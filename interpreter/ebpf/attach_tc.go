@@ -237,34 +237,34 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 
 // AttachTCExtension loads a program from ELF as Extension type and attaches
 // it to a TC dispatcher slot. This follows the same pattern as XDP extension.
-//
-// The mapPinDir parameter specifies the directory containing the program's
-// pinned maps. These maps are loaded and passed as MapReplacements so the
-// extension program shares the same maps as the original loaded program.
-func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error) {
+	if err := spec.Validate(); err != nil {
+		return bpfman.Link{}, fmt.Errorf("invalid spec: %w", err)
+	}
+
 	// Load the pinned dispatcher to use as attach target
-	dispatcherProg, err := ebpf.LoadPinnedProgram(dispatcherPinPath, nil)
+	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned TC dispatcher %s: %w", dispatcherPinPath, err)
+		return bpfman.Link{}, fmt.Errorf("load pinned TC dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
 	// Load the collection spec from the ELF file
-	collSpec, err := ebpf.LoadCollectionSpec(objectPath)
+	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load collection spec from %s: %w", objectPath, err)
+		return bpfman.Link{}, fmt.Errorf("load collection spec from %s: %w", spec.ObjectPath, err)
 	}
 
 	// Verify the program exists in the collection
-	progSpec, ok := collSpec.Programs[programName]
+	progSpec, ok := collSpec.Programs[spec.ProgramName]
 	if !ok {
-		return bpfman.Link{}, fmt.Errorf("program %q not found in %s", programName, objectPath)
+		return bpfman.Link{}, fmt.Errorf("program %q not found in %s", spec.ProgramName, spec.ObjectPath)
 	}
 
 	// Modify the program spec to be Extension type targeting the dispatcher
 	progSpec.Type = ebpf.Extension
 	progSpec.AttachTarget = dispatcherProg
-	progSpec.AttachTo = dispatcher.SlotName(position)
+	progSpec.AttachTo = dispatcher.SlotName(spec.Position)
 
 	// Load pinned maps from the original program's map directory.
 	// This ensures the extension program uses the same maps that were
@@ -272,15 +272,19 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath
 	// We iterate over collSpec.Maps to get the exact ELF map names,
 	// which must match the MapReplacements keys.
 	mapReplacements := make(map[string]*ebpf.Map)
-	if mapPinDir != "" {
+	if spec.MapPinDir != "" {
 		for name := range collSpec.Maps {
 			// Skip internal maps (same filtering as Load)
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			mapPath := filepath.Join(mapPinDir, name)
+			mapPath := filepath.Join(spec.MapPinDir, name)
 			m, err := ebpf.LoadPinnedMap(mapPath, nil)
 			if err != nil {
+				// Close any maps we've already loaded before returning
+				for _, loaded := range mapReplacements {
+					loaded.Close()
+				}
 				return bpfman.Link{}, fmt.Errorf("load pinned map %s: %w", mapPath, err)
 			}
 			mapReplacements[name] = m
@@ -288,12 +292,13 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath
 		}
 	}
 
-	// Ensure we close loaded maps on error
-	closeMapReplacements := func() {
+	// Always close map FDs when done. Closing a pinned map's FD is safe -
+	// it just releases our handle, not the underlying kernel object.
+	defer func() {
 		for _, m := range mapReplacements {
 			m.Close()
 		}
-	}
+	}()
 
 	// Clear map pinning flags - maps will come from MapReplacements
 	for _, mapSpec := range collSpec.Maps {
@@ -305,15 +310,14 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath
 		MapReplacements: mapReplacements,
 	})
 	if err != nil {
-		closeMapReplacements()
 		return bpfman.Link{}, fmt.Errorf("load TC extension collection: %w", err)
 	}
 	defer coll.Close()
 
 	// Get the loaded extension program
-	extensionProg := coll.Programs[programName]
+	extensionProg := coll.Programs[spec.ProgramName]
 	if extensionProg == nil {
-		return bpfman.Link{}, fmt.Errorf("TC extension program %q not in loaded collection", programName)
+		return bpfman.Link{}, fmt.Errorf("TC extension program %q not in loaded collection", spec.ProgramName)
 	}
 
 	// Attach the extension using freplace link
@@ -322,20 +326,34 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath
 		return bpfman.Link{}, fmt.Errorf("attach TC freplace to %s: %w", progSpec.AttachTo, err)
 	}
 
-	// Pin the link if path provided
-	if linkPinPath != "" {
-		if err := pinWithRetry(lnk, linkPinPath); err != nil {
+	success := false
+	cleanup := func() {
+		if !success {
 			lnk.Close()
-			return bpfman.Link{}, fmt.Errorf("pin TC extension link to %s: %w", linkPinPath, err)
+			if spec.LinkPinPath != "" {
+				if err := os.Remove(spec.LinkPinPath); err != nil && !os.IsNotExist(err) {
+					k.logger.Warn("failed to remove pinned TC extension link during cleanup",
+						"path", spec.LinkPinPath, "error", err)
+				}
+			}
+		}
+	}
+	defer cleanup()
+
+	// Pin the link if path provided
+	if spec.LinkPinPath != "" {
+		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
+			return bpfman.Link{}, fmt.Errorf("pin TC extension link to %s: %w", spec.LinkPinPath, err)
 		}
 	}
 
 	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
-		lnk.Close()
 		return bpfman.Link{}, fmt.Errorf("get TC link info: %w", err)
 	}
+
+	success = true
 
 	kernelLinkID := uint32(linkInfo.ID)
 	kernelLink := ToKernelLink(linkInfo)
@@ -343,15 +361,15 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, dispatcherPinPath
 		Spec: bpfman.LinkSpec{
 			ID:        bpfman.LinkID(kernelLinkID),
 			Kind:      bpfman.LinkKindTC,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
-			Details:   bpfman.TCDetails{Position: int32(position)},
+			Details:   bpfman.TCDetails{Position: int32(spec.Position)},
 			// ProgramID is set by the manager after this call
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     kernelLink,
 			KernelSeen: true,
-			PinPresent: linkPinPath != "",
+			PinPresent: spec.LinkPinPath != "",
 		},
 	}, nil
 }
@@ -412,10 +430,23 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 			return fmt.Errorf("attach TCX to ifindex %d %s: %w", ifindex, direction, err)
 		}
 
+		success := false
+		cleanup := func() {
+			if !success {
+				lnk.Close()
+				if linkPinPath != "" {
+					if err := os.Remove(linkPinPath); err != nil && !os.IsNotExist(err) {
+						k.logger.Warn("failed to remove pinned TCX link during cleanup",
+							"path", linkPinPath, "error", err)
+					}
+				}
+			}
+		}
+		defer cleanup()
+
 		// Pin the link if path provided
 		if linkPinPath != "" {
 			if err := pinWithRetry(lnk, linkPinPath); err != nil {
-				lnk.Close()
 				return fmt.Errorf("pin TCX link to %s: %w", linkPinPath, err)
 			}
 		}
@@ -423,10 +454,10 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		// Get link info
 		linkInfo, err := lnk.Info()
 		if err != nil {
-			lnk.Close()
 			return fmt.Errorf("get TCX link info: %w", err)
 		}
 
+		success = true
 		kernelLinkID := uint32(linkInfo.ID)
 		kernelLink := ToKernelLink(linkInfo)
 		result = bpfman.Link{

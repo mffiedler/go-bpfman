@@ -34,10 +34,23 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 		return bpfman.Link{}, fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 	}
 
+	success := false
+	cleanup := func() {
+		if !success {
+			lnk.Close()
+			if linkPinPath != "" {
+				if err := os.Remove(linkPinPath); err != nil && !os.IsNotExist(err) {
+					k.logger.Warn("failed to remove pinned link during cleanup",
+						"path", linkPinPath, "error", err)
+				}
+			}
+		}
+	}
+	defer cleanup()
+
 	// Pin the link if a path is provided
 	if linkPinPath != "" {
 		if err := pinWithRetry(lnk, linkPinPath); err != nil {
-			lnk.Close()
 			return bpfman.Link{}, fmt.Errorf("pin link to %s: %w", linkPinPath, err)
 		}
 	}
@@ -45,9 +58,10 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
-		lnk.Close()
 		return bpfman.Link{}, fmt.Errorf("get link info: %w", err)
 	}
+
+	success = true
 
 	kernelLinkID := uint32(linkInfo.ID)
 	kernelLink := ToKernelLink(linkInfo)
@@ -189,34 +203,34 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 // specifically as BPF_PROG_TYPE_EXT with the dispatcher as the attach target.
 // The same ELF bytecode used for direct XDP attachment is reloaded with
 // different type settings.
-//
-// The mapPinDir parameter specifies the directory containing the program's
-// pinned maps. These maps are loaded and passed as MapReplacements so the
-// extension program shares the same maps as the original loaded program.
-func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.Link, error) {
+	if err := spec.Validate(); err != nil {
+		return bpfman.Link{}, fmt.Errorf("invalid spec: %w", err)
+	}
+
 	// Load the pinned dispatcher to use as attach target
-	dispatcherProg, err := ebpf.LoadPinnedProgram(dispatcherPinPath, nil)
+	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned dispatcher %s: %w", dispatcherPinPath, err)
+		return bpfman.Link{}, fmt.Errorf("load pinned dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
 	// Load the collection spec from the ELF file
-	collSpec, err := ebpf.LoadCollectionSpec(objectPath)
+	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load collection spec from %s: %w", objectPath, err)
+		return bpfman.Link{}, fmt.Errorf("load collection spec from %s: %w", spec.ObjectPath, err)
 	}
 
 	// Verify the program exists in the collection
-	progSpec, ok := collSpec.Programs[programName]
+	progSpec, ok := collSpec.Programs[spec.ProgramName]
 	if !ok {
-		return bpfman.Link{}, fmt.Errorf("program %q not found in %s", programName, objectPath)
+		return bpfman.Link{}, fmt.Errorf("program %q not found in %s", spec.ProgramName, spec.ObjectPath)
 	}
 
 	// Modify the program spec to be Extension type targeting the dispatcher
 	progSpec.Type = ebpf.Extension
 	progSpec.AttachTarget = dispatcherProg
-	progSpec.AttachTo = dispatcher.SlotName(position)
+	progSpec.AttachTo = dispatcher.SlotName(spec.Position)
 
 	// Load pinned maps from the original program's map directory.
 	// This ensures the extension program uses the same maps that were
@@ -224,15 +238,19 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPat
 	// We iterate over collSpec.Maps to get the exact ELF map names,
 	// which must match the MapReplacements keys.
 	mapReplacements := make(map[string]*ebpf.Map)
-	if mapPinDir != "" {
+	if spec.MapPinDir != "" {
 		for name := range collSpec.Maps {
 			// Skip internal maps (same filtering as Load)
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			mapPath := filepath.Join(mapPinDir, name)
+			mapPath := filepath.Join(spec.MapPinDir, name)
 			m, err := ebpf.LoadPinnedMap(mapPath, nil)
 			if err != nil {
+				// Close any maps we've already loaded before returning
+				for _, loaded := range mapReplacements {
+					loaded.Close()
+				}
 				return bpfman.Link{}, fmt.Errorf("load pinned map %s: %w", mapPath, err)
 			}
 			mapReplacements[name] = m
@@ -240,12 +258,13 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPat
 		}
 	}
 
-	// Ensure we close loaded maps on error or when done
-	closeMapReplacements := func() {
+	// Always close map FDs when done. Closing a pinned map's FD is safe -
+	// it just releases our handle, not the underlying kernel object.
+	defer func() {
 		for _, m := range mapReplacements {
 			m.Close()
 		}
-	}
+	}()
 
 	// Clear map pinning flags - maps will come from MapReplacements
 	for _, mapSpec := range collSpec.Maps {
@@ -258,18 +277,14 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPat
 		MapReplacements: mapReplacements,
 	})
 	if err != nil {
-		closeMapReplacements()
 		return bpfman.Link{}, fmt.Errorf("load extension collection: %w", err)
 	}
 	defer coll.Close()
-	// Note: maps in mapReplacements are now owned by the collection or
-	// were used as replacements. We don't close them here as the collection
-	// manages their lifecycle.
 
 	// Get the loaded extension program
-	extensionProg := coll.Programs[programName]
+	extensionProg := coll.Programs[spec.ProgramName]
 	if extensionProg == nil {
-		return bpfman.Link{}, fmt.Errorf("extension program %q not in loaded collection", programName)
+		return bpfman.Link{}, fmt.Errorf("extension program %q not in loaded collection", spec.ProgramName)
 	}
 
 	// Attach the extension using freplace link
@@ -278,20 +293,34 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPat
 		return bpfman.Link{}, fmt.Errorf("attach freplace to %s: %w", progSpec.AttachTo, err)
 	}
 
-	// Pin the link if path provided
-	if linkPinPath != "" {
-		if err := pinWithRetry(lnk, linkPinPath); err != nil {
+	success := false
+	cleanup := func() {
+		if !success {
 			lnk.Close()
-			return bpfman.Link{}, fmt.Errorf("pin extension link to %s: %w", linkPinPath, err)
+			if spec.LinkPinPath != "" {
+				if err := os.Remove(spec.LinkPinPath); err != nil && !os.IsNotExist(err) {
+					k.logger.Warn("failed to remove pinned extension link during cleanup",
+						"path", spec.LinkPinPath, "error", err)
+				}
+			}
+		}
+	}
+	defer cleanup()
+
+	// Pin the link if path provided
+	if spec.LinkPinPath != "" {
+		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
+			return bpfman.Link{}, fmt.Errorf("pin extension link to %s: %w", spec.LinkPinPath, err)
 		}
 	}
 
 	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
-		lnk.Close()
 		return bpfman.Link{}, fmt.Errorf("get link info: %w", err)
 	}
+
+	success = true
 
 	kernelLinkID := uint32(linkInfo.ID)
 	kernelLink := ToKernelLink(linkInfo)
@@ -299,15 +328,15 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, dispatcherPinPat
 		Spec: bpfman.LinkSpec{
 			ID:        bpfman.LinkID(kernelLinkID),
 			Kind:      bpfman.LinkKindXDP, // XDP extension
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
-			Details:   bpfman.XDPDetails{Position: int32(position)},
+			Details:   bpfman.XDPDetails{Position: int32(spec.Position)},
 			// ProgramID is set by the manager after this call
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     kernelLink,
 			KernelSeen: true,
-			PinPresent: linkPinPath != "",
+			PinPresent: spec.LinkPinPath != "",
 		},
 	}, nil
 }

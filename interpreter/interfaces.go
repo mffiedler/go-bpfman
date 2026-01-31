@@ -242,11 +242,7 @@ type DispatcherAttacher interface {
 	// AttachXDPExtension loads a program from ELF as Extension type and attaches
 	// it to a dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
 	// targeting the dispatcher's slot function.
-	//
-	// The mapPinDir parameter specifies the directory containing the program's
-	// pinned maps. These maps are loaded and passed as MapReplacements so the
-	// extension program shares the same maps as the original loaded program.
-	AttachXDPExtension(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error)
+	AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.Link, error)
 
 	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
 	// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
@@ -256,11 +252,7 @@ type DispatcherAttacher interface {
 	// AttachTCExtension loads a program from ELF as Extension type and attaches
 	// it to a TC dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
 	// targeting the dispatcher's slot function.
-	//
-	// The mapPinDir parameter specifies the directory containing the program's
-	// pinned maps. These maps are loaded and passed as MapReplacements so the
-	// extension program shares the same maps as the original loaded program.
-	AttachTCExtension(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error)
+	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error)
 
 	// AttachTCX attaches a loaded program directly to an interface using TCX link.
 	// Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.

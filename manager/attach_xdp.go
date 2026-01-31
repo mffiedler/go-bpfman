@@ -86,15 +86,15 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 
 	// KERNEL I/O: Attach user program as extension
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
-	link, err := m.kernel.AttachXDPExtension(
-		ctx,
-		progPinPath,
-		prog.Load.ObjectPath,
-		prog.Meta.Name,
-		position,
-		linkPinPath,
-		mapPinDir,
-	)
+	extSpec := dispatcher.XDPExtensionAttachSpec{
+		DispatcherPinPath: progPinPath,
+		ObjectPath:        prog.Load.ObjectPath,
+		ProgramName:       prog.Meta.Name,
+		Position:          position,
+		LinkPinPath:       linkPinPath,
+		MapPinDir:         mapPinDir,
+	}
+	link, err := m.kernel.AttachXDPExtension(ctx, extSpec)
 	if err != nil {
 		// Stale dispatcher recovery: the DB record exists but the
 		// bpffs pin is gone (e.g., fresh mount after pod restart while
@@ -121,15 +121,15 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		}
 		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
 		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
-		link, err = m.kernel.AttachXDPExtension(
-			ctx,
-			progPinPath,
-			prog.Load.ObjectPath,
-			prog.Meta.Name,
-			position,
-			linkPinPath,
-			mapPinDir,
-		)
+		extSpec = dispatcher.XDPExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        prog.Load.ObjectPath,
+			ProgramName:       prog.Meta.Name,
+			Position:          position,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         mapPinDir,
+		}
+		link, err = m.kernel.AttachXDPExtension(ctx, extSpec)
 		if err != nil {
 			return bpfman.Link{}, fmt.Errorf("attach XDP extension to %s slot %d (after recreate): %w", ifname, position, err)
 		}

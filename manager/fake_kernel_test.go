@@ -664,29 +664,29 @@ func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPD
 	}, nil
 }
 
-func (f *fakeKernel) AttachXDPExtension(_ context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error) {
+func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.Link, error) {
 	id := f.nextID.Add(1)
 	// Store for DetachLink lookup
 	f.links[id] = &bpfman.AttachedLink{
 		ID:      id,
-		PinPath: linkPinPath,
+		PinPath: spec.LinkPinPath,
 		Type:    bpfman.AttachXDP,
 	}
 	// Record the operation with mapPinDir for test verification
-	f.recordExtensionAttach("attach-xdp-ext", programName, id, mapPinDir)
+	f.recordExtensionAttach("attach-xdp-ext", spec.ProgramName, id, spec.MapPinDir)
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "xdp"}
 	return bpfman.Link{
 		Spec: bpfman.LinkSpec{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindXDP,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
-			Details:   bpfman.XDPDetails{Position: int32(position)},
+			Details:   bpfman.XDPDetails{Position: int32(spec.Position)},
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     &kl,
 			KernelSeen: true,
-			PinPresent: linkPinPath != "",
+			PinPresent: spec.LinkPinPath != "",
 		},
 	}, nil
 }
@@ -752,29 +752,29 @@ func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent u
 	return handle, nil
 }
 
-func (f *fakeKernel) AttachTCExtension(_ context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error) {
+func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error) {
 	id := f.nextID.Add(1)
 	// Store for DetachLink lookup
 	f.links[id] = &bpfman.AttachedLink{
 		ID:      id,
-		PinPath: linkPinPath,
+		PinPath: spec.LinkPinPath,
 		Type:    bpfman.AttachTC,
 	}
 	// Record the operation with mapPinDir for test verification
-	f.recordExtensionAttach("attach-tc-ext", programName, id, mapPinDir)
+	f.recordExtensionAttach("attach-tc-ext", spec.ProgramName, id, spec.MapPinDir)
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "tc"}
 	return bpfman.Link{
 		Spec: bpfman.LinkSpec{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindTC,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
-			Details:   bpfman.TCDetails{Position: int32(position)},
+			Details:   bpfman.TCDetails{Position: int32(spec.Position)},
 		},
 		Status: bpfman.LinkStatus{
 			Kernel:     &kl,
 			KernelSeen: true,
-			PinPresent: linkPinPath != "",
+			PinPresent: spec.LinkPinPath != "",
 		},
 	}, nil
 }

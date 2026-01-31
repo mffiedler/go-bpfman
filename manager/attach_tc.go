@@ -104,15 +104,15 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 
 	// KERNEL I/O: Attach user program as extension
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
-	link, err := m.kernel.AttachTCExtension(
-		ctx,
-		progPinPath,
-		prog.Load.ObjectPath,
-		prog.Meta.Name,
-		position,
-		linkPinPath,
-		mapPinDir,
-	)
+	extSpec := dispatcher.TCExtensionAttachSpec{
+		DispatcherPinPath: progPinPath,
+		ObjectPath:        prog.Load.ObjectPath,
+		ProgramName:       prog.Meta.Name,
+		Position:          position,
+		LinkPinPath:       linkPinPath,
+		MapPinDir:         mapPinDir,
+	}
+	link, err := m.kernel.AttachTCExtension(ctx, extSpec)
 	if err != nil {
 		// The dispatcher DB record may be stale: the kernel program
 		// survives (held by a tc filter) but its bpffs pin is gone
@@ -141,15 +141,15 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		}
 		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
 		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
-		link, err = m.kernel.AttachTCExtension(
-			ctx,
-			progPinPath,
-			prog.Load.ObjectPath,
-			prog.Meta.Name,
-			position,
-			linkPinPath,
-			mapPinDir,
-		)
+		extSpec = dispatcher.TCExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        prog.Load.ObjectPath,
+			ProgramName:       prog.Meta.Name,
+			Position:          position,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         mapPinDir,
+		}
+		link, err = m.kernel.AttachTCExtension(ctx, extSpec)
 		if err != nil {
 			return bpfman.Link{}, fmt.Errorf("attach TC extension to %s %s slot %d (after recreate): %w", ifname, direction, position, err)
 		}

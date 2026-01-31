@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/frobware/go-bpfman"
 )
@@ -61,6 +62,62 @@ func (s TCDispatcherAttachSpec) Validate() error {
 	}
 	if s.NumProgs <= 0 {
 		return errors.New("NumProgs must be positive")
+	}
+	return nil
+}
+
+// XDPExtensionAttachSpec contains parameters for attaching an XDP extension
+// program to a dispatcher slot.
+type XDPExtensionAttachSpec struct {
+	DispatcherPinPath string // pinned dispatcher program
+	ObjectPath        string // ELF file containing extension
+	ProgramName       string // program name within ELF
+	Position          int    // dispatcher slot [0, MaxPrograms)
+	LinkPinPath       string // optional - empty for ephemeral
+	MapPinDir         string // optional - empty if no maps
+}
+
+// Validate checks the spec for invalid or missing values.
+func (s XDPExtensionAttachSpec) Validate() error {
+	if s.DispatcherPinPath == "" {
+		return errors.New("XDP extension: DispatcherPinPath is required")
+	}
+	if s.ObjectPath == "" {
+		return errors.New("XDP extension: ObjectPath is required")
+	}
+	if s.ProgramName == "" {
+		return errors.New("XDP extension: ProgramName is required")
+	}
+	if s.Position < 0 || s.Position >= MaxPrograms {
+		return fmt.Errorf("XDP extension: Position %d out of range [0, %d)", s.Position, MaxPrograms)
+	}
+	return nil
+}
+
+// TCExtensionAttachSpec contains parameters for attaching a TC extension
+// program to a dispatcher slot.
+type TCExtensionAttachSpec struct {
+	DispatcherPinPath string // pinned dispatcher program
+	ObjectPath        string // ELF file containing extension
+	ProgramName       string // program name within ELF
+	Position          int    // dispatcher slot [0, MaxPrograms)
+	LinkPinPath       string // optional - empty for ephemeral
+	MapPinDir         string // optional - empty if no maps
+}
+
+// Validate checks the spec for invalid or missing values.
+func (s TCExtensionAttachSpec) Validate() error {
+	if s.DispatcherPinPath == "" {
+		return errors.New("TC extension: DispatcherPinPath is required")
+	}
+	if s.ObjectPath == "" {
+		return errors.New("TC extension: ObjectPath is required")
+	}
+	if s.ProgramName == "" {
+		return errors.New("TC extension: ProgramName is required")
+	}
+	if s.Position < 0 || s.Position >= MaxPrograms {
+		return fmt.Errorf("TC extension: Position %d out of range [0, %d)", s.Position, MaxPrograms)
 	}
 	return nil
 }
