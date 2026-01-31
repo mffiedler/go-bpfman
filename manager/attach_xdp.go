@@ -198,15 +198,20 @@ func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex 
 		"link_pin_path", linkPinPath)
 
 	// KERNEL I/O: Create dispatcher (returns IDs)
-	result, err := m.kernel.AttachXDPDispatcherWithPaths(
-		ctx,
-		int(ifindex),
-		progPinPath,
-		linkPinPath,
-		dispatcher.MaxPrograms,
-		xdpProceedOnPass,
-		netnsPath,
-	)
+	spec := dispatcher.XDPDispatcherAttachSpec{
+		Target: bpfman.AttachTarget{
+			IfIndex: int(ifindex),
+			NetNS:   netnsPath,
+		},
+		ProgPinPath: progPinPath,
+		LinkPinPath: linkPinPath,
+		NumProgs:    dispatcher.MaxPrograms,
+		ProceedOn:   xdpProceedOnPass,
+	}
+	if err := spec.Validate(); err != nil {
+		return dispatcher.State{}, fmt.Errorf("invalid XDP dispatcher spec: %w", err)
+	}
+	result, err := m.kernel.AttachXDPDispatcher(ctx, spec)
 	if err != nil {
 		return dispatcher.State{}, err
 	}

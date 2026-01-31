@@ -8,7 +8,6 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/manager"
 )
 
 // AttachCmd attaches a loaded program to a hook.
@@ -323,6 +322,3 @@ func (c *AttachCmd) attachFexit(ctx context.Context, runtime *CLIRuntime) (attac
 	}
 	return attachResult{Link: link}, nil
 }
-
-// Ensure manager is used (silence unused warning during incremental development)
-var _ *manager.Manager

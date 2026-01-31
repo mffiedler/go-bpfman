@@ -237,21 +237,7 @@ type TCDispatcherResult struct {
 type DispatcherAttacher interface {
 	// AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 	// The dispatcher allows multiple XDP programs to be chained together.
-	// numProgs specifies how many slots to enable, proceedOn is the bitmask for chain behaviour.
-	AttachXDPDispatcher(ctx context.Context, ifindex int, pinDir string, numProgs int, proceedOn uint32) (*XDPDispatcherResult, error)
-
-	// AttachXDPDispatcherWithPaths loads and attaches an XDP dispatcher to an interface
-	// with explicit paths for the dispatcher program and link.
-	// This is used when the caller has computed paths according to the Rust bpfman convention.
-	//
-	// Parameters:
-	//   - ifindex: Network interface index
-	//   - progPinPath: Path to pin the dispatcher program (e.g., .../dispatcher_{nsid}_{ifindex}_{revision}/dispatcher)
-	//   - linkPinPath: Stable path to pin the XDP link (e.g., .../xdp/dispatcher_{nsid}_{ifindex}_link)
-	//   - numProgs: Number of extension slots to enable
-	//   - proceedOn: Bitmask of XDP return codes that trigger continuation to next program
-	//   - netns: Optional network namespace path. If non-empty, attachment is performed in that namespace.
-	AttachXDPDispatcherWithPaths(ctx context.Context, ifindex int, progPinPath, linkPinPath string, numProgs int, proceedOn uint32, netns string) (*XDPDispatcherResult, error)
+	AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*XDPDispatcherResult, error)
 
 	// AttachXDPExtension loads a program from ELF as Extension type and attaches
 	// it to a dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
@@ -262,20 +248,10 @@ type DispatcherAttacher interface {
 	// extension program shares the same maps as the original loaded program.
 	AttachXDPExtension(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.Link, error)
 
-	// AttachTCDispatcherWithPaths loads and attaches a TC dispatcher to an
-	// interface using legacy netlink TC (clsact qdisc + BPF tc filter).
-	// This matches the upstream Rust bpfman approach and is visible to
-	// the tc(8) command-line tool.
-	//
-	// Parameters:
-	//   - ifindex: Network interface index
-	//   - ifname: Network interface name (needed for netlink)
-	//   - progPinPath: Path to pin the dispatcher program
-	//   - direction: "ingress" or "egress"
-	//   - numProgs: Number of extension slots to enable
-	//   - proceedOn: Bitmask of TC return codes that trigger continuation to next program
-	//   - netns: Optional network namespace path. If non-empty, attachment is performed in that namespace.
-	AttachTCDispatcherWithPaths(ctx context.Context, ifindex int, ifname, progPinPath, direction string, numProgs int, proceedOn uint32, netns string) (*TCDispatcherResult, error)
+	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
+	// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
+	// the upstream Rust bpfman approach and is visible to tc(8) tooling.
+	AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*TCDispatcherResult, error)
 
 	// AttachTCExtension loads a program from ELF as Extension type and attaches
 	// it to a TC dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
@@ -318,7 +294,7 @@ type PinRemover interface {
 type TCFilterDetacher interface {
 	// DetachTCFilter removes a tc filter identified by ifindex, parent,
 	// priority, and handle. This is the counterpart to the netlink-based
-	// attachment performed by AttachTCDispatcherWithPaths.
+	// attachment performed by AttachTCDispatcher.
 	DetachTCFilter(ctx context.Context, ifindex int, ifname string, parent uint32, priority uint16, handle uint32) error
 
 	// FindTCFilterHandle looks up the kernel-assigned handle for a TC

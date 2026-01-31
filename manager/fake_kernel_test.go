@@ -11,6 +11,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -637,21 +638,10 @@ func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath string) error {
 	return nil
 }
 
-func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, ifindex int, pinDir string, numProgs int, proceedOn uint32) (*interpreter.XDPDispatcherResult, error) {
-	dispatcherID := f.nextID.Add(1)
-	linkID := f.nextID.Add(1)
-	return &interpreter.XDPDispatcherResult{
-		DispatcherID:  dispatcherID,
-		LinkID:        linkID,
-		DispatcherPin: pinDir + "/xdp_dispatcher",
-		LinkPin:       pinDir + "/link",
-	}, nil
-}
-
-func (f *fakeKernel) AttachXDPDispatcherWithPaths(_ context.Context, ifindex int, progPinPath, linkPinPath string, numProgs int, proceedOn uint32, netns string) (*interpreter.XDPDispatcherResult, error) {
+func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*interpreter.XDPDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
-	if err, ok := f.failOnIfindex[ifindex]; ok {
+	if err, ok := f.failOnIfindex[spec.Target.IfIndex]; ok {
 		f.mu.Unlock()
 		return nil, err
 	}
@@ -664,13 +654,13 @@ func (f *fakeKernel) AttachXDPDispatcherWithPaths(_ context.Context, ifindex int
 		id:          dispatcherID,
 		name:        "xdp_dispatcher",
 		programType: bpfman.ProgramTypeXDP,
-		pinPath:     progPinPath,
+		pinPath:     spec.ProgPinPath,
 	}
 	return &interpreter.XDPDispatcherResult{
 		DispatcherID:  dispatcherID,
 		LinkID:        linkID,
-		DispatcherPin: progPinPath,
-		LinkPin:       linkPinPath,
+		DispatcherPin: spec.ProgPinPath,
+		LinkPin:       spec.LinkPinPath,
 	}, nil
 }
 
@@ -701,10 +691,10 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, dispatcherPinPath, ob
 	}, nil
 }
 
-func (f *fakeKernel) AttachTCDispatcherWithPaths(_ context.Context, ifindex int, ifname, progPinPath, direction string, numProgs int, proceedOn uint32, netns string) (*interpreter.TCDispatcherResult, error) {
+func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDispatcherAttachSpec) (*interpreter.TCDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
-	if err, ok := f.failOnIfname[ifname]; ok {
+	if err, ok := f.failOnIfname[spec.IfName]; ok {
 		f.mu.Unlock()
 		return nil, err
 	}
@@ -717,26 +707,26 @@ func (f *fakeKernel) AttachTCDispatcherWithPaths(_ context.Context, ifindex int,
 		id:          dispatcherID,
 		name:        "tc_dispatcher",
 		programType: bpfman.ProgramTypeTC,
-		pinPath:     progPinPath,
+		pinPath:     spec.ProgPinPath,
 	}
 
 	// Determine parent handle from direction
 	var parent uint32
-	switch direction {
-	case "ingress":
+	switch spec.Direction {
+	case bpfman.TCDirectionIngress:
 		parent = 0xFFFFFFF2 // netlink.HANDLE_MIN_INGRESS
-	case "egress":
+	case bpfman.TCDirectionEgress:
 		parent = 0xFFFFFFF3 // netlink.HANDLE_MIN_EGRESS
 	}
 
 	// Store TC filter so FindTCFilterHandle can look it up
 	f.mu.Lock()
-	f.tcFilters[tcFilterKey{ifindex: ifindex, parent: parent, priority: 50}] = handle
+	f.tcFilters[tcFilterKey{ifindex: spec.Target.IfIndex, parent: parent, priority: 50}] = handle
 	f.mu.Unlock()
 
 	return &interpreter.TCDispatcherResult{
 		DispatcherID:  dispatcherID,
-		DispatcherPin: progPinPath,
+		DispatcherPin: spec.ProgPinPath,
 		Handle:        handle,
 		Priority:      50,
 	}, nil

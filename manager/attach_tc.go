@@ -372,16 +372,21 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 		"prog_pin_path", progPinPath)
 
 	// KERNEL I/O: Create TC dispatcher using legacy netlink TC
-	result, err := m.kernel.AttachTCDispatcherWithPaths(
-		ctx,
-		int(ifindex),
-		ifname,
-		progPinPath,
-		string(direction),
-		dispatcher.MaxPrograms,
-		uint32(DefaultTCProceedOn),
-		netnsPath,
-	)
+	spec := dispatcher.TCDispatcherAttachSpec{
+		Target: bpfman.AttachTarget{
+			IfIndex: int(ifindex),
+			NetNS:   netnsPath,
+		},
+		IfName:      ifname,
+		ProgPinPath: progPinPath,
+		Direction:   direction,
+		NumProgs:    dispatcher.MaxPrograms,
+		ProceedOn:   uint32(DefaultTCProceedOn),
+	}
+	if err := spec.Validate(); err != nil {
+		return dispatcher.State{}, fmt.Errorf("invalid TC dispatcher spec: %w", err)
+	}
+	result, err := m.kernel.AttachTCDispatcher(ctx, spec)
 	if err != nil {
 		return dispatcher.State{}, err
 	}

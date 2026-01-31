@@ -25,44 +25,33 @@ import (
 // filter, matching the upstream Rust bpfman value.
 const tcDispatcherPriority = 50
 
-// AttachTCDispatcherWithPaths loads and attaches a TC dispatcher to an
-// interface using legacy netlink TC (clsact qdisc + BPF tc filter).
-// This matches the upstream Rust bpfman approach: the dispatcher
-// program is attached as a cls_bpf filter on the clsact qdisc,
-// visible to tc(8) tooling, and works on kernels older than 6.6.
-//
-// Parameters:
-//   - ifindex: Network interface index
-//   - ifname: Network interface name (needed for netlink)
-//   - progPinPath: Path to pin the dispatcher program
-//   - direction: "ingress" or "egress"
-//   - numProgs: Number of extension slots to enable
-//   - proceedOn: Bitmask of TC return codes that trigger continuation
-//   - netnsPath: if non-empty, attachment is performed in that network namespace
-func (k *kernelAdapter) AttachTCDispatcherWithPaths(ctx context.Context, ifindex int, ifname, progPinPath, direction string, numProgs int, proceedOn uint32, netnsPath string) (*interpreter.TCDispatcherResult, error) {
+// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
+// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
+// the upstream Rust bpfman approach: the dispatcher program is attached
+// as a cls_bpf filter on the clsact qdisc, visible to tc(8) tooling,
+// and works on kernels older than 6.6.
+func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*interpreter.TCDispatcherResult, error) {
 	// Configure the TC dispatcher
 	// TC_DISPATCHER_RETVAL (30) is returned by empty slots - we must include
 	// this bit so the dispatcher continues past empty slots to the final TC_ACT_OK.
 	const tcDispatcherRetval = 30
-	cfg := dispatcher.NewTCConfig(numProgs)
+	cfg := dispatcher.NewTCConfig(spec.NumProgs)
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		cfg.ChainCallActions[i] = proceedOn | (1 << tcDispatcherRetval)
+		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << tcDispatcherRetval)
 	}
 
-	// Load the TC dispatcher spec with config injected
-	spec, err := dispatcher.LoadTCDispatcher(cfg)
+	// Load the TC dispatcher collection spec with config injected
+	collSpec, err := dispatcher.LoadTCDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load TC dispatcher spec: %w", err)
 	}
 
-	// Create collection from spec
-	coll, err := ebpf.NewCollection(spec)
+	coll, err := ebpf.NewCollection(collSpec)
 	if err != nil {
 		return nil, fmt.Errorf("create TC dispatcher collection: %w", err)
 	}
 	defer coll.Close()
 
-	// Get the dispatcher program
 	dispatcherProg := coll.Programs["tc_dispatcher"]
 	if dispatcherProg == nil {
 		return nil, fmt.Errorf("tc_dispatcher program not found in collection")
@@ -70,43 +59,43 @@ func (k *kernelAdapter) AttachTCDispatcherWithPaths(ctx context.Context, ifindex
 
 	// Determine the parent handle based on direction
 	var parent uint32
-	switch direction {
-	case "ingress":
+	switch spec.Direction {
+	case bpfman.TCDirectionIngress:
 		parent = netlink.HANDLE_MIN_INGRESS
-	case "egress":
+	case bpfman.TCDirectionEgress:
 		parent = netlink.HANDLE_MIN_EGRESS
 	default:
-		return nil, fmt.Errorf("invalid TC direction %q: must be ingress or egress", direction)
+		return nil, fmt.Errorf("invalid TC direction %q: must be ingress or egress", spec.Direction)
 	}
 
-	// Attach and pin in target namespace (if specified)
-	if netnsPath != "" {
-		k.logger.Debug("entering network namespace for TC dispatcher attachment", "netns", netnsPath, "ifindex", ifindex, "direction", direction)
+	if spec.Target.NetNS != "" {
+		k.logger.Debug("entering network namespace for TC dispatcher attachment",
+			"netns", spec.Target.NetNS,
+			"ifname", spec.IfName,
+			"ifindex", spec.Target.IfIndex,
+			"direction", spec.Direction)
 	}
 
 	var result *interpreter.TCDispatcherResult
-	err = netns.Run(netnsPath, func() error {
+	err = netns.Run(spec.Target.NetNS, func() error {
 		// Step 1: Ensure clsact qdisc exists (matching Rust bpfman behaviour).
-		// Aya checks has_qdisc("clsact"), errors on "ingress", else adds clsact.
-		// We mirror this: attempt to add clsact, ignore EEXIST.
 		qdisc := &netlink.Clsact{
 			QdiscAttrs: netlink.QdiscAttrs{
-				LinkIndex: ifindex,
+				LinkIndex: spec.Target.IfIndex,
 				Handle:    netlink.MakeHandle(0xffff, 0),
 				Parent:    netlink.HANDLE_INGRESS,
 			},
 		}
 		if err := netlink.QdiscAdd(qdisc); err != nil {
-			// EEXIST is fine — clsact already present.
 			if !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("add clsact qdisc to ifindex %d: %w", ifindex, err)
+				return fmt.Errorf("add clsact qdisc to %s (ifindex %d): %w", spec.IfName, spec.Target.IfIndex, err)
 			}
 		}
 
 		// Step 2: Add a BPF tc filter with the dispatcher program.
 		filter := &netlink.BpfFilter{
 			FilterAttrs: netlink.FilterAttrs{
-				LinkIndex: ifindex,
+				LinkIndex: spec.Target.IfIndex,
 				Parent:    parent,
 				Priority:  tcDispatcherPriority,
 				Protocol:  unix.ETH_P_ALL,
@@ -116,23 +105,53 @@ func (k *kernelAdapter) AttachTCDispatcherWithPaths(ctx context.Context, ifindex
 			DirectAction: true,
 		}
 		if err := netlink.FilterAdd(filter); err != nil {
-			return fmt.Errorf("add TC BPF filter to ifindex %d direction %s: %w", ifindex, direction, err)
+			return fmt.Errorf("add TC BPF filter to %s (ifindex %d) %s: %w",
+				spec.IfName, spec.Target.IfIndex, spec.Direction, err)
 		}
 
 		// Step 3: Read back the kernel-assigned handle.
-		// vishvananda/netlink FilterAdd does not use NLM_F_ECHO, so
-		// we must list filters to find our newly-added one.
-		handle, err := readBackTCFilterHandle(ifindex, parent, tcDispatcherPriority)
+		handle, err := readBackTCFilterHandle(spec.Target.IfIndex, parent, tcDispatcherPriority)
 		if err != nil {
+			// Filter was added but we can't get its handle; attempt cleanup.
+			// We can't call FilterDel without a handle, so log and return.
+			k.logger.Warn("TC filter added but handle readback failed; filter may be orphaned",
+				"ifname", spec.IfName,
+				"ifindex", spec.Target.IfIndex,
+				"direction", spec.Direction,
+				"error", err)
 			return fmt.Errorf("read back TC filter handle: %w", err)
 		}
+
+		// Defer cleanup of the tc filter. On success we skip deletion;
+		// on any error the filter is removed.
+		success := false
+		defer func() {
+			if success {
+				return
+			}
+			delFilter := &netlink.BpfFilter{
+				FilterAttrs: netlink.FilterAttrs{
+					LinkIndex: spec.Target.IfIndex,
+					Parent:    parent,
+					Handle:    handle,
+					Priority:  tcDispatcherPriority,
+					Protocol:  unix.ETH_P_ALL,
+				},
+			}
+			if delErr := netlink.FilterDel(delFilter); delErr != nil {
+				k.logger.Warn("failed to clean up TC filter after error",
+					"ifname", spec.IfName,
+					"ifindex", spec.Target.IfIndex,
+					"handle", fmt.Sprintf("%x", handle),
+					"error", delErr)
+			}
+		}()
 
 		result = &interpreter.TCDispatcherResult{
 			Handle:   handle,
 			Priority: tcDispatcherPriority,
 		}
 
-		// Get dispatcher program info
 		progInfo, err := dispatcherProg.Info()
 		if err != nil {
 			return fmt.Errorf("get TC dispatcher program info: %w", err)
@@ -143,19 +162,17 @@ func (k *kernelAdapter) AttachTCDispatcherWithPaths(ctx context.Context, ifindex
 		}
 		result.DispatcherID = uint32(progID)
 
-		// Pin dispatcher program to the revision-specific path
-		if progPinPath != "" {
-			progDir := filepath.Dir(progPinPath)
-			if err := os.MkdirAll(progDir, 0755); err != nil {
+		if spec.ProgPinPath != "" {
+			if err := os.MkdirAll(filepath.Dir(spec.ProgPinPath), 0755); err != nil {
 				return fmt.Errorf("create TC dispatcher program directory: %w", err)
 			}
-
-			if err := dispatcherProg.Pin(progPinPath); err != nil {
-				return fmt.Errorf("pin TC dispatcher program to %s: %w", progPinPath, err)
+			if err := dispatcherProg.Pin(spec.ProgPinPath); err != nil {
+				return fmt.Errorf("pin TC dispatcher program to %s: %w", spec.ProgPinPath, err)
 			}
-			result.DispatcherPin = progPinPath
+			result.DispatcherPin = spec.ProgPinPath
 		}
 
+		success = true
 		return nil
 	})
 	if err != nil {

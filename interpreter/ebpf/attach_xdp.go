@@ -70,24 +70,24 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 
 // AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 // The dispatcher allows multiple XDP programs to be chained together.
-func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, ifindex int, pinDir string, numProgs int, proceedOn uint32) (*interpreter.XDPDispatcherResult, error) {
+func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*interpreter.XDPDispatcherResult, error) {
 	// Configure the dispatcher
 	// XDP_DISPATCHER_RETVAL (31) is returned by empty slots - we must include
 	// this bit so the dispatcher continues past empty slots to the final XDP_PASS.
 	const xdpDispatcherRetval = 31
-	cfg := dispatcher.NewXDPConfig(numProgs)
+	cfg := dispatcher.NewXDPConfig(spec.NumProgs)
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		cfg.ChainCallActions[i] = proceedOn | (1 << xdpDispatcherRetval)
+		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << xdpDispatcherRetval)
 	}
 
-	// Load the dispatcher spec with config injected
-	spec, err := dispatcher.LoadXDPDispatcher(cfg)
+	// Load the dispatcher collection spec with config injected
+	collSpec, err := dispatcher.LoadXDPDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load XDP dispatcher spec: %w", err)
 	}
 
 	// Create collection from spec
-	coll, err := ebpf.NewCollection(spec)
+	coll, err := ebpf.NewCollection(collSpec)
 	if err != nil {
 		return nil, fmt.Errorf("create XDP dispatcher collection: %w", err)
 	}
@@ -99,122 +99,23 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, ifindex int, pi
 		return nil, fmt.Errorf("xdp_dispatcher program not found in collection")
 	}
 
-	// Attach to interface
-	lnk, err := link.AttachXDP(link.XDPOptions{
-		Program:   dispatcherProg,
-		Interface: ifindex,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", ifindex, err)
-	}
-
-	result := &interpreter.XDPDispatcherResult{}
-
-	// Get dispatcher program info
-	progInfo, err := dispatcherProg.Info()
-	if err != nil {
-		lnk.Close()
-		return nil, fmt.Errorf("get dispatcher program info: %w", err)
-	}
-	progID, ok := progInfo.ID()
-	if !ok {
-		lnk.Close()
-		return nil, fmt.Errorf("failed to get dispatcher program ID from kernel")
-	}
-	result.DispatcherID = uint32(progID)
-
-	// Get link info
-	linkInfo, err := lnk.Info()
-	if err != nil {
-		lnk.Close()
-		return nil, fmt.Errorf("get dispatcher link info: %w", err)
-	}
-	result.LinkID = uint32(linkInfo.ID)
-
-	// Pin dispatcher and link if pinDir provided
-	if pinDir != "" {
-		if err := os.MkdirAll(pinDir, 0755); err != nil {
-			lnk.Close()
-			return nil, fmt.Errorf("create dispatcher pin directory: %w", err)
-		}
-
-		// Pin dispatcher program
-		dispatcherPinPath := filepath.Join(pinDir, "xdp_dispatcher")
-		if err := dispatcherProg.Pin(dispatcherPinPath); err != nil {
-			lnk.Close()
-			return nil, fmt.Errorf("pin dispatcher program: %w", err)
-		}
-		result.DispatcherPin = dispatcherPinPath
-
-		// Pin link
-		linkPinPath := filepath.Join(pinDir, "link")
-		if err := lnk.Pin(linkPinPath); err != nil {
-			if rmErr := os.Remove(dispatcherPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				k.logger.Warn("failed to remove dispatcher pin during cleanup", "path", dispatcherPinPath, "error", rmErr)
-			}
-			lnk.Close()
-			return nil, fmt.Errorf("pin dispatcher link: %w", err)
-		}
-		result.LinkPin = linkPinPath
-	}
-
-	return result, nil
-}
-
-// AttachXDPDispatcherWithPaths loads and attaches an XDP dispatcher to an interface
-// with explicit paths for the dispatcher program and link.
-// This follows the Rust bpfman convention where:
-//   - progPinPath: revision-specific path for the dispatcher program
-//   - linkPinPath: stable path for the XDP link (outside revision directory)
-//   - netnsPath: if non-empty, attachment is performed in that network namespace
-func (k *kernelAdapter) AttachXDPDispatcherWithPaths(ctx context.Context, ifindex int, progPinPath, linkPinPath string, numProgs int, proceedOn uint32, netnsPath string) (*interpreter.XDPDispatcherResult, error) {
-	// Configure the dispatcher
-	// XDP_DISPATCHER_RETVAL (31) is returned by empty slots - we must include
-	// this bit so the dispatcher continues past empty slots to the final XDP_PASS.
-	const xdpDispatcherRetval = 31
-	cfg := dispatcher.NewXDPConfig(numProgs)
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		cfg.ChainCallActions[i] = proceedOn | (1 << xdpDispatcherRetval)
-	}
-
-	// Load the dispatcher spec with config injected
-	spec, err := dispatcher.LoadXDPDispatcher(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("load XDP dispatcher spec: %w", err)
-	}
-
-	// Create collection from spec
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return nil, fmt.Errorf("create XDP dispatcher collection: %w", err)
-	}
-	defer coll.Close()
-
-	// Get the dispatcher program
-	dispatcherProg := coll.Programs["xdp_dispatcher"]
-	if dispatcherProg == nil {
-		return nil, fmt.Errorf("xdp_dispatcher program not found in collection")
-	}
-
-	// Attach and pin in target namespace (if specified)
-	if netnsPath != "" {
-		k.logger.Debug("entering network namespace for XDP dispatcher attachment", "netns", netnsPath, "ifindex", ifindex)
+	if spec.Target.NetNS != "" {
+		k.logger.Debug("entering network namespace for XDP dispatcher attachment",
+			"netns", spec.Target.NetNS, "ifindex", spec.Target.IfIndex)
 	}
 
 	var result *interpreter.XDPDispatcherResult
-	err = netns.Run(netnsPath, func() error {
-		// Attach to interface
+	err = netns.Run(spec.Target.NetNS, func() error {
 		lnk, err := link.AttachXDP(link.XDPOptions{
 			Program:   dispatcherProg,
-			Interface: ifindex,
+			Interface: spec.Target.IfIndex,
 		})
 		if err != nil {
-			return fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", ifindex, err)
+			return fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", spec.Target.IfIndex, err)
 		}
 
 		result = &interpreter.XDPDispatcherResult{}
 
-		// Get dispatcher program info
 		progInfo, err := dispatcherProg.Info()
 		if err != nil {
 			lnk.Close()
@@ -227,7 +128,6 @@ func (k *kernelAdapter) AttachXDPDispatcherWithPaths(ctx context.Context, ifinde
 		}
 		result.DispatcherID = uint32(progID)
 
-		// Get link info
 		linkInfo, err := lnk.Info()
 		if err != nil {
 			lnk.Close()
@@ -236,43 +136,41 @@ func (k *kernelAdapter) AttachXDPDispatcherWithPaths(ctx context.Context, ifinde
 		result.LinkID = uint32(linkInfo.ID)
 
 		// Pin dispatcher program to the revision-specific path
-		if progPinPath != "" {
-			progDir := filepath.Dir(progPinPath)
-			if err := os.MkdirAll(progDir, 0755); err != nil {
+		if spec.ProgPinPath != "" {
+			if err := os.MkdirAll(filepath.Dir(spec.ProgPinPath), 0755); err != nil {
 				lnk.Close()
 				return fmt.Errorf("create dispatcher program directory: %w", err)
 			}
-
-			if err := dispatcherProg.Pin(progPinPath); err != nil {
+			if err := dispatcherProg.Pin(spec.ProgPinPath); err != nil {
 				lnk.Close()
-				return fmt.Errorf("pin dispatcher program to %s: %w", progPinPath, err)
+				return fmt.Errorf("pin dispatcher program to %s: %w", spec.ProgPinPath, err)
 			}
-			result.DispatcherPin = progPinPath
+			result.DispatcherPin = spec.ProgPinPath
 		}
 
 		// Pin link to the stable path (outside revision directory)
-		if linkPinPath != "" {
-			linkDir := filepath.Dir(linkPinPath)
-			if err := os.MkdirAll(linkDir, 0755); err != nil {
-				if progPinPath != "" {
-					if rmErr := os.Remove(progPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
-						k.logger.Warn("failed to remove program pin during cleanup", "path", progPinPath, "error", rmErr)
+		if spec.LinkPinPath != "" {
+			if err := os.MkdirAll(filepath.Dir(spec.LinkPinPath), 0755); err != nil {
+				if spec.ProgPinPath != "" {
+					if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
+						k.logger.Warn("failed to remove program pin during cleanup",
+							"path", spec.ProgPinPath, "error", rmErr)
 					}
 				}
 				lnk.Close()
 				return fmt.Errorf("create link pin directory: %w", err)
 			}
-
-			if err := lnk.Pin(linkPinPath); err != nil {
-				if progPinPath != "" {
-					if rmErr := os.Remove(progPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
-						k.logger.Warn("failed to remove program pin during cleanup", "path", progPinPath, "error", rmErr)
+			if err := lnk.Pin(spec.LinkPinPath); err != nil {
+				if spec.ProgPinPath != "" {
+					if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
+						k.logger.Warn("failed to remove program pin during cleanup",
+							"path", spec.ProgPinPath, "error", rmErr)
 					}
 				}
 				lnk.Close()
-				return fmt.Errorf("pin dispatcher link to %s: %w", linkPinPath, err)
+				return fmt.Errorf("pin dispatcher link to %s: %w", spec.LinkPinPath, err)
 			}
-			result.LinkPin = linkPinPath
+			result.LinkPin = spec.LinkPinPath
 		}
 
 		return nil
