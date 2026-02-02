@@ -909,7 +909,7 @@ func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
 		if len(o.ManualCleanupCommands) > 0 {
 			b.WriteString("Manual cleanup required:\n")
 			for _, cmd := range o.ManualCleanupCommands {
-				fmt.Fprintf(&b, "  %s\n", strings.Join(cmd, " "))
+				fmt.Fprintf(&b, "  %s\n", cmd)
 			}
 		}
 	} else if o.SystemState == "unknown" {

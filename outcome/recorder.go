@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 var (
@@ -58,12 +59,13 @@ func (r *ManagerOperationRecorder) Complete(step Step) error {
 		return ErrAlreadyFailed
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
-		Seq:     r.nextSeq(),
-		Phase:   r.currentPhase(),
-		Status:  StepStatusCompleted,
-		Kind:    step.Kind,
-		Target:  step.Target,
-		Details: step.Details,
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     r.currentPhase(),
+		Status:    StepStatusCompleted,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Details:   step.Details,
 	})
 	return nil
 }
@@ -74,12 +76,13 @@ func (r *ManagerOperationRecorder) Skip(step Step) error {
 		return ErrAlreadyFailed
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
-		Seq:    r.nextSeq(),
-		Phase:  r.currentPhase(),
-		Status: StepStatusSkipped,
-		Kind:   step.Kind,
-		Target: step.Target,
-		Error:  step.Error,
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     r.currentPhase(),
+		Status:    StepStatusSkipped,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Error:     step.Error,
 	})
 	return nil
 }
@@ -92,13 +95,14 @@ func (r *ManagerOperationRecorder) Fail(step Step) error {
 	}
 	r.o.Status = StatusFailure
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
-		Seq:     r.nextSeq(),
-		Phase:   r.currentPhase(),
-		Status:  StepStatusFailed,
-		Kind:    step.Kind,
-		Target:  step.Target,
-		Error:   step.Error,
-		Details: step.Details,
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     r.currentPhase(),
+		Status:    StepStatusFailed,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Error:     step.Error,
+		Details:   step.Details,
 	})
 	return nil
 }
@@ -122,12 +126,13 @@ func (r *ManagerOperationRecorder) RollbackComplete(step Step) error {
 		return ErrRollbackNotActive
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
-		Seq:     r.nextSeq(),
-		Phase:   PhaseRollback,
-		Status:  StepStatusCompleted,
-		Kind:    step.Kind,
-		Target:  step.Target,
-		Details: step.Details,
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     PhaseRollback,
+		Status:    StepStatusCompleted,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Details:   step.Details,
 	})
 	return nil
 }
@@ -139,13 +144,14 @@ func (r *ManagerOperationRecorder) RollbackFail(step Step) error {
 	}
 	r.rollbackFailed = true
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
-		Seq:     r.nextSeq(),
-		Phase:   PhaseRollback,
-		Status:  StepStatusFailed,
-		Kind:    step.Kind,
-		Target:  step.Target,
-		Error:   step.Error,
-		Details: step.Details,
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     PhaseRollback,
+		Status:    StepStatusFailed,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Error:     step.Error,
+		Details:   step.Details,
 	})
 	return nil
 }
@@ -163,11 +169,11 @@ func (r *ManagerOperationRecorder) SetResidual(artefacts []Artefact, observeErr 
 	}
 }
 
-// Finalise computes and stores the derived fields (SystemState, NeedsManualCleanup,
+// Finalise computes and stores the derived fields (SystemState, ManualCleanupRequired,
 // ManualCleanupCommands). Call this before returning the outcome to the caller.
 func (r *ManagerOperationRecorder) Finalise() {
 	r.o.SystemState = ComputeSystemState(r.o.Status, r.o.Residual, r.o.ResidualError)
-	r.o.NeedsManualCleanup = ComputeNeedsManualCleanup(r.o.Status, r.o.SystemState)
+	r.o.ManualCleanupRequired = ComputeManualCleanupRequired(r.o.Status, r.o.SystemState)
 	r.o.ManualCleanupCommands = ComputeManualCleanupCommands(r.o.SystemState, r.o.Residual)
 }
 

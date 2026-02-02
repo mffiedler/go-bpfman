@@ -115,7 +115,7 @@ func TestStarted(t *testing.T) {
 	}
 }
 
-func TestComputeNeedsManualCleanup(t *testing.T) {
+func TestComputeManualCleanupRequired(t *testing.T) {
 	tests := []struct {
 		name        string
 		status      outcome.Status
@@ -150,9 +150,9 @@ func TestComputeNeedsManualCleanup(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := outcome.ComputeNeedsManualCleanup(tc.status, tc.systemState)
+			got := outcome.ComputeManualCleanupRequired(tc.status, tc.systemState)
 			if got != tc.expected {
-				t.Errorf("ComputeNeedsManualCleanup() = %v, want %v", got, tc.expected)
+				t.Errorf("ComputeManualCleanupRequired() = %v, want %v", got, tc.expected)
 			}
 		})
 	}
@@ -163,7 +163,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 		name        string
 		systemState string
 		residual    []outcome.Artefact
-		expected    [][]string
+		expected    []string
 	}{
 		{
 			name:        "clean state returns nil",
@@ -181,7 +181,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
-			expected: [][]string{{"bpfman", "unload", "123"}},
+			expected: []string{"bpfman unload 123"},
 		},
 		{
 			name:        "link_pin with link_id returns detach command",
@@ -189,7 +189,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
 			},
-			expected: [][]string{{"bpfman", "detach", "--id", "456"}},
+			expected: []string{"bpfman detach --id 456"},
 		},
 		{
 			name:        "deduplicates same kernel_id",
@@ -198,7 +198,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
-			expected: [][]string{{"bpfman", "unload", "123"}},
+			expected: []string{"bpfman unload 123"},
 		},
 		{
 			name:        "suppresses maps_dir for same kernel_id",
@@ -207,7 +207,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 				{Kind: outcome.ArtefactMapsDir, KernelID: 123, Path: "/sys/fs/bpf/bpfman/123/maps"},
 			},
-			expected: [][]string{{"bpfman", "unload", "123"}},
+			expected: []string{"bpfman unload 123"},
 		},
 		{
 			name:        "maps_dir without kernel_id triggers gc",
@@ -215,7 +215,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactMapsDir, Path: "/sys/fs/bpf/bpfman/orphan/maps"},
 			},
-			expected: [][]string{{"bpfman", "gc"}},
+			expected: []string{"bpfman gc"},
 		},
 		{
 			name:        "dispatcher triggers gc",
@@ -223,7 +223,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
-			expected: [][]string{{"bpfman", "gc"}},
+			expected: []string{"bpfman gc"},
 		},
 		{
 			name:        "mixed artefacts returns multiple commands",
@@ -233,10 +233,10 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
 				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
-			expected: [][]string{
-				{"bpfman", "unload", "123"},
-				{"bpfman", "detach", "--id", "456"},
-				{"bpfman", "gc"},
+			expected: []string{
+				"bpfman unload 123",
+				"bpfman detach --id 456",
+				"bpfman gc",
 			},
 		},
 	}
@@ -251,18 +251,13 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 	}
 }
 
-func equalCmds(a, b [][]string) bool {
+func equalCmds(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if len(a[i]) != len(b[i]) {
+		if a[i] != b[i] {
 			return false
-		}
-		for j := range a[i] {
-			if a[i][j] != b[i][j] {
-				return false
-			}
 		}
 	}
 	return true
@@ -478,8 +473,8 @@ func TestRecorder_Finalise(t *testing.T) {
 	if out.SystemState != "inconsistent" {
 		t.Errorf("SystemState = %q, want %q", out.SystemState, "inconsistent")
 	}
-	if !out.NeedsManualCleanup {
-		t.Error("NeedsManualCleanup = false, want true")
+	if !out.ManualCleanupRequired {
+		t.Error("ManualCleanupRequired = false, want true")
 	}
 	if len(out.ManualCleanupCommands) != 1 {
 		t.Errorf("ManualCleanupCommands has %d items, want 1", len(out.ManualCleanupCommands))
@@ -501,8 +496,8 @@ func TestRecorder_FinaliseCleanState(t *testing.T) {
 	if out.SystemState != "clean" {
 		t.Errorf("SystemState = %q, want %q", out.SystemState, "clean")
 	}
-	if out.NeedsManualCleanup {
-		t.Error("NeedsManualCleanup = true, want false")
+	if out.ManualCleanupRequired {
+		t.Error("ManualCleanupRequired = true, want false")
 	}
 	if out.ManualCleanupCommands != nil {
 		t.Errorf("ManualCleanupCommands = %v, want nil", out.ManualCleanupCommands)
@@ -651,7 +646,7 @@ func TestOutcomeJSONSerialization(t *testing.T) {
 		},
 		Residual:              []outcome.Artefact{},
 		SystemState:           "clean",
-		NeedsManualCleanup:    false,
+		ManualCleanupRequired: false,
 		ManualCleanupCommands: nil,
 	}
 

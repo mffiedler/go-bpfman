@@ -233,9 +233,9 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	fix.AssertCleanState()
 }
 
-// TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess verifies that
-// NeedsManualCleanup returns false for successful operations.
-func TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess(t *testing.T) {
+// TestOutcome_ManualCleanupRequiredReturnsFalseOnSuccess verifies that
+// ManualCleanupRequired returns false for successful operations.
+func TestOutcome_ManualCleanupRequiredReturnsFalseOnSuccess(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -245,7 +245,7 @@ func TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess(t *testing.T) {
 	result, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	assert.False(t, result.Outcome.NeedsManualCleanup)
+	assert.False(t, result.Outcome.ManualCleanupRequired)
 }
 
 // TestOutcome_Started verifies that the Started() method correctly

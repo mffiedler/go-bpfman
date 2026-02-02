@@ -22,6 +22,7 @@ package outcome
 import (
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // Status indicates overall operation result.
@@ -109,6 +110,10 @@ type TimelineEntry struct {
 	// Seq is the sequence number (1-based) for ordering.
 	Seq int `json:"seq"`
 
+	// Timestamp is when this step was recorded (RFC3339 with nanoseconds).
+	// Useful for correlating with system logs, k8s logs, and application logs.
+	Timestamp time.Time `json:"timestamp"`
+
 	// Phase indicates whether this is a primary or rollback step.
 	Phase Phase `json:"phase"`
 
@@ -170,13 +175,14 @@ type ManagerOperationOutcome struct {
 	// Computed from Residual/ResidualError and stored for JSON output.
 	SystemState string `json:"system_state"`
 
-	// NeedsManualCleanup indicates operator intervention is required.
+	// ManualCleanupRequired indicates operator intervention is required.
 	// True for "inconsistent" or "unknown" states on failure.
-	NeedsManualCleanup bool `json:"needs_manual_cleanup"`
+	ManualCleanupRequired bool `json:"manual_cleanup_required"`
 
-	// ManualCleanupCommands contains cleanup commands as argv slices.
-	// Only populated when NeedsManualCleanup is true and state is "inconsistent".
-	ManualCleanupCommands [][]string `json:"manual_cleanup_commands,omitempty"`
+	// ManualCleanupCommands contains cleanup commands as formatted strings.
+	// Each string is a complete command (e.g., "bpfman unload 123").
+	// Only populated when ManualCleanupRequired is true and state is "inconsistent".
+	ManualCleanupCommands []string `json:"manual_cleanup_commands,omitempty"`
 }
 
 // Step is the internal representation used during recording.
@@ -222,17 +228,17 @@ func ComputeSystemState(status Status, residual []Artefact, residualError string
 	return "inconsistent"
 }
 
-// ComputeNeedsManualCleanup returns true if operator intervention is required.
+// ComputeManualCleanupRequired returns true if operator intervention is required.
 // Returns true for BOTH "inconsistent" (known residue) AND "unknown"
 // (observation failed) - in unknown case, operator must verify manually.
-func ComputeNeedsManualCleanup(status Status, systemState string) bool {
+func ComputeManualCleanupRequired(status Status, systemState string) bool {
 	if status != StatusFailure {
 		return false
 	}
 	return systemState == "inconsistent" || systemState == "unknown"
 }
 
-// ComputeManualCleanupCommands returns cleanup commands as argv slices.
+// ComputeManualCleanupCommands returns cleanup commands as formatted strings.
 //
 // Constraints:
 //   - ONLY returns commands when systemState == "inconsistent"
@@ -244,12 +250,12 @@ func ComputeNeedsManualCleanup(status Status, systemState string) bool {
 //   - DEDUPLICATE: Same kernel ID or pin path yields only one command
 //   - SUPPRESSION: program-level commands suppress lower-level commands
 //     for maps_dir / pins referring to the same logical program
-func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]string {
+func ComputeManualCleanupCommands(systemState string, residual []Artefact) []string {
 	if systemState != "inconsistent" {
 		return nil
 	}
 
-	var cmds [][]string
+	var cmds []string
 	seenKernelIDs := make(map[uint32]bool)
 	seenLinkIDs := make(map[uint32]bool)
 	needsGC := false
@@ -259,7 +265,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]s
 		if a.Kind == ArtefactProgramPin && a.KernelID != 0 {
 			if !seenKernelIDs[a.KernelID] {
 				seenKernelIDs[a.KernelID] = true
-				cmds = append(cmds, []string{"bpfman", "unload", strconv.FormatUint(uint64(a.KernelID), 10)})
+				cmds = append(cmds, "bpfman unload "+strconv.FormatUint(uint64(a.KernelID), 10))
 			}
 		}
 	}
@@ -269,7 +275,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]s
 		if a.Kind == ArtefactLinkPin && a.LinkID != 0 {
 			if !seenLinkIDs[a.LinkID] {
 				seenLinkIDs[a.LinkID] = true
-				cmds = append(cmds, []string{"bpfman", "detach", "--id", strconv.FormatUint(uint64(a.LinkID), 10)})
+				cmds = append(cmds, "bpfman detach --id "+strconv.FormatUint(uint64(a.LinkID), 10))
 			}
 		}
 	}
@@ -301,7 +307,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]s
 	}
 
 	if needsGC {
-		cmds = append(cmds, []string{"bpfman", "gc"})
+		cmds = append(cmds, "bpfman gc")
 	}
 
 	return cmds

@@ -316,7 +316,7 @@ func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 
 	// SystemState should be clean after successful rollback
 	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.NeedsManualCleanup)
+	assert.False(t, o.ManualCleanupRequired)
 
 	// Verify rollback: prog_a and prog_b should be unloaded from both kernel and database
 	f.AssertCleanState()
@@ -556,7 +556,7 @@ func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 
 	// SystemState should be clean after successful rollback
 	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.NeedsManualCleanup)
+	assert.False(t, o.ManualCleanupRequired)
 
 	// Verify rollback: both xdp and fentry should be unloaded from both kernel and database
 	f.AssertCleanState()

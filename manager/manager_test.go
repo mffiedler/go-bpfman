@@ -472,7 +472,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 
 	// SystemState should be clean
 	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.NeedsManualCleanup)
+	assert.False(t, o.ManualCleanupRequired)
 
 	fix.AssertKernelOps([]string{"load:single_prog:error"})
 	fix.AssertCleanState()
@@ -570,7 +570,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 
 	// SystemState should be clean
 	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.NeedsManualCleanup)
+	assert.False(t, o.ManualCleanupRequired)
 
 	// Program should still be loaded
 	retrieved, err := fix.Manager.Get(ctx, prog.Kernel.ID)
