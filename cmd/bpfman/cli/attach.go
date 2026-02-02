@@ -8,6 +8,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // AttachCmd attaches a loaded program to a hook.
@@ -47,7 +48,8 @@ type AttachCmd struct {
 
 // attachResult holds the result of an attach operation for output outside the lock.
 type attachResult struct {
-	Link bpfman.Link
+	Link          bpfman.Link
+	FailedOutcome *outcome.ManagerOperationOutcome
 }
 
 // Run executes the attach command: mutation under lock, output outside.
@@ -61,6 +63,13 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Execute mutation under lock
 	result, err := c.execute(ctx, cli, runtime)
 	if err != nil {
+		// On failure, display the outcome if available
+		if result.FailedOutcome != nil {
+			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 
@@ -139,11 +148,11 @@ func (c *AttachCmd) attachTracepoint(ctx context.Context, runtime *CLIRuntime) (
 		return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachXDP(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -164,11 +173,11 @@ func (c *AttachCmd) attachXDP(ctx context.Context, runtime *CLIRuntime) (attachR
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachXDP(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachXDP(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachTC(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -207,11 +216,11 @@ func (c *AttachCmd) attachTC(ctx context.Context, runtime *CLIRuntime) (attachRe
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachTC(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachTC(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachTCX(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -244,11 +253,11 @@ func (c *AttachCmd) attachTCX(ctx context.Context, runtime *CLIRuntime) (attachR
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachTCX(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachTCX(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachKprobe(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -264,11 +273,11 @@ func (c *AttachCmd) attachKprobe(ctx context.Context, runtime *CLIRuntime) (atta
 		spec = spec.WithOffset(c.Offset)
 	}
 
-	link, err := runtime.Manager.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachUprobe(ctx context.Context, runtime *CLIRuntime, scope lock.WriterScope) (attachResult, error) {
@@ -290,11 +299,11 @@ func (c *AttachCmd) attachUprobe(ctx context.Context, runtime *CLIRuntime, scope
 		spec = spec.WithContainerPid(c.ContainerPid)
 	}
 
-	link, err := runtime.Manager.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachFentry(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -303,11 +312,11 @@ func (c *AttachCmd) attachFentry(ctx context.Context, runtime *CLIRuntime) (atta
 		return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachFentry(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachFentry(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }
 
 func (c *AttachCmd) attachFexit(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
@@ -316,9 +325,9 @@ func (c *AttachCmd) attachFexit(ctx context.Context, runtime *CLIRuntime) (attac
 		return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachFexit(ctx, spec, bpfman.AttachOpts{})
+	result, err := runtime.Manager.AttachFexit(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
-		return attachResult{}, err
+		return attachResult{FailedOutcome: &result.Outcome}, err
 	}
-	return attachResult{Link: link}, nil
+	return attachResult{Link: result.Link}, nil
 }

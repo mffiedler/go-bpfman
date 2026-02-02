@@ -9,23 +9,34 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // AttachTracepoint attaches a pinned program to a tracepoint.
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
 	programKernelID := spec.ProgramID()
 	group := spec.Group()
 	name := spec.Name()
+	target := group + "/" + name
 
 	// FETCH: Verify program exists in store
 	_, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.Link{}, bpfman.ErrProgramNotFound{ID: programKernelID}
+			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+		} else {
+			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
-		return bpfman.Link{}, fmt.Errorf("get program %d: %w", programKernelID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: target,
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
@@ -39,8 +50,30 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	// KERNEL I/O: Attach to the kernel
 	link, err := m.kernel.AttachTracepoint(ctx, progPinPath, group, name, linkPinPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach tracepoint %s/%s: %w", group, name, err)
+		retErr = fmt.Errorf("attach tracepoint %s/%s: %w", group, name, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindAttachTracepoint,
+			Target: target,
+			Details: outcome.LinkDetails{
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+			},
+			Error: retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful kernel attach
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindAttachTracepoint,
+		Target: target,
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+		},
+	})
 
 	// ROLLBACK: If the store write fails, detach the link we just created.
 	var undo undoStack
@@ -54,26 +87,73 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
+
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveLink,
+			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Details: outcome.LinkDetails{
+				LinkID:    uint32(link.Spec.ID),
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+			},
+			Error: storeErr.Error(),
+		})
+
+		rec.BeginCleanup()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return bpfman.Link{}, errors.Join(fmt.Errorf("save link metadata: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+			_ = rec.CleanupFail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+				Error: rbErr.Error(),
+			})
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+		} else {
+			_ = rec.CleanupComplete(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+			})
+			retErr = storeErr
 		}
-		return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful store save
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreSaveLink,
+		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+		},
+	})
 
 	m.logger.InfoContext(ctx, "attached tracepoint",
 		"link_id", link.Spec.ID,
 		"program_id", programKernelID,
-		"tracepoint", group+"/"+name,
+		"tracepoint", target,
 		"pin_path", linkPinPath)
 
-	return link, nil
+	result.Link = link
+	return
 }
 
 // AttachKprobe attaches a pinned program to a kernel function.
 // retprobe is derived from the program type stored in the database.
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
 	programKernelID := spec.ProgramID()
 	fnName := spec.FnName()
 	offset := spec.Offset()
@@ -82,9 +162,17 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	prog, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.Link{}, bpfman.ErrProgramNotFound{ID: programKernelID}
+			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+		} else {
+			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
-		return bpfman.Link{}, fmt.Errorf("get program %d: %w", programKernelID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: fnName,
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// Derive retprobe from program type
@@ -104,8 +192,32 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	// KERNEL I/O: Attach to the kernel
 	link, err := m.kernel.AttachKprobe(ctx, progPinPath, fnName, offset, retprobe, linkPinPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach kprobe %s: %w", fnName, err)
+		retErr = fmt.Errorf("attach kprobe %s: %w", fnName, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindAttachKprobe,
+			Target: fnName,
+			Details: outcome.LinkDetails{
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful kernel attach
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindAttachKprobe,
+		Target: fnName,
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	// ROLLBACK: If the store write fails, detach the link we just created.
 	var undo undoStack
@@ -119,11 +231,58 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
+
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveLink,
+			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Details: outcome.LinkDetails{
+				LinkID:    uint32(link.Spec.ID),
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: storeErr.Error(),
+		})
+
+		rec.BeginCleanup()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return bpfman.Link{}, errors.Join(fmt.Errorf("save link metadata: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+			_ = rec.CleanupFail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+				Error: rbErr.Error(),
+			})
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+		} else {
+			_ = rec.CleanupComplete(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+			})
+			retErr = storeErr
 		}
-		return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful store save
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreSaveLink,
+		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	probeType := "kprobe"
 	if retprobe {
@@ -136,7 +295,8 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 		"offset", offset,
 		"pin_path", linkPinPath)
 
-	return link, nil
+	result.Link = link
+	return
 }
 
 // AttachUprobe attaches a pinned program to a user-space function.
@@ -147,20 +307,30 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 // is not used but accepted for API uniformity.
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
 	programKernelID := spec.ProgramID()
-	target := spec.Target()
+	binaryTarget := spec.Target()
 	fnName := spec.FnName()
 	offset := spec.Offset()
 	containerPid := spec.ContainerPid()
+	outcomeTarget := binaryTarget + ":" + fnName
 
 	// FETCH: Get program to determine if it's a uretprobe
 	prog, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.Link{}, bpfman.ErrProgramNotFound{ID: programKernelID}
+			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+		} else {
+			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
-		return bpfman.Link{}, fmt.Errorf("get program %d: %w", programKernelID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: outcomeTarget,
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// Derive retprobe from program type
@@ -182,16 +352,47 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	if containerPid > 0 {
 		// Container uprobe - scope required
 		if scope == nil {
-			return bpfman.Link{}, fmt.Errorf("container uprobe requires lock scope (containerPid=%d)", containerPid)
+			retErr = fmt.Errorf("container uprobe requires lock scope (containerPid=%d)", containerPid)
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindPreflight,
+				Target: outcomeTarget,
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
-		link, err = m.kernel.AttachUprobeContainer(ctx, scope, progPinPath, target, fnName, offset, retprobe, linkPinPath, containerPid)
+		link, err = m.kernel.AttachUprobeContainer(ctx, scope, progPinPath, binaryTarget, fnName, offset, retprobe, linkPinPath, containerPid)
 	} else {
 		// Local uprobe - no scope needed
-		link, err = m.kernel.AttachUprobeLocal(ctx, progPinPath, target, fnName, offset, retprobe, linkPinPath)
+		link, err = m.kernel.AttachUprobeLocal(ctx, progPinPath, binaryTarget, fnName, offset, retprobe, linkPinPath)
 	}
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach uprobe %s to %s: %w", fnName, target, err)
+		retErr = fmt.Errorf("attach uprobe %s to %s: %w", fnName, binaryTarget, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindAttachUprobe,
+			Target: outcomeTarget,
+			Details: outcome.LinkDetails{
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful kernel attach
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindAttachUprobe,
+		Target: outcomeTarget,
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	// ROLLBACK: If the store write fails, detach the link we just created.
 	var undo undoStack
@@ -205,11 +406,58 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
+
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveLink,
+			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Details: outcome.LinkDetails{
+				LinkID:    uint32(link.Spec.ID),
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: storeErr.Error(),
+		})
+
+		rec.BeginCleanup()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return bpfman.Link{}, errors.Join(fmt.Errorf("save link metadata: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+			_ = rec.CleanupFail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+				Error: rbErr.Error(),
+			})
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+		} else {
+			_ = rec.CleanupComplete(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+			})
+			retErr = storeErr
 		}
-		return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful store save
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreSaveLink,
+		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	probeType := "uprobe"
 	if retprobe {
@@ -218,34 +466,51 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	m.logger.InfoContext(ctx, "attached "+probeType,
 		"link_id", link.Spec.ID,
 		"program_id", programKernelID,
-		"target", target,
+		"target", binaryTarget,
 		"fn_name", fnName,
 		"offset", offset,
 		"container_pid", containerPid,
 		"pin_path", linkPinPath)
 
-	return link, nil
+	result.Link = link
+	return
 }
 
 // AttachFentry attaches a pinned fentry program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
 	programKernelID := spec.ProgramID()
 
 	// FETCH: Get program metadata to access AttachFunc
 	prog, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.Link{}, bpfman.ErrProgramNotFound{ID: programKernelID}
+			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+		} else {
+			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
-		return bpfman.Link{}, fmt.Errorf("get program %d: %w", programKernelID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: fmt.Sprintf("program_%d", programKernelID),
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	fnName := prog.Load.AttachFunc
 	if fnName == "" {
-		return bpfman.Link{}, fmt.Errorf("program %d has no attach function (fentry requires attach function at load time)", programKernelID)
+		retErr = fmt.Errorf("program %d has no attach function (fentry requires attach function at load time)", programKernelID)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: fmt.Sprintf("program_%d", programKernelID),
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
@@ -259,8 +524,32 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	// KERNEL I/O: Attach to the kernel
 	link, err := m.kernel.AttachFentry(ctx, progPinPath, fnName, linkPinPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach fentry %s: %w", fnName, err)
+		retErr = fmt.Errorf("attach fentry %s: %w", fnName, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindAttachFentry,
+			Target: fnName,
+			Details: outcome.LinkDetails{
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful kernel attach
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindAttachFentry,
+		Target: fnName,
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	// ROLLBACK: If the store write fails, detach the link we just created.
 	var undo undoStack
@@ -274,11 +563,58 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
+
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveLink,
+			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Details: outcome.LinkDetails{
+				LinkID:    uint32(link.Spec.ID),
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: storeErr.Error(),
+		})
+
+		rec.BeginCleanup()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return bpfman.Link{}, errors.Join(fmt.Errorf("save link metadata: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+			_ = rec.CleanupFail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+				Error: rbErr.Error(),
+			})
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+		} else {
+			_ = rec.CleanupComplete(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+			})
+			retErr = storeErr
 		}
-		return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful store save
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreSaveLink,
+		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	m.logger.InfoContext(ctx, "attached fentry",
 		"link_id", link.Spec.ID,
@@ -286,28 +622,45 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 		"fn_name", fnName,
 		"pin_path", linkPinPath)
 
-	return link, nil
+	result.Link = link
+	return
 }
 
 // AttachFexit attaches a pinned fexit program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
 	programKernelID := spec.ProgramID()
 
 	// FETCH: Get program metadata to access AttachFunc
 	prog, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.Link{}, bpfman.ErrProgramNotFound{ID: programKernelID}
+			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+		} else {
+			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
-		return bpfman.Link{}, fmt.Errorf("get program %d: %w", programKernelID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: fmt.Sprintf("program_%d", programKernelID),
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	fnName := prog.Load.AttachFunc
 	if fnName == "" {
-		return bpfman.Link{}, fmt.Errorf("program %d has no attach function (fexit requires attach function at load time)", programKernelID)
+		retErr = fmt.Errorf("program %d has no attach function (fexit requires attach function at load time)", programKernelID)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: fmt.Sprintf("program_%d", programKernelID),
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
@@ -321,8 +674,32 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	// KERNEL I/O: Attach to the kernel
 	link, err := m.kernel.AttachFexit(ctx, progPinPath, fnName, linkPinPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach fexit %s: %w", fnName, err)
+		retErr = fmt.Errorf("attach fexit %s: %w", fnName, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindAttachFexit,
+			Target: fnName,
+			Details: outcome.LinkDetails{
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful kernel attach
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindAttachFexit,
+		Target: fnName,
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	// ROLLBACK: If the store write fails, detach the link we just created.
 	var undo undoStack
@@ -336,11 +713,58 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
+
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveLink,
+			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Details: outcome.LinkDetails{
+				LinkID:    uint32(link.Spec.ID),
+				ProgramID: programKernelID,
+				PinPath:   linkPinPath,
+				Function:  fnName,
+			},
+			Error: storeErr.Error(),
+		})
+
+		rec.BeginCleanup()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return bpfman.Link{}, errors.Join(fmt.Errorf("save link metadata: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+			_ = rec.CleanupFail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+				Error: rbErr.Error(),
+			})
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+		} else {
+			_ = rec.CleanupComplete(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Details: outcome.LinkDetails{
+					LinkID:  uint32(link.Spec.ID),
+					PinPath: linkPinPath,
+				},
+			})
+			retErr = storeErr
 		}
-		return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	// Record successful store save
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreSaveLink,
+		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Details: outcome.LinkDetails{
+			LinkID:    uint32(link.Spec.ID),
+			ProgramID: programKernelID,
+			PinPath:   linkPinPath,
+			Function:  fnName,
+		},
+	})
 
 	m.logger.InfoContext(ctx, "attached fexit",
 		"link_id", link.Spec.ID,
@@ -348,5 +772,6 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 		"fn_name", fnName,
 		"pin_path", linkPinPath)
 
-	return link, nil
+	result.Link = link
+	return
 }

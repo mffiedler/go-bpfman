@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
@@ -106,4 +107,81 @@ func (f *testFixture) AssertKernelOps(expected []string) {
 func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Context, scope lock.WriterScope) error) error {
 	f.t.Helper()
 	return lock.Run(ctx, f.Dirs.Lock(), fn)
+}
+
+// Load is a convenience wrapper that returns just the ManagedProgram.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.ManagedProgram, error) {
+	result, err := f.Manager.Load(ctx, spec, opts)
+	return result.Program, err
+}
+
+// Unload is a convenience wrapper that returns just the error.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) Unload(ctx context.Context, kernelID uint32) error {
+	_, err := f.Manager.Unload(ctx, kernelID)
+	return err
+}
+
+// AttachTracepoint is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachTracepoint(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachKprobe is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachKprobe(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachUprobe is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachUprobe(ctx, scope, spec, opts)
+	return result.Link, err
+}
+
+// AttachFentry is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachFentry(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachFexit is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachFexit(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachXDP is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachXDP(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachTC is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachTC(ctx, spec, opts)
+	return result.Link, err
+}
+
+// AttachTCX is a convenience wrapper that returns just the Link.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	result, err := f.Manager.AttachTCX(ctx, spec, opts)
+	return result.Link, err
+}
+
+// Detach is a convenience wrapper that returns just the error.
+// Use this for tests that don't need to inspect the outcome.
+func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+	_, err := f.Manager.Detach(ctx, linkID)
+	return err
 }

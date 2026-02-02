@@ -11,6 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // isNotFoundError returns true if err wraps store.ErrNotFound.
@@ -28,18 +29,30 @@ func isNotFoundError(err error) bool {
 // dispatcher is cleaned up automatically (pins removed, deleted from store).
 //
 // Pattern: FETCH -> EXECUTE (detach link) -> QUERY -> EXECUTE (cleanup)
-func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result DetachResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
+	target := fmt.Sprintf("%d", linkID)
+
 	// FETCH: Get link record (includes details)
 	record, err := m.store.GetLink(ctx, linkID)
 	if err != nil {
 		if isNotFoundError(err) {
 			// Check if link exists in kernel but isn't managed by bpfman
 			if _, kerr := m.kernel.GetLinkByID(ctx, uint32(linkID)); kerr == nil {
-				return bpfman.ErrLinkNotManaged{LinkID: linkID}
+				retErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
+			} else {
+				retErr = bpfman.ErrLinkNotFound{LinkID: linkID}
 			}
-			return bpfman.ErrLinkNotFound{LinkID: linkID}
+		} else {
+			retErr = fmt.Errorf("get link %d: %w", linkID, err)
 		}
-		return fmt.Errorf("get link %d: %w", linkID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: target,
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// FETCH: Get dispatcher state if this is a dispatcher-based link
@@ -47,7 +60,14 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	if record.Kind == bpfman.LinkKindXDP || record.Kind == bpfman.LinkKindTC {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
-			return fmt.Errorf("extract dispatcher key: %w", err)
+			retErr = fmt.Errorf("extract dispatcher key: %w", err)
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindPreflight,
+				Target: target,
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
 		if dispType != "" {
 			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
@@ -67,20 +87,78 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 
 	// Phase 1: Detach the link and delete it from the store.
 	linkActions := computeDetachLinkActions(record)
+	linkSteps := computeDetachLinkSteps(record)
 	if err := m.executor.ExecuteAll(ctx, linkActions); err != nil {
-		return fmt.Errorf("execute detach link actions: %w", err)
+		retErr = fmt.Errorf("execute detach link actions: %w", err)
+		// Record the failed step (we don't know which one failed, so mark the first)
+		if len(linkSteps) > 0 {
+			failedStep := linkSteps[0]
+			failedStep.Error = retErr.Error()
+			_ = rec.Fail(failedStep)
+		} else {
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindKernelDetachLink,
+				Target: target,
+				Error:  retErr.Error(),
+			})
+		}
+		result.Outcome.Error = retErr.Error()
+		return
+	}
+
+	// Record successful detach steps
+	for _, step := range linkSteps {
+		_ = rec.Complete(step)
 	}
 
 	// Phase 2: If this was a dispatcher-based link, check whether the
 	// dispatcher has any remaining extensions. Clean up if empty.
 	if dispState != nil {
 		if err := m.cleanupEmptyDispatcher(ctx, *dispState); err != nil {
-			return err
+			retErr = err
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindStoreDeleteDispatcher,
+				Target: fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
+				Details: outcome.DispatcherDetails{
+					DispatcherID: dispState.KernelID,
+				},
+				Error: retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
 	}
 
 	m.logger.InfoContext(ctx, "removed link", "link_id", linkID, "kind", record.Kind)
-	return nil
+	return
+}
+
+// computeDetachLinkSteps generates outcome.Step entries corresponding to computeDetachLinkActions.
+func computeDetachLinkSteps(record bpfman.LinkSpec) []outcome.Step {
+	var steps []outcome.Step
+
+	// Detach link from kernel if pinned
+	if record.PinPath != nil {
+		steps = append(steps, outcome.Step{
+			Kind:   outcome.StepKindKernelDetachLink,
+			Target: fmt.Sprintf("%d", record.ID),
+			Details: outcome.LinkDetails{
+				LinkID:  uint32(record.ID),
+				PinPath: record.PinPath.String(),
+			},
+		})
+	}
+
+	// Delete link from store
+	steps = append(steps, outcome.Step{
+		Kind:   outcome.StepKindStoreDeleteLink,
+		Target: fmt.Sprintf("%d", record.ID),
+		Details: outcome.LinkDetails{
+			LinkID: uint32(record.ID),
+		},
+	})
+
+	return steps
 }
 
 // computeDetachLinkActions is a pure function that computes the actions

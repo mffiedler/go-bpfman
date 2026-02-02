@@ -9,6 +9,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // LoadImageCmd loads BPF programs from an OCI container image.
@@ -45,13 +46,21 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		"pull_policy", c.PullPolicy.Value,
 	)
 
-	results, err := RunWithLockValue(ctx, cli, func(ctx context.Context) ([]bpfman.ManagedProgram, error) {
+	// loadImageResult captures both successful programs and any failure outcome.
+	type loadImageResult struct {
+		Programs      []bpfman.ManagedProgram
+		FailedOutcome *outcome.ManagerOperationOutcome
+	}
+
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {
+		var res loadImageResult
+
 		// Build auth config from base64-encoded registry-auth
 		var authConfig *interpreter.ImageAuth
 		if c.RegistryAuth != "" {
 			username, password, err := parseRegistryAuth(c.RegistryAuth)
 			if err != nil {
-				return nil, fmt.Errorf("invalid registry-auth: %w", err)
+				return res, fmt.Errorf("invalid registry-auth: %w", err)
 			}
 			runtime.Logger.Debug("using registry auth", "username", username)
 			authConfig = &interpreter.ImageAuth{
@@ -96,15 +105,16 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		// Load via manager directly
-		result, err := runtime.Manager.LoadImage(ctx, runtime.Puller, ref, programs, manager.LoadImageOpts{
+		loadResult, err := runtime.Manager.LoadImage(ctx, runtime.Puller, ref, programs, manager.LoadImageOpts{
 			UserMetadata: metadata,
 			GlobalData:   globalData,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to load from image: %w", err)
+			res.FailedOutcome = &loadResult.Outcome
+			return res, fmt.Errorf("failed to load from image: %w", err)
 		}
 
-		for _, loaded := range result.Programs {
+		for _, loaded := range loadResult.Programs {
 			runtime.Logger.Info("program loaded successfully",
 				"name", loaded.Kernel.Name,
 				"kernel_id", loaded.Kernel.ID,
@@ -112,14 +122,22 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			)
 		}
 
-		return result.Programs, nil
+		res.Programs = loadResult.Programs
+		return res, nil
 	})
 	if err != nil {
+		// On failure, display the outcome if available
+		if result.FailedOutcome != nil {
+			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 
 	// Format and emit output outside the lock
-	output, err := FormatLoadedPrograms(results, &c.OutputFlags)
+	output, err := FormatLoadedPrograms(result.Programs, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

@@ -3,10 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+
+	"github.com/frobware/go-bpfman/manager"
 )
 
 // UnloadCmd unloads a managed BPF program by kernel ID.
 type UnloadCmd struct {
+	OutputFlags
 	ProgramID ProgramID `arg:"" name:"program-id" help:"Kernel program ID to unload (supports hex with 0x prefix)."`
 }
 
@@ -19,9 +22,17 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 	defer runtime.Close()
 
 	// Mutation under lock
-	if err := cli.RunWithLock(ctx, func(ctx context.Context) error {
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.UnloadResult, error) {
 		return runtime.Manager.Unload(ctx, c.ProgramID.Value)
-	}); err != nil {
+	})
+	if err != nil {
+		// On failure, display the outcome if available
+		if result.Outcome.Status != "" {
+			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &c.OutputFlags)
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 

@@ -37,6 +37,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -44,6 +45,7 @@ import (
 
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // opIDKey is the context key for operation IDs.
@@ -99,8 +101,20 @@ func (m *Manager) Dirs() config.RuntimeDirs {
 	return m.dirs
 }
 
-// GCResult contains statistics from garbage collection.
-type GCResult = interpreter.GCResult
+// GCResult contains statistics and outcome from garbage collection.
+type GCResult struct {
+	// Statistics from GC.
+	ProgramsRemoved    int
+	DispatchersRemoved int
+	LinksRemoved       int
+	OrphanPinsRemoved  int
+	// LiveOrphans counts programs pinned under bpfman's bpffs root
+	// that are still alive in the kernel but have no DB record.
+	LiveOrphans int
+
+	// Outcome tracks the structured result of the GC operation.
+	Outcome outcome.ManagerOperationOutcome
+}
 
 // GC removes stale database entries that no longer exist in the kernel.
 // This should be called at startup before accepting requests. After GC,
@@ -123,7 +137,9 @@ func (m *Manager) GC(ctx context.Context) (GCResult, error) {
 // GCWithRules runs garbage collection. If rules is non-empty, only the
 // specified GC rules are run; otherwise all rules are run. Store-level
 // GC always runs regardless of the rules filter.
-func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, error) {
+func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
+	result.Outcome.OpID = OpIDFromContext(ctx)
 	start := time.Now()
 
 	// Gather kernel state
@@ -142,7 +158,14 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 	// remove it from the live set so the store GC reaps the row.
 	dbPrograms, err := m.store.List(ctx)
 	if err != nil {
-		return GCResult{}, err
+		retErr = fmt.Errorf("list programs: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: "store",
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 	for id := range dbPrograms {
 		if !kernelProgramIDs[id] {
@@ -165,17 +188,48 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 		kernelLinkIDs[kl.ID] = true
 	}
 
-	// Delegate to store - it handles ordering constraints internally
-	result, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
+	// Phase 1: Delegate to store - it handles ordering constraints internally
+	storeResult, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
 	if err != nil {
-		return result, err
+		retErr = fmt.Errorf("store gc: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreGCPrograms,
+			Target: "store",
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
-	// Post-store GC: use the coherency rule engine to detect and
+	// Record Phase 1 steps
+	result.ProgramsRemoved = storeResult.ProgramsRemoved
+	result.LinksRemoved = storeResult.LinksRemoved
+	result.DispatchersRemoved = storeResult.DispatchersRemoved
+
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreGCPrograms,
+		Target: "store",
+		Details: outcome.GCPhaseDetails{
+			Removed: storeResult.ProgramsRemoved,
+		},
+	})
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreGCLinks,
+		Target: "store",
+		Details: outcome.GCPhaseDetails{
+			Removed: storeResult.LinksRemoved,
+		},
+	})
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindStoreGCDispatchers,
+		Target: "store",
+		Details: outcome.GCPhaseDetails{
+			Removed: storeResult.DispatchersRemoved,
+		},
+	})
+
+	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
-	// Store GC handles structural cleanup (programs, dispatchers,
-	// links by kernel ID); the rule engine handles stale dispatchers
-	// and orphan filesystem artefacts.
 	state, err := GatherState(ctx, m.store, m.kernel, m.dirs)
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
@@ -203,9 +257,28 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 			}
 			if err := v.Op.Execute(); err != nil {
 				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
+				// Record failed orphan removal step
+				_ = rec.Fail(outcome.Step{
+					Kind:   outcome.StepKindGCRemoveOrphan,
+					Target: v.Op.Description,
+					Details: outcome.OrphanDetails{
+						Category: v.Category,
+					},
+					Error: err.Error(),
+				})
+				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
+				result.Outcome.Error = retErr.Error()
+				// Continue to attempt other cleanup operations but mark overall as failed
 				continue
 			}
 			m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
+			_ = rec.Complete(outcome.Step{
+				Kind:   outcome.StepKindGCRemoveOrphan,
+				Target: v.Op.Description,
+				Details: outcome.OrphanDetails{
+					Category: v.Category,
+				},
+			})
 			switch v.Category {
 			case "gc-dispatcher":
 				result.DispatchersRemoved++
@@ -237,7 +310,7 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 		m.logger.DebugContext(ctx, "gc complete", "duration", elapsed)
 	}
 
-	return result, nil
+	return
 }
 
 // GCIfNeeded runs GC if required, with its own mutex for coordination.

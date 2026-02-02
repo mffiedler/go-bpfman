@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // toKernelType converts a bpfman program type to its underlying kernel type.
@@ -822,4 +823,153 @@ func formatProgramsCompositeTable(result manager.ProgramListResult) string {
 
 	w.Flush()
 	return b.String()
+}
+
+// FormatOutcome formats a ManagerOperationOutcome according to the specified output flags.
+// This is used to display structured error information on failure paths.
+func FormatOutcome(o outcome.ManagerOperationOutcome, flags *OutputFlags) (string, error) {
+	format, err := flags.Format()
+	if err != nil {
+		return "", err
+	}
+	switch format {
+	case OutputFormatJSON:
+		return formatOutcomeJSON(o)
+	case OutputFormatJSONPath:
+		return formatOutcomeJSONPath(o, flags.JSONPathExpr())
+	default:
+		return formatOutcomeTable(o), nil
+	}
+}
+
+func formatOutcomeJSON(o outcome.ManagerOperationOutcome) (string, error) {
+	output, err := json.MarshalIndent(o, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal outcome: %w", err)
+	}
+	return string(output) + "\n", nil
+}
+
+func formatOutcomeJSONPath(o outcome.ManagerOperationOutcome, expr string) (string, error) {
+	return executeJSONPath(o, expr)
+}
+
+func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
+	var b strings.Builder
+
+	// Header with operation ID
+	if o.OpID != 0 {
+		fmt.Fprintf(&b, "Operation: op_id=%d\n", o.OpID)
+	}
+	fmt.Fprintf(&b, "Status: %s\n", strings.ToUpper(string(o.Status)))
+	if o.Error != "" {
+		fmt.Fprintf(&b, "Error: %s\n", o.Error)
+	}
+	b.WriteString("\n")
+
+	// Completed steps
+	if len(o.Completed) > 0 {
+		b.WriteString("Completed:\n")
+		for _, step := range o.Completed {
+			fmt.Fprintf(&b, "  [%s] %s%s\n", step.Kind, step.Target, formatStepDetails(step.Details))
+		}
+		b.WriteString("\n")
+	}
+
+	// Failed step
+	if o.Failed != nil {
+		b.WriteString("Failed:\n")
+		fmt.Fprintf(&b, "  [%s] %s", o.Failed.Kind, o.Failed.Target)
+		if o.Failed.Error != "" {
+			fmt.Fprintf(&b, ": %s", o.Failed.Error)
+		}
+		b.WriteString("\n\n")
+	}
+
+	// Skipped steps
+	if len(o.Skipped) > 0 {
+		b.WriteString("Skipped:\n")
+		for _, step := range o.Skipped {
+			fmt.Fprintf(&b, "  [%s] %s\n", step.Kind, step.Target)
+		}
+		b.WriteString("\n")
+	}
+
+	// Cleanup outcome
+	if o.Cleanup != nil {
+		fmt.Fprintf(&b, "Cleanup: %s\n", strings.ToUpper(string(o.Cleanup.Status)))
+		if len(o.Cleanup.Completed) > 0 {
+			for _, step := range o.Cleanup.Completed {
+				fmt.Fprintf(&b, "  [%s] %s%s\n", step.Kind, step.Target, formatStepDetails(step.Details))
+			}
+		}
+		if len(o.Cleanup.Failed) > 0 {
+			for _, step := range o.Cleanup.Failed {
+				fmt.Fprintf(&b, "  [%s] %s", step.Kind, step.Target)
+				if step.Error != "" {
+					fmt.Fprintf(&b, ": %s", step.Error)
+				}
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Observed artefacts
+	if len(o.Observed) > 0 {
+		b.WriteString("Observed:\n")
+		for _, a := range o.Observed {
+			fmt.Fprintf(&b, "  %s\n", a.String())
+		}
+		b.WriteString("\n")
+	} else if o.Status == outcome.StatusFailure {
+		b.WriteString("Observed: (none)\n\n")
+	}
+
+	// System state
+	systemState := o.SystemState()
+	if systemState == "inconsistent" {
+		fmt.Fprintf(&b, "System state: INCONSISTENT\n\n")
+		// Manual cleanup commands
+		cmds := o.ManualCleanupCommands()
+		if len(cmds) > 0 {
+			b.WriteString("Manual cleanup required:\n")
+			for _, cmd := range cmds {
+				fmt.Fprintf(&b, "  %s\n", strings.Join(cmd, " "))
+			}
+		}
+	} else if systemState == "unknown" {
+		fmt.Fprintf(&b, "System state: UNKNOWN\n")
+		b.WriteString("Manual verification required. Run `bpfman doctor` or `bpfman gc` to inspect and clean up.\n")
+	} else {
+		fmt.Fprintf(&b, "System state: clean\n")
+	}
+
+	return b.String()
+}
+
+// formatStepDetails formats step details for display.
+func formatStepDetails(details any) string {
+	if details == nil {
+		return ""
+	}
+	switch d := details.(type) {
+	case outcome.ProgramDetails:
+		if d.KernelID != 0 {
+			return fmt.Sprintf(" (kernel_id=%d)", d.KernelID)
+		}
+	case outcome.LinkDetails:
+		if d.LinkID != 0 {
+			return fmt.Sprintf(" (link_id=%d)", d.LinkID)
+		}
+	case outcome.DispatcherDetails:
+		if d.DispatcherID != 0 {
+			return fmt.Sprintf(" (dispatcher_id=%d)", d.DispatcherID)
+		}
+	case outcome.GCPhaseDetails:
+		return fmt.Sprintf(" (removed=%d)", d.Removed)
+	case outcome.OrphanDetails:
+		return fmt.Sprintf(" (category=%s)", d.Category)
+	}
+	return ""
 }

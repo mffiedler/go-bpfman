@@ -6,6 +6,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // ImageProgramSpec describes a program to load from an OCI image.
@@ -28,13 +29,27 @@ type LoadImageOpts struct {
 // LoadImageResult contains the loaded programs from an OCI image.
 type LoadImageResult struct {
 	Programs []bpfman.ManagedProgram
+	Outcome  outcome.ManagerOperationOutcome
 }
 
 // LoadImage loads BPF programs from an OCI container image.
 // It pulls the image, extracts the bytecode, and loads each specified program.
-func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (LoadImageResult, error) {
+//
+// On success, Outcome.Status == StatusSuccess and all programs are loaded.
+// On failure, Outcome contains completed, failed, and skipped steps plus
+// cleanup information if rollback was attempted.
+func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result LoadImageResult, retErr error) {
+	rec := outcome.NewRecorder(&result.Outcome)
+
 	if puller == nil {
-		return LoadImageResult{}, fmt.Errorf("image puller is required")
+		retErr = fmt.Errorf("image puller is required")
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: "validation",
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
 
 	// Pull the image
@@ -44,8 +59,25 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 
 	pulled, err := puller.Pull(ctx, ref)
 	if err != nil {
-		return LoadImageResult{}, fmt.Errorf("pull image %s: %w", ref.URL, err)
+		retErr = fmt.Errorf("pull image %s: %w", ref.URL, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPullImage,
+			Target: ref.URL,
+			Error:  retErr.Error(),
+		})
+		result.Outcome.Error = retErr.Error()
+		return
 	}
+
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindPullImage,
+		Target: ref.URL,
+		Details: outcome.ImageDetails{
+			URL:        ref.URL,
+			Digest:     pulled.Digest,
+			ObjectPath: pulled.ObjectPath,
+		},
+	})
 
 	m.logger.InfoContext(ctx, "pulled OCI image",
 		"url", ref.URL,
@@ -55,8 +87,24 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 	if len(programs) == 0 {
 		discovered, err := m.programDiscoverer.DiscoverPrograms(pulled.ObjectPath)
 		if err != nil {
-			return LoadImageResult{}, fmt.Errorf("discover programs in image: %w", err)
+			retErr = fmt.Errorf("discover programs in image: %w", err)
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindDiscoverPrograms,
+				Target: pulled.ObjectPath,
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
+
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindDiscoverPrograms,
+			Target: pulled.ObjectPath,
+			Details: outcome.ImageDetails{
+				ObjectPath: pulled.ObjectPath,
+			},
+		})
+
 		programs = make([]ImageProgramSpec, 0, len(discovered))
 		for _, d := range discovered {
 			programs = append(programs, ImageProgramSpec{
@@ -75,34 +123,60 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			programNames[i] = p.ProgramName
 		}
 		if err := m.programDiscoverer.ValidatePrograms(pulled.ObjectPath, programNames); err != nil {
-			return LoadImageResult{}, err
+			retErr = err
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindPreflight,
+				Target: "validate_programs",
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
 	}
 
-	// Load each program, with rollback on failure
-	results := make([]bpfman.ManagedProgram, 0, len(programs))
-
-	// Use defer with success flag to ensure cleanup on any error path
+	// Load each program, with rollback on failure.
+	// We use a defer with named return values so cleanup modifies the actual return.
 	success := false
 	defer func() {
 		if success {
 			return
 		}
-		for _, loaded := range results {
-			if err := m.Unload(ctx, loaded.Kernel.ID); err != nil {
+		if len(result.Programs) == 0 {
+			return // Nothing to clean up
+		}
+		rec.BeginCleanup()
+		for _, loaded := range result.Programs {
+			if _, err := m.Unload(ctx, loaded.Kernel.ID); err != nil {
 				m.logger.WarnContext(ctx, "rollback: failed to unload program",
 					"kernel_id", loaded.Kernel.ID,
 					"name", loaded.Kernel.Name,
 					"error", err)
+				_ = rec.CleanupFail(outcome.Step{
+					Kind:   outcome.StepKindKernelUnload,
+					Target: loaded.Kernel.Name,
+					Details: outcome.ProgramDetails{
+						KernelID: loaded.Kernel.ID,
+						PinPath:  loaded.Managed.PinPath,
+					},
+					Error: err.Error(),
+				})
 			} else {
 				m.logger.DebugContext(ctx, "rollback: unloaded program",
 					"kernel_id", loaded.Kernel.ID,
 					"name", loaded.Kernel.Name)
+				_ = rec.CleanupComplete(outcome.Step{
+					Kind:   outcome.StepKindKernelUnload,
+					Target: loaded.Kernel.Name,
+					Details: outcome.ProgramDetails{
+						KernelID: loaded.Kernel.ID,
+						PinPath:  loaded.Managed.PinPath,
+					},
+				})
 			}
 		}
 	}()
 
-	for _, prog := range programs {
+	for i, prog := range programs {
 		// Build load spec for this program
 		var spec bpfman.LoadSpec
 		var specErr error
@@ -112,7 +186,22 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			spec, specErr = bpfman.NewLoadSpec(pulled.ObjectPath, prog.ProgramName, prog.ProgramType)
 		}
 		if specErr != nil {
-			return LoadImageResult{}, fmt.Errorf("invalid load spec for %q: %w", prog.ProgramName, specErr)
+			retErr = fmt.Errorf("invalid load spec for %q: %w", prog.ProgramName, specErr)
+			// Mark remaining programs as skipped BEFORE recording failure
+			// (recorder doesn't allow Skip after Fail)
+			for j := i + 1; j < len(programs); j++ {
+				_ = rec.Skip(outcome.Step{
+					Kind:   outcome.StepKindKernelLoad,
+					Target: programs[j].ProgramName,
+				})
+			}
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindKernelLoad,
+				Target: prog.ProgramName,
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
 
 		// Apply global data (per-program overrides take precedence)
@@ -142,19 +231,53 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		}
 
 		// Load through manager
-		loaded, loadErr := m.Load(ctx, spec, loadOpts)
+		loadResult, loadErr := m.Load(ctx, spec, loadOpts)
 		if loadErr != nil {
-			return LoadImageResult{}, fmt.Errorf("load program %q from image: %w", prog.ProgramName, loadErr)
+			retErr = fmt.Errorf("load program %q from image: %w", prog.ProgramName, loadErr)
+			// Mark remaining programs as skipped BEFORE recording failure
+			// (recorder doesn't allow Skip after Fail)
+			for j := i + 1; j < len(programs); j++ {
+				_ = rec.Skip(outcome.Step{
+					Kind:   outcome.StepKindKernelLoad,
+					Target: programs[j].ProgramName,
+				})
+			}
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindKernelLoad,
+				Target: prog.ProgramName,
+				Error:  retErr.Error(),
+			})
+			result.Outcome.Error = retErr.Error()
+			return
 		}
+
+		loaded := loadResult.Program
+
+		// Load succeeded - record both kernel and store steps
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindKernelLoad,
+			Target: prog.ProgramName,
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Kernel.ID,
+				PinPath:  loaded.Managed.PinPath,
+			},
+		})
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveProgram,
+			Target: prog.ProgramName,
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Kernel.ID,
+			},
+		})
 
 		m.logger.InfoContext(ctx, "loaded program from image",
 			"name", prog.ProgramName,
 			"kernel_id", loaded.Kernel.ID,
 			"pin_path", loaded.Managed.PinPath)
 
-		results = append(results, loaded)
+		result.Programs = append(result.Programs, loaded)
 	}
 
 	success = true
-	return LoadImageResult{Programs: results}, nil
+	return
 }

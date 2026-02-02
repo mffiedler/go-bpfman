@@ -7,6 +7,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/outcome"
 )
 
 // LoadCmd loads a BPF program from an object file or OCI image.
@@ -25,6 +26,12 @@ type LoadFileCmd struct {
 	Programs    []ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
 	Application string        `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
 	MapOwnerID  uint32        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+}
+
+// loadFileResult captures both successful programs and any failure outcome.
+type loadFileResult struct {
+	Programs      []bpfman.ManagedProgram
+	FailedOutcome *outcome.ManagerOperationOutcome
 }
 
 // Run executes the load file command.
@@ -67,7 +74,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer runtime.Close()
 
-	results, err := RunWithLockValue(ctx, cli, func(ctx context.Context) ([]bpfman.ManagedProgram, error) {
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
@@ -83,7 +90,8 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		results := make([]bpfman.ManagedProgram, 0, len(programs))
+		var res loadFileResult
+		res.Programs = make([]bpfman.ManagedProgram, 0, len(programs))
 
 		// Use defer with success flag to ensure cleanup on any error path
 		success := false
@@ -91,8 +99,8 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			if success {
 				return
 			}
-			for _, loaded := range results {
-				if err := runtime.Manager.Unload(ctx, loaded.Kernel.ID); err != nil {
+			for _, loaded := range res.Programs {
+				if _, err := runtime.Manager.Unload(ctx, loaded.Kernel.ID); err != nil {
 					runtime.Logger.Warn("rollback: failed to unload program",
 						"kernel_id", loaded.Kernel.ID,
 						"name", loaded.Kernel.Name,
@@ -115,7 +123,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 				spec, err = bpfman.NewLoadSpec(objPath.Path, prog.Name, prog.Type)
 			}
 			if err != nil {
-				return nil, fmt.Errorf("invalid load spec for %q: %w", prog.Name, err)
+				return res, fmt.Errorf("invalid load spec for %q: %w", prog.Name, err)
 			}
 
 			// Apply optional fields
@@ -131,22 +139,30 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			}
 
 			// Load through manager
-			loaded, err := runtime.Manager.Load(ctx, spec, opts)
+			loadResult, err := runtime.Manager.Load(ctx, spec, opts)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load program %q: %w", prog.Name, err)
+				res.FailedOutcome = &loadResult.Outcome
+				return res, fmt.Errorf("failed to load program %q: %w", prog.Name, err)
 			}
-			results = append(results, loaded)
+			res.Programs = append(res.Programs, loadResult.Program)
 		}
 
 		success = true
-		return results, nil
+		return res, nil
 	})
 	if err != nil {
+		// On failure, display the outcome if available
+		if result.FailedOutcome != nil {
+			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 
 	// Format and emit output outside the lock
-	output, err := FormatLoadedPrograms(results, &c.OutputFlags)
+	output, err := FormatLoadedPrograms(result.Programs, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

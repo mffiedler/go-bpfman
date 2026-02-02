@@ -5,10 +5,12 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/manager"
 )
 
 // DetachCmd detaches a link.
 type DetachCmd struct {
+	OutputFlags
 	LinkID LinkID `arg:"" name:"link-id" help:"Kernel link ID to detach."`
 }
 
@@ -21,9 +23,17 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	defer runtime.Close()
 
 	// Mutation under lock
-	if err := cli.RunWithLock(ctx, func(ctx context.Context) error {
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.DetachResult, error) {
 		return runtime.Manager.Detach(ctx, bpfman.LinkID(c.LinkID.Value))
-	}); err != nil {
+	})
+	if err != nil {
+		// On failure, display the outcome if available
+		if result.Outcome.Status != "" {
+			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &c.OutputFlags)
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 

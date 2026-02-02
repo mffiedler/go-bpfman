@@ -56,13 +56,20 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Mutation under lock
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {
-		result, err := runtime.Manager.GCWithRules(ctx, c.Rules)
-		if err != nil {
-			return manager.GCResult{}, fmt.Errorf("gc failed: %w", err)
+		gcResult, gcErr := runtime.Manager.GCWithRules(ctx, c.Rules)
+		if gcErr != nil {
+			return gcResult, fmt.Errorf("gc failed: %w", gcErr)
 		}
-		return result, nil
+		return gcResult, nil
 	})
 	if err != nil {
+		// On failure, display the outcome if available
+		if result.Outcome.Status != "" {
+			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &OutputFlags{Output: "table"})
+			if fmtErr == nil {
+				_ = cli.PrintErr(outcomeStr)
+			}
+		}
 		return err
 	}
 
