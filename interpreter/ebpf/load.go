@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/cilium/ebpf"
@@ -55,7 +56,12 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 	// Find the requested program and get its license (needed before loading)
 	progSpec, ok := collSpec.Programs[spec.ProgramName()]
 	if !ok {
-		return bpfman.ManagedProgram{}, fmt.Errorf("program %q not found in collection spec", spec.ProgramName())
+		available := make([]string, 0, len(collSpec.Programs))
+		for name := range collSpec.Programs {
+			available = append(available, name)
+		}
+		sort.Strings(available)
+		return bpfman.ManagedProgram{}, fmt.Errorf("program %q not found in collection spec; available programs: %v", spec.ProgramName(), available)
 	}
 	license := progSpec.License
 
