@@ -8,59 +8,51 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-func TestSystemState(t *testing.T) {
+func TestComputeSystemState(t *testing.T) {
 	tests := []struct {
-		name     string
-		outcome  outcome.ManagerOperationOutcome
-		expected string
+		name          string
+		status        outcome.Status
+		residual      []outcome.Artefact
+		residualError string
+		expected      string
 	}{
 		{
 			name:     "success is clean by contract",
-			outcome:  outcome.ManagerOperationOutcome{Status: outcome.StatusSuccess},
+			status:   outcome.StatusSuccess,
 			expected: "clean",
 		},
 		{
-			name: "failure with no observed residue is clean",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:   outcome.StatusFailure,
-				Observed: nil,
-			},
+			name:     "failure with no residue is clean",
+			status:   outcome.StatusFailure,
+			residual: nil,
 			expected: "clean",
 		},
 		{
-			name: "failure with empty observed is clean",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:   outcome.StatusFailure,
-				Observed: []outcome.Artefact{},
-			},
+			name:     "failure with empty residue is clean",
+			status:   outcome.StatusFailure,
+			residual: []outcome.Artefact{},
 			expected: "clean",
 		},
 		{
-			name: "failure with observed residue is inconsistent",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-				},
+			name:   "failure with residue is inconsistent",
+			status: outcome.StatusFailure,
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
 			expected: "inconsistent",
 		},
 		{
-			name: "failure with observation error is unknown",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:        outcome.StatusFailure,
-				ObservedError: "failed to probe state",
-			},
-			expected: "unknown",
+			name:          "failure with residual error is unknown",
+			status:        outcome.StatusFailure,
+			residualError: "failed to probe state",
+			expected:      "unknown",
 		},
 		{
-			name: "observation error takes precedence over observed",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:        outcome.StatusFailure,
-				ObservedError: "probe failed",
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-				},
+			name:          "residual error takes precedence over residue",
+			status:        outcome.StatusFailure,
+			residualError: "probe failed",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
 			expected: "unknown",
 		},
@@ -68,9 +60,9 @@ func TestSystemState(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.outcome.SystemState()
+			got := outcome.ComputeSystemState(tc.status, tc.residual, tc.residualError)
 			if got != tc.expected {
-				t.Errorf("SystemState() = %q, want %q", got, tc.expected)
+				t.Errorf("ComputeSystemState() = %q, want %q", got, tc.expected)
 			}
 		})
 	}
@@ -79,32 +71,32 @@ func TestSystemState(t *testing.T) {
 func TestStarted(t *testing.T) {
 	tests := []struct {
 		name     string
-		outcome  outcome.ManagerOperationOutcome
+		timeline []outcome.TimelineEntry
 		expected bool
 	}{
 		{
-			name:     "empty outcome not started",
-			outcome:  outcome.ManagerOperationOutcome{},
+			name:     "empty timeline not started",
+			timeline: nil,
 			expected: false,
 		},
 		{
-			name: "with completed steps is started",
-			outcome: outcome.ManagerOperationOutcome{
-				Completed: []outcome.Step{{Kind: outcome.StepKindKernelLoad}},
+			name: "with completed entry is started",
+			timeline: []outcome.TimelineEntry{
+				{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusCompleted, Kind: outcome.StepKindKernelLoad},
 			},
 			expected: true,
 		},
 		{
-			name: "with failed step is started",
-			outcome: outcome.ManagerOperationOutcome{
-				Failed: &outcome.Step{Kind: outcome.StepKindKernelLoad},
+			name: "with failed entry is started",
+			timeline: []outcome.TimelineEntry{
+				{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelLoad},
 			},
 			expected: true,
 		},
 		{
-			name: "with skipped steps is started",
-			outcome: outcome.ManagerOperationOutcome{
-				Skipped: []outcome.Step{{Kind: outcome.StepKindKernelLoad}},
+			name: "with skipped entry is started",
+			timeline: []outcome.TimelineEntry{
+				{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusSkipped, Kind: outcome.StepKindKernelLoad},
 			},
 			expected: true,
 		},
@@ -112,7 +104,10 @@ func TestStarted(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.outcome.Started()
+			var out outcome.ManagerOperationOutcome
+			out.Timeline = tc.timeline
+			rec := outcome.NewRecorder(&out)
+			got := rec.Started()
 			if got != tc.expected {
 				t.Errorf("Started() = %v, want %v", got, tc.expected)
 			}
@@ -120,150 +115,123 @@ func TestStarted(t *testing.T) {
 	}
 }
 
-func TestNeedsManualCleanup(t *testing.T) {
+func TestComputeNeedsManualCleanup(t *testing.T) {
 	tests := []struct {
-		name     string
-		outcome  outcome.ManagerOperationOutcome
-		expected bool
+		name        string
+		status      outcome.Status
+		systemState string
+		expected    bool
 	}{
 		{
-			name:     "success never needs cleanup",
-			outcome:  outcome.ManagerOperationOutcome{Status: outcome.StatusSuccess},
-			expected: false,
+			name:        "success never needs cleanup",
+			status:      outcome.StatusSuccess,
+			systemState: "clean",
+			expected:    false,
 		},
 		{
-			name: "success with observed (impossible state) still no cleanup",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:   outcome.StatusSuccess,
-				Observed: []outcome.Artefact{{Kind: outcome.ArtefactProgramPin}},
-			},
-			expected: false,
+			name:        "failure with clean state needs no cleanup",
+			status:      outcome.StatusFailure,
+			systemState: "clean",
+			expected:    false,
 		},
 		{
-			name: "failure without residue needs no cleanup",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-			},
-			expected: false,
+			name:        "failure with inconsistent state needs cleanup",
+			status:      outcome.StatusFailure,
+			systemState: "inconsistent",
+			expected:    true,
 		},
 		{
-			name: "failure with residue needs cleanup",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:   outcome.StatusFailure,
-				Observed: []outcome.Artefact{{Kind: outcome.ArtefactProgramPin}},
-			},
-			expected: true,
-		},
-		{
-			name: "failure with observation error needs cleanup (verification)",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:        outcome.StatusFailure,
-				ObservedError: "probe failed",
-			},
-			expected: true,
+			name:        "failure with unknown state needs cleanup (verification)",
+			status:      outcome.StatusFailure,
+			systemState: "unknown",
+			expected:    true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.outcome.NeedsManualCleanup()
+			got := outcome.ComputeNeedsManualCleanup(tc.status, tc.systemState)
 			if got != tc.expected {
-				t.Errorf("NeedsManualCleanup() = %v, want %v", got, tc.expected)
+				t.Errorf("ComputeNeedsManualCleanup() = %v, want %v", got, tc.expected)
 			}
 		})
 	}
 }
 
-func TestManualCleanupCommands(t *testing.T) {
+func TestComputeManualCleanupCommands(t *testing.T) {
 	tests := []struct {
-		name     string
-		outcome  outcome.ManagerOperationOutcome
-		expected [][]string
+		name        string
+		systemState string
+		residual    []outcome.Artefact
+		expected    [][]string
 	}{
 		{
-			name:     "clean state returns nil",
-			outcome:  outcome.ManagerOperationOutcome{Status: outcome.StatusSuccess},
-			expected: nil,
+			name:        "clean state returns nil",
+			systemState: "clean",
+			expected:    nil,
 		},
 		{
-			name: "unknown state returns nil",
-			outcome: outcome.ManagerOperationOutcome{
-				Status:        outcome.StatusFailure,
-				ObservedError: "probe failed",
-			},
-			expected: nil,
+			name:        "unknown state returns nil",
+			systemState: "unknown",
+			expected:    nil,
 		},
 		{
-			name: "program_pin with kernel_id returns unload command",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-				},
+			name:        "program_pin with kernel_id returns unload command",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
 			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
-			name: "link_pin with link_id returns detach command",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactLinkPin, LinkID: 456},
-				},
+			name:        "link_pin with link_id returns detach command",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
 			},
 			expected: [][]string{{"bpfman", "detach", "--id", "456"}},
 		},
 		{
-			name: "deduplicates same kernel_id",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-				},
+			name:        "deduplicates same kernel_id",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
 			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
-			name: "suppresses maps_dir for same kernel_id",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-					{Kind: outcome.ArtefactMapsDir, KernelID: 123, Path: "/sys/fs/bpf/bpfman/123/maps"},
-				},
+			name:        "suppresses maps_dir for same kernel_id",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
+				{Kind: outcome.ArtefactMapsDir, KernelID: 123, Path: "/sys/fs/bpf/bpfman/123/maps"},
 			},
 			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
-			name: "maps_dir without kernel_id triggers gc",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactMapsDir, Path: "/sys/fs/bpf/bpfman/orphan/maps"},
-				},
+			name:        "maps_dir without kernel_id triggers gc",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactMapsDir, Path: "/sys/fs/bpf/bpfman/orphan/maps"},
 			},
 			expected: [][]string{{"bpfman", "gc"}},
 		},
 		{
-			name: "dispatcher triggers gc",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactDispatcher, KernelID: 789},
-				},
+			name:        "dispatcher triggers gc",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
 			expected: [][]string{{"bpfman", "gc"}},
 		},
 		{
-			name: "mixed artefacts returns multiple commands",
-			outcome: outcome.ManagerOperationOutcome{
-				Status: outcome.StatusFailure,
-				Observed: []outcome.Artefact{
-					{Kind: outcome.ArtefactProgramPin, KernelID: 123},
-					{Kind: outcome.ArtefactLinkPin, LinkID: 456},
-					{Kind: outcome.ArtefactDispatcher, KernelID: 789},
-				},
+			name:        "mixed artefacts returns multiple commands",
+			systemState: "inconsistent",
+			residual: []outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
+				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
+				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
 			expected: [][]string{
 				{"bpfman", "unload", "123"},
@@ -275,9 +243,9 @@ func TestManualCleanupCommands(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.outcome.ManualCleanupCommands()
+			got := outcome.ComputeManualCleanupCommands(tc.systemState, tc.residual)
 			if !equalCmds(got, tc.expected) {
-				t.Errorf("ManualCleanupCommands() = %v, want %v", got, tc.expected)
+				t.Errorf("ComputeManualCleanupCommands() = %v, want %v", got, tc.expected)
 			}
 		})
 	}
@@ -309,11 +277,20 @@ func TestRecorder_Complete(t *testing.T) {
 		t.Fatalf("Complete() failed: %v", err)
 	}
 
-	if len(out.Completed) != 1 {
-		t.Errorf("Completed has %d steps, want 1", len(out.Completed))
+	if len(out.Timeline) != 1 {
+		t.Errorf("Timeline has %d entries, want 1", len(out.Timeline))
 	}
-	if out.Completed[0].Target != "test_prog" {
-		t.Errorf("Completed[0].Target = %q, want %q", out.Completed[0].Target, "test_prog")
+	if out.Timeline[0].Target != "test_prog" {
+		t.Errorf("Timeline[0].Target = %q, want %q", out.Timeline[0].Target, "test_prog")
+	}
+	if out.Timeline[0].Seq != 1 {
+		t.Errorf("Timeline[0].Seq = %d, want 1", out.Timeline[0].Seq)
+	}
+	if out.Timeline[0].Phase != outcome.PhasePrimary {
+		t.Errorf("Timeline[0].Phase = %q, want %q", out.Timeline[0].Phase, outcome.PhasePrimary)
+	}
+	if out.Timeline[0].Status != outcome.StepStatusCompleted {
+		t.Errorf("Timeline[0].Status = %q, want %q", out.Timeline[0].Status, outcome.StepStatusCompleted)
 	}
 }
 
@@ -345,11 +322,17 @@ func TestRecorder_Fail(t *testing.T) {
 	if out.Status != outcome.StatusFailure {
 		t.Errorf("Status = %q, want %q", out.Status, outcome.StatusFailure)
 	}
-	if out.Failed == nil {
-		t.Fatal("Failed is nil")
+	if len(out.Timeline) != 1 {
+		t.Fatalf("Timeline has %d entries, want 1", len(out.Timeline))
 	}
-	if out.Failed.Target != "test_prog" {
-		t.Errorf("Failed.Target = %q, want %q", out.Failed.Target, "test_prog")
+	if out.Timeline[0].Target != "test_prog" {
+		t.Errorf("Timeline[0].Target = %q, want %q", out.Timeline[0].Target, "test_prog")
+	}
+	if out.Timeline[0].Status != outcome.StepStatusFailed {
+		t.Errorf("Timeline[0].Status = %q, want %q", out.Timeline[0].Status, outcome.StepStatusFailed)
+	}
+	if out.Timeline[0].Error != "load failed" {
+		t.Errorf("Timeline[0].Error = %q, want %q", out.Timeline[0].Error, "load failed")
 	}
 }
 
@@ -373,8 +356,11 @@ func TestRecorder_Rollback(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
-	// Fail first
-	failStep := outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"}
+	// Complete a step first
+	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog"})
+
+	// Fail
+	failStep := outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Error: "db failed"}
 	_ = rec.Fail(failStep)
 
 	// Begin rollback
@@ -386,14 +372,20 @@ func TestRecorder_Rollback(t *testing.T) {
 		t.Fatalf("RollbackComplete() failed: %v", err)
 	}
 
-	if out.Rollback == nil {
-		t.Fatal("Rollback is nil")
+	if len(out.Timeline) != 3 {
+		t.Fatalf("Timeline has %d entries, want 3", len(out.Timeline))
 	}
-	if out.Rollback.Status != outcome.StatusSuccess {
-		t.Errorf("Rollback.Status = %q, want %q", out.Rollback.Status, outcome.StatusSuccess)
+
+	// Check rollback entry
+	rollbackEntry := out.Timeline[2]
+	if rollbackEntry.Phase != outcome.PhaseRollback {
+		t.Errorf("Timeline[2].Phase = %q, want %q", rollbackEntry.Phase, outcome.PhaseRollback)
 	}
-	if len(out.Rollback.Completed) != 1 {
-		t.Errorf("Rollback.Completed has %d steps, want 1", len(out.Rollback.Completed))
+	if rollbackEntry.Status != outcome.StepStatusCompleted {
+		t.Errorf("Timeline[2].Status = %q, want %q", rollbackEntry.Status, outcome.StepStatusCompleted)
+	}
+	if rollbackEntry.Target != "test_prog" {
+		t.Errorf("Timeline[2].Target = %q, want %q", rollbackEntry.Target, "test_prog")
 	}
 }
 
@@ -409,11 +401,20 @@ func TestRecorder_RollbackFailFlipsStatus(t *testing.T) {
 		t.Fatalf("RollbackFail() failed: %v", err)
 	}
 
-	if out.Rollback.Status != outcome.StatusFailure {
-		t.Errorf("Rollback.Status = %q, want %q", out.Rollback.Status, outcome.StatusFailure)
+	if !rec.RollbackFailed() {
+		t.Error("RollbackFailed() = false, want true")
 	}
-	if len(out.Rollback.Failed) != 1 {
-		t.Errorf("Rollback.Failed has %d steps, want 1", len(out.Rollback.Failed))
+
+	// Check the rollback entry
+	rollbackEntry := out.Timeline[1]
+	if rollbackEntry.Phase != outcome.PhaseRollback {
+		t.Errorf("Timeline[1].Phase = %q, want %q", rollbackEntry.Phase, outcome.PhaseRollback)
+	}
+	if rollbackEntry.Status != outcome.StepStatusFailed {
+		t.Errorf("Timeline[1].Status = %q, want %q", rollbackEntry.Status, outcome.StepStatusFailed)
+	}
+	if rollbackEntry.Error != "permission denied" {
+		t.Errorf("Timeline[1].Error = %q, want %q", rollbackEntry.Error, "permission denied")
 	}
 }
 
@@ -433,32 +434,78 @@ func TestRecorder_RollbackWithoutBeginReturnsError(t *testing.T) {
 	}
 }
 
-func TestRecorder_SetObserved(t *testing.T) {
+func TestRecorder_SetResidual(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	artefacts := []outcome.Artefact{
 		{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 	}
-	rec.SetObserved(artefacts, nil)
+	rec.SetResidual(artefacts, nil)
 
-	if len(out.Observed) != 1 {
-		t.Errorf("Observed has %d items, want 1", len(out.Observed))
+	if len(out.Residual) != 1 {
+		t.Errorf("Residual has %d items, want 1", len(out.Residual))
 	}
-	if out.ObservedError != "" {
-		t.Errorf("ObservedError = %q, want empty", out.ObservedError)
+	if out.ResidualError != "" {
+		t.Errorf("ResidualError = %q, want empty", out.ResidualError)
 	}
 }
 
-func TestRecorder_SetObservedWithError(t *testing.T) {
+func TestRecorder_SetResidualWithError(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	observeErr := errors.New("failed to probe")
-	rec.SetObserved(nil, observeErr)
+	rec.SetResidual(nil, observeErr)
 
-	if out.ObservedError != "failed to probe" {
-		t.Errorf("ObservedError = %q, want %q", out.ObservedError, "failed to probe")
+	if out.ResidualError != "failed to probe" {
+		t.Errorf("ResidualError = %q, want %q", out.ResidualError, "failed to probe")
+	}
+}
+
+func TestRecorder_Finalise(t *testing.T) {
+	var out outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&out)
+
+	// Simulate a failed operation with residue
+	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+	rec.SetResidual([]outcome.Artefact{
+		{Kind: outcome.ArtefactProgramPin, KernelID: 123},
+	}, nil)
+
+	rec.Finalise()
+
+	if out.SystemState != "inconsistent" {
+		t.Errorf("SystemState = %q, want %q", out.SystemState, "inconsistent")
+	}
+	if !out.NeedsManualCleanup {
+		t.Error("NeedsManualCleanup = false, want true")
+	}
+	if len(out.ManualCleanupCommands) != 1 {
+		t.Errorf("ManualCleanupCommands has %d items, want 1", len(out.ManualCleanupCommands))
+	}
+}
+
+func TestRecorder_FinaliseCleanState(t *testing.T) {
+	var out outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&out)
+
+	// Simulate a failed operation with successful rollback (no residue)
+	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Error: "db error"})
+	rec.BeginRollback()
+	_ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload})
+	rec.SetResidual(nil, nil)
+
+	rec.Finalise()
+
+	if out.SystemState != "clean" {
+		t.Errorf("SystemState = %q, want %q", out.SystemState, "clean")
+	}
+	if out.NeedsManualCleanup {
+		t.Error("NeedsManualCleanup = true, want false")
+	}
+	if out.ManualCleanupCommands != nil {
+		t.Errorf("ManualCleanupCommands = %v, want nil", out.ManualCleanupCommands)
 	}
 }
 
@@ -478,7 +525,7 @@ func TestRecorder_Validate_FailureWithFailedStep(t *testing.T) {
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
-	out.Error = "load failed: boom"
+	out.PrimaryError = "load failed: boom"
 
 	if err := rec.Validate(); err != nil {
 		t.Errorf("Validate() failed: %v", err)
@@ -498,7 +545,9 @@ func TestRecorder_Validate_FailureWithoutFailedStepOrError(t *testing.T) {
 func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
 		Status: outcome.StatusSuccess,
-		Failed: &outcome.Step{Kind: outcome.StepKindKernelLoad},
+		Timeline: []outcome.TimelineEntry{
+			{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelLoad},
+		},
 	}
 	rec := outcome.NewRecorder(&out)
 
@@ -508,29 +557,32 @@ func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
 	}
 }
 
-func TestRecorder_Validate_RollbackSuccessWithFailedSteps(t *testing.T) {
+func TestRecorder_Validate_RollbackFailedWithoutError(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
-		Status: outcome.StatusFailure,
-		Failed: &outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"},
-		Error:  "boom",
-		Rollback: &outcome.RollbackOutcome{
-			Status: outcome.StatusSuccess,
-			Failed: []outcome.Step{{Kind: outcome.StepKindKernelUnload}},
+		Status:       outcome.StatusFailure,
+		PrimaryError: "boom",
+		Timeline: []outcome.TimelineEntry{
+			{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelLoad, Error: "boom"},
+			{Seq: 2, Phase: outcome.PhaseRollback, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelUnload, Error: "perm denied"},
 		},
+		// RollbackError not set - this is the invalid state
 	}
 	rec := outcome.NewRecorder(&out)
 
 	err := rec.Validate()
 	if err == nil {
-		t.Error("Validate() should fail for rollback success with failed steps")
+		t.Error("Validate() should fail for rollback failed without rollback error")
 	}
 }
 
 func TestRecorder_Validate_NonJSONSafeDetails(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
 		Status: outcome.StatusSuccess,
-		Completed: []outcome.Step{
+		Timeline: []outcome.TimelineEntry{
 			{
+				Seq:     1,
+				Phase:   outcome.PhasePrimary,
+				Status:  outcome.StepStatusCompleted,
 				Kind:    outcome.StepKindKernelLoad,
 				Details: make(chan int), // channels are not JSON-safe
 			},
@@ -561,35 +613,46 @@ func TestFailFromErr(t *testing.T) {
 
 func TestOutcomeJSONSerialization(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
-		OpID:   42,
-		Status: outcome.StatusFailure,
-		Error:  "load failed",
-		Completed: []outcome.Step{
+		OpID:         42,
+		Status:       outcome.StatusFailure,
+		PrimaryError: "load failed",
+		Timeline: []outcome.TimelineEntry{
 			{
+				Seq:     1,
+				Phase:   outcome.PhasePrimary,
+				Status:  outcome.StepStatusCompleted,
 				Kind:    outcome.StepKindKernelLoad,
 				Target:  "prog_a",
 				Details: outcome.ProgramDetails{KernelID: 123},
 			},
-		},
-		Failed: &outcome.Step{
-			Kind:   outcome.StepKindKernelLoad,
-			Target: "prog_b",
-			Error:  "invalid BTF",
-		},
-		Skipped: []outcome.Step{
-			{Kind: outcome.StepKindKernelLoad, Target: "prog_c"},
-		},
-		Rollback: &outcome.RollbackOutcome{
-			Status: outcome.StatusSuccess,
-			Completed: []outcome.Step{
-				{
-					Kind:    outcome.StepKindKernelUnload,
-					Target:  "prog_a",
-					Details: outcome.ProgramDetails{KernelID: 123},
-				},
+			{
+				Seq:    2,
+				Phase:  outcome.PhasePrimary,
+				Status: outcome.StepStatusFailed,
+				Kind:   outcome.StepKindKernelLoad,
+				Target: "prog_b",
+				Error:  "invalid BTF",
+			},
+			{
+				Seq:    3,
+				Phase:  outcome.PhasePrimary,
+				Status: outcome.StepStatusSkipped,
+				Kind:   outcome.StepKindKernelLoad,
+				Target: "prog_c",
+			},
+			{
+				Seq:     4,
+				Phase:   outcome.PhaseRollback,
+				Status:  outcome.StepStatusCompleted,
+				Kind:    outcome.StepKindKernelUnload,
+				Target:  "prog_a",
+				Details: outcome.ProgramDetails{KernelID: 123},
 			},
 		},
-		Observed: []outcome.Artefact{},
+		Residual:              []outcome.Artefact{},
+		SystemState:           "clean",
+		NeedsManualCleanup:    false,
+		ManualCleanupCommands: nil,
 	}
 
 	data, err := json.Marshal(out)
@@ -608,17 +671,14 @@ func TestOutcomeJSONSerialization(t *testing.T) {
 	if decoded.Status != outcome.StatusFailure {
 		t.Errorf("Status = %q, want %q", decoded.Status, outcome.StatusFailure)
 	}
-	if len(decoded.Completed) != 1 {
-		t.Errorf("Completed has %d items, want 1", len(decoded.Completed))
+	if len(decoded.Timeline) != 4 {
+		t.Errorf("Timeline has %d items, want 4", len(decoded.Timeline))
 	}
-	if decoded.Failed == nil {
-		t.Error("Failed is nil")
+	if decoded.PrimaryError != "load failed" {
+		t.Errorf("PrimaryError = %q, want %q", decoded.PrimaryError, "load failed")
 	}
-	if len(decoded.Skipped) != 1 {
-		t.Errorf("Skipped has %d items, want 1", len(decoded.Skipped))
-	}
-	if decoded.Rollback == nil {
-		t.Error("Rollback is nil")
+	if decoded.SystemState != "clean" {
+		t.Errorf("SystemState = %q, want %q", decoded.SystemState, "clean")
 	}
 }
 
@@ -656,5 +716,36 @@ func TestArtefactString(t *testing.T) {
 				t.Errorf("String() = %q, want %q", got, tc.expected)
 			}
 		})
+	}
+}
+
+func TestTimelineSequencing(t *testing.T) {
+	var out outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&out)
+
+	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step1"})
+	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Target: "step2"})
+	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step3", Error: "failed"})
+	rec.BeginRollback()
+	_ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "step4"})
+
+	if len(out.Timeline) != 4 {
+		t.Fatalf("Timeline has %d entries, want 4", len(out.Timeline))
+	}
+
+	// Check sequence numbers
+	for i, entry := range out.Timeline {
+		expectedSeq := i + 1
+		if entry.Seq != expectedSeq {
+			t.Errorf("Timeline[%d].Seq = %d, want %d", i, entry.Seq, expectedSeq)
+		}
+	}
+
+	// Check phases
+	if out.Timeline[0].Phase != outcome.PhasePrimary {
+		t.Errorf("Timeline[0].Phase = %q, want %q", out.Timeline[0].Phase, outcome.PhasePrimary)
+	}
+	if out.Timeline[3].Phase != outcome.PhaseRollback {
+		t.Errorf("Timeline[3].Phase = %q, want %q", out.Timeline[3].Phase, outcome.PhaseRollback)
 	}
 }

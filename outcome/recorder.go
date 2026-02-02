@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	// ErrAlreadyFailed is returned when attempting to record a step after failure.
+	// ErrAlreadyFailed is returned when attempting to record a primary step after failure.
 	ErrAlreadyFailed = errors.New("outcome already failed")
 
 	// ErrRollbackNotActive is returned when recording rollback steps without BeginRollback.
@@ -20,17 +20,20 @@ var (
 // semantics, rollback policy, or step taxonomies. It only ensures the
 // ManagerOperationOutcome structure cannot contradict itself.
 type ManagerOperationRecorder struct {
-	o *ManagerOperationOutcome
+	o              *ManagerOperationOutcome
+	seq            int  // current sequence number
+	inRollback     bool // whether we're in rollback phase
+	rollbackFailed bool // whether any rollback step has failed
 }
 
 // NewRecorder initialises a ManagerOperationOutcome in a consistent state.
-// Status defaults to success; failure flips status and sets Error at the
+// Status defaults to success; failure flips status and sets PrimaryError at the
 // boundary (manager), not here.
 func NewRecorder(o *ManagerOperationOutcome) ManagerOperationRecorder {
 	if o.Status == "" {
 		o.Status = StatusSuccess
 	}
-	return ManagerOperationRecorder{o: o}
+	return ManagerOperationRecorder{o: o, seq: 0}
 }
 
 // Outcome returns the underlying ManagerOperationOutcome.
@@ -38,75 +41,134 @@ func (r ManagerOperationRecorder) Outcome() *ManagerOperationOutcome {
 	return r.o
 }
 
-// Started reports whether any step was recorded (completed/failed/skipped).
+// Started reports whether any step was recorded.
 func (r ManagerOperationRecorder) Started() bool {
-	return len(r.o.Completed) > 0 || r.o.Failed != nil || len(r.o.Skipped) > 0
+	return len(r.o.Timeline) > 0
 }
 
-// Complete appends a completed step. Returns error if already failed.
-func (r ManagerOperationRecorder) Complete(step Step) error {
-	if r.o.Status == StatusFailure {
+// nextSeq returns the next sequence number and increments the counter.
+func (r *ManagerOperationRecorder) nextSeq() int {
+	r.seq++
+	return r.seq
+}
+
+// Complete appends a completed step to the timeline. Returns error if already failed.
+func (r *ManagerOperationRecorder) Complete(step Step) error {
+	if r.o.Status == StatusFailure && !r.inRollback {
 		return ErrAlreadyFailed
 	}
-	r.o.Completed = append(r.o.Completed, step)
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:     r.nextSeq(),
+		Phase:   r.currentPhase(),
+		Status:  StepStatusCompleted,
+		Kind:    step.Kind,
+		Target:  step.Target,
+		Details: step.Details,
+	})
 	return nil
 }
 
-// Skip appends a skipped step. Returns error if already failed.
-func (r ManagerOperationRecorder) Skip(step Step) error {
-	if r.o.Status == StatusFailure {
+// Skip appends a skipped step to the timeline. Returns error if already failed.
+func (r *ManagerOperationRecorder) Skip(step Step) error {
+	if r.o.Status == StatusFailure && !r.inRollback {
 		return ErrAlreadyFailed
 	}
-	r.o.Skipped = append(r.o.Skipped, step)
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:    r.nextSeq(),
+		Phase:  r.currentPhase(),
+		Status: StepStatusSkipped,
+		Kind:   step.Kind,
+		Target: step.Target,
+		Error:  step.Error,
+	})
 	return nil
 }
 
 // Fail sets the failed step and flips status to failure.
-// Does NOT set ManagerOperationOutcome.Error - that's the manager boundary's job.
-func (r ManagerOperationRecorder) Fail(step Step) error {
-	if r.o.Status == StatusFailure {
+// Does NOT set ManagerOperationOutcome.PrimaryError - that's the manager boundary's job.
+func (r *ManagerOperationRecorder) Fail(step Step) error {
+	if r.o.Status == StatusFailure && !r.inRollback {
 		return ErrAlreadyFailed
 	}
-	if r.o.Failed != nil {
-		return fmt.Errorf("failed step already set: %w", ErrAlreadyFailed)
-	}
 	r.o.Status = StatusFailure
-	r.o.Failed = &step
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:     r.nextSeq(),
+		Phase:   r.currentPhase(),
+		Status:  StepStatusFailed,
+		Kind:    step.Kind,
+		Target:  step.Target,
+		Error:   step.Error,
+		Details: step.Details,
+	})
 	return nil
 }
 
-// BeginRollback initialises Rollback if needed. Idempotent.
-func (r ManagerOperationRecorder) BeginRollback() {
-	if r.o.Rollback == nil {
-		r.o.Rollback = &RollbackOutcome{Status: StatusSuccess}
+// currentPhase returns the current phase (primary or rollback).
+func (r ManagerOperationRecorder) currentPhase() Phase {
+	if r.inRollback {
+		return PhaseRollback
 	}
+	return PhasePrimary
 }
 
-// RollbackComplete records a successful cleanup step.
-func (r ManagerOperationRecorder) RollbackComplete(step Step) error {
-	if r.o.Rollback == nil {
+// BeginRollback transitions to the rollback phase. Idempotent.
+func (r *ManagerOperationRecorder) BeginRollback() {
+	r.inRollback = true
+}
+
+// RollbackComplete records a successful rollback step.
+func (r *ManagerOperationRecorder) RollbackComplete(step Step) error {
+	if !r.inRollback {
 		return ErrRollbackNotActive
 	}
-	r.o.Rollback.Completed = append(r.o.Rollback.Completed, step)
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:     r.nextSeq(),
+		Phase:   PhaseRollback,
+		Status:  StepStatusCompleted,
+		Kind:    step.Kind,
+		Target:  step.Target,
+		Details: step.Details,
+	})
 	return nil
 }
 
-// RollbackFail records a failed cleanup step and flips cleanup status.
-func (r ManagerOperationRecorder) RollbackFail(step Step) error {
-	if r.o.Rollback == nil {
+// RollbackFail records a failed rollback step and marks rollback as failed.
+func (r *ManagerOperationRecorder) RollbackFail(step Step) error {
+	if !r.inRollback {
 		return ErrRollbackNotActive
 	}
-	r.o.Rollback.Status = StatusFailure
-	r.o.Rollback.Failed = append(r.o.Rollback.Failed, step)
+	r.rollbackFailed = true
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:     r.nextSeq(),
+		Phase:   PhaseRollback,
+		Status:  StepStatusFailed,
+		Kind:    step.Kind,
+		Target:  step.Target,
+		Error:   step.Error,
+		Details: step.Details,
+	})
 	return nil
 }
 
-// SetObserved records observed residue and/or observation error.
-func (r ManagerOperationRecorder) SetObserved(artefacts []Artefact, observeErr error) {
-	r.o.Observed = artefacts
+// RollbackFailed returns true if any rollback step has failed.
+func (r ManagerOperationRecorder) RollbackFailed() bool {
+	return r.rollbackFailed
+}
+
+// SetResidual records residual artefacts and/or observation error.
+func (r *ManagerOperationRecorder) SetResidual(artefacts []Artefact, observeErr error) {
+	r.o.Residual = artefacts
 	if observeErr != nil {
-		r.o.ObservedError = observeErr.Error()
+		r.o.ResidualError = observeErr.Error()
 	}
+}
+
+// Finalise computes and stores the derived fields (SystemState, NeedsManualCleanup,
+// ManualCleanupCommands). Call this before returning the outcome to the caller.
+func (r *ManagerOperationRecorder) Finalise() {
+	r.o.SystemState = ComputeSystemState(r.o.Status, r.o.Residual, r.o.ResidualError)
+	r.o.NeedsManualCleanup = ComputeNeedsManualCleanup(r.o.Status, r.o.SystemState)
+	r.o.ManualCleanupCommands = ComputeManualCleanupCommands(r.o.SystemState, r.o.Residual)
 }
 
 // Validate enforces cheap invariants. Call in tests and debug builds.
@@ -115,56 +177,39 @@ func (r ManagerOperationRecorder) Validate() error {
 	if o.Status != StatusSuccess && o.Status != StatusFailure {
 		return fmt.Errorf("invalid status: %q", o.Status)
 	}
-	if o.Status == StatusSuccess && o.Failed != nil {
-		return errors.New("success outcome has failed step")
-	}
-	if o.Status == StatusFailure && o.Failed == nil && o.Error == "" {
-		return errors.New("failure outcome has neither failed step nor error")
-	}
-	if o.Rollback != nil {
-		if o.Rollback.Status == StatusSuccess && len(o.Rollback.Failed) != 0 {
-			return errors.New("cleanup success has failed steps")
+
+	// Check timeline consistency
+	hasPrimaryFailed := false
+	hasRollbackFailed := false
+	for _, entry := range o.Timeline {
+		if entry.Phase == PhasePrimary && entry.Status == StepStatusFailed {
+			hasPrimaryFailed = true
+		}
+		if entry.Phase == PhaseRollback && entry.Status == StepStatusFailed {
+			hasRollbackFailed = true
 		}
 	}
 
-	// JSON sanity for Details - ALL steps, not just Completed
-	validateStep := func(s Step, loc string) error {
-		if s.Details == nil {
-			return nil
-		}
-		if _, err := json.Marshal(s.Details); err != nil {
-			return fmt.Errorf("%s step details not json-safe: %w", loc, err)
-		}
-		return nil
+	if o.Status == StatusSuccess && hasPrimaryFailed {
+		return errors.New("success outcome has failed primary step")
+	}
+	if o.Status == StatusFailure && !hasPrimaryFailed && o.PrimaryError == "" {
+		return errors.New("failure outcome has neither failed primary step nor primary error")
+	}
+	if hasRollbackFailed && o.RollbackError == "" {
+		return errors.New("rollback failed but no rollback error set")
 	}
 
-	for _, s := range o.Completed {
-		if err := validateStep(s, "completed"); err != nil {
-			return err
+	// JSON sanity for Details
+	for i, entry := range o.Timeline {
+		if entry.Details == nil {
+			continue
+		}
+		if _, err := json.Marshal(entry.Details); err != nil {
+			return fmt.Errorf("timeline[%d] details not json-safe: %w", i, err)
 		}
 	}
-	for _, s := range o.Skipped {
-		if err := validateStep(s, "skipped"); err != nil {
-			return err
-		}
-	}
-	if o.Failed != nil {
-		if err := validateStep(*o.Failed, "failed"); err != nil {
-			return err
-		}
-	}
-	if o.Rollback != nil {
-		for _, s := range o.Rollback.Completed {
-			if err := validateStep(s, "cleanup.completed"); err != nil {
-				return err
-			}
-		}
-		for _, s := range o.Rollback.Failed {
-			if err := validateStep(s, "cleanup.failed"); err != nil {
-				return err
-			}
-		}
-	}
+
 	return nil
 }
 

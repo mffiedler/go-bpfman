@@ -41,6 +41,7 @@ var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcher
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
@@ -63,7 +64,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -76,7 +77,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -104,7 +105,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		// Record dispatcher creation
@@ -124,7 +125,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -146,7 +147,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 	linkPinPath := dispatcher.ExtensionLinkPath(revisionDir, position)
@@ -185,7 +186,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
@@ -199,7 +200,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				Target: target,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		dispState, err = m.createTCDispatcher(ctx, nsid, uint32(ifindex), ifname, direction, dispType, netnsPath)
@@ -214,7 +215,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		// Recalculate paths for the fresh dispatcher
@@ -227,7 +228,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				Target: target,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
@@ -254,7 +255,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}
@@ -336,7 +337,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -376,6 +377,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
@@ -397,7 +399,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -409,7 +411,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -422,7 +424,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -443,7 +445,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 				Target: linkPinPath,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}
@@ -460,7 +462,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -489,7 +491,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -565,7 +567,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 

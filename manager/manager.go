@@ -139,6 +139,7 @@ func (m *Manager) GC(ctx context.Context) (GCResult, error) {
 // GC always runs regardless of the rules filter.
 func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	result.Outcome.OpID = OpIDFromContext(ctx)
 	start := time.Now()
 
@@ -164,7 +165,7 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCRes
 			Target: "store",
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 	for id := range dbPrograms {
@@ -197,7 +198,7 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCRes
 			Target: "store",
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -267,7 +268,7 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCRes
 					Error: err.Error(),
 				})
 				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
-				result.Outcome.Error = retErr.Error()
+				result.Outcome.PrimaryError = retErr.Error()
 				// Continue to attempt other cleanup operations but mark overall as failed
 				continue
 			}

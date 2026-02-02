@@ -35,6 +35,7 @@ const (
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
@@ -54,7 +55,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -67,7 +68,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -86,7 +87,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		// Record dispatcher creation
@@ -105,7 +106,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -126,7 +127,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 	linkPinPath := dispatcher.ExtensionLinkPath(revisionDir, position)
@@ -164,7 +165,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
@@ -178,7 +179,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				Target: target,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		dispState, err = m.createXDPDispatcher(ctx, nsid, uint32(ifindex), netnsPath)
@@ -192,7 +193,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		revisionDir = dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
@@ -204,7 +205,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				Target: target,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
@@ -231,7 +232,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}
@@ -311,7 +312,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 

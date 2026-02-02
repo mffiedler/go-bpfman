@@ -31,6 +31,7 @@ func isNotFoundError(err error) bool {
 // Pattern: FETCH -> EXECUTE (detach link) -> QUERY -> EXECUTE (cleanup)
 func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result DetachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	target := fmt.Sprintf("%d", linkID)
 
 	// FETCH: Get link record (includes details)
@@ -51,7 +52,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -66,7 +67,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 				Target: target,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		if dispType != "" {
@@ -102,7 +103,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 				Error:  retErr.Error(),
 			})
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -124,7 +125,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 				},
 				Error: retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}

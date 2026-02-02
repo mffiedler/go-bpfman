@@ -17,6 +17,7 @@ import (
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	group := spec.Group()
 	name := spec.Name()
@@ -35,7 +36,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			Target: target,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -60,7 +61,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -123,7 +124,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -154,6 +155,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	fnName := spec.FnName()
 	offset := spec.Offset()
@@ -171,7 +173,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			Target: fnName,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -203,7 +205,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -268,7 +270,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -309,6 +311,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 	binaryTarget := spec.Target()
 	fnName := spec.FnName()
@@ -329,7 +332,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			Target: outcomeTarget,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -358,7 +361,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 				Target: outcomeTarget,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		link, err = m.kernel.AttachUprobeContainer(ctx, scope, progPinPath, binaryTarget, fnName, offset, retprobe, linkPinPath, containerPid)
@@ -378,7 +381,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -443,7 +446,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -482,6 +485,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 
 	// FETCH: Get program metadata to access AttachFunc
@@ -497,7 +501,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			Target: fmt.Sprintf("program_%d", programKernelID),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -509,7 +513,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			Target: fmt.Sprintf("program_%d", programKernelID),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -535,7 +539,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -600,7 +604,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -632,6 +636,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 	programKernelID := spec.ProgramID()
 
 	// FETCH: Get program metadata to access AttachFunc
@@ -647,7 +652,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			Target: fmt.Sprintf("program_%d", programKernelID),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -659,7 +664,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			Target: fmt.Sprintf("program_%d", programKernelID),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -685,7 +690,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			},
 			Error: retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -750,7 +755,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 

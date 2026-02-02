@@ -40,6 +40,7 @@ type LoadImageResult struct {
 // cleanup information if rollback was attempted.
 func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result LoadImageResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
+	defer func() { rec.Finalise() }()
 
 	if puller == nil {
 		retErr = fmt.Errorf("image puller is required")
@@ -48,7 +49,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Target: "validation",
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -65,7 +66,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Target: ref.URL,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -93,7 +94,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: pulled.ObjectPath,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 
@@ -129,7 +130,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: "validate_programs",
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}
@@ -200,7 +201,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: prog.ProgramName,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 
@@ -247,7 +248,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: prog.ProgramName,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 

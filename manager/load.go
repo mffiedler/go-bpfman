@@ -61,6 +61,10 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	rec := outcome.NewRecorder(&result.Outcome)
 	now := time.Now()
 
+	defer func() {
+		rec.Finalise()
+	}()
+
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
 	loaded, err := m.kernel.Load(ctx, spec, bpffs.Root(m.dirs.FS()))
@@ -71,7 +75,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Target: spec.ProgramName(),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -157,6 +161,12 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 				},
 				Error: rbErr.Error(),
 			})
+			result.Outcome.RollbackError = rbErr.Error()
+			// Set residual artefacts since rollback failed
+			rec.SetResidual([]outcome.Artefact{
+				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinPath},
+				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinDir},
+			}, nil)
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
@@ -170,7 +180,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			})
 			retErr = storeErr
 		}
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = storeErr.Error()
 		return
 	}
 
@@ -196,6 +206,10 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
 
+	defer func() {
+		rec.Finalise()
+	}()
+
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.store.Get(ctx, kernelID)
 	if err != nil {
@@ -214,7 +228,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 			Target: fmt.Sprintf("%d", kernelID),
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -230,7 +244,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 			Target: programName,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 	if depCount > 0 {
@@ -240,7 +254,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 			Target: programName,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -252,7 +266,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 			Target: programName,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.Error = retErr.Error()
+		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
 
@@ -278,7 +292,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 		// Fallback for executors that don't support result tracking
 		if err := m.executor.ExecuteAll(ctx, actions); err != nil {
 			retErr = fmt.Errorf("execute unload actions: %w", err)
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 		// Record all steps as completed
@@ -303,7 +317,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 				_ = rec.Fail(failedStep)
 			}
 			retErr = fmt.Errorf("execute unload actions: %w", execResult.Error)
-			result.Outcome.Error = retErr.Error()
+			result.Outcome.PrimaryError = retErr.Error()
 			return
 		}
 	}

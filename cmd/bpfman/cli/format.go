@@ -862,83 +862,57 @@ func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
 		fmt.Fprintf(&b, "Operation: op_id=%d\n", o.OpID)
 	}
 	fmt.Fprintf(&b, "Status: %s\n", strings.ToUpper(string(o.Status)))
-	if o.Error != "" {
-		fmt.Fprintf(&b, "Error: %s\n", o.Error)
+	if o.PrimaryError != "" {
+		fmt.Fprintf(&b, "Error: %s\n", o.PrimaryError)
+	}
+	if o.RollbackError != "" {
+		fmt.Fprintf(&b, "Rollback Error: %s\n", o.RollbackError)
 	}
 	b.WriteString("\n")
 
-	// Completed steps
-	if len(o.Completed) > 0 {
-		b.WriteString("Completed:\n")
-		for _, step := range o.Completed {
-			fmt.Fprintf(&b, "  [%s] %s%s\n", step.Kind, step.Target, formatStepDetails(step.Details))
-		}
-		b.WriteString("\n")
-	}
-
-	// Failed step
-	if o.Failed != nil {
-		b.WriteString("Failed:\n")
-		fmt.Fprintf(&b, "  [%s] %s", o.Failed.Kind, o.Failed.Target)
-		if o.Failed.Error != "" {
-			fmt.Fprintf(&b, ": %s", o.Failed.Error)
-		}
-		b.WriteString("\n\n")
-	}
-
-	// Skipped steps
-	if len(o.Skipped) > 0 {
-		b.WriteString("Skipped:\n")
-		for _, step := range o.Skipped {
-			fmt.Fprintf(&b, "  [%s] %s\n", step.Kind, step.Target)
-		}
-		b.WriteString("\n")
-	}
-
-	// Cleanup outcome
-	if o.Rollback != nil {
-		fmt.Fprintf(&b, "Rollback: %s\n", strings.ToUpper(string(o.Rollback.Status)))
-		if len(o.Rollback.Completed) > 0 {
-			for _, step := range o.Rollback.Completed {
-				fmt.Fprintf(&b, "  [%s] %s%s\n", step.Kind, step.Target, formatStepDetails(step.Details))
+	// Timeline - display steps in chronological order grouped by phase
+	if len(o.Timeline) > 0 {
+		b.WriteString("Timeline:\n")
+		for _, entry := range o.Timeline {
+			phaseMarker := ""
+			if entry.Phase == outcome.PhaseRollback {
+				phaseMarker = " [rollback]"
 			}
-		}
-		if len(o.Rollback.Failed) > 0 {
-			for _, step := range o.Rollback.Failed {
-				fmt.Fprintf(&b, "  [%s] %s", step.Kind, step.Target)
-				if step.Error != "" {
-					fmt.Fprintf(&b, ": %s", step.Error)
-				}
-				b.WriteString("\n")
+			statusStr := string(entry.Status)
+			detailsStr := formatTimelineDetails(entry.Details)
+			if entry.Error != "" {
+				fmt.Fprintf(&b, "  %d. [%s] %s %s%s%s: %s\n",
+					entry.Seq, entry.Kind, entry.Target, statusStr, phaseMarker, detailsStr, entry.Error)
+			} else {
+				fmt.Fprintf(&b, "  %d. [%s] %s %s%s%s\n",
+					entry.Seq, entry.Kind, entry.Target, statusStr, phaseMarker, detailsStr)
 			}
 		}
 		b.WriteString("\n")
 	}
 
-	// Observed artefacts
-	if len(o.Observed) > 0 {
-		b.WriteString("Observed:\n")
-		for _, a := range o.Observed {
+	// Residual artefacts
+	if len(o.Residual) > 0 {
+		b.WriteString("Residual:\n")
+		for _, a := range o.Residual {
 			fmt.Fprintf(&b, "  %s\n", a.String())
 		}
 		b.WriteString("\n")
 	} else if o.Status == outcome.StatusFailure {
-		b.WriteString("Observed: (none)\n\n")
+		b.WriteString("Residual: (none)\n\n")
 	}
 
-	// System state
-	systemState := o.SystemState()
-	if systemState == "inconsistent" {
+	// System state (stored, not computed)
+	if o.SystemState == "inconsistent" {
 		fmt.Fprintf(&b, "System state: INCONSISTENT\n\n")
-		// Manual cleanup commands
-		cmds := o.ManualCleanupCommands()
-		if len(cmds) > 0 {
+		// Manual cleanup commands (stored, not computed)
+		if len(o.ManualCleanupCommands) > 0 {
 			b.WriteString("Manual cleanup required:\n")
-			for _, cmd := range cmds {
+			for _, cmd := range o.ManualCleanupCommands {
 				fmt.Fprintf(&b, "  %s\n", strings.Join(cmd, " "))
 			}
 		}
-	} else if systemState == "unknown" {
+	} else if o.SystemState == "unknown" {
 		fmt.Fprintf(&b, "System state: UNKNOWN\n")
 		b.WriteString("Manual verification required. Run `bpfman doctor` or `bpfman gc` to inspect and clean up.\n")
 	} else {
@@ -948,8 +922,8 @@ func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
 	return b.String()
 }
 
-// formatStepDetails formats step details for display.
-func formatStepDetails(details any) string {
+// formatTimelineDetails formats timeline entry details for display.
+func formatTimelineDetails(details any) string {
 	if details == nil {
 		return ""
 	}

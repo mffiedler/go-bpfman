@@ -31,11 +31,12 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	// Verify outcome records the preflight failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, o.Failed.Kind)
-	assert.Empty(t, o.Completed)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestDetach_KernelOnlyLink_ReturnsNotManaged verifies that:
@@ -61,11 +62,12 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	// Verify outcome records the preflight failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, o.Failed.Kind)
-	assert.Empty(t, o.Completed)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestUnload_NonExistentProgram_ReturnsNotFound verifies that:
@@ -87,11 +89,12 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	// Verify outcome records the preflight failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, o.Failed.Kind)
-	assert.Empty(t, o.Completed)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestUnload_KernelOnlyProgram_ReturnsNotManaged verifies that:
@@ -117,9 +120,10 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	// Verify outcome records the preflight failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, o.Failed.Kind)
-	assert.Empty(t, o.Completed)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 }

@@ -14,6 +14,68 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
+// timelineFindFailed returns the first failed entry from the timeline, or nil if none.
+func timelineFindFailed(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
+	for i := range timeline {
+		if timeline[i].Status == outcome.StepStatusFailed {
+			return &timeline[i]
+		}
+	}
+	return nil
+}
+
+// timelineCompletedPrimary returns completed entries in the primary phase.
+func timelineCompletedPrimary(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
+	var result []outcome.TimelineEntry
+	for _, e := range timeline {
+		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// timelineSkipped returns skipped entries from the timeline.
+func timelineSkipped(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
+	var result []outcome.TimelineEntry
+	for _, e := range timeline {
+		if e.Status == outcome.StepStatusSkipped {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// timelineRollbackCompleted returns completed entries in the rollback phase.
+func timelineRollbackCompleted(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
+	var result []outcome.TimelineEntry
+	for _, e := range timeline {
+		if e.Phase == outcome.PhaseRollback && e.Status == outcome.StepStatusCompleted {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// timelineHasRollback returns true if there are any rollback phase entries.
+func timelineHasRollback(timeline []outcome.TimelineEntry) bool {
+	for _, e := range timeline {
+		if e.Phase == outcome.PhaseRollback {
+			return true
+		}
+	}
+	return false
+}
+
+// timelineKinds returns the kinds of all entries matching the filter.
+func timelineKinds(entries []outcome.TimelineEntry) []outcome.StepKind {
+	kinds := make([]outcome.StepKind, len(entries))
+	for i, e := range entries {
+		kinds[i] = e.Kind
+	}
+	return kinds
+}
+
 func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
@@ -35,25 +97,23 @@ func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 	// Verify outcome structure on success
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusSuccess, o.Status)
-	assert.Empty(t, o.Error)
-	assert.Nil(t, o.Failed)
-	assert.Nil(t, o.Rollback)
-	assert.Empty(t, o.Skipped)
+	assert.Empty(t, o.PrimaryError)
+	assert.Nil(t, timelineFindFailed(o.Timeline))
+	assert.False(t, timelineHasRollback(o.Timeline))
+	assert.Empty(t, timelineSkipped(o.Timeline))
 	// Should have: image.pull, image.discover, kernel.load, store.save
-	assert.Len(t, o.Completed, 4)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 4)
 
 	// Verify step kinds
-	kinds := make([]outcome.StepKind, len(o.Completed))
-	for i, s := range o.Completed {
-		kinds[i] = s.Kind
-	}
+	kinds := timelineKinds(completed)
 	assert.Contains(t, kinds, outcome.StepKindPullImage)
 	assert.Contains(t, kinds, outcome.StepKindDiscoverPrograms)
 	assert.Contains(t, kinds, outcome.StepKindKernelLoad)
 	assert.Contains(t, kinds, outcome.StepKindStoreSaveProgram)
 
 	// SystemState should be clean on success
-	assert.Equal(t, "clean", o.SystemState())
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 func TestLoadImage_AutoDiscover_MultiplePrograms(t *testing.T) {
@@ -167,27 +227,29 @@ func TestLoadImage_Rollback_SecondProgramFails(t *testing.T) {
 	// Verify outcome structure on failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "prog_b", o.Failed.Target)
-	assert.NotEmpty(t, o.Failed.Error)
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "prog_b", failed.Target)
+	assert.NotEmpty(t, failed.Error)
 
 	// Should have completed: image.pull, image.discover, kernel.load(prog_a), store.save(prog_a)
-	assert.Len(t, o.Completed, 4)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 4)
 
 	// No programs skipped (only 2 programs, first succeeded, second failed)
-	assert.Empty(t, o.Skipped)
+	assert.Empty(t, timelineSkipped(o.Timeline))
 
 	// Verify cleanup was recorded
-	require.NotNil(t, o.Rollback)
-	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
-	assert.Len(t, o.Rollback.Completed, 1)
-	assert.Equal(t, outcome.StepKindKernelUnload, o.Rollback.Completed[0].Kind)
-	assert.Equal(t, "prog_a", o.Rollback.Completed[0].Target)
+	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
+	assert.True(t, timelineHasRollback(o.Timeline))
+	assert.Len(t, rollbackCompleted, 1)
+	assert.Equal(t, outcome.StepKindKernelUnload, rollbackCompleted[0].Kind)
+	assert.Equal(t, "prog_a", rollbackCompleted[0].Target)
 
 	// SystemState should be clean after successful cleanup
-	assert.Equal(t, "clean", o.SystemState())
+	assert.Equal(t, "clean", o.SystemState)
 
 	// Verify the operation sequence
 	ops := f.Kernel.Operations()
@@ -236,23 +298,25 @@ func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 	// Verify outcome structure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "prog_c", o.Failed.Target)
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "prog_c", failed.Target)
 
 	// Should have completed: image.pull, image.discover, kernel.load(prog_a), store.save(prog_a),
 	// kernel.load(prog_b), store.save(prog_b)
-	assert.Len(t, o.Completed, 6)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 6)
 
 	// Verify cleanup was recorded - prog_a and prog_b should be rolled back
-	require.NotNil(t, o.Rollback)
-	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
-	assert.Len(t, o.Rollback.Completed, 2, "should have 2 cleanup steps for prog_a and prog_b")
+	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
+	assert.True(t, timelineHasRollback(o.Timeline))
+	assert.Len(t, rollbackCompleted, 2, "should have 2 cleanup steps for prog_a and prog_b")
 
 	// SystemState should be clean after successful rollback
-	assert.Equal(t, "clean", o.SystemState())
-	assert.False(t, o.NeedsManualCleanup())
+	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, o.NeedsManualCleanup)
 
 	// Verify rollback: prog_a and prog_b should be unloaded from both kernel and database
 	f.AssertCleanState()
@@ -275,13 +339,14 @@ func TestLoadImage_PullError(t *testing.T) {
 	// Verify outcome structure - early failure, no completed steps
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPullImage, o.Failed.Kind)
-	assert.Equal(t, "test.io/image:latest", o.Failed.Target)
-	assert.Empty(t, o.Completed)
-	assert.Empty(t, o.Skipped)
-	assert.Nil(t, o.Rollback)
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPullImage, failed.Kind)
+	assert.Equal(t, "test.io/image:latest", failed.Target)
+	assert.Empty(t, timelineCompletedPrimary(o.Timeline))
+	assert.Empty(t, timelineSkipped(o.Timeline))
+	assert.False(t, timelineHasRollback(o.Timeline))
 }
 
 func TestLoadImage_DiscoverError(t *testing.T) {
@@ -346,23 +411,25 @@ func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {
 	// Verify outcome structure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "trace_vfs_write", o.Failed.Target)
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "trace_vfs_write", failed.Target)
 
 	// Should have completed: image.pull, image.discover, kernel.load(fentry), store.save(fentry)
-	assert.Len(t, o.Completed, 4)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 4)
 
 	// Verify cleanup was recorded - fentry should be rolled back
-	require.NotNil(t, o.Rollback)
-	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
-	assert.Len(t, o.Rollback.Completed, 1)
-	assert.Equal(t, outcome.StepKindKernelUnload, o.Rollback.Completed[0].Kind)
-	assert.Equal(t, "trace_vfs_read", o.Rollback.Completed[0].Target)
+	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
+	assert.True(t, timelineHasRollback(o.Timeline))
+	assert.Len(t, rollbackCompleted, 1)
+	assert.Equal(t, outcome.StepKindKernelUnload, rollbackCompleted[0].Kind)
+	assert.Equal(t, "trace_vfs_read", rollbackCompleted[0].Target)
 
 	// SystemState should be clean after successful rollback
-	assert.Equal(t, "clean", o.SystemState())
+	assert.Equal(t, "clean", o.SystemState)
 
 	// Verify rollback: fentry program should be unloaded from both kernel and database
 	f.AssertCleanState()
@@ -412,22 +479,25 @@ func TestLoadImage_Rollback_FentryFexitFirstFails(t *testing.T) {
 	// Verify outcome structure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, "trace_vfs_read", o.Failed.Target)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, "trace_vfs_read", failed.Target)
 
 	// Should have completed: image.pull, image.discover (no kernel.load succeeded)
-	assert.Len(t, o.Completed, 2)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 2)
 
 	// Second program should be skipped
-	assert.Len(t, o.Skipped, 1)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Skipped[0].Kind)
-	assert.Equal(t, "trace_vfs_write", o.Skipped[0].Target)
+	skipped := timelineSkipped(o.Timeline)
+	assert.Len(t, skipped, 1)
+	assert.Equal(t, outcome.StepKindKernelLoad, skipped[0].Kind)
+	assert.Equal(t, "trace_vfs_write", skipped[0].Target)
 
 	// No cleanup needed (nothing successfully loaded)
-	assert.Nil(t, o.Rollback)
+	assert.False(t, timelineHasRollback(o.Timeline))
 
 	// SystemState should be clean (no residue)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.Equal(t, "clean", o.SystemState)
 
 	// Verify second program was never attempted
 	ops := f.Kernel.Operations()
@@ -468,23 +538,25 @@ func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 	// Verify outcome structure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "trace_vfs_write", o.Failed.Target)
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := timelineFindFailed(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "trace_vfs_write", failed.Target)
 
 	// Should have completed: image.pull, image.discover, kernel.load(xdp), store.save(xdp),
 	// kernel.load(fentry), store.save(fentry)
-	assert.Len(t, o.Completed, 6)
+	completed := timelineCompletedPrimary(o.Timeline)
+	assert.Len(t, completed, 6)
 
 	// Verify cleanup was recorded - xdp and fentry should be rolled back
-	require.NotNil(t, o.Rollback)
-	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
-	assert.Len(t, o.Rollback.Completed, 2, "should have 2 cleanup steps for xdp and fentry")
+	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
+	assert.True(t, timelineHasRollback(o.Timeline))
+	assert.Len(t, rollbackCompleted, 2, "should have 2 cleanup steps for xdp and fentry")
 
 	// SystemState should be clean after successful rollback
-	assert.Equal(t, "clean", o.SystemState())
-	assert.False(t, o.NeedsManualCleanup())
+	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, o.NeedsManualCleanup)
 
 	// Verify rollback: both xdp and fentry should be unloaded from both kernel and database
 	f.AssertCleanState()

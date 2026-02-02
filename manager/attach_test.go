@@ -15,6 +15,37 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
+// findFailedEntry returns the first failed entry from the timeline, or nil if none.
+func findFailedEntry(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
+	for i := range timeline {
+		if timeline[i].Status == outcome.StepStatusFailed {
+			return &timeline[i]
+		}
+	}
+	return nil
+}
+
+// countCompletedPrimary counts completed entries in the primary phase.
+func countCompletedPrimary(timeline []outcome.TimelineEntry) int {
+	count := 0
+	for _, e := range timeline {
+		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
+			count++
+		}
+	}
+	return count
+}
+
+// hasRollbackEntries returns true if there are any rollback phase entries.
+func hasRollbackEntries(timeline []outcome.TimelineEntry) bool {
+	for _, e := range timeline {
+		if e.Phase == outcome.PhaseRollback {
+			return true
+		}
+	}
+	return false
+}
+
 // =============================================================================
 // Fentry Lifecycle Tests
 // =============================================================================
@@ -845,13 +876,14 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	// Verify outcome records the failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "first_prog", o.Failed.Target)
-	assert.Empty(t, o.Completed)
-	assert.Nil(t, o.Rollback)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "first_prog", failed.Target)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.False(t, hasRollbackEntries(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 
 	// Verify clean state
 	fix.AssertCleanState()
@@ -887,11 +919,12 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	// Verify third load outcome records the failure
 	o := result3.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
-	assert.Equal(t, "third_prog", o.Failed.Target)
-	assert.Empty(t, o.Completed)
-	assert.Equal(t, "clean", o.SystemState())
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
+	assert.Equal(t, "third_prog", failed.Target)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
+	assert.Equal(t, "clean", o.SystemState)
 
 	// First two should still exist
 	listResult, err := fix.Manager.ListPrograms(ctx)
@@ -1702,10 +1735,11 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	// Verify outcome records the failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.NotEmpty(t, o.Failed.Error)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.NotEmpty(t, failed.Error)
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestTC_AttachToNonExistentInterface verifies that:
@@ -1737,10 +1771,11 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	// Verify outcome records the failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.NotEmpty(t, o.Failed.Error)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.NotEmpty(t, failed.Error)
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestTCX_AttachToNonExistentInterface verifies that:
@@ -1773,10 +1808,11 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	// Verify outcome records the failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.NotEmpty(t, o.Failed.Error)
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.NotEmpty(t, failed.Error)
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // =============================================================================
@@ -1805,11 +1841,12 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	// Verify outcome records the preflight failure
 	o := result.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.Error)
-	require.NotNil(t, o.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, o.Failed.Kind)
-	assert.Empty(t, o.Completed, "no steps should complete on preflight failure")
-	assert.Equal(t, "clean", o.SystemState())
+	assert.NotEmpty(t, o.PrimaryError)
+	failed := findFailedEntry(o.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.Equal(t, 0, countCompletedPrimary(o.Timeline), "no steps should complete on preflight failure")
+	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestGetLink_NonExistentLink_ReturnsNotFound verifies that:

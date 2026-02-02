@@ -3,8 +3,12 @@
 // It is a first-class description of what happened, intended for:
 //   - operators (human-readable failure reports)
 //   - automation (JSON output for CI/K8s)
-//   - post-mortems (what succeeded, what failed, what cleanup was attempted)
+//   - post-mortems (what succeeded, what failed, what rollback was attempted)
 //   - reconciliation logic (what residue remains)
+//
+// The outcome uses a "timeline-first" design: all steps (primary and rollback)
+// appear in a single ordered Timeline array. This makes it easy to understand
+// exactly what happened in chronological order.
 //
 // outcome is intentionally dumber than the manager. It does not know:
 //   - rollback policy
@@ -26,6 +30,23 @@ type Status string
 const (
 	StatusSuccess Status = "success"
 	StatusFailure Status = "failure"
+)
+
+// Phase indicates which phase of the operation a step belongs to.
+type Phase string
+
+const (
+	PhasePrimary  Phase = "primary"
+	PhaseRollback Phase = "rollback"
+)
+
+// StepStatus indicates whether a step completed, failed, or was skipped.
+type StepStatus string
+
+const (
+	StepStatusCompleted StepStatus = "completed"
+	StepStatusFailed    StepStatus = "failed"
+	StepStatusSkipped   StepStatus = "skipped"
 )
 
 // StepKind identifies the type of operation step.
@@ -82,53 +103,101 @@ const (
 	StepKindGCRemoveOrphan StepKind = "gc.remove_orphan"
 )
 
+// TimelineEntry represents a single step in the operation timeline.
+// All steps (primary and rollback) appear in chronological order.
+type TimelineEntry struct {
+	// Seq is the sequence number (1-based) for ordering.
+	Seq int `json:"seq"`
+
+	// Phase indicates whether this is a primary or rollback step.
+	Phase Phase `json:"phase"`
+
+	// Status indicates whether the step completed, failed, or was skipped.
+	Status StepStatus `json:"status"`
+
+	// Kind identifies what type of operation this step represents.
+	Kind StepKind `json:"kind"`
+
+	// Target identifies what the step operated on.
+	// Format depends on Kind (see Target Conventions in plan).
+	Target string `json:"target,omitempty"`
+
+	// Error is the error message if this step failed.
+	Error string `json:"error,omitempty"`
+
+	// Details contains operation-specific information.
+	// Must be JSON-serialisable.
+	Details any `json:"details,omitempty"`
+}
+
 // ManagerOperationOutcome represents the result of any multi-step operation.
 //
-// INVARIANT: Rollback never mutates Completed/Failed/Skipped. Once a step
-// is recorded in Completed, it remains there even if rollback succeeds.
-// The Rollback field separately tracks what rollback operations were attempted.
+// The timeline-first design puts all steps in a single ordered array,
+// making it easy to understand the sequence of events.
 type ManagerOperationOutcome struct {
 	// OpID is the correlation ID for log/trace correlation.
 	OpID uint64 `json:"op_id,omitempty"`
 
-	// Status indicates success or failure.
+	// Status indicates overall success or failure.
 	Status Status `json:"status"`
 
-	// Error is the public-facing error message (JSON-safe string).
-	// Set at the manager boundary to match the returned error.
-	Error string `json:"error,omitempty"`
+	// PrimaryError is the error from the primary operation (if failed).
+	PrimaryError string `json:"primary_error,omitempty"`
 
-	// Completed steps in the primary operation (immutable after recording).
-	Completed []Step `json:"completed,omitempty"`
+	// RollbackError is the error from the rollback phase (if rollback failed).
+	// Only populated when rollback was attempted and failed.
+	RollbackError string `json:"rollback_error,omitempty"`
 
-	// Failed is the step that caused the operation to fail.
-	Failed *Step `json:"failed,omitempty"`
+	// Timeline contains all steps in chronological order.
+	// Each entry has a phase (primary/rollback) and status (completed/failed/skipped).
+	Timeline []TimelineEntry `json:"timeline,omitempty"`
 
-	// Skipped steps that were not attempted due to earlier failure.
-	Skipped []Step `json:"skipped,omitempty"`
-
-	// Rollback tracks rollback operations (only populated if needed).
-	Rollback *RollbackOutcome `json:"rollback,omitempty"`
-
-	// Observed is the set of RESIDUE artefacts relevant to THIS operation
-	// that still exist at the end of the operation (after any cleanup was
-	// attempted). This is not a full system snapshot.
+	// Residual is the set of artefacts that still exist after the operation
+	// (including any rollback attempts). Populated by probing actual state.
 	//
-	// "Never lie" means Observed is populated by probing actual kernel/FS
-	// state, not inferred from step history. Observed MUST contain only
-	// unexpected leftovers (residue), not "things we successfully created".
+	// "Never lie" means Residual is populated by probing actual kernel/FS
+	// state, not inferred from step history. Residual MUST contain only
+	// unexpected leftovers, not "things we successfully created".
 	//
 	// Use `bpfman doctor` / `bpfman gc` for full system inspection.
-	Observed []Artefact `json:"observed,omitempty"`
+	Residual []Artefact `json:"residual,omitempty"`
 
-	// ObservedError is set when state probing fails.
+	// ResidualError is set when state probing fails.
 	// This prevents false "clean" reports when observation couldn't complete.
-	ObservedError string `json:"observed_error,omitempty"`
+	ResidualError string `json:"residual_error,omitempty"`
+
+	// SystemState is "clean", "inconsistent", or "unknown".
+	// Computed from Residual/ResidualError and stored for JSON output.
+	SystemState string `json:"system_state"`
+
+	// NeedsManualCleanup indicates operator intervention is required.
+	// True for "inconsistent" or "unknown" states on failure.
+	NeedsManualCleanup bool `json:"needs_manual_cleanup"`
+
+	// ManualCleanupCommands contains cleanup commands as argv slices.
+	// Only populated when NeedsManualCleanup is true and state is "inconsistent".
+	ManualCleanupCommands [][]string `json:"manual_cleanup_commands,omitempty"`
 }
 
-// SystemState returns "clean", "inconsistent", or "unknown" based on OBSERVED state.
+// Step is the internal representation used during recording.
+// It gets converted to TimelineEntry when added to the timeline.
+type Step struct {
+	// Kind identifies what type of operation this step represents.
+	Kind StepKind `json:"kind"`
+
+	// Target identifies what the step operated on.
+	Target string `json:"target,omitempty"`
+
+	// Details contains operation-specific information.
+	Details any `json:"details,omitempty"`
+
+	// Error is the error message if this step failed.
+	Error string `json:"error,omitempty"`
+}
+
+// ComputeSystemState returns "clean", "inconsistent", or "unknown" based on residual state.
 //
-// This method examines the Observed artefacts (populated by probing actual
+// This function examines the residual artefacts (populated by probing actual
 // kernel/filesystem state at operation end) rather than inferring from step
 // history. This implements the "never lie" principle.
 //
@@ -139,56 +208,44 @@ type ManagerOperationOutcome struct {
 //
 // IMPORTANT: Success implies clean BY CONTRACT, not by verification.
 // On success we skip probing (for performance) and report "clean" by definition.
-// Any latent inconsistency from a successful operation is detected by later
-// `bpfman doctor` or `bpfman gc` runs.
-func (o ManagerOperationOutcome) SystemState() string {
+func ComputeSystemState(status Status, residual []Artefact, residualError string) string {
 	// Success fast-path: clean by contract, no verification
-	if o.Status == StatusSuccess {
+	if status == StatusSuccess {
 		return "clean"
 	}
-	if o.ObservedError != "" {
+	if residualError != "" {
 		return "unknown"
 	}
-	if len(o.Observed) == 0 {
+	if len(residual) == 0 {
 		return "clean"
 	}
 	return "inconsistent"
 }
 
-// Started returns true if at least one real step was attempted.
-// Computed (not stored) to avoid drift.
-func (o ManagerOperationOutcome) Started() bool {
-	return len(o.Completed) > 0 || o.Failed != nil || len(o.Skipped) > 0
-}
-
-// NeedsManualCleanup returns true if operator intervention is required.
+// ComputeNeedsManualCleanup returns true if operator intervention is required.
 // Returns true for BOTH "inconsistent" (known residue) AND "unknown"
 // (observation failed) - in unknown case, operator must verify manually.
-func (o ManagerOperationOutcome) NeedsManualCleanup() bool {
-	if o.Status != StatusFailure {
+func ComputeNeedsManualCleanup(status Status, systemState string) bool {
+	if status != StatusFailure {
 		return false
 	}
-	// "unknown" means "assume manual verification/cleanup is required"
-	if o.ObservedError != "" {
-		return true
-	}
-	return len(o.Observed) > 0
+	return systemState == "inconsistent" || systemState == "unknown"
 }
 
-// ManualCleanupCommands returns cleanup commands as argv slices.
+// ComputeManualCleanupCommands returns cleanup commands as argv slices.
 //
 // Constraints:
-//   - ONLY returns commands when SystemState() == "inconsistent"
+//   - ONLY returns commands when systemState == "inconsistent"
 //   - Returns empty if "clean" (no residue)
 //   - Returns empty if "unknown" (incomplete observation undermines "never lie")
-//   - Generated from Observed artefacts (actual state), not step history
+//   - Generated from residual artefacts (actual state), not step history
 //   - Commands are idempotent (safe to run multiple times)
 //   - Commands use absolute identifiers (kernel IDs, not names)
 //   - DEDUPLICATE: Same kernel ID or pin path yields only one command
 //   - SUPPRESSION: program-level commands suppress lower-level commands
 //     for maps_dir / pins referring to the same logical program
-func (o ManagerOperationOutcome) ManualCleanupCommands() [][]string {
-	if o.SystemState() != "inconsistent" {
+func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]string {
+	if systemState != "inconsistent" {
 		return nil
 	}
 
@@ -198,7 +255,7 @@ func (o ManagerOperationOutcome) ManualCleanupCommands() [][]string {
 	needsGC := false
 
 	// First pass: collect program_pin with kernel_id (highest priority)
-	for _, a := range o.Observed {
+	for _, a := range residual {
 		if a.Kind == ArtefactProgramPin && a.KernelID != 0 {
 			if !seenKernelIDs[a.KernelID] {
 				seenKernelIDs[a.KernelID] = true
@@ -208,7 +265,7 @@ func (o ManagerOperationOutcome) ManualCleanupCommands() [][]string {
 	}
 
 	// Second pass: collect link_pin with link_id
-	for _, a := range o.Observed {
+	for _, a := range residual {
 		if a.Kind == ArtefactLinkPin && a.LinkID != 0 {
 			if !seenLinkIDs[a.LinkID] {
 				seenLinkIDs[a.LinkID] = true
@@ -219,7 +276,7 @@ func (o ManagerOperationOutcome) ManualCleanupCommands() [][]string {
 
 	// Third pass: check for residue that needs GC
 	// (maps_dir without associated kernel_id, orphan pins)
-	for _, a := range o.Observed {
+	for _, a := range residual {
 		switch a.Kind {
 		case ArtefactMapsDir:
 			// If we already have an unload command for this kernel_id, skip
@@ -248,30 +305,6 @@ func (o ManagerOperationOutcome) ManualCleanupCommands() [][]string {
 	}
 
 	return cmds
-}
-
-// Step represents a single operation step.
-type Step struct {
-	// Kind identifies what type of operation this step represents.
-	Kind StepKind `json:"kind"`
-
-	// Target identifies what the step operated on.
-	// Format depends on Kind (see Target Conventions in plan).
-	Target string `json:"target,omitempty"`
-
-	// Details contains operation-specific information.
-	// Must be JSON-serialisable.
-	Details any `json:"details,omitempty"`
-
-	// Error is the error message if this step failed.
-	Error string `json:"error,omitempty"`
-}
-
-// RollbackOutcome tracks rollback results.
-type RollbackOutcome struct {
-	Status    Status `json:"status"`
-	Completed []Step `json:"completed,omitempty"`
-	Failed    []Step `json:"failed,omitempty"`
 }
 
 // ArtefactKind identifies the type of residue artefact.

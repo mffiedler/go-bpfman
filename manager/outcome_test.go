@@ -12,6 +12,38 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
+// outcomeTestCompletedPrimary returns completed entries in the primary phase.
+func outcomeTestCompletedPrimary(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
+	var result []outcome.TimelineEntry
+	for _, e := range timeline {
+		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// outcomeTestFindFailed returns the first failed entry from the timeline, or nil if none.
+func outcomeTestFindFailed(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
+	for i := range timeline {
+		if timeline[i].Status == outcome.StepStatusFailed {
+			return &timeline[i]
+		}
+	}
+	return nil
+}
+
+// outcomeTestSkipped returns skipped entries from the timeline.
+func outcomeTestSkipped(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
+	var result []outcome.TimelineEntry
+	for _, e := range timeline {
+		if e.Status == outcome.StepStatusSkipped {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
 // TestLoad_Success_OutcomeTracksCompletedSteps verifies that a successful
 // load operation records the completed steps in the outcome.
 func TestLoad_Success_OutcomeTracksCompletedSteps(t *testing.T) {
@@ -26,21 +58,22 @@ func TestLoad_Success_OutcomeTracksCompletedSteps(t *testing.T) {
 
 	// Verify outcome indicates success
 	assert.Equal(t, outcome.StatusSuccess, result.Outcome.Status)
-	assert.Empty(t, result.Outcome.Error)
+	assert.Empty(t, result.Outcome.PrimaryError)
 
 	// Verify completed steps
-	assert.Len(t, result.Outcome.Completed, 2, "expected 2 completed steps: kernel.load_program and store.save_program")
+	completed := outcomeTestCompletedPrimary(result.Outcome.Timeline)
+	assert.Len(t, completed, 2, "expected 2 completed steps: kernel.load_program and store.save_program")
 
 	// First step should be kernel load
-	assert.Equal(t, outcome.StepKindKernelLoad, result.Outcome.Completed[0].Kind)
-	assert.Equal(t, "test_prog", result.Outcome.Completed[0].Target)
+	assert.Equal(t, outcome.StepKindKernelLoad, completed[0].Kind)
+	assert.Equal(t, "test_prog", completed[0].Target)
 
 	// Second step should be store save
-	assert.Equal(t, outcome.StepKindStoreSaveProgram, result.Outcome.Completed[1].Kind)
+	assert.Equal(t, outcome.StepKindStoreSaveProgram, completed[1].Kind)
 
 	// No failed or skipped steps
-	assert.Nil(t, result.Outcome.Failed)
-	assert.Empty(t, result.Outcome.Skipped)
+	assert.Nil(t, outcomeTestFindFailed(result.Outcome.Timeline))
+	assert.Empty(t, outcomeTestSkipped(result.Outcome.Timeline))
 }
 
 // TestUnload_Success_OutcomeTracksSteps verifies that a successful unload
@@ -62,14 +95,15 @@ func TestUnload_Success_OutcomeTracksSteps(t *testing.T) {
 
 	// Verify outcome indicates success
 	assert.Equal(t, outcome.StatusSuccess, unloadResult.Outcome.Status)
-	assert.Empty(t, unloadResult.Outcome.Error)
+	assert.Empty(t, unloadResult.Outcome.PrimaryError)
 
 	// Verify completed steps include unload operations
-	assert.NotEmpty(t, unloadResult.Outcome.Completed)
+	completed := outcomeTestCompletedPrimary(unloadResult.Outcome.Timeline)
+	assert.NotEmpty(t, completed)
 
 	// No failed or skipped steps on success
-	assert.Nil(t, unloadResult.Outcome.Failed)
-	assert.Empty(t, unloadResult.Outcome.Skipped)
+	assert.Nil(t, outcomeTestFindFailed(unloadResult.Outcome.Timeline))
+	assert.Empty(t, outcomeTestSkipped(unloadResult.Outcome.Timeline))
 }
 
 // TestDetach_NotFound_OutcomeRecordsFailure verifies that a detach
@@ -83,15 +117,16 @@ func TestDetach_NotFound_OutcomeRecordsFailure(t *testing.T) {
 
 	// Verify outcome indicates failure
 	assert.Equal(t, outcome.StatusFailure, result.Outcome.Status)
-	assert.NotEmpty(t, result.Outcome.Error)
+	assert.NotEmpty(t, result.Outcome.PrimaryError)
 
 	// Verify failed step is recorded
-	require.NotNil(t, result.Outcome.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, result.Outcome.Failed.Kind)
-	assert.NotEmpty(t, result.Outcome.Failed.Error)
+	failed := outcomeTestFindFailed(result.Outcome.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
+	assert.NotEmpty(t, failed.Error)
 
 	// System state should be clean (no residue on preflight failure)
-	assert.Equal(t, "clean", result.Outcome.SystemState())
+	assert.Equal(t, "clean", result.Outcome.SystemState)
 }
 
 // TestUnload_NotFound_OutcomeRecordsFailure verifies that an unload
@@ -105,14 +140,15 @@ func TestUnload_NotFound_OutcomeRecordsFailure(t *testing.T) {
 
 	// Verify outcome indicates failure
 	assert.Equal(t, outcome.StatusFailure, result.Outcome.Status)
-	assert.NotEmpty(t, result.Outcome.Error)
+	assert.NotEmpty(t, result.Outcome.PrimaryError)
 
 	// Verify failed step is recorded
-	require.NotNil(t, result.Outcome.Failed)
-	assert.Equal(t, outcome.StepKindPreflight, result.Outcome.Failed.Kind)
+	failed := outcomeTestFindFailed(result.Outcome.Timeline)
+	require.NotNil(t, failed)
+	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
 
 	// System state should be clean (no residue on preflight failure)
-	assert.Equal(t, "clean", result.Outcome.SystemState())
+	assert.Equal(t, "clean", result.Outcome.SystemState)
 }
 
 // TestAttachTracepoint_Success_OutcomeTracksSteps verifies that a successful
@@ -137,12 +173,13 @@ func TestAttachTracepoint_Success_OutcomeTracksSteps(t *testing.T) {
 
 	// Verify outcome indicates success
 	assert.Equal(t, outcome.StatusSuccess, attachResult.Outcome.Status)
-	assert.Empty(t, attachResult.Outcome.Error)
+	assert.Empty(t, attachResult.Outcome.PrimaryError)
 
 	// Verify completed steps
-	assert.Len(t, attachResult.Outcome.Completed, 2)
-	assert.Equal(t, outcome.StepKindAttachTracepoint, attachResult.Outcome.Completed[0].Kind)
-	assert.Equal(t, outcome.StepKindStoreSaveLink, attachResult.Outcome.Completed[1].Kind)
+	completed := outcomeTestCompletedPrimary(attachResult.Outcome.Timeline)
+	assert.Len(t, completed, 2)
+	assert.Equal(t, outcome.StepKindAttachTracepoint, completed[0].Kind)
+	assert.Equal(t, outcome.StepKindStoreSaveLink, completed[1].Kind)
 }
 
 // TestGC_Success_OutcomeTracksPhases verifies that GC records both
@@ -156,14 +193,15 @@ func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 
 	// Verify outcome indicates success
 	assert.Equal(t, outcome.StatusSuccess, result.Outcome.Status)
-	assert.Empty(t, result.Outcome.Error)
+	assert.Empty(t, result.Outcome.PrimaryError)
 
 	// Verify Phase 1 steps (store GC)
-	require.GreaterOrEqual(t, len(result.Outcome.Completed), 3, "expected at least 3 store GC steps")
+	completed := outcomeTestCompletedPrimary(result.Outcome.Timeline)
+	require.GreaterOrEqual(t, len(completed), 3, "expected at least 3 store GC steps")
 
 	// Check for store GC step kinds
 	stepKinds := make(map[outcome.StepKind]bool)
-	for _, step := range result.Outcome.Completed {
+	for _, step := range completed {
 		stepKinds[step.Kind] = true
 	}
 	assert.True(t, stepKinds[outcome.StepKindStoreGCPrograms], "missing store.gc_programs step")
@@ -172,7 +210,7 @@ func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 }
 
 // TestOutcome_SystemStateReflectsActualState verifies that the outcome's
-// SystemState() method correctly reflects the actual system state after
+// SystemState field correctly reflects the actual system state after
 // an operation.
 func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	fix := newTestFixture(t)
@@ -189,14 +227,14 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	require.NoError(t, err)
 
 	// SystemState should be clean
-	assert.Equal(t, "clean", unloadResult.Outcome.SystemState())
+	assert.Equal(t, "clean", unloadResult.Outcome.SystemState)
 
 	// Verify actual state matches reported state
 	fix.AssertCleanState()
 }
 
 // TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess verifies that
-// NeedsManualCleanup() returns false for successful operations.
+// NeedsManualCleanup returns false for successful operations.
 func TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -207,7 +245,7 @@ func TestOutcome_NeedsManualCleanupReturnsFalseOnSuccess(t *testing.T) {
 	result, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	assert.False(t, result.Outcome.NeedsManualCleanup())
+	assert.False(t, result.Outcome.NeedsManualCleanup)
 }
 
 // TestOutcome_Started verifies that the Started() method correctly
@@ -220,5 +258,6 @@ func TestOutcome_Started(t *testing.T) {
 	result, err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
 	require.Error(t, err)
 
-	assert.True(t, result.Outcome.Started(), "preflight failure should count as started")
+	// Timeline should have at least one entry (the failed step)
+	assert.NotEmpty(t, result.Outcome.Timeline, "preflight failure should have timeline entry")
 }
