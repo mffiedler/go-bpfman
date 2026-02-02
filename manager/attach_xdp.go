@@ -288,9 +288,9 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -301,7 +301,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{

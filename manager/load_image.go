@@ -144,14 +144,14 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		if len(result.Programs) == 0 {
 			return // Nothing to clean up
 		}
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		for _, loaded := range result.Programs {
 			if _, err := m.Unload(ctx, loaded.Kernel.ID); err != nil {
 				m.logger.WarnContext(ctx, "rollback: failed to unload program",
 					"kernel_id", loaded.Kernel.ID,
 					"name", loaded.Kernel.Name,
 					"error", err)
-				_ = rec.CleanupFail(outcome.Step{
+				_ = rec.RollbackFail(outcome.Step{
 					Kind:   outcome.StepKindKernelUnload,
 					Target: loaded.Kernel.Name,
 					Details: outcome.ProgramDetails{
@@ -164,7 +164,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				m.logger.DebugContext(ctx, "rollback: unloaded program",
 					"kernel_id", loaded.Kernel.ID,
 					"name", loaded.Kernel.Name)
-				_ = rec.CleanupComplete(outcome.Step{
+				_ = rec.RollbackComplete(outcome.Step{
 					Kind:   outcome.StepKindKernelUnload,
 					Target: loaded.Kernel.Name,
 					Details: outcome.ProgramDetails{

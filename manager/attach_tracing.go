@@ -100,9 +100,9 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -113,7 +113,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -245,9 +245,9 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -258,7 +258,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -420,9 +420,9 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -433,7 +433,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -577,9 +577,9 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -590,7 +590,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -727,9 +727,9 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -740,7 +740,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{

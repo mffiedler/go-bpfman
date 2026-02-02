@@ -850,7 +850,7 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	assert.Equal(t, outcome.StepKindKernelLoad, o.Failed.Kind)
 	assert.Equal(t, "first_prog", o.Failed.Target)
 	assert.Empty(t, o.Completed)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 	assert.Equal(t, "clean", o.SystemState())
 
 	// Verify clean state

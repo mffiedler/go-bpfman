@@ -390,7 +390,7 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	assert.Empty(t, o.Completed)
 
 	// No cleanup needed (nothing was created before failure)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 
 	// SystemState should be clean (failure on first step, nothing to clean)
 	assert.Equal(t, "clean", o.SystemState())
@@ -435,7 +435,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 
 	// No steps completed before failure
 	assert.Empty(t, o.Completed)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 
 	// SystemState should be clean
 	assert.Equal(t, "clean", o.SystemState())
@@ -531,7 +531,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	assert.Empty(t, o.Completed)
 
 	// No cleanup needed (nothing was created)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 
 	// SystemState should be clean
 	assert.Equal(t, "clean", o.SystemState())
@@ -728,7 +728,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	assert.Empty(t, o.Completed)
 
 	// No cleanup needed
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 
 	// Verify the link still exists in the fake kernel (was not deleted)
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "link should still exist in kernel after failed detach")

@@ -144,10 +144,10 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Error: storeErr.Error(),
 		})
 
-		// Attempt cleanup
-		rec.BeginCleanup()
+		// Attempt rollback
+		rec.BeginRollback()
 		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
 				Details: outcome.ProgramDetails{
@@ -159,7 +159,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
 				Details: outcome.ProgramDetails{

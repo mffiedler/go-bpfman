@@ -313,9 +313,9 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -326,7 +326,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -542,9 +542,9 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			Error: storeErr.Error(),
 		})
 
-		rec.BeginCleanup()
+		rec.BeginRollback()
 		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			_ = rec.CleanupFail(outcome.Step{
+			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{
@@ -555,7 +555,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 			})
 			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
-			_ = rec.CleanupComplete(outcome.Step{
+			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
 				Details: outcome.LinkDetails{

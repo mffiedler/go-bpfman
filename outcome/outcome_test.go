@@ -369,7 +369,7 @@ func TestRecorder_DoubleFailReturnsError(t *testing.T) {
 	}
 }
 
-func TestRecorder_Cleanup(t *testing.T) {
+func TestRecorder_Rollback(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
@@ -377,59 +377,59 @@ func TestRecorder_Cleanup(t *testing.T) {
 	failStep := outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"}
 	_ = rec.Fail(failStep)
 
-	// Begin cleanup
-	rec.BeginCleanup()
+	// Begin rollback
+	rec.BeginRollback()
 
-	// Record cleanup step
-	cleanupStep := outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "test_prog"}
-	if err := rec.CleanupComplete(cleanupStep); err != nil {
-		t.Fatalf("CleanupComplete() failed: %v", err)
+	// Record rollback step
+	rollbackStep := outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "test_prog"}
+	if err := rec.RollbackComplete(rollbackStep); err != nil {
+		t.Fatalf("RollbackComplete() failed: %v", err)
 	}
 
-	if out.Cleanup == nil {
-		t.Fatal("Cleanup is nil")
+	if out.Rollback == nil {
+		t.Fatal("Rollback is nil")
 	}
-	if out.Cleanup.Status != outcome.StatusSuccess {
-		t.Errorf("Cleanup.Status = %q, want %q", out.Cleanup.Status, outcome.StatusSuccess)
+	if out.Rollback.Status != outcome.StatusSuccess {
+		t.Errorf("Rollback.Status = %q, want %q", out.Rollback.Status, outcome.StatusSuccess)
 	}
-	if len(out.Cleanup.Completed) != 1 {
-		t.Errorf("Cleanup.Completed has %d steps, want 1", len(out.Cleanup.Completed))
+	if len(out.Rollback.Completed) != 1 {
+		t.Errorf("Rollback.Completed has %d steps, want 1", len(out.Rollback.Completed))
 	}
 }
 
-func TestRecorder_CleanupFailFlipsStatus(t *testing.T) {
+func TestRecorder_RollbackFailFlipsStatus(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"})
-	rec.BeginCleanup()
+	rec.BeginRollback()
 
-	failedCleanup := outcome.Step{Kind: outcome.StepKindKernelUnload, Error: "permission denied"}
-	if err := rec.CleanupFail(failedCleanup); err != nil {
-		t.Fatalf("CleanupFail() failed: %v", err)
+	failedRollback := outcome.Step{Kind: outcome.StepKindKernelUnload, Error: "permission denied"}
+	if err := rec.RollbackFail(failedRollback); err != nil {
+		t.Fatalf("RollbackFail() failed: %v", err)
 	}
 
-	if out.Cleanup.Status != outcome.StatusFailure {
-		t.Errorf("Cleanup.Status = %q, want %q", out.Cleanup.Status, outcome.StatusFailure)
+	if out.Rollback.Status != outcome.StatusFailure {
+		t.Errorf("Rollback.Status = %q, want %q", out.Rollback.Status, outcome.StatusFailure)
 	}
-	if len(out.Cleanup.Failed) != 1 {
-		t.Errorf("Cleanup.Failed has %d steps, want 1", len(out.Cleanup.Failed))
+	if len(out.Rollback.Failed) != 1 {
+		t.Errorf("Rollback.Failed has %d steps, want 1", len(out.Rollback.Failed))
 	}
 }
 
-func TestRecorder_CleanupWithoutBeginReturnsError(t *testing.T) {
+func TestRecorder_RollbackWithoutBeginReturnsError(t *testing.T) {
 	var out outcome.ManagerOperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	step := outcome.Step{Kind: outcome.StepKindKernelUnload}
-	err := rec.CleanupComplete(step)
-	if !errors.Is(err, outcome.ErrCleanupNotActive) {
-		t.Errorf("CleanupComplete() without BeginCleanup() returned %v, want ErrCleanupNotActive", err)
+	err := rec.RollbackComplete(step)
+	if !errors.Is(err, outcome.ErrRollbackNotActive) {
+		t.Errorf("RollbackComplete() without BeginRollback() returned %v, want ErrRollbackNotActive", err)
 	}
 
-	err = rec.CleanupFail(step)
-	if !errors.Is(err, outcome.ErrCleanupNotActive) {
-		t.Errorf("CleanupFail() without BeginCleanup() returned %v, want ErrCleanupNotActive", err)
+	err = rec.RollbackFail(step)
+	if !errors.Is(err, outcome.ErrRollbackNotActive) {
+		t.Errorf("RollbackFail() without BeginRollback() returned %v, want ErrRollbackNotActive", err)
 	}
 }
 
@@ -508,12 +508,12 @@ func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
 	}
 }
 
-func TestRecorder_Validate_CleanupSuccessWithFailedSteps(t *testing.T) {
+func TestRecorder_Validate_RollbackSuccessWithFailedSteps(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
 		Status: outcome.StatusFailure,
 		Failed: &outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"},
 		Error:  "boom",
-		Cleanup: &outcome.CleanupOutcome{
+		Rollback: &outcome.RollbackOutcome{
 			Status: outcome.StatusSuccess,
 			Failed: []outcome.Step{{Kind: outcome.StepKindKernelUnload}},
 		},
@@ -522,7 +522,7 @@ func TestRecorder_Validate_CleanupSuccessWithFailedSteps(t *testing.T) {
 
 	err := rec.Validate()
 	if err == nil {
-		t.Error("Validate() should fail for cleanup success with failed steps")
+		t.Error("Validate() should fail for rollback success with failed steps")
 	}
 }
 
@@ -579,7 +579,7 @@ func TestOutcomeJSONSerialization(t *testing.T) {
 		Skipped: []outcome.Step{
 			{Kind: outcome.StepKindKernelLoad, Target: "prog_c"},
 		},
-		Cleanup: &outcome.CleanupOutcome{
+		Rollback: &outcome.RollbackOutcome{
 			Status: outcome.StatusSuccess,
 			Completed: []outcome.Step{
 				{
@@ -617,8 +617,8 @@ func TestOutcomeJSONSerialization(t *testing.T) {
 	if len(decoded.Skipped) != 1 {
 		t.Errorf("Skipped has %d items, want 1", len(decoded.Skipped))
 	}
-	if decoded.Cleanup == nil {
-		t.Error("Cleanup is nil")
+	if decoded.Rollback == nil {
+		t.Error("Rollback is nil")
 	}
 }
 

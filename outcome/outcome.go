@@ -84,9 +84,9 @@ const (
 
 // ManagerOperationOutcome represents the result of any multi-step operation.
 //
-// INVARIANT: Cleanup never mutates Completed/Failed/Skipped. Once a step
-// is recorded in Completed, it remains there even if cleanup succeeds.
-// The Cleanup field separately tracks what cleanup operations were attempted.
+// INVARIANT: Rollback never mutates Completed/Failed/Skipped. Once a step
+// is recorded in Completed, it remains there even if rollback succeeds.
+// The Rollback field separately tracks what rollback operations were attempted.
 type ManagerOperationOutcome struct {
 	// OpID is the correlation ID for log/trace correlation.
 	OpID uint64 `json:"op_id,omitempty"`
@@ -107,8 +107,8 @@ type ManagerOperationOutcome struct {
 	// Skipped steps that were not attempted due to earlier failure.
 	Skipped []Step `json:"skipped,omitempty"`
 
-	// Cleanup tracks rollback/cleanup operations (only populated if needed).
-	Cleanup *CleanupOutcome `json:"cleanup,omitempty"`
+	// Rollback tracks rollback operations (only populated if needed).
+	Rollback *RollbackOutcome `json:"rollback,omitempty"`
 
 	// Observed is the set of RESIDUE artefacts relevant to THIS operation
 	// that still exist at the end of the operation (after any cleanup was
@@ -267,8 +267,8 @@ type Step struct {
 	Error string `json:"error,omitempty"`
 }
 
-// CleanupOutcome tracks rollback/cleanup results.
-type CleanupOutcome struct {
+// RollbackOutcome tracks rollback results.
+type RollbackOutcome struct {
 	Status    Status `json:"status"`
 	Completed []Step `json:"completed,omitempty"`
 	Failed    []Step `json:"failed,omitempty"`

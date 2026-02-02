@@ -896,15 +896,15 @@ func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
 	}
 
 	// Cleanup outcome
-	if o.Cleanup != nil {
-		fmt.Fprintf(&b, "Cleanup: %s\n", strings.ToUpper(string(o.Cleanup.Status)))
-		if len(o.Cleanup.Completed) > 0 {
-			for _, step := range o.Cleanup.Completed {
+	if o.Rollback != nil {
+		fmt.Fprintf(&b, "Rollback: %s\n", strings.ToUpper(string(o.Rollback.Status)))
+		if len(o.Rollback.Completed) > 0 {
+			for _, step := range o.Rollback.Completed {
 				fmt.Fprintf(&b, "  [%s] %s%s\n", step.Kind, step.Target, formatStepDetails(step.Details))
 			}
 		}
-		if len(o.Cleanup.Failed) > 0 {
-			for _, step := range o.Cleanup.Failed {
+		if len(o.Rollback.Failed) > 0 {
+			for _, step := range o.Rollback.Failed {
 				fmt.Fprintf(&b, "  [%s] %s", step.Kind, step.Target)
 				if step.Error != "" {
 					fmt.Fprintf(&b, ": %s", step.Error)

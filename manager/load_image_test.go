@@ -37,7 +37,7 @@ func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 	assert.Equal(t, outcome.StatusSuccess, o.Status)
 	assert.Empty(t, o.Error)
 	assert.Nil(t, o.Failed)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 	assert.Empty(t, o.Skipped)
 	// Should have: image.pull, image.discover, kernel.load, store.save
 	assert.Len(t, o.Completed, 4)
@@ -180,11 +180,11 @@ func TestLoadImage_Rollback_SecondProgramFails(t *testing.T) {
 	assert.Empty(t, o.Skipped)
 
 	// Verify cleanup was recorded
-	require.NotNil(t, o.Cleanup)
-	assert.Equal(t, outcome.StatusSuccess, o.Cleanup.Status)
-	assert.Len(t, o.Cleanup.Completed, 1)
-	assert.Equal(t, outcome.StepKindKernelUnload, o.Cleanup.Completed[0].Kind)
-	assert.Equal(t, "prog_a", o.Cleanup.Completed[0].Target)
+	require.NotNil(t, o.Rollback)
+	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
+	assert.Len(t, o.Rollback.Completed, 1)
+	assert.Equal(t, outcome.StepKindKernelUnload, o.Rollback.Completed[0].Kind)
+	assert.Equal(t, "prog_a", o.Rollback.Completed[0].Target)
 
 	// SystemState should be clean after successful cleanup
 	assert.Equal(t, "clean", o.SystemState())
@@ -246,9 +246,9 @@ func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 	assert.Len(t, o.Completed, 6)
 
 	// Verify cleanup was recorded - prog_a and prog_b should be rolled back
-	require.NotNil(t, o.Cleanup)
-	assert.Equal(t, outcome.StatusSuccess, o.Cleanup.Status)
-	assert.Len(t, o.Cleanup.Completed, 2, "should have 2 cleanup steps for prog_a and prog_b")
+	require.NotNil(t, o.Rollback)
+	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
+	assert.Len(t, o.Rollback.Completed, 2, "should have 2 cleanup steps for prog_a and prog_b")
 
 	// SystemState should be clean after successful rollback
 	assert.Equal(t, "clean", o.SystemState())
@@ -281,7 +281,7 @@ func TestLoadImage_PullError(t *testing.T) {
 	assert.Equal(t, "test.io/image:latest", o.Failed.Target)
 	assert.Empty(t, o.Completed)
 	assert.Empty(t, o.Skipped)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 }
 
 func TestLoadImage_DiscoverError(t *testing.T) {
@@ -355,11 +355,11 @@ func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {
 	assert.Len(t, o.Completed, 4)
 
 	// Verify cleanup was recorded - fentry should be rolled back
-	require.NotNil(t, o.Cleanup)
-	assert.Equal(t, outcome.StatusSuccess, o.Cleanup.Status)
-	assert.Len(t, o.Cleanup.Completed, 1)
-	assert.Equal(t, outcome.StepKindKernelUnload, o.Cleanup.Completed[0].Kind)
-	assert.Equal(t, "trace_vfs_read", o.Cleanup.Completed[0].Target)
+	require.NotNil(t, o.Rollback)
+	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
+	assert.Len(t, o.Rollback.Completed, 1)
+	assert.Equal(t, outcome.StepKindKernelUnload, o.Rollback.Completed[0].Kind)
+	assert.Equal(t, "trace_vfs_read", o.Rollback.Completed[0].Target)
 
 	// SystemState should be clean after successful rollback
 	assert.Equal(t, "clean", o.SystemState())
@@ -424,7 +424,7 @@ func TestLoadImage_Rollback_FentryFexitFirstFails(t *testing.T) {
 	assert.Equal(t, "trace_vfs_write", o.Skipped[0].Target)
 
 	// No cleanup needed (nothing successfully loaded)
-	assert.Nil(t, o.Cleanup)
+	assert.Nil(t, o.Rollback)
 
 	// SystemState should be clean (no residue)
 	assert.Equal(t, "clean", o.SystemState())
@@ -478,9 +478,9 @@ func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 	assert.Len(t, o.Completed, 6)
 
 	// Verify cleanup was recorded - xdp and fentry should be rolled back
-	require.NotNil(t, o.Cleanup)
-	assert.Equal(t, outcome.StatusSuccess, o.Cleanup.Status)
-	assert.Len(t, o.Cleanup.Completed, 2, "should have 2 cleanup steps for xdp and fentry")
+	require.NotNil(t, o.Rollback)
+	assert.Equal(t, outcome.StatusSuccess, o.Rollback.Status)
+	assert.Len(t, o.Rollback.Completed, 2, "should have 2 cleanup steps for xdp and fentry")
 
 	// SystemState should be clean after successful rollback
 	assert.Equal(t, "clean", o.SystemState())

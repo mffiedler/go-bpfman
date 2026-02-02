@@ -10,8 +10,8 @@ var (
 	// ErrAlreadyFailed is returned when attempting to record a step after failure.
 	ErrAlreadyFailed = errors.New("outcome already failed")
 
-	// ErrCleanupNotActive is returned when recording cleanup steps without BeginCleanup.
-	ErrCleanupNotActive = errors.New("cleanup not active")
+	// ErrRollbackNotActive is returned when recording rollback steps without BeginRollback.
+	ErrRollbackNotActive = errors.New("rollback not active")
 )
 
 // ManagerOperationRecorder appends steps to a ManagerOperationOutcome while enforcing invariants.
@@ -75,29 +75,29 @@ func (r ManagerOperationRecorder) Fail(step Step) error {
 	return nil
 }
 
-// BeginCleanup initialises Cleanup if needed. Idempotent.
-func (r ManagerOperationRecorder) BeginCleanup() {
-	if r.o.Cleanup == nil {
-		r.o.Cleanup = &CleanupOutcome{Status: StatusSuccess}
+// BeginRollback initialises Rollback if needed. Idempotent.
+func (r ManagerOperationRecorder) BeginRollback() {
+	if r.o.Rollback == nil {
+		r.o.Rollback = &RollbackOutcome{Status: StatusSuccess}
 	}
 }
 
-// CleanupComplete records a successful cleanup step.
-func (r ManagerOperationRecorder) CleanupComplete(step Step) error {
-	if r.o.Cleanup == nil {
-		return ErrCleanupNotActive
+// RollbackComplete records a successful cleanup step.
+func (r ManagerOperationRecorder) RollbackComplete(step Step) error {
+	if r.o.Rollback == nil {
+		return ErrRollbackNotActive
 	}
-	r.o.Cleanup.Completed = append(r.o.Cleanup.Completed, step)
+	r.o.Rollback.Completed = append(r.o.Rollback.Completed, step)
 	return nil
 }
 
-// CleanupFail records a failed cleanup step and flips cleanup status.
-func (r ManagerOperationRecorder) CleanupFail(step Step) error {
-	if r.o.Cleanup == nil {
-		return ErrCleanupNotActive
+// RollbackFail records a failed cleanup step and flips cleanup status.
+func (r ManagerOperationRecorder) RollbackFail(step Step) error {
+	if r.o.Rollback == nil {
+		return ErrRollbackNotActive
 	}
-	r.o.Cleanup.Status = StatusFailure
-	r.o.Cleanup.Failed = append(r.o.Cleanup.Failed, step)
+	r.o.Rollback.Status = StatusFailure
+	r.o.Rollback.Failed = append(r.o.Rollback.Failed, step)
 	return nil
 }
 
@@ -121,8 +121,8 @@ func (r ManagerOperationRecorder) Validate() error {
 	if o.Status == StatusFailure && o.Failed == nil && o.Error == "" {
 		return errors.New("failure outcome has neither failed step nor error")
 	}
-	if o.Cleanup != nil {
-		if o.Cleanup.Status == StatusSuccess && len(o.Cleanup.Failed) != 0 {
+	if o.Rollback != nil {
+		if o.Rollback.Status == StatusSuccess && len(o.Rollback.Failed) != 0 {
 			return errors.New("cleanup success has failed steps")
 		}
 	}
@@ -153,13 +153,13 @@ func (r ManagerOperationRecorder) Validate() error {
 			return err
 		}
 	}
-	if o.Cleanup != nil {
-		for _, s := range o.Cleanup.Completed {
+	if o.Rollback != nil {
+		for _, s := range o.Rollback.Completed {
 			if err := validateStep(s, "cleanup.completed"); err != nil {
 				return err
 			}
 		}
-		for _, s := range o.Cleanup.Failed {
+		for _, s := range o.Rollback.Failed {
 			if err := validateStep(s, "cleanup.failed"); err != nil {
 				return err
 			}
