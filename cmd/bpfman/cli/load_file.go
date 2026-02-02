@@ -155,6 +155,13 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		if result.FailedOutcome != nil {
 			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
 			if fmtErr == nil {
+				format, _ := c.OutputFlags.Format()
+				if format == OutputFormatJSON || format == OutputFormatJSONPath {
+					// JSON goes to stdout for machine parsing; return ErrSilent
+					// to suppress the additional "bpfman: error:" message
+					_ = cli.PrintOut(outcomeStr)
+					return ErrSilent
+				}
 				_ = cli.PrintErr(outcomeStr)
 			}
 		}

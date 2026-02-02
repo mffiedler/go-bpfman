@@ -30,6 +30,11 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 		if result.Outcome.Status != "" {
 			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &c.OutputFlags)
 			if fmtErr == nil {
+				format, _ := c.OutputFlags.Format()
+				if format == OutputFormatJSON || format == OutputFormatJSONPath {
+					_ = cli.PrintOut(outcomeStr)
+					return ErrSilent
+				}
 				_ = cli.PrintErr(outcomeStr)
 			}
 		}

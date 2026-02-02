@@ -162,9 +162,13 @@ func Run(ctx context.Context) {
 	// Handle errors ourselves to use injected writers instead of Kong's
 	// default os.Stderr. This ensures I/O error propagation is consistent.
 	if err := kctx.Run(&c); err != nil {
-		// Attempt to write error to stderr. If stderr write fails, we still
-		// exit with code 1 - there's nothing more useful we can do.
-		_ = c.PrintErrf("bpfman: error: %v\n", err)
+		// ErrSilent means the error was already communicated (e.g., via JSON)
+		// so we exit non-zero without printing anything additional.
+		if !errors.Is(err, ErrSilent) {
+			// Attempt to write error to stderr. If stderr write fails, we still
+			// exit with code 1 - there's nothing more useful we can do.
+			_ = c.PrintErrf("bpfman: error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }

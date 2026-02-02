@@ -1,9 +1,15 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrSilent is returned when the error has already been communicated
+// (e.g., via JSON output) and cli.go should exit non-zero without
+// printing an additional error message.
+var ErrSilent = errors.New("silent error")
 
 // DryRunFlag provides a --dry-run flag for commands that support it.
 type DryRunFlag struct {

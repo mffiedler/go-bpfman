@@ -130,6 +130,11 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		if result.FailedOutcome != nil {
 			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
 			if fmtErr == nil {
+				format, _ := c.OutputFlags.Format()
+				if format == OutputFormatJSON || format == OutputFormatJSONPath {
+					_ = cli.PrintOut(outcomeStr)
+					return ErrSilent
+				}
 				_ = cli.PrintErr(outcomeStr)
 			}
 		}
