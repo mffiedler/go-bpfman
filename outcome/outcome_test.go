@@ -163,7 +163,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 		name        string
 		systemState string
 		residual    []outcome.Artefact
-		expected    []string
+		expected    [][]string
 	}{
 		{
 			name:        "clean state returns nil",
@@ -181,7 +181,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
-			expected: []string{"bpfman unload 123"},
+			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
 			name:        "link_pin with link_id returns detach command",
@@ -189,7 +189,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
 			},
-			expected: []string{"bpfman detach --id 456"},
+			expected: [][]string{{"bpfman", "detach", "--id", "456"}},
 		},
 		{
 			name:        "deduplicates same kernel_id",
@@ -198,7 +198,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 			},
-			expected: []string{"bpfman unload 123"},
+			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
 			name:        "suppresses maps_dir for same kernel_id",
@@ -207,7 +207,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 				{Kind: outcome.ArtefactMapsDir, KernelID: 123, Path: "/sys/fs/bpf/bpfman/123/maps"},
 			},
-			expected: []string{"bpfman unload 123"},
+			expected: [][]string{{"bpfman", "unload", "123"}},
 		},
 		{
 			name:        "maps_dir without kernel_id triggers gc",
@@ -215,7 +215,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactMapsDir, Path: "/sys/fs/bpf/bpfman/orphan/maps"},
 			},
-			expected: []string{"bpfman gc"},
+			expected: [][]string{{"bpfman", "gc"}},
 		},
 		{
 			name:        "dispatcher triggers gc",
@@ -223,7 +223,7 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 			residual: []outcome.Artefact{
 				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
-			expected: []string{"bpfman gc"},
+			expected: [][]string{{"bpfman", "gc"}},
 		},
 		{
 			name:        "mixed artefacts returns multiple commands",
@@ -233,10 +233,10 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 				{Kind: outcome.ArtefactLinkPin, LinkID: 456},
 				{Kind: outcome.ArtefactDispatcher, KernelID: 789},
 			},
-			expected: []string{
-				"bpfman unload 123",
-				"bpfman detach --id 456",
-				"bpfman gc",
+			expected: [][]string{
+				{"bpfman", "unload", "123"},
+				{"bpfman", "detach", "--id", "456"},
+				{"bpfman", "gc"},
 			},
 		},
 	}
@@ -251,13 +251,18 @@ func TestComputeManualCleanupCommands(t *testing.T) {
 	}
 }
 
-func equalCmds(a, b []string) bool {
+func equalCmds(a, b [][]string) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if len(a[i]) != len(b[i]) {
 			return false
+		}
+		for j := range a[i] {
+			if a[i][j] != b[i][j] {
+				return false
+			}
 		}
 	}
 	return true

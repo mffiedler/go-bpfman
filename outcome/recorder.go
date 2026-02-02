@@ -53,6 +53,14 @@ func (r *ManagerOperationRecorder) nextSeq() int {
 	return r.seq
 }
 
+// stepTimestamp returns the step's timestamp if set, otherwise time.Now().
+func stepTimestamp(step Step) time.Time {
+	if step.Timestamp.IsZero() {
+		return time.Now()
+	}
+	return step.Timestamp
+}
+
 // Complete appends a completed step to the timeline. Returns error if already failed.
 func (r *ManagerOperationRecorder) Complete(step Step) error {
 	if r.o.Status == StatusFailure && !r.inRollback {
@@ -60,7 +68,7 @@ func (r *ManagerOperationRecorder) Complete(step Step) error {
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
-		Timestamp: time.Now(),
+		Timestamp: stepTimestamp(step),
 		Phase:     r.currentPhase(),
 		Status:    StepStatusCompleted,
 		Kind:      step.Kind,
@@ -77,7 +85,7 @@ func (r *ManagerOperationRecorder) Skip(step Step) error {
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
-		Timestamp: time.Now(),
+		Timestamp: stepTimestamp(step),
 		Phase:     r.currentPhase(),
 		Status:    StepStatusSkipped,
 		Kind:      step.Kind,
@@ -96,7 +104,7 @@ func (r *ManagerOperationRecorder) Fail(step Step) error {
 	r.o.Status = StatusFailure
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
-		Timestamp: time.Now(),
+		Timestamp: stepTimestamp(step),
 		Phase:     r.currentPhase(),
 		Status:    StepStatusFailed,
 		Kind:      step.Kind,
@@ -127,7 +135,7 @@ func (r *ManagerOperationRecorder) RollbackComplete(step Step) error {
 	}
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
-		Timestamp: time.Now(),
+		Timestamp: stepTimestamp(step),
 		Phase:     PhaseRollback,
 		Status:    StepStatusCompleted,
 		Kind:      step.Kind,
@@ -145,7 +153,7 @@ func (r *ManagerOperationRecorder) RollbackFail(step Step) error {
 	r.rollbackFailed = true
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
-		Timestamp: time.Now(),
+		Timestamp: stepTimestamp(step),
 		Phase:     PhaseRollback,
 		Status:    StepStatusFailed,
 		Kind:      step.Kind,

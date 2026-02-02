@@ -179,10 +179,10 @@ type ManagerOperationOutcome struct {
 	// True for "inconsistent" or "unknown" states on failure.
 	ManualCleanupRequired bool `json:"manual_cleanup_required"`
 
-	// ManualCleanupCommands contains cleanup commands as formatted strings.
-	// Each string is a complete command (e.g., "bpfman unload 123").
+	// ManualCleanupCommands contains cleanup commands as argv slices.
+	// Each entry is a command ready for exec (e.g., ["bpfman", "unload", "123"]).
 	// Only populated when ManualCleanupRequired is true and state is "inconsistent".
-	ManualCleanupCommands []string `json:"manual_cleanup_commands,omitempty"`
+	ManualCleanupCommands [][]string `json:"manual_cleanup_commands,omitempty"`
 }
 
 // Step is the internal representation used during recording.
@@ -199,6 +199,11 @@ type Step struct {
 
 	// Error is the error message if this step failed.
 	Error string `json:"error,omitempty"`
+
+	// Timestamp is when the operation was attempted (not when it was recorded).
+	// If zero, the recorder uses time.Now() when the step is recorded.
+	// Callers should set this before starting the operation for accurate timing.
+	Timestamp time.Time `json:"-"`
 }
 
 // ComputeSystemState returns "clean", "inconsistent", or "unknown" based on residual state.
@@ -238,7 +243,7 @@ func ComputeManualCleanupRequired(status Status, systemState string) bool {
 	return systemState == "inconsistent" || systemState == "unknown"
 }
 
-// ComputeManualCleanupCommands returns cleanup commands as formatted strings.
+// ComputeManualCleanupCommands returns cleanup commands as argv slices.
 //
 // Constraints:
 //   - ONLY returns commands when systemState == "inconsistent"
@@ -247,15 +252,16 @@ func ComputeManualCleanupRequired(status Status, systemState string) bool {
 //   - Generated from residual artefacts (actual state), not step history
 //   - Commands are idempotent (safe to run multiple times)
 //   - Commands use absolute identifiers (kernel IDs, not names)
+//   - Each command is an argv slice ready for exec (no shell parsing needed)
 //   - DEDUPLICATE: Same kernel ID or pin path yields only one command
 //   - SUPPRESSION: program-level commands suppress lower-level commands
 //     for maps_dir / pins referring to the same logical program
-func ComputeManualCleanupCommands(systemState string, residual []Artefact) []string {
+func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]string {
 	if systemState != "inconsistent" {
 		return nil
 	}
 
-	var cmds []string
+	var cmds [][]string
 	seenKernelIDs := make(map[uint32]bool)
 	seenLinkIDs := make(map[uint32]bool)
 	needsGC := false
@@ -265,7 +271,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) []str
 		if a.Kind == ArtefactProgramPin && a.KernelID != 0 {
 			if !seenKernelIDs[a.KernelID] {
 				seenKernelIDs[a.KernelID] = true
-				cmds = append(cmds, "bpfman unload "+strconv.FormatUint(uint64(a.KernelID), 10))
+				cmds = append(cmds, []string{"bpfman", "unload", strconv.FormatUint(uint64(a.KernelID), 10)})
 			}
 		}
 	}
@@ -275,7 +281,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) []str
 		if a.Kind == ArtefactLinkPin && a.LinkID != 0 {
 			if !seenLinkIDs[a.LinkID] {
 				seenLinkIDs[a.LinkID] = true
-				cmds = append(cmds, "bpfman detach --id "+strconv.FormatUint(uint64(a.LinkID), 10))
+				cmds = append(cmds, []string{"bpfman", "detach", "--id", strconv.FormatUint(uint64(a.LinkID), 10)})
 			}
 		}
 	}
@@ -307,7 +313,7 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) []str
 	}
 
 	if needsGC {
-		cmds = append(cmds, "bpfman gc")
+		cmds = append(cmds, []string{"bpfman", "gc"})
 	}
 
 	return cmds
