@@ -51,8 +51,56 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		"url", ref.URL,
 		"object_path", pulled.ObjectPath)
 
-	// Load each program
+	// If no programs specified, auto-discover from the pulled object file
+	if len(programs) == 0 {
+		discovered, err := m.programDiscoverer.DiscoverPrograms(pulled.ObjectPath)
+		if err != nil {
+			return LoadImageResult{}, fmt.Errorf("discover programs in image: %w", err)
+		}
+		programs = make([]ImageProgramSpec, 0, len(discovered))
+		for _, d := range discovered {
+			programs = append(programs, ImageProgramSpec{
+				ProgramName: d.Name,
+				ProgramType: d.Type,
+				AttachFunc:  d.AttachFunc,
+				GlobalData:  opts.GlobalData,
+			})
+		}
+		m.logger.InfoContext(ctx, "auto-discovered programs",
+			"count", len(programs))
+	} else {
+		// Validate all requested programs exist before loading any
+		programNames := make([]string, len(programs))
+		for i, p := range programs {
+			programNames[i] = p.ProgramName
+		}
+		if err := m.programDiscoverer.ValidatePrograms(pulled.ObjectPath, programNames); err != nil {
+			return LoadImageResult{}, err
+		}
+	}
+
+	// Load each program, with rollback on failure
 	results := make([]bpfman.ManagedProgram, 0, len(programs))
+
+	// Use defer with success flag to ensure cleanup on any error path
+	success := false
+	defer func() {
+		if success {
+			return
+		}
+		for _, loaded := range results {
+			if err := m.Unload(ctx, loaded.Kernel.ID); err != nil {
+				m.logger.WarnContext(ctx, "rollback: failed to unload program",
+					"kernel_id", loaded.Kernel.ID,
+					"name", loaded.Kernel.Name,
+					"error", err)
+			} else {
+				m.logger.DebugContext(ctx, "rollback: unloaded program",
+					"kernel_id", loaded.Kernel.ID,
+					"name", loaded.Kernel.Name)
+			}
+		}
+	}()
 
 	for _, prog := range programs {
 		// Build load spec for this program
@@ -64,7 +112,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			spec, specErr = bpfman.NewLoadSpec(pulled.ObjectPath, prog.ProgramName, prog.ProgramType)
 		}
 		if specErr != nil {
-			return LoadImageResult{Programs: results}, fmt.Errorf("invalid load spec for %q: %w", prog.ProgramName, specErr)
+			return LoadImageResult{}, fmt.Errorf("invalid load spec for %q: %w", prog.ProgramName, specErr)
 		}
 
 		// Apply global data (per-program overrides take precedence)
@@ -96,7 +144,7 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		// Load through manager
 		loaded, loadErr := m.Load(ctx, spec, loadOpts)
 		if loadErr != nil {
-			return LoadImageResult{Programs: results}, fmt.Errorf("load program %q from image: %w", prog.ProgramName, loadErr)
+			return LoadImageResult{}, fmt.Errorf("load program %q from image: %w", prog.ProgramName, loadErr)
 		}
 
 		m.logger.InfoContext(ctx, "loaded program from image",
@@ -107,5 +155,6 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		results = append(results, loaded)
 	}
 
+	success = true
 	return LoadImageResult{Programs: results}, nil
 }

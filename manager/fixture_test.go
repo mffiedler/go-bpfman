@@ -29,15 +29,21 @@ func testLogger() *slog.Logger {
 
 // testFixture provides access to all components for verification.
 type testFixture struct {
-	Manager *manager.Manager
-	Kernel  *fakeKernel
-	Store   interpreter.Store
-	Dirs    *config.RuntimeDirs
-	t       *testing.T
+	Manager    *manager.Manager
+	Kernel     *fakeKernel
+	Discoverer *fakeDiscoverer
+	Store      interpreter.Store
+	Dirs       *config.RuntimeDirs
+	t          *testing.T
 }
 
 // newTestFixture creates a complete test fixture with accessible components.
 func newTestFixture(t *testing.T) *testFixture {
+	return newTestFixtureWithDiscoverer(t, nil)
+}
+
+// newTestFixtureWithDiscoverer creates a test fixture with a custom discoverer.
+func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *testFixture {
 	t.Helper()
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
@@ -45,13 +51,17 @@ func newTestFixture(t *testing.T) *testFixture {
 	dirs, err := config.NewRuntimeDirs(t.TempDir())
 	require.NoError(t, err, "failed to create runtime dirs")
 	kernel := newFakeKernel()
-	mgr := manager.New(dirs, store, kernel, testLogger())
+	if discoverer == nil {
+		discoverer = newFakeDiscoverer()
+	}
+	mgr := manager.New(dirs, store, kernel, discoverer, testLogger())
 	return &testFixture{
-		Manager: mgr,
-		Kernel:  kernel,
-		Store:   store,
-		Dirs:    &dirs,
-		t:       t,
+		Manager:    mgr,
+		Kernel:     kernel,
+		Discoverer: discoverer,
+		Store:      store,
+		Dirs:       &dirs,
+		t:          t,
 	}
 }
 

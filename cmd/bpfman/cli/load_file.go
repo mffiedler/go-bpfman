@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -21,7 +22,7 @@ type LoadFileCmd struct {
 	GlobalDataFlags
 
 	Path        string        `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
-	Programs    []ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required." required:""`
+	Programs    []ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
 	Application string        `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
 	MapOwnerID  uint32        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
@@ -32,6 +33,32 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 	objPath, err := ParseObjectPath(c.Path)
 	if err != nil {
 		return err
+	}
+
+	// If no programs specified, auto-discover from object file
+	programs := c.Programs
+	if len(programs) == 0 {
+		discovered, err := ebpf.DiscoverPrograms(objPath.Path)
+		if err != nil {
+			return fmt.Errorf("discover programs: %w", err)
+		}
+		programs = make([]ProgramSpec, 0, len(discovered))
+		for _, d := range discovered {
+			programs = append(programs, ProgramSpec{
+				Name:       d.Name,
+				Type:       d.Type,
+				AttachFunc: d.AttachFunc,
+			})
+		}
+	} else {
+		// Validate all requested programs exist before loading any
+		programNames := make([]string, len(programs))
+		for i, p := range programs {
+			programNames[i] = p.Name
+		}
+		if err := ebpf.ValidatePrograms(objPath.Path, programNames); err != nil {
+			return err
+		}
 	}
 
 	runtime, err := cli.NewCLIRuntime(ctx)
@@ -56,9 +83,29 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		results := make([]bpfman.ManagedProgram, 0, len(c.Programs))
+		results := make([]bpfman.ManagedProgram, 0, len(programs))
 
-		for _, prog := range c.Programs {
+		// Use defer with success flag to ensure cleanup on any error path
+		success := false
+		defer func() {
+			if success {
+				return
+			}
+			for _, loaded := range results {
+				if err := runtime.Manager.Unload(ctx, loaded.Kernel.ID); err != nil {
+					runtime.Logger.Warn("rollback: failed to unload program",
+						"kernel_id", loaded.Kernel.ID,
+						"name", loaded.Kernel.Name,
+						"error", err)
+				} else {
+					runtime.Logger.Debug("rollback: unloaded program",
+						"kernel_id", loaded.Kernel.ID,
+						"name", loaded.Kernel.Name)
+				}
+			}
+		}()
+
+		for _, prog := range programs {
 			// Build load spec using the appropriate constructor
 			var spec bpfman.LoadSpec
 			var err error
@@ -91,6 +138,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			results = append(results, loaded)
 		}
 
+		success = true
 		return results, nil
 	})
 	if err != nil {

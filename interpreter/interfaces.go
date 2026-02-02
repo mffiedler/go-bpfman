@@ -360,3 +360,23 @@ type SignatureVerifier interface {
 	// (when unsigned images are not allowed).
 	Verify(ctx context.Context, imageRef string) error
 }
+
+// DiscoveredProgram represents a program found in a BPF object file.
+type DiscoveredProgram struct {
+	Name        string
+	SectionName string
+	Type        bpfman.ProgramType
+	AttachFunc  string // For fentry/fexit, extracted from section name (e.g., "fentry/vfs_read" -> "vfs_read")
+}
+
+// ProgramDiscoverer discovers programs in BPF object files.
+type ProgramDiscoverer interface {
+	// DiscoverPrograms scans a BPF object file and returns all loadable
+	// programs. Programs with fentry/fexit types are skipped because they
+	// require an explicit attach function.
+	DiscoverPrograms(objectPath string) ([]DiscoveredProgram, error)
+
+	// ValidatePrograms checks that all specified program names exist in
+	// the object file. Returns an error listing missing programs.
+	ValidatePrograms(objectPath string, programNames []string) error
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +17,120 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
+
+// fakeDiscoverer implements interpreter.ProgramDiscoverer for testing.
+type fakeDiscoverer struct {
+	// Programs maps object path to discovered programs
+	programs map[string][]interpreter.DiscoveredProgram
+	// DiscoverErr if set, DiscoverPrograms returns this error
+	discoverErr error
+	// ValidateErr if set, ValidatePrograms returns this error
+	validateErr error
+}
+
+func newFakeDiscoverer() *fakeDiscoverer {
+	return &fakeDiscoverer{
+		programs: make(map[string][]interpreter.DiscoveredProgram),
+	}
+}
+
+// SetPrograms configures the programs to return for a given object path.
+func (d *fakeDiscoverer) SetPrograms(objectPath string, programs []interpreter.DiscoveredProgram) {
+	d.programs[objectPath] = programs
+}
+
+// SetDiscoverError configures DiscoverPrograms to return the given error.
+func (d *fakeDiscoverer) SetDiscoverError(err error) {
+	d.discoverErr = err
+}
+
+// SetValidateError configures ValidatePrograms to return the given error.
+func (d *fakeDiscoverer) SetValidateError(err error) {
+	d.validateErr = err
+}
+
+func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error) {
+	if d.discoverErr != nil {
+		return nil, d.discoverErr
+	}
+	programs, ok := d.programs[objectPath]
+	if !ok {
+		return nil, fmt.Errorf("no programs found in object file")
+	}
+	// Return sorted copy for determinism
+	result := make([]interpreter.DiscoveredProgram, len(programs))
+	copy(result, programs)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []string) error {
+	if d.validateErr != nil {
+		return d.validateErr
+	}
+	programs, ok := d.programs[objectPath]
+	if !ok {
+		return fmt.Errorf("object file not found: %s", objectPath)
+	}
+	// Build set of available program names
+	available := make(map[string]bool)
+	for _, p := range programs {
+		available[p.Name] = true
+	}
+	// Check each requested program
+	var missing []string
+	for _, name := range programNames {
+		if !available[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		availableList := make([]string, 0, len(available))
+		for name := range available {
+			availableList = append(availableList, name)
+		}
+		sort.Strings(availableList)
+		return fmt.Errorf("program(s) not found: %v; available: %v", missing, availableList)
+	}
+	return nil
+}
+
+// Ensure fakeDiscoverer implements the interface.
+var _ interpreter.ProgramDiscoverer = (*fakeDiscoverer)(nil)
+
+// fakeImagePuller implements interpreter.ImagePuller for testing.
+type fakeImagePuller struct {
+	objectPath string
+	digest     string
+	pullErr    error
+}
+
+func newFakeImagePuller(objectPath string) *fakeImagePuller {
+	return &fakeImagePuller{
+		objectPath: objectPath,
+		digest:     "sha256:fake",
+	}
+}
+
+func (p *fakeImagePuller) SetPullError(err error) {
+	p.pullErr = err
+}
+
+func (p *fakeImagePuller) Pull(_ context.Context, ref interpreter.ImageRef) (interpreter.PulledImage, error) {
+	if p.pullErr != nil {
+		return interpreter.PulledImage{}, p.pullErr
+	}
+	return interpreter.PulledImage{
+		ObjectPath: p.objectPath,
+		Digest:     p.digest,
+	}, nil
+}
+
+// Ensure fakeImagePuller implements the interface.
+var _ interpreter.ImagePuller = (*fakeImagePuller)(nil)
 
 // kernelOp records an operation performed on the fake kernel.
 type kernelOp struct {

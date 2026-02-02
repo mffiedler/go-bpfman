@@ -64,11 +64,12 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	dirs     config.RuntimeDirs
-	store    interpreter.Store
-	kernel   interpreter.KernelOperations
-	executor interpreter.ActionExecutor
-	logger   *slog.Logger
+	dirs              config.RuntimeDirs
+	store             interpreter.Store
+	kernel            interpreter.KernelOperations
+	executor          interpreter.ActionExecutor
+	programDiscoverer interpreter.ProgramDiscoverer
+	logger            *slog.Logger
 
 	// GC coordination - separate from request-level locking
 	gcMu           sync.Mutex
@@ -78,17 +79,18 @@ type Manager struct {
 // New creates a new Manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(dirs config.RuntimeDirs, store interpreter.Store, kernel interpreter.KernelOperations, logger *slog.Logger) *Manager {
+func New(dirs config.RuntimeDirs, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Manager{
-		dirs:           dirs,
-		store:          store,
-		kernel:         kernel,
-		executor:       interpreter.NewExecutor(store, kernel),
-		logger:         logger.With("component", "manager"),
-		mutatedSinceGC: true, // Force GC on first operation
+		dirs:              dirs,
+		store:             store,
+		kernel:            kernel,
+		programDiscoverer: programDiscoverer,
+		executor:          interpreter.NewExecutor(store, kernel),
+		logger:            logger.With("component", "manager"),
+		mutatedSinceGC:    true, // Force GC on first operation
 	}
 }
 
