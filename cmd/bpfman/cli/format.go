@@ -56,6 +56,8 @@ func FormatProgram(prog bpfman.Program, flags *OutputFlags) (string, error) {
 		return formatProgramTable(prog), nil
 	case OutputFormatJSONPath:
 		return formatProgramJSONPath(prog, flags.JSONPathExpr())
+	case OutputFormatWide, OutputFormatCustomColumns, OutputFormatCustomColumnsFile:
+		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatProgramTable(prog), nil
 	}
@@ -411,6 +413,8 @@ func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
 		return formatLinkResultTable(link), nil
 	case OutputFormatJSONPath:
 		return executeJSONPath(link, flags.JSONPathExpr())
+	case OutputFormatWide, OutputFormatCustomColumns, OutputFormatCustomColumnsFile:
+		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatLinkResultTable(link), nil
 	}
