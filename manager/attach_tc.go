@@ -315,7 +315,10 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -323,9 +326,9 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -545,7 +548,10 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -553,9 +559,9 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -685,8 +691,11 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 	// EXECUTE: Save through executor
 	if err := m.executor.Execute(ctx, saveAction); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher", "ifname", ifname, "error", err)
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
-			return dispatcher.State{}, errors.Join(fmt.Errorf("save TC dispatcher: %w", err), fmt.Errorf("rollback failed: %w", rbErr))
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
+			return dispatcher.State{}, errors.Join(fmt.Errorf("save TC dispatcher: %w", err), fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		}
 		return dispatcher.State{}, fmt.Errorf("save TC dispatcher: %w", err)
 	}

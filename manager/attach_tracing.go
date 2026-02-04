@@ -102,7 +102,10 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -110,9 +113,9 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -248,7 +251,10 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -256,9 +262,9 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -424,7 +430,10 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -432,9 +441,9 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -582,7 +591,10 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -590,9 +602,9 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -733,7 +745,10 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 		})
 
 		rec.BeginRollback()
-		if rbErr := undo.rollback(ctx, m.logger); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -741,9 +756,9 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: rbErr.Error(),
+				Error: joinRollbackErrors(rbErrs).Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
+			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,

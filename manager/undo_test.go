@@ -1,9 +1,7 @@
 package manager
 
 import (
-	"context"
 	"errors"
-	"log/slog"
 	"testing"
 )
 
@@ -16,8 +14,8 @@ func TestUndoStack_ReverseOrder(t *testing.T) {
 			return nil
 		})
 	}
-	if err := undo.rollback(context.Background(), slog.Default()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if errs := undo.rollback(); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if len(order) != 3 || order[0] != 2 || order[1] != 1 || order[2] != 0 {
 		t.Fatalf("expected reverse order [2 1 0], got %v", order)
@@ -31,18 +29,38 @@ func TestUndoStack_CollectsErrors(t *testing.T) {
 	undo.push(func() error { return errA })
 	undo.push(func() error { return errB })
 
-	err := undo.rollback(context.Background(), slog.Default())
-	if err == nil {
-		t.Fatal("expected error")
+	errs := undo.rollback()
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors, got %d", len(errs))
 	}
-	if !errors.Is(err, errA) || !errors.Is(err, errB) {
-		t.Fatalf("expected both errors, got: %v", err)
+	// Executed in reverse: step 1 (errB) fails first, then step 0 (errA)
+	if errs[0].Step != 1 || !errors.Is(errs[0].Err, errB) {
+		t.Fatalf("expected step 1 with errB, got step %d with %v", errs[0].Step, errs[0].Err)
+	}
+	if errs[1].Step != 0 || !errors.Is(errs[1].Err, errA) {
+		t.Fatalf("expected step 0 with errA, got step %d with %v", errs[1].Step, errs[1].Err)
 	}
 }
 
 func TestUndoStack_EmptyIsNoop(t *testing.T) {
 	var undo undoStack
-	if err := undo.rollback(context.Background(), slog.Default()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if errs := undo.rollback(); len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+}
+
+func TestUndoStack_PartialFailure(t *testing.T) {
+	errOnly := errors.New("only this fails")
+	var undo undoStack
+	undo.push(func() error { return nil })
+	undo.push(func() error { return errOnly })
+	undo.push(func() error { return nil })
+
+	errs := undo.rollback()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(errs))
+	}
+	if errs[0].Step != 1 || !errors.Is(errs[0].Err, errOnly) {
+		t.Fatalf("expected step 1 with errOnly, got step %d with %v", errs[0].Step, errs[0].Err)
 	}
 }
