@@ -5,10 +5,10 @@ import (
 	"fmt"
 )
 
-// UnloadCmd unloads a managed BPF program by kernel ID.
+// UnloadCmd unloads managed BPF programs by kernel ID.
 type UnloadCmd struct {
 	OutputFlags
-	ProgramID ProgramID `arg:"" name:"program-id" help:"Kernel program ID to unload (supports hex with 0x prefix)."`
+	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Kernel program IDs to unload (supports hex with 0x prefix)." required:""`
 }
 
 // Run executes the unload command: mutation under lock, output outside.
@@ -19,15 +19,36 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer runtime.Close()
 
-	// Mutation under lock
-	err = RunWithLock(ctx, cli, func(ctx context.Context) error {
-		return runtime.Manager.Unload(ctx, c.ProgramID.Value)
-	})
-	if err != nil {
-		if o := extractOutcome(err); o.Status != "" {
-			return displayOutcomeError(cli, err, o, &c.OutputFlags)
+	// Collect results to print after releasing lock
+	type result struct {
+		id  uint32
+		err error
+	}
+	results := make([]result, 0, len(c.ProgramIDs))
+
+	// Mutation under lock - process all IDs
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+		for _, pid := range c.ProgramIDs {
+			err := runtime.Manager.Unload(ctx, pid.Value)
+			results = append(results, result{id: pid.Value, err: err})
 		}
-		return err
+		return nil
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	// Print results outside lock
+	var failCount int
+	for _, r := range results {
+		if r.err != nil {
+			_ = cli.PrintErrf("program %d: %v\n", r.id, r.err)
+			failCount++
+		}
+	}
+
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d program(s) failed to unload", failCount, len(results))
 	}
 
 	return nil
