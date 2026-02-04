@@ -947,39 +947,44 @@ func formatOutcomeTable(o outcome.OperationOutcome) string {
 	// Primary identifier at column one (kubectl-describe style)
 	fmt.Fprintf(&b, "Operation: %s\n", strings.ToUpper(string(o.Status)))
 
-	// Build summary fields for tabwriter alignment
+	// Build summary fields for tabwriter alignment (sorted alphabetically)
 	var summaryFields []string
-	if o.OpID != 0 {
-		summaryFields = append(summaryFields, fmt.Sprintf("    Op ID:\t%d", o.OpID))
+
+	// Cleanup
+	if len(o.ManualCleanupCommands) > 0 {
+		for i, cmd := range o.ManualCleanupCommands {
+			if i == 0 {
+				summaryFields = append(summaryFields, fmt.Sprintf("    Cleanup:\t%s", strings.Join(cmd, " ")))
+			} else {
+				summaryFields = append(summaryFields, fmt.Sprintf("    \t%s", strings.Join(cmd, " ")))
+			}
+		}
 	}
+
+	// Error
 	if o.PrimaryError != "" {
 		summaryFields = append(summaryFields, fmt.Sprintf("    Error:\t%s", o.PrimaryError))
 	}
 
-	// System state
-	switch o.SystemState {
-	case "inconsistent":
-		summaryFields = append(summaryFields, "    System State:\tINCONSISTENT")
-	case "unknown":
-		summaryFields = append(summaryFields, "    System State:\tUNKNOWN")
-	default:
-		summaryFields = append(summaryFields, "    System State:\tClean")
+	// Op ID
+	if o.OpID != 0 {
+		summaryFields = append(summaryFields, fmt.Sprintf("    Op ID:\t%d", o.OpID))
 	}
 
-	// Residual
+	// Orphaned
 	if len(o.Residual) > 0 {
 		for i, a := range o.Residual {
 			if i == 0 {
-				summaryFields = append(summaryFields, fmt.Sprintf("    Residual:\t%s", a.String()))
+				summaryFields = append(summaryFields, fmt.Sprintf("    Orphaned:\t%s", a.String()))
 			} else {
 				summaryFields = append(summaryFields, fmt.Sprintf("    \t%s", a.String()))
 			}
 		}
 	} else {
-		summaryFields = append(summaryFields, "    Residual:\tNone")
+		summaryFields = append(summaryFields, "    Orphaned:\tNone")
 	}
 
-	// Rollback errors
+	// Rollback Errors
 	if len(o.RollbackErrors) > 0 {
 		for i, re := range o.RollbackErrors {
 			if i == 0 {
@@ -990,15 +995,12 @@ func formatOutcomeTable(o outcome.OperationOutcome) string {
 		}
 	}
 
-	// Manual cleanup commands
-	if len(o.ManualCleanupCommands) > 0 {
-		for i, cmd := range o.ManualCleanupCommands {
-			if i == 0 {
-				summaryFields = append(summaryFields, fmt.Sprintf("    Cleanup:\t%s", strings.Join(cmd, " ")))
-			} else {
-				summaryFields = append(summaryFields, fmt.Sprintf("    \t%s", strings.Join(cmd, " ")))
-			}
-		}
+	// System State (only show when not clean)
+	switch o.SystemState {
+	case "inconsistent":
+		summaryFields = append(summaryFields, "    System State:\tINCONSISTENT")
+	case "unknown":
+		summaryFields = append(summaryFields, "    System State:\tUNKNOWN")
 	}
 
 	// Run summary fields through tabwriter
@@ -1013,20 +1015,24 @@ func formatOutcomeTable(o outcome.OperationOutcome) string {
 	b.WriteString("  Summary:\n")
 	b.WriteString(aligned.String())
 
-	// Timeline section
+	// Events section
 	if len(o.Timeline) > 0 {
-		b.WriteString("  Timeline:\n")
+		b.WriteString("  Events:\n")
 		for _, entry := range o.Timeline {
-			// Each timeline entry as a sub-block
+			// Each timeline entry as a sub-block (fields sorted alphabetically)
 			var entryFields []string
-			entryFields = append(entryFields, fmt.Sprintf("      Kind:\t%s", entry.Kind))
-			entryFields = append(entryFields, fmt.Sprintf("      Target:\t%s", entry.Target))
-			entryFields = append(entryFields, fmt.Sprintf("      Phase:\t%s", entry.Phase))
-			entryFields = append(entryFields, fmt.Sprintf("      Status:\t%s", entry.Status))
 			if entry.Error != "" {
 				entryFields = append(entryFields, fmt.Sprintf("      Error:\t%s", entry.Error))
 			}
-			// Add any details
+			entryFields = append(entryFields, fmt.Sprintf("      Kind:\t%s", entry.Kind))
+			// Only show Phase for rollback steps (primary is implied)
+			if entry.Phase == outcome.PhaseRollback {
+				entryFields = append(entryFields, fmt.Sprintf("      Phase:\t%s", entry.Phase))
+			}
+			entryFields = append(entryFields, fmt.Sprintf("      Step:\t%d", entry.Seq))
+			entryFields = append(entryFields, fmt.Sprintf("      Status:\t%s", entry.Status))
+			entryFields = append(entryFields, fmt.Sprintf("      Target:\t%s", entry.Target))
+			// Add any details (sorted within formatTimelineDetailsDescribe)
 			if detailStr := formatTimelineDetailsDescribe(entry.Details); detailStr != "" {
 				entryFields = append(entryFields, detailStr)
 			}
@@ -1049,6 +1055,7 @@ func formatOutcomeTable(o outcome.OperationOutcome) string {
 }
 
 // formatTimelineDetailsDescribe formats timeline entry details for kubectl-describe style.
+// Fields within each detail type are sorted alphabetically.
 func formatTimelineDetailsDescribe(details any) string {
 	if details == nil {
 		return ""
@@ -1059,11 +1066,11 @@ func formatTimelineDetailsDescribe(details any) string {
 		if d.KernelID != 0 {
 			fields = append(fields, fmt.Sprintf("      Kernel ID:\t%d", d.KernelID))
 		}
-		if d.PinPath != "" {
-			fields = append(fields, fmt.Sprintf("      Pin Path:\t%s", d.PinPath))
-		}
 		if d.MapsDirPath != "" {
 			fields = append(fields, fmt.Sprintf("      Maps Dir:\t%s", d.MapsDirPath))
+		}
+		if d.PinPath != "" {
+			fields = append(fields, fmt.Sprintf("      Pin Path:\t%s", d.PinPath))
 		}
 	case outcome.LinkDetails:
 		if d.LinkID != 0 {
@@ -1073,11 +1080,11 @@ func formatTimelineDetailsDescribe(details any) string {
 			fields = append(fields, fmt.Sprintf("      Pin Path:\t%s", d.PinPath))
 		}
 	case outcome.ImageDetails:
-		if d.URL != "" {
-			fields = append(fields, fmt.Sprintf("      Image URL:\t%s", d.URL))
-		}
 		if d.Digest != "" {
 			fields = append(fields, fmt.Sprintf("      Digest:\t%s", d.Digest))
+		}
+		if d.URL != "" {
+			fields = append(fields, fmt.Sprintf("      Image URL:\t%s", d.URL))
 		}
 		if d.ObjectPath != "" {
 			fields = append(fields, fmt.Sprintf("      Object Path:\t%s", d.ObjectPath))
