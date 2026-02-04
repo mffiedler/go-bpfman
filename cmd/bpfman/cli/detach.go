@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
@@ -23,13 +24,14 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	defer runtime.Close()
 
 	// Mutation under lock
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.DetachResult, error) {
+	err = RunWithLock(ctx, cli, func(ctx context.Context) error {
 		return runtime.Manager.Detach(ctx, bpfman.LinkID(c.LinkID.Value))
 	})
 	if err != nil {
 		// On failure, display the outcome if available
-		if result.Outcome.Status != "" {
-			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &c.OutputFlags)
+		var me *manager.ManagerError
+		if errors.As(err, &me) {
+			outcomeStr, fmtErr := FormatOutcome(me.Outcome, &c.OutputFlags)
 			if fmtErr == nil {
 				format, _ := c.OutputFlags.Format()
 				if format == OutputFormatJSON || format == OutputFormatJSONPath {

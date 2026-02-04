@@ -150,24 +150,21 @@ func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Conte
 
 // LoadImage loads BPF programs from an OCI image.
 func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ImageProgramSpec, opts manager.LoadImageOpts) ([]bpfman.Program, error) {
-	var result manager.LoadImageResult
+	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
 		result, loadErr = e.Manager.LoadImage(ctx, e.Puller, ref, programs, opts)
 		return loadErr
 	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Programs, nil
+	return result, err
 }
 
 // Load loads a BPF program from a file.
 func (e *TestEnv) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
 	var result bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		loadResult, loadErr := e.Manager.Load(ctx, spec, opts)
-		result = loadResult.Program
+		prog, loadErr := e.Manager.Load(ctx, spec, opts)
+		result = prog
 		return loadErr
 	})
 	return result, err
@@ -176,8 +173,7 @@ func (e *TestEnv) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.L
 // Unload unloads a BPF program.
 func (e *TestEnv) Unload(ctx context.Context, kernelID uint32) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
-		_, err := e.Manager.Unload(ctx, kernelID)
-		return err
+		return e.Manager.Unload(ctx, kernelID)
 	})
 }
 
@@ -199,8 +195,8 @@ func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 func (e *TestEnv) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachTracepoint(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachTracepoint(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -218,8 +214,8 @@ func (e *TestEnv) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 func (e *TestEnv) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachXDP(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachXDP(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -236,8 +232,8 @@ func (e *TestEnv) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 func (e *TestEnv) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachTC(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachTC(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -254,8 +250,8 @@ func (e *TestEnv) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 func (e *TestEnv) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachTCX(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachTCX(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -272,8 +268,8 @@ func (e *TestEnv) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 func (e *TestEnv) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachKprobe(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachKprobe(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -290,8 +286,8 @@ func (e *TestEnv) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 func (e *TestEnv) AttachUprobe(ctx context.Context, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLockAndScope(ctx, func(ctx context.Context, scope lock.WriterScope) error {
-		attachResult, attachErr := e.Manager.AttachUprobe(ctx, scope, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachUprobe(ctx, scope, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -308,8 +304,8 @@ func (e *TestEnv) AttachUprobe(ctx context.Context, spec bpfman.UprobeAttachSpec
 func (e *TestEnv) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachFentry(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachFentry(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -326,8 +322,8 @@ func (e *TestEnv) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 func (e *TestEnv) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkSpec, error) {
 	var result bpfman.Link
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		attachResult, attachErr := e.Manager.AttachFexit(ctx, spec, opts)
-		result = attachResult.Link
+		link, attachErr := e.Manager.AttachFexit(ctx, spec, opts)
+		result = link
 		return attachErr
 	})
 	if err != nil {
@@ -343,8 +339,7 @@ func (e *TestEnv) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 // Detach detaches a link.
 func (e *TestEnv) Detach(ctx context.Context, kernelLinkID uint32) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
-		_, err := e.Manager.Detach(ctx, bpfman.LinkID(kernelLinkID))
-		return err
+		return e.Manager.Detach(ctx, bpfman.LinkID(kernelLinkID))
 	})
 }
 

@@ -1,6 +1,6 @@
 package manager
 
-import "errors"
+import "github.com/frobware/go-bpfman/outcome"
 
 // undoStack accumulates rollback closures that are executed in reverse
 // order when a multi-step operation fails partway through. Each
@@ -14,17 +14,16 @@ type RollbackError struct {
 	Err  error
 }
 
-// joinRollbackErrors converts a slice of RollbackError to a single
-// error using errors.Join. Returns nil if the slice is empty.
-func joinRollbackErrors(errs []RollbackError) error {
+// toOutcomeErrors converts internal RollbackErrors to outcome package format.
+func toOutcomeErrors(errs []RollbackError) []outcome.RollbackError {
 	if len(errs) == 0 {
 		return nil
 	}
-	unwrapped := make([]error, len(errs))
+	out := make([]outcome.RollbackError, len(errs))
 	for i, e := range errs {
-		unwrapped[i] = e.Err
+		out[i] = outcome.RollbackError{Step: e.Step, Err: e.Err.Error()}
 	}
-	return errors.Join(unwrapped...)
+	return out
 }
 
 // push appends a rollback closure to the stack.

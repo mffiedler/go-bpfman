@@ -177,6 +177,11 @@ func (r *ManagerOperationRecorder) SetResidual(artefacts []Artefact, observeErr 
 	}
 }
 
+// SetRollbackErrors records structured rollback errors.
+func (r *ManagerOperationRecorder) SetRollbackErrors(errs []RollbackError) {
+	r.o.RollbackErrors = errs
+}
+
 // Finalise computes and stores the derived fields (SystemState, ManualCleanupRequired,
 // ManualCleanupCommands). Call this before returning the outcome to the caller.
 func (r *ManagerOperationRecorder) Finalise() {
@@ -210,8 +215,8 @@ func (r ManagerOperationRecorder) Validate() error {
 	if o.Status == StatusFailure && !hasPrimaryFailed && o.PrimaryError == "" {
 		return errors.New("failure outcome has neither failed primary step nor primary error")
 	}
-	if hasRollbackFailed && o.RollbackError == "" {
-		return errors.New("rollback failed but no rollback error set")
+	if hasRollbackFailed && len(o.RollbackErrors) == 0 {
+		return errors.New("rollback failed but no rollback errors set")
 	}
 
 	// JSON sanity for Details

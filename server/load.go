@@ -89,7 +89,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	// rollback unloads all previously loaded programs in reverse order
 	rollback := func() {
 		for i := len(loadedKernelIDs) - 1; i >= 0; i-- {
-			if _, err := s.mgr.Unload(ctx, loadedKernelIDs[i]); err != nil {
+			if err := s.mgr.Unload(ctx, loadedKernelIDs[i]); err != nil {
 				s.logger.ErrorContext(ctx, "rollback failed", "kernel_id", loadedKernelIDs[i], "error", err)
 			}
 		}
@@ -176,7 +176,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			rollback()
 			return nil, status.Errorf(codes.Internal, "failed to load program %s: %v", info.Name, err)
 		}
-		loaded := loadResult.Program
+		loaded := loadResult
 
 		// Track for potential rollback
 		loadedKernelIDs = append(loadedKernelIDs, loaded.Spec.KernelID)
@@ -252,7 +252,7 @@ func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadR
 	}
 	defer s.mgr.MarkMutated()
 
-	if _, err := s.mgr.Unload(ctx, req.Id); err != nil {
+	if err := s.mgr.Unload(ctx, req.Id); err != nil {
 		var notManaged bpfman.ErrProgramNotManaged
 		var notFound bpfman.ErrProgramNotFound
 		switch {

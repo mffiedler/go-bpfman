@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -105,24 +106,27 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		// Load via manager directly
-		loadResult, err := runtime.Manager.LoadImage(ctx, runtime.Puller, ref, programs, manager.LoadImageOpts{
+		loaded, err := runtime.Manager.LoadImage(ctx, runtime.Puller, ref, programs, manager.LoadImageOpts{
 			UserMetadata: metadata,
 			GlobalData:   globalData,
 		})
 		if err != nil {
-			res.FailedOutcome = &loadResult.Outcome
+			var me *manager.ManagerError
+			if errors.As(err, &me) {
+				res.FailedOutcome = &me.Outcome
+			}
 			return res, fmt.Errorf("failed to load from image: %w", err)
 		}
 
-		for _, loaded := range loadResult.Programs {
+		for _, prog := range loaded {
 			runtime.Logger.Info("program loaded successfully",
-				"name", loaded.Spec.Meta.Name,
-				"kernel_id", loaded.Spec.KernelID,
-				"pin_path", loaded.Spec.Handles.PinPath,
+				"name", prog.Spec.Meta.Name,
+				"kernel_id", prog.Spec.KernelID,
+				"pin_path", prog.Spec.Handles.PinPath,
 			)
 		}
 
-		res.Programs = loadResult.Programs
+		res.Programs = loaded
 		return res, nil
 	})
 	if err != nil {

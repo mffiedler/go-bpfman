@@ -395,23 +395,20 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	// Load first program
 	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_one", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	result1, err := fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
+	prog1, err := fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
-
-	// Verify first load outcome is success
-	assert.Equal(t, outcome.StatusSuccess, result1.Outcome.Status)
-	assert.Empty(t, result1.Outcome.PrimaryError)
-	assert.Equal(t, 2, mgrTestCountCompletedPrimary(result1.Outcome.Timeline), "should have kernel.load and store.save steps")
+	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
 	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_two", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	result2, err := fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
 	// Verify second load outcome records the failure
-	o := result2.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := mgrTestFindFailed(o.Timeline)
@@ -430,7 +427,7 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	assert.Equal(t, "clean", o.SystemState)
 
 	// First program should still exist (manager doesn't auto-rollback across separate Load calls)
-	_, err = fix.Manager.Get(ctx, result1.Program.Spec.KernelID)
+	_, err = fix.Manager.Get(ctx, prog1.Spec.KernelID)
 	require.NoError(t, err, "First program should still exist")
 
 	// Verify kernel operations
@@ -455,12 +452,13 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 
 	spec, err := bpfman.NewLoadSpec("/path/to/single.o", "single_prog", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	result, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 
 	require.Error(t, err, "Load should fail")
 
 	// Verify outcome records the failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := mgrTestFindFailed(o.Timeline)
@@ -495,20 +493,19 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 	// Load first program - should succeed
 	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_a", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	result1, err := fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
-
-	// Verify first load has success outcome
-	assert.Equal(t, outcome.StatusSuccess, result1.Outcome.Status)
+	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
 	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_b", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	result2, err := fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail on 2nd program")
 
 	// Verify second load has failure outcome
-	o := result2.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	failed := mgrTestFindFailed(o.Timeline)
 	require.NotNil(t, failed)
@@ -550,12 +547,13 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	// Attempt attach - should fail
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
-	result, err := fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
+	_, err = fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "attach should fail")
 	assert.Contains(t, err.Error(), "injected attach failure")
 
 	// Verify outcome records the attach failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := mgrTestFindFailed(o.Timeline)
@@ -749,12 +747,13 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	fix.Kernel.FailOnDetach(uint32(link.Spec.ID), fmt.Errorf("injected detach failure"))
 
 	// Attempt to detach - should fail
-	result, err := fix.Manager.Detach(ctx, link.Spec.ID)
+	err = fix.Manager.Detach(ctx, link.Spec.ID)
 	require.Error(t, err, "Detach should fail due to kernel error")
 	assert.Contains(t, err.Error(), "injected detach failure", "error should mention injected failure")
 
 	// Verify outcome records the detach failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := mgrTestFindFailed(o.Timeline)

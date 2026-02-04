@@ -952,8 +952,11 @@ func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
 	if o.PrimaryError != "" {
 		fmt.Fprintf(&b, "Error: %s\n", o.PrimaryError)
 	}
-	if o.RollbackError != "" {
-		fmt.Fprintf(&b, "Rollback Error: %s\n", o.RollbackError)
+	if len(o.RollbackErrors) > 0 {
+		fmt.Fprintf(&b, "Rollback Errors:\n")
+		for _, re := range o.RollbackErrors {
+			fmt.Fprintf(&b, "  Step %d: %s\n", re.Step, re.Err)
+		}
 	}
 	b.WriteString("\n")
 

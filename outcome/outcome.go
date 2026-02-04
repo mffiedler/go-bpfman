@@ -149,9 +149,10 @@ type ManagerOperationOutcome struct {
 	// PrimaryError is the error from the primary operation (if failed).
 	PrimaryError string `json:"primary_error,omitempty"`
 
-	// RollbackError is the error from the rollback phase (if rollback failed).
+	// RollbackErrors contains structured errors from the rollback phase.
+	// Each entry pairs a step index with its error message.
 	// Only populated when rollback was attempted and failed.
-	RollbackError string `json:"rollback_error,omitempty"`
+	RollbackErrors []RollbackError `json:"rollback_errors,omitempty"`
 
 	// Timeline contains all steps in chronological order.
 	// Each entry has a phase (primary/rollback) and status (completed/failed/skipped).
@@ -317,6 +318,12 @@ func ComputeManualCleanupCommands(systemState string, residual []Artefact) [][]s
 	}
 
 	return cmds
+}
+
+// RollbackError pairs a rollback step failure with its position.
+type RollbackError struct {
+	Step int    `json:"step"`
+	Err  string `json:"error"`
 }
 
 // ArtefactKind identifies the type of residue artefact.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
@@ -102,7 +103,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			for _, loaded := range res.Programs {
 				kernelID := loaded.Spec.KernelID
 				progName := loaded.Spec.Meta.Name
-				if _, err := runtime.Manager.Unload(ctx, kernelID); err != nil {
+				if err := runtime.Manager.Unload(ctx, kernelID); err != nil {
 					runtime.Logger.Warn("rollback: failed to unload program",
 						"kernel_id", kernelID,
 						"name", progName,
@@ -141,12 +142,15 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			}
 
 			// Load through manager
-			loadResult, err := runtime.Manager.Load(ctx, spec, opts)
+			loaded, err := runtime.Manager.Load(ctx, spec, opts)
 			if err != nil {
-				res.FailedOutcome = &loadResult.Outcome
+				var me *manager.ManagerError
+				if errors.As(err, &me) {
+					res.FailedOutcome = &me.Outcome
+				}
 				return res, fmt.Errorf("failed to load program %q: %w", prog.Name, err)
 			}
-			res.Programs = append(res.Programs, loadResult.Program)
+			res.Programs = append(res.Programs, loaded)
 		}
 
 		success = true

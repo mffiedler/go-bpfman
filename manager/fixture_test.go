@@ -109,79 +109,57 @@ func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Conte
 	return lock.Run(ctx, f.Dirs.Lock(), fn)
 }
 
-// Load is a convenience wrapper that returns just the Program.
-// Use this for tests that don't need to inspect the outcome.
+// Load is a convenience wrapper that calls Manager.Load directly.
 func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
-	result, err := f.Manager.Load(ctx, spec, opts)
-	return result.Program, err
+	return f.Manager.Load(ctx, spec, opts)
 }
 
-// Unload is a convenience wrapper that returns just the error.
-// Use this for tests that don't need to inspect the outcome.
+// Unload is a convenience wrapper that calls Manager.Unload directly.
 func (f *testFixture) Unload(ctx context.Context, kernelID uint32) error {
-	_, err := f.Manager.Unload(ctx, kernelID)
-	return err
+	return f.Manager.Unload(ctx, kernelID)
 }
 
-// AttachTracepoint is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachTracepoint is a convenience wrapper that calls Manager.AttachTracepoint directly.
 func (f *testFixture) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachTracepoint(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachTracepoint(ctx, spec, opts)
 }
 
-// AttachKprobe is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachKprobe is a convenience wrapper that calls Manager.AttachKprobe directly.
 func (f *testFixture) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachKprobe(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachKprobe(ctx, spec, opts)
 }
 
-// AttachUprobe is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachUprobe is a convenience wrapper that calls Manager.AttachUprobe directly.
 func (f *testFixture) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachUprobe(ctx, scope, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachUprobe(ctx, scope, spec, opts)
 }
 
-// AttachFentry is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachFentry is a convenience wrapper that calls Manager.AttachFentry directly.
 func (f *testFixture) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachFentry(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachFentry(ctx, spec, opts)
 }
 
-// AttachFexit is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachFexit is a convenience wrapper that calls Manager.AttachFexit directly.
 func (f *testFixture) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachFexit(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachFexit(ctx, spec, opts)
 }
 
-// AttachXDP is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachXDP is a convenience wrapper that calls Manager.AttachXDP directly.
 func (f *testFixture) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachXDP(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachXDP(ctx, spec, opts)
 }
 
-// AttachTC is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachTC is a convenience wrapper that calls Manager.AttachTC directly.
 func (f *testFixture) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachTC(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachTC(ctx, spec, opts)
 }
 
-// AttachTCX is a convenience wrapper that returns just the Link.
-// Use this for tests that don't need to inspect the outcome.
+// AttachTCX is a convenience wrapper that calls Manager.AttachTCX directly.
 func (f *testFixture) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	result, err := f.Manager.AttachTCX(ctx, spec, opts)
-	return result.Link, err
+	return f.Manager.AttachTCX(ctx, spec, opts)
 }
 
-// Detach is a convenience wrapper that returns just the error.
-// Use this for tests that don't need to inspect the outcome.
+// Detach is a convenience wrapper that calls Manager.Detach directly.
 func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
-	_, err := f.Manager.Detach(ctx, linkID)
-	return err
+	return f.Manager.Detach(ctx, linkID)
 }

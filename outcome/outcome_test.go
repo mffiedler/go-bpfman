@@ -557,7 +557,7 @@ func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
 	}
 }
 
-func TestRecorder_Validate_RollbackFailedWithoutError(t *testing.T) {
+func TestRecorder_Validate_RollbackFailedWithoutErrors(t *testing.T) {
 	out := outcome.ManagerOperationOutcome{
 		Status:       outcome.StatusFailure,
 		PrimaryError: "boom",
@@ -565,13 +565,13 @@ func TestRecorder_Validate_RollbackFailedWithoutError(t *testing.T) {
 			{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelLoad, Error: "boom"},
 			{Seq: 2, Phase: outcome.PhaseRollback, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelUnload, Error: "perm denied"},
 		},
-		// RollbackError not set - this is the invalid state
+		// RollbackErrors not set - this is the invalid state
 	}
 	rec := outcome.NewRecorder(&out)
 
 	err := rec.Validate()
 	if err == nil {
-		t.Error("Validate() should fail for rollback failed without rollback error")
+		t.Error("Validate() should fail for rollback failed without rollback errors")
 	}
 }
 

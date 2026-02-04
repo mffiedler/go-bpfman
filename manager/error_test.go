@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
 )
 
@@ -21,7 +22,7 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	result, err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
+	err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
 	require.Error(t, err, "Detach of non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
@@ -29,7 +30,9 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	assert.Equal(t, bpfman.LinkID(999), notFound.LinkID)
 
 	// Verify outcome records the preflight failure
-	o := result.Outcome
+	var me *manager.ManagerError
+	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -52,7 +55,7 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyLinkID = 42
 	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.AttachTracepoint)
 
-	result, err := fix.Manager.Detach(ctx, bpfman.LinkID(kernelOnlyLinkID))
+	err := fix.Manager.Detach(ctx, bpfman.LinkID(kernelOnlyLinkID))
 	require.Error(t, err, "Detach of kernel-only link should fail")
 
 	var notManaged bpfman.ErrLinkNotManaged
@@ -60,7 +63,9 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	assert.Equal(t, bpfman.LinkID(kernelOnlyLinkID), notManaged.LinkID)
 
 	// Verify outcome records the preflight failure
-	o := result.Outcome
+	var me *manager.ManagerError
+	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -79,7 +84,7 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	result, err := fix.Manager.Unload(ctx, 999)
+	err := fix.Manager.Unload(ctx, 999)
 	require.Error(t, err, "Unload of non-existent program should fail")
 
 	var notFound bpfman.ErrProgramNotFound
@@ -87,7 +92,9 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	assert.Equal(t, uint32(999), notFound.ID)
 
 	// Verify outcome records the preflight failure
-	o := result.Outcome
+	var me *manager.ManagerError
+	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -110,7 +117,7 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyProgID = 42
 	fix.Kernel.InjectKernelProgram(kernelOnlyProgID, "orphan_prog", bpfman.ProgramTypeTracepoint)
 
-	result, err := fix.Manager.Unload(ctx, kernelOnlyProgID)
+	err := fix.Manager.Unload(ctx, kernelOnlyProgID)
 	require.Error(t, err, "Unload of kernel-only program should fail")
 
 	var notManaged bpfman.ErrProgramNotManaged
@@ -118,7 +125,9 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	assert.Equal(t, uint32(kernelOnlyProgID), notManaged.ID)
 
 	// Verify outcome records the preflight failure
-	o := result.Outcome
+	var me *manager.ManagerError
+	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)

@@ -29,31 +29,40 @@ func isNotFoundError(err error) bool {
 // dispatcher is cleaned up automatically (pins removed, deleted from store).
 //
 // Pattern: FETCH -> EXECUTE (detach link) -> QUERY -> EXECUTE (cleanup)
-func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result DetachResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
-	defer func() { rec.Finalise() }()
+//
+// On failure, returns a *ManagerError containing the full operation outcome.
+func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+	var o outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&o)
+
+	fail := func(primaryErr error) error {
+		o.PrimaryError = primaryErr.Error()
+		rec.Finalise()
+		return &ManagerError{Outcome: o, Cause: primaryErr}
+	}
+
 	target := fmt.Sprintf("%d", linkID)
 
 	// FETCH: Get link record (includes details)
 	record, err := m.store.GetLink(ctx, linkID)
 	if err != nil {
+		var primaryErr error
 		if isNotFoundError(err) {
 			// Check if link exists in kernel but isn't managed by bpfman
 			if _, kerr := m.kernel.GetLinkByID(ctx, uint32(linkID)); kerr == nil {
-				retErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
+				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
 			} else {
-				retErr = bpfman.ErrLinkNotFound{LinkID: linkID}
+				primaryErr = bpfman.ErrLinkNotFound{LinkID: linkID}
 			}
 		} else {
-			retErr = fmt.Errorf("get link %d: %w", linkID, err)
+			primaryErr = fmt.Errorf("get link %d: %w", linkID, err)
 		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// FETCH: Get dispatcher state if this is a dispatcher-based link
@@ -61,14 +70,13 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 	if record.Kind == bpfman.LinkKindXDP || record.Kind == bpfman.LinkKindTC {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
-			retErr = fmt.Errorf("extract dispatcher key: %w", err)
+			primaryErr := fmt.Errorf("extract dispatcher key: %w", err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindPreflight,
 				Target: target,
-				Error:  retErr.Error(),
+				Error:  primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		if dispType != "" {
 			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
@@ -90,21 +98,20 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 	linkActions := computeDetachLinkActions(record)
 	linkSteps := computeDetachLinkSteps(record)
 	if err := m.executor.ExecuteAll(ctx, linkActions); err != nil {
-		retErr = fmt.Errorf("execute detach link actions: %w", err)
+		primaryErr := fmt.Errorf("execute detach link actions: %w", err)
 		// Record the failed step (we don't know which one failed, so mark the first)
 		if len(linkSteps) > 0 {
 			failedStep := linkSteps[0]
-			failedStep.Error = retErr.Error()
+			failedStep.Error = primaryErr.Error()
 			_ = rec.Fail(failedStep)
 		} else {
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: target,
-				Error:  retErr.Error(),
+				Error:  primaryErr.Error(),
 			})
 		}
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// Record successful detach steps
@@ -116,22 +123,20 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) (result Deta
 	// dispatcher has any remaining extensions. Clean up if empty.
 	if dispState != nil {
 		if err := m.cleanupEmptyDispatcher(ctx, *dispState); err != nil {
-			retErr = err
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindStoreDeleteDispatcher,
 				Target: fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
 				Details: outcome.DispatcherDetails{
 					DispatcherID: dispState.KernelID,
 				},
-				Error: retErr.Error(),
+				Error: err.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(err)
 		}
 	}
 
 	m.logger.InfoContext(ctx, "removed link", "link_id", linkID, "kind", record.Kind)
-	return
+	return nil
 }
 
 // computeDetachLinkSteps generates outcome.Step entries corresponding to computeDetachLinkActions.

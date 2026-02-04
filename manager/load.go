@@ -22,26 +22,32 @@ type LoadOpts struct {
 	Owner        string
 }
 
-// LoadResult contains the result of a Load operation.
-type LoadResult struct {
-	Program bpfman.Program
+// ManagerError is returned when a manager operation fails.
+// It implements error and contains the full operation outcome,
+// including timeline, rollback errors, and residual artefacts.
+//
+// Callers can use errors.As() to extract structured details:
+//
+//	prog, err := mgr.Load(ctx, spec, opts)
+//	if err != nil {
+//	    var me *ManagerError
+//	    if errors.As(err, &me) {
+//	        // Access me.Outcome.RollbackErrors, me.Outcome.Timeline, etc.
+//	    }
+//	}
+type ManagerError struct {
 	Outcome outcome.ManagerOperationOutcome
+	Cause   error // Underlying error, accessible via errors.As/errors.Is
 }
 
-// UnloadResult contains the result of an Unload operation.
-type UnloadResult struct {
-	Outcome outcome.ManagerOperationOutcome
+// Error returns the primary error message.
+func (e *ManagerError) Error() string {
+	return e.Outcome.PrimaryError
 }
 
-// AttachResult contains the result of an Attach operation.
-type AttachResult struct {
-	Link    bpfman.Link
-	Outcome outcome.ManagerOperationOutcome
-}
-
-// DetachResult contains the result of a Detach operation.
-type DetachResult struct {
-	Outcome outcome.ManagerOperationOutcome
+// Unwrap returns the underlying error for use with errors.Is/errors.As.
+func (e *ManagerError) Unwrap() error {
+	return e.Cause
 }
 
 // Load loads a BPF program and stores its metadata atomically.
@@ -56,28 +62,30 @@ type DetachResult struct {
 //   - If kernel load fails: nothing to clean up
 //   - If DB persist fails: unpin program and maps from kernel
 //
-// The Outcome field provides structured information about what completed,
-// failed, and what cleanup was attempted.
-func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts) (result LoadResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
+// On failure, returns a *ManagerError containing the full operation outcome
+// with timeline, rollback errors, and residual artefacts.
+func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts) (bpfman.Program, error) {
+	var o outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&o)
 	now := time.Now()
 
-	defer func() {
+	fail := func(primaryErr error) (bpfman.Program, error) {
+		o.PrimaryError = primaryErr.Error()
 		rec.Finalise()
-	}()
+		return bpfman.Program{}, &ManagerError{Outcome: o, Cause: primaryErr}
+	}
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
 	loaded, err := m.kernel.Load(ctx, spec, bpffs.Root(m.dirs.FS()))
 	if err != nil {
-		retErr = fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
+		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindKernelLoad,
 			Target: spec.ProgramName(),
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// Record successful kernel load
@@ -149,9 +157,18 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Error: storeErr.Error(),
 		})
 
-		// Attempt rollback
+		// Attempt rollback using undoStack for consistent pattern
+		var undo undoStack
+		undo.push(func() error {
+			return m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir)
+		})
+
 		rec.BeginRollback()
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
+		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
+			for _, f := range rbErrs {
+				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
+			}
+			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
@@ -160,15 +177,13 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 					PinPath:     loaded.Managed.PinPath,
 					MapsDirPath: loaded.Managed.PinDir,
 				},
-				Error: rbErr.Error(),
+				Error: rbErrs[0].Err.Error(),
 			})
-			result.Outcome.RollbackError = rbErr.Error()
 			// Set residual artefacts since rollback failed
 			rec.SetResidual([]outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinPath},
 				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinDir},
 			}, nil)
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", rbErr))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
@@ -179,10 +194,8 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 					MapsDirPath: loaded.Managed.PinDir,
 				},
 			})
-			retErr = storeErr
 		}
-		result.Outcome.PrimaryError = storeErr.Error()
-		return
+		return fail(storeErr)
 	}
 
 	// Record successful store save
@@ -203,7 +216,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		}
 	}
 
-	result.Program = bpfman.Program{
+	return bpfman.Program{
 		Spec: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:      loaded.Kernel,
@@ -212,43 +225,44 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Links:       nil, // No links yet, just loaded
 			Maps:        kernelMaps,
 		},
-	}
-	return
+	}, nil
 }
 
 // Unload removes a BPF program, its links, and metadata.
 //
 // Pattern: FETCH -> COMPUTE -> EXECUTE
 //
-// The Outcome field provides structured information about what completed
-// and failed during the unload operation.
-func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
+// On failure, returns a *ManagerError containing the full operation outcome.
+func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
+	var o outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&o)
 
-	defer func() {
+	fail := func(primaryErr error) error {
+		o.PrimaryError = primaryErr.Error()
 		rec.Finalise()
-	}()
+		return &ManagerError{Outcome: o, Cause: primaryErr}
+	}
 
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.store.Get(ctx, kernelID)
 	if err != nil {
+		var primaryErr error
 		if errors.Is(err, store.ErrNotFound) {
 			// Check if program exists in kernel but isn't managed by bpfman
 			if _, kerr := m.kernel.GetProgramByID(ctx, kernelID); kerr == nil {
-				retErr = bpfman.ErrProgramNotManaged{ID: kernelID}
+				primaryErr = bpfman.ErrProgramNotManaged{ID: kernelID}
 			} else {
-				retErr = bpfman.ErrProgramNotFound{ID: kernelID}
+				primaryErr = bpfman.ErrProgramNotFound{ID: kernelID}
 			}
 		} else {
-			retErr = fmt.Errorf("get program %d: %w", kernelID, err)
+			primaryErr = fmt.Errorf("get program %d: %w", kernelID, err)
 		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: fmt.Sprintf("%d", kernelID),
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	programName := progSpec.Meta.Name
@@ -257,36 +271,33 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 	// Programs that share maps with this program must be unloaded first.
 	depCount, err := m.store.CountDependentPrograms(ctx, kernelID)
 	if err != nil {
-		retErr = fmt.Errorf("check dependent programs for %d: %w", kernelID, err)
+		primaryErr := fmt.Errorf("check dependent programs for %d: %w", kernelID, err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: programName,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 	if depCount > 0 {
-		retErr = fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", kernelID, depCount)
+		primaryErr := fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", kernelID, depCount)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: programName,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	links, err := m.store.ListLinksByProgram(ctx, kernelID)
 	if err != nil {
-		retErr = fmt.Errorf("list links for program %d: %w", kernelID, err)
+		primaryErr := fmt.Errorf("list links for program %d: %w", kernelID, err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: programName,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// FETCH: Collect dispatcher keys for any TC/XDP links before
@@ -310,9 +321,8 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 	if !ok {
 		// Fallback for executors that don't support result tracking
 		if err := m.executor.ExecuteAll(ctx, actions); err != nil {
-			retErr = fmt.Errorf("execute unload actions: %w", err)
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			primaryErr := fmt.Errorf("execute unload actions: %w", err)
+			return fail(primaryErr)
 		}
 		// Record all steps as completed
 		for _, step := range steps {
@@ -335,9 +345,8 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 				failedStep.Error = execResult.Error.Error()
 				_ = rec.Fail(failedStep)
 			}
-			retErr = fmt.Errorf("execute unload actions: %w", execResult.Error)
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			primaryErr := fmt.Errorf("execute unload actions: %w", execResult.Error)
+			return fail(primaryErr)
 		}
 	}
 
@@ -345,7 +354,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) (result UnloadRes
 	m.cleanupEmptyDispatchers(ctx, dispatcherKeys)
 
 	m.logger.InfoContext(ctx, "unloaded program", "kernel_id", kernelID)
-	return
+	return nil
 }
 
 // computeUnloadSteps generates outcome.Step entries corresponding to computeUnloadActions.

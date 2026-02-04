@@ -33,9 +33,18 @@ const (
 //   - Extension links: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 //
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (result AttachResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
-	defer func() { rec.Finalise() }()
+//
+// On failure, returns a *ManagerError containing the full operation outcome.
+func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	var o outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&o)
+
+	fail := func(primaryErr error) (bpfman.Link, error) {
+		o.PrimaryError = primaryErr.Error()
+		rec.Finalise()
+		return bpfman.Link{}, &ManagerError{Outcome: o, Cause: primaryErr}
+	}
+
 	programKernelID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
@@ -45,31 +54,30 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	// FETCH: Get program metadata to access ObjectPath and ProgramName
 	prog, err := m.store.Get(ctx, programKernelID)
 	if err != nil {
+		var primaryErr error
 		if errors.Is(err, store.ErrNotFound) {
-			retErr = bpfman.ErrProgramNotFound{ID: programKernelID}
+			primaryErr = bpfman.ErrProgramNotFound{ID: programKernelID}
 		} else {
-			retErr = fmt.Errorf("get program %d: %w", programKernelID, err)
+			primaryErr = fmt.Errorf("get program %d: %w", programKernelID, err)
 		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// FETCH: Get network namespace ID (from target namespace if specified)
 	nsid, err := netns.GetNsid(netnsPath)
 	if err != nil {
-		retErr = fmt.Errorf("get nsid: %w", err)
+		primaryErr := fmt.Errorf("get nsid: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	// FETCH: Look up existing dispatcher or create new one.
@@ -78,17 +86,16 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		// KERNEL I/O + EXECUTE: Create new dispatcher
 		dispState, err = m.createXDPDispatcher(ctx, nsid, uint32(ifindex), netnsPath)
 		if err != nil {
-			retErr = fmt.Errorf("create XDP dispatcher for %s: %w", ifname, err)
+			primaryErr := fmt.Errorf("create XDP dispatcher for %s: %w", ifname, err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindAttachXDPDispatcher,
 				Target: target,
 				Details: outcome.DispatcherDetails{
 					Interface: ifname,
 				},
-				Error: retErr.Error(),
+				Error: primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		// Record dispatcher creation
 		_ = rec.Complete(outcome.Step{
@@ -100,14 +107,13 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			},
 		})
 	} else if err != nil {
-		retErr = fmt.Errorf("get dispatcher: %w", err)
+		primaryErr := fmt.Errorf("get dispatcher: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 
 	m.logger.DebugContext(ctx, "using dispatcher",
@@ -121,14 +127,13 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	revisionDir := dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
-		retErr = fmt.Errorf("count dispatcher links: %w", err)
+		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  retErr.Error(),
+			Error:  primaryErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(primaryErr)
 	}
 	linkPinPath := dispatcher.ExtensionLinkPath(revisionDir, position)
 
@@ -153,7 +158,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		// the kernel program survives via XDP link). Delete the stale
 		// record and retry with a fresh dispatcher.
 		if !errors.Is(err, os.ErrNotExist) {
-			retErr = fmt.Errorf("attach XDP extension to %s slot %d: %w", ifname, position, err)
+			primaryErr := fmt.Errorf("attach XDP extension to %s slot %d: %w", ifname, position, err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindAttachExtension,
 				Target: target,
@@ -163,50 +168,46 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 					PinPath:      linkPinPath,
 					DispatcherID: dispState.KernelID,
 				},
-				Error: retErr.Error(),
+				Error: primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
 			"prog_pin_path", progPinPath,
 			"dispatcher_id", dispState.KernelID,
 			"error", err)
 		if delErr := m.store.DeleteDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), nsid, uint32(ifindex)); delErr != nil {
-			retErr = fmt.Errorf("delete stale XDP dispatcher: %w", delErr)
+			primaryErr := fmt.Errorf("delete stale XDP dispatcher: %w", delErr)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindStoreDeleteDispatcher,
 				Target: target,
-				Error:  retErr.Error(),
+				Error:  primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		dispState, err = m.createXDPDispatcher(ctx, nsid, uint32(ifindex), netnsPath)
 		if err != nil {
-			retErr = fmt.Errorf("recreate XDP dispatcher for %s: %w", ifname, err)
+			primaryErr := fmt.Errorf("recreate XDP dispatcher for %s: %w", ifname, err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindAttachXDPDispatcher,
 				Target: target,
 				Details: outcome.DispatcherDetails{
 					Interface: ifname,
 				},
-				Error: retErr.Error(),
+				Error: primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		revisionDir = dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
-			retErr = fmt.Errorf("count dispatcher links after recreate: %w", err)
+			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindPreflight,
 				Target: target,
-				Error:  retErr.Error(),
+				Error:  primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
 		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
@@ -220,7 +221,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		}
 		link, err = m.kernel.AttachXDPExtension(ctx, extSpec)
 		if err != nil {
-			retErr = fmt.Errorf("attach XDP extension to %s slot %d (after recreate): %w", ifname, position, err)
+			primaryErr := fmt.Errorf("attach XDP extension to %s slot %d (after recreate): %w", ifname, position, err)
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindAttachExtension,
 				Target: target,
@@ -230,10 +231,9 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 					PinPath:      linkPinPath,
 					DispatcherID: dispState.KernelID,
 				},
-				Error: retErr.Error(),
+				Error: primaryErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			return fail(primaryErr)
 		}
 	}
 
@@ -294,6 +294,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			for _, f := range rbErrs {
 				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
 			}
+			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: fmt.Sprintf("%d", link.Spec.ID),
@@ -301,9 +302,8 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 					LinkID:  uint32(link.Spec.ID),
 					PinPath: linkPinPath,
 				},
-				Error: joinRollbackErrors(rbErrs).Error(),
+				Error: rbErrs[0].Err.Error(),
 			})
-			retErr = errors.Join(storeErr, fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
@@ -313,10 +313,8 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 					PinPath: linkPinPath,
 				},
 			})
-			retErr = storeErr
 		}
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return fail(storeErr)
 	}
 
 	// Record successful store save
@@ -341,8 +339,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		"revision", dispState.Revision,
 		"pin_path", linkPinPath)
 
-	result.Link = link
-	return
+	return link, nil
 }
 
 // createXDPDispatcher creates a new XDP dispatcher for the given interface.
@@ -403,7 +400,7 @@ func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex 
 			for _, f := range rbErrs {
 				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
 			}
-			return dispatcher.State{}, errors.Join(fmt.Errorf("save dispatcher: %w", err), fmt.Errorf("rollback failed: %w", joinRollbackErrors(rbErrs)))
+			return dispatcher.State{}, errors.Join(fmt.Errorf("save dispatcher: %w", err), errors.New("rollback failed"))
 		}
 		return dispatcher.State{}, fmt.Errorf("save dispatcher: %w", err)
 	}

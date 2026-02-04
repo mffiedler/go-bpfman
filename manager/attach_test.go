@@ -869,12 +869,13 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	// Load first program - should fail
 	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "first_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	result, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "First Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
 	// Verify outcome records the failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -905,19 +906,20 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	for i, name := range []string{"first_prog", "second_prog"} {
 		spec, err := bpfman.NewLoadSpec("/path/to/prog.o", name, bpfman.ProgramTypeTracepoint)
 		require.NoError(t, err)
-		result, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+		_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 		require.NoError(t, err, "Load %d should succeed", i+1)
-		assert.Equal(t, outcome.StatusSuccess, result.Outcome.Status)
+		// Outcome is not accessible on success - absence of error implies success
 	}
 
 	// Load third program - should fail
 	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "third_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	result3, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "Third Load should fail")
 
 	// Verify third load outcome records the failure
-	o := result3.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	failed := findFailedEntry(o.Timeline)
 	require.NotNil(t, failed)
@@ -1728,12 +1730,13 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	// Attempt to attach to non-existent interface
 	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "nonexistent0", nonExistentIfindex)
 	require.NoError(t, err, "spec creation should succeed")
-	result, err := fix.Manager.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
+	_, err = fix.Manager.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "AttachXDP to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
 
 	// Verify outcome records the failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -1764,12 +1767,13 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "nonexistent0", 999, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "spec creation should succeed")
 	attachSpec = attachSpec.WithPriority(50)
-	result, err := fix.Manager.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
+	_, err = fix.Manager.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "AttachTC to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
 
 	// Verify outcome records the failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -1801,12 +1805,13 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "nonexistent0", nonExistentIfindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "spec creation should succeed")
 	attachSpec = attachSpec.WithPriority(50)
-	result, err := fix.Manager.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})
+	_, err = fix.Manager.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "AttachTCX to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
 
 	// Verify outcome records the failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)
@@ -1831,7 +1836,7 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	// Try to attach a program that doesn't exist
 	attachSpec, err := bpfman.NewTracepointAttachSpec(99999, "syscalls", "sys_enter_open")
 	require.NoError(t, err, "spec creation should succeed")
-	result, err := fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
+	_, err = fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "Attach to non-existent program should fail")
 
 	var notFound bpfman.ErrProgramNotFound
@@ -1839,7 +1844,8 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	assert.Equal(t, uint32(99999), notFound.ID)
 
 	// Verify outcome records the preflight failure
-	o := result.Outcome
+	me := extractManagerError(t, err)
+	o := me.Outcome
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := findFailedEntry(o.Timeline)

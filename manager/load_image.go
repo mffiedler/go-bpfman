@@ -26,21 +26,71 @@ type LoadImageOpts struct {
 	GlobalData   map[string][]byte
 }
 
-// LoadImageResult contains the loaded programs from an OCI image.
-type LoadImageResult struct {
-	Programs []bpfman.Program
-	Outcome  outcome.ManagerOperationOutcome
-}
-
 // LoadImage loads BPF programs from an OCI container image.
 // It pulls the image, extracts the bytecode, and loads each specified program.
 //
-// On success, Outcome.Status == StatusSuccess and all programs are loaded.
-// On failure, Outcome contains completed, failed, and skipped steps plus
-// cleanup information if rollback was attempted.
-func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result LoadImageResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
-	defer func() { rec.Finalise() }()
+// On success, returns the loaded programs.
+// On failure, returns a *ManagerError containing the full operation outcome
+// with timeline, rollback errors, and residual artefacts.
+func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result []bpfman.Program, retErr error) {
+	var o outcome.ManagerOperationOutcome
+	rec := outcome.NewRecorder(&o)
+
+	var loaded []bpfman.Program
+
+	// Defer handles rollback, finalization, and setting the final error.
+	// Using named return values allows the defer to modify retErr after
+	// rollback completes, ensuring the ManagerError captures the complete outcome.
+	defer func() {
+		if retErr != nil && len(loaded) > 0 {
+			// Rollback any loaded programs before finalizing
+			rec.BeginRollback()
+			for _, prog := range loaded {
+				kernelID := prog.Spec.KernelID
+				progName := prog.Spec.Meta.Name
+				pinPath := prog.Spec.Handles.PinPath
+				if err := m.Unload(ctx, kernelID); err != nil {
+					m.logger.WarnContext(ctx, "rollback: failed to unload program",
+						"kernel_id", kernelID,
+						"name", progName,
+						"error", err)
+					_ = rec.RollbackFail(outcome.Step{
+						Kind:   outcome.StepKindKernelUnload,
+						Target: progName,
+						Details: outcome.ProgramDetails{
+							KernelID: kernelID,
+							PinPath:  pinPath,
+						},
+						Error: err.Error(),
+					})
+				} else {
+					m.logger.DebugContext(ctx, "rollback: unloaded program",
+						"kernel_id", kernelID,
+						"name", progName)
+					_ = rec.RollbackComplete(outcome.Step{
+						Kind:   outcome.StepKindKernelUnload,
+						Target: progName,
+						Details: outcome.ProgramDetails{
+							KernelID: kernelID,
+							PinPath:  pinPath,
+						},
+					})
+				}
+			}
+		}
+		rec.Finalise()
+		// If there was an error, update retErr with the complete outcome
+		if retErr != nil {
+			// Extract the original cause from the existing ManagerError if present
+			var cause error
+			if me, ok := retErr.(*ManagerError); ok {
+				cause = me.Cause
+			} else {
+				cause = retErr
+			}
+			retErr = &ManagerError{Outcome: o, Cause: cause}
+		}
+	}()
 
 	if puller == nil {
 		retErr = fmt.Errorf("image puller is required")
@@ -49,8 +99,8 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Target: "validation",
 			Error:  retErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		o.PrimaryError = retErr.Error()
+		return nil, retErr
 	}
 
 	// Pull the image
@@ -66,8 +116,8 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Target: ref.URL,
 			Error:  retErr.Error(),
 		})
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		o.PrimaryError = retErr.Error()
+		return nil, retErr
 	}
 
 	_ = rec.Complete(outcome.Step{
@@ -94,8 +144,8 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: pulled.ObjectPath,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			o.PrimaryError = retErr.Error()
+			return nil, retErr
 		}
 
 		_ = rec.Complete(outcome.Step{
@@ -130,56 +180,12 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: "validate_programs",
 				Error:  retErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			o.PrimaryError = retErr.Error()
+			return nil, retErr
 		}
 	}
 
-	// Load each program, with rollback on failure.
-	// We use a defer with named return values so cleanup modifies the actual return.
-	success := false
-	defer func() {
-		if success {
-			return
-		}
-		if len(result.Programs) == 0 {
-			return // Nothing to clean up
-		}
-		rec.BeginRollback()
-		for _, loaded := range result.Programs {
-			kernelID := loaded.Spec.KernelID
-			progName := loaded.Spec.Meta.Name
-			pinPath := loaded.Spec.Handles.PinPath
-			if _, err := m.Unload(ctx, kernelID); err != nil {
-				m.logger.WarnContext(ctx, "rollback: failed to unload program",
-					"kernel_id", kernelID,
-					"name", progName,
-					"error", err)
-				_ = rec.RollbackFail(outcome.Step{
-					Kind:   outcome.StepKindKernelUnload,
-					Target: progName,
-					Details: outcome.ProgramDetails{
-						KernelID: kernelID,
-						PinPath:  pinPath,
-					},
-					Error: err.Error(),
-				})
-			} else {
-				m.logger.DebugContext(ctx, "rollback: unloaded program",
-					"kernel_id", kernelID,
-					"name", progName)
-				_ = rec.RollbackComplete(outcome.Step{
-					Kind:   outcome.StepKindKernelUnload,
-					Target: progName,
-					Details: outcome.ProgramDetails{
-						KernelID: kernelID,
-						PinPath:  pinPath,
-					},
-				})
-			}
-		}
-	}()
-
+	// Load each program
 	for i, prog := range programs {
 		// Build load spec for this program
 		var spec bpfman.LoadSpec
@@ -192,7 +198,6 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		if specErr != nil {
 			retErr = fmt.Errorf("invalid load spec for %q: %w", prog.ProgramName, specErr)
 			// Mark remaining programs as skipped BEFORE recording failure
-			// (recorder doesn't allow Skip after Fail)
 			for j := i + 1; j < len(programs); j++ {
 				_ = rec.Skip(outcome.Step{
 					Kind:   outcome.StepKindKernelLoad,
@@ -204,8 +209,8 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 				Target: prog.ProgramName,
 				Error:  retErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			o.PrimaryError = retErr.Error()
+			return nil, retErr
 		}
 
 		// Apply global data (per-program overrides take precedence)
@@ -235,11 +240,10 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		}
 
 		// Load through manager
-		loadResult, loadErr := m.Load(ctx, spec, loadOpts)
+		loadedProg, loadErr := m.Load(ctx, spec, loadOpts)
 		if loadErr != nil {
-			retErr = fmt.Errorf("load program %q from image: %w", prog.ProgramName, loadErr)
+			retErr = fmt.Errorf("load program %q from image: %w", spec.ProgramName(), loadErr)
 			// Mark remaining programs as skipped BEFORE recording failure
-			// (recorder doesn't allow Skip after Fail)
 			for j := i + 1; j < len(programs); j++ {
 				_ = rec.Skip(outcome.Step{
 					Kind:   outcome.StepKindKernelLoad,
@@ -248,40 +252,37 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			}
 			_ = rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindKernelLoad,
-				Target: prog.ProgramName,
+				Target: spec.ProgramName(),
 				Error:  retErr.Error(),
 			})
-			result.Outcome.PrimaryError = retErr.Error()
-			return
+			o.PrimaryError = retErr.Error()
+			return nil, retErr
 		}
-
-		loaded := loadResult.Program
 
 		// Load succeeded - record both kernel and store steps
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindKernelLoad,
-			Target: prog.ProgramName,
+			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Spec.KernelID,
-				PinPath:  loaded.Spec.Handles.PinPath,
+				KernelID: loadedProg.Spec.KernelID,
+				PinPath:  loadedProg.Spec.Handles.PinPath,
 			},
 		})
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveProgram,
-			Target: prog.ProgramName,
+			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Spec.KernelID,
+				KernelID: loadedProg.Spec.KernelID,
 			},
 		})
 
 		m.logger.InfoContext(ctx, "loaded program from image",
-			"name", prog.ProgramName,
-			"kernel_id", loaded.Spec.KernelID,
-			"pin_path", loaded.Spec.Handles.PinPath)
+			"name", spec.ProgramName(),
+			"kernel_id", loadedProg.Spec.KernelID,
+			"pin_path", loadedProg.Spec.Handles.PinPath)
 
-		result.Programs = append(result.Programs, loaded)
+		loaded = append(loaded, loadedProg)
 	}
 
-	success = true
-	return
+	return loaded, nil
 }

@@ -275,6 +275,15 @@ func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context) error) e
 	return err
 }
 
+// RunWithLock executes fn under the global writer lock. Use this pattern
+// to perform mutations that don't return a value.
+func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context) error) error {
+	_, err := RunWithLockValue(ctx, c, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, fn(ctx)
+	})
+	return err
+}
+
 // RunWithLockValue is like RunWithLock but returns a value from the locked
 // section. Use this pattern to perform mutations under lock, then format and
 // emit output outside the lock to minimise critical section duration.
