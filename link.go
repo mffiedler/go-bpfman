@@ -29,15 +29,15 @@ func IsSyntheticLinkID(id uint32) bool {
 // This type maps to cilium/ebpf's link.Anchor for kernel attachment.
 type TCXAttachOrder struct {
 	// First attaches at the head of the chain (runs before all others).
-	First bool
+	First bool `json:"first,omitempty"`
 	// Last attaches at the tail of the chain (runs after all others).
-	Last bool
+	Last bool `json:"last,omitempty"`
 	// BeforeProgID attaches before the program with this kernel ID.
 	// Zero means not set.
-	BeforeProgID uint32
+	BeforeProgID uint32 `json:"before_prog_id,omitempty"`
 	// AfterProgID attaches after the program with this kernel ID.
 	// Zero means not set.
-	AfterProgID uint32
+	AfterProgID uint32 `json:"after_prog_id,omitempty"`
 }
 
 // TCXAttachFirst returns an order that attaches at the head of the chain.

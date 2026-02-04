@@ -5,7 +5,7 @@ import "fmt"
 // ErrLinkNotManaged is returned when attempting to operate on a link
 // that exists in the kernel but is not managed by bpfman.
 type ErrLinkNotManaged struct {
-	LinkID LinkID
+	LinkID LinkID `json:"link_id"`
 }
 
 func (e ErrLinkNotManaged) Error() string {
@@ -15,7 +15,7 @@ func (e ErrLinkNotManaged) Error() string {
 // ErrLinkNotFound is returned when attempting to operate on a link
 // that does not exist in either the kernel or bpfman's store.
 type ErrLinkNotFound struct {
-	LinkID LinkID
+	LinkID LinkID `json:"link_id"`
 }
 
 func (e ErrLinkNotFound) Error() string {
@@ -25,7 +25,7 @@ func (e ErrLinkNotFound) Error() string {
 // ErrProgramNotManaged is returned when attempting to operate on a program
 // that exists in the kernel but is not managed by bpfman.
 type ErrProgramNotManaged struct {
-	ID uint32
+	ID uint32 `json:"id"`
 }
 
 func (e ErrProgramNotManaged) Error() string {
@@ -35,7 +35,7 @@ func (e ErrProgramNotManaged) Error() string {
 // ErrProgramNotFound is returned when attempting to operate on a program
 // that does not exist in either the kernel or bpfman's store.
 type ErrProgramNotFound struct {
-	ID uint32
+	ID uint32 `json:"id"`
 }
 
 func (e ErrProgramNotFound) Error() string {

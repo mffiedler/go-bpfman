@@ -33,18 +33,18 @@ const (
 
 // Config is the top-level bpfman configuration.
 type Config struct {
-	Signing SigningConfig `toml:"signing"`
-	Logging LoggingConfig `toml:"logging"`
+	Signing SigningConfig `toml:"signing" json:"signing"`
+	Logging LoggingConfig `toml:"logging" json:"logging"`
 }
 
 // LoggingConfig controls logging behaviour.
 type LoggingConfig struct {
 	// Level is the log spec (e.g., "info" or "info,manager=debug").
-	Level string `toml:"level"`
+	Level string `toml:"level" json:"level,omitempty"`
 	// Format is the output format: "text" or "json".
-	Format string `toml:"format"`
+	Format string `toml:"format" json:"format,omitempty"`
 	// Components provides an alternative way to specify per-component levels.
-	Components map[string]string `toml:"components"`
+	Components map[string]string `toml:"components" json:"components,omitempty"`
 }
 
 // ToSpec converts the LoggingConfig to a log spec string.
@@ -75,12 +75,12 @@ type SigningConfig struct {
 	// AllowUnsigned controls whether unsigned images are accepted.
 	// When true (default), unsigned images can be loaded.
 	// When false, all images must have valid signatures.
-	AllowUnsigned bool `toml:"allow_unsigned"`
+	AllowUnsigned bool `toml:"allow_unsigned" json:"allow_unsigned"`
 
 	// VerifyEnabled controls whether signature verification is performed.
 	// When true (default), images with signatures are verified.
 	// When false, signature verification is skipped entirely.
-	VerifyEnabled bool `toml:"verify_enabled"`
+	VerifyEnabled bool `toml:"verify_enabled" json:"verify_enabled"`
 }
 
 // DefaultConfig returns the default configuration from the embedded default.toml.

@@ -17,9 +17,9 @@ import (
 //   - "info,manager=debug,store=trace" - multiple overrides
 type Spec struct {
 	// BaseLevel is the default level for all components.
-	BaseLevel Level
+	BaseLevel Level `json:"base_level"`
 	// Components maps component names to their specific levels.
-	Components map[string]Level
+	Components map[string]Level `json:"components,omitempty"`
 }
 
 // ParseSpec parses a log specification string.

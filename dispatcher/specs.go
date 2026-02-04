@@ -9,11 +9,11 @@ import (
 
 // XDPDispatcherAttachSpec contains parameters for creating an XDP dispatcher.
 type XDPDispatcherAttachSpec struct {
-	Target      bpfman.AttachTarget
-	ProgPinPath string // where to pin dispatcher program
-	LinkPinPath string // where to pin dispatcher link
-	NumProgs    int    // extension slot count
-	ProceedOn   uint32 // XDP action bitmask
+	Target      bpfman.AttachTarget `json:"target"`
+	ProgPinPath string              `json:"prog_pin_path"`        // where to pin dispatcher program
+	LinkPinPath string              `json:"link_pin_path"`        // where to pin dispatcher link
+	NumProgs    int                 `json:"num_progs"`            // extension slot count
+	ProceedOn   uint32              `json:"proceed_on,omitempty"` // XDP action bitmask
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -37,12 +37,12 @@ func (s XDPDispatcherAttachSpec) Validate() error {
 // Note: TC legacy uses netlink, not BPF links, so no LinkPinPath.
 // TC netlink requires interface name; manager resolves and supplies it.
 type TCDispatcherAttachSpec struct {
-	Target      bpfman.AttachTarget
-	IfName      string             // needed for netlink operations
-	ProgPinPath string             // where to pin dispatcher program
-	Direction   bpfman.TCDirection // ingress or egress
-	NumProgs    int                // extension slot count
-	ProceedOn   uint32             // TC action bitmask
+	Target      bpfman.AttachTarget `json:"target"`
+	IfName      string              `json:"ifname"`               // needed for netlink operations
+	ProgPinPath string              `json:"prog_pin_path"`        // where to pin dispatcher program
+	Direction   bpfman.TCDirection  `json:"direction"`            // ingress or egress
+	NumProgs    int                 `json:"num_progs"`            // extension slot count
+	ProceedOn   uint32              `json:"proceed_on,omitempty"` // TC action bitmask
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -69,12 +69,12 @@ func (s TCDispatcherAttachSpec) Validate() error {
 // XDPExtensionAttachSpec contains parameters for attaching an XDP extension
 // program to a dispatcher slot.
 type XDPExtensionAttachSpec struct {
-	DispatcherPinPath string // pinned dispatcher program
-	ObjectPath        string // ELF file containing extension
-	ProgramName       string // program name within ELF
-	Position          int    // dispatcher slot [0, MaxPrograms)
-	LinkPinPath       string // optional - empty for ephemeral
-	MapPinDir         string // optional - empty if no maps
+	DispatcherPinPath string `json:"dispatcher_pin_path"`     // pinned dispatcher program
+	ObjectPath        string `json:"object_path"`             // ELF file containing extension
+	ProgramName       string `json:"program_name"`            // program name within ELF
+	Position          int    `json:"position"`                // dispatcher slot [0, MaxPrograms)
+	LinkPinPath       string `json:"link_pin_path,omitempty"` // optional - empty for ephemeral
+	MapPinDir         string `json:"map_pin_dir,omitempty"`   // optional - empty if no maps
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -97,12 +97,12 @@ func (s XDPExtensionAttachSpec) Validate() error {
 // TCExtensionAttachSpec contains parameters for attaching a TC extension
 // program to a dispatcher slot.
 type TCExtensionAttachSpec struct {
-	DispatcherPinPath string // pinned dispatcher program
-	ObjectPath        string // ELF file containing extension
-	ProgramName       string // program name within ELF
-	Position          int    // dispatcher slot [0, MaxPrograms)
-	LinkPinPath       string // optional - empty for ephemeral
-	MapPinDir         string // optional - empty if no maps
+	DispatcherPinPath string `json:"dispatcher_pin_path"`     // pinned dispatcher program
+	ObjectPath        string `json:"object_path"`             // ELF file containing extension
+	ProgramName       string `json:"program_name"`            // program name within ELF
+	Position          int    `json:"position"`                // dispatcher slot [0, MaxPrograms)
+	LinkPinPath       string `json:"link_pin_path,omitempty"` // optional - empty for ephemeral
+	MapPinDir         string `json:"map_pin_dir,omitempty"`   // optional - empty if no maps
 }
 
 // Validate checks the spec for invalid or missing values.

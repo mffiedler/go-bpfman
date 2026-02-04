@@ -14,17 +14,17 @@ import (
 // This avoids importing the config package, preventing import cycles.
 type ScannerDirs struct {
 	// FS is the bpffs mount point (e.g., /run/bpfman/fs).
-	FS string
+	FS string `json:"fs"`
 	// XDP is the XDP dispatcher directory.
-	XDP string
+	XDP string `json:"xdp"`
 	// TCIngress is the TC ingress dispatcher directory.
-	TCIngress string
+	TCIngress string `json:"tc_ingress"`
 	// TCEgress is the TC egress dispatcher directory.
-	TCEgress string
+	TCEgress string `json:"tc_egress"`
 	// Maps is the maps directory.
-	Maps string
+	Maps string `json:"maps"`
 	// Links is the links directory.
-	Links string
+	Links string `json:"links"`
 }
 
 // Scanner provides read-only access to bpfman's filesystem layout.
@@ -57,51 +57,51 @@ func (s *Scanner) reportMalformed(path string, err error) {
 
 // ProgPin represents a program pin: {dirs.FS}/prog_{kernel_id}
 type ProgPin struct {
-	Path     string
-	KernelID uint32
+	Path     string `json:"path"`
+	KernelID uint32 `json:"kernel_id"`
 }
 
 // LinkDir represents a link directory: {dirs.FS}/links/{program_id}
 type LinkDir struct {
-	Path      string
-	ProgramID uint32
+	Path      string `json:"path"`
+	ProgramID uint32 `json:"program_id"`
 }
 
 // MapDir represents a map directory: {dirs.FS}/maps/{program_id}
 type MapDir struct {
-	Path      string
-	ProgramID uint32
+	Path      string `json:"path"`
+	ProgramID uint32 `json:"program_id"`
 }
 
 // DispatcherDir represents a dispatcher revision directory.
 // Path: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
 // LinkCount is derived by counting link_* files in the directory.
 type DispatcherDir struct {
-	Path      string
-	DispType  string // "xdp", "tc-ingress", "tc-egress"
-	Nsid      uint64
-	Ifindex   uint32
-	Revision  uint32
-	LinkCount int
+	Path      string `json:"path"`
+	DispType  string `json:"disp_type"` // "xdp", "tc-ingress", "tc-egress"
+	Nsid      uint64 `json:"nsid"`
+	Ifindex   uint32 `json:"ifindex"`
+	Revision  uint32 `json:"revision"`
+	LinkCount int    `json:"link_count"`
 }
 
 // DispatcherLinkPin represents a dispatcher link pin (XDP only).
 // Path: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_link
 type DispatcherLinkPin struct {
-	Path     string
-	DispType string
-	Nsid     uint64
-	Ifindex  uint32
+	Path     string `json:"path"`
+	DispType string `json:"disp_type"`
+	Nsid     uint64 `json:"nsid"`
+	Ifindex  uint32 `json:"ifindex"`
 }
 
 // FSState is a materialised snapshot of the filesystem.
 // Use Scanner.Scan() to create, or construct directly in tests.
 type FSState struct {
-	ProgPins           []ProgPin
-	LinkDirs           []LinkDir
-	MapDirs            []MapDir
-	DispatcherDirs     []DispatcherDir
-	DispatcherLinkPins []DispatcherLinkPin
+	ProgPins           []ProgPin           `json:"prog_pins"`
+	LinkDirs           []LinkDir           `json:"link_dirs"`
+	MapDirs            []MapDir            `json:"map_dirs"`
+	DispatcherDirs     []DispatcherDir     `json:"dispatcher_dirs"`
+	DispatcherLinkPins []DispatcherLinkPin `json:"dispatcher_link_pins"`
 }
 
 // ProgPins returns an iterator over program pins in {dirs.FS}/prog_*.

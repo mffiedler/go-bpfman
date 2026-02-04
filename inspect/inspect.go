@@ -54,9 +54,9 @@ type KernelLinkGetter interface {
 
 // LinkInfo is the result of GetLink, containing record and presence.
 type LinkInfo struct {
-	Record   bpfman.LinkSpec
-	Kernel   *kernel.Link // may be nil if not in kernel
-	Presence Presence
+	Record   bpfman.LinkSpec `json:"record"`
+	Kernel   *kernel.Link    `json:"kernel,omitempty"` // may be nil if not in kernel
+	Presence Presence        `json:"presence"`
 }
 
 // DispatcherGetter is the subset of interpreter.Store needed by GetDispatcher.
@@ -66,16 +66,16 @@ type DispatcherGetter interface {
 
 // DispatcherInfo is the result of GetDispatcher, containing state and presence.
 type DispatcherInfo struct {
-	State        dispatcher.State
-	ProgPresence Presence // dispatcher program presence
-	LinkPresence Presence // XDP link presence (for XDP dispatchers)
+	State        dispatcher.State `json:"state"`
+	ProgPresence Presence         `json:"prog_presence"` // dispatcher program presence
+	LinkPresence Presence         `json:"link_presence"` // XDP link presence (for XDP dispatchers)
 }
 
 // Presence indicates where an object exists across the three sources.
 type Presence struct {
-	InStore  bool
-	InKernel bool
-	InFS     bool
+	InStore  bool `json:"in_store"`
+	InKernel bool `json:"in_kernel"`
+	InFS     bool `json:"in_fs"`
 }
 
 // Managed returns true if the object is tracked in the store.
@@ -90,19 +90,19 @@ func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 // ProgramView is a correlation view of a program across store, kernel, and FS.
 // Renamed from ProgramRow.
 type ProgramView struct {
-	KernelID uint32
+	KernelID uint32 `json:"kernel_id"`
 
 	// Store fields (valid when Presence.InStore is true)
-	Managed *bpfman.ProgramSpec
+	Managed *bpfman.ProgramSpec `json:"managed,omitempty"`
 
 	// Kernel fields (valid when Presence.InKernel is true)
-	Kernel *kernel.Program
+	Kernel *kernel.Program `json:"kernel,omitempty"`
 
 	// FS fields
-	FSPinPath   string // from bpffs scan (may differ from store)
-	MapsPresent bool   // true if map pin directory exists
+	FSPinPath   string `json:"fs_pin_path,omitempty"` // from bpffs scan (may differ from store)
+	MapsPresent bool   `json:"maps_present"`          // true if map pin directory exists
 
-	Presence Presence
+	Presence Presence `json:"presence"`
 }
 
 // AsProgram constructs a bpfman.Program composite from a store-managed program.
@@ -159,12 +159,12 @@ func (v ProgramView) PinPath() string {
 // LinkRow is a store-first view of a link with presence annotations.
 type LinkRow struct {
 	// Store fields (valid when Presence.InStore is true)
-	Managed *bpfman.LinkSpec
+	Managed *bpfman.LinkSpec `json:"managed,omitempty"`
 
 	// Kernel fields (valid when Presence.InKernel is true)
-	Kernel *kernel.Link
+	Kernel *kernel.Link `json:"kernel,omitempty"`
 
-	Presence Presence
+	Presence Presence `json:"presence"`
 }
 
 // ID returns the link's durable bpfman ID.
@@ -224,38 +224,38 @@ func (r LinkRow) HasPin() bool {
 // DispatcherRow is a store-first view of a dispatcher with presence annotations.
 type DispatcherRow struct {
 	// Key fields
-	DispType string
-	Nsid     uint64
-	Ifindex  uint32
+	DispType string `json:"disp_type"`
+	Nsid     uint64 `json:"nsid"`
+	Ifindex  uint32 `json:"ifindex"`
 
 	// Store fields (valid when Presence.InStore is true)
-	Revision uint32
-	KernelID uint32
-	LinkID   uint32
-	Priority uint32
+	Revision uint32 `json:"revision"`
+	KernelID uint32 `json:"kernel_id"`
+	LinkID   uint32 `json:"link_id"`
+	Priority uint32 `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
-	ProgPresence Presence // dispatcher program
-	LinkPresence Presence // XDP link (for XDP dispatchers)
+	ProgPresence Presence `json:"prog_presence"` // dispatcher program
+	LinkPresence Presence `json:"link_presence"` // XDP link (for XDP dispatchers)
 
 	// FS-derived
-	FSLinkCount int // count of link_* files in revision dir (-1 if unknown)
+	FSLinkCount int `json:"fs_link_count"` // count of link_* files in revision dir (-1 if unknown)
 }
 
 // SnapshotMeta contains metadata about the snapshot.
 type SnapshotMeta struct {
 	// ObservedAt is when the snapshot was taken.
-	ObservedAt time.Time
+	ObservedAt time.Time `json:"observed_at"`
 	// Errors encountered during snapshot (non-fatal)
-	Errors []error
+	Errors []error `json:"-"` // errors don't serialize well to JSON
 }
 
 // World is a point-in-time snapshot of bpfman's state across all sources.
 type World struct {
-	Programs    []ProgramRow
-	Links       []LinkRow
-	Dispatchers []DispatcherRow
-	Meta        SnapshotMeta
+	Programs    []ProgramRow    `json:"programs"`
+	Links       []LinkRow       `json:"links"`
+	Dispatchers []DispatcherRow `json:"dispatchers"`
+	Meta        SnapshotMeta    `json:"meta"`
 }
 
 // ManagedPrograms returns only store-managed programs.
