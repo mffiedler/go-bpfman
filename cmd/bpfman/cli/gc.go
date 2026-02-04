@@ -64,7 +64,7 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 	})
 	if err != nil {
 		if result.Outcome.Status != "" {
-			return displayOutcomeError(cli, err, result.Outcome, &OutputFlags{Output: "table"})
+			return displayOutcomeError(cli, err, result.Outcome, &OutputFlags{Output: OutputValue{Value: "table"}})
 		}
 		return err
 	}

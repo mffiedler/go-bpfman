@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/alecthomas/kong"
@@ -114,6 +115,22 @@ func imagePullPolicyMapper() kong.MapperFunc {
 			return err
 		}
 		target.Set(reflect.ValueOf(pp))
+		return nil
+	}
+}
+
+// outputValueMapper creates a Kong mapper for OutputValue that rejects multiple -o flags.
+func outputValueMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("format", &s); err != nil {
+			return err
+		}
+		current := target.Interface().(OutputValue)
+		if current.IsSet {
+			return fmt.Errorf("only one output format may be specified")
+		}
+		target.Set(reflect.ValueOf(OutputValue{Value: s, IsSet: true}))
 		return nil
 	}
 }

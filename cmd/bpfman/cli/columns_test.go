@@ -467,7 +467,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 		},
 	}
 
-	flags := &OutputFlags{Output: "wide"}
+	flags := &OutputFlags{Output: OutputValue{Value: "wide"}}
 	output, err := FormatProgramsComposite(result, flags)
 	if err != nil {
 		t.Fatalf("FormatProgramsComposite() error = %v", err)
@@ -508,7 +508,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumns(t *testing.T) {
 		},
 	}
 
-	flags := &OutputFlags{Output: "custom-columns=ID:.spec.kernel_id,NAME:.spec.meta.name"}
+	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns=ID:.spec.kernel_id,NAME:.spec.meta.name"}}
 	output, err := FormatProgramsComposite(result, flags)
 	if err != nil {
 		t.Fatalf("FormatProgramsComposite() error = %v", err)
@@ -544,7 +544,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumnsFile(t *testing.T) {
 		},
 	}
 
-	flags := &OutputFlags{Output: "custom-columns-file=" + tmpFile}
+	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns-file=" + tmpFile}}
 	output, err := FormatProgramsComposite(result, flags)
 	if err != nil {
 		t.Fatalf("FormatProgramsComposite() error = %v", err)
@@ -563,7 +563,7 @@ func TestIntegration_InvalidCustomColumnsSpec(t *testing.T) {
 		Programs: []bpfman.Program{},
 	}
 
-	flags := &OutputFlags{Output: "custom-columns=INVALID"}
+	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns=INVALID"}}
 	_, err := FormatProgramsComposite(result, flags)
 	if err == nil {
 		t.Error("FormatProgramsComposite() expected error for invalid spec")
@@ -575,7 +575,7 @@ func TestIntegration_InvalidCustomColumnsFile(t *testing.T) {
 		Programs: []bpfman.Program{},
 	}
 
-	flags := &OutputFlags{Output: "custom-columns-file=/nonexistent/file.txt"}
+	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns-file=/nonexistent/file.txt"}}
 	_, err := FormatProgramsComposite(result, flags)
 	if err == nil {
 		t.Error("FormatProgramsComposite() expected error for nonexistent file")

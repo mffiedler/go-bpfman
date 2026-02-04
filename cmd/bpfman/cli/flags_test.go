@@ -65,7 +65,7 @@ func TestOutputFlags_Format(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: tt.output}
+			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
 			got, err := f.Format()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Format() error = %v, wantErr %v", err, tt.wantErr)
@@ -103,7 +103,7 @@ func TestOutputFlags_JSONPathExpr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: tt.output}
+			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
 			got := f.JSONPathExpr()
 			if got != tt.want {
 				t.Errorf("JSONPathExpr() = %q, want %q", got, tt.want)
@@ -142,7 +142,7 @@ func TestOutputFlags_CustomColumnsSpec(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: tt.output}
+			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
 			got := f.CustomColumnsSpec()
 			if got != tt.want {
 				t.Errorf("CustomColumnsSpec() = %q, want %q", got, tt.want)
@@ -181,7 +181,7 @@ func TestOutputFlags_CustomColumnsFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: tt.output}
+			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
 			got := f.CustomColumnsFile()
 			if got != tt.want {
 				t.Errorf("CustomColumnsFile() = %q, want %q", got, tt.want)

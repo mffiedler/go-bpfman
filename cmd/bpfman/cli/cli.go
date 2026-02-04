@@ -190,6 +190,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(ObjectPath{}), objectPathMapper()),
 		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
 		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
 		kong.Vars{
 			"default_runtime_dir": "/run/bpfman",
 			"default_config_path": "/etc/bpfman/bpfman.toml",
