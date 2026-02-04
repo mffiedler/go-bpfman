@@ -18,6 +18,7 @@ type ListCmd struct {
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
 	OutputFlags
+	Quiet      bool     `short:"q" help:"Output only program IDs, one per line."`
 	Attached   bool     `name:"attached" help:"Show only programs with active links."`
 	Unattached bool     `name:"unattached" help:"Show only programs without active links."`
 	Type       []string `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
@@ -91,6 +92,14 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 		return nil
 	}
 
+	if c.Quiet {
+		var b strings.Builder
+		for _, p := range result.Programs {
+			fmt.Fprintf(&b, "%d\n", p.Spec.KernelID)
+		}
+		return cli.PrintOut(b.String())
+	}
+
 	output, err := FormatProgramsComposite(result, &c.OutputFlags)
 	if err != nil {
 		return err
@@ -101,6 +110,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 // ListLinksCmd lists managed links.
 type ListLinksCmd struct {
 	OutputFlags
+	Quiet     bool       `short:"q" help:"Output only link IDs, one per line."`
 	ProgramID *ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
 }
 
@@ -124,6 +134,14 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 
 	if len(links) == 0 {
 		return nil
+	}
+
+	if c.Quiet {
+		var b strings.Builder
+		for _, l := range links {
+			fmt.Fprintf(&b, "%d\n", l.ID)
+		}
+		return cli.PrintOut(b.String())
 	}
 
 	output, err := FormatLinkList(links, &c.OutputFlags)
