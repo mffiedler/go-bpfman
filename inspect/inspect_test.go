@@ -639,3 +639,112 @@ func TestGetDispatcher_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNotFound)
 }
+
+func TestSnapshot_LinksHaveDetails(t *testing.T) {
+	// Verify that Snapshot() returns a World where links have Details populated.
+	// This is critical for the ATTACH column in CLI output.
+	dirs := testScannerDirs(t)
+	scanner := bpffs.NewScanner(dirs)
+
+	// Create links WITH details populated (simulating what the real store returns)
+	store := &fakeStore{
+		programs: map[uint32]bpfman.ProgramSpec{
+			100: {KernelID: 100, Load: bpfman.ProgramLoadSpec{ProgramType: bpfman.ProgramTypeTracepoint}, Meta: bpfman.ProgramMeta{Name: "test_prog"}},
+		},
+		links: []bpfman.LinkSpec{
+			{
+				ID:        bpfman.LinkID(10),
+				Kind:      bpfman.LinkKindTracepoint,
+				ProgramID: 100,
+				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+			},
+			{
+				ID:        bpfman.LinkID(20),
+				Kind:      bpfman.LinkKindKprobe,
+				ProgramID: 100,
+				Details:   bpfman.KprobeDetails{FnName: "do_sys_open"},
+			},
+		},
+	}
+
+	kern := &fakeKernelSource{
+		programs: []kernel.Program{{ID: 100}},
+		links: []kernel.Link{
+			{ID: 10, ProgramID: 100},
+			{ID: 20, ProgramID: 100},
+		},
+	}
+
+	w, err := Snapshot(context.Background(), store, kern, scanner)
+	require.NoError(t, err)
+
+	// Verify links in World have details
+	managed := w.ManagedLinks()
+	require.Len(t, managed, 2)
+
+	for _, linkRow := range managed {
+		require.NotNil(t, linkRow.Managed, "Managed should not be nil")
+		require.NotNil(t, linkRow.Managed.Details, "link %d Details should not be nil", linkRow.ID())
+	}
+
+	// Verify details are correct types
+	linksByID := make(map[bpfman.LinkID]LinkRow)
+	for _, l := range managed {
+		linksByID[l.ID()] = l
+	}
+
+	tpLink := linksByID[bpfman.LinkID(10)]
+	tpDetails, ok := tpLink.Managed.Details.(bpfman.TracepointDetails)
+	require.True(t, ok, "expected TracepointDetails")
+	assert.Equal(t, "sched", tpDetails.Group)
+	assert.Equal(t, "sched_switch", tpDetails.Name)
+
+	kpLink := linksByID[bpfman.LinkID(20)]
+	kpDetails, ok := kpLink.Managed.Details.(bpfman.KprobeDetails)
+	require.True(t, ok, "expected KprobeDetails")
+	assert.Equal(t, "do_sys_open", kpDetails.FnName)
+}
+
+func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
+	// Verify that links correlated to programs also have details populated.
+	dirs := testScannerDirs(t)
+	scanner := bpffs.NewScanner(dirs)
+
+	store := &fakeStore{
+		programs: map[uint32]bpfman.ProgramSpec{
+			100: {KernelID: 100, Load: bpfman.ProgramLoadSpec{ProgramType: bpfman.ProgramTypeTracepoint}, Meta: bpfman.ProgramMeta{Name: "test_prog"}},
+		},
+		links: []bpfman.LinkSpec{
+			{
+				ID:        bpfman.LinkID(10),
+				Kind:      bpfman.LinkKindTracepoint,
+				ProgramID: 100,
+				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+			},
+		},
+	}
+
+	kern := &fakeKernelSource{
+		programs: []kernel.Program{{ID: 100}},
+		links:    []kernel.Link{{ID: 10, ProgramID: 100}},
+	}
+
+	w, err := Snapshot(context.Background(), store, kern, scanner)
+	require.NoError(t, err)
+
+	// Find the program and verify its correlated links have details
+	managed := w.ManagedPrograms()
+	require.Len(t, managed, 1)
+
+	prog := managed[0]
+	require.Len(t, prog.Links, 1, "program should have 1 correlated link")
+
+	linkRow := prog.Links[0]
+	require.NotNil(t, linkRow.Managed)
+	require.NotNil(t, linkRow.Managed.Details, "correlated link Details should not be nil")
+
+	tpDetails, ok := linkRow.Managed.Details.(bpfman.TracepointDetails)
+	require.True(t, ok)
+	assert.Equal(t, "sched", tpDetails.Group)
+	assert.Equal(t, "sched_switch", tpDetails.Name)
+}

@@ -190,6 +190,16 @@ type sqliteStore struct {
 	stmtSaveTCDetails         *sql.Stmt
 	stmtSaveTCXDetails        *sql.Stmt
 
+	// Prepared statements for batch link detail queries (used by ListLinks)
+	stmtListAllTracepointDetails *sql.Stmt
+	stmtListAllKprobeDetails     *sql.Stmt
+	stmtListAllUprobeDetails     *sql.Stmt
+	stmtListAllFentryDetails     *sql.Stmt
+	stmtListAllFexitDetails      *sql.Stmt
+	stmtListAllXDPDetails        *sql.Stmt
+	stmtListAllTCDetails         *sql.Stmt
+	stmtListAllTCXDetails        *sql.Stmt
+
 	// Prepared statements for dispatcher operations
 	stmtGetDispatcher        *sql.Stmt
 	stmtListDispatchers      *sql.Stmt
@@ -327,6 +337,14 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtSaveXDPDetails,
 		s.stmtSaveTCDetails,
 		s.stmtSaveTCXDetails,
+		s.stmtListAllTracepointDetails,
+		s.stmtListAllKprobeDetails,
+		s.stmtListAllUprobeDetails,
+		s.stmtListAllFentryDetails,
+		s.stmtListAllFexitDetails,
+		s.stmtListAllXDPDetails,
+		s.stmtListAllTCDetails,
+		s.stmtListAllTCXDetails,
 		s.stmtGetDispatcher,
 		s.stmtListDispatchers,
 		s.stmtSaveDispatcher,
@@ -453,6 +471,15 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(interpreter.
 		stmtSaveXDPDetails:        tx.StmtContext(ctx, s.stmtSaveXDPDetails),
 		stmtSaveTCDetails:         tx.StmtContext(ctx, s.stmtSaveTCDetails),
 		stmtSaveTCXDetails:        tx.StmtContext(ctx, s.stmtSaveTCXDetails),
+		// Batch link detail list statements
+		stmtListAllTracepointDetails: tx.StmtContext(ctx, s.stmtListAllTracepointDetails),
+		stmtListAllKprobeDetails:     tx.StmtContext(ctx, s.stmtListAllKprobeDetails),
+		stmtListAllUprobeDetails:     tx.StmtContext(ctx, s.stmtListAllUprobeDetails),
+		stmtListAllFentryDetails:     tx.StmtContext(ctx, s.stmtListAllFentryDetails),
+		stmtListAllFexitDetails:      tx.StmtContext(ctx, s.stmtListAllFexitDetails),
+		stmtListAllXDPDetails:        tx.StmtContext(ctx, s.stmtListAllXDPDetails),
+		stmtListAllTCDetails:         tx.StmtContext(ctx, s.stmtListAllTCDetails),
+		stmtListAllTCXDetails:        tx.StmtContext(ctx, s.stmtListAllTCXDetails),
 		// Dispatcher statements
 		stmtGetDispatcher:        tx.StmtContext(ctx, s.stmtGetDispatcher),
 		stmtListDispatchers:      tx.StmtContext(ctx, s.stmtListDispatchers),

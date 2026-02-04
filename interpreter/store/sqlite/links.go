@@ -61,8 +61,9 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 	return record, nil
 }
 
-// ListLinks returns all links. The returned slice has no guaranteed order;
-// sorting for deterministic output is done in inspect.Snapshot.
+// ListLinks returns all links with their details populated. The returned slice
+// has no guaranteed order; sorting for deterministic output is done in
+// inspect.Snapshot.
 func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinks.QueryContext(ctx)
@@ -77,10 +78,17 @@ func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) 
 		return nil, err
 	}
 	s.logger.Debug("sql", "stmt", "ListLinks", "duration_ms", msec(time.Since(start)), "rows", len(result))
+
+	// Batch-fetch all details and populate links
+	if err := s.populateLinkDetails(ctx, result); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
-// ListLinksByProgram returns all links for a given program kernel ID.
+// ListLinksByProgram returns all links for a given program kernel ID with
+// their details populated.
 func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkSpec, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinksByProgram.QueryContext(ctx, programKernelID)
@@ -95,6 +103,12 @@ func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID ui
 		return nil, err
 	}
 	s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programKernelID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
+
+	// Batch-fetch all details and populate links
+	if err := s.populateLinkDetails(ctx, result); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
@@ -122,6 +136,251 @@ func (s *sqliteStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, 
 	}
 	s.logger.Debug("sql", "stmt", "ListTCXLinksByInterface", "args", []any{nsid, ifindex, direction}, "duration_ms", msec(time.Since(start)), "rows", len(result))
 	return result, nil
+}
+
+// ----------------------------------------------------------------------------
+// Batch Detail Population
+// ----------------------------------------------------------------------------
+
+// populateLinkDetails batch-fetches details from all detail tables and
+// populates the Details field of each link. This is O(9) queries regardless
+// of N links, rather than O(N+1) for per-link fetching.
+func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.LinkSpec) error {
+	if len(links) == 0 {
+		return nil
+	}
+
+	// Build index from link_id to slice position
+	linkIndex := make(map[bpfman.LinkID]int, len(links))
+	for i := range links {
+		linkIndex[links[i].ID] = i
+	}
+
+	// Batch-fetch from each detail table
+	if err := s.batchPopulateTracepointDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateKprobeDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateUprobeDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateFentryDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateFexitDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateXDPDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateTCDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+	if err := s.batchPopulateTCXDetails(ctx, links, linkIndex); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllTracepointDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch tracepoint details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.TracepointDetails
+		if err := rows.Scan(&linkID, &details.Group, &details.Name); err != nil {
+			return fmt.Errorf("scan tracepoint details: %w", err)
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllKprobeDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch kprobe details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.KprobeDetails
+		var retprobe int
+		if err := rows.Scan(&linkID, &details.FnName, &details.Offset, &retprobe); err != nil {
+			return fmt.Errorf("scan kprobe details: %w", err)
+		}
+		details.Retprobe = retprobe == 1
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllUprobeDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch uprobe details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.UprobeDetails
+		var fnName sql.NullString
+		var pid sql.NullInt64
+		var retprobe int
+		if err := rows.Scan(&linkID, &details.Target, &fnName, &details.Offset, &pid, &retprobe); err != nil {
+			return fmt.Errorf("scan uprobe details: %w", err)
+		}
+		if fnName.Valid {
+			details.FnName = fnName.String
+		}
+		if pid.Valid {
+			details.PID = int32(pid.Int64)
+		}
+		details.Retprobe = retprobe == 1
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllFentryDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch fentry details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.FentryDetails
+		if err := rows.Scan(&linkID, &details.FnName); err != nil {
+			return fmt.Errorf("scan fentry details: %w", err)
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllFexitDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch fexit details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.FexitDetails
+		if err := rows.Scan(&linkID, &details.FnName); err != nil {
+			return fmt.Errorf("scan fexit details: %w", err)
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllXDPDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch xdp details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.XDPDetails
+		var proceedOnJSON string
+		var netns sql.NullString
+		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &details.Priority, &details.Position,
+			&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision); err != nil {
+			return fmt.Errorf("scan xdp details: %w", err)
+		}
+		if err := json.Unmarshal([]byte(proceedOnJSON), &details.ProceedOn); err != nil {
+			return fmt.Errorf("unmarshal xdp proceed_on: %w", err)
+		}
+		if netns.Valid {
+			details.Netns = netns.String
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllTCDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch tc details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.TCDetails
+		var proceedOnJSON string
+		var netns sql.NullString
+		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &details.Position,
+			&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision); err != nil {
+			return fmt.Errorf("scan tc details: %w", err)
+		}
+		if err := json.Unmarshal([]byte(proceedOnJSON), &details.ProceedOn); err != nil {
+			return fmt.Errorf("unmarshal tc proceed_on: %w", err)
+		}
+		if netns.Valid {
+			details.Netns = netns.String
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
+}
+
+func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+	rows, err := s.stmtListAllTCXDetails.QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("batch fetch tcx details: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var linkID int64
+		var details bpfman.TCXDetails
+		var netns sql.NullString
+		var nsid sql.NullInt64
+		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &netns, &nsid); err != nil {
+			return fmt.Errorf("scan tcx details: %w", err)
+		}
+		if netns.Valid {
+			details.Netns = netns.String
+		}
+		if nsid.Valid {
+			details.Nsid = uint64(nsid.Int64)
+		}
+		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+			links[idx].Details = details
+		}
+	}
+	return rows.Err()
 }
 
 // ----------------------------------------------------------------------------

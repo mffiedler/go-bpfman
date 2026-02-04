@@ -294,6 +294,53 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare SaveTCXDetails: %w", err)
 	}
 
+	// Batch list statements for populating link details in ListLinks
+	const sqlListAllTracepointDetails = "SELECT link_id, tp_group, tp_name FROM link_tracepoint_details"
+	if s.stmtListAllTracepointDetails, err = s.db.PrepareContext(ctx, sqlListAllTracepointDetails); err != nil {
+		return fmt.Errorf("prepare ListAllTracepointDetails: %w", err)
+	}
+
+	const sqlListAllKprobeDetails = "SELECT link_id, fn_name, offset, retprobe FROM link_kprobe_details"
+	if s.stmtListAllKprobeDetails, err = s.db.PrepareContext(ctx, sqlListAllKprobeDetails); err != nil {
+		return fmt.Errorf("prepare ListAllKprobeDetails: %w", err)
+	}
+
+	const sqlListAllUprobeDetails = "SELECT link_id, target, fn_name, offset, pid, retprobe FROM link_uprobe_details"
+	if s.stmtListAllUprobeDetails, err = s.db.PrepareContext(ctx, sqlListAllUprobeDetails); err != nil {
+		return fmt.Errorf("prepare ListAllUprobeDetails: %w", err)
+	}
+
+	const sqlListAllFentryDetails = "SELECT link_id, fn_name FROM link_fentry_details"
+	if s.stmtListAllFentryDetails, err = s.db.PrepareContext(ctx, sqlListAllFentryDetails); err != nil {
+		return fmt.Errorf("prepare ListAllFentryDetails: %w", err)
+	}
+
+	const sqlListAllFexitDetails = "SELECT link_id, fn_name FROM link_fexit_details"
+	if s.stmtListAllFexitDetails, err = s.db.PrepareContext(ctx, sqlListAllFexitDetails); err != nil {
+		return fmt.Errorf("prepare ListAllFexitDetails: %w", err)
+	}
+
+	const sqlListAllXDPDetails = `
+		SELECT link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		FROM link_xdp_details`
+	if s.stmtListAllXDPDetails, err = s.db.PrepareContext(ctx, sqlListAllXDPDetails); err != nil {
+		return fmt.Errorf("prepare ListAllXDPDetails: %w", err)
+	}
+
+	const sqlListAllTCDetails = `
+		SELECT link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		FROM link_tc_details`
+	if s.stmtListAllTCDetails, err = s.db.PrepareContext(ctx, sqlListAllTCDetails); err != nil {
+		return fmt.Errorf("prepare ListAllTCDetails: %w", err)
+	}
+
+	const sqlListAllTCXDetails = `
+		SELECT link_id, interface, ifindex, direction, priority, netns, nsid
+		FROM link_tcx_details`
+	if s.stmtListAllTCXDetails, err = s.db.PrepareContext(ctx, sqlListAllTCXDetails); err != nil {
+		return fmt.Errorf("prepare ListAllTCXDetails: %w", err)
+	}
+
 	return nil
 }
 

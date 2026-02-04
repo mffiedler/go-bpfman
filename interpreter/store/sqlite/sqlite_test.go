@@ -1129,6 +1129,241 @@ func TestGC_Comprehensive(t *testing.T) {
 	assert.Equal(t, bpfman.LinkID(400), links[0].ID)
 }
 
+func TestListLinks_ReturnsDetails(t *testing.T) {
+	// Verify that ListLinks() returns LinkSpec with Details populated
+	// for ALL link detail types. This is critical for inspect.Snapshot()
+	// to build a complete World where the ATTACH column can display
+	// meaningful information.
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create a program first (FK requirement for links)
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, 100, prog), "Save program failed")
+
+	// Create dispatchers for XDP and TC links (FK requirement for their details)
+	xdpDispatcher := dispatcher.State{
+		Type:     dispatcher.DispatcherTypeXDP,
+		Nsid:     4026531840,
+		Ifindex:  2,
+		Revision: 1,
+		KernelID: 500,
+		LinkID:   501,
+	}
+	require.NoError(t, store.SaveDispatcher(ctx, xdpDispatcher), "SaveDispatcher XDP failed")
+
+	tcDispatcher := dispatcher.State{
+		Type:     dispatcher.DispatcherTypeTCIngress,
+		Nsid:     4026531840,
+		Ifindex:  3,
+		Revision: 1,
+		KernelID: 502,
+		LinkID:   0, // TC dispatchers don't have links
+	}
+	require.NoError(t, store.SaveDispatcher(ctx, tcDispatcher), "SaveDispatcher TC failed")
+
+	// Create links with ALL detail types
+	testCases := []struct {
+		linkID  bpfman.LinkID
+		details bpfman.LinkDetails
+		check   func(t *testing.T, got bpfman.LinkDetails)
+	}{
+		{
+			linkID:  10,
+			details: bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.TracepointDetails)
+				require.True(t, ok, "expected TracepointDetails, got %T", got)
+				assert.Equal(t, "sched", d.Group)
+				assert.Equal(t, "sched_switch", d.Name)
+			},
+		},
+		{
+			linkID:  20,
+			details: bpfman.KprobeDetails{FnName: "do_sys_open", Offset: 64, Retprobe: true},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.KprobeDetails)
+				require.True(t, ok, "expected KprobeDetails, got %T", got)
+				assert.Equal(t, "do_sys_open", d.FnName)
+				assert.Equal(t, uint64(64), d.Offset)
+				assert.True(t, d.Retprobe)
+			},
+		},
+		{
+			linkID:  30,
+			details: bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main", Offset: 128, PID: 1234, Retprobe: false},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.UprobeDetails)
+				require.True(t, ok, "expected UprobeDetails, got %T", got)
+				assert.Equal(t, "/usr/bin/test", d.Target)
+				assert.Equal(t, "main", d.FnName)
+				assert.Equal(t, uint64(128), d.Offset)
+				assert.Equal(t, int32(1234), d.PID)
+				assert.False(t, d.Retprobe)
+			},
+		},
+		{
+			linkID:  40,
+			details: bpfman.FentryDetails{FnName: "tcp_connect"},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.FentryDetails)
+				require.True(t, ok, "expected FentryDetails, got %T", got)
+				assert.Equal(t, "tcp_connect", d.FnName)
+			},
+		},
+		{
+			linkID:  50,
+			details: bpfman.FexitDetails{FnName: "tcp_disconnect"},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.FexitDetails)
+				require.True(t, ok, "expected FexitDetails, got %T", got)
+				assert.Equal(t, "tcp_disconnect", d.FnName)
+			},
+		},
+		{
+			linkID: 60,
+			details: bpfman.XDPDetails{
+				Interface:    "eth0",
+				Ifindex:      2,
+				Priority:     50,
+				Position:     1,
+				ProceedOn:    []int32{2, 31}, // XDP_PASS=2, XDP_DISPATCHER_RETURN=31
+				Netns:        "/proc/1/ns/net",
+				Nsid:         4026531840,
+				DispatcherID: 500, // References XDP dispatcher created above
+				Revision:     1,
+			},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.XDPDetails)
+				require.True(t, ok, "expected XDPDetails, got %T", got)
+				assert.Equal(t, "eth0", d.Interface)
+				assert.Equal(t, uint32(2), d.Ifindex)
+				assert.Equal(t, int32(50), d.Priority)
+				assert.Equal(t, int32(1), d.Position)
+				assert.Equal(t, []int32{2, 31}, d.ProceedOn)
+				assert.Equal(t, "/proc/1/ns/net", d.Netns)
+				assert.Equal(t, uint64(4026531840), d.Nsid)
+				assert.Equal(t, uint32(500), d.DispatcherID)
+				assert.Equal(t, uint32(1), d.Revision)
+			},
+		},
+		{
+			linkID: 70,
+			details: bpfman.TCDetails{
+				Interface:    "eth1",
+				Ifindex:      3,
+				Direction:    "ingress",
+				Priority:     100,
+				Position:     1,
+				ProceedOn:    []int32{0, 3}, // TC_ACT_OK=0, TC_ACT_PIPE=3
+				Netns:        "/proc/1/ns/net",
+				Nsid:         4026531840,
+				DispatcherID: 502, // References TC dispatcher created above
+				Revision:     1,
+			},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.TCDetails)
+				require.True(t, ok, "expected TCDetails, got %T", got)
+				assert.Equal(t, "eth1", d.Interface)
+				assert.Equal(t, uint32(3), d.Ifindex)
+				assert.Equal(t, bpfman.TCDirection("ingress"), d.Direction)
+				assert.Equal(t, int32(100), d.Priority)
+				assert.Equal(t, int32(1), d.Position)
+				assert.Equal(t, []int32{0, 3}, d.ProceedOn)
+				assert.Equal(t, "/proc/1/ns/net", d.Netns)
+				assert.Equal(t, uint64(4026531840), d.Nsid)
+			},
+		},
+		{
+			linkID: 80,
+			details: bpfman.TCXDetails{
+				Interface: "eth2",
+				Ifindex:   4,
+				Direction: "egress",
+				Priority:  200,
+				Netns:     "/proc/1/ns/net",
+				Nsid:      4026531840,
+			},
+			check: func(t *testing.T, got bpfman.LinkDetails) {
+				d, ok := got.(bpfman.TCXDetails)
+				require.True(t, ok, "expected TCXDetails, got %T", got)
+				assert.Equal(t, "eth2", d.Interface)
+				assert.Equal(t, uint32(4), d.Ifindex)
+				assert.Equal(t, bpfman.TCDirection("egress"), d.Direction)
+				assert.Equal(t, int32(200), d.Priority)
+				assert.Equal(t, "/proc/1/ns/net", d.Netns)
+				assert.Equal(t, uint64(4026531840), d.Nsid)
+			},
+		},
+	}
+
+	// Save all links
+	for _, tc := range testCases {
+		spec := bpfman.NewEphemeralLinkSpec(tc.linkID, 100, tc.details, time.Now())
+		require.NoError(t, store.SaveLink(ctx, spec), "SaveLink %d failed", tc.linkID)
+	}
+
+	// ListLinks should return links WITH details populated
+	links, err := store.ListLinks(ctx)
+	require.NoError(t, err, "ListLinks failed")
+	require.Len(t, links, len(testCases), "expected %d links", len(testCases))
+
+	// Build a map for easier lookup
+	linksByID := make(map[bpfman.LinkID]bpfman.LinkSpec)
+	for _, l := range links {
+		linksByID[l.ID] = l
+	}
+
+	// Verify each link's details
+	for _, tc := range testCases {
+		t.Run(string(tc.details.Kind()), func(t *testing.T) {
+			link, ok := linksByID[tc.linkID]
+			require.True(t, ok, "link %d not found", tc.linkID)
+			require.NotNil(t, link.Details, "link %d Details should not be nil", tc.linkID)
+			tc.check(t, link.Details)
+		})
+	}
+}
+
+func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
+	// Verify that ListLinksByProgram() also returns details.
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create two programs
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, 100, prog), "Save program 100 failed")
+	require.NoError(t, store.Save(ctx, 200, prog), "Save program 200 failed")
+
+	// Create links for program 100
+	tp1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_read"}
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkSpec(bpfman.LinkID(10), 100, tp1, time.Now())))
+
+	tp2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_read"}
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkSpec(bpfman.LinkID(11), 100, tp2, time.Now())))
+
+	// Create link for program 200
+	tp3 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_write"}
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkSpec(bpfman.LinkID(20), 200, tp3, time.Now())))
+
+	// ListLinksByProgram for program 100 should return 2 links with details
+	links, err := store.ListLinksByProgram(ctx, 100)
+	require.NoError(t, err)
+	require.Len(t, links, 2)
+
+	for _, link := range links {
+		require.NotNil(t, link.Details, "link %d Details should not be nil", link.ID)
+		_, ok := link.Details.(bpfman.TracepointDetails)
+		require.True(t, ok, "expected TracepointDetails for link %d", link.ID)
+	}
+}
+
 func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 	// Test that GC skips links with nil kernel_link_id.
 	// These are used for perf_event-based links (e.g., container uprobes)
