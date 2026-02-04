@@ -33,7 +33,7 @@ type LoadImageOpts struct {
 // On failure, returns a *ManagerError containing the full operation outcome
 // with timeline, rollback errors, and residual artefacts.
 func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result []bpfman.Program, retErr error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	var loaded []bpfman.Program

@@ -36,7 +36,7 @@ const (
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {

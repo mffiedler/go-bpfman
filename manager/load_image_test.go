@@ -16,7 +16,7 @@ import (
 )
 
 // extractLoadImageOutcome extracts the outcome from a LoadImage error.
-func extractLoadImageOutcome(t *testing.T, err error) outcome.ManagerOperationOutcome {
+func extractLoadImageOutcome(t *testing.T, err error) outcome.OperationOutcome {
 	t.Helper()
 	var me *manager.ManagerError
 	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)

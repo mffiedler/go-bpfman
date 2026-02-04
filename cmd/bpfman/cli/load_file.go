@@ -32,7 +32,7 @@ type LoadFileCmd struct {
 // loadFileResult captures both successful programs and any failure outcome.
 type loadFileResult struct {
 	Programs      []bpfman.Program
-	FailedOutcome *outcome.ManagerOperationOutcome
+	FailedOutcome *outcome.OperationOutcome
 }
 
 // Run executes the load file command.

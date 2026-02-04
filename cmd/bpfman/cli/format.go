@@ -912,9 +912,9 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	return b.String()
 }
 
-// FormatOutcome formats a ManagerOperationOutcome according to the specified output flags.
+// FormatOutcome formats a OperationOutcome according to the specified output flags.
 // This is used to display structured error information on failure paths.
-func FormatOutcome(o outcome.ManagerOperationOutcome, flags *OutputFlags) (string, error) {
+func FormatOutcome(o outcome.OperationOutcome, flags *OutputFlags) (string, error) {
 	format, err := flags.Format()
 	if err != nil {
 		return "", err
@@ -929,7 +929,7 @@ func FormatOutcome(o outcome.ManagerOperationOutcome, flags *OutputFlags) (strin
 	}
 }
 
-func formatOutcomeJSON(o outcome.ManagerOperationOutcome) (string, error) {
+func formatOutcomeJSON(o outcome.OperationOutcome) (string, error) {
 	output, err := json.MarshalIndent(o, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal outcome: %w", err)
@@ -937,11 +937,11 @@ func formatOutcomeJSON(o outcome.ManagerOperationOutcome) (string, error) {
 	return string(output) + "\n", nil
 }
 
-func formatOutcomeJSONPath(o outcome.ManagerOperationOutcome, expr string) (string, error) {
+func formatOutcomeJSONPath(o outcome.OperationOutcome, expr string) (string, error) {
 	return executeJSONPath(o, expr)
 }
 
-func formatOutcomeTable(o outcome.ManagerOperationOutcome) string {
+func formatOutcomeTable(o outcome.OperationOutcome) string {
 	var b strings.Builder
 
 	// Header with operation ID

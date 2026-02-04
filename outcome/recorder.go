@@ -15,30 +15,30 @@ var (
 	ErrRollbackNotActive = errors.New("rollback not active")
 )
 
-// ManagerOperationRecorder appends steps to a ManagerOperationOutcome while enforcing invariants.
+// ManagerOperationRecorder appends steps to a OperationOutcome while enforcing invariants.
 //
 // The recorder is intentionally tiny: it does not know about manager
 // semantics, rollback policy, or step taxonomies. It only ensures the
-// ManagerOperationOutcome structure cannot contradict itself.
+// OperationOutcome structure cannot contradict itself.
 type ManagerOperationRecorder struct {
-	o              *ManagerOperationOutcome
+	o              *OperationOutcome
 	seq            int  // current sequence number
 	inRollback     bool // whether we're in rollback phase
 	rollbackFailed bool // whether any rollback step has failed
 }
 
-// NewRecorder initialises a ManagerOperationOutcome in a consistent state.
+// NewRecorder initialises a OperationOutcome in a consistent state.
 // Status defaults to success; failure flips status and sets PrimaryError at the
 // boundary (manager), not here.
-func NewRecorder(o *ManagerOperationOutcome) ManagerOperationRecorder {
+func NewRecorder(o *OperationOutcome) ManagerOperationRecorder {
 	if o.Status == "" {
 		o.Status = StatusSuccess
 	}
 	return ManagerOperationRecorder{o: o, seq: 0}
 }
 
-// Outcome returns the underlying ManagerOperationOutcome.
-func (r ManagerOperationRecorder) Outcome() *ManagerOperationOutcome {
+// Outcome returns the underlying OperationOutcome.
+func (r ManagerOperationRecorder) Outcome() *OperationOutcome {
 	return r.o
 }
 
@@ -96,7 +96,7 @@ func (r *ManagerOperationRecorder) Skip(step Step) error {
 }
 
 // Fail sets the failed step and flips status to failure.
-// Does NOT set ManagerOperationOutcome.PrimaryError - that's the manager boundary's job.
+// Does NOT set OperationOutcome.PrimaryError - that's the manager boundary's job.
 func (r *ManagerOperationRecorder) Fail(step Step) error {
 	if r.o.Status == StatusFailure && !r.inRollback {
 		return ErrAlreadyFailed

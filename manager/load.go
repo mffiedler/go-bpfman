@@ -36,7 +36,7 @@ type LoadOpts struct {
 //	    }
 //	}
 type ManagerError struct {
-	Outcome outcome.ManagerOperationOutcome
+	Outcome outcome.OperationOutcome
 	Cause   error // Underlying error, accessible via errors.As/errors.Is
 }
 
@@ -65,7 +65,7 @@ func (e *ManagerError) Unwrap() error {
 // On failure, returns a *ManagerError containing the full operation outcome
 // with timeline, rollback errors, and residual artefacts.
 func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts) (bpfman.Program, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 	now := time.Now()
 
@@ -234,7 +234,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) error {

@@ -50,7 +50,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 	// loadImageResult captures both successful programs and any failure outcome.
 	type loadImageResult struct {
 		Programs      []bpfman.Program
-		FailedOutcome *outcome.ManagerOperationOutcome
+		FailedOutcome *outcome.OperationOutcome
 	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {

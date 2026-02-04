@@ -18,7 +18,7 @@ import (
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
@@ -164,7 +164,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
@@ -328,7 +328,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
@@ -509,7 +509,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
@@ -667,7 +667,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) (bpfman.Link, error) {

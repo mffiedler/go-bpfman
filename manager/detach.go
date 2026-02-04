@@ -32,7 +32,7 @@ func isNotFoundError(err error) bool {
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
-	var o outcome.ManagerOperationOutcome
+	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
 	fail := func(primaryErr error) error {

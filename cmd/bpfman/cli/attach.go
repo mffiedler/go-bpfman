@@ -13,9 +13,9 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-// extractOutcome extracts the ManagerOperationOutcome from a manager error.
+// extractOutcome extracts the OperationOutcome from a manager error.
 // Returns nil if the error is not a *manager.ManagerError.
-func extractOutcome(err error) *outcome.ManagerOperationOutcome {
+func extractOutcome(err error) *outcome.OperationOutcome {
 	var me *manager.ManagerError
 	if errors.As(err, &me) {
 		return &me.Outcome
@@ -61,7 +61,7 @@ type AttachCmd struct {
 // attachResult holds the result of an attach operation for output outside the lock.
 type attachResult struct {
 	Link          bpfman.Link
-	FailedOutcome *outcome.ManagerOperationOutcome
+	FailedOutcome *outcome.OperationOutcome
 }
 
 // Run executes the attach command: mutation under lock, output outside.

@@ -113,7 +113,7 @@ type GCResult struct {
 	LiveOrphans int
 
 	// Outcome tracks the structured result of the GC operation.
-	Outcome outcome.ManagerOperationOutcome
+	Outcome outcome.OperationOutcome
 }
 
 // GC removes stale database entries that no longer exist in the kernel.

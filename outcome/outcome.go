@@ -135,11 +135,11 @@ type TimelineEntry struct {
 	Details any `json:"details,omitempty"`
 }
 
-// ManagerOperationOutcome represents the result of any multi-step operation.
+// OperationOutcome represents the result of any multi-step operation.
 //
 // The timeline-first design puts all steps in a single ordered array,
 // making it easy to understand the sequence of events.
-type ManagerOperationOutcome struct {
+type OperationOutcome struct {
 	// OpID is the correlation ID for log/trace correlation.
 	OpID uint64 `json:"op_id,omitempty"`
 

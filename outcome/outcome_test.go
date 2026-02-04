@@ -104,7 +104,7 @@ func TestStarted(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var out outcome.ManagerOperationOutcome
+			var out outcome.OperationOutcome
 			out.Timeline = tc.timeline
 			rec := outcome.NewRecorder(&out)
 			got := rec.Started()
@@ -269,7 +269,7 @@ func equalCmds(a, b [][]string) bool {
 }
 
 func TestRecorder_Complete(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog"}
@@ -295,7 +295,7 @@ func TestRecorder_Complete(t *testing.T) {
 }
 
 func TestRecorder_CompleteAfterFailReturnsError(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	failStep := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "failing", Error: "boom"}
@@ -311,7 +311,7 @@ func TestRecorder_CompleteAfterFailReturnsError(t *testing.T) {
 }
 
 func TestRecorder_Fail(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog", Error: "load failed"}
@@ -337,7 +337,7 @@ func TestRecorder_Fail(t *testing.T) {
 }
 
 func TestRecorder_DoubleFailReturnsError(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	step1 := outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "first"}
@@ -353,7 +353,7 @@ func TestRecorder_DoubleFailReturnsError(t *testing.T) {
 }
 
 func TestRecorder_Rollback(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	// Complete a step first
@@ -390,7 +390,7 @@ func TestRecorder_Rollback(t *testing.T) {
 }
 
 func TestRecorder_RollbackFailFlipsStatus(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"})
@@ -419,7 +419,7 @@ func TestRecorder_RollbackFailFlipsStatus(t *testing.T) {
 }
 
 func TestRecorder_RollbackWithoutBeginReturnsError(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	step := outcome.Step{Kind: outcome.StepKindKernelUnload}
@@ -435,7 +435,7 @@ func TestRecorder_RollbackWithoutBeginReturnsError(t *testing.T) {
 }
 
 func TestRecorder_SetResidual(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	artefacts := []outcome.Artefact{
@@ -452,7 +452,7 @@ func TestRecorder_SetResidual(t *testing.T) {
 }
 
 func TestRecorder_SetResidualWithError(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	observeErr := errors.New("failed to probe")
@@ -464,7 +464,7 @@ func TestRecorder_SetResidualWithError(t *testing.T) {
 }
 
 func TestRecorder_Finalise(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	// Simulate a failed operation with residue
@@ -487,7 +487,7 @@ func TestRecorder_Finalise(t *testing.T) {
 }
 
 func TestRecorder_FinaliseCleanState(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	// Simulate a failed operation with successful rollback (no residue)
@@ -510,7 +510,7 @@ func TestRecorder_FinaliseCleanState(t *testing.T) {
 }
 
 func TestRecorder_Validate_Success(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "prog"})
@@ -521,7 +521,7 @@ func TestRecorder_Validate_Success(t *testing.T) {
 }
 
 func TestRecorder_Validate_FailureWithFailedStep(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
@@ -533,7 +533,7 @@ func TestRecorder_Validate_FailureWithFailedStep(t *testing.T) {
 }
 
 func TestRecorder_Validate_FailureWithoutFailedStepOrError(t *testing.T) {
-	out := outcome.ManagerOperationOutcome{Status: outcome.StatusFailure}
+	out := outcome.OperationOutcome{Status: outcome.StatusFailure}
 	rec := outcome.NewRecorder(&out)
 
 	err := rec.Validate()
@@ -543,7 +543,7 @@ func TestRecorder_Validate_FailureWithoutFailedStepOrError(t *testing.T) {
 }
 
 func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
-	out := outcome.ManagerOperationOutcome{
+	out := outcome.OperationOutcome{
 		Status: outcome.StatusSuccess,
 		Timeline: []outcome.TimelineEntry{
 			{Seq: 1, Phase: outcome.PhasePrimary, Status: outcome.StepStatusFailed, Kind: outcome.StepKindKernelLoad},
@@ -558,7 +558,7 @@ func TestRecorder_Validate_SuccessWithFailedStep(t *testing.T) {
 }
 
 func TestRecorder_Validate_RollbackFailedWithoutErrors(t *testing.T) {
-	out := outcome.ManagerOperationOutcome{
+	out := outcome.OperationOutcome{
 		Status:       outcome.StatusFailure,
 		PrimaryError: "boom",
 		Timeline: []outcome.TimelineEntry{
@@ -576,7 +576,7 @@ func TestRecorder_Validate_RollbackFailedWithoutErrors(t *testing.T) {
 }
 
 func TestRecorder_Validate_NonJSONSafeDetails(t *testing.T) {
-	out := outcome.ManagerOperationOutcome{
+	out := outcome.OperationOutcome{
 		Status: outcome.StatusSuccess,
 		Timeline: []outcome.TimelineEntry{
 			{
@@ -612,7 +612,7 @@ func TestFailFromErr(t *testing.T) {
 }
 
 func TestOutcomeJSONSerialization(t *testing.T) {
-	out := outcome.ManagerOperationOutcome{
+	out := outcome.OperationOutcome{
 		OpID:         42,
 		Status:       outcome.StatusFailure,
 		PrimaryError: "load failed",
@@ -660,7 +660,7 @@ func TestOutcomeJSONSerialization(t *testing.T) {
 		t.Fatalf("json.Marshal() failed: %v", err)
 	}
 
-	var decoded outcome.ManagerOperationOutcome
+	var decoded outcome.OperationOutcome
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("json.Unmarshal() failed: %v", err)
 	}
@@ -720,7 +720,7 @@ func TestArtefactString(t *testing.T) {
 }
 
 func TestTimelineSequencing(t *testing.T) {
-	var out outcome.ManagerOperationOutcome
+	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out)
 
 	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step1"})
