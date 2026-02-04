@@ -32,6 +32,5 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	// Output outside lock
-	return cli.PrintOutf("Detached link %d\n", c.LinkID.Value)
+	return nil
 }

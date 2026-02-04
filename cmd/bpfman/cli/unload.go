@@ -30,6 +30,5 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	// Output outside lock
-	return cli.PrintOutf("Unloaded program %d\n", c.ProgramID.Value)
+	return nil
 }
