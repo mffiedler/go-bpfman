@@ -129,7 +129,7 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 
 	// Output outside lock
-	return c.output(cli, ctx, runtime, result)
+	return c.output(cli, result)
 }
 
 // execute performs the attach operation under the global writer lock.
@@ -164,23 +164,9 @@ func (c *AttachCmd) execute(ctx context.Context, cli *CLI, runtime *CLIRuntime) 
 	})
 }
 
-// output fetches link details and formats output outside the lock.
-func (c *AttachCmd) output(cli *CLI, ctx context.Context, runtime *CLIRuntime, result attachResult) error {
-	record, err := runtime.Manager.GetLink(ctx, result.Link.Spec.ID)
-	if err != nil {
-		// Attachment succeeded but we can't fetch details for display.
-		// This shouldn't normally happen - log it and show minimal output.
-		return cli.PrintOutf("Attached link %d (warning: failed to fetch details: %v)\n", result.Link.Spec.ID, err)
-	}
-
-	// Fetch program info to get the BPF function name using the original program ID
-	var bpfFunction string
-	prog, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
-	if err == nil && prog.Status.Kernel != nil {
-		bpfFunction = prog.Status.Kernel.Name
-	}
-
-	output, err := FormatLinkResult(bpfFunction, record, record.Details, &c.OutputFlags)
+// output formats the link result outside the lock.
+func (c *AttachCmd) output(cli *CLI, result attachResult) error {
+	output, err := FormatLinkResult(result.Link, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

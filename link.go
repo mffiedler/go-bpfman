@@ -293,17 +293,17 @@ func (s LinkSpec) HasPin() bool { return s.PinPath != nil }
 // LinkStatus is observed state (kernel + fs).
 // This is "what actually exists right now".
 type LinkStatus struct {
-	Kernel     *kernel.Link // nil if not in kernel or synthetic
-	KernelSeen bool         // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
-	PinPresent bool         // true if pin path exists on filesystem
+	Kernel     *kernel.Link `json:"kernel,omitempty"` // nil if not in kernel or synthetic
+	KernelSeen bool         `json:"kernel_seen"`      // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
+	PinPresent bool         `json:"pin_present"`      // true if pin path exists on filesystem
 }
 
 // Link is the canonical domain object combining spec and status.
 // Spec comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
 type Link struct {
-	Spec   LinkSpec
-	Status LinkStatus
+	Spec   LinkSpec   `json:"spec"`
+	Status LinkStatus `json:"status"`
 }
 
 // NewPinnedLinkSpec creates a fully-detailed spec for a pinned link.

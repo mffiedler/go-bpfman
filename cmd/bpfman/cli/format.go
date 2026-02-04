@@ -376,138 +376,151 @@ func formatLinkListTable(links []bpfman.LinkSpec) string {
 }
 
 // FormatLinkResult formats a link result (from attach command) according to
-// the specified output flags. The bpfFunction is the name of the BPF function.
-func FormatLinkResult(bpfFunction string, record bpfman.LinkSpec, details bpfman.LinkDetails, flags *OutputFlags) (string, error) {
+// the specified output flags.
+func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
 	format, err := flags.Format()
 	if err != nil {
 		return "", err
 	}
 	switch format {
 	case OutputFormatJSON:
-		return formatLinkResultJSON(bpfFunction, record, details)
+		output, err := json.MarshalIndent(link, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal link: %w", err)
+		}
+		return string(output) + "\n", nil
 	case OutputFormatTable:
-		return formatLinkResultTable(bpfFunction, record, details), nil
+		return formatLinkResultTable(link), nil
 	case OutputFormatJSONPath:
-		return formatLinkResultJSONPath(bpfFunction, record, details, flags.JSONPathExpr())
+		return executeJSONPath(link, flags.JSONPathExpr())
 	default:
-		return formatLinkResultTable(bpfFunction, record, details), nil
+		return formatLinkResultTable(link), nil
 	}
 }
 
-// linkResultData combines record, details, and bpf function for JSON serialisation.
-type linkResultData struct {
-	BPFFunction string             `json:"bpf_function,omitempty"`
-	Record      bpfman.LinkSpec    `json:"record"`
-	Details     bpfman.LinkDetails `json:"details"`
-}
-
-func formatLinkResultJSON(bpfFunction string, record bpfman.LinkSpec, details bpfman.LinkDetails) (string, error) {
-	data := linkResultData{
-		BPFFunction: bpfFunction,
-		Record:      record,
-		Details:     details,
-	}
-	output, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
-}
-
-func formatLinkResultJSONPath(bpfFunction string, record bpfman.LinkSpec, details bpfman.LinkDetails, expr string) (string, error) {
-	data := linkResultData{
-		BPFFunction: bpfFunction,
-		Record:      record,
-		Details:     details,
-	}
-	return executeJSONPath(data, expr)
-}
-
-func formatLinkResultTable(bpfFunction string, record bpfman.LinkSpec, details bpfman.LinkDetails) string {
+func formatLinkResultTable(link bpfman.Link) string {
 	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 1, ' ', 0)
 
-	// Header - identity fields
-	fmt.Fprintf(w, "Name:\t%s\n", bpfFunction)
-	fmt.Fprintf(w, "Link Type:\t%s\n", record.Kind)
-	fmt.Fprintf(w, "Link ID:\t%d\n", record.ID)
-	fmt.Fprintf(w, "Program ID:\t%d\n", record.ProgramID)
-	w.Flush()
+	// Primary identifier at column one (like Kernel ID for programs)
+	fmt.Fprintf(&b, "Link ID: %d\n", link.Spec.ID)
 
-	// Spec section - type-specific attachment details
-	b.WriteString("\nSpec:\n")
-	w = tabwriter.NewWriter(&b, 0, 0, 1, ' ', 0)
+	// Collect Spec fields from LinkSpec, then sort alphabetically
+	var specFields []string
 
-	// Type-specific fields
-	switch d := details.(type) {
-	case bpfman.TCDetails:
-		fmt.Fprintf(w, "  Interface:\t%s\n", d.Interface)
-		fmt.Fprintf(w, "  Direction:\t%s\n", d.Direction)
-		fmt.Fprintf(w, "  Priority:\t%d\n", d.Priority)
-		fmt.Fprintf(w, "  Position:\t%d\n", d.Position)
-		fmt.Fprintf(w, "  Proceed On:\t%s\n", TCActionsToString(d.ProceedOn))
-		if d.Netns != "" {
-			fmt.Fprintf(w, "  Network Namespace:\t%s\n", d.Netns)
-		} else {
-			fmt.Fprintf(w, "  Network Namespace:\tNone\n")
-		}
-	case bpfman.XDPDetails:
-		fmt.Fprintf(w, "  Interface:\t%s\n", d.Interface)
-		fmt.Fprintf(w, "  Priority:\t%d\n", d.Priority)
-		fmt.Fprintf(w, "  Position:\t%d\n", d.Position)
-		fmt.Fprintf(w, "  Proceed On:\t%s\n", formatXDPProceedOn(d.ProceedOn))
-		if d.Netns != "" {
-			fmt.Fprintf(w, "  Network Namespace:\t%s\n", d.Netns)
-		} else {
-			fmt.Fprintf(w, "  Network Namespace:\tNone\n")
-		}
-	case bpfman.TracepointDetails:
-		fmt.Fprintf(w, "  Tracepoint:\t%s/%s\n", d.Group, d.Name)
+	// LinkSpec fields
+	if !link.Spec.CreatedAt.IsZero() {
+		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Spec.CreatedAt.Format(time.RFC3339)))
+	}
+	specFields = append(specFields, "    Metadata:\tNone")
+	if link.Spec.PinPath != nil {
+		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Spec.PinPath.String()))
+	} else {
+		specFields = append(specFields, "    Pin Path:\tNone")
+	}
+	specFields = append(specFields, fmt.Sprintf("    Program ID:\t%d", link.Spec.ProgramID))
+	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", link.Spec.Kind))
+
+	// Type-specific fields from LinkDetails
+	switch d := link.Spec.Details.(type) {
+	case bpfman.FentryDetails:
+		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+	case bpfman.FexitDetails:
+		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
 	case bpfman.KprobeDetails:
 		if d.Retprobe {
-			fmt.Fprintf(w, "  Attach Type:\tkretprobe\n")
+			specFields = append(specFields, "    Attach Type:\tkretprobe")
 		} else {
-			fmt.Fprintf(w, "  Attach Type:\tkprobe\n")
+			specFields = append(specFields, "    Attach Type:\tkprobe")
 		}
-		fmt.Fprintf(w, "  Function:\t%s\n", d.FnName)
+		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
 		if d.Offset != 0 {
-			fmt.Fprintf(w, "  Offset:\t%d\n", d.Offset)
+			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
 		}
-	case bpfman.TCXDetails:
-		fmt.Fprintf(w, "  Interface:\t%s\n", d.Interface)
-		fmt.Fprintf(w, "  Direction:\t%s\n", d.Direction)
-		fmt.Fprintf(w, "  Priority:\t%d\n", d.Priority)
+	case bpfman.TCDetails:
+		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
+		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
 		if d.Netns != "" {
-			fmt.Fprintf(w, "  Network Namespace:\t%s\n", d.Netns)
-		} else {
-			fmt.Fprintf(w, "  Network Namespace:\tNone\n")
+			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
 		}
+		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
+		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
+		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", TCActionsToString(d.ProceedOn)))
+	case bpfman.TCXDetails:
+		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
+		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
+		if d.Netns != "" {
+			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
+		}
+		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
+	case bpfman.TracepointDetails:
+		specFields = append(specFields, fmt.Sprintf("    Tracepoint:\t%s/%s", d.Group, d.Name))
 	case bpfman.UprobeDetails:
 		if d.Retprobe {
-			fmt.Fprintf(w, "  Attach Type:\turetprobe\n")
+			specFields = append(specFields, "    Attach Type:\turetprobe")
 		} else {
-			fmt.Fprintf(w, "  Attach Type:\tuprobe\n")
-		}
-		fmt.Fprintf(w, "  Target:\t%s\n", d.Target)
-		fmt.Fprintf(w, "  Function:\t%s\n", d.FnName)
-		if d.Offset != 0 {
-			fmt.Fprintf(w, "  Offset:\t%d\n", d.Offset)
+			specFields = append(specFields, "    Attach Type:\tuprobe")
 		}
 		if d.PID != 0 {
-			fmt.Fprintf(w, "  PID:\t%d\n", d.PID)
-		} else {
-			fmt.Fprintf(w, "  PID:\tNone\n")
+			specFields = append(specFields, fmt.Sprintf("    PID:\t%d", d.PID))
 		}
-	case bpfman.FentryDetails:
-		fmt.Fprintf(w, "  Attach Function:\t%s\n", d.FnName)
-	case bpfman.FexitDetails:
-		fmt.Fprintf(w, "  Attach Function:\t%s\n", d.FnName)
+		specFields = append(specFields, fmt.Sprintf("    Target:\t%s", d.Target))
+		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
+		if d.Offset != 0 {
+			specFields = append(specFields, fmt.Sprintf("    Target Offset:\t%d", d.Offset))
+		}
+	case bpfman.XDPDetails:
+		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))
+		if d.Netns != "" {
+			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
+		}
+		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
+		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
+		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", formatXDPProceedOn(d.ProceedOn)))
 	}
 
-	// Metadata placeholder
-	fmt.Fprintf(w, "  Metadata:\tNone\n")
+	// Sort Spec fields alphabetically
+	slices.Sort(specFields)
 
+	// Collect Status fields from LinkStatus
+	var statusFields []string
+	if link.Status.KernelSeen {
+		statusFields = append(statusFields, "    Kernel Seen:\ttrue")
+	} else {
+		statusFields = append(statusFields, "    Kernel Seen:\tfalse")
+	}
+	if link.Status.PinPresent {
+		statusFields = append(statusFields, "    Pin Present:\ttrue")
+	} else {
+		statusFields = append(statusFields, "    Pin Present:\tfalse")
+	}
+
+	// Sort Status fields alphabetically
+	slices.Sort(statusFields)
+
+	// Run all fields through single tabwriter for unified alignment
+	var aligned strings.Builder
+	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
+	for _, f := range specFields {
+		fmt.Fprintln(w, f)
+	}
+	for _, f := range statusFields {
+		fmt.Fprintln(w, f)
+	}
 	w.Flush()
+
+	// Split aligned output and reassemble with headers
+	lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
+	b.WriteString("  Spec:\n")
+	for _, line := range lines[:len(specFields)] {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("  Status:\n")
+	for _, line := range lines[len(specFields):] {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 
