@@ -27,12 +27,12 @@ func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer runtime.Close()
 
-	info, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
+	prog, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
 	if err != nil {
 		return err
 	}
 
-	output, err := FormatProgramInfo(info, &c.OutputFlags)
+	output, err := FormatProgram(prog, &c.OutputFlags)
 	if err != nil {
 		return err
 	}
@@ -61,9 +61,9 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 	// Look up program to get the BPF function name
 	var bpfFunction string
 	if record.ProgramID != 0 {
-		progInfo, err := runtime.Manager.Get(ctx, record.ProgramID)
-		if err == nil && progInfo.Kernel != nil && progInfo.Kernel.Program != nil {
-			bpfFunction = progInfo.Kernel.Program.Name
+		prog, err := runtime.Manager.Get(ctx, record.ProgramID)
+		if err == nil && prog.Status.Kernel != nil {
+			bpfFunction = prog.Status.Kernel.Name
 		}
 	}
 

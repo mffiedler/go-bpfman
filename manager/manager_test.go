@@ -80,10 +80,11 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 	require.NoError(t, err, "Load failed")
 
 	// Verify returned program fields
-	assert.Equal(t, "my_prog", prog.Managed.Name, "Managed.Name")
-	assert.NotZero(t, prog.Kernel.ID, "Kernel.ID")
-	assert.Equal(t, "my_prog", prog.Kernel.Name, "Kernel.Name")
-	assert.NotEmpty(t, prog.Managed.PinPath, "Managed.PinPath should be set")
+	assert.Equal(t, "my_prog", prog.Spec.Meta.Name, "Spec.Meta.Name")
+	assert.NotZero(t, prog.Spec.KernelID, "Spec.KernelID")
+	require.NotNil(t, prog.Status.Kernel, "Status.Kernel should not be nil")
+	assert.Equal(t, "my_prog", prog.Status.Kernel.Name, "Status.Kernel.Name")
+	assert.NotEmpty(t, prog.Spec.Handles.PinPath, "Spec.Handles.PinPath should be set")
 }
 
 // TestGetProgram_ReturnsAllFields verifies that:
@@ -109,16 +110,17 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 	loaded, err := fix.Load(ctx, spec, opts)
 	require.NoError(t, err, "Load failed")
 
-	retrieved, err := fix.Manager.Get(ctx, loaded.Kernel.ID)
+	retrieved, err := fix.Manager.Get(ctx, loaded.Spec.KernelID)
 	require.NoError(t, err, "Get failed")
 
 	// Verify retrieved program matches loaded
-	assert.Equal(t, loaded.Kernel.ID, retrieved.Kernel.Program.ID, "Kernel.Program.ID")
-	assert.Equal(t, "get_test_prog", retrieved.Kernel.Program.Name, "Kernel.Program.Name")
-	assert.Equal(t, "get_test_prog", retrieved.Bpfman.Program.Meta.Name, "Bpfman.Program.Meta.Name")
-	assert.Equal(t, "get-test-program", retrieved.Bpfman.Program.Meta.Metadata["bpfman.io/ProgramName"], "UserMetadata")
-	assert.Equal(t, "testing", retrieved.Bpfman.Program.Meta.Metadata["environment"], "UserMetadata[environment]")
-	assert.Equal(t, "1.0.0", retrieved.Bpfman.Program.Meta.Metadata["version"], "UserMetadata[version]")
+	require.NotNil(t, retrieved.Status.Kernel, "Status.Kernel should not be nil")
+	assert.Equal(t, loaded.Spec.KernelID, retrieved.Status.Kernel.ID, "Status.Kernel.ID")
+	assert.Equal(t, "get_test_prog", retrieved.Status.Kernel.Name, "Status.Kernel.Name")
+	assert.Equal(t, "get_test_prog", retrieved.Spec.Meta.Name, "Spec.Meta.Name")
+	assert.Equal(t, "get-test-program", retrieved.Spec.Meta.Metadata["bpfman.io/ProgramName"], "UserMetadata")
+	assert.Equal(t, "testing", retrieved.Spec.Meta.Metadata["environment"], "UserMetadata[environment]")
+	assert.Equal(t, "1.0.0", retrieved.Spec.Meta.Metadata["version"], "UserMetadata[version]")
 }
 
 // TestLoadProgram_WithGlobalData verifies that:
@@ -145,9 +147,9 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 	require.NoError(t, err, "Load failed")
 
 	// Verify via Get
-	retrieved, err := fix.Manager.Get(ctx, prog.Kernel.ID)
+	retrieved, err := fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Get failed")
-	assert.Equal(t, globalData, retrieved.Bpfman.Program.Load.GlobalData, "GlobalData")
+	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData, "GlobalData")
 }
 
 // TestLoadProgram_WithMetadataAndGlobalData verifies that:
@@ -180,12 +182,12 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 	require.NoError(t, err, "Load failed")
 
 	// Verify via Get
-	retrieved, err := fix.Manager.Get(ctx, prog.Kernel.ID)
+	retrieved, err := fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Get failed")
-	assert.Equal(t, "combined-test", retrieved.Bpfman.Program.Meta.Metadata["bpfman.io/ProgramName"])
-	assert.Equal(t, "test-app", retrieved.Bpfman.Program.Meta.Metadata["app"])
-	assert.Equal(t, "2.0.0", retrieved.Bpfman.Program.Meta.Metadata["version"])
-	assert.Equal(t, globalData, retrieved.Bpfman.Program.Load.GlobalData)
+	assert.Equal(t, "combined-test", retrieved.Spec.Meta.Metadata["bpfman.io/ProgramName"])
+	assert.Equal(t, "test-app", retrieved.Spec.Meta.Metadata["app"])
+	assert.Equal(t, "2.0.0", retrieved.Spec.Meta.Metadata["version"])
+	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData)
 }
 
 // TestListPrograms_ReturnsAllFields verifies that:
@@ -244,7 +246,7 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 	require.NoError(t, err, "Second Load failed")
 
 	// Both should have different kernel IDs
-	assert.NotEqual(t, prog1.Kernel.ID, prog2.Kernel.ID, "kernel IDs should differ")
+	assert.NotEqual(t, prog1.Spec.KernelID, prog2.Spec.KernelID, "kernel IDs should differ")
 
 	// Both should be in the list
 	result, err := fix.Manager.ListPrograms(ctx)
@@ -292,7 +294,7 @@ func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
 
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload failed")
 
 	// Verify program is gone
@@ -317,7 +319,7 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 	require.NoError(t, err, "First Load failed")
 
 	// Unload it
-	err = fix.Unload(ctx, prog1.Kernel.ID)
+	err = fix.Unload(ctx, prog1.Spec.KernelID)
 	require.NoError(t, err, "Unload failed")
 
 	// Load again with same name
@@ -326,7 +328,7 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err, "Second Load failed")
 
-	assert.NotEqual(t, prog1.Kernel.ID, prog2.Kernel.ID, "kernel IDs should differ")
+	assert.NotEqual(t, prog1.Spec.KernelID, prog2.Spec.KernelID, "kernel IDs should differ")
 }
 
 // TestLoadProgram_AllProgramTypes_RoundTrip verifies that:
@@ -368,7 +370,7 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 
 			prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 			require.NoError(t, err, "Load failed for %s", tc.name)
-			assert.NotZero(t, prog.Kernel.ID, "kernel ID should be assigned")
+			assert.NotZero(t, prog.Spec.KernelID, "kernel ID should be assigned")
 		})
 	}
 }
@@ -428,7 +430,7 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	assert.Equal(t, "clean", o.SystemState)
 
 	// First program should still exist (manager doesn't auto-rollback across separate Load calls)
-	_, err = fix.Manager.Get(ctx, result1.Program.Kernel.ID)
+	_, err = fix.Manager.Get(ctx, result1.Program.Spec.KernelID)
 	require.NoError(t, err, "First program should still exist")
 
 	// Verify kernel operations
@@ -546,7 +548,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	fix.Kernel.FailOnAttach("tracepoint", fmt.Errorf("injected attach failure"))
 
 	// Attempt attach - should fail
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, "syscalls", "sys_enter_read")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
 	result, err := fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "attach should fail")
@@ -573,9 +575,9 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	assert.False(t, o.ManualCleanupRequired)
 
 	// Program should still be loaded
-	retrieved, err := fix.Manager.Get(ctx, prog.Kernel.ID)
+	retrieved, err := fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Get failed - program should still exist")
-	assert.Equal(t, prog.Kernel.ID, retrieved.Kernel.Program.ID)
+	assert.Equal(t, prog.Spec.KernelID, retrieved.Status.Kernel.ID)
 }
 
 // TestDetach_ExistingLink_Succeeds verifies that:
@@ -595,7 +597,7 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, "syscalls", "sys_enter_write")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_write")
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach failed")
@@ -605,12 +607,12 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 	require.NoError(t, err, "Detach failed")
 
 	// Link should be gone
-	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Kernel.ID)
+	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Spec.KernelID)
 	require.NoError(t, err)
 	assert.Empty(t, links, "expected no links after detach")
 
 	// Program should still exist
-	_, err = fix.Manager.Get(ctx, prog.Kernel.ID)
+	_, err = fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "program should still exist after detach")
 }
 
@@ -639,7 +641,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for _, tp := range tracepoints {
-		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, tp.group, tp.name)
+		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, tp.group, tp.name)
 		require.NoError(t, err, "failed to create attach spec")
 		link, err := fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "Attach failed for %s/%s", tp.group, tp.name)
@@ -647,7 +649,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 	}
 
 	// Verify all links exist
-	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Kernel.ID)
+	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Spec.KernelID)
 	require.NoError(t, err)
 	assert.Len(t, links, 3, "expected 3 links")
 
@@ -658,12 +660,12 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 	}
 
 	// All links should be gone
-	links, err = fix.Manager.ListLinksByProgram(ctx, prog.Kernel.ID)
+	links, err = fix.Manager.ListLinksByProgram(ctx, prog.Spec.KernelID)
 	require.NoError(t, err)
 	assert.Empty(t, links, "expected no links after detaching all")
 
 	// Program should still exist
-	_, err = fix.Manager.Get(ctx, prog.Kernel.ID)
+	_, err = fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "program should still exist")
 }
 
@@ -684,7 +686,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, "syscalls", "sys_enter_read")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
 	_, err = fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach failed")
@@ -694,7 +696,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "should have 1 link")
 
 	// Unload should succeed (detaches links automatically)
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload failed")
 
 	// Verify operation sequence: load -> attach -> detach -> unload
@@ -738,7 +740,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	require.NoError(t, err, "Load failed")
 
 	// Attach to a tracepoint
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, "syscalls", "sys_enter_close")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_close")
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach failed")

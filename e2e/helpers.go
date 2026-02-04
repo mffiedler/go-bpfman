@@ -149,7 +149,7 @@ func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Conte
 }
 
 // LoadImage loads BPF programs from an OCI image.
-func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ImageProgramSpec, opts manager.LoadImageOpts) ([]bpfman.ManagedProgram, error) {
+func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ImageProgramSpec, opts manager.LoadImageOpts) ([]bpfman.Program, error) {
 	var result manager.LoadImageResult
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
@@ -163,8 +163,8 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, progr
 }
 
 // Load loads a BPF program from a file.
-func (e *TestEnv) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.ManagedProgram, error) {
-	var result bpfman.ManagedProgram
+func (e *TestEnv) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
+	var result bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		loadResult, loadErr := e.Manager.Load(ctx, spec, opts)
 		result = loadResult.Program
@@ -182,37 +182,16 @@ func (e *TestEnv) Unload(ctx context.Context, kernelID uint32) error {
 }
 
 // List returns all managed programs.
-// This provides compatibility with the old client.Client interface.
-func (e *TestEnv) List(ctx context.Context) ([]manager.ManagedProgram, error) {
+func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 	result, err := e.Manager.ListPrograms(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Convert []bpfman.Program to []manager.ManagedProgram
-	managed := make([]manager.ManagedProgram, 0, len(result.Programs))
-	for _, p := range result.Programs {
-		mp := manager.ManagedProgram{}
-		if p.Status.Kernel != nil {
-			mp.KernelProgram = *p.Status.Kernel
-		}
-		if p.Spec.Load.ProgramType != bpfman.ProgramTypeUnspecified {
-			spec := &bpfman.ProgramSpec{
-				Load: p.Spec.Load,
-				Handles: bpfman.ProgramHandles{
-					PinPath: p.Spec.Handles.PinPath,
-				},
-				Meta: p.Spec.Meta,
-			}
-			mp.Metadata = spec
-		}
-		managed = append(managed, mp)
-	}
-	return managed, nil
+	return result.Programs, nil
 }
 
 // Get returns detailed information about a program.
-func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (manager.ProgramInfo, error) {
+func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (bpfman.Program, error) {
 	return e.Manager.Get(ctx, kernelID)
 }
 

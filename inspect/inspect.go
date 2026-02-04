@@ -115,10 +115,9 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 	return bpfman.Program{
 		Spec: *v.Managed,
 		Status: bpfman.ProgramStatus{
-			Kernel:      v.Kernel,            // may be nil
-			KernelSeen:  v.Presence.InKernel, // true if kernel enumeration found it
-			PinPresent:  v.Presence.InFS,     // Spec.PinPath exists
-			MapsPresent: v.MapsPresent,       // map pin directory exists
+			Kernel:      v.Kernel,        // may be nil
+			PinPresent:  v.Presence.InFS, // Spec.PinPath exists
+			MapsPresent: v.MapsPresent,   // map pin directory exists
 		},
 	}, true
 }

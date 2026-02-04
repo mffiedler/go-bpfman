@@ -12,6 +12,7 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/outcome"
 )
 
@@ -23,7 +24,7 @@ type LoadOpts struct {
 
 // LoadResult contains the result of a Load operation.
 type LoadResult struct {
-	Program bpfman.ManagedProgram
+	Program bpfman.Program
 	Outcome outcome.ManagerOperationOutcome
 }
 
@@ -193,7 +194,25 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		},
 	})
 
-	result.Program = loaded
+	// Fetch kernel maps for status
+	var kernelMaps []kernel.Map
+	for _, mapID := range loaded.Kernel.MapIDs {
+		km, err := m.kernel.GetMapByID(ctx, mapID)
+		if err == nil {
+			kernelMaps = append(kernelMaps, km)
+		}
+	}
+
+	result.Program = bpfman.Program{
+		Spec: metadata,
+		Status: bpfman.ProgramStatus{
+			Kernel:      loaded.Kernel,
+			PinPresent:  true,
+			MapsPresent: len(kernelMaps) > 0,
+			Links:       nil, // No links yet, just loaded
+			Maps:        kernelMaps,
+		},
+	}
 	return
 }
 

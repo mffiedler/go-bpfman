@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -15,62 +14,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ManagedProgram combines kernel and metadata info.
-type ManagedProgram struct {
-	KernelProgram kernel.Program      `json:"kernel"`
-	Metadata      *bpfman.ProgramSpec `json:"metadata,omitempty"`
-}
-
-// ProgramInfo is the complete view of a managed program.
-type ProgramInfo struct {
-	Kernel *KernelInfo `json:"kernel,omitempty"`
-	Bpfman *BpfmanInfo `json:"bpfman,omitempty"`
-}
-
-// KernelInfo contains live kernel state.
-type KernelInfo struct {
-	Program *kernel.Program `json:"program,omitempty"`
-	Links   []kernel.Link   `json:"links,omitempty"`
-	Maps    []kernel.Map    `json:"maps,omitempty"`
-}
-
-// BpfmanInfo contains managed metadata.
-type BpfmanInfo struct {
-	Program *bpfman.ProgramSpec `json:"program,omitempty"`
-	Links   []bpfman.LinkSpec   `json:"links,omitempty"`
-}
-
-// HostInfo contains system information about the observed host.
-type HostInfo struct {
-	Sysname  string `json:"sysname"`
-	Nodename string `json:"nodename"`
-	Release  string `json:"release"`
-	Version  string `json:"version"`
-	Machine  string `json:"machine"`
-}
-
-// GetHostInfo returns system information from uname.
-func GetHostInfo() HostInfo {
-	var utsname unix.Utsname
-	if err := unix.Uname(&utsname); err != nil {
-		return HostInfo{}
-	}
-	return HostInfo{
-		Sysname:  unix.ByteSliceToString(utsname.Sysname[:]),
-		Nodename: unix.ByteSliceToString(utsname.Nodename[:]),
-		Release:  unix.ByteSliceToString(utsname.Release[:]),
-		Version:  unix.ByteSliceToString(utsname.Version[:]),
-		Machine:  unix.ByteSliceToString(utsname.Machine[:]),
-	}
-}
-
-// ProgramListResult contains programs with observation metadata.
-type ProgramListResult struct {
-	ObservedAt time.Time        `json:"observed_at"`
-	Host       HostInfo         `json:"host"`
-	Programs   []bpfman.Program `json:"programs"`
-}
-
 // ErrMultipleProgramsFound is returned when multiple programs match the
 // search criteria and none is the map owner.
 var ErrMultipleProgramsFound = errors.New("multiple programs found")
@@ -79,66 +22,71 @@ var ErrMultipleProgramsFound = errors.New("multiple programs found")
 // the map owner (MapOwnerID == 0). This indicates a data inconsistency.
 var ErrMultipleMapOwners = errors.New("multiple map owners found")
 
-// FilterManaged returns only managed programs.
-func FilterManaged(programs []ManagedProgram) []ManagedProgram {
-	var result []ManagedProgram
-	for _, p := range programs {
-		if p.Metadata != nil {
-			result = append(result, p)
-		}
+// GetHostInfo returns system information from uname.
+func GetHostInfo() bpfman.HostInfo {
+	var utsname unix.Utsname
+	if err := unix.Uname(&utsname); err != nil {
+		return bpfman.HostInfo{}
 	}
-	return result
+	return bpfman.HostInfo{
+		Sysname:  unix.ByteSliceToString(utsname.Sysname[:]),
+		Nodename: unix.ByteSliceToString(utsname.Nodename[:]),
+		Release:  unix.ByteSliceToString(utsname.Release[:]),
+		Version:  unix.ByteSliceToString(utsname.Version[:]),
+		Machine:  unix.ByteSliceToString(utsname.Machine[:]),
+	}
 }
 
 // Get retrieves a managed program by its kernel ID.
-// Returns both the stored metadata and the live kernel state, including
-// associated links and maps from both the kernel and the store.
+// Returns the canonical bpfman.Program type with both Spec (from store)
+// and Status (from kernel enumeration + filesystem checks + links + maps).
 // Returns an error if the program exists in the store but not in the kernel,
 // as this indicates an inconsistent state that requires reconciliation.
-func (m *Manager) Get(ctx context.Context, kernelID uint32) (ProgramInfo, error) {
+func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, error) {
 	// Fetch program from store
 	metadata, err := m.store.Get(ctx, kernelID)
 	if err != nil {
-		return ProgramInfo{}, err
+		return bpfman.Program{}, err
 	}
 
 	// Fetch program from kernel
 	kp, err := m.kernel.GetProgramByID(ctx, kernelID)
 	if err != nil {
-		return ProgramInfo{}, fmt.Errorf("program %d exists in store but not in kernel (requires reconciliation): %w", kernelID, err)
+		return bpfman.Program{}, fmt.Errorf("program %d exists in store but not in kernel (requires reconciliation): %w", kernelID, err)
 	}
 
 	// Fetch links from store (records with details)
 	storedLinks, err := m.store.ListLinksByProgram(ctx, kernelID)
 	if err != nil {
-		return ProgramInfo{}, fmt.Errorf("list links: %w", err)
+		return bpfman.Program{}, fmt.Errorf("list links: %w", err)
 	}
 
-	// Fetch complete records with details, and kernel info
-	var kernelLinks []kernel.Link
-	var linksWithDetails []bpfman.LinkSpec
+	// Build links with spec + status
+	var links []bpfman.Link
 	for _, sl := range storedLinks {
 		// Fetch full record with details for this link
 		record, err := m.store.GetLink(ctx, sl.ID)
 		if err != nil {
 			m.logger.WarnContext(ctx, "failed to get link details", "link_id", sl.ID, "error", err)
-			// Include the summary record without details
-			linksWithDetails = append(linksWithDetails, sl)
-		} else {
-			linksWithDetails = append(linksWithDetails, record)
+			record = sl // Use summary record without details
 		}
 
-		// Fetch from kernel if we have a kernel link ID.
-		// For non-synthetic links, ID is the kernel link ID.
-		if sl.IsSynthetic() {
-			continue // Synthetic links don't have kernel link IDs
+		link := bpfman.Link{
+			Spec: record,
+			Status: bpfman.LinkStatus{
+				PinPresent: record.PinPath != nil,
+			},
 		}
-		kl, err := m.kernel.GetLinkByID(ctx, uint32(sl.ID))
-		if err != nil {
-			// Link exists in store but not kernel - skip
-			continue
+
+		// Fetch kernel link if non-synthetic
+		if !record.IsSynthetic() {
+			kl, err := m.kernel.GetLinkByID(ctx, uint32(record.ID))
+			if err == nil {
+				link.Status.Kernel = &kl
+			}
 		}
-		kernelLinks = append(kernelLinks, kl)
+
+		links = append(links, link)
 	}
 
 	// Fetch each map from kernel using the program's map IDs
@@ -152,15 +100,14 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (ProgramInfo, error)
 		kernelMaps = append(kernelMaps, km)
 	}
 
-	return ProgramInfo{
-		Kernel: &KernelInfo{
-			Program: &kp,
-			Links:   kernelLinks,
-			Maps:    kernelMaps,
-		},
-		Bpfman: &BpfmanInfo{
-			Program: &metadata,
-			Links:   linksWithDetails,
+	return bpfman.Program{
+		Spec: metadata,
+		Status: bpfman.ProgramStatus{
+			Kernel:      &kp,
+			PinPresent:  true, // If we got here, program exists
+			MapsPresent: len(kernelMaps) > 0,
+			Links:       links,
+			Maps:        kernelMaps,
 		},
 	}, nil
 }
@@ -262,13 +209,13 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 }
 
 // ListPrograms returns all managed programs with full spec and status.
-// This returns the canonical bpfman.Program type with both Spec (from store)
+// This returns the canonical bpfman.ProgramListResult type with both Spec (from store)
 // and Status (from kernel enumeration + filesystem checks).
-func (m *Manager) ListPrograms(ctx context.Context) (ProgramListResult, error) {
+func (m *Manager) ListPrograms(ctx context.Context) (bpfman.ProgramListResult, error) {
 	scanner := bpffs.NewScanner(m.dirs.ScannerDirs())
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
-		return ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
+		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
 	}
 
 	var programs []bpfman.Program
@@ -277,7 +224,7 @@ func (m *Manager) ListPrograms(ctx context.Context) (ProgramListResult, error) {
 			programs = append(programs, prog)
 		}
 	}
-	return ProgramListResult{
+	return bpfman.ProgramListResult{
 		ObservedAt: world.Meta.ObservedAt,
 		Host:       GetHostInfo(),
 		Programs:   programs,

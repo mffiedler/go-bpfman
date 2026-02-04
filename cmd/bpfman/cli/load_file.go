@@ -30,7 +30,7 @@ type LoadFileCmd struct {
 
 // loadFileResult captures both successful programs and any failure outcome.
 type loadFileResult struct {
-	Programs      []bpfman.ManagedProgram
+	Programs      []bpfman.Program
 	FailedOutcome *outcome.ManagerOperationOutcome
 }
 
@@ -91,7 +91,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		var res loadFileResult
-		res.Programs = make([]bpfman.ManagedProgram, 0, len(programs))
+		res.Programs = make([]bpfman.Program, 0, len(programs))
 
 		// Use defer with success flag to ensure cleanup on any error path
 		success := false
@@ -100,15 +100,17 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 				return
 			}
 			for _, loaded := range res.Programs {
-				if _, err := runtime.Manager.Unload(ctx, loaded.Kernel.ID); err != nil {
+				kernelID := loaded.Spec.KernelID
+				progName := loaded.Spec.Meta.Name
+				if _, err := runtime.Manager.Unload(ctx, kernelID); err != nil {
 					runtime.Logger.Warn("rollback: failed to unload program",
-						"kernel_id", loaded.Kernel.ID,
-						"name", loaded.Kernel.Name,
+						"kernel_id", kernelID,
+						"name", progName,
 						"error", err)
 				} else {
 					runtime.Logger.Debug("rollback: unloaded program",
-						"kernel_id", loaded.Kernel.ID,
-						"name", loaded.Kernel.Name)
+						"kernel_id", kernelID,
+						"name", progName)
 				}
 			}
 		}()

@@ -91,7 +91,7 @@ func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result.Programs, 1)
-	assert.Equal(t, "test_prog", result.Programs[0].Kernel.Name)
+	assert.Equal(t, "test_prog", result.Programs[0].Spec.Meta.Name)
 	assert.Equal(t, 1, f.Kernel.ProgramCount())
 
 	// Verify outcome structure on success
@@ -136,9 +136,9 @@ func TestLoadImage_AutoDiscover_MultiplePrograms(t *testing.T) {
 	assert.Equal(t, 3, f.Kernel.ProgramCount())
 
 	// Verify programs are loaded in sorted order
-	assert.Equal(t, "prog_a", result.Programs[0].Kernel.Name)
-	assert.Equal(t, "prog_b", result.Programs[1].Kernel.Name)
-	assert.Equal(t, "prog_c", result.Programs[2].Kernel.Name)
+	assert.Equal(t, "prog_a", result.Programs[0].Spec.Meta.Name)
+	assert.Equal(t, "prog_b", result.Programs[1].Spec.Meta.Name)
+	assert.Equal(t, "prog_c", result.Programs[2].Spec.Meta.Name)
 }
 
 func TestLoadImage_AutoDiscover_NoPrograms(t *testing.T) {
@@ -176,7 +176,7 @@ func TestLoadImage_ExplicitPrograms_Valid(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result.Programs, 1)
-	assert.Equal(t, "prog_b", result.Programs[0].Kernel.Name)
+	assert.Equal(t, "prog_b", result.Programs[0].Spec.Meta.Name)
 	assert.Equal(t, 1, f.Kernel.ProgramCount())
 }
 
@@ -384,8 +384,8 @@ func TestLoadImage_AutoDiscover_FentryFexit(t *testing.T) {
 	assert.Equal(t, 2, f.Kernel.ProgramCount())
 
 	// Verify the programs were loaded (sorted by name)
-	assert.Equal(t, "trace_vfs_read", result.Programs[0].Kernel.Name)
-	assert.Equal(t, "trace_vfs_write", result.Programs[1].Kernel.Name)
+	assert.Equal(t, "trace_vfs_read", result.Programs[0].Spec.Meta.Name)
+	assert.Equal(t, "trace_vfs_write", result.Programs[1].Spec.Meta.Name)
 }
 
 func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {

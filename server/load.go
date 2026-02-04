@@ -179,17 +179,17 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		loaded := loadResult.Program
 
 		// Track for potential rollback
-		loadedKernelIDs = append(loadedKernelIDs, loaded.Kernel.ID)
+		loadedKernelIDs = append(loadedKernelIDs, loaded.Spec.KernelID)
 
 		// First program becomes the map owner for subsequent programs in this request
 		if i == 0 {
-			mapOwnerKernelID = loaded.Kernel.ID
+			mapOwnerKernelID = loaded.Spec.KernelID
 		}
 
 		// Format LoadedAt as RFC3339 if available
 		var loadedAt string
-		if !loaded.Kernel.LoadedAt.IsZero() {
-			loadedAt = loaded.Kernel.LoadedAt.Format(time.RFC3339)
+		if loaded.Status.Kernel != nil && !loaded.Status.Kernel.LoadedAt.IsZero() {
+			loadedAt = loaded.Status.Kernel.LoadedAt.Format(time.RFC3339)
 		}
 
 		progInfo := &pb.ProgramInfo{
@@ -197,7 +197,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			Bytecode:   req.Bytecode,
 			Metadata:   req.Metadata,
 			GlobalData: req.GlobalData,
-			MapPinPath: loaded.Managed.PinDir, // maps directory computed from kernel ID
+			MapPinPath: loaded.Spec.Handles.MapPinPath, // maps directory computed from kernel ID
 		}
 		// Set MapOwnerId for dependent programs (those sharing maps with the first)
 		if spec.MapOwnerID() != 0 {
@@ -205,23 +205,30 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			progInfo.MapOwnerId = &ownerID
 		}
 
-		resp.Programs = append(resp.Programs, &pb.LoadResponseInfo{
-			Info: progInfo,
-			KernelInfo: &pb.KernelProgramInfo{
-				Id:            loaded.Kernel.ID,
-				Name:          loaded.Kernel.Name,
-				ProgramType:   uint32(loaded.Managed.Type),
+		// Build KernelProgramInfo from status
+		var kernelInfo *pb.KernelProgramInfo
+		if loaded.Status.Kernel != nil {
+			kp := loaded.Status.Kernel
+			kernelInfo = &pb.KernelProgramInfo{
+				Id:            kp.ID,
+				Name:          kp.Name,
+				ProgramType:   uint32(loaded.Spec.Load.ProgramType),
 				LoadedAt:      loadedAt,
-				Tag:           loaded.Kernel.Tag,
-				GplCompatible: bpfman.ExtractGPLCompatible(loaded.Kernel),
-				Jited:         loaded.Kernel.JitedSize > 0,
-				MapIds:        loaded.Kernel.MapIDs,
-				BtfId:         loaded.Kernel.BTFId,
-				BytesXlated:   loaded.Kernel.XlatedSize,
-				BytesJited:    loaded.Kernel.JitedSize,
-				BytesMemlock:  uint32(loaded.Kernel.Memlock),
-				VerifiedInsns: loaded.Kernel.VerifiedInstructions,
-			},
+				Tag:           kp.Tag,
+				GplCompatible: loaded.Spec.Load.GPLCompatible,
+				Jited:         kp.JitedSize > 0,
+				MapIds:        kp.MapIDs,
+				BtfId:         kp.BTFId,
+				BytesXlated:   kp.XlatedSize,
+				BytesJited:    kp.JitedSize,
+				BytesMemlock:  uint32(kp.Memlock),
+				VerifiedInsns: kp.VerifiedInstructions,
+			}
+		}
+
+		resp.Programs = append(resp.Programs, &pb.LoadResponseInfo{
+			Info:       progInfo,
+			KernelInfo: kernelInfo,
 		})
 	}
 

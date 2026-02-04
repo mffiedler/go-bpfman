@@ -125,9 +125,9 @@ func (c *AttachCmd) output(cli *CLI, ctx context.Context, runtime *CLIRuntime, r
 
 	// Fetch program info to get the BPF function name using the original program ID
 	var bpfFunction string
-	progInfo, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
-	if err == nil && progInfo.Kernel != nil && progInfo.Kernel.Program != nil {
-		bpfFunction = progInfo.Kernel.Program.Name
+	prog, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
+	if err == nil && prog.Status.Kernel != nil {
+		bpfFunction = prog.Status.Kernel.Name
 	}
 
 	output, err := FormatLinkResult(bpfFunction, record, record.Details, &c.OutputFlags)

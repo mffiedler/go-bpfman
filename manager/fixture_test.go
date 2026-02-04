@@ -109,9 +109,9 @@ func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Conte
 	return lock.Run(ctx, f.Dirs.Lock(), fn)
 }
 
-// Load is a convenience wrapper that returns just the ManagedProgram.
+// Load is a convenience wrapper that returns just the Program.
 // Use this for tests that don't need to inspect the outcome.
-func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.ManagedProgram, error) {
+func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
 	result, err := f.Manager.Load(ctx, spec, opts)
 	return result.Program, err
 }

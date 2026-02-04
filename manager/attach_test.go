@@ -67,7 +67,7 @@ func TestFentry_AttachSucceeds(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach fentry
-	attachSpec, err := bpfman.NewFentryAttachSpec(prog.Kernel.ID)
+	attachSpec, err := bpfman.NewFentryAttachSpec(prog.Spec.KernelID)
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachFentry(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "AttachFentry should succeed")
@@ -106,7 +106,7 @@ func TestFentry_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach
-	attachSpec, err := bpfman.NewFentryAttachSpec(prog.Kernel.ID)
+	attachSpec, err := bpfman.NewFentryAttachSpec(prog.Spec.KernelID)
 	require.NoError(t, err)
 	link, err := fix.AttachFentry(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach should succeed")
@@ -121,7 +121,7 @@ func TestFentry_FullLifecycle(t *testing.T) {
 	assert.Equal(t, 0, fix.Kernel.LinkCount(), "should have 0 links after detach")
 
 	// Step 4: Unload
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -149,7 +149,7 @@ func TestFexit_AttachSucceeds(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach fexit
-	attachSpec, err := bpfman.NewFexitAttachSpec(prog.Kernel.ID)
+	attachSpec, err := bpfman.NewFexitAttachSpec(prog.Spec.KernelID)
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachFexit(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "AttachFexit should succeed")
@@ -188,7 +188,7 @@ func TestFexit_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach
-	attachSpec, err := bpfman.NewFexitAttachSpec(prog.Kernel.ID)
+	attachSpec, err := bpfman.NewFexitAttachSpec(prog.Spec.KernelID)
 	require.NoError(t, err)
 	link, err := fix.AttachFexit(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach should succeed")
@@ -203,7 +203,7 @@ func TestFexit_FullLifecycle(t *testing.T) {
 	assert.Equal(t, 0, fix.Kernel.LinkCount(), "should have 0 links after detach")
 
 	// Step 4: Unload
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -230,7 +230,7 @@ func TestKprobe_AttachSucceeds(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach kprobe with function name
-	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Kernel.ID, "do_sys_open")
+	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Spec.KernelID, "do_sys_open")
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachKprobe(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "AttachKprobe should succeed")
@@ -256,7 +256,7 @@ func TestKprobe_AttachWithOffset(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach kprobe with function name and offset
-	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Kernel.ID, "do_sys_open")
+	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Spec.KernelID, "do_sys_open")
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithOffset(0x10)
 	link, err := fix.AttachKprobe(ctx, attachSpec, bpfman.AttachOpts{})
@@ -302,7 +302,7 @@ func TestKprobe_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach
-	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Kernel.ID, "do_sys_open")
+	attachSpec, err := bpfman.NewKprobeAttachSpec(prog.Spec.KernelID, "do_sys_open")
 	require.NoError(t, err)
 	link, err := fix.AttachKprobe(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach should succeed")
@@ -317,7 +317,7 @@ func TestKprobe_FullLifecycle(t *testing.T) {
 	assert.Equal(t, 0, fix.Kernel.LinkCount(), "should have 0 links after detach")
 
 	// Step 4: Unload
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -344,7 +344,7 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach uprobe with target using real lock
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Kernel.ID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Spec.KernelID, "/usr/lib/libc.so.6")
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithFnName("malloc")
 
@@ -396,7 +396,7 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach with lock
-	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Kernel.ID, "/usr/lib/libc.so.6")
+	attachSpec, err := bpfman.NewUprobeAttachSpec(prog.Spec.KernelID, "/usr/lib/libc.so.6")
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithFnName("malloc")
 
@@ -418,7 +418,7 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 	assert.Equal(t, 0, fix.Kernel.LinkCount(), "should have 0 links after detach")
 
 	// Step 4: Unload
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -445,7 +445,7 @@ func TestXDP_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface (programID, ifname, ifindex)
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 	require.NoError(t, err, "failed to create attach spec")
 	link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "AttachXDP should succeed")
@@ -473,7 +473,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	// Attach multiple times
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < 3; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "AttachXDP %d should succeed", i+1)
@@ -500,7 +500,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	numAttachments := 3
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < numAttachments; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "Attach %d should succeed", i+1)
@@ -517,7 +517,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 4: Unload program
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -544,7 +544,7 @@ func TestTC_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface with ingress direction (programID, ifname, ifindex, direction)
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -571,14 +571,14 @@ func TestTC_IngressAndEgressDirections(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach ingress
-	ingressSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	ingressSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	ingressSpec = ingressSpec.WithPriority(50)
 	ingressLink, err := fix.AttachTC(ctx, ingressSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Ingress attach should succeed")
 
 	// Attach egress
-	egressSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionEgress)
+	egressSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionEgress)
 	require.NoError(t, err)
 	egressSpec = egressSpec.WithPriority(50)
 	egressLink, err := fix.AttachTC(ctx, egressSpec, bpfman.AttachOpts{})
@@ -613,7 +613,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 
 	for _, iface := range interfaces {
 		for _, dir := range directions {
-			attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, iface.name, iface.ifindex, dir)
+			attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, iface.name, iface.ifindex, dir)
 			require.NoError(t, err)
 			attachSpec = attachSpec.WithPriority(50)
 			link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -633,7 +633,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 4: Unload program
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -660,7 +660,7 @@ func TestTCX_FirstAttachCreatesLink(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach to interface with ingress direction (programID, ifname, ifindex, direction)
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "failed to create attach spec")
 	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})
@@ -687,14 +687,14 @@ func TestTCX_IngressAndEgressDirections(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach ingress
-	ingressSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	ingressSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	ingressSpec = ingressSpec.WithPriority(50)
 	ingressLink, err := fix.AttachTCX(ctx, ingressSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Ingress attach should succeed")
 
 	// Attach egress
-	egressSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionEgress)
+	egressSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionEgress)
 	require.NoError(t, err)
 	egressSpec = egressSpec.WithPriority(50)
 	egressLink, err := fix.AttachTCX(ctx, egressSpec, bpfman.AttachOpts{})
@@ -729,7 +729,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 
 	for _, iface := range interfaces {
 		for _, dir := range directions {
-			attachSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, iface.name, iface.ifindex, dir)
+			attachSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, iface.name, iface.ifindex, dir)
 			require.NoError(t, err)
 			attachSpec = attachSpec.WithPriority(50)
 			link, err := fix.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})
@@ -749,7 +749,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 4: Unload program
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -784,7 +784,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for _, tp := range tracepoints {
-		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, tp.group, tp.name)
+		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, tp.group, tp.name)
 		require.NoError(t, err)
 		link, err := fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "Attach to %s/%s should succeed", tp.group, tp.name)
@@ -792,7 +792,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 	}
 
 	// List all links by program
-	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Kernel.ID)
+	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "ListLinksByProgram should succeed")
 	assert.Len(t, links, 3, "should have 3 links")
 }
@@ -813,7 +813,7 @@ func TestListLinks_EmptyWhenNoLinks(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// List links for this program
-	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Kernel.ID)
+	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "ListLinksByProgram should succeed")
 	assert.Empty(t, links, "should have 0 links")
 }
@@ -954,7 +954,7 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 		UserMetadata: map[string]string{"bpfman.io/ProgramName": "multi-prog-image"},
 	})
 	require.NoError(t, err, "First program load should succeed")
-	ownerID := prog1.Kernel.ID
+	ownerID := prog1.Spec.KernelID
 
 	// Load second program with MapOwnerID pointing to first
 	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "tracepoint_counter", bpfman.ProgramTypeTracepoint)
@@ -981,19 +981,19 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 
 	// Verify map sharing through pin directories
 	// First program owns maps - uses its own ID in pin dir
-	assert.Contains(t, prog1.Managed.PinDir, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog1.Spec.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
 		"first program should have its own maps directory")
 
 	// Second and third programs share maps with owner
-	assert.Contains(t, prog2.Managed.PinDir, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog2.Spec.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
 		"second program should share owner's maps directory")
-	assert.Contains(t, prog3.Managed.PinDir, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog3.Spec.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
 		"third program should share owner's maps directory")
 
 	// All should have same pin dir
-	assert.Equal(t, prog1.Managed.PinDir, prog2.Managed.PinDir,
+	assert.Equal(t, prog1.Spec.Handles.MapPinPath, prog2.Spec.Handles.MapPinPath,
 		"second program should have same PinDir as owner")
-	assert.Equal(t, prog1.Managed.PinDir, prog3.Managed.PinDir,
+	assert.Equal(t, prog1.Spec.Handles.MapPinPath, prog3.Spec.Handles.MapPinPath,
 		"third program should have same PinDir as owner")
 }
 
@@ -1013,7 +1013,7 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Single program owns its own maps - pin dir contains its own ID
-	assert.Contains(t, prog.Managed.PinDir, fmt.Sprintf("/%d", prog.Kernel.ID),
+	assert.Contains(t, prog.Spec.Handles.MapPinPath, fmt.Sprintf("/%d", prog.Spec.KernelID),
 		"single program should have its own maps directory")
 }
 
@@ -1033,11 +1033,11 @@ func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedMapPinPath := prog.Managed.PinDir
+	expectedMapPinPath := prog.Spec.Handles.MapPinPath
 	require.NotEmpty(t, expectedMapPinPath, "MapPinPath should be set")
 
 	// Attach the program
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "eth0", 2)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "eth0", 2)
 	require.NoError(t, err)
 	_, err = fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach should succeed")
@@ -1066,11 +1066,11 @@ func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedMapPinPath := prog.Managed.PinDir
+	expectedMapPinPath := prog.Spec.Handles.MapPinPath
 	require.NotEmpty(t, expectedMapPinPath, "MapPinPath should be set")
 
 	// Attach the program
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1098,8 +1098,8 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
-	ownerID := prog1.Kernel.ID
-	ownerMapPinPath := prog1.Managed.PinDir
+	ownerID := prog1.Spec.KernelID
+	ownerMapPinPath := prog1.Spec.Handles.MapPinPath
 
 	// Load XDP program with MapOwnerID pointing to first
 	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "xdp_stats", bpfman.ProgramTypeXDP)
@@ -1109,11 +1109,11 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify XDP program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Managed.PinDir,
+	assert.Equal(t, ownerMapPinPath, prog2.Spec.Handles.MapPinPath,
 		"XDP program should have same MapPinPath as owner")
 
 	// Attach the XDP program
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog2.Kernel.ID, "eth0", 2)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog2.Spec.KernelID, "eth0", 2)
 	require.NoError(t, err)
 	_, err = fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err, "Attach should succeed")
@@ -1139,8 +1139,8 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
-	ownerID := prog1.Kernel.ID
-	ownerMapPinPath := prog1.Managed.PinDir
+	ownerID := prog1.Spec.KernelID
+	ownerMapPinPath := prog1.Spec.Handles.MapPinPath
 
 	// Load TC program with MapOwnerID pointing to first
 	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "tc_stats", bpfman.ProgramTypeTC)
@@ -1150,11 +1150,11 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify TC program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Managed.PinDir,
+	assert.Equal(t, ownerMapPinPath, prog2.Spec.Handles.MapPinPath,
 		"TC program should have same MapPinPath as owner")
 
 	// Attach the TC program
-	attachSpec, err := bpfman.NewTCAttachSpec(prog2.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog2.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1185,7 +1185,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	// Attach two extensions
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < 2; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err)
@@ -1231,7 +1231,7 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach one extension
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1275,7 +1275,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < 3; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "attach %d should succeed", i)
@@ -1306,7 +1306,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	// Attach three times to the same interface/direction
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < 3; i++ {
-		attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+		attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
 		attachSpec = attachSpec.WithPriority(50)
 		link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1340,7 +1340,7 @@ func TestXDP_PinPathConventions(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 	require.NoError(t, err)
 	link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
@@ -1370,7 +1370,7 @@ func TestTC_PinPathConventions(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1406,7 +1406,7 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach a single ingress extension
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	link, err := fix.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1446,7 +1446,7 @@ func TestTC_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirection("sideways"))
+	_, err = bpfman.NewTCAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirection("sideways"))
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist
@@ -1468,7 +1468,7 @@ func TestTCX_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCXAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirection("sideways"))
+	_, err = bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirection("sideways"))
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist
@@ -1494,10 +1494,10 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// The expected pin path follows the pattern: <fsRoot>/prog_<kernelID>
-	expectedPinPath := fmt.Sprintf("%s/prog_%d", fix.Dirs.FS(), prog.Kernel.ID)
+	expectedPinPath := fmt.Sprintf("%s/prog_%d", fix.Dirs.FS(), prog.Spec.KernelID)
 
 	// Attach the program
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, "eth0", 2, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	attachSpec = attachSpec.WithPriority(50)
 	_, err = fix.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1530,7 +1530,7 @@ func TestGetLink_ReturnsLinkDetails(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Kernel.ID, "syscalls", "sys_enter_open")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "syscalls", "sys_enter_open")
 	require.NoError(t, err)
 	link, err := fix.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
@@ -1585,7 +1585,7 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 	require.NoError(t, err)
 	link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
@@ -1613,7 +1613,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < 3; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "AttachXDP %d should succeed", i+1)
@@ -1639,7 +1639,7 @@ func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach twice
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 	require.NoError(t, err)
 	link1, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
@@ -1674,7 +1674,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	numAttachments := 5
 	var linkIDs []bpfman.LinkID
 	for i := 0; i < numAttachments; i++ {
-		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "lo", 1)
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "lo", 1)
 		require.NoError(t, err)
 		link, err := fix.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 		require.NoError(t, err, "Attach %d should succeed", i+1)
@@ -1695,7 +1695,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	}
 
 	// Step 4: Unload program
-	err = fix.Unload(ctx, prog.Kernel.ID)
+	err = fix.Unload(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Unload should succeed")
 
 	// Step 5: Verify clean state
@@ -1726,7 +1726,7 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfindex(nonExistentIfindex, errors.New("interface not found"))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Kernel.ID, "nonexistent0", nonExistentIfindex)
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Spec.KernelID, "nonexistent0", nonExistentIfindex)
 	require.NoError(t, err, "spec creation should succeed")
 	result, err := fix.Manager.AttachXDP(ctx, attachSpec, bpfman.AttachOpts{})
 	require.Error(t, err, "AttachXDP to non-existent interface should fail")
@@ -1761,7 +1761,7 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfname("nonexistent0", errors.New("interface not found"))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewTCAttachSpec(prog.Kernel.ID, "nonexistent0", 999, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCAttachSpec(prog.Spec.KernelID, "nonexistent0", 999, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "spec creation should succeed")
 	attachSpec = attachSpec.WithPriority(50)
 	result, err := fix.Manager.AttachTC(ctx, attachSpec, bpfman.AttachOpts{})
@@ -1798,7 +1798,7 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	fix.Kernel.FailOnIfindex(nonExistentIfindex, errors.New("interface not found"))
 
 	// Attempt to attach to non-existent interface
-	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Kernel.ID, "nonexistent0", nonExistentIfindex, bpfman.TCDirectionIngress)
+	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Spec.KernelID, "nonexistent0", nonExistentIfindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err, "spec creation should succeed")
 	attachSpec = attachSpec.WithPriority(50)
 	result, err := fix.Manager.AttachTCX(ctx, attachSpec, bpfman.AttachOpts{})

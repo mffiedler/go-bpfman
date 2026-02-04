@@ -28,7 +28,7 @@ type LoadImageOpts struct {
 
 // LoadImageResult contains the loaded programs from an OCI image.
 type LoadImageResult struct {
-	Programs []bpfman.ManagedProgram
+	Programs []bpfman.Program
 	Outcome  outcome.ManagerOperationOutcome
 }
 
@@ -147,30 +147,33 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 		}
 		rec.BeginRollback()
 		for _, loaded := range result.Programs {
-			if _, err := m.Unload(ctx, loaded.Kernel.ID); err != nil {
+			kernelID := loaded.Spec.KernelID
+			progName := loaded.Spec.Meta.Name
+			pinPath := loaded.Spec.Handles.PinPath
+			if _, err := m.Unload(ctx, kernelID); err != nil {
 				m.logger.WarnContext(ctx, "rollback: failed to unload program",
-					"kernel_id", loaded.Kernel.ID,
-					"name", loaded.Kernel.Name,
+					"kernel_id", kernelID,
+					"name", progName,
 					"error", err)
 				_ = rec.RollbackFail(outcome.Step{
 					Kind:   outcome.StepKindKernelUnload,
-					Target: loaded.Kernel.Name,
+					Target: progName,
 					Details: outcome.ProgramDetails{
-						KernelID: loaded.Kernel.ID,
-						PinPath:  loaded.Managed.PinPath,
+						KernelID: kernelID,
+						PinPath:  pinPath,
 					},
 					Error: err.Error(),
 				})
 			} else {
 				m.logger.DebugContext(ctx, "rollback: unloaded program",
-					"kernel_id", loaded.Kernel.ID,
-					"name", loaded.Kernel.Name)
+					"kernel_id", kernelID,
+					"name", progName)
 				_ = rec.RollbackComplete(outcome.Step{
 					Kind:   outcome.StepKindKernelUnload,
-					Target: loaded.Kernel.Name,
+					Target: progName,
 					Details: outcome.ProgramDetails{
-						KernelID: loaded.Kernel.ID,
-						PinPath:  loaded.Managed.PinPath,
+						KernelID: kernelID,
+						PinPath:  pinPath,
 					},
 				})
 			}
@@ -259,22 +262,22 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Kind:   outcome.StepKindKernelLoad,
 			Target: prog.ProgramName,
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Kernel.ID,
-				PinPath:  loaded.Managed.PinPath,
+				KernelID: loaded.Spec.KernelID,
+				PinPath:  loaded.Spec.Handles.PinPath,
 			},
 		})
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveProgram,
 			Target: prog.ProgramName,
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Kernel.ID,
+				KernelID: loaded.Spec.KernelID,
 			},
 		})
 
 		m.logger.InfoContext(ctx, "loaded program from image",
 			"name", prog.ProgramName,
-			"kernel_id", loaded.Kernel.ID,
-			"pin_path", loaded.Managed.PinPath)
+			"kernel_id", loaded.Spec.KernelID,
+			"pin_path", loaded.Spec.Handles.PinPath)
 
 		result.Programs = append(result.Programs, loaded)
 	}

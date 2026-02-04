@@ -48,7 +48,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// loadImageResult captures both successful programs and any failure outcome.
 	type loadImageResult struct {
-		Programs      []bpfman.ManagedProgram
+		Programs      []bpfman.Program
 		FailedOutcome *outcome.ManagerOperationOutcome
 	}
 
@@ -116,9 +116,9 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 
 		for _, loaded := range loadResult.Programs {
 			runtime.Logger.Info("program loaded successfully",
-				"name", loaded.Kernel.Name,
-				"kernel_id", loaded.Kernel.ID,
-				"pin_path", loaded.Managed.PinPath,
+				"name", loaded.Spec.Meta.Name,
+				"kernel_id", loaded.Spec.KernelID,
+				"pin_path", loaded.Spec.Handles.PinPath,
 			)
 		}
 

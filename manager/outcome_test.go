@@ -90,7 +90,7 @@ func TestUnload_Success_OutcomeTracksSteps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now unload it
-	unloadResult, err := fix.Manager.Unload(ctx, loadResult.Program.Kernel.ID)
+	unloadResult, err := fix.Manager.Unload(ctx, loadResult.Program.Spec.KernelID)
 	require.NoError(t, err)
 
 	// Verify outcome indicates success
@@ -165,7 +165,7 @@ func TestAttachTracepoint_Success_OutcomeTracksSteps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach it
-	attachSpec, err := bpfman.NewTracepointAttachSpec(loadResult.Program.Kernel.ID, "sched", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(loadResult.Program.Spec.KernelID, "sched", "sched_switch")
 	require.NoError(t, err)
 
 	attachResult, err := fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
@@ -223,7 +223,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	loadResult, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	unloadResult, err := fix.Manager.Unload(ctx, loadResult.Program.Kernel.ID)
+	unloadResult, err := fix.Manager.Unload(ctx, loadResult.Program.Spec.KernelID)
 	require.NoError(t, err)
 
 	// SystemState should be clean

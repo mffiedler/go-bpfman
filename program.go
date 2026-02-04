@@ -155,10 +155,11 @@ type ProgramSpec struct {
 // ProgramStatus is observed state (kernel + filesystem).
 // This is "what actually exists right now".
 type ProgramStatus struct {
-	Kernel      *kernel.Program `json:"kernel,omitempty"`
-	KernelSeen  bool            `json:"kernel_seen"`
-	PinPresent  bool            `json:"pin_present"`
-	MapsPresent bool            `json:"maps_present"`
+	Kernel      *kernel.Program `json:"kernel,omitempty"` // nil means not in kernel
+	PinPresent  bool            `json:"pin_present"`      // filesystem check
+	MapsPresent bool            `json:"maps_present"`     // filesystem check
+	Links       []Link          `json:"links,omitempty"`  // links with spec + status
+	Maps        []kernel.Map    `json:"maps,omitempty"`   // kernel maps
 }
 
 // Program is the canonical domain object combining spec and status.
@@ -238,4 +239,20 @@ func (p ManagedProgram) MarshalJSON() ([]byte, error) {
 		Managed: p.Managed,
 		Kernel:  p.Kernel,
 	})
+}
+
+// HostInfo contains system information about the observed host.
+type HostInfo struct {
+	Sysname  string `json:"sysname"`
+	Nodename string `json:"nodename"`
+	Release  string `json:"release"`
+	Version  string `json:"version"`
+	Machine  string `json:"machine"`
+}
+
+// ProgramListResult contains programs with observation metadata.
+type ProgramListResult struct {
+	ObservedAt time.Time `json:"observed_at"`
+	Host       HostInfo  `json:"host"`
+	Programs   []Program `json:"programs"`
 }
