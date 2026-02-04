@@ -18,6 +18,8 @@ import (
 type CLIRuntime struct {
 	Manager *manager.Manager
 	Puller  interpreter.ImagePuller
+	Store   interpreter.Store
+	Kernel  interpreter.KernelOperations
 	Dirs    config.RuntimeDirs
 	Logger  *slog.Logger
 	env     *manager.RuntimeEnv
@@ -81,6 +83,8 @@ func (c *CLI) NewCLIRuntime(ctx context.Context) (*CLIRuntime, error) {
 	return &CLIRuntime{
 		Manager: env.Manager,
 		Puller:  puller,
+		Store:   env.Store,
+		Kernel:  env.Kernel,
 		Dirs:    dirs,
 		Logger:  logger,
 		env:     env,

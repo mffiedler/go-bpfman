@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/inspect"
 )
 
 // GetCmd gets details of a program or link.
@@ -53,21 +55,23 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer runtime.Close()
 
-	record, err := runtime.Manager.GetLink(ctx, bpfman.LinkID(c.LinkID.Value))
+	scanner := bpffs.NewScanner(runtime.Dirs.ScannerDirs())
+	info, err := inspect.GetLink(ctx, runtime.Store, runtime.Kernel, scanner, bpfman.LinkID(c.LinkID.Value))
 	if err != nil {
 		return err
 	}
 
-	// Look up program to get the BPF function name
-	var bpfFunction string
-	if record.ProgramID != 0 {
-		prog, err := runtime.Manager.Get(ctx, record.ProgramID)
-		if err == nil && prog.Status.Kernel != nil {
-			bpfFunction = prog.Status.Kernel.Name
-		}
+	// Build the composite Link type from LinkInfo
+	link := bpfman.Link{
+		Spec: info.Record,
+		Status: bpfman.LinkStatus{
+			Kernel:     info.Kernel,
+			KernelSeen: info.Presence.InKernel,
+			PinPresent: info.Presence.InFS,
+		},
 	}
 
-	output, err := FormatLinkInfo(bpfFunction, record, record.Details, &c.OutputFlags)
+	output, err := FormatLinkResult(link, &c.OutputFlags)
 	if err != nil {
 		return err
 	}
