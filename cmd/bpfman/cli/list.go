@@ -95,7 +95,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "%d\n", p.Spec.KernelID)
+			fmt.Fprintf(&b, "program/%d\n", p.Spec.KernelID)
 		}
 		return cli.PrintOut(b.String())
 	}
@@ -139,7 +139,7 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, l := range links {
-			fmt.Fprintf(&b, "%d\n", l.ID)
+			fmt.Fprintf(&b, "link/%d\n", l.ID)
 		}
 		return cli.PrintOut(b.String())
 	}

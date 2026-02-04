@@ -15,12 +15,16 @@ type ProgramID struct {
 	Value uint32
 }
 
-// ParseProgramID parses a program ID from string, supporting hex (0x) prefix.
+// ParseProgramID parses a program ID from string, supporting hex (0x) prefix
+// and optional "program/" prefix for k8s-style resource references.
 func ParseProgramID(s string) (ProgramID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ProgramID{}, fmt.Errorf("program ID cannot be empty")
 	}
+
+	// Strip optional program/ prefix
+	s = strings.TrimPrefix(s, "program/")
 
 	var val uint64
 	var err error
@@ -43,12 +47,16 @@ type LinkID struct {
 	Value uint32
 }
 
-// ParseLinkID parses a link ID from string, supporting hex (0x) prefix.
+// ParseLinkID parses a link ID from string, supporting hex (0x) prefix
+// and optional "link/" prefix for k8s-style resource references.
 func ParseLinkID(s string) (LinkID, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return LinkID{}, fmt.Errorf("link ID cannot be empty")
 	}
+
+	// Strip optional link/ prefix
+	s = strings.TrimPrefix(s, "link/")
 
 	var val uint64
 	var err error
@@ -362,6 +370,77 @@ func TCActionsToString(actions []int32) string {
 		names[i] = TCActionToString(a)
 	}
 	return strings.Join(names, ", ")
+}
+
+// ResourceKind identifies the type of BPF resource.
+type ResourceKind string
+
+const (
+	ResourceKindLink    ResourceKind = "link"
+	ResourceKindProgram ResourceKind = "program"
+)
+
+// ResourceRef is a k8s-style resource reference (e.g., "link/123", "program/456").
+type ResourceRef struct {
+	Kind ResourceKind
+	ID   uint32
+}
+
+// String returns the canonical string form (e.g., "link/123").
+func (r ResourceRef) String() string {
+	return fmt.Sprintf("%s/%d", r.Kind, r.ID)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler for Kong parsing.
+func (r *ResourceRef) UnmarshalText(text []byte) error {
+	parsed, err := ParseResourceRef(string(text))
+	if err != nil {
+		return err
+	}
+	*r = parsed
+	return nil
+}
+
+// ParseResourceRef parses a resource reference in the form "kind/id".
+// Valid kinds are "link" and "program".
+func ParseResourceRef(s string) (ResourceRef, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ResourceRef{}, fmt.Errorf("resource reference cannot be empty")
+	}
+
+	idx := strings.Index(s, "/")
+	if idx <= 0 {
+		return ResourceRef{}, fmt.Errorf("invalid resource reference %q: expected kind/id (e.g., link/123, program/456)", s)
+	}
+
+	kindStr := s[:idx]
+	idStr := s[idx+1:]
+
+	var kind ResourceKind
+	switch kindStr {
+	case "link":
+		kind = ResourceKindLink
+	case "program":
+		kind = ResourceKindProgram
+	default:
+		return ResourceRef{}, fmt.Errorf("invalid resource kind %q: must be 'link' or 'program'", kindStr)
+	}
+
+	var val uint64
+	var err error
+
+	if strings.HasPrefix(idStr, "0x") || strings.HasPrefix(idStr, "0X") {
+		val, err = strconv.ParseUint(idStr[2:], 16, 32)
+	} else {
+		val, err = strconv.ParseUint(idStr, 10, 32)
+	}
+
+	if err != nil {
+		return ResourceRef{}, fmt.Errorf("invalid resource ID in %q: %w", s, err)
+	}
+
+	return ResourceRef{Kind: kind, ID: uint32(val)}, nil
 }
 
 // ParseProgramTypes parses a slice of program type strings (case-insensitive).

@@ -50,6 +50,7 @@ type CLI struct {
 	Unload  UnloadCmd  `cmd:"" help:"Unload a managed BPF program."`
 	Attach  AttachCmd  `cmd:"" help:"Attach a loaded program to a hook."`
 	Detach  DetachCmd  `cmd:"" help:"Detach a link."`
+	Delete  DeleteCmd  `cmd:"" help:"Delete resources with cascading cleanup."`
 	List    ListCmd    `cmd:"" help:"List managed programs or links."`
 	Get     GetCmd     `cmd:"" help:"Get a loaded eBPF program or program attachment link."`
 	Explain ExplainCmd `cmd:"" help:"Explain available fields and columns for a resource."`
