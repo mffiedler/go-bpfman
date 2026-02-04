@@ -104,6 +104,9 @@ type ProgramView struct {
 	FSPinPath   string `json:"fs_pin_path,omitempty"` // from bpffs scan (may differ from store)
 	MapsPresent bool   `json:"maps_present"`          // true if map pin directory exists
 
+	// Links attached to this program (correlated from World.Links)
+	Links []LinkRow `json:"links,omitempty"`
+
 	Presence Presence `json:"presence"`
 }
 
@@ -114,12 +117,22 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 	if v.Managed == nil {
 		return bpfman.Program{}, false // not store-managed, can't construct
 	}
+
+	// Convert links
+	var links []bpfman.Link
+	for _, lr := range v.Links {
+		if link, ok := lr.AsLink(); ok {
+			links = append(links, link)
+		}
+	}
+
 	return bpfman.Program{
 		Spec: *v.Managed,
 		Status: bpfman.ProgramStatus{
 			Kernel:      v.Kernel,        // may be nil
 			PinPresent:  v.Presence.InFS, // Spec.PinPath exists
 			MapsPresent: v.MapsPresent,   // map pin directory exists
+			Links:       links,
 		},
 	}, true
 }
@@ -221,6 +234,22 @@ func (r LinkRow) HasPin() bool {
 		return r.Managed.HasPin()
 	}
 	return false
+}
+
+// AsLink constructs a bpfman.Link composite from a store-managed link.
+// Returns (Link, true) when Managed != nil.
+func (r LinkRow) AsLink() (bpfman.Link, bool) {
+	if r.Managed == nil {
+		return bpfman.Link{}, false
+	}
+	return bpfman.Link{
+		Spec: *r.Managed,
+		Status: bpfman.LinkStatus{
+			Kernel:     r.Kernel,
+			KernelSeen: r.Presence.InKernel,
+			PinPresent: r.Presence.InFS,
+		},
+	}, true
 }
 
 // DispatcherRow is a store-first view of a dispatcher with presence annotations.
@@ -577,6 +606,20 @@ func Snapshot(
 			},
 		}
 		w.Dispatchers = append(w.Dispatchers, row)
+	}
+
+	// Correlate links to programs by ProgramID
+	programIndex := make(map[uint32]int, len(w.Programs))
+	for i := range w.Programs {
+		programIndex[w.Programs[i].KernelID] = i
+	}
+	for _, link := range w.Links {
+		if link.Managed == nil {
+			continue
+		}
+		if idx, ok := programIndex[link.Managed.ProgramID]; ok {
+			w.Programs[idx].Links = append(w.Programs[idx].Links, link)
+		}
 	}
 
 	// Sort all slices for deterministic output

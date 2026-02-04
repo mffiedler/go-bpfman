@@ -383,7 +383,7 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 
 // Link column name constants for default and wide output.
 var (
-	defaultLinkColumnNames = []string{"LINK_ID", "KIND", "PIN_PATH"}
+	defaultLinkColumnNames = []string{"LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
 	wideLinkColumnNames    = []string{"LINK_ID", "KIND", "PROGRAM_ID", "ATTACH", "PIN_PATH", "CREATED_AT"}
 )
 

@@ -291,11 +291,11 @@ func TestLinkSchemaDoc_Structure(t *testing.T) {
 
 func TestDefaultLinkColumns(t *testing.T) {
 	cols := DefaultLinkColumns()
-	if len(cols.Columns) != 3 {
-		t.Errorf("DefaultLinkColumns() has %d columns, want 3", len(cols.Columns))
+	if len(cols.Columns) != 4 {
+		t.Errorf("DefaultLinkColumns() has %d columns, want 4", len(cols.Columns))
 	}
 
-	expected := []string{"LINK_ID", "KIND", "PIN_PATH"}
+	expected := []string{"LINK_ID", "KIND", "PROGRAM_ID", "PIN_PATH"}
 	for i, col := range cols.Columns {
 		if col.Name != expected[i] {
 			t.Errorf("DefaultLinkColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
