@@ -145,19 +145,11 @@ type sqliteStore struct {
 	logger *slog.Logger
 
 	// Prepared statements for program operations
-	stmtGetProgram                 *sql.Stmt
-	stmtSaveProgram                *sql.Stmt
-	stmtDeleteProgramMetadataIndex *sql.Stmt
-	stmtInsertProgramMetadataIndex *sql.Stmt
-	stmtDeleteProgram              *sql.Stmt
-	stmtListPrograms               *sql.Stmt
-	stmtFindProgramByMetadata      *sql.Stmt
-	stmtFindAllProgramsByMetadata  *sql.Stmt
-	stmtCountDependentPrograms     *sql.Stmt
-
-	// Prepared statements for program tags
-	stmtInsertTag  *sql.Stmt
-	stmtDeleteTags *sql.Stmt
+	stmtGetProgram             *sql.Stmt
+	stmtSaveProgram            *sql.Stmt
+	stmtDeleteProgram          *sql.Stmt
+	stmtListPrograms           *sql.Stmt
+	stmtCountDependentPrograms *sql.Stmt
 
 	// Prepared statements for link registry operations
 	stmtDeleteLink         *sql.Stmt
@@ -304,15 +296,9 @@ func (s *sqliteStore) closeStatements() {
 	stmts := []*sql.Stmt{
 		s.stmtGetProgram,
 		s.stmtSaveProgram,
-		s.stmtDeleteProgramMetadataIndex,
-		s.stmtInsertProgramMetadataIndex,
 		s.stmtDeleteProgram,
 		s.stmtListPrograms,
-		s.stmtFindProgramByMetadata,
-		s.stmtFindAllProgramsByMetadata,
 		s.stmtCountDependentPrograms,
-		s.stmtInsertTag,
-		s.stmtDeleteTags,
 		s.stmtDeleteLink,
 		s.stmtGetLinkRegistry,
 		s.stmtListLinks,
@@ -359,14 +345,23 @@ func (s *sqliteStore) closeStatements() {
 }
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
-// On mismatch, the database is deleted and recreated (no backwards compatibility).
-const schemaVersion = 2
+// Migrations are supported from version 2 to 3.
+const schemaVersion = 3
 
 func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Check current schema version
 	var version int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("failed to read schema version: %w", err)
+	}
+
+	// Handle version 2 -> 3 migration
+	if version == 2 {
+		s.logger.Info("migrating database schema", "from", 2, "to", 3)
+		if err := s.migrateV2toV3(ctx); err != nil {
+			return fmt.Errorf("migration v2->v3: %w", err)
+		}
+		version = 3
 	}
 
 	if version != 0 && version != schemaVersion {
@@ -382,6 +377,40 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Set schema version
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return fmt.Errorf("failed to set schema version: %w", err)
+	}
+
+	return nil
+}
+
+// migrateV2toV3 migrates from schema version 2 to 3.
+// This migration:
+// - Adds metadata_json column to managed_programs
+// - Migrates data from program_metadata_index to metadata_json
+// - Drops program_tags and program_metadata_index tables
+func (s *sqliteStore) migrateV2toV3(ctx context.Context) error {
+	// Step 1: Add new column
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE managed_programs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+		return fmt.Errorf("add metadata_json column: %w", err)
+	}
+
+	// Step 2: Migrate existing metadata from index table to JSON column
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE managed_programs SET metadata_json = COALESCE(
+			(SELECT json_group_object(key, value)
+			 FROM program_metadata_index
+			 WHERE program_metadata_index.kernel_id = managed_programs.kernel_id),
+			'{}'
+		)
+	`); err != nil {
+		return fmt.Errorf("migrate metadata to JSON: %w", err)
+	}
+
+	// Step 3: Drop old tables
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS program_metadata_index`); err != nil {
+		return fmt.Errorf("drop program_metadata_index: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS program_tags`); err != nil {
+		return fmt.Errorf("drop program_tags: %w", err)
 	}
 
 	return nil
@@ -431,18 +460,11 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(interpreter.
 		conn:   tx,
 		logger: s.logger,
 		// Program statements
-		stmtGetProgram:                 tx.StmtContext(ctx, s.stmtGetProgram),
-		stmtSaveProgram:                tx.StmtContext(ctx, s.stmtSaveProgram),
-		stmtDeleteProgramMetadataIndex: tx.StmtContext(ctx, s.stmtDeleteProgramMetadataIndex),
-		stmtInsertProgramMetadataIndex: tx.StmtContext(ctx, s.stmtInsertProgramMetadataIndex),
-		stmtDeleteProgram:              tx.StmtContext(ctx, s.stmtDeleteProgram),
-		stmtListPrograms:               tx.StmtContext(ctx, s.stmtListPrograms),
-		stmtFindProgramByMetadata:      tx.StmtContext(ctx, s.stmtFindProgramByMetadata),
-		stmtFindAllProgramsByMetadata:  tx.StmtContext(ctx, s.stmtFindAllProgramsByMetadata),
-		stmtCountDependentPrograms:     tx.StmtContext(ctx, s.stmtCountDependentPrograms),
-		// Tag statements
-		stmtInsertTag:  tx.StmtContext(ctx, s.stmtInsertTag),
-		stmtDeleteTags: tx.StmtContext(ctx, s.stmtDeleteTags),
+		stmtGetProgram:             tx.StmtContext(ctx, s.stmtGetProgram),
+		stmtSaveProgram:            tx.StmtContext(ctx, s.stmtSaveProgram),
+		stmtDeleteProgram:          tx.StmtContext(ctx, s.stmtDeleteProgram),
+		stmtListPrograms:           tx.StmtContext(ctx, s.stmtListPrograms),
+		stmtCountDependentPrograms: tx.StmtContext(ctx, s.stmtCountDependentPrograms),
 		// Link registry statements
 		stmtDeleteLink:              tx.StmtContext(ctx, s.stmtDeleteLink),
 		stmtGetLinkRegistry:         tx.StmtContext(ctx, s.stmtGetLinkRegistry),

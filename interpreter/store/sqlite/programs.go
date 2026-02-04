@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -36,10 +35,9 @@ func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramS
 }
 
 // scanProgram scans a single row into a ProgramSpec struct.
-// The row must include the tags and metadata columns.
 func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 	var programName, programTypeStr, objectPath, pinPath string
-	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, tagsStr, metadataJSON sql.NullString
+	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
 	var gplCompatible int
 	var createdAtStr, updatedAtStr string
@@ -59,7 +57,6 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		&gplCompatible,
 		&createdAtStr,
 		&updatedAtStr,
-		&tagsStr,
 		&metadataJSON,
 	)
 	if err != nil {
@@ -146,11 +143,6 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		prog.Meta.Description = description.String
 	}
 
-	// Parse tags from GROUP_CONCAT result
-	if tagsStr.Valid && tagsStr.String != "" {
-		prog.Meta.Tags = strings.Split(tagsStr.String, ",")
-	}
-
 	return prog, nil
 }
 
@@ -167,7 +159,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 //
 // For atomicity with other operations, wrap in RunInTransaction.
 func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramSpec) error {
-	// Marshal only opaque fields to JSON
+	// Marshal JSON fields
 	var globalDataJSON, imageSourceJSON sql.NullString
 	if metadata.Load.GlobalData != nil {
 		data, err := json.Marshal(metadata.Load.GlobalData)
@@ -182,6 +174,16 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 			return fmt.Errorf("failed to marshal image_source: %w", err)
 		}
 		imageSourceJSON = sql.NullString{String: string(data), Valid: true}
+	}
+
+	// Marshal metadata as JSON
+	metadataJSON := "{}"
+	if metadata.Meta.Metadata != nil {
+		data, err := json.Marshal(metadata.Meta.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = string(data)
 	}
 
 	// Handle nullable fields
@@ -227,6 +229,7 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 		owner,
 		description,
 		gplCompatibleInt,
+		metadataJSON,
 		metadata.CreatedAt.Format(time.RFC3339),
 		now,
 	)
@@ -236,53 +239,6 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	}
 	rows, _ := result.RowsAffected()
 	s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{kernelID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
-
-	// Clear old tags and insert new ones
-	start = time.Now()
-	result, err = s.stmtDeleteTags.ExecContext(ctx, kernelID)
-	if err != nil {
-		s.logger.Debug("sql", "stmt", "DeleteTags", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
-		return fmt.Errorf("failed to clear tags: %w", err)
-	}
-	rows, _ = result.RowsAffected()
-	s.logger.Debug("sql", "stmt", "DeleteTags", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
-
-	// Insert tags individually. Multi-value INSERT (VALUES (?,?), (?,?), ...)
-	// was considered but rejected: tags are typically 1-5 per program, writes
-	// are infrequent (once per load), and SQLite is local so "round-trip" cost
-	// is minimal. The added complexity of dynamic SQL and batching for
-	// SQLite's 999-variable limit isn't justified.
-	for _, tag := range metadata.Meta.Tags {
-		start = time.Now()
-		_, err = s.stmtInsertTag.ExecContext(ctx, kernelID, tag)
-		if err != nil {
-			s.logger.Debug("sql", "stmt", "InsertTag", "args", []any{kernelID, tag}, "duration_ms", msec(time.Since(start)), "error", err)
-			return fmt.Errorf("failed to insert tag: %w", err)
-		}
-		s.logger.Debug("sql", "stmt", "InsertTag", "args", []any{kernelID, tag}, "duration_ms", msec(time.Since(start)), "rows_affected", 1)
-	}
-
-	// Clear old metadata index entries for this program
-	start = time.Now()
-	result, err = s.stmtDeleteProgramMetadataIndex.ExecContext(ctx, kernelID)
-	if err != nil {
-		s.logger.Debug("sql", "stmt", "DeleteProgramMetadataIndex", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
-		return fmt.Errorf("failed to clear metadata index: %w", err)
-	}
-	rows, _ = result.RowsAffected()
-	s.logger.Debug("sql", "stmt", "DeleteProgramMetadataIndex", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
-
-	// Insert metadata entries individually. Same rationale as tags above:
-	// typically 2-10 entries per program, infrequent writes, local SQLite.
-	for key, value := range metadata.Meta.Metadata {
-		start = time.Now()
-		_, err = s.stmtInsertProgramMetadataIndex.ExecContext(ctx, kernelID, key, value)
-		if err != nil {
-			s.logger.Debug("sql", "stmt", "InsertProgramMetadataIndex", "args", []any{kernelID, key, value}, "duration_ms", msec(time.Since(start)), "error", err)
-			return fmt.Errorf("failed to insert metadata index: %w", err)
-		}
-		s.logger.Debug("sql", "stmt", "InsertProgramMetadataIndex", "args", []any{kernelID, key, value}, "duration_ms", msec(time.Since(start)), "rows_affected", 1)
-	}
 
 	return nil
 }
@@ -472,7 +428,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, 
 func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.ProgramSpec, error) {
 	var kernelID uint32
 	var programName, programTypeStr, objectPath, pinPath string
-	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, tagsStr, metadataJSON sql.NullString
+	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
 	var gplCompatible int
 	var createdAtStr, updatedAtStr string
@@ -493,7 +449,6 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		&gplCompatible,
 		&createdAtStr,
 		&updatedAtStr,
-		&tagsStr,
 		&metadataJSON,
 	)
 	if err != nil {
@@ -581,74 +536,5 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		prog.Meta.Description = description.String
 	}
 
-	// Parse tags from GROUP_CONCAT result
-	if tagsStr.Valid && tagsStr.String != "" {
-		prog.Meta.Tags = strings.Split(tagsStr.String, ",")
-	}
-
 	return kernelID, prog, nil
-}
-
-// FindProgramByMetadata finds a program by a specific metadata key/value pair.
-// Returns store.ErrNotFound if no program matches.
-func (s *sqliteStore) FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramSpec, uint32, error) {
-	start := time.Now()
-	rows, err := s.stmtFindProgramByMetadata.QueryContext(ctx, key, value)
-	if err != nil {
-		s.logger.Debug("sql", "stmt", "FindProgramByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "error", err)
-		return bpfman.ProgramSpec{}, 0, err
-	}
-
-	if !rows.Next() {
-		rows.Close()
-		s.logger.Debug("sql", "stmt", "FindProgramByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.ProgramSpec{}, 0, fmt.Errorf("program with %s=%s: %w", key, value, store.ErrNotFound)
-	}
-
-	kernelID, prog, err := s.scanProgramFromRows(rows)
-	rows.Close() // Close rows before making additional queries
-	if err != nil {
-		s.logger.Debug("sql", "stmt", "FindProgramByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "error", err)
-		return bpfman.ProgramSpec{}, 0, err
-	}
-	s.logger.Debug("sql", "stmt", "FindProgramByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "rows", 1)
-
-	return prog, kernelID, nil
-}
-
-// FindAllProgramsByMetadata finds all programs with a specific metadata key/value pair.
-func (s *sqliteStore) FindAllProgramsByMetadata(ctx context.Context, key, value string) ([]struct {
-	KernelID uint32
-	Metadata bpfman.ProgramSpec
-}, error) {
-	start := time.Now()
-	rows, err := s.stmtFindAllProgramsByMetadata.QueryContext(ctx, key, value)
-	if err != nil {
-		s.logger.Debug("sql", "stmt", "FindAllProgramsByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "error", err)
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []struct {
-		KernelID uint32
-		Metadata bpfman.ProgramSpec
-	}
-
-	for rows.Next() {
-		kernelID, prog, err := s.scanProgramFromRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, struct {
-			KernelID uint32
-			Metadata bpfman.ProgramSpec
-		}{KernelID: kernelID, Metadata: prog})
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	s.logger.Debug("sql", "stmt", "FindAllProgramsByMetadata", "args", []any{key, value}, "duration_ms", msec(time.Since(start)), "rows", len(result))
-	return result, nil
 }

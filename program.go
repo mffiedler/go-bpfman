@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"slices"
 	"time"
 
 	"github.com/frobware/go-bpfman/kernel"
@@ -149,7 +148,6 @@ type ProgramMeta struct {
 	Name        string            `json:"name"`            // human-readable label
 	Owner       string            `json:"owner,omitempty"` // who manages this
 	Description string            `json:"description,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"` // arbitrary key/value for selection
 }
 
@@ -192,20 +190,10 @@ type Program struct {
 // Deprecated: Use ProgramSpec instead.
 type ProgramRecord = ProgramSpec
 
-// WithTag returns a new ProgramSpec with the tag added.
-func (p ProgramSpec) WithTag(tag string) ProgramSpec {
-	cp := p
-	cp.Meta.Tags = append(slices.Clone(p.Meta.Tags), tag)
-	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
-	cp.Load.GlobalData = cloneMap(p.Load.GlobalData)
-	return cp
-}
-
 // WithDescription returns a new ProgramSpec with the description set.
 func (p ProgramSpec) WithDescription(desc string) ProgramSpec {
 	cp := p
 	cp.Meta.Description = desc
-	cp.Meta.Tags = slices.Clone(p.Meta.Tags)
 	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
 	cp.Load.GlobalData = cloneMap(p.Load.GlobalData)
 	return cp

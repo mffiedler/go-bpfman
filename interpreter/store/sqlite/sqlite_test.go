@@ -104,7 +104,7 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 	assert.Empty(t, links, "expected 0 links after CASCADE delete")
 }
 
-func TestForeignKey_CascadeDeleteRemovesMetadataIndex(t *testing.T) {
+func TestMetadata_StoredAsJSON(t *testing.T) {
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	defer store.Close()
@@ -121,18 +121,18 @@ func TestForeignKey_CascadeDeleteRemovesMetadataIndex(t *testing.T) {
 
 	require.NoError(t, store.Save(ctx, kernelID, prog), "Save failed")
 
-	// Verify we can find by metadata.
-	found, foundID, err := store.FindProgramByMetadata(ctx, "app", "test")
-	require.NoError(t, err, "FindProgramByMetadata failed")
-	assert.Equal(t, kernelID, foundID, "kernel_id mismatch")
-	assert.Equal(t, "test", found.Meta.Metadata["app"], "metadata mismatch")
+	// Verify metadata is stored and retrieved correctly.
+	found, err := store.Get(ctx, kernelID)
+	require.NoError(t, err, "Get failed")
+	assert.Equal(t, "test", found.Meta.Metadata["app"], "metadata app mismatch")
+	assert.Equal(t, "1.0", found.Meta.Metadata["version"], "metadata version mismatch")
 
 	// Delete the program.
 	require.NoError(t, store.Delete(ctx, kernelID), "Delete failed")
 
-	// Verify CASCADE removed the metadata index entries.
-	_, _, err = store.FindProgramByMetadata(ctx, "app", "test")
-	assert.Error(t, err, "expected error after CASCADE delete")
+	// Verify program is gone.
+	_, err = store.Get(ctx, kernelID)
+	assert.Error(t, err, "expected error after delete")
 }
 
 func TestProgramName_DuplicatesAllowed(t *testing.T) {
@@ -212,9 +212,8 @@ func TestUniqueIndex_NameCanBeReusedAfterDelete(t *testing.T) {
 	require.NoError(t, store.Save(ctx, 200, prog2), "Save prog2 failed")
 
 	// Verify it exists.
-	found, kernelID, err := store.FindProgramByMetadata(ctx, "bpfman.io/ProgramName", "reusable-name")
-	require.NoError(t, err, "FindProgramByMetadata failed")
-	assert.Equal(t, uint32(200), kernelID, "kernel_id mismatch")
+	found, err := store.Get(ctx, 200)
+	require.NoError(t, err, "Get failed")
 	assert.Equal(t, "reusable-name", found.Meta.Metadata["bpfman.io/ProgramName"], "name mismatch")
 }
 

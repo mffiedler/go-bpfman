@@ -48,7 +48,6 @@ func ProgramSchemaDoc() SchemaDoc {
 					{Name: "name", Type: "<string>", Description: "User-defined name"},
 					{Name: "owner", Type: "<string>", Description: "Owner identifier"},
 					{Name: "description", Type: "<string>", Description: "Description"},
-					{Name: "tags", Type: "<[]string>", Description: "Tags for filtering"},
 					{Name: "metadata", Type: "<map>", Description: "Arbitrary key-value metadata"},
 				}},
 				{Name: "created_at", Type: "<time>", Description: "Creation timestamp"},

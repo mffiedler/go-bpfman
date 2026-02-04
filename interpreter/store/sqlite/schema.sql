@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     owner TEXT,
     description TEXT,
     gpl_compatible INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT NOT NULL DEFAULT '{}', -- User key-value metadata as JSON
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
@@ -26,25 +27,6 @@ CREATE TABLE IF NOT EXISTS managed_programs (
         REFERENCES managed_programs(kernel_id)
         ON DELETE RESTRICT       -- Prevent deleting owner while dependents exist
 ) STRICT;
-
--- Tags table for program tags (one-to-many)
-CREATE TABLE IF NOT EXISTS program_tags (
-    kernel_id INTEGER NOT NULL,
-    tag TEXT NOT NULL,
-    PRIMARY KEY (kernel_id, tag),
-    FOREIGN KEY (kernel_id) REFERENCES managed_programs(kernel_id) ON DELETE CASCADE
-) STRICT;
-
--- Index table for fast metadata key/value lookups (used by CSI)
-CREATE TABLE IF NOT EXISTS program_metadata_index (
-    kernel_id INTEGER NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    PRIMARY KEY (kernel_id, key),
-    FOREIGN KEY (kernel_id) REFERENCES managed_programs(kernel_id) ON DELETE CASCADE
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS idx_program_metadata_key_value ON program_metadata_index(key, value);
 
 -- Note: No uniqueness constraint on bpfman.io/ProgramName.
 -- Multiple programs can share the same application name (e.g., when loading

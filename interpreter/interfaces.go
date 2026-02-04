@@ -127,10 +127,8 @@ type ProgramLister interface {
 }
 
 // ProgramFinder finds programs by criteria.
+// This interface is currently empty but retained for future extensions.
 type ProgramFinder interface {
-	// FindProgramByMetadata finds a program by a metadata key/value pair.
-	// Returns store.ErrNotFound if no matching program exists.
-	FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramSpec, uint32, error)
 }
 
 // MapOwnershipReader provides access to map ownership information.

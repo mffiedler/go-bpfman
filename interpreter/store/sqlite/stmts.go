@@ -12,12 +12,9 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlGetProgram = `
 		SELECT m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
-		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
+		       m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m
-		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
-		WHERE m.kernel_id = ?
-		GROUP BY m.kernel_id`
+		WHERE m.kernel_id = ?`
 	if s.stmtGetProgram, err = s.db.PrepareContext(ctx, sqlGetProgram); err != nil {
 		return fmt.Errorf("prepare GetProgram: %w", err)
 	}
@@ -38,8 +35,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlSaveProgram = `
 		INSERT INTO managed_programs
 		(kernel_id, program_name, program_type, object_path, pin_path, attach_func,
-		 global_data, map_owner_id, map_pin_path, image_source, owner, description, gpl_compatible, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 global_data, map_owner_id, map_pin_path, image_source, owner, description, gpl_compatible, metadata_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kernel_id) DO UPDATE SET
 		  program_name = excluded.program_name,
 		  program_type = excluded.program_type,
@@ -53,19 +50,10 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 		  owner = excluded.owner,
 		  description = excluded.description,
 		  gpl_compatible = excluded.gpl_compatible,
+		  metadata_json = excluded.metadata_json,
 		  updated_at = excluded.updated_at`
 	if s.stmtSaveProgram, err = s.db.PrepareContext(ctx, sqlSaveProgram); err != nil {
 		return fmt.Errorf("prepare SaveProgram: %w", err)
-	}
-
-	const sqlDeleteProgramMetadataIndex = "DELETE FROM program_metadata_index WHERE kernel_id = ?"
-	if s.stmtDeleteProgramMetadataIndex, err = s.db.PrepareContext(ctx, sqlDeleteProgramMetadataIndex); err != nil {
-		return fmt.Errorf("prepare DeleteProgramMetadataIndex: %w", err)
-	}
-
-	const sqlInsertProgramMetadataIndex = "INSERT INTO program_metadata_index (kernel_id, key, value) VALUES (?, ?, ?)"
-	if s.stmtInsertProgramMetadataIndex, err = s.db.PrepareContext(ctx, sqlInsertProgramMetadataIndex); err != nil {
-		return fmt.Errorf("prepare InsertProgramMetadataIndex: %w", err)
 	}
 
 	const sqlDeleteProgram = "DELETE FROM managed_programs WHERE kernel_id = ?"
@@ -76,58 +64,15 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlListPrograms = `
 		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
-		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
-		FROM managed_programs m
-		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
-		GROUP BY m.kernel_id`
+		       m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
+		FROM managed_programs m`
 	if s.stmtListPrograms, err = s.db.PrepareContext(ctx, sqlListPrograms); err != nil {
 		return fmt.Errorf("prepare ListPrograms: %w", err)
-	}
-
-	const sqlFindProgramByMetadata = `
-		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
-		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
-		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
-		FROM managed_programs m
-		JOIN program_metadata_index i ON m.kernel_id = i.kernel_id
-		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
-		WHERE i.key = ? AND i.value = ?
-		GROUP BY m.kernel_id
-		LIMIT 1`
-	if s.stmtFindProgramByMetadata, err = s.db.PrepareContext(ctx, sqlFindProgramByMetadata); err != nil {
-		return fmt.Errorf("prepare FindProgramByMetadata: %w", err)
-	}
-
-	const sqlFindAllProgramsByMetadata = `
-		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
-		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
-		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
-		FROM managed_programs m
-		JOIN program_metadata_index i ON m.kernel_id = i.kernel_id
-		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
-		WHERE i.key = ? AND i.value = ?
-		GROUP BY m.kernel_id`
-	if s.stmtFindAllProgramsByMetadata, err = s.db.PrepareContext(ctx, sqlFindAllProgramsByMetadata); err != nil {
-		return fmt.Errorf("prepare FindAllProgramsByMetadata: %w", err)
 	}
 
 	const sqlCountDependentPrograms = "SELECT COUNT(*) FROM managed_programs WHERE map_owner_id = ?"
 	if s.stmtCountDependentPrograms, err = s.db.PrepareContext(ctx, sqlCountDependentPrograms); err != nil {
 		return fmt.Errorf("prepare CountDependentPrograms: %w", err)
-	}
-
-	// Tag statements
-	const sqlInsertTag = "INSERT INTO program_tags (kernel_id, tag) VALUES (?, ?)"
-	if s.stmtInsertTag, err = s.db.PrepareContext(ctx, sqlInsertTag); err != nil {
-		return fmt.Errorf("prepare InsertTag: %w", err)
-	}
-
-	const sqlDeleteTags = "DELETE FROM program_tags WHERE kernel_id = ?"
-	if s.stmtDeleteTags, err = s.db.PrepareContext(ctx, sqlDeleteTags); err != nil {
-		return fmt.Errorf("prepare DeleteTags: %w", err)
 	}
 
 	return nil
