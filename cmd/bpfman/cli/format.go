@@ -354,7 +354,8 @@ func FormatLinkList(links []bpfman.LinkSpec, flags *OutputFlags) (string, error)
 }
 
 func formatLinkListJSON(links []bpfman.LinkSpec) (string, error) {
-	output, err := json.MarshalIndent(links, "", "  ")
+	result := bpfman.LinkListResult{Links: links}
+	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
@@ -362,7 +363,8 @@ func formatLinkListJSON(links []bpfman.LinkSpec) (string, error) {
 }
 
 func formatLinkListJSONPath(links []bpfman.LinkSpec, expr string) (string, error) {
-	return executeJSONPath(links, expr)
+	result := bpfman.LinkListResult{Links: links}
+	return executeJSONPath(result, expr)
 }
 
 func formatLinkListTable(links []bpfman.LinkSpec) string {

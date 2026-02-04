@@ -284,6 +284,12 @@ type LinkSpec struct {
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
 
+// LinkListResult wraps link list output for consistent JSON structure.
+// The wrapper provides a stable path for jsonpath queries (e.g., {.links[*].id}).
+type LinkListResult struct {
+	Links []LinkSpec `json:"links"`
+}
+
 // IsSynthetic returns true if this is a synthetic link (perf_event-based, no kernel link).
 func (s LinkSpec) IsSynthetic() bool { return s.ID.IsSynthetic() }
 
