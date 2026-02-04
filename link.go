@@ -9,38 +9,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// AttachType specifies the type of BPF program attachment.
-type AttachType string
-
-const (
-	AttachTracepoint AttachType = "tracepoint"
-	AttachKprobe     AttachType = "kprobe"
-	AttachKretprobe  AttachType = "kretprobe"
-	AttachUprobe     AttachType = "uprobe"
-	AttachUretprobe  AttachType = "uretprobe"
-	AttachFentry     AttachType = "fentry"
-	AttachFexit      AttachType = "fexit"
-	AttachXDP        AttachType = "xdp"
-	AttachTC         AttachType = "tc"
-	AttachTCX        AttachType = "tcx"
-)
-
-// AttachInfo describes how to attach a BPF program.
-type AttachInfo struct {
-	Type            AttachType `json:"type"`
-	TracepointGroup string     `json:"tracepoint_group,omitempty"`
-	TracepointName  string     `json:"tracepoint_name,omitempty"`
-	KprobeFunc      string     `json:"kprobe_func,omitempty"`
-	LinkPinPath     string     `json:"link_pin_path,omitempty"`
-}
-
-// AttachedLink is the result of successfully attaching a program.
-type AttachedLink struct {
-	ID      uint32     `json:"id,omitempty"`
-	PinPath string     `json:"pin_path,omitempty"`
-	Type    AttachType `json:"type"`
-}
-
 // SyntheticLinkIDBase is the base value for synthetic link IDs.
 // Synthetic IDs are generated in the range 0x80000000-0xFFFFFFFF for
 // perf_event-based links (e.g., container uprobes) that lack kernel link IDs.

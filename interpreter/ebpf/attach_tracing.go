@@ -22,7 +22,14 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 
 	lnk, err := link.Tracepoint(group, name, prog, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach to tracepoint %s:%s: %w", group, name, err)
+		// Provide a user-friendly error if the tracepoint doesn't exist
+		if isTracepointNotFoundError(err) {
+			if validationErr := validateTracepoint(group, name); validationErr != nil {
+				return bpfman.Link{}, validationErr
+			}
+		}
+		// Fall back to the original error for other failures
+		return bpfman.Link{}, fmt.Errorf("attach to tracepoint %s/%s: %w", group, name, err)
 	}
 
 	// Pin the link if a path is provided

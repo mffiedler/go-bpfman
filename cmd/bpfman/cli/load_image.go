@@ -50,7 +50,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 	// loadImageResult captures both successful programs and any failure outcome.
 	type loadImageResult struct {
 		Programs      []bpfman.Program
-		FailedOutcome *outcome.OperationOutcome
+		FailedOutcome outcome.OperationOutcome
 	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {
@@ -113,7 +113,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		if err != nil {
 			var me *manager.ManagerError
 			if errors.As(err, &me) {
-				res.FailedOutcome = &me.Outcome
+				res.FailedOutcome = me.Outcome
 			}
 			return res, fmt.Errorf("failed to load from image: %w", err)
 		}
@@ -130,17 +130,8 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return res, nil
 	})
 	if err != nil {
-		// On failure, display the outcome if available
-		if result.FailedOutcome != nil {
-			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
-			if fmtErr == nil {
-				format, _ := c.OutputFlags.Format()
-				if format == OutputFormatJSON || format == OutputFormatJSONPath {
-					_ = cli.PrintOut(outcomeStr)
-					return ErrSilent
-				}
-				_ = cli.PrintErr(outcomeStr)
-			}
+		if result.FailedOutcome.Status != "" {
+			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
 		}
 		return err
 	}

@@ -2,10 +2,7 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-
-	"github.com/frobware/go-bpfman/manager"
 )
 
 // UnloadCmd unloads a managed BPF program by kernel ID.
@@ -27,18 +24,8 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 		return runtime.Manager.Unload(ctx, c.ProgramID.Value)
 	})
 	if err != nil {
-		// On failure, display the outcome if available
-		var me *manager.ManagerError
-		if errors.As(err, &me) {
-			outcomeStr, fmtErr := FormatOutcome(me.Outcome, &c.OutputFlags)
-			if fmtErr == nil {
-				format, _ := c.OutputFlags.Format()
-				if format == OutputFormatJSON || format == OutputFormatJSONPath {
-					_ = cli.PrintOut(outcomeStr)
-					return ErrSilent
-				}
-				_ = cli.PrintErr(outcomeStr)
-			}
+		if o := extractOutcome(err); o.Status != "" {
+			return displayOutcomeError(cli, err, o, &c.OutputFlags)
 		}
 		return err
 	}

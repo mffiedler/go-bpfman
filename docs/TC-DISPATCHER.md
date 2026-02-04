@@ -106,7 +106,7 @@ type DispatcherAttacher interface {
     // AttachTCExtension loads a program as Extension type and attaches
     // it to a TC dispatcher slot.
     AttachTCExtension(dispatcherPinPath, objectPath, programName string,
-        position int, linkPinPath string) (*bpfman.AttachedLink, error)
+        position int, linkPinPath string) (bpfman.Link, error)
 }
 ```
 

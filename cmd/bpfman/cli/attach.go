@@ -14,13 +14,60 @@ import (
 )
 
 // extractOutcome extracts the OperationOutcome from a manager error.
-// Returns nil if the error is not a *manager.ManagerError.
-func extractOutcome(err error) *outcome.OperationOutcome {
+// Returns the outcome if present, otherwise a zero value.
+func extractOutcome(err error) outcome.OperationOutcome {
 	var me *manager.ManagerError
 	if errors.As(err, &me) {
-		return &me.Outcome
+		return me.Outcome
 	}
-	return nil
+	return outcome.OperationOutcome{}
+}
+
+// isSimpleFailure returns true if the outcome represents a simple failure
+// that doesn't warrant the full structured output (no residual artefacts,
+// no rollback errors, no multi-step timeline).
+func isSimpleFailure(o outcome.OperationOutcome) bool {
+	// Has residual artefacts - show full output
+	if len(o.Residual) > 0 {
+		return false
+	}
+	// Has rollback errors - show full output
+	if len(o.RollbackErrors) > 0 {
+		return false
+	}
+	// Multi-step timeline - show full output
+	if len(o.Timeline) > 1 {
+		return false
+	}
+	// Single timeline event with different error - show full output
+	if len(o.Timeline) == 1 && o.Timeline[0].Error != o.PrimaryError {
+		return false
+	}
+	return true
+}
+
+// displayOutcomeError formats and displays an operation outcome for a failed operation.
+// For simple failures (no orphans, no complex timeline), returns the original error
+// to use the standard error display. For complex failures or JSON output, displays
+// the structured outcome and returns ErrSilent.
+func displayOutcomeError(cli *CLI, err error, o outcome.OperationOutcome, flags *OutputFlags) error {
+	format, _ := flags.Format()
+
+	// For table output, simple failures just use the standard error display
+	if format == OutputFormatTable && isSimpleFailure(o) {
+		return err
+	}
+
+	outcomeStr, fmtErr := FormatOutcome(o, flags)
+	if fmtErr != nil {
+		return err
+	}
+	if format == OutputFormatJSON || format == OutputFormatJSONPath {
+		_ = cli.PrintOut(outcomeStr)
+	} else {
+		_ = cli.PrintErr(outcomeStr)
+	}
+	return ErrSilent
 }
 
 // AttachCmd attaches a loaded program to a hook.
@@ -61,7 +108,7 @@ type AttachCmd struct {
 // attachResult holds the result of an attach operation for output outside the lock.
 type attachResult struct {
 	Link          bpfman.Link
-	FailedOutcome *outcome.OperationOutcome
+	FailedOutcome outcome.OperationOutcome
 }
 
 // Run executes the attach command: mutation under lock, output outside.
@@ -75,17 +122,8 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Execute mutation under lock
 	result, err := c.execute(ctx, cli, runtime)
 	if err != nil {
-		// On failure, display the outcome if available
-		if result.FailedOutcome != nil {
-			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
-			if fmtErr == nil {
-				format, _ := c.OutputFlags.Format()
-				if format == OutputFormatJSON || format == OutputFormatJSONPath {
-					_ = cli.PrintOut(outcomeStr)
-					return ErrSilent
-				}
-				_ = cli.PrintErr(outcomeStr)
-			}
+		if result.FailedOutcome.Status != "" {
+			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
 		}
 		return err
 	}

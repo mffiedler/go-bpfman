@@ -32,7 +32,7 @@ type LoadFileCmd struct {
 // loadFileResult captures both successful programs and any failure outcome.
 type loadFileResult struct {
 	Programs      []bpfman.Program
-	FailedOutcome *outcome.OperationOutcome
+	FailedOutcome outcome.OperationOutcome
 }
 
 // Run executes the load file command.
@@ -146,7 +146,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			if err != nil {
 				var me *manager.ManagerError
 				if errors.As(err, &me) {
-					res.FailedOutcome = &me.Outcome
+					res.FailedOutcome = me.Outcome
 				}
 				return res, fmt.Errorf("failed to load program %q: %w", prog.Name, err)
 			}
@@ -157,19 +157,8 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		return res, nil
 	})
 	if err != nil {
-		// On failure, display the outcome if available
-		if result.FailedOutcome != nil {
-			outcomeStr, fmtErr := FormatOutcome(*result.FailedOutcome, &c.OutputFlags)
-			if fmtErr == nil {
-				format, _ := c.OutputFlags.Format()
-				if format == OutputFormatJSON || format == OutputFormatJSONPath {
-					// JSON goes to stdout for machine parsing; return ErrSilent
-					// to suppress the additional "bpfman: error:" message
-					_ = cli.PrintOut(outcomeStr)
-					return ErrSilent
-				}
-				_ = cli.PrintErr(outcomeStr)
-			}
+		if result.FailedOutcome.Status != "" {
+			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
 		}
 		return err
 	}

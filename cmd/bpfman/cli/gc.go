@@ -63,12 +63,8 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 		return gcResult, nil
 	})
 	if err != nil {
-		// On failure, display the outcome if available
 		if result.Outcome.Status != "" {
-			outcomeStr, fmtErr := FormatOutcome(result.Outcome, &OutputFlags{Output: "table"})
-			if fmtErr == nil {
-				_ = cli.PrintErr(outcomeStr)
-			}
+			return displayOutcomeError(cli, err, result.Outcome, &OutputFlags{Output: "table"})
 		}
 		return err
 	}

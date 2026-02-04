@@ -1016,7 +1016,13 @@ func formatOutcomeTable(o outcome.OperationOutcome) string {
 	b.WriteString(aligned.String())
 
 	// Events section
-	if len(o.Timeline) > 0 {
+	// Skip if there's only one failed entry with the same error as PrimaryError
+	// (avoids redundant display for simple single-step failures)
+	showEvents := len(o.Timeline) > 0
+	if showEvents && len(o.Timeline) == 1 && o.Timeline[0].Error == o.PrimaryError {
+		showEvents = false
+	}
+	if showEvents {
 		b.WriteString("  Events:\n")
 		for _, entry := range o.Timeline {
 			// Each timeline entry as a sub-block (fields sorted alphabetically)

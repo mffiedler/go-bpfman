@@ -53,7 +53,7 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 
 	// Inject a link directly into the kernel (bypassing bpfman)
 	const kernelOnlyLinkID = 42
-	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.AttachTracepoint)
+	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.LinkKindTracepoint)
 
 	err := fix.Manager.Detach(ctx, bpfman.LinkID(kernelOnlyLinkID))
 	require.Error(t, err, "Detach of kernel-only link should fail")
