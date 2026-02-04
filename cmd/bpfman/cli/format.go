@@ -338,6 +338,12 @@ func FormatLinkList(links []bpfman.LinkSpec, flags *OutputFlags) (string, error)
 		return formatLinkListJSON(links)
 	case OutputFormatTable:
 		return formatLinkListTable(links), nil
+	case OutputFormatWide:
+		return formatLinkListWide(links), nil
+	case OutputFormatCustomColumns:
+		return formatLinkListCustomColumns(links, flags.CustomColumnsSpec())
+	case OutputFormatCustomColumnsFile:
+		return formatLinkListCustomColumnsFile(links, flags.CustomColumnsFile())
 	case OutputFormatJSONPath:
 		return formatLinkListJSONPath(links, flags.JSONPathExpr())
 	default:
@@ -358,21 +364,33 @@ func formatLinkListJSONPath(links []bpfman.LinkSpec, expr string) (string, error
 }
 
 func formatLinkListTable(links []bpfman.LinkSpec) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	return DefaultLinkColumns().FormatLinkTable(links)
+}
 
-	fmt.Fprintln(w, "LINK ID\tTYPE\tPIN PATH")
+func formatLinkListWide(links []bpfman.LinkSpec) string {
+	return WideLinkColumns().FormatLinkTable(links)
+}
 
-	for _, l := range links {
-		var pinPath string
-		if l.PinPath != nil {
-			pinPath = l.PinPath.String()
-		}
-		fmt.Fprintf(w, "%d\t%s\t%s\n", l.ID, l.Kind, pinPath)
+func formatLinkListCustomColumns(links []bpfman.LinkSpec, spec string) (string, error) {
+	columns, err := ParseCustomColumns(spec)
+	if err != nil {
+		return "", err
 	}
+	if err := columns.Validate(); err != nil {
+		return "", err
+	}
+	return columns.FormatLinkTable(links), nil
+}
 
-	w.Flush()
-	return b.String()
+func formatLinkListCustomColumnsFile(links []bpfman.LinkSpec, path string) (string, error) {
+	columns, err := ParseCustomColumnsFile(path)
+	if err != nil {
+		return "", err
+	}
+	if err := columns.Validate(); err != nil {
+		return "", err
+	}
+	return columns.FormatLinkTable(links), nil
 }
 
 // FormatLinkResult formats a link result (from attach command) according to

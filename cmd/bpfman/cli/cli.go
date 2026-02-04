@@ -45,16 +45,17 @@ type CLI struct {
 	cachedLogger *slog.Logger  `kong:"-"`
 	loggerErr    error         `kong:"-"`
 
-	Serve  ServeCmd  `cmd:"" help:"Start the gRPC daemon."`
-	Load   LoadCmd   `cmd:"" help:"Load a BPF program from an object file."`
-	Unload UnloadCmd `cmd:"" help:"Unload a managed BPF program."`
-	Attach AttachCmd `cmd:"" help:"Attach a loaded program to a hook."`
-	Detach DetachCmd `cmd:"" help:"Detach a link."`
-	List   ListCmd   `cmd:"" help:"List managed programs or links."`
-	Get    GetCmd    `cmd:"" help:"Get a loaded eBPF program or program attachment link."`
-	GC     GCCmd     `cmd:"" help:"Garbage collect stale resources."`
-	Doctor DoctorCmd `cmd:"" help:"Check coherency of database, kernel, and filesystem state."`
-	Image  ImageCmd  `cmd:"" help:"Image operations (verify signatures)."`
+	Serve   ServeCmd   `cmd:"" help:"Start the gRPC daemon."`
+	Load    LoadCmd    `cmd:"" help:"Load a BPF program from an object file."`
+	Unload  UnloadCmd  `cmd:"" help:"Unload a managed BPF program."`
+	Attach  AttachCmd  `cmd:"" help:"Attach a loaded program to a hook."`
+	Detach  DetachCmd  `cmd:"" help:"Detach a link."`
+	List    ListCmd    `cmd:"" help:"List managed programs or links."`
+	Get     GetCmd     `cmd:"" help:"Get a loaded eBPF program or program attachment link."`
+	Explain ExplainCmd `cmd:"" help:"Explain available fields and columns for a resource."`
+	GC      GCCmd      `cmd:"" help:"Garbage collect stale resources."`
+	Doctor  DoctorCmd  `cmd:"" help:"Check coherency of database, kernel, and filesystem state."`
+	Image   ImageCmd   `cmd:"" help:"Image operations (verify signatures)."`
 }
 
 // RuntimeDirs returns the runtime directories configuration.

@@ -26,6 +26,78 @@ type ColumnSet struct {
 	Columns []ColumnSpec
 }
 
+// ColumnInfo is for documentation/explain output.
+// It extends ColumnSpec with description and computed flag.
+type ColumnInfo struct {
+	Name        string // Column name (e.g., "KERNEL_ID")
+	JSONPath    string // JSONPath expression (empty if Computed)
+	Description string // Human-readable description
+	Computed    bool   // True for special columns that need custom extraction
+}
+
+// ProgramColumnRegistry returns all available columns for programs.
+// This is the authoritative source - DefaultColumns/WideColumns derive from it.
+func ProgramColumnRegistry() []ColumnInfo {
+	return []ColumnInfo{
+		{Name: "KERNEL_ID", JSONPath: ".spec.kernel_id", Description: "Kernel-assigned program ID"},
+		{Name: "TYPE", JSONPath: ".spec.load.program_type", Description: "Program type (xdp, tc, etc.)"},
+		{Name: "NAME", JSONPath: ".spec.meta.name", Description: "User-defined name"},
+		{Name: "SOURCE", JSONPath: ".spec.load.object_path", Description: "BPF object path (source)"},
+		{Name: "MAP_IDS", JSONPath: ".status.kernel.map_ids", Description: "Associated map IDs"},
+		{Name: "TAG", JSONPath: ".status.kernel.tag", Description: "Program tag (hash)"},
+		{Name: "BTF_ID", JSONPath: ".status.kernel.btf_id", Description: "BTF type ID"},
+		{Name: "PIN_PATH", JSONPath: ".spec.handles.pin_path", Description: "Pinned path in bpffs"},
+		{Name: "LOADED_AT", JSONPath: ".status.kernel.loaded_at", Description: "Load timestamp"},
+		{Name: "JIT_SIZE", JSONPath: ".status.kernel.jited_size", Description: "JIT-compiled size in bytes"},
+		{Name: "MEMLOCK", JSONPath: ".status.kernel.memlock", Description: "Locked memory in bytes"},
+		{Name: "LINK_IDS", Computed: true, Description: "Comma-separated link IDs"},
+		{Name: "ATTACH", Computed: true, Description: "Attach point descriptions"},
+	}
+}
+
+// programColumnIndex builds a lookup map from column name to ColumnInfo.
+func programColumnIndex() map[string]ColumnInfo {
+	registry := ProgramColumnRegistry()
+	index := make(map[string]ColumnInfo, len(registry))
+	for _, col := range registry {
+		index[col.Name] = col
+	}
+	return index
+}
+
+// MustSelectProgramColumns selects columns by name, panicking if any are unknown.
+// Use this for compile-time-known column sets (default, wide).
+func MustSelectProgramColumns(names []string) ColumnSet {
+	cs, err := selectProgramColumns(names)
+	if err != nil {
+		panic(err) // Programmer error, not user error
+	}
+	return cs
+}
+
+// selectProgramColumns selects columns by name from the registry.
+func selectProgramColumns(names []string) (ColumnSet, error) {
+	index := programColumnIndex()
+	columns := make([]ColumnSpec, 0, len(names))
+	for _, name := range names {
+		info, ok := index[name]
+		if !ok {
+			return ColumnSet{}, fmt.Errorf("unknown column %q", name)
+		}
+		columns = append(columns, ColumnSpec{
+			Name:     info.Name,
+			JSONPath: info.JSONPath,
+		})
+	}
+	return ColumnSet{Columns: columns}, nil
+}
+
+// Column name constants for default and wide output.
+var (
+	defaultColumnNames = []string{"KERNEL_ID", "TYPE", "NAME", "SOURCE"}
+	wideColumnNames    = []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+)
+
 // ParseCustomColumns parses a custom-columns spec string.
 // Format: NAME:.jsonpath,NAME2:.jsonpath2
 // Example: ID:.spec.kernel_id,NAME:.spec.meta.name
@@ -248,31 +320,159 @@ func (cs ColumnSet) FormatTable(programs []bpfman.Program) string {
 }
 
 // DefaultColumns returns the standard table columns.
-// Matches the current default: KERNEL ID, TYPE, NAME, SOURCE
+// Matches the current default: KERNEL_ID, TYPE, NAME, SOURCE
 func DefaultColumns() ColumnSet {
-	return ColumnSet{
-		Columns: []ColumnSpec{
-			{Name: "KERNEL ID", JSONPath: ".spec.kernel_id"},
-			{Name: "TYPE", JSONPath: ".spec.load.program_type"},
-			{Name: "NAME", JSONPath: ".spec.meta.name"},
-			{Name: "SOURCE", JSONPath: ".spec.load.object_path"},
-		},
-	}
+	return MustSelectProgramColumns(defaultColumnNames)
 }
 
 // WideColumns returns the wide table columns.
 // Includes additional detail: MAP_IDS, LINK_IDS, ATTACH, TAG
 func WideColumns() ColumnSet {
-	return ColumnSet{
-		Columns: []ColumnSpec{
-			{Name: "KERNEL ID", JSONPath: ".spec.kernel_id"},
-			{Name: "TYPE", JSONPath: ".spec.load.program_type"},
-			{Name: "NAME", JSONPath: ".spec.meta.name"},
-			{Name: "MAP_IDS", JSONPath: ".status.kernel.map_ids"},
-			{Name: "LINK_IDS", JSONPath: ""}, // Special handling
-			{Name: "ATTACH", JSONPath: ""},   // Special handling
-			{Name: "TAG", JSONPath: ".status.kernel.tag"},
-			{Name: "SOURCE", JSONPath: ".spec.load.object_path"},
-		},
+	return MustSelectProgramColumns(wideColumnNames)
+}
+
+// LinkColumnRegistry returns all available columns for links.
+// This is the authoritative source - DefaultLinkColumns/WideLinkColumns derive from it.
+func LinkColumnRegistry() []ColumnInfo {
+	return []ColumnInfo{
+		{Name: "LINK_ID", JSONPath: ".id", Description: "Link ID"},
+		{Name: "PROGRAM_ID", JSONPath: ".program_id", Description: "Associated program ID"},
+		{Name: "KIND", JSONPath: ".kind", Description: "Link type (xdp, tc, kprobe, etc.)"},
+		{Name: "PIN_PATH", JSONPath: ".pin_path", Description: "Pinned path in bpffs"},
+		{Name: "CREATED_AT", JSONPath: ".created_at", Description: "Creation timestamp"},
+		{Name: "ATTACH", Computed: true, Description: "Attach point details"},
 	}
+}
+
+// linkColumnIndex builds a lookup map from column name to ColumnInfo.
+func linkColumnIndex() map[string]ColumnInfo {
+	registry := LinkColumnRegistry()
+	index := make(map[string]ColumnInfo, len(registry))
+	for _, col := range registry {
+		index[col.Name] = col
+	}
+	return index
+}
+
+// MustSelectLinkColumns selects columns by name, panicking if any are unknown.
+// Use this for compile-time-known column sets (default, wide).
+func MustSelectLinkColumns(names []string) ColumnSet {
+	cs, err := selectLinkColumns(names)
+	if err != nil {
+		panic(err) // Programmer error, not user error
+	}
+	return cs
+}
+
+// selectLinkColumns selects columns by name from the registry.
+func selectLinkColumns(names []string) (ColumnSet, error) {
+	index := linkColumnIndex()
+	columns := make([]ColumnSpec, 0, len(names))
+	for _, name := range names {
+		info, ok := index[name]
+		if !ok {
+			return ColumnSet{}, fmt.Errorf("unknown link column %q", name)
+		}
+		columns = append(columns, ColumnSpec{
+			Name:     info.Name,
+			JSONPath: info.JSONPath,
+		})
+	}
+	return ColumnSet{Columns: columns}, nil
+}
+
+// Link column name constants for default and wide output.
+var (
+	defaultLinkColumnNames = []string{"LINK_ID", "KIND", "PIN_PATH"}
+	wideLinkColumnNames    = []string{"LINK_ID", "KIND", "PROGRAM_ID", "ATTACH", "PIN_PATH", "CREATED_AT"}
+)
+
+// DefaultLinkColumns returns the standard table columns for links.
+func DefaultLinkColumns() ColumnSet {
+	return MustSelectLinkColumns(defaultLinkColumnNames)
+}
+
+// WideLinkColumns returns the wide table columns for links.
+func WideLinkColumns() ColumnSet {
+	return MustSelectLinkColumns(wideLinkColumnNames)
+}
+
+// ExtractLinkValue extracts a value from a link using the JSONPath expression.
+// Returns "<none>" if the value is missing or empty.
+func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkSpec) string {
+	// Handle special columns that need custom logic
+	switch strings.ToUpper(cs.Name) {
+	case "ATTACH":
+		return extractLinkAttach(link)
+	}
+
+	// Standard JSONPath extraction
+	return extractLinkJSONPath(link, cs.JSONPath)
+}
+
+// extractLinkJSONPath extracts a value using JSONPath from a link.
+func extractLinkJSONPath(link bpfman.LinkSpec, expr string) string {
+	jp := jsonpath.New("extract")
+	// Wrap in {} for k8s jsonpath syntax
+	if err := jp.Parse("{" + expr + "}"); err != nil {
+		return "<error>"
+	}
+
+	// Marshal link to JSON then back to generic interface
+	jsonBytes, err := json.Marshal(link)
+	if err != nil {
+		return "<error>"
+	}
+
+	var generic any
+	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+		return "<error>"
+	}
+
+	var buf bytes.Buffer
+	if err := jp.Execute(&buf, generic); err != nil {
+		return "<none>"
+	}
+
+	result := strings.TrimSpace(buf.String())
+	if result == "" || result == "<no value>" || result == "null" {
+		return "<none>"
+	}
+
+	return result
+}
+
+// extractLinkAttach extracts attach details from a link.
+// This is a special column that requires custom logic.
+func extractLinkAttach(link bpfman.LinkSpec) string {
+	attach := formatAttachDetails(link.Details)
+	if attach == "" {
+		return "<none>"
+	}
+	return attach
+}
+
+// FormatLinkTable renders a table of links using the column set.
+func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkSpec) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+
+	// Write header
+	headers := make([]string, len(cs.Columns))
+	for i, col := range cs.Columns {
+		headers[i] = col.Name
+	}
+	fmt.Fprintln(w, strings.Join(headers, "\t"))
+
+	// Write rows
+	for _, link := range links {
+		values := make([]string, len(cs.Columns))
+		for i, col := range cs.Columns {
+			values[i] = col.ExtractLinkValue(link)
+		}
+		fmt.Fprintln(w, strings.Join(values, "\t"))
+	}
+
+	w.Flush()
+	return b.String()
 }

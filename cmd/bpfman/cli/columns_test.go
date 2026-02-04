@@ -336,7 +336,7 @@ func TestDefaultColumns(t *testing.T) {
 		t.Errorf("DefaultColumns() has %d columns, want 4", len(cols.Columns))
 	}
 
-	expected := []string{"KERNEL ID", "TYPE", "NAME", "SOURCE"}
+	expected := []string{"KERNEL_ID", "TYPE", "NAME", "SOURCE"}
 	for i, col := range cols.Columns {
 		if col.Name != expected[i] {
 			t.Errorf("DefaultColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
@@ -350,7 +350,7 @@ func TestWideColumns(t *testing.T) {
 		t.Errorf("WideColumns() has %d columns, want 8", len(cols.Columns))
 	}
 
-	expected := []string{"KERNEL ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+	expected := []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 	for i, col := range cols.Columns {
 		if col.Name != expected[i] {
 			t.Errorf("WideColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
@@ -474,7 +474,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 	}
 
 	// Check all wide columns appear in header
-	expectedHeaders := []string{"KERNEL ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+	expectedHeaders := []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 	for _, h := range expectedHeaders {
 		if !strings.Contains(output, h) {
 			t.Errorf("Wide output missing header %q: %s", h, output)
