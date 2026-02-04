@@ -15,7 +15,7 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
-	@echo "  e2e-test                    Run e2e tests (requires root)"
+	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  lint                        Run golangci-lint"
 	@echo "  coverage                    Generate coverage profile and show total"
 	@echo "  coverage-func               Show coverage by function"
@@ -106,9 +106,9 @@ coverage-open: coverage-html
 coverage-clean:
 	$(RM) -r $(COVERAGE_DIR)
 
-e2e-test:
+test-e2e:
 	@echo "Running e2e tests (requires root)..."
-	go test -tags=e2e -v ./e2e/...
+	go test -race -tags=e2e -v ./e2e/...
 
 # Documentation
 DOC_PORT ?= 6060
@@ -339,7 +339,6 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	docker-build-bpfman-upstream \
 	docker-build-csi-sanity \
 	docker-build-stats-reader \
-	e2e-test \
 	help \
 	kind-create \
 	kind-delete \
@@ -348,4 +347,5 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	stats-reader-delete \
 	stats-reader-deploy \
 	stats-reader-logs \
+	test-e2e \
 	test
