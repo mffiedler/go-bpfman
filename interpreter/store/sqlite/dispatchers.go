@@ -37,7 +37,8 @@ func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType string, nsid u
 	return state, nil
 }
 
-// ListDispatchers returns all dispatchers.
+// ListDispatchers returns all dispatchers. The returned slice has no guaranteed
+// order; sorting for deterministic output is done in inspect.Snapshot.
 func (s *sqliteStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, error) {
 	start := time.Now()
 	rows, err := s.stmtListDispatchers.QueryContext(ctx)

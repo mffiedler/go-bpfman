@@ -453,7 +453,8 @@ func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID uint3
 	return count, nil
 }
 
-// List returns all program metadata.
+// List returns all program metadata. The returned map has no guaranteed
+// iteration order; sorting for deterministic output is done in inspect.Snapshot.
 func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error) {
 	start := time.Now()
 	rows, err := s.stmtListPrograms.QueryContext(ctx)

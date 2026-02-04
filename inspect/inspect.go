@@ -4,9 +4,11 @@
 package inspect
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"iter"
+	"slices"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -576,6 +578,23 @@ func Snapshot(
 		}
 		w.Dispatchers = append(w.Dispatchers, row)
 	}
+
+	// Sort all slices for deterministic output
+	slices.SortFunc(w.Programs, func(a, b ProgramView) int {
+		return cmp.Compare(a.KernelID, b.KernelID)
+	})
+	slices.SortFunc(w.Links, func(a, b LinkRow) int {
+		return cmp.Compare(a.ID(), b.ID())
+	})
+	slices.SortFunc(w.Dispatchers, func(a, b DispatcherRow) int {
+		if c := cmp.Compare(a.DispType, b.DispType); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Nsid, b.Nsid); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Ifindex, b.Ifindex)
+	})
 
 	return w, nil
 }

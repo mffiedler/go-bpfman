@@ -61,7 +61,8 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 	return record, nil
 }
 
-// ListLinks returns all links.
+// ListLinks returns all links. The returned slice has no guaranteed order;
+// sorting for deterministic output is done in inspect.Snapshot.
 func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinks.QueryContext(ctx)
