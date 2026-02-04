@@ -185,6 +185,9 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinDir},
 			}, nil)
 		} else {
+			m.logger.DebugContext(ctx, "rollback: unloaded program",
+				"kernel_id", loaded.Kernel.ID,
+				"pin_path", loaded.Managed.PinPath)
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
