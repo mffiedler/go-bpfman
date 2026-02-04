@@ -899,6 +899,12 @@ func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags
 		return executeJSONPath(result, flags.JSONPathExpr())
 	case OutputFormatTable:
 		return formatProgramsCompositeTable(result), nil
+	case OutputFormatWide:
+		return formatProgramsCompositeWide(result), nil
+	case OutputFormatCustomColumns:
+		return formatProgramsCompositeCustomColumns(result, flags.CustomColumnsSpec())
+	case OutputFormatCustomColumnsFile:
+		return formatProgramsCompositeCustomColumnsFile(result, flags.CustomColumnsFile())
 	default:
 		return formatProgramsCompositeTable(result), nil
 	}
@@ -1118,4 +1124,33 @@ func formatTimelineDetailsDescribe(details any) string {
 		fields = append(fields, fmt.Sprintf("      Category:\t%s", d.Category))
 	}
 	return strings.Join(fields, "\n")
+}
+
+// formatProgramsCompositeWide formats the program list with wide columns.
+func formatProgramsCompositeWide(result bpfman.ProgramListResult) string {
+	return WideColumns().FormatTable(result.Programs)
+}
+
+// formatProgramsCompositeCustomColumns formats the program list with custom columns.
+func formatProgramsCompositeCustomColumns(result bpfman.ProgramListResult, spec string) (string, error) {
+	columns, err := ParseCustomColumns(spec)
+	if err != nil {
+		return "", err
+	}
+	if err := columns.Validate(); err != nil {
+		return "", err
+	}
+	return columns.FormatTable(result.Programs), nil
+}
+
+// formatProgramsCompositeCustomColumnsFile formats the program list with columns from a file.
+func formatProgramsCompositeCustomColumnsFile(result bpfman.ProgramListResult, path string) (string, error) {
+	columns, err := ParseCustomColumnsFile(path)
+	if err != nil {
+		return "", err
+	}
+	if err := columns.Validate(); err != nil {
+		return "", err
+	}
+	return columns.FormatTable(result.Programs), nil
 }
