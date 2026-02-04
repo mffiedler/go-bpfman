@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/kernel"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 // ProgramType represents the type of BPF program.
@@ -29,6 +30,45 @@ const (
 	ProgramTypeFentry
 	ProgramTypeFexit
 )
+
+// allProgramTypes is the canonical list of valid program types.
+// ParseProgramType and ProgramTypeNames derive from this.
+var allProgramTypes = []ProgramType{
+	ProgramTypeXDP,
+	ProgramTypeTC,
+	ProgramTypeTCX,
+	ProgramTypeTracepoint,
+	ProgramTypeKprobe,
+	ProgramTypeKretprobe,
+	ProgramTypeUprobe,
+	ProgramTypeUretprobe,
+	ProgramTypeFentry,
+	ProgramTypeFexit,
+}
+
+// programTypeByName maps lowercase type names to ProgramType values.
+// Built from allProgramTypes to ensure consistency.
+var programTypeByName = func() map[string]ProgramType {
+	m := make(map[string]ProgramType, len(allProgramTypes))
+	for _, pt := range allProgramTypes {
+		m[pt.String()] = pt
+	}
+	return m
+}()
+
+// AllProgramTypes returns all valid program types.
+func AllProgramTypes() []ProgramType {
+	return allProgramTypes
+}
+
+// ProgramTypeNames returns all valid program type names as strings.
+func ProgramTypeNames() []string {
+	names := make([]string, len(allProgramTypes))
+	for i, t := range allProgramTypes {
+		names[i] = t.String()
+	}
+	return names
+}
 
 // String returns the string representation of the program type.
 func (t ProgramType) String() string {
@@ -78,30 +118,8 @@ func (t *ProgramType) UnmarshalText(text []byte) error {
 // ParseProgramType parses a string into a ProgramType.
 // Returns the program type and true if valid, or ProgramTypeUnspecified and false if not.
 func ParseProgramType(s string) (ProgramType, bool) {
-	switch s {
-	case "xdp":
-		return ProgramTypeXDP, true
-	case "tc":
-		return ProgramTypeTC, true
-	case "tcx":
-		return ProgramTypeTCX, true
-	case "tracepoint":
-		return ProgramTypeTracepoint, true
-	case "kprobe":
-		return ProgramTypeKprobe, true
-	case "kretprobe":
-		return ProgramTypeKretprobe, true
-	case "uprobe":
-		return ProgramTypeUprobe, true
-	case "uretprobe":
-		return ProgramTypeUretprobe, true
-	case "fentry":
-		return ProgramTypeFentry, true
-	case "fexit":
-		return ProgramTypeFexit, true
-	default:
-		return ProgramTypeUnspecified, false
-	}
+	pt, ok := programTypeByName[s]
+	return pt, ok
 }
 
 // ProgramLoadSpec contains inputs for loading a program.
@@ -255,4 +273,67 @@ type ProgramListResult struct {
 	ObservedAt time.Time `json:"observed_at"`
 	Host       HostInfo  `json:"host"`
 	Programs   []Program `json:"programs"`
+}
+
+// AttachmentState represents the attachment filter mode.
+type AttachmentState int
+
+const (
+	AttachmentStateAll AttachmentState = iota
+	AttachmentStateAttached
+	AttachmentStateUnattached
+)
+
+// ProgramFilter specifies filtering criteria for list operations.
+// All non-nil/non-empty fields combine with AND logic.
+// Invariant: LabelSelector is never nil (use labels.Everything() as default).
+type ProgramFilter struct {
+	AttachmentState AttachmentState
+	Types           map[ProgramType]struct{}
+	LabelSelector   labels.Selector
+}
+
+// Matches returns true if the program matches all filter criteria.
+func (f *ProgramFilter) Matches(prog *Program) bool {
+	if f == nil {
+		return true
+	}
+	return f.matchesAttachmentState(prog) &&
+		f.matchesType(prog) &&
+		f.matchesLabels(prog)
+}
+
+// hasActiveLinks returns true if the program has at least one link
+// with kernel presence (actually attached, not just a DB record).
+func hasActiveLinks(prog *Program) bool {
+	for _, link := range prog.Status.Links {
+		if link.Status.Kernel != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *ProgramFilter) matchesAttachmentState(prog *Program) bool {
+	switch f.AttachmentState {
+	case AttachmentStateAttached:
+		return hasActiveLinks(prog)
+	case AttachmentStateUnattached:
+		return !hasActiveLinks(prog)
+	default:
+		return true
+	}
+}
+
+func (f *ProgramFilter) matchesType(prog *Program) bool {
+	if len(f.Types) == 0 {
+		return true
+	}
+	_, ok := f.Types[prog.Spec.Load.ProgramType]
+	return ok
+}
+
+func (f *ProgramFilter) matchesLabels(prog *Program) bool {
+	// Invariant: LabelSelector is never nil (default is labels.Everything())
+	return f.LabelSelector.Matches(labels.Set(prog.Spec.Meta.Metadata))
 }

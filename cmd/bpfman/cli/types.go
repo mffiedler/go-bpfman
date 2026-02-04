@@ -363,3 +363,22 @@ func TCActionsToString(actions []int32) string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// ParseProgramTypes parses a slice of program type strings (case-insensitive).
+// Returns a set for O(1) lookup during filtering.
+func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) {
+	result := make(map[bpfman.ProgramType]struct{}, len(types))
+	for _, raw := range types {
+		t := strings.TrimSpace(raw)
+		if t == "" {
+			continue
+		}
+		pt, ok := bpfman.ParseProgramType(strings.ToLower(t))
+		if !ok {
+			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
+				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
+		}
+		result[pt] = struct{}{}
+	}
+	return result, nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"golang.org/x/sys/unix"
 
@@ -212,6 +213,13 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 // This returns the canonical bpfman.ProgramListResult type with both Spec (from store)
 // and Status (from kernel enumeration + filesystem checks).
 func (m *Manager) ListPrograms(ctx context.Context) (bpfman.ProgramListResult, error) {
+	return m.ListProgramsWithFilter(ctx, nil)
+}
+
+// ListProgramsWithFilter returns managed programs matching the filter criteria.
+// If filter is nil, all managed programs are returned.
+// Results are ordered deterministically by kernel ID, then by type+name for ties.
+func (m *Manager) ListProgramsWithFilter(ctx context.Context, filter *bpfman.ProgramFilter) (bpfman.ProgramListResult, error) {
 	scanner := bpffs.NewScanner(m.dirs.ScannerDirs())
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
@@ -221,9 +229,25 @@ func (m *Manager) ListPrograms(ctx context.Context) (bpfman.ProgramListResult, e
 	var programs []bpfman.Program
 	for _, row := range world.ManagedPrograms() {
 		if prog, ok := row.AsProgram(); ok {
-			programs = append(programs, prog)
+			p := prog // explicit copy for clarity
+			if filter == nil || filter.Matches(&p) {
+				programs = append(programs, p)
+			}
 		}
 	}
+
+	// Deterministic output ordering: by kernel ID, then by type+name for ties
+	sort.Slice(programs, func(i, j int) bool {
+		if programs[i].Spec.KernelID != programs[j].Spec.KernelID {
+			return programs[i].Spec.KernelID < programs[j].Spec.KernelID
+		}
+		// Fallback for zero IDs: sort by type, then name
+		if programs[i].Spec.Load.ProgramType != programs[j].Spec.Load.ProgramType {
+			return programs[i].Spec.Load.ProgramType < programs[j].Spec.Load.ProgramType
+		}
+		return programs[i].Spec.Meta.Name < programs[j].Spec.Meta.Name
+	})
+
 	return bpfman.ProgramListResult{
 		ObservedAt: world.Meta.ObservedAt,
 		Host:       GetHostInfo(),

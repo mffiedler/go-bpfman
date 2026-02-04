@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/frobware/go-bpfman"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 // ListCmd lists managed programs or links.
@@ -16,17 +18,71 @@ type ListCmd struct {
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
 	OutputFlags
+	Attached   bool     `name:"attached" help:"Show only programs with active links."`
+	Unattached bool     `name:"unattached" help:"Show only programs without active links."`
+	Type       []string `name:"type" sep:"," help:"Filter by program type (case-insensitive, e.g., --type=xdp,kprobe)."`
+	Selector   string   `name:"selector" short:"l" help:"Label selector (e.g., app=myapp,version!=v1)."`
+}
+
+// Validate checks that the command flags are consistent.
+func (c *ListProgramsCmd) Validate() error {
+	if c.Attached && c.Unattached {
+		return fmt.Errorf("--attached and --unattached are mutually exclusive")
+	}
+	return nil
+}
+
+func (c *ListProgramsCmd) buildFilter() (*bpfman.ProgramFilter, error) {
+	filter := &bpfman.ProgramFilter{
+		LabelSelector: labels.Everything(),
+	}
+
+	// Attachment state
+	if c.Attached {
+		filter.AttachmentState = bpfman.AttachmentStateAttached
+	} else if c.Unattached {
+		filter.AttachmentState = bpfman.AttachmentStateUnattached
+	}
+
+	// Type filter
+	if len(c.Type) > 0 {
+		types, err := ParseProgramTypes(c.Type)
+		if err != nil {
+			return nil, err
+		}
+		filter.Types = types
+	}
+
+	// Label selector
+	if s := strings.TrimSpace(c.Selector); s != "" {
+		sel, err := labels.Parse(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid label selector: %w", err)
+		}
+		filter.LabelSelector = sel
+	}
+
+	return filter, nil
 }
 
 // Run executes the list programs command.
 func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+
 	runtime, err := cli.NewCLIRuntime(ctx)
 	if err != nil {
 		return fmt.Errorf("create runtime: %w", err)
 	}
 	defer runtime.Close()
 
-	result, err := runtime.Manager.ListPrograms(ctx)
+	filter, err := c.buildFilter()
+	if err != nil {
+		return err
+	}
+
+	result, err := runtime.Manager.ListProgramsWithFilter(ctx, filter)
 	if err != nil {
 		return err
 	}
