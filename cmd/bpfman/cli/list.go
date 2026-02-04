@@ -88,7 +88,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 
 	if len(result.Programs) == 0 {
-		return cli.PrintOut("No managed programs found\n")
+		return nil
 	}
 
 	output, err := FormatProgramsComposite(result, &c.OutputFlags)
@@ -123,7 +123,7 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 
 	if len(links) == 0 {
-		return cli.PrintOut("No managed links found\n")
+		return nil
 	}
 
 	output, err := FormatLinkList(links, &c.OutputFlags)
