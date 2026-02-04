@@ -12,7 +12,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlGetProgram = `
 		SELECT m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags
+		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
+		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
 		FROM managed_programs m
 		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
 		WHERE m.kernel_id = ?
@@ -75,7 +76,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlListPrograms = `
 		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags
+		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
+		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
 		FROM managed_programs m
 		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
 		GROUP BY m.kernel_id`
@@ -86,7 +88,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlFindProgramByMetadata = `
 		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags
+		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
+		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
 		FROM managed_programs m
 		JOIN program_metadata_index i ON m.kernel_id = i.kernel_id
 		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
@@ -100,7 +103,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlFindAllProgramsByMetadata = `
 		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags
+		       m.gpl_compatible, m.created_at, m.updated_at, GROUP_CONCAT(t.tag) as tags,
+		       (SELECT json_group_object(key, value) FROM program_metadata_index WHERE kernel_id = m.kernel_id) as metadata
 		FROM managed_programs m
 		JOIN program_metadata_index i ON m.kernel_id = i.kernel_id
 		LEFT JOIN program_tags t ON m.kernel_id = t.kernel_id
@@ -124,11 +128,6 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlDeleteTags = "DELETE FROM program_tags WHERE kernel_id = ?"
 	if s.stmtDeleteTags, err = s.db.PrepareContext(ctx, sqlDeleteTags); err != nil {
 		return fmt.Errorf("prepare DeleteTags: %w", err)
-	}
-
-	const sqlGetUserMetadata = "SELECT key, value FROM program_metadata_index WHERE kernel_id = ?"
-	if s.stmtGetUserMetadata, err = s.db.PrepareContext(ctx, sqlGetUserMetadata); err != nil {
-		return fmt.Errorf("prepare GetUserMetadata: %w", err)
 	}
 
 	return nil
