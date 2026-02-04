@@ -247,6 +247,11 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	rows, _ = result.RowsAffected()
 	s.logger.Debug("sql", "stmt", "DeleteTags", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 
+	// Insert tags individually. Multi-value INSERT (VALUES (?,?), (?,?), ...)
+	// was considered but rejected: tags are typically 1-5 per program, writes
+	// are infrequent (once per load), and SQLite is local so "round-trip" cost
+	// is minimal. The added complexity of dynamic SQL and batching for
+	// SQLite's 999-variable limit isn't justified.
 	for _, tag := range metadata.Meta.Tags {
 		start = time.Now()
 		_, err = s.stmtInsertTag.ExecContext(ctx, kernelID, tag)
@@ -267,7 +272,8 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	rows, _ = result.RowsAffected()
 	s.logger.Debug("sql", "stmt", "DeleteProgramMetadataIndex", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 
-	// Insert metadata index entries for Metadata
+	// Insert metadata entries individually. Same rationale as tags above:
+	// typically 2-10 entries per program, infrequent writes, local SQLite.
 	for key, value := range metadata.Meta.Metadata {
 		start = time.Now()
 		_, err = s.stmtInsertProgramMetadataIndex.ExecContext(ctx, kernelID, key, value)
