@@ -944,96 +944,152 @@ func formatOutcomeJSONPath(o outcome.OperationOutcome, expr string) (string, err
 func formatOutcomeTable(o outcome.OperationOutcome) string {
 	var b strings.Builder
 
-	// Header with operation ID
+	// Primary identifier at column one (kubectl-describe style)
+	fmt.Fprintf(&b, "Operation: %s\n", strings.ToUpper(string(o.Status)))
+
+	// Build summary fields for tabwriter alignment
+	var summaryFields []string
 	if o.OpID != 0 {
-		fmt.Fprintf(&b, "Operation: op_id=%d\n", o.OpID)
+		summaryFields = append(summaryFields, fmt.Sprintf("    Op ID:\t%d", o.OpID))
 	}
-	fmt.Fprintf(&b, "Status: %s\n", strings.ToUpper(string(o.Status)))
 	if o.PrimaryError != "" {
-		fmt.Fprintf(&b, "Error: %s\n", o.PrimaryError)
-	}
-	if len(o.RollbackErrors) > 0 {
-		fmt.Fprintf(&b, "Rollback Errors:\n")
-		for _, re := range o.RollbackErrors {
-			fmt.Fprintf(&b, "  Step %d: %s\n", re.Step, re.Err)
-		}
-	}
-	b.WriteString("\n")
-
-	// Timeline - display steps in chronological order grouped by phase
-	if len(o.Timeline) > 0 {
-		b.WriteString("Timeline:\n")
-		for _, entry := range o.Timeline {
-			phaseMarker := ""
-			if entry.Phase == outcome.PhaseRollback {
-				phaseMarker = " [rollback]"
-			}
-			statusStr := string(entry.Status)
-			detailsStr := formatTimelineDetails(entry.Details)
-			if entry.Error != "" {
-				fmt.Fprintf(&b, "  %d. [%s] %s %s%s%s: %s\n",
-					entry.Seq, entry.Kind, entry.Target, statusStr, phaseMarker, detailsStr, entry.Error)
-			} else {
-				fmt.Fprintf(&b, "  %d. [%s] %s %s%s%s\n",
-					entry.Seq, entry.Kind, entry.Target, statusStr, phaseMarker, detailsStr)
-			}
-		}
-		b.WriteString("\n")
+		summaryFields = append(summaryFields, fmt.Sprintf("    Error:\t%s", o.PrimaryError))
 	}
 
-	// Residual artefacts
+	// System state
+	switch o.SystemState {
+	case "inconsistent":
+		summaryFields = append(summaryFields, "    System State:\tINCONSISTENT")
+	case "unknown":
+		summaryFields = append(summaryFields, "    System State:\tUNKNOWN")
+	default:
+		summaryFields = append(summaryFields, "    System State:\tClean")
+	}
+
+	// Residual
 	if len(o.Residual) > 0 {
-		b.WriteString("Residual:\n")
-		for _, a := range o.Residual {
-			fmt.Fprintf(&b, "  %s\n", a.String())
-		}
-		b.WriteString("\n")
-	} else if o.Status == outcome.StatusFailure {
-		b.WriteString("Residual: (none)\n\n")
-	}
-
-	// System state (stored, not computed)
-	if o.SystemState == "inconsistent" {
-		fmt.Fprintf(&b, "System state: INCONSISTENT\n\n")
-		// Manual cleanup commands (stored, not computed)
-		if len(o.ManualCleanupCommands) > 0 {
-			b.WriteString("Manual cleanup required:\n")
-			for _, cmd := range o.ManualCleanupCommands {
-				fmt.Fprintf(&b, "  %s\n", strings.Join(cmd, " "))
+		for i, a := range o.Residual {
+			if i == 0 {
+				summaryFields = append(summaryFields, fmt.Sprintf("    Residual:\t%s", a.String()))
+			} else {
+				summaryFields = append(summaryFields, fmt.Sprintf("    \t%s", a.String()))
 			}
 		}
-	} else if o.SystemState == "unknown" {
-		fmt.Fprintf(&b, "System state: UNKNOWN\n")
-		b.WriteString("Manual verification required. Run `bpfman doctor` or `bpfman gc` to inspect and clean up.\n")
 	} else {
-		fmt.Fprintf(&b, "System state: clean\n")
+		summaryFields = append(summaryFields, "    Residual:\tNone")
+	}
+
+	// Rollback errors
+	if len(o.RollbackErrors) > 0 {
+		for i, re := range o.RollbackErrors {
+			if i == 0 {
+				summaryFields = append(summaryFields, fmt.Sprintf("    Rollback Errors:\tStep %d: %s", re.Step, re.Err))
+			} else {
+				summaryFields = append(summaryFields, fmt.Sprintf("    \tStep %d: %s", re.Step, re.Err))
+			}
+		}
+	}
+
+	// Manual cleanup commands
+	if len(o.ManualCleanupCommands) > 0 {
+		for i, cmd := range o.ManualCleanupCommands {
+			if i == 0 {
+				summaryFields = append(summaryFields, fmt.Sprintf("    Cleanup:\t%s", strings.Join(cmd, " ")))
+			} else {
+				summaryFields = append(summaryFields, fmt.Sprintf("    \t%s", strings.Join(cmd, " ")))
+			}
+		}
+	}
+
+	// Run summary fields through tabwriter
+	var aligned strings.Builder
+	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
+	for _, f := range summaryFields {
+		fmt.Fprintln(w, f)
+	}
+	w.Flush()
+
+	// Write summary section
+	b.WriteString("  Summary:\n")
+	b.WriteString(aligned.String())
+
+	// Timeline section
+	if len(o.Timeline) > 0 {
+		b.WriteString("  Timeline:\n")
+		for _, entry := range o.Timeline {
+			// Each timeline entry as a sub-block
+			var entryFields []string
+			entryFields = append(entryFields, fmt.Sprintf("      Kind:\t%s", entry.Kind))
+			entryFields = append(entryFields, fmt.Sprintf("      Target:\t%s", entry.Target))
+			entryFields = append(entryFields, fmt.Sprintf("      Phase:\t%s", entry.Phase))
+			entryFields = append(entryFields, fmt.Sprintf("      Status:\t%s", entry.Status))
+			if entry.Error != "" {
+				entryFields = append(entryFields, fmt.Sprintf("      Error:\t%s", entry.Error))
+			}
+			// Add any details
+			if detailStr := formatTimelineDetailsDescribe(entry.Details); detailStr != "" {
+				entryFields = append(entryFields, detailStr)
+			}
+
+			// Write entry header with timestamp (provides natural ordering)
+			fmt.Fprintf(&b, "    %s\n", entry.Timestamp.Format(time.RFC3339Nano))
+
+			// Align entry fields
+			var entryAligned strings.Builder
+			ew := tabwriter.NewWriter(&entryAligned, 0, 0, 1, ' ', 0)
+			for _, f := range entryFields {
+				fmt.Fprintln(ew, f)
+			}
+			ew.Flush()
+			b.WriteString(entryAligned.String())
+		}
 	}
 
 	return b.String()
 }
 
-// formatTimelineDetails formats timeline entry details for display.
-func formatTimelineDetails(details any) string {
+// formatTimelineDetailsDescribe formats timeline entry details for kubectl-describe style.
+func formatTimelineDetailsDescribe(details any) string {
 	if details == nil {
 		return ""
 	}
+	var fields []string
 	switch d := details.(type) {
 	case outcome.ProgramDetails:
 		if d.KernelID != 0 {
-			return fmt.Sprintf(" (kernel_id=%d)", d.KernelID)
+			fields = append(fields, fmt.Sprintf("      Kernel ID:\t%d", d.KernelID))
+		}
+		if d.PinPath != "" {
+			fields = append(fields, fmt.Sprintf("      Pin Path:\t%s", d.PinPath))
+		}
+		if d.MapsDirPath != "" {
+			fields = append(fields, fmt.Sprintf("      Maps Dir:\t%s", d.MapsDirPath))
 		}
 	case outcome.LinkDetails:
 		if d.LinkID != 0 {
-			return fmt.Sprintf(" (link_id=%d)", d.LinkID)
+			fields = append(fields, fmt.Sprintf("      Link ID:\t%d", d.LinkID))
+		}
+		if d.PinPath != "" {
+			fields = append(fields, fmt.Sprintf("      Pin Path:\t%s", d.PinPath))
+		}
+	case outcome.ImageDetails:
+		if d.URL != "" {
+			fields = append(fields, fmt.Sprintf("      Image URL:\t%s", d.URL))
+		}
+		if d.Digest != "" {
+			fields = append(fields, fmt.Sprintf("      Digest:\t%s", d.Digest))
+		}
+		if d.ObjectPath != "" {
+			fields = append(fields, fmt.Sprintf("      Object Path:\t%s", d.ObjectPath))
 		}
 	case outcome.DispatcherDetails:
 		if d.DispatcherID != 0 {
-			return fmt.Sprintf(" (dispatcher_id=%d)", d.DispatcherID)
+			fields = append(fields, fmt.Sprintf("      Dispatcher ID:\t%d", d.DispatcherID))
 		}
 	case outcome.GCPhaseDetails:
-		return fmt.Sprintf(" (removed=%d)", d.Removed)
+		fields = append(fields, fmt.Sprintf("      Removed:\t%d", d.Removed))
 	case outcome.OrphanDetails:
-		return fmt.Sprintf(" (category=%s)", d.Category)
+		fields = append(fields, fmt.Sprintf("      Category:\t%s", d.Category))
 	}
-	return ""
+	return strings.Join(fields, "\n")
 }
