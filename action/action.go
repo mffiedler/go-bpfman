@@ -1,5 +1,18 @@
 // Package action contains reified effects - descriptions of what to do
 // without actually doing it. These are pure data structures.
+//
+// Actions are intentionally generic rather than program-type-specific.
+// There is no LoadXDPProgram or LoadTCProgram; there is just LoadProgram
+// which carries a LoadSpec containing the program type. Similarly,
+// SaveLink works with LinkSpec which has a Kind discriminator and a
+// LinkDetails sealed interface for type-specific fields.
+//
+// This design keeps the action set small (operations like load, unload,
+// save, delete) rather than exploding to N actions × M program types.
+// Adding a new program type requires new constants and detail structs,
+// not new action types.
+//
+// Actions describe what to do; the how is the interpreter's responsibility.
 package action
 
 import (
