@@ -630,8 +630,11 @@ func (s *ObservedState) KernelAlive(kernelID uint32) bool {
 }
 
 // LiveOrphans returns the count of orphan program pins where the
-// kernel program is still alive. These are left untouched by GC
-// because removing the pin would unload a running program.
+// kernel program is still alive. These are programs that bpfman
+// originally loaded (pinned under bpfman's bpffs root) but no longer
+// tracks in its database, typically after a database wipe while pins
+// survived. Standard GC leaves these untouched because removing the
+// pin would unload a running program; use --prune to remove them.
 func (s *ObservedState) LiveOrphans() int {
 	count := 0
 	for _, o := range s.orphans {
@@ -1248,6 +1251,65 @@ Category: gc-orphan-pin`,
 				}
 				return out
 			},
+		},
+	}
+}
+
+// PruneRule returns a GC rule that removes live orphan program pins.
+//
+// A live orphan is a program that bpfman originally loaded and pinned
+// (evidenced by paths like /run/bpfman/fs/prog_<id>) but has since
+// lost track of, typically because the database was wiped or recreated
+// while the bpffs pins survived across restarts. The pin holds a
+// kernel reference, keeping the program alive even though bpfman no
+// longer manages it.
+//
+// Removing the pin releases bpfman's reference. The kernel reclaims
+// the program when no other references (file descriptors, other pins,
+// links) remain.
+func PruneRule() Rule {
+	return Rule{
+		Name: "prune-live-orphans",
+		Description: `Removes live orphan program pins, link directories, and map
+directories. A live orphan is a program that bpfman originally loaded
+(pinned under bpfman's bpffs root) but no longer tracks in its
+database. This typically occurs when the database is wiped or recreated
+while bpffs pins survive across restarts.
+
+Unlike orphan-program-artefacts (which only removes dead orphans),
+this rule removes the pin even when the kernel program is alive.
+Removing the pin releases bpfman's reference; the kernel reclaims the
+program when no other references remain.
+
+Severity: WARNING
+Category: gc-orphan-pin`,
+		Eval: func(s *ObservedState) []Violation {
+			var out []Violation
+			for _, o := range s.OrphanFsEntries() {
+				if o.Kind != "prog-pin" && o.Kind != "link-dir" && o.Kind != "map-dir" {
+					continue
+				}
+				if o.KernelID == 0 || !s.KernelAlive(o.KernelID) {
+					continue // dead orphans handled by orphan-program-artefacts
+				}
+				oo := o // capture
+				isDir := o.Kind != "prog-pin"
+				out = append(out, Violation{
+					Severity:    SeverityWarning,
+					Category:    "gc-orphan-pin",
+					Description: fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.KernelID),
+					Op: &Operation{
+						Description: fmt.Sprintf("remove %s", o.Path),
+						Execute: func() error {
+							if isDir {
+								return os.RemoveAll(oo.Path)
+							}
+							return os.Remove(oo.Path)
+						},
+					},
+				})
+			}
+			return out
 		},
 	}
 }

@@ -116,6 +116,16 @@ type GCResult struct {
 	Outcome outcome.OperationOutcome
 }
 
+// GCOptions configures garbage collection behaviour.
+type GCOptions struct {
+	// Rules restricts GC to the named rules. If empty, all rules run.
+	Rules []string
+	// Prune removes live orphans (programs pinned under bpfman's
+	// bpffs root that are still alive in the kernel but have no DB
+	// record). Without prune, these are counted but left untouched.
+	Prune bool
+}
+
 // GC removes stale database entries that no longer exist in the kernel.
 // This should be called at startup before accepting requests. After GC,
 // the database is authoritative for the session.
@@ -131,13 +141,18 @@ type GCResult struct {
 // when the kernel reuses an ID that now belongs to a different program.
 // GC runs garbage collection with all rules.
 func (m *Manager) GC(ctx context.Context) (GCResult, error) {
-	return m.GCWithRules(ctx, nil)
+	return m.GCWithOptions(ctx, GCOptions{})
 }
 
 // GCWithRules runs garbage collection. If rules is non-empty, only the
 // specified GC rules are run; otherwise all rules are run. Store-level
 // GC always runs regardless of the rules filter.
-func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCResult, retErr error) {
+func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, error) {
+	return m.GCWithOptions(ctx, GCOptions{Rules: rules})
+}
+
+// GCWithOptions runs garbage collection with the given options.
+func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCResult, retErr error) {
 	rec := outcome.NewRecorder(&result.Outcome)
 	defer func() { rec.Finalise() }()
 	result.Outcome.OpID = OpIDFromContext(ctx)
@@ -235,11 +250,14 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCRes
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
 	} else {
-		// Filter rules if specified.
+		// Build rule set: standard GC rules, plus prune rule if requested.
 		gcRules := GCRules()
-		if len(rules) > 0 {
+		if opts.Prune {
+			gcRules = append(gcRules, PruneRule())
+		}
+		if len(opts.Rules) > 0 {
 			ruleSet := make(map[string]bool)
-			for _, r := range rules {
+			for _, r := range opts.Rules {
 				ruleSet[r] = true
 			}
 			filtered := gcRules[:0]
@@ -288,10 +306,11 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (result GCRes
 			}
 		}
 
-		// Count live orphans: orphan pins where kernel is alive. These
-		// are not removed by GC because doing so would unload running
-		// programs.
-		result.LiveOrphans = state.LiveOrphans()
+		// Count live orphans: orphan pins where kernel is alive.
+		// When prune is set, these were already handled above.
+		if !opts.Prune {
+			result.LiveOrphans = state.LiveOrphans()
+		}
 	}
 
 	elapsed := time.Since(start)

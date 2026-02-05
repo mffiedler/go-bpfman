@@ -9,6 +9,7 @@ import (
 
 // GCCmd garbage collects stale database entries.
 type GCCmd struct {
+	Prune bool     `help:"Also remove live orphans (programs pinned in bpffs but not tracked in DB)."`
 	Rules []string `arg:"" optional:"" help:"GC rule(s) to run. Omit to run all rules."`
 }
 
@@ -56,7 +57,10 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Mutation under lock
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {
-		gcResult, gcErr := runtime.Manager.GCWithRules(ctx, c.Rules)
+		gcResult, gcErr := runtime.Manager.GCWithOptions(ctx, manager.GCOptions{
+			Rules: c.Rules,
+			Prune: c.Prune,
+		})
 		if gcErr != nil {
 			return gcResult, fmt.Errorf("gc failed: %w", gcErr)
 		}
