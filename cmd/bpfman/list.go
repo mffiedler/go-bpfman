@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/frobware/go-bpfman"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/frobware/go-bpfman"
 )
 
 // ListCmd lists managed programs or links.
@@ -110,6 +111,25 @@ type ListLinksCmd struct {
 	OutputFlags
 	Quiet     bool       `short:"q" help:"Output only link IDs, one per line."`
 	ProgramID *ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+	Kind      []string   `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+}
+
+func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
+	var opts []bpfman.LinkListOption
+
+	if c.ProgramID != nil {
+		opts = append(opts, bpfman.WithProgramID(c.ProgramID.Value))
+	}
+
+	if len(c.Kind) > 0 {
+		kinds, err := ParseLinkKindsSlice(c.Kind)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, bpfman.WithKinds(kinds...))
+	}
+
+	return opts, nil
 }
 
 // Run executes the list links command.
@@ -120,12 +140,12 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	var links []bpfman.LinkSpec
-	if c.ProgramID != nil {
-		links, err = mgr.ListLinksByProgram(ctx, c.ProgramID.Value)
-	} else {
-		links, err = mgr.ListLinks(ctx)
+	opts, err := c.buildLinkListOptions()
+	if err != nil {
+		return err
 	}
+
+	links, err := mgr.ListLinks(ctx, opts...)
 	if err != nil {
 		return err
 	}

@@ -114,8 +114,23 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 }
 
 // ListLinks returns all managed links (records only).
-func (m *Manager) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
-	return m.store.ListLinks(ctx)
+// Optional LinkListOption arguments filter the results.
+func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) ([]bpfman.LinkSpec, error) {
+	links, err := m.store.ListLinks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	filter := bpfman.ApplyLinkListOptions(opts...)
+
+	var result []bpfman.LinkSpec
+	for _, link := range links {
+		l := link // explicit copy
+		if filter.Matches(&l) {
+			result = append(result, link)
+		}
+	}
+	return result, nil
 }
 
 // ListLinksByProgram returns all links for a given program.

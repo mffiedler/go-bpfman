@@ -480,3 +480,22 @@ func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
 	}
 	return result, nil
 }
+
+// ParseLinkKindsSlice parses a slice of link kind strings (case-insensitive).
+// Returns a slice of LinkKind values.
+func ParseLinkKindsSlice(kinds []string) ([]bpfman.LinkKind, error) {
+	var result []bpfman.LinkKind
+	for _, raw := range kinds {
+		k := strings.TrimSpace(raw)
+		if k == "" {
+			continue
+		}
+		kind, ok := bpfman.ParseLinkKind(strings.ToLower(k))
+		if !ok {
+			return nil, fmt.Errorf("unknown link kind %q (valid: %s)",
+				raw, strings.Join(bpfman.LinkKindNames(), ", "))
+		}
+		result = append(result, kind)
+	}
+	return result, nil
+}

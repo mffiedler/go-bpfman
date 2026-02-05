@@ -222,6 +222,34 @@ const (
 	LinkKindTCX        LinkKind = "tcx"
 )
 
+// allLinkKinds is the canonical list of valid link kinds.
+var allLinkKinds = []LinkKind{
+	LinkKindTracepoint,
+	LinkKindKprobe,
+	LinkKindKretprobe,
+	LinkKindUprobe,
+	LinkKindUretprobe,
+	LinkKindFentry,
+	LinkKindFexit,
+	LinkKindXDP,
+	LinkKindTC,
+	LinkKindTCX,
+}
+
+// AllLinkKinds returns all valid link kinds.
+func AllLinkKinds() []LinkKind {
+	return allLinkKinds
+}
+
+// LinkKindNames returns all valid link kind names as strings.
+func LinkKindNames() []string {
+	names := make([]string, len(allLinkKinds))
+	for i, k := range allLinkKinds {
+		names[i] = string(k)
+	}
+	return names
+}
+
 // ParseLinkKind parses a string into a LinkKind.
 // Returns the LinkKind and true if valid, or empty string and false if invalid.
 func ParseLinkKind(s string) (LinkKind, bool) {
@@ -288,6 +316,63 @@ type LinkSpec struct {
 // The wrapper provides a stable path for jsonpath queries (e.g., {.links[*].id}).
 type LinkListResult struct {
 	Links []LinkSpec `json:"links"`
+}
+
+// LinkListOption configures link list filtering.
+type LinkListOption func(*linkListOptions)
+
+// linkListOptions holds the accumulated filter state.
+type linkListOptions struct {
+	kinds     map[LinkKind]struct{}
+	programID *uint32
+}
+
+// Matches returns true if the link matches all filter criteria.
+func (o *linkListOptions) Matches(link *LinkSpec) bool {
+	return o.matchesKind(link) && o.matchesProgramID(link)
+}
+
+func (o *linkListOptions) matchesKind(link *LinkSpec) bool {
+	if len(o.kinds) == 0 {
+		return true
+	}
+	_, ok := o.kinds[link.Kind]
+	return ok
+}
+
+func (o *linkListOptions) matchesProgramID(link *LinkSpec) bool {
+	if o.programID == nil {
+		return true
+	}
+	return link.ProgramID == *o.programID
+}
+
+// ApplyLinkListOptions applies the given options and returns the configured filter.
+func ApplyLinkListOptions(opts ...LinkListOption) *linkListOptions {
+	o := &linkListOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
+
+// WithKinds filters to links of the specified kinds.
+func WithKinds(kinds ...LinkKind) LinkListOption {
+	return func(o *linkListOptions) {
+		if o.kinds == nil {
+			o.kinds = make(map[LinkKind]struct{})
+		}
+		for _, k := range kinds {
+			o.kinds[k] = struct{}{}
+		}
+	}
+}
+
+// WithProgramID filters to links attached to the given program.
+func WithProgramID(id uint32) LinkListOption {
+	return func(o *linkListOptions) {
+		o.programID = &id
+	}
 }
 
 // IsSynthetic returns true if this is a synthetic link (perf_event-based, no kernel link).
