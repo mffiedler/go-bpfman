@@ -1,4 +1,4 @@
-package cli_test
+package main
 
 import (
 	"errors"
@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/frobware/go-bpfman/cmd/bpfman/cli"
 )
 
 // failingWriter is an io.Writer that succeeds for the first N bytes, then
@@ -99,31 +97,31 @@ func TestFailingWriter_ShortWriteNilError(t *testing.T) {
 }
 
 func TestCLIWriteOut_PropagatesENOSPC(t *testing.T) {
-	c := &cli.CLI{Out: &failingWriter{budget: 0, failErr: syscall.ENOSPC}}
+	c := &CLI{Out: &failingWriter{budget: 0, failErr: syscall.ENOSPC}}
 	err := c.WriteOut([]byte("x"))
 	require.True(t, errors.Is(err, syscall.ENOSPC))
 }
 
 func TestCLIWriteOut_TreatsShortWriteAsError(t *testing.T) {
-	c := &cli.CLI{Out: &failingWriter{budget: 10, failErr: syscall.ENOSPC, shortWriteEvery: 1}}
+	c := &CLI{Out: &failingWriter{budget: 10, failErr: syscall.ENOSPC, shortWriteEvery: 1}}
 	err := c.WriteOut([]byte("hello"))
 	require.ErrorIs(t, err, io.ErrShortWrite)
 }
 
 func TestCLIWriteOut_PartialThenFailReturnsENOSPC(t *testing.T) {
-	c := &cli.CLI{Out: &failingWriter{budget: 3, failErr: syscall.ENOSPC}}
+	c := &CLI{Out: &failingWriter{budget: 3, failErr: syscall.ENOSPC}}
 	err := c.WriteOut([]byte("hello"))
 	require.True(t, errors.Is(err, syscall.ENOSPC))
 }
 
 func TestCLIPrintOut_PropagatesError(t *testing.T) {
-	c := &cli.CLI{Out: &failingWriter{budget: 0, failErr: syscall.EPIPE}}
+	c := &CLI{Out: &failingWriter{budget: 0, failErr: syscall.EPIPE}}
 	err := c.PrintOut("test output")
 	require.True(t, errors.Is(err, syscall.EPIPE))
 }
 
 func TestCLIPrintOutf_PropagatesError(t *testing.T) {
-	c := &cli.CLI{Out: &failingWriter{budget: 0, failErr: syscall.EPIPE}}
+	c := &CLI{Out: &failingWriter{budget: 0, failErr: syscall.EPIPE}}
 	err := c.PrintOutf("test %s", "output")
 	require.True(t, errors.Is(err, syscall.EPIPE))
 }

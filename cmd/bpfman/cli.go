@@ -1,7 +1,5 @@
-// Package cli provides the command-line interface for bpfman.
-// It uses Kong for argument parsing and calls the manager directly
-// for BPF operations.
-package cli
+// bpfman command-line interface using Kong for argument parsing.
+package main
 
 import (
 	"context"
@@ -171,8 +169,12 @@ func New() (*CLI, *kong.Context, error) {
 	return &c, kctx, nil
 }
 
-// Run executes the parsed command.
-func (c *CLI) Run(ctx context.Context, kctx *kong.Context) error {
+// Execute runs the parsed command.
+//
+// Note: This method is deliberately not named "Run" because Kong looks for
+// Run() methods on command structs. If CLI had a Run() method, kctx.Run(c)
+// would call it recursively instead of dispatching to the matched subcommand.
+func (c *CLI) Execute(ctx context.Context, kctx *kong.Context) error {
 	kctx.BindTo(ctx, (*context.Context)(nil))
 
 	if err := kctx.Run(c); err != nil {

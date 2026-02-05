@@ -1,4 +1,4 @@
-package cli_test
+package main
 
 import (
 	"testing"
@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman/cli"
 )
 
 func TestListProgramsCmd_Validate(t *testing.T) {
@@ -47,7 +46,7 @@ func TestListProgramsCmd_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &cli.ListProgramsCmd{
+			cmd := &ListProgramsCmd{
 				Attached:   tt.attached,
 				Unattached: tt.unattached,
 			}
@@ -147,7 +146,7 @@ func TestParseProgramTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := cli.ParseProgramTypes(tt.input)
+			result, err := ParseProgramTypes(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errMsg)
@@ -163,7 +162,7 @@ func TestParseProgramTypes_AllValidTypes(t *testing.T) {
 	// Verify all program type names can be parsed
 	for _, name := range bpfman.ProgramTypeNames() {
 		t.Run(name, func(t *testing.T) {
-			result, err := cli.ParseProgramTypes([]string{name})
+			result, err := ParseProgramTypes([]string{name})
 			require.NoError(t, err)
 			assert.Len(t, result, 1)
 		})
@@ -175,7 +174,7 @@ func TestParseProgramTypes_CaseInsensitivity(t *testing.T) {
 	cases := []string{"XDP", "xdp", "Xdp", "xDp", "xDP", "XdP"}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
-			result, err := cli.ParseProgramTypes([]string{c})
+			result, err := ParseProgramTypes([]string{c})
 			require.NoError(t, err)
 			_, ok := result[bpfman.ProgramTypeXDP]
 			assert.True(t, ok, "expected XDP type for input %q", c)

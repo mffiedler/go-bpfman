@@ -1,5 +1,5 @@
 // Package cli provides the command-line interface for bpfman.
-package cli
+package main
 
 import (
 	"fmt"

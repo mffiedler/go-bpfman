@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/frobware/go-bpfman/cmd/bpfman/cli"
 )
 
 func main() {
@@ -17,7 +15,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c, kctx, err := cli.New()
+	c, kctx, err := New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bpfman: error: %v\n", err)
 		os.Exit(1)
@@ -38,7 +36,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if err := c.Run(ctx, kctx); err != nil {
+	if err := c.Execute(ctx, kctx); err != nil {
 		os.Exit(1)
 	}
 }

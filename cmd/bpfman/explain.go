@@ -1,4 +1,4 @@
-package cli
+package main
 
 // ExplainCmd is the root command for explaining resource schemas and columns.
 type ExplainCmd struct {

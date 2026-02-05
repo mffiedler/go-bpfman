@@ -1,4 +1,4 @@
-package cli_test
+package main
 
 import (
 	"testing"
@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/cmd/bpfman/cli"
 )
 
 func TestParseProgramSpec_ValidInputs(t *testing.T) {
@@ -36,7 +35,7 @@ func TestParseProgramSpec_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			spec, err := cli.ParseProgramSpec(tt.input)
+			spec, err := ParseProgramSpec(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedType, spec.Type)
 			assert.Equal(t, tt.expectedName, spec.Name)
@@ -67,7 +66,7 @@ func TestParseProgramSpec_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			_, err := cli.ParseProgramSpec(tt.input)
+			_, err := ParseProgramSpec(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
 		})
@@ -91,7 +90,7 @@ func TestParseKeyValue_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			kv, err := cli.ParseKeyValue(tt.input)
+			kv, err := ParseKeyValue(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedKey, kv.Key)
 			assert.Equal(t, tt.expectedValue, kv.Value)
@@ -112,7 +111,7 @@ func TestParseKeyValue_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			_, err := cli.ParseKeyValue(tt.input)
+			_, err := ParseKeyValue(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
 		})
@@ -140,7 +139,7 @@ func TestParseGlobalData_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			gd, err := cli.ParseGlobalData(tt.input)
+			gd, err := ParseGlobalData(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedName, gd.Name)
 			assert.Equal(t, tt.expectedData, gd.Data)
@@ -164,7 +163,7 @@ func TestParseGlobalData_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			_, err := cli.ParseGlobalData(tt.input)
+			_, err := ParseGlobalData(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
 		})
@@ -173,19 +172,19 @@ func TestParseGlobalData_InvalidInputs(t *testing.T) {
 
 func TestMetadataMap(t *testing.T) {
 	t.Run("nil for empty slice", func(t *testing.T) {
-		result := cli.MetadataMap(nil)
+		result := MetadataMap(nil)
 		assert.Nil(t, result)
 
-		result = cli.MetadataMap([]cli.KeyValue{})
+		result = MetadataMap([]KeyValue{})
 		assert.Nil(t, result)
 	})
 
 	t.Run("converts to map", func(t *testing.T) {
-		input := []cli.KeyValue{
+		input := []KeyValue{
 			{Key: "owner", Value: "acme"},
 			{Key: "app", Value: "test"},
 		}
-		result := cli.MetadataMap(input)
+		result := MetadataMap(input)
 		assert.Equal(t, map[string]string{
 			"owner": "acme",
 			"app":   "test",
@@ -193,30 +192,30 @@ func TestMetadataMap(t *testing.T) {
 	})
 
 	t.Run("last value wins for duplicate keys", func(t *testing.T) {
-		input := []cli.KeyValue{
+		input := []KeyValue{
 			{Key: "key", Value: "first"},
 			{Key: "key", Value: "second"},
 		}
-		result := cli.MetadataMap(input)
+		result := MetadataMap(input)
 		assert.Equal(t, "second", result["key"])
 	})
 }
 
 func TestGlobalDataMap(t *testing.T) {
 	t.Run("nil for empty slice", func(t *testing.T) {
-		result := cli.GlobalDataMap(nil)
+		result := GlobalDataMap(nil)
 		assert.Nil(t, result)
 
-		result = cli.GlobalDataMap([]cli.GlobalData{})
+		result = GlobalDataMap([]GlobalData{})
 		assert.Nil(t, result)
 	})
 
 	t.Run("converts to map", func(t *testing.T) {
-		input := []cli.GlobalData{
+		input := []GlobalData{
 			{Name: "GLOBAL_u8", Data: []byte{0x01}},
 			{Name: "GLOBAL_u32", Data: []byte{0x0A, 0x0B, 0x0C, 0x0D}},
 		}
-		result := cli.GlobalDataMap(input)
+		result := GlobalDataMap(input)
 		assert.Equal(t, map[string][]byte{
 			"GLOBAL_u8":  {0x01},
 			"GLOBAL_u32": {0x0A, 0x0B, 0x0C, 0x0D},
@@ -224,11 +223,11 @@ func TestGlobalDataMap(t *testing.T) {
 	})
 
 	t.Run("last value wins for duplicate names", func(t *testing.T) {
-		input := []cli.GlobalData{
+		input := []GlobalData{
 			{Name: "var", Data: []byte{0x01}},
 			{Name: "var", Data: []byte{0x02}},
 		}
-		result := cli.GlobalDataMap(input)
+		result := GlobalDataMap(input)
 		assert.Equal(t, []byte{0x02}, result["var"])
 	})
 }
