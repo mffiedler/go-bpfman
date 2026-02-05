@@ -69,11 +69,16 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 	}
 
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
+
+	logger, err := cli.Logger()
+	if err != nil {
+		return fmt.Errorf("create logger: %w", err)
+	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data
@@ -104,12 +109,12 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 				kernelID := loaded.Spec.KernelID
 				progName := loaded.Spec.Meta.Name
 				if err := mgr.Unload(ctx, kernelID); err != nil {
-					mgr.Logger().Warn("rollback: failed to unload program",
+					logger.Warn("rollback: failed to unload program",
 						"kernel_id", kernelID,
 						"name", progName,
 						"error", err)
 				} else {
-					mgr.Logger().Debug("rollback: unloaded program",
+					logger.Debug("rollback: unloaded program",
 						"kernel_id", kernelID,
 						"name", progName)
 				}

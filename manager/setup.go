@@ -15,8 +15,10 @@ import (
 //
 // This is the single entry point for setting up the runtime environment.
 // Both the CLI and server use this to avoid duplicating setup logic.
-// Call Manager.Close() when done to release resources.
-func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*Manager, error) {
+//
+// Returns the manager and a cleanup function that closes the store. The
+// cleanup function should be called when the manager is no longer needed.
+func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*Manager, func() error, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -30,7 +32,7 @@ func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*M
 
 	if err := root.EnsureDirectories(); err != nil {
 		setupLogger.Error("failed to ensure directories", "error", err)
-		return nil, err
+		return nil, nil, err
 	}
 	setupLogger.Debug("runtime directories ready")
 
@@ -38,13 +40,17 @@ func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*M
 	store, err := sqlite.New(ctx, root.DBPath(), logger)
 	if err != nil {
 		setupLogger.Error("failed to open database", "error", err)
-		return nil, err
+		return nil, nil, err
 	}
 	setupLogger.Debug("database opened")
 
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 	mgr := New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 
+	cleanup := func() error {
+		return store.Close()
+	}
+
 	setupLogger.Debug("runtime environment ready")
-	return mgr, nil
+	return mgr, cleanup, nil
 }

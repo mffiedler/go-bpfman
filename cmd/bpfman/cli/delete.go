@@ -25,11 +25,11 @@ type DeleteCmd struct {
 
 // Run executes the delete command with cascading cleanup.
 func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	// Collect results to print after releasing lock
 	type result struct {
@@ -136,15 +136,15 @@ func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, pro
 // deleteDependents finds programs that share maps with the target
 // (map_owner_id = programID) and deletes them first.
 func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID uint32) error {
-	allPrograms, err := mgr.Store().List(ctx)
+	result, err := mgr.ListPrograms(ctx)
 	if err != nil {
 		return fmt.Errorf("list programs: %w", err)
 	}
 
-	for kernelID, spec := range allPrograms {
-		if spec.Handles.MapOwnerID != nil && *spec.Handles.MapOwnerID == ownerID {
-			if err := c.deleteProgram(ctx, mgr, kernelID); err != nil {
-				return fmt.Errorf("delete dependent program %d: %w", kernelID, err)
+	for _, prog := range result.Programs {
+		if prog.Spec.Handles.MapOwnerID != nil && *prog.Spec.Handles.MapOwnerID == ownerID {
+			if err := c.deleteProgram(ctx, mgr, prog.Spec.KernelID); err != nil {
+				return fmt.Errorf("delete dependent program %d: %w", prog.Spec.KernelID, err)
 			}
 		}
 	}

@@ -113,11 +113,11 @@ type attachResult struct {
 
 // Run executes the attach command: mutation under lock, output outside.
 func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	// Execute mutation under lock
 	result, err := c.execute(ctx, cli, mgr)

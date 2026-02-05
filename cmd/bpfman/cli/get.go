@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
-	"github.com/frobware/go-bpfman/inspect"
 )
 
 // GetCmd gets details of a program or link.
@@ -23,11 +21,11 @@ type GetProgramCmd struct {
 
 // Run executes the get program command.
 func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	prog, err := mgr.Get(ctx, c.ProgramID.Value)
 	if err != nil {
@@ -49,14 +47,13 @@ type GetLinkCmd struct {
 
 // Run executes the get link command.
 func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
-	scanner := bpffs.NewScanner(mgr.Root().BPFFS().ScannerDirs())
-	info, err := inspect.GetLink(ctx, mgr.Store(), mgr.Kernel(), scanner, bpfman.LinkID(c.LinkID.Value))
+	info, err := mgr.GetLinkInfo(ctx, bpfman.LinkID(c.LinkID.Value))
 	if err != nil {
 		return err
 	}

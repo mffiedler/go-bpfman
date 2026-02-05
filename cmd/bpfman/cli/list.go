@@ -72,11 +72,11 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	filter, err := c.buildFilter()
 	if err != nil {
@@ -116,11 +116,11 @@ type ListLinksCmd struct {
 
 // Run executes the list links command.
 func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	var links []bpfman.LinkSpec
 	if c.ProgramID != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/frobware/go-bpfman"
@@ -37,19 +38,24 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return fmt.Errorf("invalid pull policy %q", c.PullPolicy.Value)
 	}
 
-	mgr, err := cli.NewManager(ctx)
+	logger, err := cli.Logger()
+	if err != nil {
+		return fmt.Errorf("create logger: %w", err)
+	}
+
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	// Build image puller with signature verification settings from config
-	puller, err := c.buildPuller(cli, mgr)
+	puller, err := c.buildPuller(cli, logger)
 	if err != nil {
 		return fmt.Errorf("create image puller: %w", err)
 	}
 
-	mgr.Logger().Info("loading BPF programs from OCI image",
+	logger.Info("loading BPF programs from OCI image",
 		"image", c.ImageURL,
 		"programs", len(c.Programs),
 		"pull_policy", c.PullPolicy.Value,
@@ -71,7 +77,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			if err != nil {
 				return res, fmt.Errorf("invalid registry-auth: %w", err)
 			}
-			mgr.Logger().Debug("using registry auth", "username", username)
+			logger.Debug("using registry auth", "username", username)
 			authConfig = &interpreter.ImageAuth{
 				Username: username,
 				Password: password,
@@ -127,7 +133,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		for _, prog := range loaded {
-			mgr.Logger().Info("program loaded successfully",
+			logger.Info("program loaded successfully",
 				"name", prog.Spec.Meta.Name,
 				"kernel_id", prog.Spec.KernelID,
 				"pin_path", prog.Spec.Handles.PinPath,
@@ -153,13 +159,11 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 }
 
 // buildPuller creates an image puller with signature verification settings from config.
-func (c *LoadImageCmd) buildPuller(cli *CLI, mgr *manager.Manager) (interpreter.ImagePuller, error) {
+func (c *LoadImageCmd) buildPuller(cli *CLI, logger *slog.Logger) (interpreter.ImagePuller, error) {
 	cfg, err := cli.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-
-	logger := mgr.Logger()
 
 	// Build signature verifier based on config
 	var verifier interpreter.SignatureVerifier

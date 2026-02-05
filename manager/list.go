@@ -135,6 +135,12 @@ func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.Lin
 	return record, nil
 }
 
+// GetLinkInfo retrieves a link with presence information across store, kernel, and filesystem.
+func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspect.LinkInfo, error) {
+	scanner := bpffs.NewScanner(m.root.BPFFS().ScannerDirs())
+	return inspect.GetLink(ctx, m.store, m.kernel, scanner, linkID)
+}
+
 // FindLoadedProgramByMetadata finds a program by metadata key/value from
 // the reconciled list of loaded programs (those in both DB and kernel).
 //

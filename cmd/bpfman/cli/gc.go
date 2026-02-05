@@ -49,11 +49,11 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 	}
 
-	mgr, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	defer mgr.Close()
+	defer cleanup()
 
 	// Mutation under lock
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {

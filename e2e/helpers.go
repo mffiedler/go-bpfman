@@ -32,11 +32,12 @@ import (
 // Each test gets a fully isolated environment with unique directories,
 // database, and socket, enabling t.Parallel() across all tests.
 type TestEnv struct {
-	T       *testing.T
-	Root    fs.Root
-	Manager *manager.Manager
-	Puller  interpreter.ImagePuller
-	logger  *slog.Logger
+	T        *testing.T
+	Root     fs.Root
+	Manager  *manager.Manager
+	Puller   interpreter.ImagePuller
+	logger   *slog.Logger
+	closeEnv func() error
 }
 
 // NewTestEnv creates an isolated test environment for e2e testing.
@@ -83,7 +84,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 	// Set up runtime environment (ensures directories, opens store, creates manager)
 	ctx := context.Background()
-	mgr, err := manager.SetupRuntimeEnv(ctx, root, logger)
+	mgr, cleanup, err := manager.SetupRuntimeEnv(ctx, root, logger)
 	require.NoError(t, err, "failed to setup runtime environment")
 
 	// Create signature verifier (disabled for tests)
@@ -97,11 +98,12 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	require.NoError(t, err, "failed to create image puller")
 
 	env := &TestEnv{
-		T:       t,
-		Root:    root,
-		Manager: mgr,
-		Puller:  puller,
-		logger:  logger,
+		T:        t,
+		Root:     root,
+		Manager:  mgr,
+		Puller:   puller,
+		logger:   logger,
+		closeEnv: cleanup,
 	}
 
 	// Register cleanup
@@ -114,8 +116,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 // cleanup releases resources and removes test directories.
 func (e *TestEnv) cleanup() {
-	if e.Manager != nil {
-		e.Manager.Close()
+	if e.closeEnv != nil {
+		e.closeEnv()
 	}
 
 	// Unmount bpffs if mounted

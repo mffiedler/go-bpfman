@@ -101,29 +101,6 @@ func (m *Manager) Root() fs.Root {
 	return m.root
 }
 
-// Store returns the underlying store.
-func (m *Manager) Store() interpreter.Store {
-	return m.store
-}
-
-// Kernel returns the kernel operations interface.
-func (m *Manager) Kernel() interpreter.KernelOperations {
-	return m.kernel
-}
-
-// Logger returns the manager's logger.
-func (m *Manager) Logger() *slog.Logger {
-	return m.logger
-}
-
-// Close releases resources held by the manager.
-func (m *Manager) Close() error {
-	if m.store != nil {
-		return m.store.Close()
-	}
-	return nil
-}
-
 // GCResult contains statistics and outcome from garbage collection.
 type GCResult struct {
 	// Statistics from GC.
