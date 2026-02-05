@@ -87,12 +87,13 @@ func timelineKinds(entries []outcome.TimelineEntry) []outcome.StepKind {
 
 func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	programs, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
 		URL: "test.io/image:latest",
@@ -107,14 +108,15 @@ func TestLoadImage_AutoDiscover_SingleProgram(t *testing.T) {
 
 func TestLoadImage_AutoDiscover_MultiplePrograms(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	programs, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
 		URL: "test.io/image:latest",
@@ -132,10 +134,11 @@ func TestLoadImage_AutoDiscover_MultiplePrograms(t *testing.T) {
 
 func TestLoadImage_AutoDiscover_NoPrograms(t *testing.T) {
 	discoverer := newFakeDiscoverer()
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
 	// Don't set any programs - empty object file
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	_, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
 		URL: "test.io/image:latest",
@@ -148,13 +151,14 @@ func TestLoadImage_AutoDiscover_NoPrograms(t *testing.T) {
 
 func TestLoadImage_ExplicitPrograms_Valid(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Request only prog_b
 	programs, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
@@ -171,12 +175,13 @@ func TestLoadImage_ExplicitPrograms_Valid(t *testing.T) {
 
 func TestLoadImage_ExplicitPrograms_InvalidName(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Request non-existent program
 	_, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
@@ -192,13 +197,14 @@ func TestLoadImage_ExplicitPrograms_InvalidName(t *testing.T) {
 
 func TestLoadImage_Rollback_SecondProgramFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Make second program fail to load
 	f.Kernel.FailOnProgram("prog_b", fmt.Errorf("injected load failure"))
@@ -223,9 +229,10 @@ func TestLoadImage_Rollback_SecondProgramFails(t *testing.T) {
 	assert.Equal(t, "prog_b", failed.Target)
 	assert.NotEmpty(t, failed.Error)
 
-	// Should have completed: image.pull, image.discover, kernel.load(prog_a), store.save(prog_a)
+	// Should have completed: image.pull, image.discover, kernel.load(prog_a),
+	// fs.publish(prog_a), store.save(prog_a)
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 4)
+	assert.Len(t, completed, 5)
 
 	// No programs skipped (only 2 programs, first succeeded, second failed)
 	assert.Empty(t, timelineSkipped(o.Timeline))
@@ -265,14 +272,15 @@ func TestLoadImage_Rollback_SecondProgramFails(t *testing.T) {
 
 func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Make third program fail to load
 	f.Kernel.FailOnProgram("prog_c", fmt.Errorf("injected load failure"))
@@ -293,10 +301,11 @@ func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
 	assert.Equal(t, "prog_c", failed.Target)
 
-	// Should have completed: image.pull, image.discover, kernel.load(prog_a), store.save(prog_a),
-	// kernel.load(prog_b), store.save(prog_b)
+	// Should have completed: image.pull, image.discover,
+	// kernel.load(prog_a), fs.publish(prog_a), store.save(prog_a),
+	// kernel.load(prog_b), fs.publish(prog_b), store.save(prog_b)
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 6)
+	assert.Len(t, completed, 8)
 
 	// Verify cleanup was recorded - prog_a and prog_b should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
@@ -314,7 +323,8 @@ func TestLoadImage_Rollback_ThirdProgramFails(t *testing.T) {
 func TestLoadImage_PullError(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	objPath := f.BytecodeFile("object.o")
+	puller := newFakeImagePuller(objPath)
 	puller.SetPullError(fmt.Errorf("network error"))
 
 	_, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
@@ -343,7 +353,8 @@ func TestLoadImage_DiscoverError(t *testing.T) {
 	discoverer.SetDiscoverError(fmt.Errorf("corrupt ELF file"))
 
 	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	objPath := f.BytecodeFile("object.o")
+	puller := newFakeImagePuller(objPath)
 
 	_, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
 		URL: "test.io/image:latest",
@@ -356,13 +367,14 @@ func TestLoadImage_DiscoverError(t *testing.T) {
 
 func TestLoadImage_AutoDiscover_FentryFexit(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	programs, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{
 		URL: "test.io/image:latest",
@@ -379,13 +391,14 @@ func TestLoadImage_AutoDiscover_FentryFexit(t *testing.T) {
 
 func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Make second program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
@@ -406,9 +419,10 @@ func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {
 	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
 	assert.Equal(t, "trace_vfs_write", failed.Target)
 
-	// Should have completed: image.pull, image.discover, kernel.load(fentry), store.save(fentry)
+	// Should have completed: image.pull, image.discover, kernel.load(fentry),
+	// fs.publish(fentry), store.save(fentry)
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 4)
+	assert.Len(t, completed, 5)
 
 	// Verify cleanup was recorded - fentry should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
@@ -444,13 +458,14 @@ func TestLoadImage_Rollback_FentryFexitSecondFails(t *testing.T) {
 
 func TestLoadImage_Rollback_FentryFexitFirstFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Make first program (fentry) fail to load - no rollback needed
 	f.Kernel.FailOnProgram("trace_vfs_read", fmt.Errorf("injected fentry load failure"))
@@ -505,14 +520,15 @@ func TestLoadImage_Rollback_FentryFexitFirstFails(t *testing.T) {
 
 func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "my_xdp", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Make third program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
@@ -533,10 +549,11 @@ func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
 	assert.Equal(t, "trace_vfs_write", failed.Target)
 
-	// Should have completed: image.pull, image.discover, kernel.load(xdp), store.save(xdp),
-	// kernel.load(fentry), store.save(fentry)
+	// Should have completed: image.pull, image.discover,
+	// kernel.load(xdp), fs.publish(xdp), store.save(xdp),
+	// kernel.load(fentry), fs.publish(fentry), store.save(fentry)
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 6)
+	assert.Len(t, completed, 8)
 
 	// Verify cleanup was recorded - xdp and fentry should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
@@ -579,13 +596,14 @@ func TestLoadImage_Rollback_MixedTypesThirdFails(t *testing.T) {
 
 func TestLoadImage_ValidationError(t *testing.T) {
 	discoverer := newFakeDiscoverer()
-	discoverer.SetPrograms("/fake/object.o", []interpreter.DiscoveredProgram{
+	f := newTestFixtureWithDiscoverer(t, discoverer)
+	objPath := f.BytecodeFile("object.o")
+	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 	discoverer.SetValidateError(fmt.Errorf("custom validation error"))
 
-	f := newTestFixtureWithDiscoverer(t, discoverer)
-	puller := newFakeImagePuller("/fake/object.o")
+	puller := newFakeImagePuller(objPath)
 
 	// Request explicit programs to trigger validation
 	_, err := f.Manager.LoadImage(context.Background(), puller, interpreter.ImageRef{

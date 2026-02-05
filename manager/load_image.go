@@ -259,13 +259,20 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			return nil, retErr
 		}
 
-		// Load succeeded - record both kernel and store steps
+		// Load succeeded - record kernel, fs publish, and store steps
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindKernelLoad,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
 				KernelID: loadedProg.Spec.KernelID,
 				PinPath:  loadedProg.Spec.Handles.PinPath,
+			},
+		})
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindFSPublish,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loadedProg.Spec.KernelID,
 			},
 		})
 		_ = rec.Complete(outcome.Step{

@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/outcome"
 )
@@ -67,6 +68,7 @@ func OpIDFromContext(ctx context.Context) uint64 {
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
 	dirs              config.RuntimeDirs
+	root              fs.Root
 	store             interpreter.Store
 	kernel            interpreter.KernelOperations
 	executor          interpreter.ActionExecutor
@@ -81,12 +83,13 @@ type Manager struct {
 // New creates a new Manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(dirs config.RuntimeDirs, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
+func New(dirs config.RuntimeDirs, root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Manager{
 		dirs:              dirs,
+		root:              root,
 		store:             store,
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
@@ -246,7 +249,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs)
+	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
 	} else {

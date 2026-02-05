@@ -29,7 +29,7 @@ func TestKprobe_AttachSucceeds(t *testing.T) {
 	// Load a kprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/kprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("kprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -78,7 +78,7 @@ func TestKprobe_AttachWithoutFnName_Fails(t *testing.T) {
 	// Load a kprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/kprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("kprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -123,7 +123,7 @@ func TestKprobe_FullLifecycle(t *testing.T) {
 	// Step 1: Load kprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/kprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("kprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{

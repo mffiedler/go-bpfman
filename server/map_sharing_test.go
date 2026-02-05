@@ -28,7 +28,7 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "kprobe_counter", ProgramType: pb.BpfmanProgramType_KPROBE},
@@ -80,7 +80,7 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/single.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("single.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "single_prog", ProgramType: pb.BpfmanProgramType_KPROBE},
@@ -115,7 +115,7 @@ func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
 	// Load an XDP program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_prog", ProgramType: pb.BpfmanProgramType_XDP},
@@ -169,7 +169,7 @@ func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
 	// Load a TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_prog", ProgramType: pb.BpfmanProgramType_TC},
@@ -225,7 +225,7 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	// Load multiple programs - first is owner, second is XDP that shares maps
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "kprobe_counter", ProgramType: pb.BpfmanProgramType_KPROBE},
@@ -289,7 +289,7 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	// Load multiple programs - first is owner, second is TC that shares maps
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "kprobe_counter", ProgramType: pb.BpfmanProgramType_KPROBE},
@@ -355,7 +355,7 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	// Load a TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_prog", ProgramType: pb.BpfmanProgramType_TCX},

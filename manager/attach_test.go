@@ -60,7 +60,7 @@ func TestFentry_AttachSucceeds(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a fentry program with FnName specified
-	spec, err := bpfman.NewAttachLoadSpec("/path/to/fentry.o", "fentry_prog", bpfman.ProgramTypeFentry, "tcp_connect")
+	spec, err := bpfman.NewAttachLoadSpec(fix.BytecodeFile("fentry.o"), "fentry_prog", bpfman.ProgramTypeFentry, "tcp_connect")
 	require.NoError(t, err, "failed to create load spec")
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -100,7 +100,7 @@ func TestFentry_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load fentry program
-	spec, err := bpfman.NewAttachLoadSpec("/path/to/fentry.o", "fentry_prog", bpfman.ProgramTypeFentry, "tcp_connect")
+	spec, err := bpfman.NewAttachLoadSpec(fix.BytecodeFile("fentry.o"), "fentry_prog", bpfman.ProgramTypeFentry, "tcp_connect")
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -142,7 +142,7 @@ func TestFexit_AttachSucceeds(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a fexit program with FnName specified
-	spec, err := bpfman.NewAttachLoadSpec("/path/to/fexit.o", "fexit_prog", bpfman.ProgramTypeFexit, "tcp_close")
+	spec, err := bpfman.NewAttachLoadSpec(fix.BytecodeFile("fexit.o"), "fexit_prog", bpfman.ProgramTypeFexit, "tcp_close")
 	require.NoError(t, err, "failed to create load spec")
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -182,7 +182,7 @@ func TestFexit_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load fexit program
-	spec, err := bpfman.NewAttachLoadSpec("/path/to/fexit.o", "fexit_prog", bpfman.ProgramTypeFexit, "tcp_close")
+	spec, err := bpfman.NewAttachLoadSpec(fix.BytecodeFile("fexit.o"), "fexit_prog", bpfman.ProgramTypeFexit, "tcp_close")
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -224,7 +224,7 @@ func TestKprobe_AttachSucceeds(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a kprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/kprobe.o", "kprobe_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -250,7 +250,7 @@ func TestKprobe_AttachWithOffset(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a kprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/kprobe.o", "kprobe_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -277,7 +277,7 @@ func TestKprobe_AttachWithoutFnName_Fails(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a kprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/kprobe.o", "kprobe_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -296,7 +296,7 @@ func TestKprobe_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load kprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/kprobe.o", "kprobe_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("kprobe.o"), "kprobe_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -338,7 +338,7 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a uprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/uprobe.o", "uprobe_prog", bpfman.ProgramTypeUprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -371,7 +371,7 @@ func TestUprobe_AttachWithoutTarget_Fails(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a uprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/uprobe.o", "uprobe_prog", bpfman.ProgramTypeUprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
 	require.NoError(t, err)
 	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -390,7 +390,7 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load uprobe program
-	spec, err := bpfman.NewLoadSpec("/path/to/uprobe.o", "uprobe_prog", bpfman.ProgramTypeUprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("uprobe.o"), "uprobe_prog", bpfman.ProgramTypeUprobe)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -439,7 +439,7 @@ func TestXDP_FirstAttachCreatesLink(t *testing.T) {
 	ctx := context.Background()
 
 	// Load an XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -465,7 +465,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	ctx := context.Background()
 
 	// Load an XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -491,7 +491,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -538,7 +538,7 @@ func TestTC_FirstAttachCreatesLink(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TC program
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -565,7 +565,7 @@ func TestTC_IngressAndEgressDirections(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TC program
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -595,7 +595,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load TC program
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -654,7 +654,7 @@ func TestTCX_FirstAttachCreatesLink(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TCX program
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_pass", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -681,7 +681,7 @@ func TestTCX_IngressAndEgressDirections(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TCX program
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_pass", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -711,7 +711,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load TCX program
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_pass", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -770,7 +770,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a tracepoint program
-	spec, err := bpfman.NewLoadSpec("/path/to/tracepoint.o", "tp_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tracepoint.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -807,7 +807,7 @@ func TestListLinks_EmptyWhenNoLinks(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a program but don't attach
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -867,7 +867,7 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	fix.Kernel.FailOnProgram("first_prog", errors.New("injected failure on first"))
 
 	// Load first program - should fail
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "first_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "first_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "First Load should fail")
@@ -904,7 +904,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 
 	// Load first two programs - should succeed
 	for i, name := range []string{"first_prog", "second_prog"} {
-		spec, err := bpfman.NewLoadSpec("/path/to/prog.o", name, bpfman.ProgramTypeTracepoint)
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), name, bpfman.ProgramTypeTracepoint)
 		require.NoError(t, err)
 		_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 		require.NoError(t, err, "Load %d should succeed", i+1)
@@ -912,7 +912,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	}
 
 	// Load third program - should fail
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "third_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "third_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "Third Load should fail")
@@ -949,7 +949,7 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 	ctx := context.Background()
 
 	// Load first program - becomes map owner
-	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "kprobe_counter", bpfman.ProgramTypeKprobe)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "kprobe_counter", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{
@@ -959,7 +959,7 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 	ownerID := prog1.Spec.KernelID
 
 	// Load second program with MapOwnerID pointing to first
-	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "tracepoint_counter", bpfman.ProgramTypeTracepoint)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "tracepoint_counter", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	spec2 = spec2.WithMapOwnerID(ownerID)
 
@@ -969,7 +969,7 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 	require.NoError(t, err, "Second program load should succeed")
 
 	// Load third program with MapOwnerID pointing to first
-	spec3, err := bpfman.NewLoadSpec("/path/to/multi.o", "xdp_stats", bpfman.ProgramTypeXDP)
+	spec3, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "xdp_stats", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	spec3 = spec3.WithMapOwnerID(ownerID)
 
@@ -1008,7 +1008,7 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/single.o", "single_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("single.o"), "single_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -1029,7 +1029,7 @@ func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
 	ctx := context.Background()
 
 	// Load an XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_prog", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_prog", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -1062,7 +1062,7 @@ func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TC program
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_prog", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_prog", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -1096,7 +1096,7 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	ctx := context.Background()
 
 	// Load first program - becomes map owner
-	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "kprobe_counter", bpfman.ProgramTypeKprobe)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "kprobe_counter", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1104,7 +1104,7 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	ownerMapPinPath := prog1.Spec.Handles.MapPinPath
 
 	// Load XDP program with MapOwnerID pointing to first
-	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "xdp_stats", bpfman.ProgramTypeXDP)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "xdp_stats", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	spec2 = spec2.WithMapOwnerID(ownerID)
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
@@ -1137,7 +1137,7 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	ctx := context.Background()
 
 	// Load first program - becomes map owner
-	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "kprobe_counter", bpfman.ProgramTypeKprobe)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "kprobe_counter", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1145,7 +1145,7 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	ownerMapPinPath := prog1.Spec.Handles.MapPinPath
 
 	// Load TC program with MapOwnerID pointing to first
-	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "tc_stats", bpfman.ProgramTypeTC)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "tc_stats", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	spec2 = spec2.WithMapOwnerID(ownerID)
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
@@ -1179,7 +1179,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1227,7 +1227,7 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1270,7 +1270,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1300,7 +1300,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1337,7 +1337,7 @@ func TestXDP_PinPathConventions(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1367,7 +1367,7 @@ func TestTC_PinPathConventions(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1402,7 +1402,7 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1442,7 +1442,7 @@ func TestTC_InvalidDirection(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1464,7 +1464,7 @@ func TestTCX_InvalidDirection(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_pass", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1490,7 +1490,7 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_prog", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_prog", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1527,7 +1527,7 @@ func TestGetLink_ReturnsLinkDetails(t *testing.T) {
 	ctx := context.Background()
 
 	// Load and attach a tracepoint program
-	spec, err := bpfman.NewLoadSpec("/path/to/tracepoint.o", "tp_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tracepoint.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1582,7 +1582,7 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1608,7 +1608,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1635,7 +1635,7 @@ func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1667,7 +1667,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Load XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1718,7 +1718,7 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	ctx := context.Background()
 
 	// Load an XDP program
-	spec, err := bpfman.NewLoadSpec("/path/to/xdp.o", "xdp_pass", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -1755,7 +1755,7 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TC program
-	spec, err := bpfman.NewLoadSpec("/path/to/tc.o", "tc_pass", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), "tc_pass", bpfman.ProgramTypeTC)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -1792,7 +1792,7 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a TCX program
-	spec, err := bpfman.NewLoadSpec("/path/to/tcx.o", "tcx_pass", bpfman.ProgramTypeTCX)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tcx.o"), "tcx_pass", bpfman.ProgramTypeTCX)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
@@ -1884,7 +1884,7 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 
 	// Load programs with different metadata
 	for _, name := range []string{"prog1", "prog2", "prog3"} {
-		spec, err := bpfman.NewLoadSpec("/path/to/prog.o", name, bpfman.ProgramTypeTracepoint)
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), name, bpfman.ProgramTypeTracepoint)
 		require.NoError(t, err)
 		_, err = fix.Load(ctx, spec, manager.LoadOpts{
 			UserMetadata: map[string]string{
@@ -1896,7 +1896,7 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 	}
 
 	// Load a program with different metadata
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "other_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "other_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	_, err = fix.Load(ctx, spec, manager.LoadOpts{
 		UserMetadata: map[string]string{

@@ -29,7 +29,7 @@ func TestTCX_FirstAttachCreatesLink(t *testing.T) {
 	// Load a TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_pass", ProgramType: pb.BpfmanProgramType_TCX},
@@ -77,7 +77,7 @@ func TestTCX_IngressAndEgressDirections(t *testing.T) {
 	// Load a TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_pass", ProgramType: pb.BpfmanProgramType_TCX},
@@ -140,7 +140,7 @@ func TestTCX_InvalidDirection(t *testing.T) {
 	// Load a TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_pass", ProgramType: pb.BpfmanProgramType_TCX},
@@ -184,7 +184,7 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	// Load a TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_pass", ProgramType: pb.BpfmanProgramType_TCX},
@@ -233,7 +233,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 	// Step 1: Load TCX program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tcx.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tcx.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tcx_pass", ProgramType: pb.BpfmanProgramType_TCX},

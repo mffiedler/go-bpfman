@@ -10,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
@@ -104,6 +105,77 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		"prog_pin", loaded.Managed.PinPath,
 		"maps_dir", loaded.Managed.PinDir)
 
+	// Phase 1.5: DB existence check. If a DB row already exists for
+	// this kernel_id, it means something is seriously wrong (the
+	// kernel reused an ID that we still track, or a concurrent load
+	// raced). Hard error and rollback kernel state.
+	if _, err := m.store.Get(ctx, loaded.Kernel.ID); err == nil {
+		// DB row exists -- invariant violation.
+		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Kernel.ID)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Kernel.ID,
+			},
+			Error: primaryErr.Error(),
+		})
+		// Rollback kernel load.
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		}
+		return fail(primaryErr)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		// Unexpected store error.
+		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Kernel.ID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: spec.ProgramName(),
+			Error:  primaryErr.Error(),
+		})
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		}
+		return fail(primaryErr)
+	}
+
+	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
+	// Register undo step to remove it on failure.
+	rt := m.root.Runtime()
+	prov := fs.Provenance{
+		Version:     1,
+		KernelID:    loaded.Kernel.ID,
+		ProgramName: spec.ProgramName(),
+		Source:      spec.ObjectPath(),
+		SourceKind:  sourceKindFromSpec(spec),
+		LoadedAt:    now,
+	}
+
+	if err := rt.PublishBytecode(loaded.Kernel.ID, spec.ObjectPath(), prov); err != nil {
+		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Kernel.ID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindFSPublish,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Kernel.ID,
+			},
+			Error: primaryErr.Error(),
+		})
+		// Rollback kernel load.
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		}
+		return fail(primaryErr)
+	}
+
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindFSPublish,
+		Target: spec.ProgramName(),
+		Details: outcome.ProgramDetails{
+			KernelID: loaded.Kernel.ID,
+		},
+	})
+
 	// Phase 2: Persist metadata to DB (single transaction)
 	// Use the inferred type from the kernel layer (from ELF section name)
 	// rather than the user-specified type.
@@ -118,7 +190,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		KernelID: loaded.Kernel.ID,
 		Load: bpfman.ProgramLoadSpec{
 			ProgramType:   loaded.Managed.Type,
-			ObjectPath:    spec.ObjectPath(),
+			ObjectPath:    rt.ProgramBytecodePath(loaded.Kernel.ID),
 			ImageSource:   spec.ImageSource(),
 			AttachFunc:    spec.AttachFunc(),
 			GlobalData:    spec.GlobalData(),
@@ -157,10 +229,14 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Error: storeErr.Error(),
 		})
 
-		// Attempt rollback using undoStack for consistent pattern
+		// Attempt rollback using undoStack for consistent pattern.
+		// LIFO order: RemoveProgram runs first, then kernel unload.
 		var undo undoStack
 		undo.push(func() error {
 			return m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir)
+		})
+		undo.push(func() error {
+			return rt.RemoveProgram(loaded.Kernel.ID)
 		})
 
 		rec.BeginRollback()
@@ -183,6 +259,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			rec.SetResidual([]outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinPath},
 				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinDir},
+				{Kind: outcome.ArtefactProgramDir, KernelID: loaded.Kernel.ID, Path: rt.ProgramBytecodePath(loaded.Kernel.ID)},
 			}, nil)
 		} else {
 			m.logger.DebugContext(ctx, "rollback: unloaded program",
@@ -353,6 +430,31 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 		}
 	}
 
+	// Remove persisted bytecode directory. This is best-effort: if
+	// it fails, log and record the residual artefact but do not fail
+	// the unload. The DB row is about to be deleted (as part of the
+	// actions above), so GC will clean it on the next pass.
+	rt := m.root.Runtime()
+	if err := rt.RemoveProgram(kernelID); err != nil {
+		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindFSRemoveProgram,
+			Target: programName,
+			Details: outcome.ProgramDetails{
+				KernelID: kernelID,
+			},
+			Error: err.Error(),
+		})
+	} else {
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindFSRemoveProgram,
+			Target: programName,
+			Details: outcome.ProgramDetails{
+				KernelID: kernelID,
+			},
+		})
+	}
+
 	// Clean up any dispatchers left empty by the link removal.
 	m.cleanupEmptyDispatchers(ctx, dispatcherKeys)
 
@@ -444,4 +546,15 @@ func computeUnloadActions(kernelID uint32, progPinPath, mapsDir, linksDir string
 	)
 
 	return actions
+}
+
+// sourceKindFromSpec returns the provenance source kind for a LoadSpec.
+func sourceKindFromSpec(spec bpfman.LoadSpec) string {
+	if spec.ImageSource() != nil {
+		return "image"
+	}
+	if spec.ObjectPath() != "" {
+		return "file"
+	}
+	return "unknown"
 }

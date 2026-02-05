@@ -33,12 +33,13 @@ import (
 // =============================================================================
 
 func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
+	bcFile := fix.BytecodeFile("prog.o")
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: bcFile},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -49,7 +50,7 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 		},
 	}
 
-	resp, err := srv.Load(ctx, req)
+	resp, err := fix.Server.Load(ctx, req)
 	require.NoError(t, err, "Load failed")
 	require.Len(t, resp.Programs, 1, "expected 1 program")
 
@@ -60,7 +61,7 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 	require.NotNil(t, prog.Info.Bytecode, "Info.Bytecode")
 	file, ok := prog.Info.Bytecode.Location.(*pb.BytecodeLocation_File)
 	require.True(t, ok, "expected BytecodeLocation_File")
-	assert.Equal(t, "/path/to/prog.o", file.File, "Info.Bytecode.File")
+	assert.Equal(t, bcFile, file.File, "Info.Bytecode.File")
 	assert.Equal(t, "my-program", prog.Info.Metadata["bpfman.io/ProgramName"], "Info.Metadata[bpfman.io/ProgramName]")
 	assert.Equal(t, "test-app", prog.Info.Metadata["app"], "Info.Metadata[app]")
 	assert.NotEmpty(t, prog.Info.MapPinPath, "Info.MapPinPath")
@@ -77,12 +78,13 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 //	When I retrieve it via Get,
 //	Then all fields match what was provided at load time.
 func TestGetProgram_ReturnsAllFields(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
+	bcFile := fix.BytecodeFile("prog.o")
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: bcFile},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "get_test_prog", ProgramType: pb.BpfmanProgramType_KPROBE},
@@ -94,11 +96,11 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 		},
 	}
 
-	loadResp, err := srv.Load(ctx, req)
+	loadResp, err := fix.Server.Load(ctx, req)
 	require.NoError(t, err, "Load failed")
 	kernelID := loadResp.Programs[0].KernelInfo.Id
 
-	getResp, err := srv.Get(ctx, &pb.GetRequest{Id: kernelID})
+	getResp, err := fix.Server.Get(ctx, &pb.GetRequest{Id: kernelID})
 	require.NoError(t, err, "Get failed")
 
 	// Verify ProgramInfo fields
@@ -106,7 +108,8 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 	require.NotNil(t, getResp.Info.Bytecode, "Info.Bytecode")
 	file, ok := getResp.Info.Bytecode.Location.(*pb.BytecodeLocation_File)
 	require.True(t, ok, "expected BytecodeLocation_File")
-	assert.Equal(t, "/path/to/prog.o", file.File, "Info.Bytecode.File")
+	// After Load, bytecode is persisted; Get returns the persisted path.
+	assert.Contains(t, file.File, "bytecode.o", "Info.Bytecode.File should point to persisted bytecode")
 	assert.Equal(t, "get-test-program", getResp.Info.Metadata["bpfman.io/ProgramName"], "Info.Metadata[bpfman.io/ProgramName]")
 	assert.Equal(t, "testing", getResp.Info.Metadata["environment"], "Info.Metadata[environment]")
 	assert.Equal(t, "1.0.0", getResp.Info.Metadata["version"], "Info.Metadata[version]")
@@ -124,7 +127,7 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 //	When I retrieve it via Get,
 //	Then the global data is returned correctly.
 func TestLoadProgram_WithGlobalData(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	globalData := map[string][]byte{
@@ -135,7 +138,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -149,7 +152,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 		GlobalData: globalData,
 	}
 
-	loadResp, err := srv.Load(ctx, req)
+	loadResp, err := fix.Server.Load(ctx, req)
 	require.NoError(t, err, "Load failed")
 	require.Len(t, loadResp.Programs, 1, "expected 1 program")
 
@@ -159,7 +162,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 
 	// Verify global data is returned via Get
 	kernelID := prog.KernelInfo.Id
-	getResp, err := srv.Get(ctx, &pb.GetRequest{Id: kernelID})
+	getResp, err := fix.Server.Get(ctx, &pb.GetRequest{Id: kernelID})
 	require.NoError(t, err, "Get failed")
 	assert.Equal(t, globalData, getResp.Info.GlobalData, "GlobalData in get response")
 }
@@ -170,7 +173,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 //	When I retrieve it via Get and List,
 //	Then both are returned correctly.
 func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	metadata := map[string]string{
@@ -183,7 +186,7 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -195,19 +198,19 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 		GlobalData: globalData,
 	}
 
-	loadResp, err := srv.Load(ctx, req)
+	loadResp, err := fix.Server.Load(ctx, req)
 	require.NoError(t, err, "Load failed")
 	kernelID := loadResp.Programs[0].KernelInfo.Id
 
 	// Verify via Get
-	getResp, err := srv.Get(ctx, &pb.GetRequest{Id: kernelID})
+	getResp, err := fix.Server.Get(ctx, &pb.GetRequest{Id: kernelID})
 	require.NoError(t, err, "Get failed")
 	assert.Equal(t, "test-team", getResp.Info.Metadata["owner"], "Metadata[owner]")
 	assert.Equal(t, "staging", getResp.Info.Metadata["environment"], "Metadata[environment]")
 	assert.Equal(t, globalData, getResp.Info.GlobalData, "GlobalData")
 
 	// Verify via List
-	listResp, err := srv.List(ctx, &pb.ListRequest{})
+	listResp, err := fix.Server.List(ctx, &pb.ListRequest{})
 	require.NoError(t, err, "List failed")
 	require.Len(t, listResp.Results, 1, "expected 1 program in list")
 	assert.Equal(t, "test-team", listResp.Results[0].Info.Metadata["owner"], "List Metadata[owner]")
@@ -220,7 +223,7 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 //	When I list all programs,
 //	Then each result contains correctly populated Info and KernelInfo.
 func TestListPrograms_ReturnsAllFields(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	// Load two programs with distinct metadata
@@ -238,7 +241,7 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 	for _, p := range programs {
 		req := &pb.LoadRequest{
 			Bytecode: &pb.BytecodeLocation{
-				Location: &pb.BytecodeLocation_File{File: "/path/to/" + p.name + ".o"},
+				Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile(p.name + ".o")},
 			},
 			Info: []*pb.LoadInfo{
 				{Name: p.name, ProgramType: p.programType},
@@ -248,12 +251,12 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 				"app":                   p.app,
 			},
 		}
-		resp, err := srv.Load(ctx, req)
+		resp, err := fix.Server.Load(ctx, req)
 		require.NoError(t, err, "Load %s failed", p.name)
 		expectedIDs[p.programName] = resp.Programs[0].KernelInfo.Id
 	}
 
-	listResp, err := srv.List(ctx, &pb.ListRequest{})
+	listResp, err := fix.Server.List(ctx, &pb.ListRequest{})
 	require.NoError(t, err, "List failed")
 	require.Len(t, listResp.Results, 2, "expected 2 results")
 
@@ -289,12 +292,12 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 // Multiple programs can share the same bpfman.io/ProgramName, e.g., when
 // loading multiple BPF programs from a single OCI image via the operator.
 func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	firstReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -303,13 +306,13 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 			"bpfman.io/ProgramName": "shared-name",
 		},
 	}
-	resp1, err := srv.Load(ctx, firstReq)
+	resp1, err := fix.Server.Load(ctx, firstReq)
 	require.NoError(t, err, "first Load failed")
 	require.Len(t, resp1.Programs, 1)
 
 	secondReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -318,7 +321,7 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 			"bpfman.io/ProgramName": "shared-name",
 		},
 	}
-	resp2, err := srv.Load(ctx, secondReq)
+	resp2, err := fix.Server.Load(ctx, secondReq)
 	require.NoError(t, err, "second Load should succeed (duplicates allowed)")
 	require.Len(t, resp2.Programs, 1)
 
@@ -332,13 +335,13 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 //	When I load two programs with different names,
 //	Then both programs exist and are listed.
 func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	for _, name := range []string{"program-a", "program-b"} {
 		req := &pb.LoadRequest{
 			Bytecode: &pb.BytecodeLocation{
-				Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+				Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 			},
 			Info: []*pb.LoadInfo{
 				{Name: "prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -347,11 +350,11 @@ func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
 				"bpfman.io/ProgramName": name,
 			},
 		}
-		_, err := srv.Load(ctx, req)
+		_, err := fix.Server.Load(ctx, req)
 		require.NoError(t, err, "Load %s failed", name)
 	}
 
-	listResp, err := srv.List(ctx, &pb.ListRequest{})
+	listResp, err := fix.Server.List(ctx, &pb.ListRequest{})
 	require.NoError(t, err, "List failed")
 	assert.Len(t, listResp.Results, 2, "expected 2 programs")
 }
@@ -362,12 +365,12 @@ func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
 //	When I unload the program,
 //	Then the unload succeeds and the program is no longer retrievable.
 func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -376,14 +379,14 @@ func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
 			"bpfman.io/ProgramName": "my-program",
 		},
 	}
-	loadResp, err := srv.Load(ctx, loadReq)
+	loadResp, err := fix.Server.Load(ctx, loadReq)
 	require.NoError(t, err, "Load failed")
 	kernelID := loadResp.Programs[0].KernelInfo.Id
 
-	_, err = srv.Unload(ctx, &pb.UnloadRequest{Id: kernelID})
+	_, err = fix.Server.Unload(ctx, &pb.UnloadRequest{Id: kernelID})
 	require.NoError(t, err, "Unload failed")
 
-	_, err = srv.Get(ctx, &pb.GetRequest{Id: kernelID})
+	_, err = fix.Server.Get(ctx, &pb.GetRequest{Id: kernelID})
 	require.Error(t, err, "expected Get after unload to fail")
 	st, _ := status.FromError(err)
 	assert.Equal(t, codes.NotFound, st.Code(), "expected NotFound")
@@ -441,12 +444,12 @@ func TestUnloadProgram_KernelOnlyProgram_ReturnsNotFound(t *testing.T) {
 //	When I load a new program with the same name,
 //	Then the load succeeds because the name was freed.
 func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	firstReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -455,15 +458,15 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 			"bpfman.io/ProgramName": "reusable-name",
 		},
 	}
-	loadResp, err := srv.Load(ctx, firstReq)
+	loadResp, err := fix.Server.Load(ctx, firstReq)
 	require.NoError(t, err, "first Load failed")
 
-	_, err = srv.Unload(ctx, &pb.UnloadRequest{Id: loadResp.Programs[0].KernelInfo.Id})
+	_, err = fix.Server.Unload(ctx, &pb.UnloadRequest{Id: loadResp.Programs[0].KernelInfo.Id})
 	require.NoError(t, err, "Unload failed")
 
 	secondReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "my_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -472,7 +475,7 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 			"bpfman.io/ProgramName": "reusable-name",
 		},
 	}
-	_, err = srv.Load(ctx, secondReq)
+	_, err = fix.Server.Load(ctx, secondReq)
 	assert.NoError(t, err, "second Load with reused name should succeed")
 }
 
@@ -482,13 +485,13 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 //	When I list programs filtering by app=frontend,
 //	Then only the frontend program is returned.
 func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	for _, app := range []string{"frontend", "backend"} {
 		req := &pb.LoadRequest{
 			Bytecode: &pb.BytecodeLocation{
-				Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+				Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 			},
 			Info: []*pb.LoadInfo{
 				{Name: "prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -498,11 +501,11 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 				"app":                   app,
 			},
 		}
-		_, err := srv.Load(ctx, req)
+		_, err := fix.Server.Load(ctx, req)
 		require.NoError(t, err, "Load %s failed", app)
 	}
 
-	filteredResp, err := srv.List(ctx, &pb.ListRequest{
+	filteredResp, err := fix.Server.List(ctx, &pb.ListRequest{
 		MatchMetadata: map[string]string{"app": "frontend"},
 	})
 	require.NoError(t, err, "List failed")
@@ -516,7 +519,7 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 //	When I load programs of each supported type,
 //	Then each program's type is correctly stored and returned via Get.
 func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	// Test all program types that can be loaded via the proto API.
@@ -560,7 +563,7 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 			// Load
 			loadReq := &pb.LoadRequest{
 				Bytecode: &pb.BytecodeLocation{
-					Location: &pb.BytecodeLocation_File{File: "/path/to/" + progName + ".o"},
+					Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile(progName + ".o")},
 				},
 				Info: []*pb.LoadInfo{loadInfo},
 				Metadata: map[string]string{
@@ -568,7 +571,7 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 				},
 			}
 
-			loadResp, err := srv.Load(ctx, loadReq)
+			loadResp, err := fix.Server.Load(ctx, loadReq)
 			require.NoError(t, err, "Load failed")
 			require.Len(t, loadResp.Programs, 1, "expected 1 program")
 
@@ -577,13 +580,13 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 				"Load response has wrong program type")
 
 			// Get - verify round-trip
-			getResp, err := srv.Get(ctx, &pb.GetRequest{Id: kernelID})
+			getResp, err := fix.Server.Get(ctx, &pb.GetRequest{Id: kernelID})
 			require.NoError(t, err, "Get failed")
 			assert.Equal(t, uint32(tt.domainType), getResp.KernelInfo.ProgramType,
 				"Get response has wrong program type")
 
 			// Cleanup for next iteration
-			_, err = srv.Unload(ctx, &pb.UnloadRequest{Id: kernelID})
+			_, err = fix.Server.Unload(ctx, &pb.UnloadRequest{Id: kernelID})
 			require.NoError(t, err, "Unload failed")
 		})
 	}
@@ -595,7 +598,7 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 //	When I list all programs,
 //	Then each program's type is correctly returned.
 func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	// Load programs of different types
@@ -614,7 +617,7 @@ func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
 	for _, pt := range programTypes {
 		req := &pb.LoadRequest{
 			Bytecode: &pb.BytecodeLocation{
-				Location: &pb.BytecodeLocation_File{File: "/path/to/" + pt.name + ".o"},
+				Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile(pt.name + ".o")},
 			},
 			Info: []*pb.LoadInfo{
 				{Name: pt.name, ProgramType: pt.protoType},
@@ -623,13 +626,13 @@ func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
 				"bpfman.io/ProgramName": pt.name,
 			},
 		}
-		_, err := srv.Load(ctx, req)
+		_, err := fix.Server.Load(ctx, req)
 		require.NoError(t, err, "Load %s failed", pt.name)
 		expectedTypes[pt.name] = pt.domainType
 	}
 
 	// List all programs
-	listResp, err := srv.List(ctx, &pb.ListRequest{})
+	listResp, err := fix.Server.List(ctx, &pb.ListRequest{})
 	require.NoError(t, err, "List failed")
 	require.Len(t, listResp.Results, len(programTypes), "expected %d programs", len(programTypes))
 
@@ -649,12 +652,12 @@ func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
 //	When I attempt to load a program with an invalid program type,
 //	Then the server rejects the request with an error.
 func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "bad_prog", ProgramType: pb.BpfmanProgramType(999)}, // Invalid type
@@ -664,7 +667,7 @@ func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
 		},
 	}
 
-	_, err := srv.Load(ctx, req)
+	_, err := fix.Server.Load(ctx, req)
 	require.Error(t, err, "Load with invalid program type should fail")
 	assert.Contains(t, err.Error(), "unknown program type",
 		"error should mention unknown program type")
@@ -676,7 +679,7 @@ func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
 //	When I attempt to load a program without specifying a program type,
 //	Then the server rejects the request with an error.
 func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
-	srv := newTestServer(t)
+	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	// pb.BpfmanProgramType zero value (XDP=0) is actually valid,
@@ -685,7 +688,7 @@ func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
 	// representable. This test documents that behaviour.
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_prog", ProgramType: pb.BpfmanProgramType_XDP}, // XDP = 0
@@ -696,7 +699,7 @@ func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
 	}
 
 	// This should succeed - XDP (0) is a valid type
-	resp, err := srv.Load(ctx, req)
+	resp, err := fix.Server.Load(ctx, req)
 	require.NoError(t, err, "Load with XDP type should succeed")
 	assert.Equal(t, uint32(bpfman.ProgramTypeXDP), resp.Programs[0].KernelInfo.ProgramType)
 }
@@ -726,7 +729,7 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "prog_one", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -772,7 +775,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "prog_one", ProgramType: pb.BpfmanProgramType_XDP},
@@ -817,7 +820,7 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "prog_one", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -857,7 +860,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/single.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("single.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "single_prog", ProgramType: pb.BpfmanProgramType_XDP},
@@ -889,7 +892,7 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/multi.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("multi.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "prog_a", ProgramType: pb.BpfmanProgramType_XDP},
@@ -930,7 +933,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -1001,7 +1004,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -1110,7 +1113,7 @@ func TestLoadProgram_WithEmptyName_IsRejected(t *testing.T) {
 
 	req := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/prog.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("prog.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "", ProgramType: pb.BpfmanProgramType_TRACEPOINT}, // Empty name
@@ -1195,7 +1198,7 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -1257,7 +1260,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -1335,7 +1338,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},

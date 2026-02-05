@@ -66,7 +66,7 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "my_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "my_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err, "failed to create load spec")
 
 	opts := manager.LoadOpts{
@@ -96,7 +96,7 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "get_test_prog", bpfman.ProgramTypeKprobe)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "get_test_prog", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err, "failed to create load spec")
 
 	opts := manager.LoadOpts{
@@ -139,7 +139,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 		"single_byte": {0xFF},
 	}
 
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "global_data_prog", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "global_data_prog", bpfman.ProgramTypeXDP)
 	require.NoError(t, err, "failed to create load spec")
 	spec = spec.WithGlobalData(globalData)
 
@@ -172,7 +172,7 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 		"param2": {0xAA, 0xBB, 0xCC},
 	}
 
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "combined_prog", bpfman.ProgramTypeTC)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "combined_prog", bpfman.ProgramTypeTC)
 	require.NoError(t, err, "failed to create load spec")
 	spec = spec.WithGlobalData(globalData)
 
@@ -200,7 +200,7 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a program
-	spec, err := bpfman.NewLoadSpec("/path/to/list_prog.o", "list_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("list_prog.o"), "list_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err, "failed to create load spec")
 
 	opts := manager.LoadOpts{
@@ -234,13 +234,13 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 	ctx := context.Background()
 
 	// Load first program
-	spec1, err := bpfman.NewLoadSpec("/path/to/prog1.o", "same_name", bpfman.ProgramTypeTracepoint)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog1.o"), "same_name", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load failed")
 
 	// Load second program with same name
-	spec2, err := bpfman.NewLoadSpec("/path/to/prog2.o", "same_name", bpfman.ProgramTypeKprobe)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog2.o"), "same_name", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err, "Second Load failed")
@@ -264,7 +264,7 @@ func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"program_a", "program_b"} {
-		spec, err := bpfman.NewLoadSpec("/path/to/prog.o", name, bpfman.ProgramTypeTracepoint)
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), name, bpfman.ProgramTypeTracepoint)
 		require.NoError(t, err)
 		_, err = fix.Load(ctx, spec, manager.LoadOpts{
 			UserMetadata: map[string]string{
@@ -288,7 +288,7 @@ func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "unload_test", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "unload_test", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
@@ -313,7 +313,7 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 	ctx := context.Background()
 
 	// Load first program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "reusable_name", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "reusable_name", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog1, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "First Load failed")
@@ -323,7 +323,7 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 	require.NoError(t, err, "Unload failed")
 
 	// Load again with same name
-	spec2, err := bpfman.NewLoadSpec("/path/to/prog2.o", "reusable_name", bpfman.ProgramTypeKprobe)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog2.o"), "reusable_name", bpfman.ProgramTypeKprobe)
 	require.NoError(t, err)
 	prog2, err := fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.NoError(t, err, "Second Load failed")
@@ -362,9 +362,9 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 			var spec bpfman.LoadSpec
 			var err error
 			if tc.attachFunc != "" {
-				spec, err = bpfman.NewAttachLoadSpec("/path/to/prog.o", "test_prog", tc.programType, tc.attachFunc)
+				spec, err = bpfman.NewAttachLoadSpec(fix.BytecodeFile("prog.o"), "test_prog", tc.programType, tc.attachFunc)
 			} else {
-				spec, err = bpfman.NewLoadSpec("/path/to/prog.o", "test_prog", tc.programType)
+				spec, err = bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "test_prog", tc.programType)
 			}
 			require.NoError(t, err, "failed to create load spec")
 
@@ -393,14 +393,14 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	fix.Kernel.FailOnProgram("prog_two", fmt.Errorf("injected failure on prog_two"))
 
 	// Load first program
-	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_one", bpfman.ProgramTypeTracepoint)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_one", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog1, err := fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
 	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
-	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_two", bpfman.ProgramTypeTracepoint)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_two", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail")
@@ -450,7 +450,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 	// Configure kernel to fail
 	fix.Kernel.FailOnProgram("single_prog", fmt.Errorf("injected failure"))
 
-	spec, err := bpfman.NewLoadSpec("/path/to/single.o", "single_prog", bpfman.ProgramTypeXDP)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("single.o"), "single_prog", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 
@@ -491,14 +491,14 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 	fix.Kernel.FailOnNthLoad(2, fmt.Errorf("nth load failure"))
 
 	// Load first program - should succeed
-	spec1, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_a", bpfman.ProgramTypeXDP)
+	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_a", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
 	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
-	spec2, err := bpfman.NewLoadSpec("/path/to/multi.o", "prog_b", bpfman.ProgramTypeXDP)
+	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_b", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
 	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail on 2nd program")
@@ -536,7 +536,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a tracepoint program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "tp_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
@@ -590,7 +590,7 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 	ctx := context.Background()
 
 	// Load and attach a program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "detach_test", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "detach_test", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
@@ -625,7 +625,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "multi_link_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "multi_link_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
@@ -679,7 +679,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 	ctx := context.Background()
 
 	// Load and attach a program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "unload_with_links", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "unload_with_links", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
@@ -732,7 +732,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a tracepoint program
-	spec, err := bpfman.NewLoadSpec("/path/to/prog.o", "tp_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load failed")
@@ -796,7 +796,7 @@ func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
 	}
 
 	for _, pt := range programTypes {
-		spec, err := bpfman.NewLoadSpec("/path/to/"+pt.name+".o", pt.name, pt.programType)
+		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile(pt.name+".o"), pt.name, pt.programType)
 		require.NoError(t, err)
 		_, err = fix.Load(ctx, spec, manager.LoadOpts{
 			UserMetadata: map[string]string{

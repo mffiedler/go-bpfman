@@ -102,6 +102,10 @@ const (
 
 	// GC operations - Phase 2: Rule Engine
 	StepKindGCRemoveOrphan StepKind = "gc.remove_orphan"
+
+	// Filesystem operations
+	StepKindFSPublish       StepKind = "fs.publish_bytecode"
+	StepKindFSRemoveProgram StepKind = "fs.remove_program"
 )
 
 // TimelineEntry represents a single step in the operation timeline.
@@ -336,6 +340,7 @@ const (
 	ArtefactLinkPin    ArtefactKind = "link_pin"
 	ArtefactDispatcher ArtefactKind = "dispatcher"
 	ArtefactTCFilter   ArtefactKind = "tc_filter"
+	ArtefactProgramDir ArtefactKind = "program_dir"
 )
 
 // Artefact represents a kernel/filesystem object that exists at operation end.
@@ -366,6 +371,8 @@ func (a Artefact) String() string {
 		return fmt.Sprintf("dispatcher(kernel_id=%d)", a.KernelID)
 	case ArtefactTCFilter:
 		return fmt.Sprintf("tc_filter(path=%s)", a.Path)
+	case ArtefactProgramDir:
+		return fmt.Sprintf("program_dir(kernel_id=%d, path=%s)", a.KernelID, a.Path)
 	default:
 		return fmt.Sprintf("%s(kernel_id=%d, link_id=%d, path=%s)", a.Kind, a.KernelID, a.LinkID, a.Path)
 	}

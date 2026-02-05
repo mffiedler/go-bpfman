@@ -30,7 +30,7 @@ func TestFentry_AttachSucceeds(t *testing.T) {
 	// Load a fentry program with FnName specified
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fentry.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fentry.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -84,7 +84,7 @@ func TestFentry_LoadWithoutFnName_Fails(t *testing.T) {
 	// Try to load a fentry program WITHOUT FnName (no ProgSpecificInfo)
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fentry.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fentry.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -120,7 +120,7 @@ func TestFentry_FullLifecycle(t *testing.T) {
 	// Step 1: Load fentry program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fentry.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fentry.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{

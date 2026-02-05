@@ -34,7 +34,7 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 	// Load an XDP program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -80,7 +80,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	// Load an XDP program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -130,7 +130,7 @@ func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
 	// Load and attach twice
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -195,7 +195,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 	// Step 1: Load XDP program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -274,7 +274,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -321,7 +321,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -387,7 +387,7 @@ func TestXDP_PinPathConventions(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},
@@ -453,7 +453,7 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	// Load an XDP program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/xdp.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("xdp.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "xdp_pass", ProgramType: pb.BpfmanProgramType_XDP},

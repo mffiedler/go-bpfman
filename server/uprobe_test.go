@@ -29,7 +29,7 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 	// Load a uprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/uprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("uprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -79,7 +79,7 @@ func TestUprobe_AttachWithoutTarget_Fails(t *testing.T) {
 	// Load a uprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/uprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("uprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -124,7 +124,7 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 	// Step 1: Load uprobe program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/uprobe.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("uprobe.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{

@@ -30,7 +30,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 	// Load a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},
@@ -111,7 +111,7 @@ func TestGetLink_ReturnsLinkDetails(t *testing.T) {
 	// Load and attach a tracepoint program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tracepoint.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tracepoint.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tp_prog", ProgramType: pb.BpfmanProgramType_TRACEPOINT},

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
@@ -30,12 +32,14 @@ func testLogger() *slog.Logger {
 
 // testFixture provides access to all components for verification.
 type testFixture struct {
-	Manager    *manager.Manager
-	Kernel     *fakeKernel
-	Discoverer *fakeDiscoverer
-	Store      interpreter.Store
-	Dirs       *config.RuntimeDirs
-	t          *testing.T
+	Manager       *manager.Manager
+	Kernel        *fakeKernel
+	Discoverer    *fakeDiscoverer
+	Store         interpreter.Store
+	Dirs          *config.RuntimeDirs
+	t             *testing.T
+	bytecodeDir   string            // temp dir for dummy bytecode files
+	bytecodeFiles map[string]string // name -> path cache
 }
 
 // newTestFixture creates a complete test fixture with accessible components.
@@ -55,15 +59,36 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	if discoverer == nil {
 		discoverer = newFakeDiscoverer()
 	}
-	mgr := manager.New(dirs, store, kernel, discoverer, testLogger())
+	root := fs.FromRuntimeDirs(dirs)
+	mgr := manager.New(dirs, root, store, kernel, discoverer, testLogger())
+	bcDir := t.TempDir()
 	return &testFixture{
-		Manager:    mgr,
-		Kernel:     kernel,
-		Discoverer: discoverer,
-		Store:      store,
-		Dirs:       &dirs,
-		t:          t,
+		Manager:       mgr,
+		Kernel:        kernel,
+		Discoverer:    discoverer,
+		Store:         store,
+		Dirs:          &dirs,
+		t:             t,
+		bytecodeDir:   bcDir,
+		bytecodeFiles: make(map[string]string),
 	}
+}
+
+// BytecodeFile returns the path to a dummy bytecode file with the
+// given name. The file is created on first request and reused for
+// subsequent calls with the same name. Tests should use this instead
+// of hard-coded paths like "/path/to/prog.o".
+func (f *testFixture) BytecodeFile(name string) string {
+	f.t.Helper()
+	if p, ok := f.bytecodeFiles[name]; ok {
+		return p
+	}
+	p := filepath.Join(f.bytecodeDir, name)
+	dir := filepath.Dir(p)
+	require.NoError(f.t, os.MkdirAll(dir, 0755))
+	require.NoError(f.t, os.WriteFile(p, []byte("ELF dummy bytecode"), 0644))
+	f.bytecodeFiles[name] = p
+	return p
 }
 
 // AssertKernelEmpty verifies no programs remain in the kernel.

@@ -32,7 +32,7 @@ func TestTC_FirstAttachCreatesLink(t *testing.T) {
 	// Load a TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -80,7 +80,7 @@ func TestTC_IngressAndEgressDirections(t *testing.T) {
 	// Load a TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -143,7 +143,7 @@ func TestTC_InvalidDirection(t *testing.T) {
 	// Load a TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -187,7 +187,7 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	// Load a TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -236,7 +236,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 	// Step 1: Load TC program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -306,7 +306,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -358,7 +358,7 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -415,7 +415,7 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},
@@ -467,7 +467,7 @@ func TestTC_PinPathConventions(t *testing.T) {
 
 	loadResp, err := fix.Server.Load(ctx, &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/tc.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("tc.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{Name: "tc_pass", ProgramType: pb.BpfmanProgramType_TC},

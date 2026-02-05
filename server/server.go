@@ -17,6 +17,7 @@ import (
 
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
@@ -73,7 +74,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	logger = manager.WithOpIDHandler(logger)
 
 	// Ensure directories exist and bpffs is mounted
-	if err := dirs.EnsureDirectories(); err != nil {
+	root := fs.FromRuntimeDirs(dirs)
+	if err := root.EnsureDirectories(); err != nil {
 		return fmt.Errorf("runtime directory setup failed: %w", err)
 	}
 
@@ -112,7 +114,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	mgr := manager.New(dirs, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr := manager.New(dirs, root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
 
 	// Track CSI driver for graceful shutdown
 	var csiDriver *driver.Driver
@@ -232,7 +234,7 @@ func New(dirs config.RuntimeDirs, store interpreter.Store, kernel interpreter.Ke
 		netIface: netIface,
 		logger:   logger.With("component", "server"),
 	}
-	s.mgr = manager.New(dirs, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	s.mgr = manager.New(dirs, fs.FromRuntimeDirs(dirs), store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	return s
 }
 
@@ -256,7 +258,7 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 
 	// Create manager for transactional load/unload operations (if not already set)
 	if s.mgr == nil {
-		s.mgr = manager.New(s.dirs, s.store, s.kernel, ebpf.NewProgramDiscoverer(), s.logger)
+		s.mgr = manager.New(s.dirs, fs.FromRuntimeDirs(s.dirs), s.store, s.kernel, ebpf.NewProgramDiscoverer(), s.logger)
 	}
 
 	// GC stale DB entries before accepting requests.

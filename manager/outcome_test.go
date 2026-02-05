@@ -59,7 +59,7 @@ func TestLoad_Success(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	spec, err := bpfman.NewLoadSpec("/fake/path.o", "test_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
 	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
@@ -77,7 +77,7 @@ func TestUnload_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// First load a program
-	spec, err := bpfman.NewLoadSpec("/fake/path.o", "test_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
 	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
@@ -151,7 +151,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Load a program first
-	spec, err := bpfman.NewLoadSpec("/fake/path.o", "test_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
 	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
@@ -203,7 +203,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	ctx := context.Background()
 
 	// Load and then unload a program
-	spec, err := bpfman.NewLoadSpec("/fake/path.o", "test_prog", bpfman.ProgramTypeTracepoint)
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
 	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})

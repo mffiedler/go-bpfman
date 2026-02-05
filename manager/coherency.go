@@ -10,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 )
 
@@ -207,6 +208,7 @@ type ObservedState struct {
 
 	// Runtime context (immutable after gather).
 	dirs config.RuntimeDirs
+	root fs.Root
 
 	// Mutation capability for GC operations only.
 	// Not used during rule evaluation.
@@ -220,7 +222,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, dirs config.RuntimeDirs) (*ObservedState, error) {
+func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, dirs config.RuntimeDirs, root fs.Root) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[uint32]bool),
 		kernelLinks:           make(map[uint32]bool),
@@ -232,6 +234,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		dbProgIDs:             make(map[uint32]bool),
 		dbDispatcherKeys:      make(map[string]bool),
 		dirs:                  dirs,
+		root:                  root,
 	}
 
 	var err error
@@ -479,6 +482,53 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 				}
 			}
 		}
+	}
+
+	// ----------------------------------------------------------------
+	// Phase 6a: Scan <base>/programs/ for orphan program dirs
+	// ----------------------------------------------------------------
+
+	if root.Valid() {
+		rt := root.Runtime()
+		programsPath := filepath.Join(root.Base(), "programs")
+		if entries, err := os.ReadDir(programsPath); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				var kernelID uint32
+				if n, _ := fmt.Sscanf(name, "%d", &kernelID); n == 1 {
+					if !s.dbProgIDs[kernelID] {
+						s.orphans = append(s.orphans, FsOrphan{
+							Path:     filepath.Join(programsPath, name),
+							KernelID: kernelID,
+							Kind:     "program-dir",
+						})
+					}
+				} else {
+					s.orphans = append(s.orphans, FsOrphan{
+						Path: filepath.Join(programsPath, name),
+						Kind: "program-dir-unknown",
+					})
+				}
+			}
+		}
+
+		// ----------------------------------------------------------------
+		// Phase 6b: Scan <base>/.staging/ for orphan staging dirs
+		// ----------------------------------------------------------------
+
+		stagingPath := filepath.Join(root.Base(), ".staging")
+		if entries, err := os.ReadDir(stagingPath); err == nil {
+			for _, entry := range entries {
+				s.orphans = append(s.orphans, FsOrphan{
+					Path: filepath.Join(stagingPath, entry.Name()),
+					Kind: "staging-dir",
+				})
+			}
+		}
+		_ = rt // used in GC rule closures via s.root
 	}
 
 	// ----------------------------------------------------------------
@@ -1066,6 +1116,31 @@ Category: kernel-vs-db`,
 				return out
 			},
 		},
+		// Orphan program directories under <base>/programs/ with no DB record.
+		{
+			Name: "orphan-program-dirs",
+			Description: `Reports orphan program directories under <base>/programs/ that have
+no corresponding database record. These directories contain persisted
+bytecode from a previous load that was rolled back, crashed, or whose
+DB row was removed. GC will remove them.
+
+Severity: WARNING
+Category: fs-vs-db`,
+			Eval: func(s *ObservedState) []Violation {
+				var out []Violation
+				for _, o := range s.OrphanFsEntries() {
+					if o.Kind != "program-dir" && o.Kind != "program-dir-unknown" {
+						continue
+					}
+					out = append(out, Violation{
+						Severity:    SeverityWarning,
+						Category:    "fs-vs-db",
+						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+					})
+				}
+				return out
+			},
+		},
 		// DB dispatcher link count must match the filesystem link count.
 		{
 			Name: "dispatcher-link-count",
@@ -1252,6 +1327,78 @@ Category: gc-orphan-pin`,
 				return out
 			},
 		},
+		// Orphan program directories under <base>/programs/ with
+		// no corresponding DB record.
+		{
+			Name: "orphan-program-dirs",
+			Description: `Removes orphan program directories under <base>/programs/ that
+have no corresponding database record. These directories contain
+persisted bytecode and provenance from a previous load that was
+either rolled back, crashed, or whose DB row was removed.
+
+Both numeric (program-dir) and non-numeric (program-dir-unknown)
+directory names are removed. All entries under <base>/programs/
+are owned by bpfman and safe to delete when not backed by a DB row.
+
+Severity: WARNING
+Category: gc-orphan-pin`,
+			Eval: func(s *ObservedState) []Violation {
+				var out []Violation
+				for _, o := range s.OrphanFsEntries() {
+					if o.Kind != "program-dir" && o.Kind != "program-dir-unknown" {
+						continue
+					}
+					oo := o
+					out = append(out, Violation{
+						Severity:    SeverityWarning,
+						Category:    "gc-orphan-pin",
+						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+						Op: &Operation{
+							Description: fmt.Sprintf("remove program dir %s", o.Path),
+							Execute: func() error {
+								if s.root.Valid() {
+									return s.root.Runtime().RemoveProgram(oo.KernelID)
+								}
+								return os.RemoveAll(oo.Path)
+							},
+						},
+					})
+				}
+				return out
+			},
+		},
+		// Orphan staging directories under <base>/.staging/.
+		{
+			Name: "orphan-staging-dirs",
+			Description: `Removes orphan staging directories under <base>/.staging/.
+Staging directories are transient scratch space used during atomic
+publish operations. They are never referenced by DB rows and are
+always safe to delete.
+
+Severity: WARNING
+Category: gc-orphan-pin`,
+			Eval: func(s *ObservedState) []Violation {
+				var out []Violation
+				for _, o := range s.OrphanFsEntries() {
+					if o.Kind != "staging-dir" {
+						continue
+					}
+					oo := o
+					out = append(out, Violation{
+						Severity:    SeverityWarning,
+						Category:    "gc-orphan-pin",
+						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+						Op: &Operation{
+							Description: fmt.Sprintf("remove staging dir %s", o.Path),
+							Execute: func() error {
+								return os.RemoveAll(oo.Path)
+							},
+						},
+					})
+				}
+				return out
+			},
+		},
 	}
 }
 
@@ -1320,7 +1467,7 @@ Category: gc-orphan-pin`,
 
 // Doctor gathers state and evaluates all coherency rules.
 func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs)
+	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
 	if err != nil {
 		return DoctorReport{}, fmt.Errorf("gather state: %w", err)
 	}
@@ -1340,7 +1487,7 @@ func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
 // Store-level GC (structural cleanup) is handled separately by
 // store.GC() called from Manager.GC().
 func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs)
+	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
 	if err != nil {
 		return 0, fmt.Errorf("gather state: %w", err)
 	}

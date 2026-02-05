@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,11 +53,13 @@ func (f *fakeNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 
 // testFixture provides access to all components for verification.
 type testFixture struct {
-	Server *server.Server
-	Kernel *fakeKernel
-	Store  interpreter.Store
-	Dirs   *config.RuntimeDirs
-	t      *testing.T
+	Server        *server.Server
+	Kernel        *fakeKernel
+	Store         interpreter.Store
+	Dirs          *config.RuntimeDirs
+	t             *testing.T
+	bytecodeDir   string
+	bytecodeFiles map[string]string
 }
 
 // newTestFixture creates a complete test fixture with accessible components.
@@ -71,12 +74,30 @@ func newTestFixture(t *testing.T) *testFixture {
 	netIface := newFakeNetIfaceResolver()
 	srv := server.New(dirs, store, kernel, nil, netIface, testLogger())
 	return &testFixture{
-		Server: srv,
-		Kernel: kernel,
-		Store:  store,
-		Dirs:   &dirs,
-		t:      t,
+		Server:        srv,
+		Kernel:        kernel,
+		Store:         store,
+		Dirs:          &dirs,
+		t:             t,
+		bytecodeDir:   t.TempDir(),
+		bytecodeFiles: make(map[string]string),
 	}
+}
+
+// BytecodeFile returns the path to a dummy bytecode file with the
+// given name. The file is created on first request and reused for
+// subsequent calls with the same name.
+func (f *testFixture) BytecodeFile(name string) string {
+	f.t.Helper()
+	if p, ok := f.bytecodeFiles[name]; ok {
+		return p
+	}
+	p := filepath.Join(f.bytecodeDir, name)
+	dir := filepath.Dir(p)
+	require.NoError(f.t, os.MkdirAll(dir, 0755))
+	require.NoError(f.t, os.WriteFile(p, []byte("ELF dummy bytecode"), 0644))
+	f.bytecodeFiles[name] = p
+	return p
 }
 
 // AssertKernelEmpty verifies no programs remain in the kernel.

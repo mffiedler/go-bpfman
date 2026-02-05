@@ -30,7 +30,7 @@ func TestFexit_AttachSucceeds(t *testing.T) {
 	// Load a fexit program with FnName specified
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fexit.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fexit.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -84,7 +84,7 @@ func TestFexit_LoadWithoutFnName_Fails(t *testing.T) {
 	// Try to load a fexit program WITHOUT FnName (no ProgSpecificInfo)
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fexit.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fexit.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{
@@ -120,7 +120,7 @@ func TestFexit_FullLifecycle(t *testing.T) {
 	// Step 1: Load fexit program
 	loadReq := &pb.LoadRequest{
 		Bytecode: &pb.BytecodeLocation{
-			Location: &pb.BytecodeLocation_File{File: "/path/to/fexit.o"},
+			Location: &pb.BytecodeLocation_File{File: fix.BytecodeFile("fexit.o")},
 		},
 		Info: []*pb.LoadInfo{
 			{

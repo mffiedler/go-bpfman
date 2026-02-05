@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
@@ -40,13 +41,15 @@ func SetupRuntimeEnv(ctx context.Context, dirs config.RuntimeDirs, logger *slog.
 	}
 	setupLogger := logger.With("component", "setup")
 
-	setupLogger.Debug("ensuring runtime directories",
-		"base", dirs.Base,
-		"fs", dirs.FS,
-		"db", dirs.DB,
-		"sock", dirs.Sock)
+	root := fs.FromRuntimeDirs(dirs)
 
-	if err := dirs.EnsureDirectories(); err != nil {
+	setupLogger.Debug("ensuring runtime directories",
+		"base", dirs.Base(),
+		"fs", dirs.FS(),
+		"db", dirs.DB(),
+		"sock", dirs.Sock())
+
+	if err := root.EnsureDirectories(); err != nil {
 		setupLogger.Error("failed to ensure directories", "error", err)
 		return nil, err
 	}
@@ -61,7 +64,7 @@ func SetupRuntimeEnv(ctx context.Context, dirs config.RuntimeDirs, logger *slog.
 	setupLogger.Debug("database opened")
 
 	kernel := ebpf.New(ebpf.WithLogger(logger))
-	mgr := New(dirs, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr := New(dirs, root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 
 	setupLogger.Debug("runtime environment ready")
 	return &RuntimeEnv{
