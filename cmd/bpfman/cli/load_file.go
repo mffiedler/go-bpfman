@@ -75,10 +75,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	logger, err := cli.Logger()
-	if err != nil {
-		return fmt.Errorf("create logger: %w", err)
-	}
+	logger := cli.Logger()
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data

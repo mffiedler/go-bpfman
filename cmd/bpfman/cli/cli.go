@@ -38,13 +38,13 @@ type CLI struct {
 	// Injected for testability.
 	Err io.Writer `kong:"-"`
 
-	// Cached config and logger to avoid repeated file parsing per invocation.
+	// Cached config to avoid repeated file parsing per invocation.
 	configOnce   sync.Once     `kong:"-"`
 	cachedConfig config.Config `kong:"-"`
 	configErr    error         `kong:"-"`
-	loggerOnce   sync.Once     `kong:"-"`
-	cachedLogger *slog.Logger  `kong:"-"`
-	loggerErr    error         `kong:"-"`
+
+	// Logger is initialised eagerly by initLogger and never changes.
+	logger *slog.Logger `kong:"-"`
 
 	Serve   ServeCmd   `cmd:"" help:"Start the gRPC daemon."`
 	Load    LoadCmd    `cmd:"" help:"Load a BPF program from an object file."`
@@ -115,17 +115,21 @@ func (c *CLI) PrintErrf(format string, args ...any) error {
 	return c.PrintErr(fmt.Sprintf(format, args...))
 }
 
-// Run parses command-line arguments and executes the selected command.
+// New creates and initialises a CLI instance by parsing command-line arguments.
+// Returns the CLI, kong context for running the command, and any error.
+//
+// If (nil, nil, nil) is returned, the namespace helper was invoked and handled
+// the request - the caller should exit successfully without further action.
 //
 // Mode detection:
 //   - BPFMAN_MODE env var is authoritative when set (handled by helper detection)
 //   - argv[0] basename provides symlink/binary name compatibility
 //
 // Modes:
-//   - "bpfman-ns": namespace helper for container uprobes (early exit)
+//   - "bpfman-ns": namespace helper for container uprobes (returns nil, nil, nil)
 //   - "bpfman-rpc": serve command (for bpfman-operator compatibility)
 //   - otherwise: normal CLI parsing
-func Run(ctx context.Context) {
+func New() (*CLI, *kong.Context, error) {
 	// Check for namespace helper subprocess mode (used for container uprobes).
 	// This needs early handling before the main CLI is set up because the
 	// subprocess runs in a different mount namespace.
@@ -134,11 +138,10 @@ func Run(ctx context.Context) {
 	modeEnv := os.Getenv(nsenter.ModeEnvVar)
 	handled, err := HandleNamespaceHelperInvocation(os.Args, modeEnv, runNamespaceHelper)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "bpfman: error: %v\n", err)
-		os.Exit(1)
+		return nil, nil, err
 	}
 	if handled {
-		return
+		return nil, nil, nil // Namespace helper handled the request
 	}
 
 	// Check for bpfman-rpc mode (daemon compatibility with bpfman-operator).
@@ -160,20 +163,26 @@ func Run(ctx context.Context) {
 		c.Err = os.Stderr
 	}
 
+	// Initialise logger eagerly so errors surface immediately
+	if err := c.initLogger(); err != nil {
+		return nil, nil, fmt.Errorf("create logger: %w", err)
+	}
+
+	return &c, kctx, nil
+}
+
+// Run executes the parsed command.
+func (c *CLI) Run(ctx context.Context, kctx *kong.Context) error {
 	kctx.BindTo(ctx, (*context.Context)(nil))
 
-	// Handle errors ourselves to use injected writers instead of Kong's
-	// default os.Stderr. This ensures I/O error propagation is consistent.
-	if err := kctx.Run(&c); err != nil {
+	if err := kctx.Run(c); err != nil {
 		// ErrSilent means the error was already communicated (e.g., via JSON)
-		// so we exit non-zero without printing anything additional.
 		if !errors.Is(err, ErrSilent) {
-			// Attempt to write error to stderr. If stderr write fails, we still
-			// exit with code 1 - there's nothing more useful we can do.
 			_ = c.PrintErrf("bpfman: error: %v\n", err)
 		}
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 // KongOptions returns the Kong configuration options for the CLI.
@@ -209,40 +218,41 @@ func (c *CLI) LoadConfig() (config.Config, error) {
 	return c.cachedConfig, c.configErr
 }
 
-// Logger creates a logger for CLI commands.
-// CLI commands default to WARN level for quieter output.
-// Results are cached for the lifetime of the CLI instance.
+// initLogger initialises the CLI logger. Call this once during CLI setup,
+// before any commands run. Returns an error if logger creation fails.
+func (c *CLI) initLogger() error {
+	cfg, err := c.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	format, err := logging.ParseFormat(cfg.Logging.Format)
+	if err != nil {
+		return err
+	}
+
+	// CLI commands default to warn unless --log is specified
+	spec := c.Log
+	if spec == "" {
+		spec = "warn"
+	}
+
+	opts := logging.Options{
+		CLISpec:    spec,
+		ConfigSpec: cfg.Logging.ToSpec(),
+		Format:     format,
+		Output:     os.Stderr,
+	}
+
+	c.logger, err = logging.New(opts)
+	return err
+}
+
+// Logger returns the CLI logger. The logger is initialised during CLI setup
+// and never changes. CLI commands default to WARN level for quieter output.
 // Use LoggerFromConfig for long-running services like serve.
-func (c *CLI) Logger() (*slog.Logger, error) {
-	c.loggerOnce.Do(func() {
-		cfg, err := c.LoadConfig()
-		if err != nil {
-			c.loggerErr = err
-			return
-		}
-
-		format, err := logging.ParseFormat(cfg.Logging.Format)
-		if err != nil {
-			c.loggerErr = err
-			return
-		}
-
-		// CLI commands default to warn unless --log is specified
-		spec := c.Log
-		if spec == "" {
-			spec = "warn"
-		}
-
-		opts := logging.Options{
-			CLISpec:    spec,
-			ConfigSpec: cfg.Logging.ToSpec(),
-			Format:     format,
-			Output:     os.Stderr,
-		}
-
-		c.cachedLogger, c.loggerErr = logging.New(opts)
-	})
-	return c.cachedLogger, c.loggerErr
+func (c *CLI) Logger() *slog.Logger {
+	return c.logger
 }
 
 // LoggerFromConfig creates a logger using config file settings.
@@ -305,14 +315,8 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 	if err != nil {
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
 	}
-	logger, logErr := c.Logger()
-	if logErr != nil {
-		// Fall back to default logger if config parsing fails.
-		// This allows operations to proceed even with invalid logging config.
-		logger = slog.Default()
-	}
 
-	err = lock.RunWithTiming(ctx, root.LockPath(), logger, func(ctx context.Context, _ lock.WriterScope) error {
+	err = lock.RunWithTiming(ctx, root.LockPath(), c.Logger(), func(ctx context.Context, _ lock.WriterScope) error {
 		var fnErr error
 		result, fnErr = fn(ctx)
 		return fnErr
@@ -344,12 +348,8 @@ func RunWithLockValueAndScope[T any](ctx context.Context, c *CLI, fn func(contex
 	if err != nil {
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
 	}
-	logger, logErr := c.Logger()
-	if logErr != nil {
-		logger = slog.Default()
-	}
 
-	err = lock.RunWithTiming(ctx, root.LockPath(), logger, func(ctx context.Context, scope lock.WriterScope) error {
+	err = lock.RunWithTiming(ctx, root.LockPath(), c.Logger(), func(ctx context.Context, scope lock.WriterScope) error {
 		var fnErr error
 		result, fnErr = fn(ctx, scope)
 		return fnErr

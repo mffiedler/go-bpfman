@@ -17,6 +17,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	c, kctx, err := cli.New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bpfman: error: %v\n", err)
+		os.Exit(1)
+	}
+	if c == nil {
+		// Namespace helper handled the request
+		return
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -28,5 +38,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	cli.Run(ctx)
+	if err := c.Run(ctx, kctx); err != nil {
+		os.Exit(1)
+	}
 }

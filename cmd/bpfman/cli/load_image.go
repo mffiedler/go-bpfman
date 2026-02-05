@@ -38,10 +38,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return fmt.Errorf("invalid pull policy %q", c.PullPolicy.Value)
 	}
 
-	logger, err := cli.Logger()
-	if err != nil {
-		return fmt.Errorf("create logger: %w", err)
-	}
+	logger := cli.Logger()
 
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {

@@ -23,11 +23,7 @@ type ImageVerifyCmd struct {
 
 // Run executes the image verify command.
 func (c *ImageVerifyCmd) Run(cli *CLI, ctx context.Context) error {
-	logger, err := cli.Logger()
-	if err != nil {
-		return fmt.Errorf("failed to create logger: %w", err)
-	}
-
+	logger := cli.Logger()
 	logger.Info("verifying image signature", "image", c.ImageURL)
 
 	// Load configuration (use CLI's config, not the deprecated --config flag)
