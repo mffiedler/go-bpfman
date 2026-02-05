@@ -60,6 +60,9 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Second signal forces immediate exit. The first signal cancels ctx
+	// for graceful shutdown; if the user sends another signal during
+	// shutdown, exit immediately rather than waiting.
 	go func() {
 		<-ctx.Done()
 		sig := make(chan os.Signal, 1)
