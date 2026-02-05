@@ -461,3 +461,22 @@ func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) 
 	}
 	return result, nil
 }
+
+// ParseProgramTypesSlice parses a slice of program type strings (case-insensitive).
+// Returns a slice of ProgramType values.
+func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
+	var result []bpfman.ProgramType
+	for _, raw := range types {
+		t := strings.TrimSpace(raw)
+		if t == "" {
+			continue
+		}
+		pt, ok := bpfman.ParseProgramType(strings.ToLower(t))
+		if !ok {
+			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
+				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
+		}
+		result = append(result, pt)
+	}
+	return result, nil
+}

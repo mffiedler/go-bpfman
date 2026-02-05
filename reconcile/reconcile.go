@@ -1,6 +1,7 @@
-// Package compute contains pure functions for business logic.
-// Functions in this package perform no I/O - they transform data into actions.
-package compute
+// Package reconcile contains pure functions for computing reconciliation actions.
+// Functions in this package perform no I/O - they compare observed state and
+// produce actions to bring the system into a consistent state.
+package reconcile
 
 import (
 	"github.com/frobware/go-bpfman"

@@ -33,25 +33,23 @@ func (c *ListProgramsCmd) Validate() error {
 	return nil
 }
 
-func (c *ListProgramsCmd) buildFilter() (*bpfman.ProgramFilter, error) {
-	filter := &bpfman.ProgramFilter{
-		LabelSelector: labels.Everything(),
-	}
+func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
+	var opts []bpfman.ListOption
 
 	// Attachment state
 	if c.Attached {
-		filter.AttachmentState = bpfman.AttachmentStateAttached
+		opts = append(opts, bpfman.WithAttached())
 	} else if c.Unattached {
-		filter.AttachmentState = bpfman.AttachmentStateUnattached
+		opts = append(opts, bpfman.WithUnattached())
 	}
 
 	// Type filter
 	if len(c.Type) > 0 {
-		types, err := ParseProgramTypes(c.Type)
+		types, err := ParseProgramTypesSlice(c.Type)
 		if err != nil {
 			return nil, err
 		}
-		filter.Types = types
+		opts = append(opts, bpfman.WithTypes(types...))
 	}
 
 	// Label selector
@@ -60,10 +58,10 @@ func (c *ListProgramsCmd) buildFilter() (*bpfman.ProgramFilter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
-		filter.LabelSelector = sel
+		opts = append(opts, bpfman.MatchingSelector(sel))
 	}
 
-	return filter, nil
+	return opts, nil
 }
 
 // Run executes the list programs command.
@@ -78,12 +76,12 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	filter, err := c.buildFilter()
+	opts, err := c.buildListOptions()
 	if err != nil {
 		return err
 	}
 
-	result, err := mgr.ListProgramsWithFilter(ctx, filter)
+	result, err := mgr.ListPrograms(ctx, opts...)
 	if err != nil {
 		return err
 	}

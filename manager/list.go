@@ -218,14 +218,11 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 // ListPrograms returns all managed programs with full spec and status.
 // This returns the canonical bpfman.ProgramListResult type with both Spec (from store)
 // and Status (from kernel enumeration + filesystem checks).
-func (m *Manager) ListPrograms(ctx context.Context) (bpfman.ProgramListResult, error) {
-	return m.ListProgramsWithFilter(ctx, nil)
-}
-
-// ListProgramsWithFilter returns managed programs matching the filter criteria.
-// If filter is nil, all managed programs are returned.
+// Optional ListOption arguments filter the results.
 // Results are ordered deterministically by kernel ID, then by type+name for ties.
-func (m *Manager) ListProgramsWithFilter(ctx context.Context, filter *bpfman.ProgramFilter) (bpfman.ProgramListResult, error) {
+func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramListResult, error) {
+	filter := bpfman.ApplyListOptions(opts...)
+
 	scanner := bpffs.NewScanner(m.root.BPFFS().ScannerDirs())
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
@@ -236,7 +233,7 @@ func (m *Manager) ListProgramsWithFilter(ctx context.Context, filter *bpfman.Pro
 	for _, row := range world.ManagedPrograms() {
 		if prog, ok := row.AsProgram(); ok {
 			p := prog // explicit copy for clarity
-			if filter == nil || filter.Matches(&p) {
+			if filter.Matches(&p) {
 				programs = append(programs, p)
 			}
 		}

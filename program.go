@@ -263,32 +263,47 @@ type ProgramListResult struct {
 	Programs   []Program `json:"programs"`
 }
 
-// AttachmentState represents the attachment filter mode.
-type AttachmentState int
+// ListOption configures program list filtering.
+type ListOption func(*listOptions)
 
-const (
-	AttachmentStateAll AttachmentState = iota
-	AttachmentStateAttached
-	AttachmentStateUnattached
-)
-
-// ProgramFilter specifies filtering criteria for list operations.
-// All non-nil/non-empty fields combine with AND logic.
-// Invariant: LabelSelector is never nil (use labels.Everything() as default).
-type ProgramFilter struct {
-	AttachmentState AttachmentState
-	Types           map[ProgramType]struct{}
-	LabelSelector   labels.Selector
+// listOptions holds the accumulated filter state.
+type listOptions struct {
+	attached *bool // nil = don't filter, true = attached only, false = unattached only
+	types    map[ProgramType]struct{}
+	selector labels.Selector
 }
 
 // Matches returns true if the program matches all filter criteria.
-func (f *ProgramFilter) Matches(prog *Program) bool {
-	if f == nil {
+func (o *listOptions) Matches(prog *Program) bool {
+	return o.matchesAttachment(prog) &&
+		o.matchesType(prog) &&
+		o.matchesLabels(prog)
+}
+
+func (o *listOptions) matchesAttachment(prog *Program) bool {
+	if o.attached == nil {
 		return true
 	}
-	return f.matchesAttachmentState(prog) &&
-		f.matchesType(prog) &&
-		f.matchesLabels(prog)
+	hasLinks := hasActiveLinks(prog)
+	if *o.attached {
+		return hasLinks
+	}
+	return !hasLinks
+}
+
+func (o *listOptions) matchesType(prog *Program) bool {
+	if len(o.types) == 0 {
+		return true
+	}
+	_, ok := o.types[prog.Spec.Load.ProgramType]
+	return ok
+}
+
+func (o *listOptions) matchesLabels(prog *Program) bool {
+	if o.selector == nil {
+		return true
+	}
+	return o.selector.Matches(labels.Set(prog.Spec.Meta.Metadata))
 }
 
 // hasActiveLinks returns true if the program has at least one link
@@ -302,26 +317,53 @@ func hasActiveLinks(prog *Program) bool {
 	return false
 }
 
-func (f *ProgramFilter) matchesAttachmentState(prog *Program) bool {
-	switch f.AttachmentState {
-	case AttachmentStateAttached:
-		return hasActiveLinks(prog)
-	case AttachmentStateUnattached:
-		return !hasActiveLinks(prog)
-	default:
-		return true
+// ApplyListOptions applies the given options and returns the configured listOptions.
+func ApplyListOptions(opts ...ListOption) *listOptions {
+	o := &listOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
+}
+
+// WithAttached filters to programs with active kernel links.
+func WithAttached() ListOption {
+	return func(o *listOptions) {
+		t := true
+		o.attached = &t
 	}
 }
 
-func (f *ProgramFilter) matchesType(prog *Program) bool {
-	if len(f.Types) == 0 {
-		return true
+// WithUnattached filters to programs without active kernel links.
+func WithUnattached() ListOption {
+	return func(o *listOptions) {
+		f := false
+		o.attached = &f
 	}
-	_, ok := f.Types[prog.Spec.Load.ProgramType]
-	return ok
 }
 
-func (f *ProgramFilter) matchesLabels(prog *Program) bool {
-	// Invariant: LabelSelector is never nil (default is labels.Everything())
-	return f.LabelSelector.Matches(labels.Set(prog.Spec.Meta.Metadata))
+// WithTypes filters to programs of the specified types.
+func WithTypes(types ...ProgramType) ListOption {
+	return func(o *listOptions) {
+		if o.types == nil {
+			o.types = make(map[ProgramType]struct{})
+		}
+		for _, t := range types {
+			o.types[t] = struct{}{}
+		}
+	}
+}
+
+// MatchingLabels filters to programs with matching label key-value pairs.
+func MatchingLabels(lbls map[string]string) ListOption {
+	return func(o *listOptions) {
+		o.selector = labels.SelectorFromSet(labels.Set(lbls))
+	}
+}
+
+// MatchingSelector filters to programs matching the label selector.
+func MatchingSelector(sel labels.Selector) ListOption {
+	return func(o *listOptions) {
+		o.selector = sel
+	}
 }

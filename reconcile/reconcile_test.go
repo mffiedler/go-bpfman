@@ -1,4 +1,4 @@
-package compute_test
+package reconcile_test
 
 import (
 	"testing"
@@ -8,8 +8,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
-	"github.com/frobware/go-bpfman/compute"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/reconcile"
 )
 
 func TestReconcileActions_OrphanedPrograms(t *testing.T) {
@@ -25,7 +25,7 @@ func TestReconcileActions_OrphanedPrograms(t *testing.T) {
 		// ID 2 and 3 are gone from kernel
 	}
 
-	actions := compute.ReconcileActions(stored, kps)
+	actions := reconcile.ReconcileActions(stored, kps)
 
 	// Should have 2 delete actions for IDs 2 and 3
 	require.Len(t, actions, 2, "expected 2 actions")
@@ -51,7 +51,7 @@ func TestReconcileActions_NoOrphans(t *testing.T) {
 		{ID: 2, Name: "prog2"}, // Unmanaged, not in store
 	}
 
-	actions := compute.ReconcileActions(stored, kps)
+	actions := reconcile.ReconcileActions(stored, kps)
 
 	assert.Empty(t, actions, "expected 0 actions")
 }
@@ -63,7 +63,7 @@ func TestReconcileActions_EmptyStore(t *testing.T) {
 		{ID: 1, Name: "prog1"},
 	}
 
-	actions := compute.ReconcileActions(stored, kps)
+	actions := reconcile.ReconcileActions(stored, kps)
 
 	assert.Empty(t, actions, "expected 0 actions")
 }
@@ -78,7 +78,7 @@ func TestOrphanedPrograms(t *testing.T) {
 		{ID: 1, Name: "prog1"},
 	}
 
-	orphaned := compute.OrphanedPrograms(stored, kps)
+	orphaned := reconcile.OrphanedPrograms(stored, kps)
 
 	require.Len(t, orphaned, 1, "expected 1 orphaned")
 	assert.Equal(t, uint32(2), orphaned[0], "expected orphaned ID 2")
@@ -95,7 +95,7 @@ func TestUnmanagedPrograms(t *testing.T) {
 		{ID: 3, Name: "prog3"},
 	}
 
-	unmanaged := compute.UnmanagedPrograms(stored, kps)
+	unmanaged := reconcile.UnmanagedPrograms(stored, kps)
 
 	assert.Len(t, unmanaged, 2, "expected 2 unmanaged")
 }
@@ -118,7 +118,7 @@ func TestReconcileActions_MapOwnerOrdering(t *testing.T) {
 	// All programs are gone from kernel
 	kps := []kernel.Program{}
 
-	actions := compute.ReconcileActions(stored, kps)
+	actions := reconcile.ReconcileActions(stored, kps)
 
 	require.Len(t, actions, 3, "expected 3 delete actions")
 
