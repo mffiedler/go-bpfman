@@ -38,13 +38,13 @@ type DoctorCheckupCmd struct{}
 
 // Run executes the doctor check command.
 func (c *DoctorCheckupCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
-	report, err := runtime.Manager.Doctor(ctx)
+	report, err := mgr.Doctor(ctx)
 	if err != nil {
 		return fmt.Errorf("doctor failed: %w", err)
 	}

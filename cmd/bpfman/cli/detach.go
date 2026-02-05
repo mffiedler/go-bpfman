@@ -15,11 +15,11 @@ type DetachCmd struct {
 
 // Run executes the detach command: mutation under lock, output outside.
 func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	// Collect results to print after releasing lock
 	type result struct {
@@ -31,7 +31,7 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Mutation under lock - process all IDs
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
 		for _, lid := range c.LinkIDs {
-			err := runtime.Manager.Detach(ctx, bpfman.LinkID(lid.Value))
+			err := mgr.Detach(ctx, bpfman.LinkID(lid.Value))
 			results = append(results, result{id: lid.Value, err: err})
 		}
 		return nil

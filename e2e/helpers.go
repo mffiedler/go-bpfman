@@ -36,7 +36,6 @@ type TestEnv struct {
 	Root    fs.Root
 	Manager *manager.Manager
 	Puller  interpreter.ImagePuller
-	env     *manager.RuntimeEnv
 	logger  *slog.Logger
 }
 
@@ -84,7 +83,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 	// Set up runtime environment (ensures directories, opens store, creates manager)
 	ctx := context.Background()
-	runtimeEnv, err := manager.SetupRuntimeEnv(ctx, root, logger)
+	mgr, err := manager.SetupRuntimeEnv(ctx, root, logger)
 	require.NoError(t, err, "failed to setup runtime environment")
 
 	// Create signature verifier (disabled for tests)
@@ -100,9 +99,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	env := &TestEnv{
 		T:       t,
 		Root:    root,
-		Manager: runtimeEnv.Manager,
+		Manager: mgr,
 		Puller:  puller,
-		env:     runtimeEnv,
 		logger:  logger,
 	}
 
@@ -116,8 +114,8 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 // cleanup releases resources and removes test directories.
 func (e *TestEnv) cleanup() {
-	if e.env != nil {
-		e.env.Close()
+	if e.Manager != nil {
+		e.Manager.Close()
 	}
 
 	// Unmount bpffs if mounted

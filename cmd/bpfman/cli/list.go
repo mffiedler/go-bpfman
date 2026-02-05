@@ -72,18 +72,18 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	filter, err := c.buildFilter()
 	if err != nil {
 		return err
 	}
 
-	result, err := runtime.Manager.ListProgramsWithFilter(ctx, filter)
+	result, err := mgr.ListProgramsWithFilter(ctx, filter)
 	if err != nil {
 		return err
 	}
@@ -116,17 +116,17 @@ type ListLinksCmd struct {
 
 // Run executes the list links command.
 func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	var links []bpfman.LinkSpec
 	if c.ProgramID != nil {
-		links, err = runtime.Manager.ListLinksByProgram(ctx, c.ProgramID.Value)
+		links, err = mgr.ListLinksByProgram(ctx, c.ProgramID.Value)
 	} else {
-		links, err = runtime.Manager.ListLinks(ctx)
+		links, err = mgr.ListLinks(ctx)
 	}
 	if err != nil {
 		return err

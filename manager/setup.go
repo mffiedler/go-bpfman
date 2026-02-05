@@ -5,28 +5,9 @@ import (
 	"log/slog"
 
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 )
-
-// RuntimeEnv holds the initialised runtime environment for BPF management.
-// Use SetupRuntimeEnv to create this, and call Close when done.
-type RuntimeEnv struct {
-	Store   interpreter.Store
-	Kernel  interpreter.KernelOperations
-	Manager *Manager
-	Root    fs.Root
-	Logger  *slog.Logger
-}
-
-// Close releases resources held by the runtime environment.
-func (r *RuntimeEnv) Close() error {
-	if r.Store != nil {
-		return r.Store.Close()
-	}
-	return nil
-}
 
 // SetupRuntimeEnv initialises the runtime environment for BPF management.
 // It ensures runtime directories exist, mounts bpffs, opens the database,
@@ -34,7 +15,8 @@ func (r *RuntimeEnv) Close() error {
 //
 // This is the single entry point for setting up the runtime environment.
 // Both the CLI and server use this to avoid duplicating setup logic.
-func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*RuntimeEnv, error) {
+// Call Manager.Close() when done to release resources.
+func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -64,11 +46,5 @@ func SetupRuntimeEnv(ctx context.Context, root fs.Root, logger *slog.Logger) (*R
 	mgr := New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 
 	setupLogger.Debug("runtime environment ready")
-	return &RuntimeEnv{
-		Store:   store,
-		Kernel:  kernel,
-		Manager: mgr,
-		Root:    root,
-		Logger:  logger,
-	}, nil
+	return mgr, nil
 }

@@ -49,15 +49,15 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 	}
 
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	// Mutation under lock
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {
-		gcResult, gcErr := runtime.Manager.GCWithOptions(ctx, manager.GCOptions{
+		gcResult, gcErr := mgr.GCWithOptions(ctx, manager.GCOptions{
 			Rules: c.Rules,
 			Prune: c.Prune,
 		})

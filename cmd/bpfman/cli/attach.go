@@ -113,14 +113,14 @@ type attachResult struct {
 
 // Run executes the attach command: mutation under lock, output outside.
 func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	// Execute mutation under lock
-	result, err := c.execute(ctx, cli, runtime)
+	result, err := c.execute(ctx, cli, mgr)
 	if err != nil {
 		if result.FailedOutcome.Status != "" {
 			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
@@ -133,11 +133,11 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 }
 
 // execute performs the attach operation under the global writer lock.
-func (c *AttachCmd) execute(ctx context.Context, cli *CLI, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) execute(ctx context.Context, cli *CLI, mgr *manager.Manager) (attachResult, error) {
 	// Uprobe needs scope for container attachment
 	if c.Type == "uprobe" {
 		return RunWithLockValueAndScope(ctx, cli, func(ctx context.Context, scope lock.WriterScope) (attachResult, error) {
-			return c.attachUprobe(ctx, runtime, scope)
+			return c.attachUprobe(ctx, mgr, scope)
 		})
 	}
 
@@ -145,19 +145,19 @@ func (c *AttachCmd) execute(ctx context.Context, cli *CLI, runtime *CLIRuntime) 
 	return RunWithLockValue(ctx, cli, func(ctx context.Context) (attachResult, error) {
 		switch c.Type {
 		case "tracepoint":
-			return c.attachTracepoint(ctx, runtime)
+			return c.attachTracepoint(ctx, mgr)
 		case "xdp":
-			return c.attachXDP(ctx, runtime)
+			return c.attachXDP(ctx, mgr)
 		case "tc":
-			return c.attachTC(ctx, runtime)
+			return c.attachTC(ctx, mgr)
 		case "tcx":
-			return c.attachTCX(ctx, runtime)
+			return c.attachTCX(ctx, mgr)
 		case "kprobe":
-			return c.attachKprobe(ctx, runtime)
+			return c.attachKprobe(ctx, mgr)
 		case "fentry":
-			return c.attachFentry(ctx, runtime)
+			return c.attachFentry(ctx, mgr)
 		case "fexit":
-			return c.attachFexit(ctx, runtime)
+			return c.attachFexit(ctx, mgr)
 		default:
 			return attachResult{}, fmt.Errorf("unknown attach type: %s", c.Type)
 		}
@@ -173,7 +173,7 @@ func (c *AttachCmd) output(cli *CLI, result attachResult) error {
 	return cli.PrintOut(output)
 }
 
-func (c *AttachCmd) attachTracepoint(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	if c.Tracepoint == "" {
 		return attachResult{}, fmt.Errorf("--tracepoint is required for tracepoint attachment")
 	}
@@ -189,14 +189,14 @@ func (c *AttachCmd) attachTracepoint(ctx context.Context, runtime *CLIRuntime) (
 		return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachXDP(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for XDP attachment")
 	}
@@ -214,14 +214,14 @@ func (c *AttachCmd) attachXDP(ctx context.Context, runtime *CLIRuntime) (attachR
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachXDP(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachXDP(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachTC(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for TC attachment")
 	}
@@ -257,14 +257,14 @@ func (c *AttachCmd) attachTC(ctx context.Context, runtime *CLIRuntime) (attachRe
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachTC(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachTC(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachTCX(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for TCX attachment")
 	}
@@ -294,14 +294,14 @@ func (c *AttachCmd) attachTCX(ctx context.Context, runtime *CLIRuntime) (attachR
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := runtime.Manager.AttachTCX(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachTCX(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachKprobe(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	if c.FnName == "" {
 		return attachResult{}, fmt.Errorf("--fn-name is required for kprobe attachment")
 	}
@@ -314,14 +314,14 @@ func (c *AttachCmd) attachKprobe(ctx context.Context, runtime *CLIRuntime) (atta
 		spec = spec.WithOffset(c.Offset)
 	}
 
-	link, err := runtime.Manager.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachUprobe(ctx context.Context, runtime *CLIRuntime, scope lock.WriterScope) (attachResult, error) {
+func (c *AttachCmd) attachUprobe(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.Target == "" {
 		return attachResult{}, fmt.Errorf("--target is required for uprobe attachment")
 	}
@@ -340,33 +340,33 @@ func (c *AttachCmd) attachUprobe(ctx context.Context, runtime *CLIRuntime, scope
 		spec = spec.WithContainerPid(c.ContainerPid)
 	}
 
-	link, err := runtime.Manager.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachFentry(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachFentry(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 	if err != nil {
 		return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachFentry(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachFentry(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachFexit(ctx context.Context, runtime *CLIRuntime) (attachResult, error) {
+func (c *AttachCmd) attachFexit(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
 	spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 	if err != nil {
 		return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 	}
 
-	link, err := runtime.Manager.AttachFexit(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.AttachFexit(ctx, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}

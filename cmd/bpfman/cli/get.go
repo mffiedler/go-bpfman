@@ -23,13 +23,13 @@ type GetProgramCmd struct {
 
 // Run executes the get program command.
 func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
-	prog, err := runtime.Manager.Get(ctx, c.ProgramID.Value)
+	prog, err := mgr.Get(ctx, c.ProgramID.Value)
 	if err != nil {
 		return err
 	}
@@ -49,14 +49,14 @@ type GetLinkCmd struct {
 
 // Run executes the get link command.
 func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
-	scanner := bpffs.NewScanner(runtime.Root.BPFFS().ScannerDirs())
-	info, err := inspect.GetLink(ctx, runtime.Store, runtime.Kernel, scanner, bpfman.LinkID(c.LinkID.Value))
+	scanner := bpffs.NewScanner(mgr.Root().BPFFS().ScannerDirs())
+	info, err := inspect.GetLink(ctx, mgr.Store(), mgr.Kernel(), scanner, bpfman.LinkID(c.LinkID.Value))
 	if err != nil {
 		return err
 	}

@@ -13,11 +13,11 @@ type UnloadCmd struct {
 
 // Run executes the unload command: mutation under lock, output outside.
 func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	// Collect results to print after releasing lock
 	type result struct {
@@ -29,7 +29,7 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 	// Mutation under lock - process all IDs
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
 		for _, pid := range c.ProgramIDs {
-			err := runtime.Manager.Unload(ctx, pid.Value)
+			err := mgr.Unload(ctx, pid.Value)
 			results = append(results, result{id: pid.Value, err: err})
 		}
 		return nil

@@ -9,6 +9,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/interpreter/image/oci"
+	"github.com/frobware/go-bpfman/interpreter/image/verify"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
 )
@@ -35,13 +37,19 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return fmt.Errorf("invalid pull policy %q", c.PullPolicy.Value)
 	}
 
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
-	runtime.Logger.Info("loading BPF programs from OCI image",
+	// Build image puller with signature verification settings from config
+	puller, err := c.buildPuller(cli, mgr)
+	if err != nil {
+		return fmt.Errorf("create image puller: %w", err)
+	}
+
+	mgr.Logger().Info("loading BPF programs from OCI image",
 		"image", c.ImageURL,
 		"programs", len(c.Programs),
 		"pull_policy", c.PullPolicy.Value,
@@ -63,7 +71,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			if err != nil {
 				return res, fmt.Errorf("invalid registry-auth: %w", err)
 			}
-			runtime.Logger.Debug("using registry auth", "username", username)
+			mgr.Logger().Debug("using registry auth", "username", username)
 			authConfig = &interpreter.ImageAuth{
 				Username: username,
 				Password: password,
@@ -106,7 +114,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		// Load via manager directly
-		loaded, err := runtime.Manager.LoadImage(ctx, runtime.Puller, ref, programs, manager.LoadImageOpts{
+		loaded, err := mgr.LoadImage(ctx, puller, ref, programs, manager.LoadImageOpts{
 			UserMetadata: metadata,
 			GlobalData:   globalData,
 		})
@@ -119,7 +127,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		for _, prog := range loaded {
-			runtime.Logger.Info("program loaded successfully",
+			mgr.Logger().Info("program loaded successfully",
 				"name", prog.Spec.Meta.Name,
 				"kernel_id", prog.Spec.KernelID,
 				"pin_path", prog.Spec.Handles.PinPath,
@@ -142,6 +150,34 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 	return cli.PrintOut(output)
+}
+
+// buildPuller creates an image puller with signature verification settings from config.
+func (c *LoadImageCmd) buildPuller(cli *CLI, mgr *manager.Manager) (interpreter.ImagePuller, error) {
+	cfg, err := cli.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	logger := mgr.Logger()
+
+	// Build signature verifier based on config
+	var verifier interpreter.SignatureVerifier
+	if cfg.Signing.ShouldVerify() {
+		logger.Info("signature verification enabled")
+		verifier = verify.Cosign(
+			verify.WithLogger(logger),
+			verify.WithAllowUnsigned(cfg.Signing.AllowUnsigned),
+		)
+	} else {
+		logger.Debug("signature verification disabled")
+		verifier = verify.NoSign()
+	}
+
+	return oci.NewPuller(
+		oci.WithLogger(logger),
+		oci.WithVerifier(verifier),
+	)
 }
 
 // parseRegistryAuth parses a base64-encoded "username:password" string.

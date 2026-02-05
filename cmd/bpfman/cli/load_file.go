@@ -69,11 +69,11 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 	}
 
-	runtime, err := cli.NewCLIRuntime(ctx)
+	mgr, err := cli.NewManager(ctx)
 	if err != nil {
-		return fmt.Errorf("create runtime: %w", err)
+		return fmt.Errorf("create manager: %w", err)
 	}
-	defer runtime.Close()
+	defer mgr.Close()
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data
@@ -103,13 +103,13 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			for _, loaded := range res.Programs {
 				kernelID := loaded.Spec.KernelID
 				progName := loaded.Spec.Meta.Name
-				if err := runtime.Manager.Unload(ctx, kernelID); err != nil {
-					runtime.Logger.Warn("rollback: failed to unload program",
+				if err := mgr.Unload(ctx, kernelID); err != nil {
+					mgr.Logger().Warn("rollback: failed to unload program",
 						"kernel_id", kernelID,
 						"name", progName,
 						"error", err)
 				} else {
-					runtime.Logger.Debug("rollback: unloaded program",
+					mgr.Logger().Debug("rollback: unloaded program",
 						"kernel_id", kernelID,
 						"name", progName)
 				}
@@ -142,7 +142,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			}
 
 			// Load through manager
-			loaded, err := runtime.Manager.Load(ctx, spec, opts)
+			loaded, err := mgr.Load(ctx, spec, opts)
 			if err != nil {
 				var me *manager.ManagerError
 				if errors.As(err, &me) {
