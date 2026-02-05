@@ -10,10 +10,19 @@ import (
 )
 
 func TestOpen_ValidAbsolutePaths(t *testing.T) {
-	for _, base := range []string{"/run/bpfman", "/tmp/test", "/var/run/bpfman"} {
-		root, err := fs.Open(base)
-		require.NoError(t, err, "Open(%q)", base)
-		assert.Equal(t, base, root.Base())
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"/run", "/run/bpfman"},
+		{"/tmp/test", "/tmp/test/bpfman"},
+		{"/var/run", "/var/run/bpfman"},
+		{"/", "/bpfman"},
+	}
+	for _, tt := range tests {
+		root, err := fs.Open(tt.input)
+		require.NoError(t, err, "Open(%q)", tt.input)
+		assert.Equal(t, tt.expected, root.Base(), "Open(%q)", tt.input)
 	}
 }
 
@@ -24,22 +33,75 @@ func TestOpen_RejectsEmpty(t *testing.T) {
 }
 
 func TestOpen_RejectsRelative(t *testing.T) {
-	_, err := fs.Open("run/bpfman")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "absolute")
+	relativePaths := []string{
+		"run/bpfman",
+		"./",
+		"../",
+		".",
+		"..",
+		"./foo",
+		"../foo",
+		"foo/bar",
+	}
+	for _, path := range relativePaths {
+		_, err := fs.Open(path)
+		require.Error(t, err, "Open(%q) should fail", path)
+		assert.Contains(t, err.Error(), "absolute", "Open(%q)", path)
+	}
 }
 
-func TestOpen_RejectsRoot(t *testing.T) {
-	_, err := fs.Open("/")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "root")
+func TestOpen_HandlesRootSafely(t *testing.T) {
+	// Even "/" is safe because we append /bpfman
+	root, err := fs.Open("/")
+	require.NoError(t, err)
+	assert.Equal(t, "/bpfman", root.Base())
+}
+
+func TestOpen_CleansPathVariants(t *testing.T) {
+	// All these paths that would be dangerous if used directly
+	// are safe because we append /bpfman after cleaning.
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Multiple slashes
+		{"//////", "/bpfman"},
+		{"//", "/bpfman"},
+		{"//run//", "/run/bpfman"},
+		// Dot navigation
+		{"/./", "/bpfman"},
+		{"/././.", "/bpfman"},
+		{"/../", "/bpfman"},
+		{"/../../", "/bpfman"},
+		{"/../../../../../../../", "/bpfman"},
+		// Mixed
+		{"//./", "/bpfman"},
+		{"//..", "/bpfman"},
+		{"/..//", "/bpfman"},
+		{"/.//../", "/bpfman"},
+		// Trailing components that resolve away
+		{"/tmp/..", "/bpfman"},
+		{"/run/../..", "/bpfman"},
+		{"/a/b/c/../../..", "/bpfman"},
+		{"/foo/bar/baz/../../../..", "/bpfman"},
+		// Normal paths with extra slashes
+		{"//run//test//", "/run/test/bpfman"},
+	}
+	for _, tt := range tests {
+		root, err := fs.Open(tt.input)
+		require.NoError(t, err, "Open(%q)", tt.input)
+		assert.Equal(t, tt.expected, root.Base(), "Open(%q)", tt.input)
+	}
 }
 
 func TestZeroValueRoot(t *testing.T) {
 	var root fs.Root
 	assert.Equal(t, "", root.Base())
 
-	err := root.EnsureDirectories()
+	err := root.EnsureRuntimeDirectories()
+	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
+
+	err = root.EnsureDirectories()
 	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
 
 	err = root.EnsureCSIDirectories()
@@ -49,31 +111,35 @@ func TestZeroValueRoot(t *testing.T) {
 	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
 }
 
-func TestEnsureDirectories(t *testing.T) {
-	base := t.TempDir()
-	root, err := fs.Open(base)
+func TestEnsureRuntimeDirectories(t *testing.T) {
+	parent := t.TempDir()
+	root, err := fs.Open(parent)
 	require.NoError(t, err)
 
-	// EnsureDirectories will fail on bpffs mount (expected in test).
-	// We test that the regular directories are created despite that.
-	_ = root.EnsureDirectories()
+	// root.Base() is parent + "/bpfman"
+	runtimeDir := root.Base()
+	assert.Equal(t, parent+"/bpfman", runtimeDir)
 
-	// The directories that do not require bpffs should exist.
-	assert.DirExists(t, base)
-	assert.DirExists(t, base+"/db")
-	assert.DirExists(t, base+"-sock")
+	err = root.EnsureRuntimeDirectories()
+	require.NoError(t, err)
+
+	assert.DirExists(t, runtimeDir)
+	assert.DirExists(t, runtimeDir+"/db")
+	assert.DirExists(t, runtimeDir+"-sock")
 }
 
 func TestEnsureCSIDirectories(t *testing.T) {
-	base := t.TempDir()
-	root, err := fs.Open(base)
+	parent := t.TempDir()
+	root, err := fs.Open(parent)
 	require.NoError(t, err)
+
+	runtimeDir := root.Base()
 
 	err = root.EnsureCSIDirectories()
 	require.NoError(t, err)
 
-	assert.DirExists(t, base+"/csi")
-	assert.DirExists(t, base+"/csi/fs")
+	assert.DirExists(t, runtimeDir+"/csi")
+	assert.DirExists(t, runtimeDir+"/csi/fs")
 }
 
 func TestRuntime_ZeroValue(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 
 // CLI is the root command structure for bpfman.
 type CLI struct {
-	RuntimeDir  string        `name:"runtime-dir" help:"Runtime directory base path." default:"${default_runtime_dir}"`
+	RuntimeDir  string        `name:"runtime-dir" help:"Parent directory for runtime files (bpfman subdirectory is created)." default:"${default_runtime_dir}"`
 	Config      string        `name:"config" help:"Config file path." default:"${default_config_path}"`
 	Log         string        `name:"log" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
 	LockTimeout time.Duration `name:"lock-timeout" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
@@ -205,7 +205,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
 		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
 		kong.Vars{
-			"default_runtime_dir": "/run/bpfman",
+			"default_runtime_dir": "/run",
 			"default_config_path": "/etc/bpfman/bpfman.toml",
 		},
 	}

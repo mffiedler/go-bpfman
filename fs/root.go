@@ -19,10 +19,19 @@ type Root struct {
 	base string
 }
 
-// Open creates a Root rooted at the given base path.
+// Open creates a Root for bpfman's runtime directory.
 //
-// Open rejects empty paths, relative paths, and "/" (the filesystem
-// root is never a valid bpfman base).
+// The base path specifies the parent directory; Open always appends
+// "bpfman" to create the actual runtime root. This ensures bpfman
+// operates in a controlled subdirectory regardless of what base is
+// provided, preventing accidental operations on system directories.
+//
+// Examples:
+//   - Open("/run") → /run/bpfman
+//   - Open("/tmp/test") → /tmp/test/bpfman
+//   - Open("/") → /bpfman
+//
+// Open rejects empty paths and relative paths.
 func Open(base string) (Root, error) {
 	if base == "" {
 		return Root{}, fmt.Errorf("fs: base path cannot be empty")
@@ -30,10 +39,8 @@ func Open(base string) (Root, error) {
 	if !filepath.IsAbs(base) {
 		return Root{}, fmt.Errorf("fs: base path must be absolute, got %q", base)
 	}
-	if base == "/" {
-		return Root{}, fmt.Errorf("fs: base path cannot be filesystem root")
-	}
-	return Root{base: base}, nil
+	base = filepath.Clean(base)
+	return Root{base: filepath.Join(base, "bpfman")}, nil
 }
 
 // valid reports whether r was constructed via Open.
