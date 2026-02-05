@@ -105,9 +105,11 @@ func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperati
 		"fs", root.BPFFSMountPoint(),
 		"db", root.DBPath())
 
-	if err := root.EnsureRuntimeDirectories(); err != nil {
-		setupLogger.Error("failed to ensure directories", "error", err)
-		return nil, err
+	for _, dir := range root.RuntimeDirs() {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			setupLogger.Error("failed to create directory", "dir", dir, "error", err)
+			return nil, fmt.Errorf("create directory %s: %w", dir, err)
+		}
 	}
 
 	// Mount bpffs via the provided mounter

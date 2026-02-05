@@ -97,49 +97,30 @@ func TestOpen_CleansPathVariants(t *testing.T) {
 func TestZeroValueRoot(t *testing.T) {
 	var root fs.Root
 	assert.Equal(t, "", root.Base())
-
-	err := root.EnsureRuntimeDirectories()
-	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
-
-	err = root.EnsureDirectories()
-	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
-
-	err = root.EnsureCSIDirectories()
-	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
-
-	err = root.EnsureBPFFSMounted("/proc/self/mountinfo")
-	assert.ErrorIs(t, err, fs.ErrInvalidRoot)
+	assert.False(t, root.Valid())
 }
 
-func TestEnsureRuntimeDirectories(t *testing.T) {
+func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
 	root, err := fs.Open(parent)
 	require.NoError(t, err)
 
-	// root.Base() is parent + "/bpfman"
-	runtimeDir := root.Base()
-	assert.Equal(t, parent+"/bpfman", runtimeDir)
-
-	err = root.EnsureRuntimeDirectories()
-	require.NoError(t, err)
-
-	assert.DirExists(t, runtimeDir)
-	assert.DirExists(t, runtimeDir+"/db")
-	assert.DirExists(t, runtimeDir+"-sock")
+	dirs := root.RuntimeDirs()
+	require.Len(t, dirs, 3)
+	assert.Equal(t, root.Base(), dirs[0])
+	assert.Equal(t, root.DBDir(), dirs[1])
+	assert.Equal(t, root.SocketDir(), dirs[2])
 }
 
-func TestEnsureCSIDirectories(t *testing.T) {
+func TestCSIDirs(t *testing.T) {
 	parent := t.TempDir()
 	root, err := fs.Open(parent)
 	require.NoError(t, err)
 
-	runtimeDir := root.Base()
-
-	err = root.EnsureCSIDirectories()
-	require.NoError(t, err)
-
-	assert.DirExists(t, runtimeDir+"/csi")
-	assert.DirExists(t, runtimeDir+"/csi/fs")
+	dirs := root.CSIDirs()
+	require.Len(t, dirs, 2)
+	assert.Equal(t, root.CSIDir(), dirs[0])
+	assert.Equal(t, root.CSIFSDir(), dirs[1])
 }
 
 func TestRuntime_ZeroValue(t *testing.T) {

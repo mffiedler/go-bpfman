@@ -2,10 +2,7 @@ package fs
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-
-	"github.com/frobware/go-bpfman/bpffs"
 )
 
 // Root is an immutable, validated filesystem root. Fields are
@@ -15,6 +12,11 @@ import (
 // Root acts as a capability token following the same pattern as
 // lock.WriterScope: possession of a valid Root proves the base path
 // has been validated.
+//
+// Root is deliberately I/O free - it only computes and validates paths.
+// Callers with appropriate context (e.g., manager.New with an injected
+// BPFFSMounter) are responsible for creating directories and mount points.
+// This separation enables testing without root privileges or real filesystems.
 type Root struct {
 	base string
 }
@@ -91,71 +93,41 @@ func (r Root) BPFFSMountPoint() string {
 	return filepath.Join(r.base, "fs")
 }
 
-// EnsureDirectories creates core runtime directories and ensures
-// bpffs is mounted. Call this at startup to fail fast on permission
-// or configuration issues.
-//
-// Creates these directories (on regular filesystem):
-//   - {base}/
-//   - {base}/db/
-//   - {base}-sock/
-//
-// Mounts bpffs at {base}/fs/ if not already mounted.
-func (r Root) EnsureDirectories() error {
-	if err := r.EnsureRuntimeDirectories(); err != nil {
-		return err
-	}
-	return r.EnsureBPFFSMounted(bpffs.DefaultMountInfoPath)
+// DBDir returns the directory containing the database file.
+func (r Root) DBDir() string {
+	return filepath.Join(r.base, "db")
 }
 
-// EnsureRuntimeDirectories creates core runtime directories without
-// mounting bpffs. Use this when bpffs mounting is handled separately
-// (e.g., via a BPFFSMounter interface for testability).
-//
-// Creates these directories (on regular filesystem):
-//   - {base}/
-//   - {base}/db/
-//   - {base}-sock/
-func (r Root) EnsureRuntimeDirectories() error {
-	if !r.valid() {
-		return ErrInvalidRoot
-	}
-	for _, dir := range []string{
-		r.base,
-		filepath.Join(r.base, "db"),
-		r.base + "-sock",
-	} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
-		}
-	}
-	return nil
+// SocketDir returns the directory containing the gRPC socket.
+func (r Root) SocketDir() string {
+	return r.base + "-sock"
 }
 
-// EnsureBPFFSMounted ensures bpffs is mounted at the mount point.
-func (r Root) EnsureBPFFSMounted(mountInfoPath string) error {
-	if !r.valid() {
-		return ErrInvalidRoot
-	}
-	mp := r.BPFFSMountPoint()
-	if err := bpffs.EnsureMounted(mountInfoPath, mp); err != nil {
-		return fmt.Errorf("failed to ensure bpffs at %s: %w", mp, err)
-	}
-	return nil
+// CSIDir returns the CSI directory path.
+func (r Root) CSIDir() string {
+	return filepath.Join(r.base, "csi")
 }
 
-// EnsureCSIDirectories creates CSI-specific directories.
-// Call this only when CSI functionality is enabled.
-func (r Root) EnsureCSIDirectories() error {
-	if !r.valid() {
-		return ErrInvalidRoot
+// CSIFSDir returns the CSI filesystem directory path.
+func (r Root) CSIFSDir() string {
+	return filepath.Join(r.base, "csi", "fs")
+}
+
+// RuntimeDirs returns the directories required for basic runtime operation.
+// Callers should create these directories at startup.
+func (r Root) RuntimeDirs() []string {
+	return []string{
+		r.Base(),
+		r.DBDir(),
+		r.SocketDir(),
 	}
-	csi := filepath.Join(r.base, "csi")
-	csiFS := filepath.Join(csi, "fs")
-	for _, dir := range []string{csi, csiFS} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
-		}
+}
+
+// CSIDirs returns the directories required for CSI operation.
+// Callers should create these directories only when CSI is enabled.
+func (r Root) CSIDirs() []string {
+	return []string{
+		r.CSIDir(),
+		r.CSIFSDir(),
 	}
-	return nil
 }

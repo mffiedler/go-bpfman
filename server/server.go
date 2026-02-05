@@ -119,8 +119,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Start CSI driver if enabled
 	if cfg.CSISupport {
-		if err := root.EnsureCSIDirectories(); err != nil {
-			return fmt.Errorf("CSI directory setup failed: %w", err)
+		for _, dir := range root.CSIDirs() {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("create CSI directory %s: %w", dir, err)
+			}
 		}
 
 		nodeID, err := os.Hostname()
