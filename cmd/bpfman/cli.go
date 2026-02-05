@@ -44,6 +44,9 @@ type CLI struct {
 	// Logger is initialised eagerly by initLogger and never changes.
 	logger *slog.Logger `kong:"-"`
 
+	// kctx is the parsed Kong context, stored for Execute to dispatch.
+	kctx *kong.Context `kong:"-"`
+
 	Serve   ServeCmd   `cmd:"" help:"Start the gRPC daemon."`
 	Load    LoadCmd    `cmd:"" help:"Load a BPF program from an object file."`
 	Unload  UnloadCmd  `cmd:"" help:"Unload a managed BPF program."`
@@ -113,45 +116,22 @@ func (c *CLI) PrintErrf(format string, args ...any) error {
 	return c.PrintErr(fmt.Sprintf(format, args...))
 }
 
-// New creates and initialises a CLI instance by parsing command-line arguments.
-// Returns the CLI, kong context for running the command, and any error.
+// NewCLI creates and initialises a CLI instance by parsing command-line arguments.
 //
-// If (nil, nil, nil) is returned, the namespace helper was invoked and handled
-// the request - the caller should exit successfully without further action.
+// Mode detection for bpfman-rpc (daemon compatibility with bpfman-operator):
+//   - BPFMAN_MODE=bpfman-rpc or argv[0] basename "bpfman-rpc" injects "serve" command
 //
-// Mode detection:
-//   - BPFMAN_MODE env var is authoritative when set (handled by helper detection)
-//   - argv[0] basename provides symlink/binary name compatibility
-//
-// Modes:
-//   - "bpfman-ns": namespace helper for container uprobes (returns nil, nil, nil)
-//   - "bpfman-rpc": serve command (for bpfman-operator compatibility)
-//   - otherwise: normal CLI parsing
-func New() (*CLI, *kong.Context, error) {
-	// Check for namespace helper subprocess mode (used for container uprobes).
-	// This needs early handling before the main CLI is set up because the
-	// subprocess runs in a different mount namespace.
-	// Helper detection owns BPFMAN_MODE interpretation and returns errors for
-	// unknown values.
-	modeEnv := os.Getenv(nsenter.ModeEnvVar)
-	handled, err := HandleNamespaceHelperInvocation(os.Args, modeEnv, runNamespaceHelper)
-	if err != nil {
-		return nil, nil, err
-	}
-	if handled {
-		return nil, nil, nil // Namespace helper handled the request
-	}
-
+// Note: Namespace helper mode (bpfman-ns) must be checked before calling NewCLI
+// via RunNamespaceHelper(), as it uses a completely separate CLI structure.
+func NewCLI() (*CLI, error) {
 	// Check for bpfman-rpc mode (daemon compatibility with bpfman-operator).
-	// BPFMAN_MODE takes precedence over argv[0] for explicit configuration.
-	// By this point, if BPFMAN_MODE is set, it's "bpfman-rpc" (helper detection
-	// handles "bpfman-ns" and rejects unknown values).
+	modeEnv := os.Getenv(nsenter.ModeEnvVar)
 	if modeEnv == "bpfman-rpc" || filepath.Base(os.Args[0]) == "bpfman-rpc" {
 		os.Args = append([]string{os.Args[0], "serve"}, os.Args[1:]...)
 	}
 
 	var c CLI
-	kctx := kong.Parse(&c, KongOptions()...)
+	c.kctx = kong.Parse(&c, KongOptions()...)
 
 	// Default writers if not injected (e.g., by tests)
 	if c.Out == nil {
@@ -163,10 +143,10 @@ func New() (*CLI, *kong.Context, error) {
 
 	// Initialise logger eagerly so errors surface immediately
 	if err := c.initLogger(); err != nil {
-		return nil, nil, fmt.Errorf("create logger: %w", err)
+		return nil, fmt.Errorf("create logger: %w", err)
 	}
 
-	return &c, kctx, nil
+	return &c, nil
 }
 
 // Execute runs the parsed command.
@@ -174,10 +154,10 @@ func New() (*CLI, *kong.Context, error) {
 // Note: This method is deliberately not named "Run" because Kong looks for
 // Run() methods on command structs. If CLI had a Run() method, kctx.Run(c)
 // would call it recursively instead of dispatching to the matched subcommand.
-func (c *CLI) Execute(ctx context.Context, kctx *kong.Context) error {
-	kctx.BindTo(ctx, (*context.Context)(nil))
+func (c *CLI) Execute(ctx context.Context) error {
+	c.kctx.BindTo(ctx, (*context.Context)(nil))
 
-	if err := kctx.Run(c); err != nil {
+	if err := c.kctx.Run(c); err != nil {
 		// ErrSilent means the error was already communicated (e.g., via JSON)
 		if !errors.Is(err, ErrSilent) {
 			_ = c.PrintErrf("bpfman: error: %v\n", err)

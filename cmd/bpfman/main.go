@@ -7,7 +7,30 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/frobware/go-bpfman/nsenter"
 )
+
+// NamespaceSwitcherResult represents the outcome of attempting to run
+// as the namespace helper subprocess.
+type NamespaceSwitcherResult struct {
+	Ran bool
+	Err error
+}
+
+// RunNamespaceSwitcher checks if we're being invoked as the namespace helper
+// subprocess (for container uprobe attachment) and runs that code path if so.
+func RunNamespaceSwitcher() NamespaceSwitcherResult {
+	modeEnv := os.Getenv(nsenter.ModeEnvVar)
+	inv, isHelper, err := DetectNamespaceHelperInvocation(os.Args, modeEnv)
+	if err != nil {
+		return NamespaceSwitcherResult{Err: err}
+	}
+	if !isHelper {
+		return NamespaceSwitcherResult{}
+	}
+	return NamespaceSwitcherResult{Ran: true, Err: runNamespaceHelper(inv)}
+}
 
 func main() {
 	if os.Geteuid() != 0 {
@@ -15,14 +38,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	c, kctx, err := New()
+	// Check if we're being invoked as the namespace helper subprocess.
+	// This is a completely different execution path with its own CLI.
+	switch r := RunNamespaceSwitcher(); {
+	case r.Ran && r.Err != nil:
+		fmt.Fprintf(os.Stderr, "bpfman-ns: error: %v\n", r.Err)
+		os.Exit(1)
+	case r.Err != nil:
+		fmt.Fprintf(os.Stderr, "bpfman: error: %v\n", r.Err)
+		os.Exit(1)
+	case r.Ran:
+		return
+	}
+
+	c, err := NewCLI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bpfman: error: %v\n", err)
 		os.Exit(1)
-	}
-	if c == nil {
-		// Namespace helper handled the request
-		return
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -36,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if err := c.Execute(ctx, kctx); err != nil {
+	if err := c.Execute(ctx); err != nil {
 		os.Exit(1)
 	}
 }
