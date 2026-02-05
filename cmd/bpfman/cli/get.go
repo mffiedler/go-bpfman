@@ -55,7 +55,7 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer runtime.Close()
 
-	scanner := bpffs.NewScanner(runtime.Dirs.ScannerDirs())
+	scanner := bpffs.NewScanner(runtime.Root.BPFFS().ScannerDirs())
 	info, err := inspect.GetLink(ctx, runtime.Store, runtime.Kernel, scanner, bpfman.LinkID(c.LinkID.Value))
 	if err != nil {
 		return err

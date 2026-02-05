@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -78,7 +77,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, bpffs.Root(m.dirs.FS()))
+	loaded, err := m.kernel.Load(ctx, spec, bpffs.Root(m.root.BPFFS().FS()))
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
@@ -386,9 +385,9 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
 
 	// COMPUTE: Build paths from convention (kernel ID + bpffs root)
-	progPinPath := m.dirs.ProgPinPath(kernelID)
-	mapsDir := filepath.Join(m.dirs.FS(), "maps", fmt.Sprintf("%d", kernelID))
-	linksDir := m.dirs.LinkPinDir(kernelID)
+	progPinPath := m.root.BPFFS().ProgPinPath(kernelID)
+	mapsDir := m.root.BPFFS().MapPinDir(kernelID)
+	linksDir := m.root.BPFFS().LinkPinDir(kernelID)
 
 	// COMPUTE: Build unload actions and step mapping
 	actions := computeUnloadActions(kernelID, progPinPath, mapsDir, linksDir, links)

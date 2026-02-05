@@ -506,7 +506,7 @@ func TestTC_PinPathConventions(t *testing.T) {
 	// Verify RemovePin was called with convention-derived paths
 	removedPins := fix.Kernel.RemovedPins()
 
-	bpffsRoot := fix.Dirs.FS()
+	bpffsRoot := fix.Root.BPFFS().FS()
 	revisionDir := dispatcher.DispatcherRevisionDir(bpffsRoot, disp.Type, disp.Nsid, disp.Ifindex, disp.Revision)
 	expectedProgPin := dispatcher.DispatcherProgPath(revisionDir)
 

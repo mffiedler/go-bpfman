@@ -83,8 +83,6 @@ func (b BPFFS) ScannerDirs() bpffs.ScannerDirs {
 }
 
 // uitoa converts uint32 to string without importing strconv.
-// Duplicated from config/runtime_dirs.go; will be removed when
-// RuntimeDirs is retired.
 func uitoa(n uint32) string {
 	if n == 0 {
 		return "0"

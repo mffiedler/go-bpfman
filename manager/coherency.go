@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
@@ -207,7 +206,6 @@ type ObservedState struct {
 	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
-	dirs config.RuntimeDirs
 	root fs.Root
 
 	// Mutation capability for GC operations only.
@@ -222,7 +220,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, dirs config.RuntimeDirs, root fs.Root) (*ObservedState, error) {
+func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, root fs.Root) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[uint32]bool),
 		kernelLinks:           make(map[uint32]bool),
@@ -233,7 +231,6 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		dbProgPins:            make(map[string]bool),
 		dbProgIDs:             make(map[uint32]bool),
 		dbDispatcherKeys:      make(map[string]bool),
-		dirs:                  dirs,
 		root:                  root,
 	}
 
@@ -339,12 +336,12 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 
 	// Dispatcher prog pins and XDP link pins.
 	for _, d := range s.dbDispatchers {
-		revDir := dispatcher.DispatcherRevisionDir(dirs.FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
+		revDir := dispatcher.DispatcherRevisionDir(root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
 		progPin := dispatcher.DispatcherProgPath(revDir)
 		pathsToStat[progPin] = struct{}{}
 
 		if d.Type == dispatcher.DispatcherTypeXDP {
-			linkPin := dispatcher.DispatcherLinkPath(dirs.FS(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := dispatcher.DispatcherLinkPath(root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex)
 			pathsToStat[linkPin] = struct{}{}
 		}
 	}
@@ -367,13 +364,13 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	s.orphans = make([]FsOrphan, 0)
 
 	// Scan dirs.FS for orphan prog_* pins.
-	if entries, err := os.ReadDir(dirs.FS()); err == nil {
+	if entries, err := os.ReadDir(root.BPFFS().FS()); err == nil {
 		for _, entry := range entries {
 			name := entry.Name()
 			if !strings.HasPrefix(name, "prog_") {
 				continue
 			}
-			pinPath := filepath.Join(dirs.FS(), name)
+			pinPath := filepath.Join(root.BPFFS().FS(), name)
 			if s.dbProgPins[pinPath] {
 				continue
 			}
@@ -384,8 +381,8 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		}
 	}
 
-	// Scan dirs.FS_LINKS() for orphan link directories.
-	if entries, err := os.ReadDir(dirs.FS_LINKS()); err == nil {
+	// Scan root.BPFFS().Links() for orphan link directories.
+	if entries, err := os.ReadDir(root.BPFFS().Links()); err == nil {
 		for _, entry := range entries {
 			var progID uint32
 			if n, _ := fmt.Sscanf(entry.Name(), "%d", &progID); n != 1 {
@@ -395,15 +392,15 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 				continue
 			}
 			s.orphans = append(s.orphans, FsOrphan{
-				Path:     filepath.Join(dirs.FS_LINKS(), entry.Name()),
+				Path:     filepath.Join(root.BPFFS().Links(), entry.Name()),
 				KernelID: progID,
 				Kind:     "link-dir",
 			})
 		}
 	}
 
-	// Scan dirs.FS_MAPS() for orphan map directories.
-	if entries, err := os.ReadDir(dirs.FS_MAPS()); err == nil {
+	// Scan root.BPFFS().Maps() for orphan map directories.
+	if entries, err := os.ReadDir(root.BPFFS().Maps()); err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				continue
@@ -416,7 +413,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 				continue
 			}
 			s.orphans = append(s.orphans, FsOrphan{
-				Path:     filepath.Join(dirs.FS_MAPS(), entry.Name()),
+				Path:     filepath.Join(root.BPFFS().Maps(), entry.Name()),
 				KernelID: progID,
 				Kind:     "map-dir",
 			})
@@ -431,7 +428,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		dispatcher.DispatcherTypeTCEgress,
 	}
 	for _, dt := range dispTypes {
-		typeDir := dispatcher.TypeDir(dirs.FS(), dt)
+		typeDir := dispatcher.TypeDir(root.BPFFS().FS(), dt)
 		entries, err := os.ReadDir(typeDir)
 		if err != nil {
 			continue
@@ -609,7 +606,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	}
 	for _, d := range s.dbDispatchers {
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		revDir := dispatcher.DispatcherRevisionDir(s.dirs.FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
+		revDir := dispatcher.DispatcherRevisionDir(s.root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
 		progPin := dispatcher.DispatcherProgPath(revDir)
 
 		ds := DispatcherState{
@@ -628,7 +625,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		// XDP link checks from gathered facts.
 		if d.Type == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = d.LinkID != 0 && s.kernelLinks[d.LinkID]
-			linkPin := dispatcher.DispatcherLinkPath(s.dirs.FS(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex)
 			if exists, ok := s.fsPinExists[linkPin]; ok {
 				ds.LinkPinExist = &exists
 			}
@@ -1228,7 +1225,7 @@ Category: gc-dispatcher`,
 								os.Remove(dd.ProgPin)
 								os.RemoveAll(dd.RevDir)
 								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
-									linkPin := dispatcher.DispatcherLinkPath(s.dirs.FS(), dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
+									linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().FS(), dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
 									os.Remove(linkPin)
 								}
 								return s.DeleteDispatcher(string(dd.DB.Type), dd.DB.Nsid, dd.DB.Ifindex)
@@ -1467,7 +1464,7 @@ Category: gc-orphan-pin`,
 
 // Doctor gathers state and evaluates all coherency rules.
 func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
+	state, err := GatherState(ctx, m.store, m.kernel, m.root)
 	if err != nil {
 		return DoctorReport{}, fmt.Errorf("gather state: %w", err)
 	}
@@ -1487,7 +1484,7 @@ func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
 // Store-level GC (structural cleanup) is handled separately by
 // store.GC() called from Manager.GC().
 func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
+	state, err := GatherState(ctx, m.store, m.kernel, m.root)
 	if err != nil {
 		return 0, fmt.Errorf("gather state: %w", err)
 	}

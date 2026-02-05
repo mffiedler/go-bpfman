@@ -51,7 +51,7 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 
 // RunConfig configures the server daemon.
 type RunConfig struct {
-	Dirs         config.RuntimeDirs
+	Root         fs.Root
 	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
@@ -63,7 +63,7 @@ type RunConfig struct {
 // This is the main entry point for the serve command.
 // The context is used for cancellation - when cancelled, the server shuts down gracefully.
 func Run(ctx context.Context, cfg RunConfig) error {
-	dirs := cfg.Dirs
+	root := cfg.Root
 
 	logger := cfg.Logger
 	if logger == nil {
@@ -74,13 +74,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	logger = manager.WithOpIDHandler(logger)
 
 	// Ensure directories exist and bpffs is mounted
-	root := fs.FromRuntimeDirs(dirs)
 	if err := root.EnsureDirectories(); err != nil {
 		return fmt.Errorf("runtime directory setup failed: %w", err)
 	}
 
 	// Open shared SQLite store
-	dbPath := dirs.DBPath()
+	dbPath := root.DBPath()
 	st, err := sqlite.New(ctx, dbPath, logger)
 	if err != nil {
 		return fmt.Errorf("failed to open store at %s: %w", dbPath, err)
@@ -114,14 +113,14 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	mgr := manager.New(dirs, root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
 
 	// Track CSI driver for graceful shutdown
 	var csiDriver *driver.Driver
 
 	// Start CSI driver if enabled
 	if cfg.CSISupport {
-		if err := dirs.EnsureCSIDirectories(); err != nil {
+		if err := root.EnsureCSIDirectories(); err != nil {
 			return fmt.Errorf("CSI directory setup failed: %w", err)
 		}
 
@@ -130,7 +129,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			return fmt.Errorf("failed to get hostname for node ID: %w", err)
 		}
 
-		csiSocketPath := dirs.CSISocketPath()
+		csiSocketPath := root.CSISocketPath()
 		csiDriver = driver.New(
 			DefaultCSIDriverName,
 			DefaultCSIVersion,
@@ -183,8 +182,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	// Start bpfman gRPC server
-	srv := newWithStore(dirs, st, puller, mgr, logger)
-	return srv.serve(ctx, dirs.SocketPath(), cfg.TCPAddress)
+	srv := newWithStore(root, st, puller, mgr, logger)
+	return srv.serve(ctx, root.SocketPath(), cfg.TCPAddress)
 }
 
 // Server implements the bpfman gRPC service.
@@ -192,7 +191,7 @@ type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	mu        sync.RWMutex
-	dirs      config.RuntimeDirs
+	root      fs.Root
 	kernel    interpreter.KernelOperations
 	store     interpreter.Store
 	puller    interpreter.ImagePuller
@@ -204,12 +203,12 @@ type Server struct {
 
 // newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(dirs config.RuntimeDirs, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
+func newWithStore(root fs.Root, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		dirs:     dirs,
+		root:     root,
 		kernel:   ebpf.New(ebpf.WithLogger(logger)),
 		store:    store,
 		puller:   puller,
@@ -220,21 +219,21 @@ func newWithStore(dirs config.RuntimeDirs, store interpreter.Store, puller inter
 }
 
 // New creates a server with the provided dependencies.
-func New(dirs config.RuntimeDirs, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, logger *slog.Logger) *Server {
+func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	s := &Server{
-		dirs:     dirs,
+		root:     root,
 		kernel:   kernel,
 		store:    store,
 		puller:   puller,
 		netIface: netIface,
 		logger:   logger.With("component", "server"),
 	}
-	s.mgr = manager.New(dirs, fs.FromRuntimeDirs(dirs), store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	s.mgr = manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	return s
 }
 
@@ -243,7 +242,7 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 	// Open SQLite store if not already set (e.g., when using newWithStore)
 	closeStore := false
 	if s.store == nil {
-		st, err := sqlite.New(ctx, s.dirs.DBPath(), s.logger)
+		st, err := sqlite.New(ctx, s.root.DBPath(), s.logger)
 		if err != nil {
 			return fmt.Errorf("failed to open store: %w", err)
 		}
@@ -258,7 +257,7 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 
 	// Create manager for transactional load/unload operations (if not already set)
 	if s.mgr == nil {
-		s.mgr = manager.New(s.dirs, fs.FromRuntimeDirs(s.dirs), s.store, s.kernel, ebpf.NewProgramDiscoverer(), s.logger)
+		s.mgr = manager.New(s.root, s.store, s.kernel, ebpf.NewProgramDiscoverer(), s.logger)
 	}
 
 	// GC stale DB entries before accepting requests.
@@ -385,7 +384,7 @@ func (s *Server) lockInterceptor() grpc.UnaryServerInterceptor {
 		var resp any
 		var handlerErr error
 
-		runErr := lock.RunWithTiming(ctx, s.dirs.Lock(), s.logger,
+		runErr := lock.RunWithTiming(ctx, s.root.LockPath(), s.logger,
 			func(ctx context.Context, scope lock.WriterScope) error {
 				// Stash scope in ctx so handlers can pass it to manager
 				// methods that need it (e.g., container uprobe).

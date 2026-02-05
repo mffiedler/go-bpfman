@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/fs"
 )
 
@@ -34,49 +33,6 @@ func TestOpen_RejectsRoot(t *testing.T) {
 	_, err := fs.Open("/")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "root")
-}
-
-func TestFromRuntimeDirs_PathEquivalence(t *testing.T) {
-	dirs := config.DefaultRuntimeDirs()
-	root := fs.FromRuntimeDirs(dirs)
-	bpffsView := root.BPFFS()
-
-	assert.Equal(t, dirs.Base(), root.Base())
-	assert.Equal(t, dirs.Lock(), root.LockPath())
-	assert.Equal(t, dirs.DBPath(), root.DBPath())
-	assert.Equal(t, dirs.SocketPath(), root.SocketPath())
-	assert.Equal(t, dirs.CSISocketPath(), root.CSISocketPath())
-	assert.Equal(t, dirs.FS(), root.BPFFSMountPoint())
-
-	assert.Equal(t, dirs.FS(), bpffsView.FS())
-	assert.Equal(t, dirs.FS_XDP(), bpffsView.XDP())
-	assert.Equal(t, dirs.FS_TC_INGRESS(), bpffsView.TCIngress())
-	assert.Equal(t, dirs.FS_TC_EGRESS(), bpffsView.TCEgress())
-	assert.Equal(t, dirs.FS_MAPS(), bpffsView.Maps())
-	assert.Equal(t, dirs.FS_LINKS(), bpffsView.Links())
-
-	// Test program-specific paths with various IDs.
-	for _, id := range []uint32{0, 1, 42, 1000, 4294967295} {
-		assert.Equal(t, dirs.ProgPinPath(id), bpffsView.ProgPinPath(id), "ProgPinPath(%d)", id)
-		assert.Equal(t, dirs.MapPinDir(id), bpffsView.MapPinDir(id), "MapPinDir(%d)", id)
-		assert.Equal(t, dirs.LinkPinDir(id), bpffsView.LinkPinDir(id), "LinkPinDir(%d)", id)
-	}
-
-	// ScannerDirs equivalence.
-	assert.Equal(t, dirs.ScannerDirs(), bpffsView.ScannerDirs())
-}
-
-func TestFromRuntimeDirs_CustomBase(t *testing.T) {
-	dirs, err := config.NewRuntimeDirs("/tmp/custom-bpfman")
-	require.NoError(t, err)
-	root := fs.FromRuntimeDirs(dirs)
-
-	assert.Equal(t, "/tmp/custom-bpfman", root.Base())
-	assert.Equal(t, "/tmp/custom-bpfman/.lock", root.LockPath())
-	assert.Equal(t, "/tmp/custom-bpfman/db/store.db", root.DBPath())
-	assert.Equal(t, "/tmp/custom-bpfman-sock/bpfman.sock", root.SocketPath())
-	assert.Equal(t, "/tmp/custom-bpfman/csi/csi.sock", root.CSISocketPath())
-	assert.Equal(t, "/tmp/custom-bpfman/fs", root.BPFFSMountPoint())
 }
 
 func TestZeroValueRoot(t *testing.T) {

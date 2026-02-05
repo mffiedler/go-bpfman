@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/server"
@@ -56,7 +56,7 @@ type testFixture struct {
 	Server        *server.Server
 	Kernel        *fakeKernel
 	Store         interpreter.Store
-	Dirs          *config.RuntimeDirs
+	Root          fs.Root
 	t             *testing.T
 	bytecodeDir   string
 	bytecodeFiles map[string]string
@@ -68,16 +68,16 @@ func newTestFixture(t *testing.T) *testFixture {
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
-	dirs, err := config.NewRuntimeDirs(t.TempDir())
-	require.NoError(t, err, "failed to create runtime dirs")
+	root, err := fs.Open(t.TempDir())
+	require.NoError(t, err, "failed to create fs root")
 	kernel := newFakeKernel()
 	netIface := newFakeNetIfaceResolver()
-	srv := server.New(dirs, store, kernel, nil, netIface, testLogger())
+	srv := server.New(root, store, kernel, nil, netIface, testLogger())
 	return &testFixture{
 		Server:        srv,
 		Kernel:        kernel,
 		Store:         store,
-		Dirs:          &dirs,
+		Root:          root,
 		t:             t,
 		bytecodeDir:   t.TempDir(),
 		bytecodeFiles: make(map[string]string),

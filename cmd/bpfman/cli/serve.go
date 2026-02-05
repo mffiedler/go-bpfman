@@ -26,13 +26,13 @@ func (c *ServeCmd) Run(cli *CLI, ctx context.Context) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	dirs, err := cli.RuntimeDirs()
+	root, err := cli.Root()
 	if err != nil {
 		return fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
 	cfg := server.RunConfig{
-		Dirs:         dirs,
+		Root:         root,
 		TCPAddress:   c.TCPAddress,
 		CSISupport:   c.CSISupport,
 		PprofAddress: c.PprofAddress,

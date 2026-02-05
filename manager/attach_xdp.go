@@ -124,7 +124,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	revisionDir := dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
+	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -198,7 +198,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			})
 			return fail(primaryErr)
 		}
-		revisionDir = dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
+		revisionDir = dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
 			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
@@ -348,8 +348,8 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
 	// COMPUTE: Calculate paths according to Rust bpfman convention
 	revision := uint32(1)
-	linkPinPath := dispatcher.DispatcherLinkPath(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	revisionDir := dispatcher.DispatcherRevisionDir(m.dirs.FS(), dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
+	linkPinPath := dispatcher.DispatcherLinkPath(m.root.BPFFS().FS(), dispatcher.DispatcherTypeXDP, nsid, ifindex)
+	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
 
 	m.logger.InfoContext(ctx, "creating XDP dispatcher",

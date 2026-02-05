@@ -8,8 +8,7 @@
 //   - Runtime: regular-filesystem operations (bytecode persistence)
 //   - BPFFS: bpffs layout conventions (pin paths, scanner dirs)
 //
-// All types have unexported fields and are constructible only via
-// Open or FromRuntimeDirs.
+// All types have unexported fields and are constructible only via Open.
 package fs
 
 import (

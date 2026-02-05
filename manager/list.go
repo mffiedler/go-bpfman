@@ -145,7 +145,7 @@ func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.Lin
 // Returns an error if no programs match, or if multiple map owners exist
 // (data inconsistency).
 func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, uint32, error) {
-	scanner := bpffs.NewScanner(m.dirs.ScannerDirs())
+	scanner := bpffs.NewScanner(m.root.BPFFS().ScannerDirs())
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramRecord{}, 0, fmt.Errorf("snapshot: %w", err)
@@ -220,7 +220,7 @@ func (m *Manager) ListPrograms(ctx context.Context) (bpfman.ProgramListResult, e
 // If filter is nil, all managed programs are returned.
 // Results are ordered deterministically by kernel ID, then by type+name for ties.
 func (m *Manager) ListProgramsWithFilter(ctx context.Context, filter *bpfman.ProgramFilter) (bpfman.ProgramListResult, error) {
-	scanner := bpffs.NewScanner(m.dirs.ScannerDirs())
+	scanner := bpffs.NewScanner(m.root.BPFFS().ScannerDirs())
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)

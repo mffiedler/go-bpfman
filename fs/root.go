@@ -6,12 +6,11 @@ import (
 	"path/filepath"
 
 	"github.com/frobware/go-bpfman/bpffs"
-	"github.com/frobware/go-bpfman/config"
 )
 
 // Root is an immutable, validated filesystem root. Fields are
 // unexported; external packages cannot construct a non-zero Root
-// without calling Open or FromRuntimeDirs.
+// without calling Open.
 //
 // Root acts as a capability token following the same pattern as
 // lock.WriterScope: possession of a valid Root proves the base path
@@ -37,19 +36,12 @@ func Open(base string) (Root, error) {
 	return Root{base: base}, nil
 }
 
-// FromRuntimeDirs constructs a Root from an existing RuntimeDirs.
-// This is the migration bridge; it does not return an error because
-// RuntimeDirs is pre-validated by its own constructor.
-func FromRuntimeDirs(d config.RuntimeDirs) Root {
-	return Root{base: d.Base()}
-}
-
-// valid reports whether r was constructed via Open or FromRuntimeDirs.
+// valid reports whether r was constructed via Open.
 func (r Root) valid() bool {
 	return r.base != ""
 }
 
-// Valid reports whether r was constructed via Open or FromRuntimeDirs.
+// Valid reports whether r was constructed via Open.
 func (r Root) Valid() bool {
 	return r.valid()
 }

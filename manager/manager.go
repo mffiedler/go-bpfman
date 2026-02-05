@@ -43,7 +43,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/outcome"
@@ -67,7 +66,6 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	dirs              config.RuntimeDirs
 	root              fs.Root
 	store             interpreter.Store
 	kernel            interpreter.KernelOperations
@@ -83,12 +81,11 @@ type Manager struct {
 // New creates a new Manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(dirs config.RuntimeDirs, root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
+func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Manager{
-		dirs:              dirs,
 		root:              root,
 		store:             store,
 		kernel:            kernel,
@@ -99,9 +96,9 @@ func New(dirs config.RuntimeDirs, root fs.Root, store interpreter.Store, kernel 
 	}
 }
 
-// Dirs returns the runtime directories configuration.
-func (m *Manager) Dirs() config.RuntimeDirs {
-	return m.dirs
+// Root returns the filesystem root.
+func (m *Manager) Root() fs.Root {
+	return m.root
 }
 
 // GCResult contains statistics and outcome from garbage collection.
@@ -190,7 +187,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		if !kernelProgramIDs[id] {
 			continue // already absent; store GC will reap
 		}
-		pinPath := m.dirs.ProgPinPath(id)
+		pinPath := m.root.BPFFS().ProgPinPath(id)
 		if _, err := os.Stat(pinPath); errors.Is(err, os.ErrNotExist) {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
 				"kernel_id", id, "pin_path", pinPath)
@@ -249,7 +246,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
-	state, err := GatherState(ctx, m.store, m.kernel, m.dirs, m.root)
+	state, err := GatherState(ctx, m.store, m.kernel, m.root)
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
 	} else {

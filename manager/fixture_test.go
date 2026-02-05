@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
@@ -36,7 +35,7 @@ type testFixture struct {
 	Kernel        *fakeKernel
 	Discoverer    *fakeDiscoverer
 	Store         interpreter.Store
-	Dirs          *config.RuntimeDirs
+	Root          fs.Root
 	t             *testing.T
 	bytecodeDir   string            // temp dir for dummy bytecode files
 	bytecodeFiles map[string]string // name -> path cache
@@ -53,21 +52,20 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
-	dirs, err := config.NewRuntimeDirs(t.TempDir())
-	require.NoError(t, err, "failed to create runtime dirs")
+	root, err := fs.Open(t.TempDir())
+	require.NoError(t, err, "failed to create fs root")
 	kernel := newFakeKernel()
 	if discoverer == nil {
 		discoverer = newFakeDiscoverer()
 	}
-	root := fs.FromRuntimeDirs(dirs)
-	mgr := manager.New(dirs, root, store, kernel, discoverer, testLogger())
+	mgr := manager.New(root, store, kernel, discoverer, testLogger())
 	bcDir := t.TempDir()
 	return &testFixture{
 		Manager:       mgr,
 		Kernel:        kernel,
 		Discoverer:    discoverer,
 		Store:         store,
-		Dirs:          &dirs,
+		Root:          root,
 		t:             t,
 		bytecodeDir:   bcDir,
 		bytecodeFiles: make(map[string]string),
@@ -131,7 +129,7 @@ func (f *testFixture) AssertKernelOps(expected []string) {
 // Use this for operations that require a WriterScope (e.g., AttachUprobe).
 func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Context, scope lock.WriterScope) error) error {
 	f.t.Helper()
-	return lock.Run(ctx, f.Dirs.Lock(), fn)
+	return lock.Run(ctx, f.Root.LockPath(), fn)
 }
 
 // Load is a convenience wrapper that calls Manager.Load directly.

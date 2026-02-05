@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
 	"github.com/frobware/go-bpfman/interpreter/image/verify"
@@ -20,7 +20,7 @@ type CLIRuntime struct {
 	Puller  interpreter.ImagePuller
 	Store   interpreter.Store
 	Kernel  interpreter.KernelOperations
-	Dirs    config.RuntimeDirs
+	Root    fs.Root
 	Logger  *slog.Logger
 	env     *manager.RuntimeEnv
 }
@@ -35,13 +35,13 @@ func (c *CLI) NewCLIRuntime(ctx context.Context) (*CLIRuntime, error) {
 		return nil, fmt.Errorf("create logger: %w", err)
 	}
 
-	dirs, err := c.RuntimeDirs()
+	root, err := c.Root()
 	if err != nil {
 		return nil, fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
 	// Set up runtime environment (ensures directories, opens store, creates manager)
-	env, err := manager.SetupRuntimeEnv(ctx, dirs, logger)
+	env, err := manager.SetupRuntimeEnv(ctx, root, logger)
 	if err != nil {
 		return nil, fmt.Errorf("setup runtime: %w", err)
 	}
@@ -85,7 +85,7 @@ func (c *CLI) NewCLIRuntime(ctx context.Context) (*CLIRuntime, error) {
 		Puller:  puller,
 		Store:   env.Store,
 		Kernel:  env.Kernel,
-		Dirs:    dirs,
+		Root:    root,
 		Logger:  logger,
 		env:     env,
 	}, nil
