@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/interpreter/ebpf"
+	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -16,9 +18,26 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 		return nil, nil, fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
-	mgr, cleanup, err := manager.SetupRuntimeEnv(ctx, root, c.Logger())
+	logger := c.Logger()
+
+	// Create store
+	store, err := sqlite.New(ctx, root.DBPath(), logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("setup runtime: %w", err)
+		return nil, nil, fmt.Errorf("open database: %w", err)
+	}
+
+	// Create kernel adapter
+	kernel := ebpf.New(ebpf.WithLogger(logger))
+
+	// Create manager with real mounter
+	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	if err != nil {
+		store.Close()
+		return nil, nil, fmt.Errorf("create manager: %w", err)
+	}
+
+	cleanup := func() error {
+		return store.Close()
 	}
 
 	return mgr, cleanup, nil

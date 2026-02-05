@@ -78,13 +78,45 @@ type Manager struct {
 	mutatedSinceGC bool
 }
 
-// New creates a new Manager.
+// New creates a new Manager with all required dependencies.
+//
+// All parameters are required:
+//   - root: filesystem root for runtime directories
+//   - store: database for program/link metadata
+//   - kernel: kernel operations adapter
+//   - programDiscoverer: discovers existing kernel programs
+//   - mounter: handles bpffs mounting (use RealMounter for production, NoOpMounter for tests)
+//   - logger: structured logger (nil uses slog.Default())
+//
+// New ensures runtime directories exist and bpffs is mounted via the
+// provided mounter. For tests, use NoOpMounter to skip actual mounting.
+//
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, logger *slog.Logger) *Manager {
+func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, mounter BPFFSMounter, logger *slog.Logger) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	setupLogger := logger.With("component", "setup")
+
+	// Ensure runtime directories exist
+	setupLogger.Debug("ensuring runtime directories",
+		"base", root.Base(),
+		"fs", root.BPFFSMountPoint(),
+		"db", root.DBPath())
+
+	if err := root.EnsureRuntimeDirectories(); err != nil {
+		setupLogger.Error("failed to ensure directories", "error", err)
+		return nil, err
+	}
+
+	// Mount bpffs via the provided mounter
+	if err := mounter.EnsureMounted(root.BPFFSMountPoint()); err != nil {
+		setupLogger.Error("failed to mount bpffs", "error", err)
+		return nil, err
+	}
+	setupLogger.Debug("runtime directories ready")
+
 	return &Manager{
 		root:              root,
 		store:             store,
@@ -93,7 +125,7 @@ func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperati
 		executor:          interpreter.NewExecutor(store, kernel),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true, // Force GC on first operation
-	}
+	}, nil
 }
 
 // Root returns the filesystem root.

@@ -95,6 +95,21 @@ func (r Root) BPFFSMountPoint() string {
 //
 // Mounts bpffs at {base}/fs/ if not already mounted.
 func (r Root) EnsureDirectories() error {
+	if err := r.EnsureRuntimeDirectories(); err != nil {
+		return err
+	}
+	return r.EnsureBPFFSMounted(bpffs.DefaultMountInfoPath)
+}
+
+// EnsureRuntimeDirectories creates core runtime directories without
+// mounting bpffs. Use this when bpffs mounting is handled separately
+// (e.g., via a BPFFSMounter interface for testability).
+//
+// Creates these directories (on regular filesystem):
+//   - {base}/
+//   - {base}/db/
+//   - {base}-sock/
+func (r Root) EnsureRuntimeDirectories() error {
 	if !r.valid() {
 		return ErrInvalidRoot
 	}
@@ -107,7 +122,7 @@ func (r Root) EnsureDirectories() error {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
-	return r.EnsureBPFFSMounted(bpffs.DefaultMountInfoPath)
+	return nil
 }
 
 // EnsureBPFFSMounted ensures bpffs is mounted at the mount point.

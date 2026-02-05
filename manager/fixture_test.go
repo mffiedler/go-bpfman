@@ -58,7 +58,8 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	if discoverer == nil {
 		discoverer = newFakeDiscoverer()
 	}
-	mgr := manager.New(root, store, kernel, discoverer, testLogger())
+	mgr, err := manager.New(root, store, kernel, discoverer, manager.NoOpMounter{}, testLogger())
+	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{
 		Manager:       mgr,

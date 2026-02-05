@@ -16,6 +16,7 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
+	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/server"
 )
 
@@ -51,6 +52,29 @@ func (f *fakeNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 	return iface, nil
 }
 
+// fakeDiscoverer implements interpreter.ProgramDiscoverer for testing.
+type fakeDiscoverer struct {
+	programs map[string][]interpreter.DiscoveredProgram
+}
+
+func newFakeDiscoverer() *fakeDiscoverer {
+	return &fakeDiscoverer{
+		programs: make(map[string][]interpreter.DiscoveredProgram),
+	}
+}
+
+func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error) {
+	programs, ok := d.programs[objectPath]
+	if !ok {
+		return nil, fmt.Errorf("no programs found in object file")
+	}
+	return programs, nil
+}
+
+func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []string) error {
+	return nil
+}
+
 // testFixture provides access to all components for verification.
 type testFixture struct {
 	Server        *server.Server
@@ -72,7 +96,9 @@ func newTestFixture(t *testing.T) *testFixture {
 	require.NoError(t, err, "failed to create fs root")
 	kernel := newFakeKernel()
 	netIface := newFakeNetIfaceResolver()
-	srv := server.New(root, store, kernel, nil, netIface, testLogger())
+	mgr, err := manager.New(root, store, kernel, newFakeDiscoverer(), manager.NoOpMounter{}, testLogger())
+	require.NoError(t, err, "failed to create manager")
+	srv := server.New(root, store, kernel, nil, netIface, mgr, testLogger())
 	return &testFixture{
 		Server:        srv,
 		Kernel:        kernel,

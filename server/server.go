@@ -73,11 +73,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// This must happen at the server level since op_id is generated here.
 	logger = manager.WithOpIDHandler(logger)
 
-	// Ensure directories exist and bpffs is mounted
-	if err := root.EnsureDirectories(); err != nil {
-		return fmt.Errorf("runtime directory setup failed: %w", err)
-	}
-
 	// Open shared SQLite store
 	dbPath := root.DBPath()
 	st, err := sqlite.New(ctx, dbPath, logger)
@@ -88,6 +83,14 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create kernel adapter
 	kernel := ebpf.New(ebpf.WithLogger(logger))
+
+	// Create manager for orchestrating store + kernel operations.
+	// The manager is needed by CSI for reconciled program lookups.
+	// Manager.New handles directory creation and bpffs mounting.
+	mgr, err := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create manager: %w", err)
+	}
 
 	// Build signature verifier based on config
 	var verifier interpreter.SignatureVerifier
@@ -110,10 +113,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to create image puller: %w", err)
 	}
-
-	// Create manager for orchestrating store + kernel operations.
-	// The manager is needed by CSI for reconciled program lookups.
-	mgr := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
 
 	// Track CSI driver for graceful shutdown
 	var csiDriver *driver.Driver
@@ -219,47 +218,27 @@ func newWithStore(root fs.Root, store interpreter.Store, puller interpreter.Imag
 }
 
 // New creates a server with the provided dependencies.
-func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, logger *slog.Logger) *Server {
+// The manager must be created by the caller - use manager.New() with
+// appropriate mounter (RealMounter for production, NoOpMounter for tests).
+func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
-	s := &Server{
+	return &Server{
 		root:     root,
 		kernel:   kernel,
 		store:    store,
 		puller:   puller,
 		netIface: netIface,
+		mgr:      mgr,
 		logger:   logger.With("component", "server"),
 	}
-	s.mgr = manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
-	return s
 }
 
 // serve starts the gRPC server on the given socket path and optionally on TCP.
 func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
-	// Open SQLite store if not already set (e.g., when using newWithStore)
-	closeStore := false
-	if s.store == nil {
-		st, err := sqlite.New(ctx, s.root.DBPath(), s.logger)
-		if err != nil {
-			return fmt.Errorf("failed to open store: %w", err)
-		}
-		s.store = st
-		closeStore = true
-	}
-	if closeStore {
-		if closer, ok := s.store.(interface{ Close() error }); ok {
-			defer closer.Close()
-		}
-	}
-
-	// Create manager for transactional load/unload operations (if not already set)
-	if s.mgr == nil {
-		s.mgr = manager.New(s.root, s.store, s.kernel, ebpf.NewProgramDiscoverer(), s.logger)
-	}
-
 	// GC stale DB entries before accepting requests.
 	// This cleans up entries from previous runs that no longer exist in kernel.
 	s.mu.Lock()

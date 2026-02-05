@@ -21,8 +21,10 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
 	"github.com/frobware/go-bpfman/interpreter/image/verify"
+	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/manager"
@@ -82,10 +84,21 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		}))
 	}
 
-	// Set up runtime environment (ensures directories, opens store, creates manager)
+	// Create store
 	ctx := context.Background()
-	mgr, cleanup, err := manager.SetupRuntimeEnv(ctx, root, logger)
-	require.NoError(t, err, "failed to setup runtime environment")
+	store, err := sqlite.New(ctx, root.DBPath(), logger)
+	require.NoError(t, err, "failed to create store")
+
+	// Create kernel adapter
+	kernel := ebpf.New(ebpf.WithLogger(logger))
+
+	// Create manager (handles directory creation and bpffs mounting)
+	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	require.NoError(t, err, "failed to create manager")
+
+	cleanup := func() error {
+		return store.Close()
+	}
 
 	// Create signature verifier (disabled for tests)
 	verifier := verify.NoSign()
