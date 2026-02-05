@@ -8,12 +8,17 @@ import (
 )
 
 // DeleteCmd deletes BPF resources with cascading cleanup.
-// Unlike unload/detach, delete works on both programs and links and
-// automatically handles dependencies:
-//   - delete link/123: detaches the link, then unloads the program if orphaned
+// Unlike unload/detach which are single-level primitives, delete
+// cascades through links:
+//   - delete link/123: detaches the link, unloads the program if orphaned
 //   - delete program/456: detaches all links, then unloads the program
+//
+// With --recursive, also removes programs that depend on the target
+// through map ownership (map_owner_id). Without it, delete fails if
+// other programs share the target's maps.
 type DeleteCmd struct {
 	OutputFlags
+	Recursive bool          `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
 	Resources []ResourceRef `arg:"" name:"resource" help:"Resources to delete (e.g., link/123, program/456)." required:""`
 }
 
@@ -66,7 +71,7 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 	return nil
 }
 
-// deleteLink detaches the link, then unloads the program if it has no remaining links.
+// deleteLink detaches the link, then deletes the program if it has no remaining links.
 func (c *DeleteCmd) deleteLink(ctx context.Context, runtime *CLIRuntime, linkID uint32) error {
 	// Get link to find its program
 	link, err := runtime.Manager.GetLink(ctx, bpfman.LinkID(linkID))
@@ -88,9 +93,8 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, runtime *CLIRuntime, linkID 
 	}
 
 	if len(links) == 0 {
-		// Program is orphaned, unload it
-		if err := runtime.Manager.Unload(ctx, programID); err != nil {
-			return fmt.Errorf("unload orphaned program %d: %w", programID, err)
+		if err := c.deleteProgram(ctx, runtime, programID); err != nil {
+			return fmt.Errorf("delete orphaned program %d: %w", programID, err)
 		}
 	}
 
@@ -98,14 +102,22 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, runtime *CLIRuntime, linkID 
 }
 
 // deleteProgram detaches all links for the program, then unloads it.
+// With --recursive, also deletes dependent programs (those sharing
+// maps via map_owner_id) before unloading the target.
 func (c *DeleteCmd) deleteProgram(ctx context.Context, runtime *CLIRuntime, programID uint32) error {
-	// Get all links for this program
+	// With full-graph, find and delete map dependents first
+	if c.Recursive {
+		if err := c.deleteDependents(ctx, runtime, programID); err != nil {
+			return err
+		}
+	}
+
+	// Detach all links for this program
 	links, err := runtime.Manager.ListLinksByProgram(ctx, programID)
 	if err != nil {
 		return fmt.Errorf("list links: %w", err)
 	}
 
-	// Detach all links
 	for _, link := range links {
 		if err := runtime.Manager.Detach(ctx, link.ID); err != nil {
 			return fmt.Errorf("detach link %d: %w", link.ID, err)
@@ -115,6 +127,25 @@ func (c *DeleteCmd) deleteProgram(ctx context.Context, runtime *CLIRuntime, prog
 	// Unload the program
 	if err := runtime.Manager.Unload(ctx, programID); err != nil {
 		return fmt.Errorf("unload: %w", err)
+	}
+
+	return nil
+}
+
+// deleteDependents finds programs that share maps with the target
+// (map_owner_id = programID) and deletes them first.
+func (c *DeleteCmd) deleteDependents(ctx context.Context, runtime *CLIRuntime, ownerID uint32) error {
+	allPrograms, err := runtime.Store.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list programs: %w", err)
+	}
+
+	for kernelID, spec := range allPrograms {
+		if spec.Handles.MapOwnerID != nil && *spec.Handles.MapOwnerID == ownerID {
+			if err := c.deleteProgram(ctx, runtime, kernelID); err != nil {
+				return fmt.Errorf("delete dependent program %d: %w", kernelID, err)
+			}
+		}
 	}
 
 	return nil
