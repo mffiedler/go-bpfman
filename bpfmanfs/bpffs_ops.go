@@ -8,13 +8,12 @@ import (
 	"strings"
 )
 
-// RemovePinFile removes a pin file under the bpffs mount.
+// removePinFile removes a file under the bpffs mount.
 //
-// Safety properties:
-//   - Refuses to operate outside the bpffs mount.
-//   - Refuses to remove the mount root.
-//   - Ignores ENOENT for idempotent GC.
-func (b BPFFS) RemovePinFile(path string) error {
+// This is intentionally unexported. External callers must use typed
+// deletion methods (RemoveProgPin, RemoveDispatcherLinkPin, etc.) to
+// avoid "delete arbitrary file" foot-guns.
+func (b BPFFS) removePinFile(path string) error {
 	path, err := b.cleanUnderMount(path)
 	if err != nil {
 		return err
@@ -25,16 +24,12 @@ func (b BPFFS) RemovePinFile(path string) error {
 	return nil
 }
 
-// RemoveDir removes a directory tree under the bpffs mount.
+// removeDir removes a directory tree under the bpffs mount.
 //
-// This is the only place we allow RemoveAll. Callers should not call
-// os.RemoveAll directly.
-//
-// Safety properties:
-//   - Refuses to operate outside the bpffs mount.
-//   - Refuses to remove the mount root.
-//   - Ignores ENOENT for idempotent GC.
-func (b BPFFS) RemoveDir(path string) error {
+// This is intentionally unexported. External callers must use typed
+// deletion methods to ensure we only remove directories we own and
+// recognise.
+func (b BPFFS) removeDir(path string) error {
 	path, err := b.cleanUnderMount(path)
 	if err != nil {
 		return err
@@ -48,6 +43,8 @@ func (b BPFFS) RemoveDir(path string) error {
 // RemoveProgPin removes a bpfman program pin of the form:
 //
 //	{bpffs}/prog_{kernel_id}
+//
+// The suffix must be a valid numeric kernel ID.
 func (b BPFFS) RemoveProgPin(path string) error {
 	path, err := b.cleanUnderMount(path)
 	if err != nil {
@@ -56,10 +53,16 @@ func (b BPFFS) RemoveProgPin(path string) error {
 	if filepath.Dir(path) != b.MountPoint() {
 		return fmt.Errorf("prog pin not under mount root: %s", path)
 	}
-	if !strings.HasPrefix(filepath.Base(path), "prog_") {
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "prog_") {
 		return fmt.Errorf("prog pin has unexpected name: %s", path)
 	}
-	return b.RemovePinFile(path)
+	// Validate suffix is numeric.
+	suffix := strings.TrimPrefix(base, "prog_")
+	if _, err := strconv.ParseUint(suffix, 10, 32); err != nil {
+		return fmt.Errorf("prog pin has unexpected name: %s", path)
+	}
+	return b.removePinFile(path)
 }
 
 // RemoveLinkDir removes a link directory of the form:
@@ -76,6 +79,29 @@ func (b BPFFS) RemoveMapDir(path string) error {
 	return b.removeNumericChildDir(b.Maps(), path, "map dir")
 }
 
+// RemoveDispatcherProgPin removes a dispatcher program pin.
+//
+// The dispatcher program pin is located at:
+//
+//	{bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
+//
+// We validate both the revision directory name pattern and the pin
+// filename (must be "dispatcher").
+func (b BPFFS) RemoveDispatcherProgPin(path string) error {
+	path, err := b.cleanUnderMount(path)
+	if err != nil {
+		return err
+	}
+	if filepath.Base(path) != "dispatcher" {
+		return fmt.Errorf("dispatcher prog pin has unexpected name: %s", path)
+	}
+	revDir := filepath.Dir(path)
+	if err := b.validateDispatcherRevDirPath(revDir); err != nil {
+		return err
+	}
+	return b.removePinFile(path)
+}
+
 // RemoveDispatcherRevDir removes a dispatcher revision directory of
 // the form:
 //
@@ -88,30 +114,10 @@ func (b BPFFS) RemoveDispatcherRevDir(path string) error {
 	if err != nil {
 		return err
 	}
-
-	parent := filepath.Dir(path)
-	if !b.isDispatcherTypeDir(parent) {
-		return fmt.Errorf("dispatcher dir not under type dir: %s", path)
+	if err := b.validateDispatcherRevDirPath(path); err != nil {
+		return err
 	}
-
-	base := filepath.Base(path)
-	if !strings.HasPrefix(base, "dispatcher_") {
-		return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
-	}
-
-	// Validate suffixes are numeric to avoid rm -rf surprises.
-	// Expected: dispatcher_NSID_IFINDEX_REV.
-	parts := strings.Split(strings.TrimPrefix(base, "dispatcher_"), "_")
-	if len(parts) != 3 {
-		return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
-	}
-	for _, p := range parts {
-		if _, err := strconv.ParseUint(p, 10, 64); err != nil {
-			return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
-		}
-	}
-
-	return b.RemoveDir(path)
+	return b.removeDir(path)
 }
 
 // RemoveDispatcherLinkPin removes a dispatcher link pin of the form:
@@ -144,7 +150,7 @@ func (b BPFFS) RemoveDispatcherLinkPin(path string) error {
 		}
 	}
 
-	return b.RemovePinFile(path)
+	return b.removePinFile(path)
 }
 
 // removeNumericChildDir removes a directory that is a direct child of
@@ -160,7 +166,7 @@ func (b BPFFS) removeNumericChildDir(parent, path, what string) error {
 	if _, err := strconv.ParseUint(filepath.Base(path), 10, 32); err != nil {
 		return fmt.Errorf("%s has non-numeric name: %s", what, path)
 	}
-	return b.RemoveDir(path)
+	return b.removeDir(path)
 }
 
 // isDispatcherTypeDir returns true if path is one of the dispatcher
@@ -172,6 +178,36 @@ func (b BPFFS) isDispatcherTypeDir(path string) bool {
 	default:
 		return false
 	}
+}
+
+// validateDispatcherRevDirPath validates a dispatcher revision
+// directory path has the expected structure:
+//
+//	{bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
+func (b BPFFS) validateDispatcherRevDirPath(path string) error {
+	parent := filepath.Dir(path)
+	if !b.isDispatcherTypeDir(parent) {
+		return fmt.Errorf("dispatcher dir not under type dir: %s", path)
+	}
+
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "dispatcher_") {
+		return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
+	}
+
+	// Validate suffixes are numeric to avoid rm -rf surprises.
+	// Expected: dispatcher_NSID_IFINDEX_REV.
+	parts := strings.Split(strings.TrimPrefix(base, "dispatcher_"), "_")
+	if len(parts) != 3 {
+		return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
+	}
+	for _, p := range parts {
+		if _, err := strconv.ParseUint(p, 10, 64); err != nil {
+			return fmt.Errorf("dispatcher dir has unexpected name: %s", path)
+		}
+	}
+
+	return nil
 }
 
 // cleanUnderMount validates and cleans a path, ensuring it is under

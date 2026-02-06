@@ -1188,9 +1188,9 @@ Category: gc-dispatcher`,
 							Execute: func() error {
 								b := s.root.BPFFS()
 
-								// Dispatcher program pin lives under the
-								// revision dir (owned by bpfman).
-								if err := b.RemovePinFile(dd.ProgPin); err != nil {
+								// Explicitly remove the dispatcher program
+								// pin (typed + validated).
+								if err := b.RemoveDispatcherProgPin(dd.ProgPin); err != nil {
 									return err
 								}
 
