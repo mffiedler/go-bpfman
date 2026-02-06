@@ -14,9 +14,9 @@ import (
 // has been validated.
 //
 // Root is deliberately I/O free - it only computes and validates paths.
-// Callers with appropriate context (e.g., manager.New with an injected
-// BPFFSMounter) are responsible for creating directories and mount points.
-// This separation enables testing without root privileges or real filesystems.
+// Callers use bpfmanfs/runtime.Ensure() to create directories and mount
+// bpffs before constructing a manager. This separation enables testing
+// without root privileges or real filesystems.
 type Root struct {
 	base string
 }
