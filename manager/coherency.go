@@ -336,12 +336,12 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 
 	// Dispatcher prog pins and XDP link pins.
 	for _, d := range s.dbDispatchers {
-		revDir := dispatcher.DispatcherRevisionDir(root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
+		revDir := dispatcher.DispatcherRevisionDir(root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex, d.Revision)
 		progPin := dispatcher.DispatcherProgPath(revDir)
 		pathsToStat[progPin] = struct{}{}
 
 		if d.Type == dispatcher.DispatcherTypeXDP {
-			linkPin := dispatcher.DispatcherLinkPath(root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := dispatcher.DispatcherLinkPath(root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex)
 			pathsToStat[linkPin] = struct{}{}
 		}
 	}
@@ -364,13 +364,13 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	s.orphans = make([]FsOrphan, 0)
 
 	// Scan dirs.FS for orphan prog_* pins.
-	if entries, err := os.ReadDir(root.BPFFS().FS()); err == nil {
+	if entries, err := os.ReadDir(root.BPFFS().MountPoint()); err == nil {
 		for _, entry := range entries {
 			name := entry.Name()
 			if !strings.HasPrefix(name, "prog_") {
 				continue
 			}
-			pinPath := filepath.Join(root.BPFFS().FS(), name)
+			pinPath := filepath.Join(root.BPFFS().MountPoint(), name)
 			if s.dbProgPins[pinPath] {
 				continue
 			}
@@ -428,7 +428,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		dispatcher.DispatcherTypeTCEgress,
 	}
 	for _, dt := range dispTypes {
-		typeDir := dispatcher.TypeDir(root.BPFFS().FS(), dt)
+		typeDir := dispatcher.TypeDir(root.BPFFS().MountPoint(), dt)
 		entries, err := os.ReadDir(typeDir)
 		if err != nil {
 			continue
@@ -606,7 +606,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	}
 	for _, d := range s.dbDispatchers {
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		revDir := dispatcher.DispatcherRevisionDir(s.root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex, d.Revision)
+		revDir := dispatcher.DispatcherRevisionDir(s.root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex, d.Revision)
 		progPin := dispatcher.DispatcherProgPath(revDir)
 
 		ds := DispatcherState{
@@ -625,7 +625,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		// XDP link checks from gathered facts.
 		if d.Type == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = d.LinkID != 0 && s.kernelLinks[d.LinkID]
-			linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().FS(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex)
 			if exists, ok := s.fsPinExists[linkPin]; ok {
 				ds.LinkPinExist = &exists
 			}
@@ -1225,7 +1225,7 @@ Category: gc-dispatcher`,
 								os.Remove(dd.ProgPin)
 								os.RemoveAll(dd.RevDir)
 								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
-									linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().FS(), dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
+									linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().MountPoint(), dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
 									os.Remove(linkPin)
 								}
 								return s.DeleteDispatcher(string(dd.DB.Type), dd.DB.Nsid, dd.DB.Ifindex)

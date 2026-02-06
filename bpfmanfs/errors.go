@@ -1,14 +1,14 @@
-// Package fslayout centralises all bpfman filesystem layout and mutations.
+// Package bpfmanfs models bpfman's runtime filesystem hierarchy.
 //
-// Callers express intent (publish, remove, ensure) rather than
-// computing paths or calling os.* directly. The package provides
-// three capability types:
+// The package provides capability tokens for safe path construction:
 //
-//   - Root: validated filesystem root with infrastructure path methods
-//   - Runtime: regular-filesystem operations (bytecode persistence)
-//   - BPFFS: bpffs layout conventions (pin paths, scanner dirs)
+//   - Root: validated runtime root, constructed via New
+//   - Runtime: bytecode persistence operations, obtained via Root.Runtime()
+//   - BPFFS: bpffs pin path conventions, obtained via Root.BPFFS()
 //
-// All types have unexported fields and are constructible only via New.
+// All types enforce validity: methods panic on zero-value receivers to
+// catch programmer errors. This prevents accidentally obtaining paths
+// from uninitialised values.
 package bpfmanfs
 
 import (

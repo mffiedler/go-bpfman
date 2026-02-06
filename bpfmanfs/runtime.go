@@ -40,6 +40,13 @@ func (rt Runtime) Valid() bool {
 	return rt.root.Valid()
 }
 
+// mustValid panics if rt was not obtained from Root.Runtime().
+func (rt Runtime) mustValid() {
+	if !rt.Valid() {
+		panic("bpfmanfs: zero Runtime used; obtain via Root.Runtime()")
+	}
+}
+
 // programsPath returns <base>/programs.
 func (rt Runtime) programsPath() string {
 	return filepath.Join(rt.root.base, programsDir)
@@ -73,9 +80,7 @@ func (rt Runtime) programDir(id uint32) string {
 // A provenance.json is written alongside the bytecode. Publish is
 // atomic (rename on the same filesystem).
 func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) error {
-	if !rt.Valid() {
-		return ErrInvalidRoot
-	}
+	rt.mustValid()
 
 	// Validate source file.
 	if err := validateRegularFile(srcPath); err != nil {
@@ -141,17 +146,13 @@ func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) er
 // Returns nil if the directory does not exist. Uses safeRemoveAll to
 // verify the target is under the programs directory.
 func (rt Runtime) RemoveProgram(id uint32) error {
-	if !rt.Valid() {
-		return ErrInvalidRoot
-	}
+	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
 }
 
 // ProgramExists reports whether <base>/programs/{id}/ exists.
 func (rt Runtime) ProgramExists(id uint32) bool {
-	if !rt.Valid() {
-		return false
-	}
+	rt.mustValid()
 	var exists bool
 	_ = (statExistsOp{path: rt.programDir(id), exists: &exists}).exec()
 	return exists
@@ -160,15 +161,14 @@ func (rt Runtime) ProgramExists(id uint32) bool {
 // ProgramBytecodePath returns the published bytecode path for DB
 // ObjectPath storage.
 func (rt Runtime) ProgramBytecodePath(id uint32) string {
+	rt.mustValid()
 	return filepath.Join(rt.programDir(id), bytecodeName)
 }
 
 // CleanStaging removes all entries under <base>/.staging/. Staging is
 // a writer-only concern and is never visible to readers.
 func (rt Runtime) CleanStaging() error {
-	if !rt.Valid() {
-		return ErrInvalidRoot
-	}
+	rt.mustValid()
 	staging := rt.stagingPath()
 
 	entries, err := os.ReadDir(staging)

@@ -10,8 +10,9 @@ import (
 )
 
 // Internal primitives: operations as data structures executed by
-// osInterp. Public methods build sequences of these primitives;
-// only osInterp calls os.*.
+// osInterp. Most filesystem mutations are expressed as op sequences
+// and executed via osInterp; some operations (safeRemoveAll,
+// validateRegularFile, CleanStaging) call os.* directly.
 
 // op is the internal operation interface.
 type op interface {
@@ -150,7 +151,10 @@ func safeRemoveAll(parent, target string) error {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return ErrOutsideRoot{Parent: parent, Target: target}
 	}
-	return os.RemoveAll(target)
+	if err := os.RemoveAll(target); err != nil {
+		return &PathError{Op: "remove_all", Path: target, Err: err}
+	}
+	return nil
 }
 
 // validateRegularFile checks that path exists and is a regular file.

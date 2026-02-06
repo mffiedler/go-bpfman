@@ -6,7 +6,7 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 )
 
-// BPFFS provides access to bpfman's bpffs layout conventions.
+// BPFFS provides access to bpfman's bpffs path conventions.
 // Fields are unexported; obtain via Root.BPFFS().
 type BPFFS struct {
 	root Root
@@ -17,63 +17,80 @@ func (b BPFFS) Valid() bool {
 	return b.root.Valid()
 }
 
-// FS returns the bpffs mount point path.
-func (b BPFFS) FS() string {
+// mustValid panics if b was not obtained from Root.BPFFS().
+func (b BPFFS) mustValid() {
+	if !b.Valid() {
+		panic("bpfmanfs: zero BPFFS used; obtain via Root.BPFFS()")
+	}
+}
+
+// MountPoint returns the bpffs mount point path.
+func (b BPFFS) MountPoint() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs")
 }
 
 // XDP returns the XDP dispatcher pins directory.
 func (b BPFFS) XDP() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "xdp")
 }
 
 // TCIngress returns the TC ingress dispatcher pins directory.
 func (b BPFFS) TCIngress() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "tc-ingress")
 }
 
 // TCEgress returns the TC egress dispatcher pins directory.
 func (b BPFFS) TCEgress() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "tc-egress")
 }
 
 // Maps returns the map pins directory.
 func (b BPFFS) Maps() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "maps")
 }
 
 // Links returns the link pins directory.
 func (b BPFFS) Links() string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "links")
 }
 
 // ProgPinPath returns the pin path for a program.
 // Format: {base}/fs/prog_{id}
 func (b BPFFS) ProgPinPath(kernelID uint32) string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "prog_"+uitoa(kernelID))
 }
 
 // MapPinDir returns the directory for a program's map pins.
 // Format: {base}/fs/maps/{program_id}/
 func (b BPFFS) MapPinDir(programID uint32) string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "maps", uitoa(programID))
 }
 
 // LinkPinDir returns the directory for a program's link pins.
 // Format: {base}/fs/links/{program_id}/
 func (b BPFFS) LinkPinDir(programID uint32) string {
+	b.mustValid()
 	return filepath.Join(b.root.base, "fs", "links", uitoa(programID))
 }
 
 // ScannerDirs returns a bpffs.ScannerDirs for use with bpffs.Scanner.
 func (b BPFFS) ScannerDirs() bpffs.ScannerDirs {
+	b.mustValid()
 	return bpffs.ScannerDirs{
-		FS:        b.FS(),
-		XDP:       b.XDP(),
-		TCIngress: b.TCIngress(),
-		TCEgress:  b.TCEgress(),
-		Maps:      b.Maps(),
-		Links:     b.Links(),
+		FS:        filepath.Join(b.root.base, "fs"),
+		XDP:       filepath.Join(b.root.base, "fs", "xdp"),
+		TCIngress: filepath.Join(b.root.base, "fs", "tc-ingress"),
+		TCEgress:  filepath.Join(b.root.base, "fs", "tc-egress"),
+		Maps:      filepath.Join(b.root.base, "fs", "maps"),
+		Links:     filepath.Join(b.root.base, "fs", "links"),
 	}
 }
 

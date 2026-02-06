@@ -77,7 +77,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, bpffs.MountPoint(m.root.BPFFS().FS()))
+	loaded, err := m.kernel.Load(ctx, spec, bpffs.MountPoint(m.root.BPFFS().MountPoint()))
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{

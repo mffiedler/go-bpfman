@@ -146,7 +146,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispType, nsid, uint32(ifindex), dispState.Revision)
+	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, uint32(ifindex), dispState.Revision)
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -223,7 +223,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			return fail(primaryErr)
 		}
 		// Recalculate paths for the fresh dispatcher
-		revisionDir = dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispType, nsid, uint32(ifindex), dispState.Revision)
+		revisionDir = dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, uint32(ifindex), dispState.Revision)
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
 			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
@@ -453,7 +453,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 	// on the same interface — each needs its own pinned link to keep the
 	// kernel attachment alive.
 	dirName := fmt.Sprintf("tcx-%s", direction)
-	linkPinPath := filepath.Join(m.root.BPFFS().FS(), dirName, fmt.Sprintf("link_%d_%d_%d", nsid, ifindex, programKernelID))
+	linkPinPath := filepath.Join(m.root.BPFFS().MountPoint(), dirName, fmt.Sprintf("link_%d_%d_%d", nsid, ifindex, programKernelID))
 
 	// KERNEL I/O: Remove stale pin if it exists from a previous daemon run.
 	if _, statErr := os.Stat(linkPinPath); statErr == nil {
@@ -664,7 +664,7 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 	// TC dispatchers do not use a link pin — legacy netlink TC has no
 	// BPF link to pin. The filter is identified by handle + priority.
 	revision := uint32(1)
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().FS(), dispType, nsid, ifindex, revision)
+	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, ifindex, revision)
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
 
 	m.logger.InfoContext(ctx, "creating TC dispatcher",

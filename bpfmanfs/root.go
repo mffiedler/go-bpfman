@@ -110,9 +110,9 @@ func (r Root) CSISocketPath() string {
 }
 
 // BPFFSMountPoint returns the bpffs mount point path.
+// Deprecated: use r.BPFFS().MountPoint() for consistency with the domain model.
 func (r Root) BPFFSMountPoint() string {
-	r.mustValid()
-	return filepath.Join(r.base, "fs")
+	return r.BPFFS().MountPoint()
 }
 
 // DBDir returns the directory containing the database file.
@@ -144,19 +144,12 @@ func (r Root) CSIFSDir() string {
 // Callers should create these directories at startup.
 func (r Root) RuntimeDirs() []string {
 	r.mustValid()
-	return []string{
-		r.base,
-		filepath.Join(r.base, "db"),
-		filepath.Join(r.base, "sock"),
-	}
+	return []string{r.base, r.DBDir(), r.SocketDir()}
 }
 
 // CSIDirs returns the directories required for CSI operation.
 // Callers should create these directories only when CSI is enabled.
 func (r Root) CSIDirs() []string {
 	r.mustValid()
-	return []string{
-		filepath.Join(r.base, "csi"),
-		filepath.Join(r.base, "csi", "fs"),
-	}
+	return []string{r.CSIDir(), r.CSIFSDir()}
 }
