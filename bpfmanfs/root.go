@@ -50,10 +50,19 @@ func (r Root) Valid() bool {
 	return r.base != ""
 }
 
+// String returns a string representation safe for logging.
+// Unlike Base(), this never panics and can be used on zero-value Roots.
+func (r Root) String() string {
+	if !r.Valid() {
+		return "bpfmanfs.Root(<invalid>)"
+	}
+	return "bpfmanfs.Root(" + r.base + ")"
+}
+
 // mustValid panics if r is a zero-value Root.
 // This catches programmer errors where a Root is used without construction via New.
 func (r Root) mustValid() {
-	if r.base == "" {
+	if !r.Valid() {
 		panic("bpfmanfs: zero Root used; construct via bpfmanfs.New")
 	}
 }

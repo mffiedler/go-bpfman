@@ -105,6 +105,17 @@ func TestZeroValueRoot(t *testing.T) {
 	assert.Panics(t, func() { root.RuntimeDirs() }, "RuntimeDirs() on zero Root should panic")
 }
 
+func TestRootString(t *testing.T) {
+	// String() on zero Root should not panic and return a safe representation
+	var zero bpfmanfs.Root
+	assert.Equal(t, "bpfmanfs.Root(<invalid>)", zero.String())
+
+	// String() on valid Root should include the path
+	root, err := bpfmanfs.New("/run")
+	require.NoError(t, err)
+	assert.Equal(t, "bpfmanfs.Root(/run/bpfman)", root.String())
+}
+
 func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
 	root, err := bpfmanfs.New(parent)
