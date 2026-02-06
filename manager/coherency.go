@@ -1348,10 +1348,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove program dir %s", o.Path),
 							Execute: func() error {
-								if s.root.Valid() {
-									return s.root.Runtime().RemoveProgram(oo.KernelID)
-								}
-								return os.RemoveAll(oo.Path)
+								return s.root.Runtime().RemoveProgramDir(oo.Path)
 							},
 						},
 					})
@@ -1383,7 +1380,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove staging dir %s", o.Path),
 							Execute: func() error {
-								return os.RemoveAll(oo.Path)
+								return s.root.Runtime().RemoveStagingDir(oo.Path)
 							},
 						},
 					})

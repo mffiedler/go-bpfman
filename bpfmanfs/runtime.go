@@ -150,6 +150,15 @@ func (rt Runtime) RemoveProgram(id uint32) error {
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
 }
 
+// RemoveProgramDir removes a program directory by path. The path must
+// be a direct child of <base>/programs/. Returns nil if the directory
+// does not exist. This handles both numeric and non-numeric directory
+// names (e.g., orphaned directories with unexpected names).
+func (rt Runtime) RemoveProgramDir(path string) error {
+	rt.mustValid()
+	return safeRemoveAll(rt.programsPath(), path)
+}
+
 // ProgramExists reports whether <base>/programs/{id}/ exists.
 func (rt Runtime) ProgramExists(id uint32) bool {
 	rt.mustValid()
@@ -186,4 +195,12 @@ func (rt Runtime) CleanStaging() error {
 		}
 	}
 	return nil
+}
+
+// RemoveStagingDir removes a staging directory by path. The path must
+// be a direct child of <base>/.staging/. Returns nil if the directory
+// does not exist.
+func (rt Runtime) RemoveStagingDir(path string) error {
+	rt.mustValid()
+	return safeRemoveAll(rt.stagingPath(), path)
 }
