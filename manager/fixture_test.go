@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fhs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
@@ -35,7 +35,7 @@ type testFixture struct {
 	Kernel        *fakeKernel
 	Discoverer    *fakeDiscoverer
 	Store         interpreter.Store
-	Root          fhs.Root
+	Root          bpfmanfs.Root
 	t             *testing.T
 	bytecodeDir   string            // temp dir for dummy bytecode files
 	bytecodeFiles map[string]string // name -> path cache
@@ -52,7 +52,7 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
-	root, err := fhs.New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	require.NoError(t, err, "failed to create fs root")
 	kernel := newFakeKernel()
 	if discoverer == nil {

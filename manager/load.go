@@ -9,7 +9,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpffs"
-	"github.com/frobware/go-bpfman/fhs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
@@ -141,7 +141,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
 	// Register undo step to remove it on failure.
 	rt := m.root.Runtime()
-	prov := fhs.Provenance{
+	prov := bpfmanfs.Provenance{
 		Version:     1,
 		KernelID:    loaded.Program.ID,
 		ProgramName: spec.ProgramName(),

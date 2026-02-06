@@ -1,4 +1,4 @@
-package fhs
+package bpfmanfs
 
 import (
 	"path/filepath"

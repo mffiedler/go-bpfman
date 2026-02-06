@@ -1,4 +1,4 @@
-package fhs_test
+package bpfmanfs_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/fhs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
 func TestNew_ValidAbsolutePaths(t *testing.T) {
@@ -20,14 +20,14 @@ func TestNew_ValidAbsolutePaths(t *testing.T) {
 		{"/", "/bpfman"},
 	}
 	for _, tt := range tests {
-		root, err := fhs.New(tt.input)
+		root, err := bpfmanfs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
 		assert.Equal(t, tt.expected, root.Base(), "New(%q)", tt.input)
 	}
 }
 
 func TestNew_RejectsEmpty(t *testing.T) {
-	_, err := fhs.New("")
+	_, err := bpfmanfs.New("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 }
@@ -44,7 +44,7 @@ func TestNew_RejectsRelative(t *testing.T) {
 		"foo/bar",
 	}
 	for _, path := range relativePaths {
-		_, err := fhs.New(path)
+		_, err := bpfmanfs.New(path)
 		require.Error(t, err, "New(%q) should fail", path)
 		assert.Contains(t, err.Error(), "absolute", "New(%q)", path)
 	}
@@ -52,7 +52,7 @@ func TestNew_RejectsRelative(t *testing.T) {
 
 func TestNew_HandlesRootSafely(t *testing.T) {
 	// Even "/" is safe because we append /bpfman
-	root, err := fhs.New("/")
+	root, err := bpfmanfs.New("/")
 	require.NoError(t, err)
 	assert.Equal(t, "/bpfman", root.Base())
 }
@@ -88,14 +88,14 @@ func TestNew_CleansPathVariants(t *testing.T) {
 		{"//run//test//", "/run/test/bpfman"},
 	}
 	for _, tt := range tests {
-		root, err := fhs.New(tt.input)
+		root, err := bpfmanfs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
 		assert.Equal(t, tt.expected, root.Base(), "New(%q)", tt.input)
 	}
 }
 
 func TestZeroValueRoot(t *testing.T) {
-	var root fhs.Root
+	var root bpfmanfs.Root
 	assert.False(t, root.Valid(), "zero Root should not be valid")
 
 	// Methods on zero Root should panic
@@ -107,7 +107,7 @@ func TestZeroValueRoot(t *testing.T) {
 
 func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
-	root, err := fhs.New(parent)
+	root, err := bpfmanfs.New(parent)
 	require.NoError(t, err)
 
 	dirs := root.RuntimeDirs()
@@ -119,7 +119,7 @@ func TestRuntimeDirs(t *testing.T) {
 
 func TestCSIDirs(t *testing.T) {
 	parent := t.TempDir()
-	root, err := fhs.New(parent)
+	root, err := bpfmanfs.New(parent)
 	require.NoError(t, err)
 
 	dirs := root.CSIDirs()
@@ -129,13 +129,13 @@ func TestCSIDirs(t *testing.T) {
 }
 
 func TestRuntime_ZeroValue(t *testing.T) {
-	var root fhs.Root
+	var root bpfmanfs.Root
 	// Calling Runtime() on zero Root should panic
 	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {
-	var root fhs.Root
+	var root bpfmanfs.Root
 	// Calling BPFFS() on zero Root should panic
 	assert.Panics(t, func() { root.BPFFS() }, "BPFFS() on zero Root should panic")
 }

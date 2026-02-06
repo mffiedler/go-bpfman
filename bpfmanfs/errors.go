@@ -9,7 +9,7 @@
 //   - BPFFS: bpffs layout conventions (pin paths, scanner dirs)
 //
 // All types have unexported fields and are constructible only via New.
-package fhs
+package bpfmanfs
 
 import (
 	"errors"
@@ -18,13 +18,13 @@ import (
 
 // ErrInvalidRoot is returned when an operation is called on a
 // zero-value Root, Runtime, or BPFFS.
-var ErrInvalidRoot = errors.New("fhs: invalid root (zero value)")
+var ErrInvalidRoot = errors.New("bpfmanfs: invalid root (zero value)")
 
 // ErrFinalExists is returned by PublishBytecode when the final
 // directory already exists. This is an invariant violation: GC
 // should have removed orphan directories before the load path
 // executes.
-var ErrFinalExists = errors.New("fhs: final directory already exists")
+var ErrFinalExists = errors.New("bpfmanfs: final directory already exists")
 
 // ErrOutsideRoot is returned when a path safety check fails.
 type ErrOutsideRoot struct {
@@ -33,7 +33,7 @@ type ErrOutsideRoot struct {
 }
 
 func (e ErrOutsideRoot) Error() string {
-	return fmt.Sprintf("fhs: target %q is outside parent %q", e.Target, e.Parent)
+	return fmt.Sprintf("bpfmanfs: target %q is outside parent %q", e.Target, e.Parent)
 }
 
 // PathError wraps a filesystem error with the operation and path.
@@ -44,7 +44,7 @@ type PathError struct {
 }
 
 func (e *PathError) Error() string {
-	return fmt.Sprintf("fhs: %s %s: %v", e.Op, e.Path, e.Err)
+	return fmt.Sprintf("bpfmanfs: %s %s: %v", e.Op, e.Path, e.Err)
 }
 
 func (e *PathError) Unwrap() error {

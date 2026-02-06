@@ -19,7 +19,7 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/fhs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
@@ -35,7 +35,7 @@ import (
 // database, and socket, enabling t.Parallel() across all tests.
 type TestEnv struct {
 	T        *testing.T
-	Root     fhs.Root
+	Root     bpfmanfs.Root
 	Manager  *manager.Manager
 	Puller   interpreter.ImagePuller
 	logger   *slog.Logger
@@ -57,7 +57,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	testName := sanitizeTestName(t.Name())
 	baseDir := filepath.Join(os.TempDir(), fmt.Sprintf("bpfman-e2e-%d-%s", os.Getpid(), testName))
 
-	root, err := fhs.New(baseDir)
+	root, err := bpfmanfs.New(baseDir)
 	if err != nil {
 		t.Fatalf("invalid runtime directory: %v", err)
 	}

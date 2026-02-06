@@ -1,4 +1,4 @@
-package fhs
+package bpfmanfs
 
 import (
 	"fmt"
@@ -36,10 +36,10 @@ type Root struct {
 // New rejects empty paths and relative paths.
 func New(base string) (Root, error) {
 	if base == "" {
-		return Root{}, fmt.Errorf("fhs: base path cannot be empty")
+		return Root{}, fmt.Errorf("bpfmanfs: base path cannot be empty")
 	}
 	if !filepath.IsAbs(base) {
-		return Root{}, fmt.Errorf("fhs: base path must be absolute, got %q", base)
+		return Root{}, fmt.Errorf("bpfmanfs: base path must be absolute, got %q", base)
 	}
 	base = filepath.Clean(base)
 	return Root{base: filepath.Join(base, "bpfman")}, nil
@@ -54,7 +54,7 @@ func (r Root) Valid() bool {
 // This catches programmer errors where a Root is used without construction via New.
 func (r Root) mustValid() {
 	if r.base == "" {
-		panic("fhs: zero Root used; construct via fhs.New")
+		panic("bpfmanfs: zero Root used; construct via bpfmanfs.New")
 	}
 }
 

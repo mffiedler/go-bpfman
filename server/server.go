@@ -15,9 +15,9 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
-	"github.com/frobware/go-bpfman/fhs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
@@ -51,7 +51,7 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 
 // RunConfig configures the server daemon.
 type RunConfig struct {
-	Root         fhs.Root
+	Root         bpfmanfs.Root
 	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
@@ -192,7 +192,7 @@ type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	mu        sync.RWMutex
-	root      fhs.Root
+	root      bpfmanfs.Root
 	kernel    interpreter.KernelOperations
 	store     interpreter.Store
 	puller    interpreter.ImagePuller
@@ -204,7 +204,7 @@ type Server struct {
 
 // newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(root fhs.Root, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
+func newWithStore(root bpfmanfs.Root, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -222,7 +222,7 @@ func newWithStore(root fhs.Root, store interpreter.Store, puller interpreter.Ima
 // New creates a server with the provided dependencies.
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
-func New(root fhs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+func New(root bpfmanfs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}

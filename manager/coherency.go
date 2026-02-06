@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fhs"
 	"github.com/frobware/go-bpfman/interpreter"
 )
 
@@ -206,7 +206,7 @@ type ObservedState struct {
 	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
-	root fhs.Root
+	root bpfmanfs.Root
 
 	// Mutation capability for GC operations only.
 	// Not used during rule evaluation.
@@ -220,7 +220,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, root fhs.Root) (*ObservedState, error) {
+func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, root bpfmanfs.Root) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[uint32]bool),
 		kernelLinks:           make(map[uint32]bool),

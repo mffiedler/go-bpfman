@@ -1,4 +1,4 @@
-package fhs_test
+package bpfmanfs_test
 
 import (
 	"encoding/json"
@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/fhs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
-func mustNew(t *testing.T) fhs.Root {
+func mustNew(t *testing.T) bpfmanfs.Root {
 	t.Helper()
-	root, err := fhs.New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	require.NoError(t, err)
 	return root
 }
@@ -33,7 +33,7 @@ func TestPublishBytecode(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fhs.Provenance{
+	prov := bpfmanfs.Provenance{
 		Version:     1,
 		KernelID:    42,
 		ProgramName: "test_prog",
@@ -59,7 +59,7 @@ func TestPublishBytecode(t *testing.T) {
 
 	provData, err := os.ReadFile(provPath)
 	require.NoError(t, err)
-	var readProv fhs.Provenance
+	var readProv bpfmanfs.Provenance
 	require.NoError(t, json.Unmarshal(provData, &readProv))
 	assert.Equal(t, uint32(42), readProv.KernelID)
 	assert.Equal(t, "test_prog", readProv.ProgramName)
@@ -72,7 +72,7 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fhs.Provenance{Version: 1, KernelID: 99}
+	prov := bpfmanfs.Provenance{Version: 1, KernelID: 99}
 
 	// First publish should succeed.
 	require.NoError(t, rt.PublishBytecode(99, srcPath, prov))
@@ -80,14 +80,14 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	// Second publish for the same ID should fail with ErrFinalExists.
 	err := rt.PublishBytecode(99, srcPath, prov)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, fhs.ErrFinalExists)
+	assert.ErrorIs(t, err, bpfmanfs.ErrFinalExists)
 }
 
 func TestPublishBytecode_InvalidSource(t *testing.T) {
 	root := mustNew(t)
 	rt := root.Runtime()
 
-	prov := fhs.Provenance{Version: 1, KernelID: 1}
+	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
 
 	// Non-existent source file.
 	err := rt.PublishBytecode(1, "/nonexistent/path.o", prov)
@@ -106,7 +106,7 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 	// Create a valid source file, then publish with ID 1.
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fhs.Provenance{Version: 1, KernelID: 1}
+	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
 
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
@@ -123,7 +123,7 @@ func TestRemoveProgram(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fhs.Provenance{Version: 1, KernelID: 10}
+	prov := bpfmanfs.Provenance{Version: 1, KernelID: 10}
 	require.NoError(t, rt.PublishBytecode(10, srcPath, prov))
 	assert.True(t, rt.ProgramExists(10))
 
@@ -148,7 +148,7 @@ func TestProgramExists(t *testing.T) {
 
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fhs.Provenance{Version: 1, KernelID: 1}
+	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
 	assert.True(t, rt.ProgramExists(1))
@@ -187,7 +187,7 @@ func TestCleanStaging_NoStagingDir(t *testing.T) {
 }
 
 func TestZeroValueRuntime(t *testing.T) {
-	var root fhs.Root
+	var root bpfmanfs.Root
 	// Calling Runtime() on zero Root should panic
 	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
 }
