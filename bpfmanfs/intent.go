@@ -56,15 +56,6 @@ func (o renameOp) exec() error {
 	return os.Rename(o.oldpath, o.newpath)
 }
 
-// removeAllOp removes a path and all its contents.
-type removeAllOp struct {
-	path string
-}
-
-func (o removeAllOp) exec() error {
-	return os.RemoveAll(o.path)
-}
-
 // copyFileOp copies a regular file from src to dst.
 type copyFileOp struct {
 	src  string
@@ -127,8 +118,7 @@ func (o statExistsOp) exec() error {
 	return err
 }
 
-// osInterp executes a sequence of ops. It is the only code that
-// calls os.* in the fslayout package.
+// osInterp executes a sequence of ops in order, stopping on first error.
 func osInterp(ops []op) error {
 	for _, o := range ops {
 		if err := o.exec(); err != nil {

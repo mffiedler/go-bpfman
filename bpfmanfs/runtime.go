@@ -118,7 +118,7 @@ func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) er
 	cleanup := true
 	defer func() {
 		if cleanup {
-			os.RemoveAll(tmpDir)
+			_ = safeRemoveAll(staging, tmpDir)
 		}
 	}()
 
