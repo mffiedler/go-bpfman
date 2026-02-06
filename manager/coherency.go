@@ -118,11 +118,25 @@ type DispatcherState struct {
 	ProgPin      string            // computed prog pin path
 }
 
+// OrphanKind identifies the type of orphaned filesystem artefact.
+type OrphanKind string
+
+const (
+	OrphanProgPin        OrphanKind = "prog-pin"
+	OrphanLinkDir        OrphanKind = "link-dir"
+	OrphanMapDir         OrphanKind = "map-dir"
+	OrphanDispatcherDir  OrphanKind = "dispatcher-dir"
+	OrphanDispatcherLink OrphanKind = "dispatcher-link"
+	OrphanProgramDir     OrphanKind = "program-dir"
+	OrphanProgramDirUnk  OrphanKind = "program-dir-unknown"
+	OrphanStagingDir     OrphanKind = "staging-dir"
+)
+
 // FsOrphan represents a filesystem entry with no matching DB record.
 type FsOrphan struct {
 	Path     string
-	KernelID uint32 // parsed from name; 0 if not parseable
-	Kind     string // "prog-pin", "link-dir", "map-dir", "dispatcher-dir", "dispatcher-link"
+	KernelID uint32     // parsed from name; 0 if not parseable
+	Kind     OrphanKind // type of orphaned artefact
 }
 
 // Operation is a planned mutation. Rules emit operations; the
@@ -377,7 +391,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		s.orphans = append(s.orphans, FsOrphan{
 			Path:     pin.Path,
 			KernelID: pin.KernelID,
-			Kind:     "prog-pin",
+			Kind:     OrphanProgPin,
 		})
 	}
 
@@ -389,7 +403,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		s.orphans = append(s.orphans, FsOrphan{
 			Path:     dir.Path,
 			KernelID: dir.ProgramID,
-			Kind:     "link-dir",
+			Kind:     OrphanLinkDir,
 		})
 	}
 
@@ -401,7 +415,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		s.orphans = append(s.orphans, FsOrphan{
 			Path:     dir.Path,
 			KernelID: dir.ProgramID,
-			Kind:     "map-dir",
+			Kind:     OrphanMapDir,
 		})
 	}
 
@@ -412,7 +426,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		if !s.dbDispatcherKeys[key] {
 			s.orphans = append(s.orphans, FsOrphan{
 				Path: d.Path,
-				Kind: "dispatcher-dir",
+				Kind: OrphanDispatcherDir,
 			})
 			continue
 		}
@@ -427,7 +441,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		}
 		s.orphans = append(s.orphans, FsOrphan{
 			Path: pin.Path,
-			Kind: "dispatcher-link",
+			Kind: OrphanDispatcherLink,
 		})
 	}
 
@@ -450,13 +464,13 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 						s.orphans = append(s.orphans, FsOrphan{
 							Path:     filepath.Join(programsPath, name),
 							KernelID: kernelID,
-							Kind:     "program-dir",
+							Kind:     OrphanProgramDir,
 						})
 					}
 				} else {
 					s.orphans = append(s.orphans, FsOrphan{
 						Path: filepath.Join(programsPath, name),
-						Kind: "program-dir-unknown",
+						Kind: OrphanProgramDirUnk,
 					})
 				}
 			}
@@ -471,7 +485,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 			for _, entry := range entries {
 				s.orphans = append(s.orphans, FsOrphan{
 					Path: filepath.Join(stagingPath, entry.Name()),
-					Kind: "staging-dir",
+					Kind: OrphanStagingDir,
 				})
 			}
 		}
@@ -635,7 +649,7 @@ func (s *ObservedState) KernelAlive(kernelID uint32) bool {
 func (s *ObservedState) LiveOrphans() int {
 	count := 0
 	for _, o := range s.orphans {
-		if o.Kind == "prog-pin" && o.KernelID != 0 && s.kernelProgs[o.KernelID] {
+		if o.Kind == OrphanProgPin && o.KernelID != 0 && s.kernelProgs[o.KernelID] {
 			count++
 		}
 	}
@@ -1009,7 +1023,7 @@ Category: fs-vs-db`,
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
 					// Skip live prog-pins - reported by kernel-program-pinned-but-not-in-db.
-					if o.Kind == "prog-pin" && o.KernelID != 0 && s.KernelAlive(o.KernelID) {
+					if o.Kind == OrphanProgPin && o.KernelID != 0 && s.KernelAlive(o.KernelID) {
 						continue
 					}
 					out = append(out, Violation{
@@ -1048,7 +1062,7 @@ Category: kernel-vs-db`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "prog-pin" || o.KernelID == 0 {
+					if o.Kind != OrphanProgPin || o.KernelID == 0 {
 						continue
 					}
 					if !s.KernelAlive(o.KernelID) {
@@ -1076,7 +1090,7 @@ Category: fs-vs-db`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "program-dir" && o.Kind != "program-dir-unknown" {
+					if o.Kind != OrphanProgramDir && o.Kind != OrphanProgramDirUnk {
 						continue
 					}
 					out = append(out, Violation{
@@ -1172,12 +1186,33 @@ Category: gc-dispatcher`,
 						Op: &Operation{
 							Description: fmt.Sprintf("delete dispatcher %s/%d/%d and filesystem artefacts", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
 							Execute: func() error {
-								os.Remove(dd.ProgPin)
-								os.RemoveAll(dd.RevDir)
-								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
-									linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().MountPoint(), dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
-									os.Remove(linkPin)
+								b := s.root.BPFFS()
+
+								// Dispatcher program pin lives under the
+								// revision dir (owned by bpfman).
+								if err := b.RemovePinFile(dd.ProgPin); err != nil {
+									return err
 								}
+
+								// Remove revision dir (includes link_*
+								// pins and the dispatcher program pin).
+								if err := b.RemoveDispatcherRevDir(dd.RevDir); err != nil {
+									return err
+								}
+
+								// XDP has a separate link pin.
+								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
+									linkPin := dispatcher.DispatcherLinkPath(
+										b.MountPoint(),
+										dd.DB.Type,
+										dd.DB.Nsid,
+										dd.DB.Ifindex,
+									)
+									if err := b.RemoveDispatcherLinkPin(linkPin); err != nil {
+										return err
+									}
+								}
+
 								return s.DeleteDispatcher(string(dd.DB.Type), dd.DB.Nsid, dd.DB.Ifindex)
 							},
 						},
@@ -1207,14 +1242,13 @@ Category: gc-orphan-pin`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "prog-pin" && o.Kind != "link-dir" && o.Kind != "map-dir" {
+					if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
 						continue
 					}
 					if o.KernelID != 0 && s.KernelAlive(o.KernelID) {
 						continue // kernel object alive; leave it
 					}
 					oo := o // capture
-					isDir := o.Kind != "prog-pin"
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
@@ -1222,10 +1256,17 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
 							Execute: func() error {
-								if isDir {
-									return os.RemoveAll(oo.Path)
+								b := s.root.BPFFS()
+								switch oo.Kind {
+								case OrphanLinkDir:
+									return b.RemoveLinkDir(oo.Path)
+								case OrphanMapDir:
+									return b.RemoveMapDir(oo.Path)
+								case OrphanProgPin:
+									return b.RemoveProgPin(oo.Path)
+								default:
+									return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
 								}
-								return os.Remove(oo.Path)
 							},
 						},
 					})
@@ -1251,11 +1292,10 @@ Category: gc-orphan-pin`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "dispatcher-dir" && o.Kind != "dispatcher-link" {
+					if o.Kind != OrphanDispatcherDir && o.Kind != OrphanDispatcherLink {
 						continue
 					}
 					oo := o
-					isDir := o.Kind == "dispatcher-dir"
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
@@ -1263,10 +1303,15 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
 							Execute: func() error {
-								if isDir {
-									return os.RemoveAll(oo.Path)
+								b := s.root.BPFFS()
+								switch oo.Kind {
+								case OrphanDispatcherDir:
+									return b.RemoveDispatcherRevDir(oo.Path)
+								case OrphanDispatcherLink:
+									return b.RemoveDispatcherLinkPin(oo.Path)
+								default:
+									return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
 								}
-								return os.Remove(oo.Path)
 							},
 						},
 					})
@@ -1292,7 +1337,7 @@ Category: gc-orphan-pin`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "program-dir" && o.Kind != "program-dir-unknown" {
+					if o.Kind != OrphanProgramDir && o.Kind != OrphanProgramDirUnk {
 						continue
 					}
 					oo := o
@@ -1327,7 +1372,7 @@ Category: gc-orphan-pin`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != "staging-dir" {
+					if o.Kind != OrphanStagingDir {
 						continue
 					}
 					oo := o
@@ -1380,14 +1425,13 @@ Category: gc-orphan-pin`,
 		Eval: func(s *ObservedState) []Violation {
 			var out []Violation
 			for _, o := range s.OrphanFsEntries() {
-				if o.Kind != "prog-pin" && o.Kind != "link-dir" && o.Kind != "map-dir" {
+				if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
 					continue
 				}
 				if o.KernelID == 0 || !s.KernelAlive(o.KernelID) {
 					continue // dead orphans handled by orphan-program-artefacts
 				}
 				oo := o // capture
-				isDir := o.Kind != "prog-pin"
 				out = append(out, Violation{
 					Severity:    SeverityWarning,
 					Category:    "gc-orphan-pin",
@@ -1395,10 +1439,17 @@ Category: gc-orphan-pin`,
 					Op: &Operation{
 						Description: fmt.Sprintf("remove %s", o.Path),
 						Execute: func() error {
-							if isDir {
-								return os.RemoveAll(oo.Path)
+							b := s.root.BPFFS()
+							switch oo.Kind {
+							case OrphanLinkDir:
+								return b.RemoveLinkDir(oo.Path)
+							case OrphanMapDir:
+								return b.RemoveMapDir(oo.Path)
+							case OrphanProgPin:
+								return b.RemoveProgPin(oo.Path)
+							default:
+								return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
 							}
-							return os.Remove(oo.Path)
 						},
 					},
 				})
