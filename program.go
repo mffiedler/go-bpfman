@@ -1,6 +1,3 @@
-// Package bpfman provides types and interfaces for BPF program management.
-// This is the root package containing shared domain types used across
-// the client, manager, and server components.
 package bpfman
 
 import (
