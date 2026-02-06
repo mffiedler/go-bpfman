@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
@@ -363,122 +362,73 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 
 	s.orphans = make([]FsOrphan, 0)
 
-	// Scan dirs.FS for orphan prog_* pins.
-	if entries, err := os.ReadDir(root.BPFFS().MountPoint()); err == nil {
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasPrefix(name, "prog_") {
-				continue
-			}
-			pinPath := filepath.Join(root.BPFFS().MountPoint(), name)
-			if s.dbProgPins[pinPath] {
-				continue
-			}
-			var kernelID uint32
-			if n, _ := fmt.Sscanf(name, "prog_%d", &kernelID); n == 1 {
-				s.orphans = append(s.orphans, FsOrphan{Path: pinPath, KernelID: kernelID, Kind: "prog-pin"})
-			}
-		}
+	// Delegate bpfman-specific bpffs scanning to the scanner.
+	scanner := root.BPFFS().Scanner()
+	fsState, err := scanner.Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("scan bpffs: %w", err)
 	}
 
-	// Scan root.BPFFS().Links() for orphan link directories.
-	if entries, err := os.ReadDir(root.BPFFS().Links()); err == nil {
-		for _, entry := range entries {
-			var progID uint32
-			if n, _ := fmt.Sscanf(entry.Name(), "%d", &progID); n != 1 {
-				continue
-			}
-			if s.dbProgIDs[progID] {
-				continue
-			}
-			s.orphans = append(s.orphans, FsOrphan{
-				Path:     filepath.Join(root.BPFFS().Links(), entry.Name()),
-				KernelID: progID,
-				Kind:     "link-dir",
-			})
-		}
-	}
-
-	// Scan root.BPFFS().Maps() for orphan map directories.
-	if entries, err := os.ReadDir(root.BPFFS().Maps()); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			var progID uint32
-			if n, _ := fmt.Sscanf(entry.Name(), "%d", &progID); n != 1 {
-				continue
-			}
-			if s.dbProgIDs[progID] {
-				continue
-			}
-			s.orphans = append(s.orphans, FsOrphan{
-				Path:     filepath.Join(root.BPFFS().Maps(), entry.Name()),
-				KernelID: progID,
-				Kind:     "map-dir",
-			})
-		}
-	}
-
-	// Scan dispatcher type directories for orphan dispatchers and
-	// count link_* files in non-orphan dispatcher revision dirs.
-	dispTypes := []dispatcher.DispatcherType{
-		dispatcher.DispatcherTypeXDP,
-		dispatcher.DispatcherTypeTCIngress,
-		dispatcher.DispatcherTypeTCEgress,
-	}
-	for _, dt := range dispTypes {
-		typeDir := dispatcher.TypeDir(root.BPFFS().MountPoint(), dt)
-		entries, err := os.ReadDir(typeDir)
-		if err != nil {
+	// Scan prog pins for orphans.
+	for _, pin := range fsState.ProgPins {
+		if s.dbProgPins[pin.Path] {
 			continue
 		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasPrefix(name, "dispatcher_") {
-				continue
-			}
-			if entry.IsDir() {
-				var nsid uint64
-				var ifindex, revision uint32
-				if n, _ := fmt.Sscanf(name, "dispatcher_%d_%d_%d", &nsid, &ifindex, &revision); n != 3 {
-					continue
-				}
-				key := dispatcherKey(dt, nsid, ifindex)
-				if !s.dbDispatcherKeys[key] {
-					// Orphan dispatcher directory.
-					s.orphans = append(s.orphans, FsOrphan{
-						Path: filepath.Join(typeDir, name),
-						Kind: "dispatcher-dir",
-					})
-				} else {
-					// Non-orphan: count link_* files for consistency check.
-					revDir := filepath.Join(typeDir, name)
-					if revEntries, err := os.ReadDir(revDir); err == nil {
-						count := 0
-						for _, re := range revEntries {
-							if strings.HasPrefix(re.Name(), "link_") {
-								count++
-							}
-						}
-						s.fsDispatcherLinkCount[key] = count
-					}
-				}
-			} else if strings.HasSuffix(name, "_link") {
-				var nsid uint64
-				var ifindex uint32
-				if n, _ := fmt.Sscanf(name, "dispatcher_%d_%d_link", &nsid, &ifindex); n != 2 {
-					continue
-				}
-				if !s.dbDispatcherKeys[dispatcherKey(dt, nsid, ifindex)] {
-					// Orphan dispatcher link pin.
-					s.orphans = append(s.orphans, FsOrphan{
-						Path: filepath.Join(typeDir, name),
-						Kind: "dispatcher-link",
-					})
-				}
-			}
+		s.orphans = append(s.orphans, FsOrphan{
+			Path:     pin.Path,
+			KernelID: pin.KernelID,
+			Kind:     "prog-pin",
+		})
+	}
+
+	// Scan link directories for orphans.
+	for _, dir := range fsState.LinkDirs {
+		if s.dbProgIDs[dir.ProgramID] {
+			continue
 		}
+		s.orphans = append(s.orphans, FsOrphan{
+			Path:     dir.Path,
+			KernelID: dir.ProgramID,
+			Kind:     "link-dir",
+		})
+	}
+
+	// Scan map directories for orphans.
+	for _, dir := range fsState.MapDirs {
+		if s.dbProgIDs[dir.ProgramID] {
+			continue
+		}
+		s.orphans = append(s.orphans, FsOrphan{
+			Path:     dir.Path,
+			KernelID: dir.ProgramID,
+			Kind:     "map-dir",
+		})
+	}
+
+	// Scan dispatcher directories for orphans and record link counts
+	// for non-orphans.
+	for _, d := range fsState.DispatcherDirs {
+		key := dispatcherKey(dispatcher.DispatcherType(d.DispType), d.Nsid, d.Ifindex)
+		if !s.dbDispatcherKeys[key] {
+			s.orphans = append(s.orphans, FsOrphan{
+				Path: d.Path,
+				Kind: "dispatcher-dir",
+			})
+			continue
+		}
+		s.fsDispatcherLinkCount[key] = d.LinkCount
+	}
+
+	// Scan dispatcher link pins for orphans.
+	for _, pin := range fsState.DispatcherLinkPins {
+		key := dispatcherKey(dispatcher.DispatcherType(pin.DispType), pin.Nsid, pin.Ifindex)
+		if s.dbDispatcherKeys[key] {
+			continue
+		}
+		s.orphans = append(s.orphans, FsOrphan{
+			Path: pin.Path,
+			Kind: "dispatcher-link",
+		})
 	}
 
 	// ----------------------------------------------------------------
