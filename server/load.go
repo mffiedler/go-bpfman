@@ -179,11 +179,11 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		loaded := loadResult
 
 		// Track for potential rollback
-		loadedKernelIDs = append(loadedKernelIDs, loaded.Spec.KernelID)
+		loadedKernelIDs = append(loadedKernelIDs, loaded.Record.KernelID)
 
 		// First program becomes the map owner for subsequent programs in this request
 		if i == 0 {
-			mapOwnerKernelID = loaded.Spec.KernelID
+			mapOwnerKernelID = loaded.Record.KernelID
 		}
 
 		// Format LoadedAt as RFC3339 if available
@@ -197,7 +197,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			Bytecode:   req.Bytecode,
 			Metadata:   req.Metadata,
 			GlobalData: req.GlobalData,
-			MapPinPath: loaded.Spec.Handles.MapPinPath, // maps directory computed from kernel ID
+			MapPinPath: loaded.Record.Handles.MapPinPath, // maps directory computed from kernel ID
 		}
 		// Set MapOwnerId for dependent programs (those sharing maps with the first)
 		if spec.MapOwnerID() != 0 {
@@ -212,10 +212,10 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			kernelInfo = &pb.KernelProgramInfo{
 				Id:            kp.ID,
 				Name:          kp.Name,
-				ProgramType:   uint32(loaded.Spec.Load.ProgramType()),
+				ProgramType:   uint32(loaded.Record.Load.ProgramType()),
 				LoadedAt:      loadedAt,
 				Tag:           kp.Tag,
-				GplCompatible: loaded.Spec.GPLCompatible,
+				GplCompatible: loaded.Record.GPLCompatible,
 				Jited:         kp.JitedSize > 0,
 				MapIds:        kp.MapIDs,
 				BtfId:         kp.BTFId,

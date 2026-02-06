@@ -140,7 +140,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 }
 
 // computeDetachLinkSteps generates outcome.Step entries corresponding to computeDetachLinkActions.
-func computeDetachLinkSteps(record bpfman.LinkSpec) []outcome.Step {
+func computeDetachLinkSteps(record bpfman.LinkRecord) []outcome.Step {
 	var steps []outcome.Step
 
 	// Detach link from kernel if pinned
@@ -169,7 +169,7 @@ func computeDetachLinkSteps(record bpfman.LinkSpec) []outcome.Step {
 
 // computeDetachLinkActions is a pure function that computes the actions
 // needed to detach and delete a link from the store.
-func computeDetachLinkActions(record bpfman.LinkSpec) []action.Action {
+func computeDetachLinkActions(record bpfman.LinkRecord) []action.Action {
 	var actions []action.Action
 
 	// Detach link from kernel if pinned
@@ -252,7 +252,7 @@ func (m *Manager) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.S
 // collectDispatcherKeys examines links for dispatcher associations and
 // returns a deduplicated set of dispatcher keys. This must be called
 // before the links are deleted from the store.
-func (m *Manager) collectDispatcherKeys(ctx context.Context, links []bpfman.LinkSpec) map[dispatcher.Key]struct{} {
+func (m *Manager) collectDispatcherKeys(ctx context.Context, links []bpfman.LinkRecord) map[dispatcher.Key]struct{} {
 	keys := make(map[dispatcher.Key]struct{})
 	for _, link := range links {
 		if link.Kind != bpfman.LinkKindTC && link.Kind != bpfman.LinkKindXDP {

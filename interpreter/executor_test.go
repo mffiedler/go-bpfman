@@ -31,7 +31,7 @@ func newStubStore() *stubStore {
 }
 
 // ProgramWriter methods (used by tests)
-func (s *stubStore) Save(ctx context.Context, kernelID uint32, _ bpfman.ProgramSpec) error {
+func (s *stubStore) Save(ctx context.Context, kernelID uint32, _ bpfman.ProgramRecord) error {
 	return s.saveFunc(ctx, kernelID)
 }
 
@@ -43,17 +43,17 @@ func (s *stubStore) Delete(ctx context.Context, kernelID uint32) error {
 func (s *stubStore) Close() error { return nil }
 
 // ProgramReader
-func (s *stubStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramSpec, error) {
+func (s *stubStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error) {
 	panic("stubStore.Get not implemented")
 }
 
 // ProgramLister
-func (s *stubStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error) {
+func (s *stubStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error) {
 	panic("stubStore.List not implemented")
 }
 
 // ProgramFinder
-func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramSpec, uint32, error) {
+func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, uint32, error) {
 	panic("stubStore.FindProgramByMetadata not implemented")
 }
 
@@ -63,7 +63,7 @@ func (s *stubStore) CountDependentPrograms(ctx context.Context, kernelID uint32)
 }
 
 // LinkWriter
-func (s *stubStore) SaveLink(ctx context.Context, spec bpfman.LinkSpec) error {
+func (s *stubStore) SaveLink(ctx context.Context, record bpfman.LinkRecord) error {
 	panic("stubStore.SaveLink not implemented")
 }
 
@@ -72,16 +72,16 @@ func (s *stubStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error 
 }
 
 // LinkReader
-func (s *stubStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error) {
+func (s *stubStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	panic("stubStore.GetLink not implemented")
 }
 
 // LinkLister
-func (s *stubStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
+func (s *stubStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 	panic("stubStore.ListLinks not implemented")
 }
 
-func (s *stubStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkSpec, error) {
+func (s *stubStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
 	panic("stubStore.ListLinksByProgram not implemented")
 }
 

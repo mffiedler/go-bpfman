@@ -18,7 +18,7 @@ import (
 // ColumnSpec defines a single column for custom-columns output.
 type ColumnSpec struct {
 	Name     string // Column header
-	JSONPath string // JSONPath expression (e.g., ".spec.kernel_id")
+	JSONPath string // JSONPath expression (e.g., ".record.kernel_id")
 }
 
 // ColumnSet holds multiple column specifications.
@@ -39,14 +39,14 @@ type ColumnInfo struct {
 // This is the authoritative source - DefaultColumns/WideColumns derive from it.
 func ProgramColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
-		{Name: "KERNEL_ID", JSONPath: ".spec.kernel_id", Description: "Kernel-assigned program ID"},
-		{Name: "TYPE", JSONPath: ".spec.load.program_type", Description: "Program type (xdp, tc, etc.)"},
-		{Name: "NAME", JSONPath: ".spec.meta.name", Description: "User-defined name"},
-		{Name: "SOURCE", JSONPath: ".spec.load.object_path", Description: "BPF object path (source)"},
+		{Name: "KERNEL_ID", JSONPath: ".record.kernel_id", Description: "Kernel-assigned program ID"},
+		{Name: "TYPE", JSONPath: ".record.load.program_type", Description: "Program type (xdp, tc, etc.)"},
+		{Name: "NAME", JSONPath: ".record.meta.name", Description: "User-defined name"},
+		{Name: "SOURCE", JSONPath: ".record.load.object_path", Description: "BPF object path (source)"},
 		{Name: "MAP_IDS", JSONPath: ".status.kernel.map_ids", Description: "Associated map IDs"},
 		{Name: "TAG", JSONPath: ".status.kernel.tag", Description: "Program tag (hash)"},
 		{Name: "BTF_ID", JSONPath: ".status.kernel.btf_id", Description: "BTF type ID"},
-		{Name: "PIN_PATH", JSONPath: ".spec.handles.pin_path", Description: "Pinned path in bpffs"},
+		{Name: "PIN_PATH", JSONPath: ".record.handles.pin_path", Description: "Pinned path in bpffs"},
 		{Name: "LOADED_AT", JSONPath: ".status.kernel.loaded_at", Description: "Load timestamp"},
 		{Name: "JIT_SIZE", JSONPath: ".status.kernel.jited_size", Description: "JIT-compiled size in bytes"},
 		{Name: "MEMLOCK", JSONPath: ".status.kernel.memlock", Description: "Locked memory in bytes"},
@@ -100,7 +100,7 @@ var (
 
 // ParseCustomColumns parses a custom-columns spec string.
 // Format: NAME:.jsonpath,NAME2:.jsonpath2
-// Example: ID:.spec.kernel_id,NAME:.spec.meta.name
+// Example: ID:.record.kernel_id,NAME:.record.meta.name
 func ParseCustomColumns(spec string) (ColumnSet, error) {
 	if spec == "" {
 		return ColumnSet{}, fmt.Errorf("custom-columns spec cannot be empty")
@@ -146,7 +146,7 @@ func ParseCustomColumns(spec string) (ColumnSet, error) {
 // ParseCustomColumnsFile parses a custom-columns file.
 // Format: Two lines, whitespace-separated
 // Line 1: Column headers (e.g., "ID NAME MAPS")
-// Line 2: JSONPath expressions (e.g., ".spec.kernel_id .spec.meta.name .status.kernel.map_ids")
+// Line 2: JSONPath expressions (e.g., ".record.kernel_id .record.meta.name .status.kernel.map_ids")
 func ParseCustomColumnsFile(path string) (ColumnSet, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -268,7 +268,7 @@ func extractLinkIDs(prog bpfman.Program) string {
 
 	ids := make([]string, len(prog.Status.Links))
 	for i, link := range prog.Status.Links {
-		ids[i] = strconv.FormatUint(uint64(link.Spec.ID), 10)
+		ids[i] = strconv.FormatUint(uint64(link.Record.ID), 10)
 	}
 	return strings.Join(ids, ",")
 }
@@ -282,7 +282,7 @@ func extractAttach(prog bpfman.Program) string {
 
 	attachments := make([]string, 0, len(prog.Status.Links))
 	for _, link := range prog.Status.Links {
-		attach := formatAttachDetails(link.Spec.Details)
+		attach := formatAttachDetails(link.Record.Details)
 		if attach != "" {
 			attachments = append(attachments, attach)
 		}
@@ -399,7 +399,7 @@ func WideLinkColumns() ColumnSet {
 
 // ExtractLinkValue extracts a value from a link using the JSONPath expression.
 // Returns "<none>" if the value is missing or empty.
-func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkSpec) string {
+func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkRecord) string {
 	// Handle special columns that need custom logic
 	switch strings.ToUpper(cs.Name) {
 	case "ATTACH":
@@ -411,7 +411,7 @@ func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkSpec) string {
 }
 
 // extractLinkJSONPath extracts a value using JSONPath from a link.
-func extractLinkJSONPath(link bpfman.LinkSpec, expr string) string {
+func extractLinkJSONPath(link bpfman.LinkRecord, expr string) string {
 	jp := jsonpath.New("extract")
 	// Wrap in {} for k8s jsonpath syntax
 	if err := jp.Parse("{" + expr + "}"); err != nil {
@@ -444,7 +444,7 @@ func extractLinkJSONPath(link bpfman.LinkSpec, expr string) string {
 
 // extractLinkAttach extracts attach details from a link.
 // This is a special column that requires custom logic.
-func extractLinkAttach(link bpfman.LinkSpec) string {
+func extractLinkAttach(link bpfman.LinkRecord) string {
 	attach := formatAttachDetails(link.Details)
 	if attach == "" {
 		return "<none>"
@@ -453,7 +453,7 @@ func extractLinkAttach(link bpfman.LinkSpec) string {
 }
 
 // FormatLinkTable renders a table of links using the column set.
-func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkSpec) string {
+func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkRecord) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 

@@ -61,7 +61,7 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 		return e.store.Delete(ctx, a.KernelID)
 
 	case action.SaveLink:
-		return e.store.SaveLink(ctx, a.Spec)
+		return e.store.SaveLink(ctx, a.Record)
 
 	case action.DeleteLink:
 		return e.store.DeleteLink(ctx, a.LinkID)

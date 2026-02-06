@@ -66,8 +66,8 @@ func TestLoad_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify program was loaded
-	assert.NotZero(t, prog.Spec.KernelID)
-	assert.Equal(t, "test_prog", prog.Spec.Meta.Name)
+	assert.NotZero(t, prog.Record.KernelID)
+	assert.Equal(t, "test_prog", prog.Record.Meta.Name)
 }
 
 // TestUnload_Success verifies that a successful unload operation
@@ -84,7 +84,7 @@ func TestUnload_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now unload it
-	err = fix.Manager.Unload(ctx, prog.Spec.KernelID)
+	err = fix.Manager.Unload(ctx, prog.Record.KernelID)
 	require.NoError(t, err)
 
 	// Verify state is clean
@@ -158,15 +158,15 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach it
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Spec.KernelID, "sched", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, "sched", "sched_switch")
 	require.NoError(t, err)
 
 	link, err := fix.Manager.AttachTracepoint(ctx, attachSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
 
 	// Verify link was created
-	assert.NotZero(t, link.Spec.ID)
-	assert.Equal(t, prog.Spec.KernelID, link.Spec.ProgramID)
+	assert.NotZero(t, link.Record.ID)
+	assert.Equal(t, prog.Record.KernelID, link.Record.ProgramID)
 }
 
 // TestGC_Success_OutcomeTracksPhases verifies that GC records both
@@ -209,7 +209,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	err = fix.Manager.Unload(ctx, prog.Spec.KernelID)
+	err = fix.Manager.Unload(ctx, prog.Record.KernelID)
 	require.NoError(t, err)
 
 	// Verify actual state is clean

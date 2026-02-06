@@ -240,7 +240,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.XDPDetails{
@@ -259,7 +259,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -287,15 +287,15 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				Interface: ifname,
 				PinPath:   linkPinPath,
@@ -311,9 +311,9 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -321,9 +321,9 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -334,9 +334,9 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			Interface: ifname,
 			PinPath:   linkPinPath,
@@ -344,7 +344,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	})
 
 	m.logger.InfoContext(ctx, "attached XDP via dispatcher",
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"interface", ifname,
 		"ifindex", ifindex,

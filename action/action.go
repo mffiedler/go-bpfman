@@ -4,7 +4,7 @@
 // Actions are intentionally generic rather than program-type-specific.
 // There is no LoadXDPProgram or LoadTCProgram; there is just LoadProgram
 // which carries a LoadSpec containing the program type. Similarly,
-// SaveLink works with LinkSpec which has a Kind discriminator and a
+// SaveLink works with LinkRecord which has a Kind discriminator and a
 // LinkDetails sealed interface for type-specific fields.
 //
 // This design keeps the action set small (operations like load, unload,
@@ -47,10 +47,10 @@ func (DeleteProgram) isAction() {}
 // Link actions - operations on link metadata
 
 // SaveLink saves a link to the store.
-// Spec.ID is the primary key: kernel-assigned for real BPF links,
+// Record.ID is the primary key: kernel-assigned for real BPF links,
 // or bpfman-assigned synthetic ID (0x80000000+) for perf_event-based links.
 type SaveLink struct {
-	Spec bpfman.LinkSpec
+	Record bpfman.LinkRecord
 }
 
 func (SaveLink) isAction() {}

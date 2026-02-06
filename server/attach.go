@@ -95,7 +95,7 @@ func (s *Server) attachTracepoint(ctx context.Context, programID uint32, info *p
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -129,7 +129,7 @@ func (s *Server) attachXDP(ctx context.Context, programID uint32, info *pb.XDPAt
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -184,7 +184,7 @@ func (s *Server) attachTC(ctx context.Context, programID uint32, info *pb.TCAtta
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -231,7 +231,7 @@ func (s *Server) attachTCX(ctx context.Context, programID uint32, info *pb.TCXAt
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -261,7 +261,7 @@ func (s *Server) attachKprobe(ctx context.Context, programID uint32, info *pb.Kp
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -311,7 +311,7 @@ func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.Up
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -336,7 +336,7 @@ func (s *Server) attachFentry(ctx context.Context, programID uint32, info *pb.Fe
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 
@@ -361,7 +361,7 @@ func (s *Server) attachFexit(ctx context.Context, programID uint32, info *pb.Fex
 	}
 
 	return &pb.AttachResponse{
-		LinkId: uint32(link.Spec.ID),
+		LinkId: uint32(link.Record.ID),
 	}, nil
 }
 

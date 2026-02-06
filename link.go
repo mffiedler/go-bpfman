@@ -298,11 +298,10 @@ func (id LinkID) IsSynthetic() bool {
 	return IsSyntheticLinkID(uint32(id))
 }
 
-// LinkSpec is what bpfman intends to manage (DB-backed).
-// This is the "desired state" - what the user asked for.
+// LinkRecord is the stored record of an attached link (DB-backed).
 // ID is the user-facing identity: kernel-assigned for real BPF links,
 // or bpfman-assigned (0x80000000+) for synthetic/perf_event links.
-type LinkSpec struct {
+type LinkRecord struct {
 	ID        LinkID          `json:"id"`
 	ProgramID uint32          `json:"program_id"` // program this attaches to
 	Kind      LinkKind        `json:"kind"`
@@ -315,7 +314,7 @@ type LinkSpec struct {
 // LinkListResult wraps link list output for consistent JSON structure.
 // The wrapper provides a stable path for jsonpath queries (e.g., {.links[*].id}).
 type LinkListResult struct {
-	Links []LinkSpec `json:"links"`
+	Links []LinkRecord `json:"links"`
 }
 
 // LinkListOption configures link list filtering.
@@ -328,11 +327,11 @@ type linkListOptions struct {
 }
 
 // Matches returns true if the link matches all filter criteria.
-func (o *linkListOptions) Matches(link *LinkSpec) bool {
+func (o *linkListOptions) Matches(link *LinkRecord) bool {
 	return o.matchesKind(link) && o.matchesProgramID(link)
 }
 
-func (o *linkListOptions) matchesKind(link *LinkSpec) bool {
+func (o *linkListOptions) matchesKind(link *LinkRecord) bool {
 	if len(o.kinds) == 0 {
 		return true
 	}
@@ -340,7 +339,7 @@ func (o *linkListOptions) matchesKind(link *LinkSpec) bool {
 	return ok
 }
 
-func (o *linkListOptions) matchesProgramID(link *LinkSpec) bool {
+func (o *linkListOptions) matchesProgramID(link *LinkRecord) bool {
 	if o.programID == nil {
 		return true
 	}
@@ -376,10 +375,10 @@ func WithProgramID(id uint32) LinkListOption {
 }
 
 // IsSynthetic returns true if this is a synthetic link (perf_event-based, no kernel link).
-func (s LinkSpec) IsSynthetic() bool { return s.ID.IsSynthetic() }
+func (r LinkRecord) IsSynthetic() bool { return r.ID.IsSynthetic() }
 
 // HasPin returns true if this link has a pin path.
-func (s LinkSpec) HasPin() bool { return s.PinPath != nil }
+func (r LinkRecord) HasPin() bool { return r.PinPath != nil }
 
 // LinkStatus is observed state (kernel + fs).
 // This is "what actually exists right now".
@@ -389,11 +388,11 @@ type LinkStatus struct {
 	PinPresent bool         `json:"pin_present"`      // true if pin path exists on filesystem
 }
 
-// Link is the canonical domain object combining spec and status.
-// Spec comes from the store (what bpfman manages).
+// Link is the canonical domain object combining record and status.
+// Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
 type Link struct {
-	Spec   LinkSpec   `json:"spec"`
+	Record LinkRecord `json:"record"`
 	Status LinkStatus `json:"status"`
 }
 
@@ -410,10 +409,10 @@ type AttachOutput struct {
 	Synthetic  bool         // true if this is a synthetic link (no kernel link)
 }
 
-// NewPinnedLinkSpec creates a fully-detailed spec for a pinned link.
+// NewPinnedLinkRecord creates a fully-detailed record for a pinned link.
 // Kind is derived from details to enforce the invariant.
-func NewPinnedLinkSpec(id LinkID, programID uint32, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkSpec {
-	return LinkSpec{
+func NewPinnedLinkRecord(id LinkID, programID uint32, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
+	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,
 		Kind:      details.Kind(),
@@ -423,10 +422,10 @@ func NewPinnedLinkSpec(id LinkID, programID uint32, details LinkDetails, pin bpf
 	}
 }
 
-// NewEphemeralLinkSpec creates a fully-detailed spec for an ephemeral (unpinned) link.
+// NewEphemeralLinkRecord creates a fully-detailed record for an ephemeral (unpinned) link.
 // Kind is derived from details to enforce the invariant.
-func NewEphemeralLinkSpec(id LinkID, programID uint32, details LinkDetails, createdAt time.Time) LinkSpec {
-	return LinkSpec{
+func NewEphemeralLinkRecord(id LinkID, programID uint32, details LinkDetails, createdAt time.Time) LinkRecord {
+	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,
 		Kind:      details.Kind(),

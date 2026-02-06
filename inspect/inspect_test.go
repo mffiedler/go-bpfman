@@ -20,33 +20,33 @@ import (
 
 // fakeStore implements StoreLister for testing.
 type fakeStore struct {
-	programs    map[uint32]bpfman.ProgramSpec
-	links       []bpfman.LinkSpec
+	programs    map[uint32]bpfman.ProgramRecord
+	links       []bpfman.LinkRecord
 	dispatchers []dispatcher.State
 }
 
-func (s *fakeStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error) {
+func (s *fakeStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error) {
 	return s.programs, nil
 }
 
-func (s *fakeStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramSpec, error) {
+func (s *fakeStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error) {
 	if p, ok := s.programs[kernelID]; ok {
 		return p, nil
 	}
-	return bpfman.ProgramSpec{}, store.ErrNotFound
+	return bpfman.ProgramRecord{}, store.ErrNotFound
 }
 
-func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
+func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 	return s.links, nil
 }
 
-func (s *fakeStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error) {
+func (s *fakeStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	for _, l := range s.links {
 		if l.ID == linkID {
 			return l, nil
 		}
 	}
-	return bpfman.LinkSpec{}, store.ErrNotFound
+	return bpfman.LinkRecord{}, store.ErrNotFound
 }
 
 func (s *fakeStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, error) {
@@ -123,7 +123,7 @@ func TestSnapshot_ManagedPrograms(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_100"}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
 			200: {KernelID: 200, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTC), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_200"}, Meta: bpfman.ProgramMeta{Name: "tc_filter"}},
 		},
@@ -154,7 +154,7 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "managed"}},
 		},
 	}
@@ -198,7 +198,7 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dirs.FS, "prog_888"), nil, 0644))
 
 	scanner := bpffs.NewScanner(dirs)
-	store := &fakeStore{programs: map[uint32]bpfman.ProgramSpec{}}
+	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
 
 	w, err := Snapshot(context.Background(), store, kern, scanner)
@@ -217,7 +217,7 @@ func TestSnapshot_Links(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		links: []bpfman.LinkSpec{
+		links: []bpfman.LinkRecord{
 			// ID is now the kernel link ID for non-synthetic links
 			{ID: bpfman.LinkID(10), Kind: bpfman.LinkKindXDP},
 			{ID: bpfman.LinkID(20), Kind: bpfman.LinkKindKprobe},
@@ -389,7 +389,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: pinPath}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
 		},
 	}
@@ -416,7 +416,7 @@ func TestGetProgram_StoreOnly(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "stale_prog"}},
 		},
 	}
@@ -438,7 +438,7 @@ func TestGetProgram_KernelOnly(t *testing.T) {
 	dirs := testScannerDirs(t)
 	scanner := bpffs.NewScanner(dirs)
 
-	store := &fakeStore{programs: map[uint32]bpfman.ProgramSpec{}} // Not in store
+	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}} // Not in store
 
 	kern := &fakeKernelSource{
 		programs: []kernel.Program{{ID: 999, Name: "unmanaged"}},
@@ -460,7 +460,7 @@ func TestGetProgram_NotFound(t *testing.T) {
 	dirs := testScannerDirs(t)
 	scanner := bpffs.NewScanner(dirs)
 
-	store := &fakeStore{programs: map[uint32]bpfman.ProgramSpec{}}
+	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
 
 	_, err := GetProgram(context.Background(), store, kern, scanner, 12345)
@@ -480,7 +480,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 
 	// ID is now the kernel link ID for non-synthetic links
 	store := &fakeStore{
-		links: []bpfman.LinkSpec{
+		links: []bpfman.LinkRecord{
 			{
 				ID:      bpfman.LinkID(10), // kernel link ID
 				Kind:    bpfman.LinkKindKprobe,
@@ -510,7 +510,7 @@ func TestGetLink_StoreOnly(t *testing.T) {
 
 	// ID is now the kernel link ID for non-synthetic links
 	store := &fakeStore{
-		links: []bpfman.LinkSpec{
+		links: []bpfman.LinkRecord{
 			{ID: bpfman.LinkID(20), Kind: bpfman.LinkKindTracepoint},
 		},
 	}
@@ -648,10 +648,10 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 
 	// Create links WITH details populated (simulating what the real store returns)
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
 		},
-		links: []bpfman.LinkSpec{
+		links: []bpfman.LinkRecord{
 			{
 				ID:        bpfman.LinkID(10),
 				Kind:      bpfman.LinkKindTracepoint,
@@ -711,10 +711,10 @@ func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 	scanner := bpffs.NewScanner(dirs)
 
 	store := &fakeStore{
-		programs: map[uint32]bpfman.ProgramSpec{
+		programs: map[uint32]bpfman.ProgramRecord{
 			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
 		},
-		links: []bpfman.LinkSpec{
+		links: []bpfman.LinkRecord{
 			{
 				ID:        bpfman.LinkID(10),
 				Kind:      bpfman.LinkKindTracepoint,

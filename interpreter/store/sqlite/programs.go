@@ -15,18 +15,18 @@ import (
 
 // Get retrieves program metadata by kernel ID.
 // Returns store.ErrNotFound if the program does not exist.
-func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramSpec, error) {
+func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error) {
 	start := time.Now()
 	row := s.stmtGetProgram.QueryRowContext(ctx, kernelID)
 
 	prog, err := s.scanProgram(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.ProgramSpec{}, store.ErrNotFound
+		return bpfman.ProgramRecord{}, store.ErrNotFound
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
-		return bpfman.ProgramSpec{}, err
+		return bpfman.ProgramRecord{}, err
 	}
 	s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
@@ -34,8 +34,8 @@ func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramS
 	return prog, nil
 }
 
-// scanProgram scans a single row into a ProgramSpec struct.
-func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
+// scanProgram scans a single row into a ProgramRecord struct.
+func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 	var programName, programTypeStr, objectPath, pinPath string
 	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
@@ -61,13 +61,13 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		&metadataJSON,
 	)
 	if err != nil {
-		return bpfman.ProgramSpec{}, err
+		return bpfman.ProgramRecord{}, err
 	}
 
 	// Parse program type
 	programType, ok := bpfman.ParseProgramType(programTypeStr)
 	if !ok {
-		return bpfman.ProgramSpec{}, fmt.Errorf("invalid program type: %q", programTypeStr)
+		return bpfman.ProgramRecord{}, fmt.Errorf("invalid program type: %q", programTypeStr)
 	}
 
 	// Parse nullable scalar fields
@@ -91,28 +91,28 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 	var metadata map[string]string
 	if globalDataJSON.Valid {
 		if err := json.Unmarshal([]byte(globalDataJSON.String), &globalData); err != nil {
-			return bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal global_data: %w", err)
+			return bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal global_data: %w", err)
 		}
 	}
 	if imageSourceJSON.Valid {
 		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imageSource); err != nil {
-			return bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal image_source: %w", err)
+			return bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source: %w", err)
 		}
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
-			return bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			return bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal metadata: %w", err)
 		}
 	}
 
 	// Parse timestamps
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
-		return bpfman.ProgramSpec{}, fmt.Errorf("invalid created_at timestamp %q: %w", createdAtStr, err)
+		return bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp %q: %w", createdAtStr, err)
 	}
 	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
 	if err != nil {
-		return bpfman.ProgramSpec{}, fmt.Errorf("invalid updated_at timestamp %q: %w", updatedAtStr, err)
+		return bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp %q: %w", updatedAtStr, err)
 	}
 
 	// Parse license field
@@ -121,8 +121,8 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		licenseVal = license.String
 	}
 
-	// Build the ProgramSpec from the stored fields using nested structs
-	prog := bpfman.ProgramSpec{
+	// Build the ProgramRecord from the stored fields using nested structs
+	prog := bpfman.ProgramRecord{
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(objectPath).
 			WithProgramName(programName).
@@ -166,7 +166,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 // as a clear signal that the kernel_id was reused.
 //
 // For atomicity with other operations, wrap in RunInTransaction.
-func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramSpec) error {
+func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramRecord) error {
 	// Marshal JSON fields
 	var globalDataJSON, imageSourceJSON sql.NullString
 	if metadata.Load.GlobalData() != nil {
@@ -408,7 +408,7 @@ func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID uint3
 
 // List returns all program metadata. The returned map has no guaranteed
 // iteration order; sorting for deterministic output is done in inspect.Snapshot.
-func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error) {
+func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error) {
 	start := time.Now()
 	rows, err := s.stmtListPrograms.QueryContext(ctx)
 	if err != nil {
@@ -417,7 +417,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, 
 	}
 	defer rows.Close()
 
-	result := make(map[uint32]bpfman.ProgramSpec)
+	result := make(map[uint32]bpfman.ProgramRecord)
 	for rows.Next() {
 		kernelID, prog, err := s.scanProgramFromRows(rows)
 		if err != nil {
@@ -435,9 +435,9 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, 
 	return result, nil
 }
 
-// scanProgramFromRows scans a single row from *sql.Rows into a ProgramSpec struct.
+// scanProgramFromRows scans a single row from *sql.Rows into a ProgramRecord struct.
 // The row must include the tags and metadata columns.
-func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.ProgramSpec, error) {
+func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.ProgramRecord, error) {
 	var kernelID uint32
 	var programName, programTypeStr, objectPath, pinPath string
 	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
@@ -465,13 +465,13 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		&metadataJSON,
 	)
 	if err != nil {
-		return 0, bpfman.ProgramSpec{}, err
+		return 0, bpfman.ProgramRecord{}, err
 	}
 
 	// Parse program type
 	programType, ok := bpfman.ParseProgramType(programTypeStr)
 	if !ok {
-		return 0, bpfman.ProgramSpec{}, fmt.Errorf("invalid program type for %d: %q", kernelID, programTypeStr)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid program type for %d: %q", kernelID, programTypeStr)
 	}
 
 	// Parse nullable scalar fields
@@ -495,28 +495,28 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 	var metadata map[string]string
 	if globalDataJSON.Valid {
 		if err := json.Unmarshal([]byte(globalDataJSON.String), &globalData); err != nil {
-			return 0, bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal global_data for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal global_data for %d: %w", kernelID, err)
 		}
 	}
 	if imageSourceJSON.Valid {
 		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imageSource); err != nil {
-			return 0, bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", kernelID, err)
 		}
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
-			return 0, bpfman.ProgramSpec{}, fmt.Errorf("failed to unmarshal metadata for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal metadata for %d: %w", kernelID, err)
 		}
 	}
 
 	// Parse timestamps
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
-		return 0, bpfman.ProgramSpec{}, fmt.Errorf("invalid created_at timestamp for %d: %q: %w", kernelID, createdAtStr, err)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp for %d: %q: %w", kernelID, createdAtStr, err)
 	}
 	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
 	if err != nil {
-		return 0, bpfman.ProgramSpec{}, fmt.Errorf("invalid updated_at timestamp for %d: %q: %w", kernelID, updatedAtStr, err)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp for %d: %q: %w", kernelID, updatedAtStr, err)
 	}
 
 	// Parse license field
@@ -525,8 +525,8 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		licenseVal = license.String
 	}
 
-	// Build the ProgramSpec from the stored fields using nested structs
-	prog := bpfman.ProgramSpec{
+	// Build the ProgramRecord from the stored fields using nested structs
+	prog := bpfman.ProgramRecord{
 		KernelID: kernelID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(objectPath).

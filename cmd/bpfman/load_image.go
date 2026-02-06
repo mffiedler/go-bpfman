@@ -131,9 +131,9 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 
 		for _, prog := range loaded {
 			logger.Info("program loaded successfully",
-				"name", prog.Spec.Meta.Name,
-				"kernel_id", prog.Spec.KernelID,
-				"pin_path", prog.Spec.Handles.PinPath,
+				"name", prog.Record.Meta.Name,
+				"kernel_id", prog.Record.KernelID,
+				"pin_path", prog.Record.Handles.PinPath,
 			)
 		}
 

@@ -103,8 +103,8 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 				return
 			}
 			for _, loaded := range res.Programs {
-				kernelID := loaded.Spec.KernelID
-				progName := loaded.Spec.Meta.Name
+				kernelID := loaded.Record.KernelID
+				progName := loaded.Record.Meta.Name
 				if err := mgr.Unload(ctx, kernelID); err != nil {
 					logger.Warn("rollback: failed to unload program",
 						"kernel_id", kernelID,

@@ -46,9 +46,9 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			// Rollback any loaded programs before finalizing
 			rec.BeginRollback()
 			for _, prog := range loaded {
-				kernelID := prog.Spec.KernelID
-				progName := prog.Spec.Meta.Name
-				pinPath := prog.Spec.Handles.PinPath
+				kernelID := prog.Record.KernelID
+				progName := prog.Record.Meta.Name
+				pinPath := prog.Record.Handles.PinPath
 				if err := m.Unload(ctx, kernelID); err != nil {
 					m.logger.WarnContext(ctx, "rollback: failed to unload program",
 						"kernel_id", kernelID,
@@ -264,29 +264,29 @@ func (m *Manager) LoadImage(ctx context.Context, puller interpreter.ImagePuller,
 			Kind:   outcome.StepKindKernelLoad,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Spec.KernelID,
-				PinPath:  loadedProg.Spec.Handles.PinPath,
+				KernelID: loadedProg.Record.KernelID,
+				PinPath:  loadedProg.Record.Handles.PinPath,
 			},
 		})
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindFSPublish,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Spec.KernelID,
+				KernelID: loadedProg.Record.KernelID,
 			},
 		})
 		_ = rec.Complete(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveProgram,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Spec.KernelID,
+				KernelID: loadedProg.Record.KernelID,
 			},
 		})
 
 		m.logger.InfoContext(ctx, "loaded program from image",
 			"name", spec.ProgramName(),
-			"kernel_id", loadedProg.Spec.KernelID,
-			"pin_path", loadedProg.Spec.Handles.PinPath)
+			"kernel_id", loadedProg.Record.KernelID,
+			"pin_path", loadedProg.Record.Handles.PinPath)
 
 		loaded = append(loaded, loadedProg)
 	}

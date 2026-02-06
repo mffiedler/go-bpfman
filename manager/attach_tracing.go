@@ -76,7 +76,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.TracepointDetails{Group: group, Name: name},
@@ -86,7 +86,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -112,15 +112,15 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				PinPath:   linkPinPath,
 			},
@@ -135,9 +135,9 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -145,9 +145,9 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -158,16 +158,16 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			PinPath:   linkPinPath,
 		},
 	})
 
 	m.logger.InfoContext(ctx, "attached tracepoint",
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"tracepoint", target,
 		"pin_path", linkPinPath)
@@ -244,7 +244,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
@@ -254,7 +254,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -281,15 +281,15 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				PinPath:   linkPinPath,
 				Function:  fnName,
@@ -305,9 +305,9 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -315,9 +315,9 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -328,9 +328,9 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			PinPath:   linkPinPath,
 			Function:  fnName,
@@ -342,7 +342,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 		probeType = "kretprobe"
 	}
 	m.logger.InfoContext(ctx, "attached "+probeType,
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"fn_name", fnName,
 		"offset", offset,
@@ -443,7 +443,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
@@ -453,7 +453,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -480,15 +480,15 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				PinPath:   linkPinPath,
 				Function:  fnName,
@@ -504,9 +504,9 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -514,9 +514,9 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -527,9 +527,9 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			PinPath:   linkPinPath,
 			Function:  fnName,
@@ -541,7 +541,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 		probeType = "uretprobe"
 	}
 	m.logger.InfoContext(ctx, "attached "+probeType,
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"target", binaryTarget,
 		"fn_name", fnName,
@@ -624,7 +624,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.FentryDetails{FnName: fnName},
@@ -634,7 +634,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -661,15 +661,15 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				PinPath:   linkPinPath,
 				Function:  fnName,
@@ -685,9 +685,9 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -695,9 +695,9 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -708,9 +708,9 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			PinPath:   linkPinPath,
 			Function:  fnName,
@@ -718,7 +718,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	})
 
 	m.logger.InfoContext(ctx, "attached fentry",
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"fn_name", fnName,
 		"pin_path", linkPinPath)
@@ -798,7 +798,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkSpec := bpfman.NewPinnedLinkSpec(
+	linkRecord := bpfman.NewPinnedLinkRecord(
 		bpfman.LinkID(attachOut.LinkID),
 		programKernelID,
 		bpfman.FexitDetails{FnName: fnName},
@@ -808,7 +808,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 
 	// Construct Link with Status from AttachOutput
 	link := bpfman.Link{
-		Spec: linkSpec,
+		Record: linkRecord,
 		Status: bpfman.LinkStatus{
 			Kernel:     attachOut.KernelLink,
 			KernelSeen: attachOut.KernelLink != nil,
@@ -835,15 +835,15 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	})
 
 	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
+	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
 		storeErr := fmt.Errorf("save link metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Spec.ID),
+			Target: fmt.Sprintf("%d", link.Record.ID),
 			Details: outcome.LinkDetails{
-				LinkID:    uint32(link.Spec.ID),
+				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				PinPath:   linkPinPath,
 				Function:  fnName,
@@ -859,9 +859,9 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 			_ = rec.RollbackFail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 				Error: rbErrs[0].Err.Error(),
@@ -869,9 +869,9 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 		} else {
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Spec.ID),
+				Target: fmt.Sprintf("%d", link.Record.ID),
 				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Spec.ID),
+					LinkID:  uint32(link.Record.ID),
 					PinPath: linkPinPath,
 				},
 			})
@@ -882,9 +882,9 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	// Record successful store save
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Spec.ID),
+		Target: fmt.Sprintf("%d", link.Record.ID),
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    uint32(link.Record.ID),
 			ProgramID: programKernelID,
 			PinPath:   linkPinPath,
 			Function:  fnName,
@@ -892,7 +892,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	})
 
 	m.logger.InfoContext(ctx, "attached fexit",
-		"link_id", link.Spec.ID,
+		"link_id", link.Record.ID,
 		"program_id", programKernelID,
 		"fn_name", fnName,
 		"pin_path", linkPinPath)

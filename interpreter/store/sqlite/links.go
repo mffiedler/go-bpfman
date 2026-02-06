@@ -39,7 +39,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 }
 
 // GetLink retrieves link metadata by link ID using two-phase lookup.
-func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error) {
+func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	// Phase 1: Get summary from registry
 	start := time.Now()
 	row := s.stmtGetLinkRegistry.QueryRowContext(ctx, int64(linkID))
@@ -47,14 +47,14 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 	record, err := s.scanLinkRecord(row)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetLinkRegistry", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.LinkSpec{}, err
+		return bpfman.LinkRecord{}, err
 	}
 	s.logger.Debug("sql", "stmt", "GetLinkRegistry", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
 	// Phase 2: Get details based on link kind
 	details, err := s.getLinkDetails(ctx, record.Kind, record.ID)
 	if err != nil {
-		return bpfman.LinkSpec{}, err
+		return bpfman.LinkRecord{}, err
 	}
 	record.Details = details
 
@@ -64,7 +64,7 @@ func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman
 // ListLinks returns all links with their details populated. The returned slice
 // has no guaranteed order; sorting for deterministic output is done in
 // inspect.Snapshot.
-func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) {
+func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinks.QueryContext(ctx)
 	if err != nil {
@@ -89,7 +89,7 @@ func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error) 
 
 // ListLinksByProgram returns all links for a given program kernel ID with
 // their details populated.
-func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkSpec, error) {
+func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinksByProgram.QueryContext(ctx, programKernelID)
 	if err != nil {
@@ -145,7 +145,7 @@ func (s *sqliteStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, 
 // populateLinkDetails batch-fetches details from all detail tables and
 // populates the Details field of each link. This is O(9) queries regardless
 // of N links, rather than O(N+1) for per-link fetching.
-func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.LinkSpec) error {
+func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.LinkRecord) error {
 	if len(links) == 0 {
 		return nil
 	}
@@ -185,7 +185,7 @@ func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.Li
 	return nil
 }
 
-func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllTracepointDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tracepoint details: %w", err)
@@ -205,7 +205,7 @@ func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links 
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllKprobeDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch kprobe details: %w", err)
@@ -227,7 +227,7 @@ func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllUprobeDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch uprobe details: %w", err)
@@ -257,7 +257,7 @@ func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllFentryDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch fentry details: %w", err)
@@ -277,7 +277,7 @@ func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllFexitDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch fexit details: %w", err)
@@ -297,7 +297,7 @@ func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpf
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllXDPDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch xdp details: %w", err)
@@ -326,7 +326,7 @@ func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfma
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllTCDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tc details: %w", err)
@@ -355,7 +355,7 @@ func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfman.LinkSpec, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
 	rows, err := s.stmtListAllTCXDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tcx details: %w", err)
@@ -391,7 +391,7 @@ func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfma
 // The spec.ID is used as the link ID (kernel-assigned for real BPF links,
 // or bpfman-assigned synthetic ID for perf_event-based links).
 // Dispatches to the appropriate detail table based on spec.Details.Kind().
-func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkSpec) error {
+func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkRecord) error {
 	if err := s.insertLinkRegistry(ctx, spec); err != nil {
 		return err
 	}
@@ -547,7 +547,7 @@ func (s *sqliteStore) saveTCXDetails(ctx context.Context, linkID bpfman.LinkID, 
 // ----------------------------------------------------------------------------
 
 // insertLinkRegistry inserts a spec into the links table.
-func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSpec) error {
+func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkRecord) error {
 	start := time.Now()
 
 	// Derive is_synthetic from the link ID
@@ -574,10 +574,10 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkSp
 	return nil
 }
 
-// scanLinkRecord scans a single row into a LinkSpec (without details).
+// scanLinkRecord scans a single row into a LinkRecord (without details).
 // Row format: link_id, kind, kernel_prog_id, pin_path, is_synthetic, created_at
-func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkSpec, error) {
-	var record bpfman.LinkSpec
+func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
+	var record bpfman.LinkRecord
 	var linkID int64
 	var kindStr string
 	var programID uint32
@@ -587,10 +587,10 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkSpec, error) {
 
 	err := row.Scan(&linkID, &kindStr, &programID, &pinPath, &isSynthetic, &createdAtStr)
 	if err == sql.ErrNoRows {
-		return bpfman.LinkSpec{}, store.ErrNotFound
+		return bpfman.LinkRecord{}, store.ErrNotFound
 	}
 	if err != nil {
-		return bpfman.LinkSpec{}, err
+		return bpfman.LinkRecord{}, err
 	}
 
 	record.ID = bpfman.LinkID(linkID)
@@ -602,17 +602,17 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkSpec, error) {
 	}
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
-		return bpfman.LinkSpec{}, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
+		return bpfman.LinkRecord{}, fmt.Errorf("invalid created_at timestamp for link %d: %q: %w", linkID, createdAtStr, err)
 	}
 	record.CreatedAt = createdAt
 
 	return record, nil
 }
 
-// scanLinkRecords scans multiple rows into a slice of LinkSpec (without details).
+// scanLinkRecords scans multiple rows into a slice of LinkRecord (without details).
 // Row format: link_id, kind, kernel_prog_id, pin_path, is_synthetic, created_at
-func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkSpec, error) {
-	var result []bpfman.LinkSpec
+func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, error) {
+	var result []bpfman.LinkRecord
 
 	for rows.Next() {
 		var linkID int64
@@ -627,7 +627,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkSpec, error)
 			return nil, err
 		}
 
-		record := bpfman.LinkSpec{
+		record := bpfman.LinkRecord{
 			ID:        bpfman.LinkID(linkID),
 			Kind:      bpfman.LinkKind(kindStr),
 			ProgramID: programID,

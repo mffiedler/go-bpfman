@@ -23,14 +23,14 @@ var ErrNotFound = errors.New("not found")
 
 // StoreLister is the subset of interpreter.Store needed by Snapshot.
 type StoreLister interface {
-	List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error)
-	ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error)
+	List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error)
+	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
 	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
 }
 
 // StoreGetter is the subset of interpreter.Store needed by GetProgram.
 type StoreGetter interface {
-	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramSpec, error)
+	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error)
 }
 
 // KernelLister is the subset of interpreter.KernelSource needed by Snapshot.
@@ -46,7 +46,7 @@ type KernelGetter interface {
 
 // LinkGetter is the subset of interpreter.Store needed by GetLink.
 type LinkGetter interface {
-	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error)
+	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // KernelLinkGetter is the subset of interpreter.KernelSource needed by GetLink.
@@ -56,9 +56,9 @@ type KernelLinkGetter interface {
 
 // LinkInfo is the result of GetLink, containing record and presence.
 type LinkInfo struct {
-	Record   bpfman.LinkSpec `json:"record"`
-	Kernel   *kernel.Link    `json:"kernel,omitempty"` // may be nil if not in kernel
-	Presence Presence        `json:"presence"`
+	Record   bpfman.LinkRecord `json:"record"`
+	Kernel   *kernel.Link      `json:"kernel,omitempty"` // may be nil if not in kernel
+	Presence Presence          `json:"presence"`
 }
 
 // DispatcherGetter is the subset of interpreter.Store needed by GetDispatcher.
@@ -95,7 +95,7 @@ type ProgramView struct {
 	KernelID uint32 `json:"kernel_id"`
 
 	// Store fields (valid when Presence.InStore is true)
-	Managed *bpfman.ProgramSpec `json:"managed,omitempty"`
+	Managed *bpfman.ProgramRecord `json:"managed,omitempty"`
 
 	// Kernel fields (valid when Presence.InKernel is true)
 	Kernel *kernel.Program `json:"kernel,omitempty"`
@@ -127,10 +127,10 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 	}
 
 	return bpfman.Program{
-		Spec: *v.Managed,
+		Record: *v.Managed,
 		Status: bpfman.ProgramStatus{
 			Kernel:      v.Kernel,        // may be nil
-			PinPresent:  v.Presence.InFS, // Spec.PinPath exists
+			PinPresent:  v.Presence.InFS, // Record.PinPath exists
 			MapsPresent: v.MapsPresent,   // map pin directory exists
 			Links:       links,
 		},
@@ -174,7 +174,7 @@ func (v ProgramView) PinPath() string {
 // LinkRow is a store-first view of a link with presence annotations.
 type LinkRow struct {
 	// Store fields (valid when Presence.InStore is true)
-	Managed *bpfman.LinkSpec `json:"managed,omitempty"`
+	Managed *bpfman.LinkRecord `json:"managed,omitempty"`
 
 	// Kernel fields (valid when Presence.InKernel is true)
 	Kernel *kernel.Link `json:"kernel,omitempty"`
@@ -243,7 +243,7 @@ func (r LinkRow) AsLink() (bpfman.Link, bool) {
 		return bpfman.Link{}, false
 	}
 	return bpfman.Link{
-		Spec: *r.Managed,
+		Record: *r.Managed,
 		Status: bpfman.LinkStatus{
 			Kernel:     r.Kernel,
 			KernelSeen: r.Presence.InKernel,

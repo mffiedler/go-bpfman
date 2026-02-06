@@ -90,19 +90,19 @@ func tcParent(dt dispatcher.DispatcherType) uint32 {
 // Primary key: kernel program ID.
 type ProgramState struct {
 	KernelID uint32
-	DB       *bpfman.ProgramSpec // nil = no DB record
-	Kernel   bool                // true = kernel program alive
-	PinPath  string              // derived from DB; empty if no DB record
-	PinExist *bool               // nil = not checked; non-nil = stat result
+	DB       *bpfman.ProgramRecord // nil = no DB record
+	Kernel   bool                  // true = kernel program alive
+	PinPath  string                // derived from DB; empty if no DB record
+	PinExist *bool                 // nil = not checked; non-nil = stat result
 }
 
 // LinkState correlates a link across DB and kernel.
 // Primary key: bpfman link ID.
 type LinkState struct {
-	DB        *bpfman.LinkSpec // nil = no DB record
-	Kernel    bool             // true = kernel link alive
-	Synthetic bool             // true = perf_event synthetic ID (no kernel link)
-	PinExist  *bool            // nil = not checked
+	DB        *bpfman.LinkRecord // nil = no DB record
+	Kernel    bool               // true = kernel link alive
+	Synthetic bool               // true = perf_event synthetic ID (no kernel link)
+	PinExist  *bool              // nil = not checked
 }
 
 // DispatcherState correlates a dispatcher across all three sources.
@@ -171,8 +171,8 @@ type Rule struct {
 // GatherState; view builders and rules are pure joins over facts.
 type ObservedState struct {
 	// DB facts.
-	dbPrograms    map[uint32]bpfman.ProgramSpec
-	dbLinks       []bpfman.LinkSpec
+	dbPrograms    map[uint32]bpfman.ProgramRecord
+	dbLinks       []bpfman.LinkRecord
 	dbDispatchers []dispatcher.State
 
 	// Kernel facts.

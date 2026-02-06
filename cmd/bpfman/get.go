@@ -60,7 +60,7 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Build the composite Link type from LinkInfo
 	link := bpfman.Link{
-		Spec: info.Record,
+		Record: info.Record,
 		Status: bpfman.LinkStatus{
 			Kernel:     info.Kernel,
 			KernelSeen: info.Presence.InKernel,

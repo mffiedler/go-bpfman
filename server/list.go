@@ -268,8 +268,8 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 	}, nil
 }
 
-// linkRecordToProtoSummary converts a bpfman.LinkSpec to protobuf LinkSummary.
-func linkRecordToProtoSummary(r bpfman.LinkSpec, k *kernel.Link) *pb.LinkSummary {
+// linkRecordToProtoSummary converts a bpfman.LinkRecord to protobuf LinkSummary.
+func linkRecordToProtoSummary(r bpfman.LinkRecord, k *kernel.Link) *pb.LinkSummary {
 	// For non-synthetic links, ID is the kernel link ID
 	var kernelLinkID uint32
 	if !r.IsSynthetic() {

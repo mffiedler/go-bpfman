@@ -185,7 +185,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		mapOwnerID = &ownerID
 	}
 
-	metadata := bpfman.ProgramSpec{
+	metadata := bpfman.ProgramRecord{
 		KernelID: loaded.Program.ID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
@@ -297,7 +297,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	}
 
 	return bpfman.Program{
-		Spec: metadata,
+		Record: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:      loaded.Program,
 			PinPresent:  true,
@@ -464,7 +464,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 
 // computeUnloadSteps generates outcome.Step entries corresponding to computeUnloadActions.
 // The steps are in the same order as the actions for easy mapping.
-func computeUnloadSteps(kernelID uint32, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkSpec) []outcome.Step {
+func computeUnloadSteps(kernelID uint32, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord) []outcome.Step {
 	var steps []outcome.Step
 
 	// Detach links
@@ -527,7 +527,7 @@ func computeUnloadSteps(kernelID uint32, programName, progPinPath, mapsDir, link
 // 2. UnloadProgram (program pin)
 // 3. UnloadProgram (maps directory)
 // 4. DeleteProgram
-func computeUnloadActions(kernelID uint32, progPinPath, mapsDir, linksDir string, links []bpfman.LinkSpec) []action.Action {
+func computeUnloadActions(kernelID uint32, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord) []action.Action {
 	var actions []action.Action
 
 	// Detach links first, then remove the links directory.

@@ -73,7 +73,7 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 		}
 
 		link := bpfman.Link{
-			Spec: record,
+			Record: record,
 			Status: bpfman.LinkStatus{
 				PinPresent: record.PinPath != nil,
 			},
@@ -102,7 +102,7 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 	}
 
 	return bpfman.Program{
-		Spec: metadata,
+		Record: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:      &kp,
 			PinPresent:  true, // If we got here, program exists
@@ -115,7 +115,7 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 
 // ListLinks returns all managed links (records only).
 // Optional LinkListOption arguments filter the results.
-func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) ([]bpfman.LinkSpec, error) {
+func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) ([]bpfman.LinkRecord, error) {
 	links, err := m.store.ListLinks(ctx)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 
 	filter := bpfman.ApplyLinkListOptions(opts...)
 
-	var result []bpfman.LinkSpec
+	var result []bpfman.LinkRecord
 	for _, link := range links {
 		l := link // explicit copy
 		if filter.Matches(&l) {
@@ -134,18 +134,18 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 }
 
 // ListLinksByProgram returns all links for a given program.
-func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkSpec, error) {
+func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
 	return m.store.ListLinksByProgram(ctx, programKernelID)
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.
-func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error) {
+func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	record, err := m.store.GetLink(ctx, linkID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.LinkSpec{}, bpfman.ErrLinkNotFound{LinkID: linkID}
+			return bpfman.LinkRecord{}, bpfman.ErrLinkNotFound{LinkID: linkID}
 		}
-		return bpfman.LinkSpec{}, fmt.Errorf("get link %d: %w", linkID, err)
+		return bpfman.LinkRecord{}, fmt.Errorf("get link %d: %w", linkID, err)
 	}
 	return record, nil
 }
@@ -256,14 +256,14 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 
 	// Deterministic output ordering: by kernel ID, then by type+name for ties
 	sort.Slice(programs, func(i, j int) bool {
-		if programs[i].Spec.KernelID != programs[j].Spec.KernelID {
-			return programs[i].Spec.KernelID < programs[j].Spec.KernelID
+		if programs[i].Record.KernelID != programs[j].Record.KernelID {
+			return programs[i].Record.KernelID < programs[j].Record.KernelID
 		}
 		// Fallback for zero IDs: sort by type, then name
-		if programs[i].Spec.Load.ProgramType() != programs[j].Spec.Load.ProgramType() {
-			return programs[i].Spec.Load.ProgramType() < programs[j].Spec.Load.ProgramType()
+		if programs[i].Record.Load.ProgramType() != programs[j].Record.Load.ProgramType() {
+			return programs[i].Record.Load.ProgramType() < programs[j].Record.Load.ProgramType()
 		}
-		return programs[i].Spec.Meta.Name < programs[j].Spec.Meta.Name
+		return programs[i].Record.Meta.Name < programs[j].Record.Meta.Name
 	})
 
 	return bpfman.ProgramListResult{

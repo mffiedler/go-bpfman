@@ -15,25 +15,25 @@ import (
 )
 
 // LinkWriter writes link metadata to the store.
-// SaveLink dispatches to the appropriate detail table based on spec.Details.Kind().
+// SaveLink dispatches to the appropriate detail table based on record.Details.Kind().
 type LinkWriter interface {
-	// SaveLink saves a link spec with its details.
-	// spec.ID is the primary key (kernel-assigned for real BPF links,
+	// SaveLink saves a link record with its details.
+	// record.ID is the primary key (kernel-assigned for real BPF links,
 	// or bpfman-assigned synthetic ID for perf_event-based links).
-	SaveLink(ctx context.Context, spec bpfman.LinkSpec) error
+	SaveLink(ctx context.Context, record bpfman.LinkRecord) error
 	DeleteLink(ctx context.Context, linkID bpfman.LinkID) error
 }
 
 // LinkReader reads link metadata from the store.
 // GetLink performs a two-phase lookup: registry then type-specific details.
 type LinkReader interface {
-	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkSpec, error)
+	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
 // LinkLister lists links from the store.
 type LinkLister interface {
-	ListLinks(ctx context.Context) ([]bpfman.LinkSpec, error)
-	ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkSpec, error)
+	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
+	ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error)
 	// ListTCXLinksByInterface returns all TCX links for a given interface/direction/namespace.
 	// Used for computing attach order based on priority.
 	ListTCXLinksByInterface(ctx context.Context, nsid uint64, ifindex uint32, direction string) ([]bpfman.TCXLinkInfo, error)
@@ -112,18 +112,18 @@ type Transactional interface {
 // ProgramReader reads program metadata from the store.
 // Get returns store.ErrNotFound if the program does not exist.
 type ProgramReader interface {
-	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramSpec, error)
+	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error)
 }
 
 // ProgramWriter writes program metadata to the store.
 type ProgramWriter interface {
-	Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramSpec) error
+	Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramRecord) error
 	Delete(ctx context.Context, kernelID uint32) error
 }
 
 // ProgramLister lists all program metadata from the store.
 type ProgramLister interface {
-	List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, error)
+	List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error)
 }
 
 // ProgramFinder finds programs by criteria.
@@ -185,7 +185,7 @@ type PinInspector interface {
 
 // ProgramAttacher attaches programs to hooks.
 // All methods return AttachOutput (raw kernel result) rather than Link,
-// allowing the manager to construct LinkSpec from AttachSpec + AttachOutput.
+// allowing the manager to construct LinkRecord from AttachSpec + AttachOutput.
 type ProgramAttacher interface {
 	// AttachTracepoint attaches a pinned program to a tracepoint.
 	AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.AttachOutput, error)

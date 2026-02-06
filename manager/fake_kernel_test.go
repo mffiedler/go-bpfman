@@ -227,7 +227,7 @@ func (f *fakeKernel) InjectKernelLink(id uint32, kind bpfman.LinkKind) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.links[id] = &bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:   bpfman.LinkID(id),
 			Kind: kind,
 		},
@@ -492,7 +492,7 @@ func (f *fakeKernel) GetLinkByID(_ context.Context, id uint32) (kernel.Link, err
 	}
 	return kernel.Link{
 		ID:        id,
-		LinkType:  string(link.Spec.Kind),
+		LinkType:  string(link.Record.Kind),
 		ProgramID: 0, // fakeKernel doesn't track program association
 	}, nil
 }
@@ -543,7 +543,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "tracepoint"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindTracepoint,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -570,7 +570,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "xdp"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindXDP,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -602,7 +602,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: kernelLinkType}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -634,7 +634,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, f
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: kernelLinkType}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -664,7 +664,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 	}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -691,7 +691,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName, linkPi
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "fentry"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindFentry,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -717,7 +717,7 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName, linkPin
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "fexit"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindFexit,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
@@ -741,8 +741,8 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName, linkPin
 func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath string) error {
 	for id, link := range f.links {
 		pinPath := ""
-		if link.Spec.PinPath != nil {
-			pinPath = link.Spec.PinPath.String()
+		if link.Record.PinPath != nil {
+			pinPath = link.Record.PinPath.String()
 		}
 		if pinPath == linkPinPath {
 			// Check error injection
@@ -794,7 +794,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "xdp"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindXDP,
 			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
@@ -883,7 +883,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "tc"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindTC,
 			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
@@ -919,7 +919,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 	kl := kernel.Link{ID: id, ProgramID: 0, LinkType: "tcx"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
-		Spec: bpfman.LinkSpec{
+		Record: bpfman.LinkRecord{
 			ID:        bpfman.LinkID(id),
 			Kind:      bpfman.LinkKindTCX,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),

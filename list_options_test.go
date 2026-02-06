@@ -16,7 +16,7 @@ func TestListOptions_NoOptions(t *testing.T) {
 	opts := bpfman.ApplyListOptions()
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
@@ -114,7 +114,7 @@ func TestListOptions_WithTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := bpfman.ApplyListOptions(bpfman.WithTypes(tt.filterTypes...))
 			prog := &bpfman.Program{
-				Spec: bpfman.ProgramSpec{
+				Record: bpfman.ProgramRecord{
 					Load: bpfman.TestLoadSpec(tt.progType),
 				},
 			}
@@ -128,7 +128,7 @@ func TestListOptions_WithTypes_Empty(t *testing.T) {
 	opts := bpfman.ApplyListOptions(bpfman.WithTypes())
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
@@ -184,7 +184,7 @@ func TestListOptions_MatchingLabels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := bpfman.ApplyListOptions(bpfman.MatchingLabels(tt.filterLabels))
 			prog := &bpfman.Program{
-				Spec: bpfman.ProgramSpec{
+				Record: bpfman.ProgramRecord{
 					Meta: bpfman.ProgramMeta{Metadata: tt.progLabels},
 				},
 			}
@@ -257,7 +257,7 @@ func TestListOptions_MatchingSelector(t *testing.T) {
 
 			opts := bpfman.ApplyListOptions(bpfman.MatchingSelector(sel))
 			prog := &bpfman.Program{
-				Spec: bpfman.ProgramSpec{
+				Record: bpfman.ProgramRecord{
 					Meta: bpfman.ProgramMeta{Metadata: tt.progLabels},
 				},
 			}
@@ -269,7 +269,7 @@ func TestListOptions_MatchingSelector(t *testing.T) {
 func TestListOptions_Combined(t *testing.T) {
 	// Program that matches all criteria
 	matchingProg := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
@@ -292,7 +292,7 @@ func TestListOptions_Combined(t *testing.T) {
 
 	t.Run("wrong type fails", func(t *testing.T) {
 		prog := &bpfman.Program{
-			Spec: bpfman.ProgramSpec{
+			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeKprobe),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 			},
@@ -307,7 +307,7 @@ func TestListOptions_Combined(t *testing.T) {
 
 	t.Run("wrong labels fails", func(t *testing.T) {
 		prog := &bpfman.Program{
-			Spec: bpfman.ProgramSpec{
+			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "other"}},
 			},
@@ -322,7 +322,7 @@ func TestListOptions_Combined(t *testing.T) {
 
 	t.Run("not attached fails", func(t *testing.T) {
 		prog := &bpfman.Program{
-			Spec: bpfman.ProgramSpec{
+			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 			},
@@ -342,17 +342,17 @@ func TestListOptions_MultipleWithTypes(t *testing.T) {
 	)
 
 	xdpProg := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
 	kprobeProg := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeKprobe),
 		},
 	}
 	tcProg := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTC),
 		},
 	}
@@ -371,12 +371,12 @@ func TestListOptions_MatchingLabels_EmptyValue(t *testing.T) {
 	)
 
 	progWithEmpty := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": ""}},
 		},
 	}
 	progWithValue := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}
@@ -397,12 +397,12 @@ func TestListOptions_MatchingSelector_OverridesMatchingLabels(t *testing.T) {
 	)
 
 	progMatchesSelector := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"env": "prod"}},
 		},
 	}
 	progMatchesLabels := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}
@@ -418,7 +418,7 @@ func TestListOptions_MatchingLabels_NilMap(t *testing.T) {
 	)
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}
@@ -433,7 +433,7 @@ func TestListOptions_MatchingSelector_Nil(t *testing.T) {
 	)
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}
@@ -448,12 +448,12 @@ func TestListOptions_MatchingSelector_Everything(t *testing.T) {
 	)
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}
 	progNoLabels := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: nil},
 		},
 	}
@@ -469,7 +469,7 @@ func TestListOptions_MatchingSelector_Nothing(t *testing.T) {
 	)
 
 	prog := &bpfman.Program{
-		Spec: bpfman.ProgramSpec{
+		Record: bpfman.ProgramRecord{
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 	}

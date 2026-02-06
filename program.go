@@ -134,19 +134,18 @@ type ProgramMeta struct {
 	Metadata    map[string]string `json:"metadata,omitempty"` // arbitrary key/value for selection
 }
 
-// ProgramSpec is what bpfman intends to manage (DB-backed).
-// This is the "desired state" - what was loaded.
+// ProgramRecord is the stored record of a loaded program (DB-backed).
 // KernelID is the DB primary key and user-facing identity.
 //
-// Note: ProgramSpec is distinct from LoadSpec. LoadSpec describes how to load
-// a program (validated input), while ProgramSpec describes a loaded program's
-// state (stored output). They share some fields but serve different purposes.
-type ProgramSpec struct {
+// Note: ProgramRecord is distinct from LoadSpec. LoadSpec describes how to load
+// a program (validated input), while ProgramRecord describes a loaded program's
+// stored state (output). They share some fields but serve different purposes.
+type ProgramRecord struct {
 	// Identity - KernelID is the DB primary key and user-facing ID
 	KernelID uint32   `json:"kernel_id"`
 	Load     LoadSpec `json:"load"`
 	// License and GPLCompatible are discovered at load time from the ELF.
-	// They live on ProgramSpec (not LoadSpec) because they're properties
+	// They live on ProgramRecord (not LoadSpec) because they're properties
 	// of the loaded program, not part of the load request.
 	License       string         `json:"license,omitempty"`
 	GPLCompatible bool           `json:"gpl_compatible"`
@@ -166,20 +165,16 @@ type ProgramStatus struct {
 	Maps        []kernel.Map    `json:"maps,omitempty"`   // kernel maps
 }
 
-// Program is the canonical domain object combining spec and status.
-// Spec comes from the store (what bpfman manages).
+// Program is the canonical domain object combining record and status.
+// Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
 type Program struct {
-	Spec   ProgramSpec   `json:"spec"`
+	Record ProgramRecord `json:"record"`
 	Status ProgramStatus `json:"status"`
 }
 
-// ProgramRecord is an alias for ProgramSpec for backwards compatibility.
-// Deprecated: Use ProgramSpec instead.
-type ProgramRecord = ProgramSpec
-
-// WithDescription returns a new ProgramSpec with the description set.
-func (p ProgramSpec) WithDescription(desc string) ProgramSpec {
+// WithDescription returns a new ProgramRecord with the description set.
+func (p ProgramRecord) WithDescription(desc string) ProgramRecord {
 	cp := p
 	cp.Meta.Description = desc
 	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
@@ -281,7 +276,7 @@ func (o *listOptions) matchesType(prog *Program) bool {
 	if len(o.types) == 0 {
 		return true
 	}
-	_, ok := o.types[prog.Spec.Load.ProgramType()]
+	_, ok := o.types[prog.Record.Load.ProgramType()]
 	return ok
 }
 
@@ -289,7 +284,7 @@ func (o *listOptions) matchesLabels(prog *Program) bool {
 	if o.selector == nil {
 		return true
 	}
-	return o.selector.Matches(labels.Set(prog.Spec.Meta.Metadata))
+	return o.selector.Matches(labels.Set(prog.Record.Meta.Metadata))
 }
 
 // hasActiveLinks returns true if the program has at least one link

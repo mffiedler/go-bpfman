@@ -131,9 +131,9 @@ func formatProgramTree(prog bpfman.Program) string {
 					prefix = "│     └─"
 				}
 				if l.Status.Kernel != nil {
-					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Spec.ID, l.Status.Kernel.LinkType)
+					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Status.Kernel.LinkType)
 				} else {
-					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Spec.ID, l.Spec.Kind)
+					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Record.Kind)
 				}
 			}
 		} else {
@@ -144,7 +144,7 @@ func formatProgramTree(prog bpfman.Program) string {
 	// Spec (configured state)
 	b.WriteString("│\n")
 	b.WriteString("└─ Spec\n")
-	p := &prog.Spec
+	p := &prog.Record
 	if !p.CreatedAt.IsZero() {
 		fmt.Fprintf(&b, "   ├─ created:    %s\n", p.CreatedAt.Format(time.RFC3339))
 	}
@@ -156,7 +156,7 @@ func formatProgramTree(prog bpfman.Program) string {
 
 func formatProgramTable(prog bpfman.Program) string {
 	var b strings.Builder
-	p := &prog.Spec
+	p := &prog.Record
 
 	// Header - kernel-assigned identifier
 	fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
@@ -201,11 +201,11 @@ func formatProgramTable(prog bpfman.Program) string {
 		if len(prog.Status.Links) > 0 {
 			for i, l := range prog.Status.Links {
 				var linkStr string
-				if l.Spec.Details != nil {
-					attachInfo := formatAttachDetails(l.Spec.Details)
-					linkStr = fmt.Sprintf("%d (%s)", l.Spec.ID, attachInfo)
+				if l.Record.Details != nil {
+					attachInfo := formatAttachDetails(l.Record.Details)
+					linkStr = fmt.Sprintf("%d (%s)", l.Record.ID, attachInfo)
 				} else {
-					linkStr = fmt.Sprintf("%d", l.Spec.ID)
+					linkStr = fmt.Sprintf("%d", l.Record.ID)
 				}
 				if i == 0 {
 					statusFields = append(statusFields, fmt.Sprintf("    Links:\t%s", linkStr))
@@ -322,10 +322,10 @@ func formatProgramListTable(programs []bpfman.Program) string {
 	fmt.Fprintln(w, "KERNEL ID\tTYPE\tNAME\tSOURCE")
 
 	for _, p := range programs {
-		id := p.Spec.KernelID
-		name := p.Spec.Meta.Name
-		progType := p.Spec.Load.ProgramType()
-		source := p.Spec.Load.ObjectPath()
+		id := p.Record.KernelID
+		name := p.Record.Meta.Name
+		progType := p.Record.Load.ProgramType()
+		source := p.Record.Load.ObjectPath()
 
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
 	}
@@ -335,7 +335,7 @@ func formatProgramListTable(programs []bpfman.Program) string {
 }
 
 // FormatLinkList formats a list of LinkRecord according to the specified output flags.
-func FormatLinkList(links []bpfman.LinkSpec, flags *OutputFlags) (string, error) {
+func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, error) {
 	format, err := flags.Format()
 	if err != nil {
 		return "", err
@@ -358,7 +358,7 @@ func FormatLinkList(links []bpfman.LinkSpec, flags *OutputFlags) (string, error)
 	}
 }
 
-func formatLinkListJSON(links []bpfman.LinkSpec) (string, error) {
+func formatLinkListJSON(links []bpfman.LinkRecord) (string, error) {
 	result := bpfman.LinkListResult{Links: links}
 	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
@@ -367,20 +367,20 @@ func formatLinkListJSON(links []bpfman.LinkSpec) (string, error) {
 	return string(output) + "\n", nil
 }
 
-func formatLinkListJSONPath(links []bpfman.LinkSpec, expr string) (string, error) {
+func formatLinkListJSONPath(links []bpfman.LinkRecord, expr string) (string, error) {
 	result := bpfman.LinkListResult{Links: links}
 	return executeJSONPath(result, expr)
 }
 
-func formatLinkListTable(links []bpfman.LinkSpec) string {
+func formatLinkListTable(links []bpfman.LinkRecord) string {
 	return DefaultLinkColumns().FormatLinkTable(links)
 }
 
-func formatLinkListWide(links []bpfman.LinkSpec) string {
+func formatLinkListWide(links []bpfman.LinkRecord) string {
 	return WideLinkColumns().FormatLinkTable(links)
 }
 
-func formatLinkListCustomColumns(links []bpfman.LinkSpec, spec string) (string, error) {
+func formatLinkListCustomColumns(links []bpfman.LinkRecord, spec string) (string, error) {
 	columns, err := ParseCustomColumns(spec)
 	if err != nil {
 		return "", err
@@ -391,7 +391,7 @@ func formatLinkListCustomColumns(links []bpfman.LinkSpec, spec string) (string, 
 	return columns.FormatLinkTable(links), nil
 }
 
-func formatLinkListCustomColumnsFile(links []bpfman.LinkSpec, path string) (string, error) {
+func formatLinkListCustomColumnsFile(links []bpfman.LinkRecord, path string) (string, error) {
 	columns, err := ParseCustomColumnsFile(path)
 	if err != nil {
 		return "", err
@@ -431,26 +431,26 @@ func formatLinkResultTable(link bpfman.Link) string {
 	var b strings.Builder
 
 	// Primary identifier at column one (like Kernel ID for programs)
-	fmt.Fprintf(&b, "Link ID: %d\n", link.Spec.ID)
+	fmt.Fprintf(&b, "Link ID: %d\n", link.Record.ID)
 
 	// Collect Spec fields from LinkSpec, then sort alphabetically
 	var specFields []string
 
 	// LinkSpec fields
-	if !link.Spec.CreatedAt.IsZero() {
-		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Spec.CreatedAt.Format(time.RFC3339)))
+	if !link.Record.CreatedAt.IsZero() {
+		specFields = append(specFields, fmt.Sprintf("    Created At:\t%s", link.Record.CreatedAt.Format(time.RFC3339)))
 	}
 	specFields = append(specFields, "    Metadata:\tNone")
-	if link.Spec.PinPath != nil {
-		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Spec.PinPath.String()))
+	if link.Record.PinPath != nil {
+		specFields = append(specFields, fmt.Sprintf("    Pin Path:\t%s", link.Record.PinPath.String()))
 	} else {
 		specFields = append(specFields, "    Pin Path:\tNone")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Program ID:\t%d", link.Spec.ProgramID))
-	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", link.Spec.Kind))
+	specFields = append(specFields, fmt.Sprintf("    Program ID:\t%d", link.Record.ProgramID))
+	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", link.Record.Kind))
 
 	// Type-specific fields from LinkDetails
-	switch d := link.Spec.Details.(type) {
+	switch d := link.Record.Details.(type) {
 	case bpfman.FentryDetails:
 		specFields = append(specFields, fmt.Sprintf("    Target Function:\t%s", d.FnName))
 	case bpfman.FexitDetails:
@@ -646,10 +646,10 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 	// Sort programs by kernel ID for consistent, scannable output
 	sorted := slices.Clone(programs)
 	slices.SortFunc(sorted, func(a, b bpfman.Program) int {
-		if a.Spec.KernelID < b.Spec.KernelID {
+		if a.Record.KernelID < b.Record.KernelID {
 			return -1
 		}
-		if a.Spec.KernelID > b.Spec.KernelID {
+		if a.Record.KernelID > b.Record.KernelID {
 			return 1
 		}
 		return 0
@@ -662,7 +662,7 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			b.WriteString("\n")
 		}
 
-		p := &prog.Spec
+		p := &prog.Record
 
 		// Header - kernel-assigned identifier
 		fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
@@ -707,11 +707,11 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			if len(prog.Status.Links) > 0 {
 				for j, l := range prog.Status.Links {
 					var linkStr string
-					if l.Spec.Details != nil {
-						attachInfo := formatAttachDetails(l.Spec.Details)
-						linkStr = fmt.Sprintf("%d (%s)", l.Spec.ID, attachInfo)
+					if l.Record.Details != nil {
+						attachInfo := formatAttachDetails(l.Record.Details)
+						linkStr = fmt.Sprintf("%d (%s)", l.Record.ID, attachInfo)
 					} else {
-						linkStr = fmt.Sprintf("%d", l.Spec.ID)
+						linkStr = fmt.Sprintf("%d", l.Record.ID)
 					}
 					if j == 0 {
 						statusFields = append(statusFields, fmt.Sprintf("    Links:\t%s", linkStr))
@@ -804,12 +804,12 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	fmt.Fprintln(w, "KERNEL ID\tTYPE\tNAME\tSOURCE")
 
 	for _, p := range result.Programs {
-		id := p.Spec.KernelID
+		id := p.Record.KernelID
 
 		// Get info from spec (always present as value type)
-		name := p.Spec.Meta.Name
-		progType := p.Spec.Load.ProgramType().String()
-		source := p.Spec.Load.ObjectPath()
+		name := p.Record.Meta.Name
+		progType := p.Record.Load.ProgramType().String()
+		source := p.Record.Load.ObjectPath()
 
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
 	}

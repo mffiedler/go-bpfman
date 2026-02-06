@@ -11,9 +11,9 @@ import (
 func TestLinkListOptions_WithKinds(t *testing.T) {
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithKinds(bpfman.LinkKindXDP, bpfman.LinkKindTC))
 
-	xdpLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindXDP}
-	tcLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindTC}
-	kprobeLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindKprobe}
+	xdpLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP}
+	tcLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindTC}
+	kprobeLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindKprobe}
 
 	assert.True(t, opts.Matches(xdpLink), "should match XDP")
 	assert.True(t, opts.Matches(tcLink), "should match TC")
@@ -23,8 +23,8 @@ func TestLinkListOptions_WithKinds(t *testing.T) {
 func TestLinkListOptions_WithProgramID(t *testing.T) {
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithProgramID(123))
 
-	matchingLink := &bpfman.LinkSpec{ProgramID: 123}
-	nonMatchingLink := &bpfman.LinkSpec{ProgramID: 456}
+	matchingLink := &bpfman.LinkRecord{ProgramID: 123}
+	nonMatchingLink := &bpfman.LinkRecord{ProgramID: 456}
 
 	assert.True(t, opts.Matches(matchingLink), "should match program 123")
 	assert.False(t, opts.Matches(nonMatchingLink), "should not match program 456")
@@ -36,9 +36,9 @@ func TestLinkListOptions_Combined(t *testing.T) {
 		bpfman.WithProgramID(123),
 	)
 
-	matchingLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindXDP, ProgramID: 123}
-	wrongKind := &bpfman.LinkSpec{Kind: bpfman.LinkKindTC, ProgramID: 123}
-	wrongProgram := &bpfman.LinkSpec{Kind: bpfman.LinkKindXDP, ProgramID: 456}
+	matchingLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP, ProgramID: 123}
+	wrongKind := &bpfman.LinkRecord{Kind: bpfman.LinkKindTC, ProgramID: 123}
+	wrongProgram := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP, ProgramID: 456}
 
 	assert.True(t, opts.Matches(matchingLink), "should match XDP + program 123")
 	assert.False(t, opts.Matches(wrongKind), "should not match TC")
@@ -48,7 +48,7 @@ func TestLinkListOptions_Combined(t *testing.T) {
 func TestLinkListOptions_EmptyMatchesAll(t *testing.T) {
 	opts := bpfman.ApplyLinkListOptions()
 
-	anyLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindKprobe, ProgramID: 999}
+	anyLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindKprobe, ProgramID: 999}
 	assert.True(t, opts.Matches(anyLink), "empty options should match all")
 }
 
@@ -56,7 +56,7 @@ func TestLinkListOptions_WithKinds_Empty(t *testing.T) {
 	// Empty kinds should match all
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithKinds())
 
-	link := &bpfman.LinkSpec{Kind: bpfman.LinkKindXDP}
+	link := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP}
 	assert.True(t, opts.Matches(link), "empty kinds should match all links")
 }
 
@@ -67,9 +67,9 @@ func TestLinkListOptions_MultipleWithKinds(t *testing.T) {
 		bpfman.WithKinds(bpfman.LinkKindKprobe),
 	)
 
-	xdpLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindXDP}
-	kprobeLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindKprobe}
-	tcLink := &bpfman.LinkSpec{Kind: bpfman.LinkKindTC}
+	xdpLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP}
+	kprobeLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindKprobe}
+	tcLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindTC}
 
 	assert.True(t, opts.Matches(xdpLink), "should match XDP")
 	assert.True(t, opts.Matches(kprobeLink), "should match Kprobe")
