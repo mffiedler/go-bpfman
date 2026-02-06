@@ -16,7 +16,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fhs"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/nsenter"
@@ -63,8 +63,8 @@ type CLI struct {
 
 // Root returns the filesystem root for the configured runtime directory.
 // Returns an error if RuntimeDir is empty or not an absolute path.
-func (c *CLI) Root() (fs.Root, error) {
-	return fs.Open(c.RuntimeDir)
+func (c *CLI) Root() (fhs.Root, error) {
+	return fhs.New(c.RuntimeDir)
 }
 
 // WriteOut writes bytes to Out, returning an error if the write fails or

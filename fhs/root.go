@@ -1,4 +1,4 @@
-package fs
+package fhs
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 
 // Root is an immutable, validated filesystem root. Fields are
 // unexported; external packages cannot construct a non-zero Root
-// without calling Open.
+// without calling New.
 //
 // Root acts as a capability token following the same pattern as
 // lock.WriterScope: possession of a valid Root proves the base path
@@ -21,36 +21,36 @@ type Root struct {
 	base string
 }
 
-// Open creates a Root for bpfman's runtime directory.
+// New creates a Root for bpfman's runtime directory.
 //
-// The base path specifies the parent directory; Open always appends
+// The base path specifies the parent directory; New always appends
 // "bpfman" to create the actual runtime root. This ensures bpfman
 // operates in a controlled subdirectory regardless of what base is
 // provided, preventing accidental operations on system directories.
 //
 // Examples:
-//   - Open("/run") → /run/bpfman
-//   - Open("/tmp/test") → /tmp/test/bpfman
-//   - Open("/") → /bpfman
+//   - New("/run") -> /run/bpfman
+//   - New("/tmp/test") -> /tmp/test/bpfman
+//   - New("/") -> /bpfman
 //
-// Open rejects empty paths and relative paths.
-func Open(base string) (Root, error) {
+// New rejects empty paths and relative paths.
+func New(base string) (Root, error) {
 	if base == "" {
-		return Root{}, fmt.Errorf("fs: base path cannot be empty")
+		return Root{}, fmt.Errorf("fhs: base path cannot be empty")
 	}
 	if !filepath.IsAbs(base) {
-		return Root{}, fmt.Errorf("fs: base path must be absolute, got %q", base)
+		return Root{}, fmt.Errorf("fhs: base path must be absolute, got %q", base)
 	}
 	base = filepath.Clean(base)
 	return Root{base: filepath.Join(base, "bpfman")}, nil
 }
 
-// valid reports whether r was constructed via Open.
+// valid reports whether r was constructed via New.
 func (r Root) valid() bool {
 	return r.base != ""
 }
 
-// Valid reports whether r was constructed via Open.
+// Valid reports whether r was constructed via New.
 func (r Root) Valid() bool {
 	return r.valid()
 }

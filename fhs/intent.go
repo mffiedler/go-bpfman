@@ -1,4 +1,4 @@
-package fs
+package fhs
 
 import (
 	"encoding/json"
@@ -127,7 +127,7 @@ func (o statExistsOp) exec() error {
 }
 
 // osInterp executes a sequence of ops. It is the only code that
-// calls os.* in the fs package.
+// calls os.* in the fslayout package.
 func osInterp(ops []op) error {
 	for _, o := range ops {
 		if err := o.exec(); err != nil {

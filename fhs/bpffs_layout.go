@@ -1,4 +1,4 @@
-package fs
+package fhs
 
 import (
 	"path/filepath"

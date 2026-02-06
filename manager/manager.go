@@ -43,7 +43,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fhs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/outcome"
 )
@@ -66,7 +66,7 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	root              fs.Root
+	root              fhs.Root
 	store             interpreter.Store
 	kernel            interpreter.KernelOperations
 	executor          interpreter.ActionExecutor
@@ -93,7 +93,7 @@ type Manager struct {
 //
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, mounter BPFFSMounter, logger *slog.Logger) (*Manager, error) {
+func New(root fhs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, mounter BPFFSMounter, logger *slog.Logger) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -131,7 +131,7 @@ func New(root fs.Root, store interpreter.Store, kernel interpreter.KernelOperati
 }
 
 // Root returns the filesystem root.
-func (m *Manager) Root() fs.Root {
+func (m *Manager) Root() fhs.Root {
 	return m.root
 }
 

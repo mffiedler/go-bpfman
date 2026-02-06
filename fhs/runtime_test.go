@@ -1,4 +1,4 @@
-package fs_test
+package fhs_test
 
 import (
 	"encoding/json"
@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fhs"
 )
 
-func mustOpen(t *testing.T) fs.Root {
+func mustNew(t *testing.T) fhs.Root {
 	t.Helper()
-	root, err := fs.Open(t.TempDir())
+	root, err := fhs.New(t.TempDir())
 	require.NoError(t, err)
 	return root
 }
@@ -28,12 +28,12 @@ func writeDummyBytecode(t *testing.T, dir string) string {
 }
 
 func TestPublishBytecode(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fs.Provenance{
+	prov := fhs.Provenance{
 		Version:     1,
 		KernelID:    42,
 		ProgramName: "test_prog",
@@ -59,7 +59,7 @@ func TestPublishBytecode(t *testing.T) {
 
 	provData, err := os.ReadFile(provPath)
 	require.NoError(t, err)
-	var readProv fs.Provenance
+	var readProv fhs.Provenance
 	require.NoError(t, json.Unmarshal(provData, &readProv))
 	assert.Equal(t, uint32(42), readProv.KernelID)
 	assert.Equal(t, "test_prog", readProv.ProgramName)
@@ -67,12 +67,12 @@ func TestPublishBytecode(t *testing.T) {
 }
 
 func TestPublishBytecode_ErrFinalExists(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fs.Provenance{Version: 1, KernelID: 99}
+	prov := fhs.Provenance{Version: 1, KernelID: 99}
 
 	// First publish should succeed.
 	require.NoError(t, rt.PublishBytecode(99, srcPath, prov))
@@ -80,14 +80,14 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	// Second publish for the same ID should fail with ErrFinalExists.
 	err := rt.PublishBytecode(99, srcPath, prov)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, fs.ErrFinalExists)
+	assert.ErrorIs(t, err, fhs.ErrFinalExists)
 }
 
 func TestPublishBytecode_InvalidSource(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fhs.Provenance{Version: 1, KernelID: 1}
 
 	// Non-existent source file.
 	err := rt.PublishBytecode(1, "/nonexistent/path.o", prov)
@@ -100,13 +100,13 @@ func TestPublishBytecode_InvalidSource(t *testing.T) {
 }
 
 func TestPublishBytecode_CleansUpOnError(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	// Create a valid source file, then publish with ID 1.
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fhs.Provenance{Version: 1, KernelID: 1}
 
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
@@ -118,12 +118,12 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 }
 
 func TestRemoveProgram(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fs.Provenance{Version: 1, KernelID: 10}
+	prov := fhs.Provenance{Version: 1, KernelID: 10}
 	require.NoError(t, rt.PublishBytecode(10, srcPath, prov))
 	assert.True(t, rt.ProgramExists(10))
 
@@ -133,7 +133,7 @@ func TestRemoveProgram(t *testing.T) {
 }
 
 func TestRemoveProgram_Idempotent(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	// Removing a non-existent program should not error.
@@ -141,21 +141,21 @@ func TestRemoveProgram_Idempotent(t *testing.T) {
 }
 
 func TestProgramExists(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	assert.False(t, rt.ProgramExists(1))
 
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fhs.Provenance{Version: 1, KernelID: 1}
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
 	assert.True(t, rt.ProgramExists(1))
 }
 
 func TestProgramBytecodePath(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	path := rt.ProgramBytecodePath(42)
@@ -163,7 +163,7 @@ func TestProgramBytecodePath(t *testing.T) {
 }
 
 func TestCleanStaging(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	// Create some staging leftovers.
@@ -179,7 +179,7 @@ func TestCleanStaging(t *testing.T) {
 }
 
 func TestCleanStaging_NoStagingDir(t *testing.T) {
-	root := mustOpen(t)
+	root := mustNew(t)
 	rt := root.Runtime()
 
 	// No staging directory exists; should not error.
@@ -187,11 +187,11 @@ func TestCleanStaging_NoStagingDir(t *testing.T) {
 }
 
 func TestZeroValueRuntime(t *testing.T) {
-	var root fs.Root
+	var root fhs.Root
 	rt := root.Runtime()
 
-	assert.ErrorIs(t, rt.PublishBytecode(1, "/tmp/x.o", fs.Provenance{}), fs.ErrInvalidRoot)
-	assert.ErrorIs(t, rt.RemoveProgram(1), fs.ErrInvalidRoot)
-	assert.ErrorIs(t, rt.CleanStaging(), fs.ErrInvalidRoot)
+	assert.ErrorIs(t, rt.PublishBytecode(1, "/tmp/x.o", fhs.Provenance{}), fhs.ErrInvalidRoot)
+	assert.ErrorIs(t, rt.RemoveProgram(1), fhs.ErrInvalidRoot)
+	assert.ErrorIs(t, rt.CleanStaging(), fhs.ErrInvalidRoot)
 	assert.False(t, rt.ProgramExists(1))
 }
