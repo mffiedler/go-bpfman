@@ -234,7 +234,7 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (interpreter.S
 	}
 	if err := s.prepareStatements(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to prepare statements: %w", err)
+		return nil, fmt.Errorf("failed to prepare statements for %s: %w", dbPath, err)
 	}
 
 	logger.Info("opened database", "path", dbPath)
@@ -345,8 +345,8 @@ func (s *sqliteStore) closeStatements() {
 }
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
-// Migrations are supported from version 2 to 3.
-const schemaVersion = 3
+// Migrations are supported from version 2 onwards.
+const schemaVersion = 4
 
 func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Check current schema version
@@ -362,6 +362,15 @@ func (s *sqliteStore) migrate(ctx context.Context) error {
 			return fmt.Errorf("migration v2->v3: %w", err)
 		}
 		version = 3
+	}
+
+	// Handle version 3 -> 4 migration
+	if version == 3 {
+		s.logger.Info("migrating database schema", "from", 3, "to", 4)
+		if err := s.migrateV3toV4(ctx); err != nil {
+			return fmt.Errorf("migration v3->v4: %w", err)
+		}
+		version = 4
 	}
 
 	if version != 0 && version != schemaVersion {
@@ -413,6 +422,15 @@ func (s *sqliteStore) migrateV2toV3(ctx context.Context) error {
 		return fmt.Errorf("drop program_tags: %w", err)
 	}
 
+	return nil
+}
+
+// migrateV3toV4 migrates from schema version 3 to 4.
+// This migration adds the license column to managed_programs.
+func (s *sqliteStore) migrateV3toV4(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE managed_programs ADD COLUMN license TEXT`); err != nil {
+		return fmt.Errorf("add license column: %w", err)
+	}
 	return nil
 }
 

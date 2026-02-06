@@ -17,7 +17,7 @@ func TestListOptions_NoOptions(t *testing.T) {
 
 	prog := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
 	assert.True(t, opts.Matches(prog), "no options should match all programs")
@@ -115,7 +115,7 @@ func TestListOptions_WithTypes(t *testing.T) {
 			opts := bpfman.ApplyListOptions(bpfman.WithTypes(tt.filterTypes...))
 			prog := &bpfman.Program{
 				Spec: bpfman.ProgramSpec{
-					Load: bpfman.NewLoadResult(tt.progType),
+					Load: bpfman.TestLoadSpec(tt.progType),
 				},
 			}
 			assert.Equal(t, tt.expected, opts.Matches(prog))
@@ -129,7 +129,7 @@ func TestListOptions_WithTypes_Empty(t *testing.T) {
 
 	prog := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
 	assert.True(t, opts.Matches(prog), "empty types should match all programs")
@@ -270,7 +270,7 @@ func TestListOptions_Combined(t *testing.T) {
 	// Program that matches all criteria
 	matchingProg := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 			Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 		},
 		Status: bpfman.ProgramStatus{
@@ -293,7 +293,7 @@ func TestListOptions_Combined(t *testing.T) {
 	t.Run("wrong type fails", func(t *testing.T) {
 		prog := &bpfman.Program{
 			Spec: bpfman.ProgramSpec{
-				Load: bpfman.NewLoadResult(bpfman.ProgramTypeKprobe),
+				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeKprobe),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 			},
 			Status: bpfman.ProgramStatus{
@@ -308,7 +308,7 @@ func TestListOptions_Combined(t *testing.T) {
 	t.Run("wrong labels fails", func(t *testing.T) {
 		prog := &bpfman.Program{
 			Spec: bpfman.ProgramSpec{
-				Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "other"}},
 			},
 			Status: bpfman.ProgramStatus{
@@ -323,7 +323,7 @@ func TestListOptions_Combined(t *testing.T) {
 	t.Run("not attached fails", func(t *testing.T) {
 		prog := &bpfman.Program{
 			Spec: bpfman.ProgramSpec{
-				Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 				Meta: bpfman.ProgramMeta{Metadata: map[string]string{"app": "test"}},
 			},
 			Status: bpfman.ProgramStatus{
@@ -343,17 +343,17 @@ func TestListOptions_MultipleWithTypes(t *testing.T) {
 
 	xdpProg := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
 		},
 	}
 	kprobeProg := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeKprobe),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeKprobe),
 		},
 	}
 	tcProg := &bpfman.Program{
 		Spec: bpfman.ProgramSpec{
-			Load: bpfman.NewLoadResult(bpfman.ProgramTypeTC),
+			Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTC),
 		},
 	}
 

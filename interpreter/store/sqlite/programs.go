@@ -123,17 +123,15 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 
 	// Build the ProgramSpec from the stored fields using nested structs
 	prog := bpfman.ProgramSpec{
-		Load: bpfman.LoadResult{
-			LoadSpec: bpfman.LoadSpec{}.
-				WithObjectPath(objectPath).
-				WithProgramName(programName).
-				WithProgramType(programType).
-				WithGlobalData(globalData).
-				WithImageSource(imageSource).
-				WithAttachFunc(attachFuncVal),
-			License:       licenseVal,
-			GPLCompatible: gplCompatible != 0,
-		},
+		Load: bpfman.LoadSpec{}.
+			WithObjectPath(objectPath).
+			WithProgramName(programName).
+			WithProgramType(programType).
+			WithGlobalData(globalData).
+			WithImageSource(imageSource).
+			WithAttachFunc(attachFuncVal),
+		License:       licenseVal,
+		GPLCompatible: gplCompatible != 0,
 		Handles: bpfman.ProgramHandles{
 			PinPath:    pinPath,
 			MapPinPath: mapPinPathVal,
@@ -215,15 +213,15 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	if metadata.Meta.Description != "" {
 		description = sql.NullString{String: metadata.Meta.Description, Valid: true}
 	}
-	if metadata.Load.License != "" {
-		license = sql.NullString{String: metadata.Load.License, Valid: true}
+	if metadata.License != "" {
+		license = sql.NullString{String: metadata.License, Valid: true}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Convert bool to int for SQLite
 	var gplCompatibleInt int
-	if metadata.Load.GPLCompatible {
+	if metadata.GPLCompatible {
 		gplCompatibleInt = 1
 	}
 
@@ -530,17 +528,15 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 	// Build the ProgramSpec from the stored fields using nested structs
 	prog := bpfman.ProgramSpec{
 		KernelID: kernelID,
-		Load: bpfman.LoadResult{
-			LoadSpec: bpfman.LoadSpec{}.
-				WithObjectPath(objectPath).
-				WithProgramName(programName).
-				WithProgramType(programType).
-				WithGlobalData(globalData).
-				WithImageSource(imageSource).
-				WithAttachFunc(attachFuncVal),
-			License:       licenseVal,
-			GPLCompatible: gplCompatible != 0,
-		},
+		Load: bpfman.LoadSpec{}.
+			WithObjectPath(objectPath).
+			WithProgramName(programName).
+			WithProgramType(programType).
+			WithGlobalData(globalData).
+			WithImageSource(imageSource).
+			WithAttachFunc(attachFuncVal),
+		License:       licenseVal,
+		GPLCompatible: gplCompatible != 0,
 		Handles: bpfman.ProgramHandles{
 			PinPath:    pinPath,
 			MapPinPath: mapPinPathVal,

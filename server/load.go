@@ -215,7 +215,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 				ProgramType:   uint32(loaded.Spec.Load.ProgramType()),
 				LoadedAt:      loadedAt,
 				Tag:           kp.Tag,
-				GplCompatible: loaded.Spec.Load.GPLCompatible,
+				GplCompatible: loaded.Spec.GPLCompatible,
 				Jited:         kp.JitedSize > 0,
 				MapIds:        kp.MapIDs,
 				BtfId:         kp.BTFId,

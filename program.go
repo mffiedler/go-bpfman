@@ -4,7 +4,6 @@
 package bpfman
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"time"
@@ -147,12 +146,17 @@ type ProgramMeta struct {
 // state (stored output). They share some fields but serve different purposes.
 type ProgramSpec struct {
 	// Identity - KernelID is the DB primary key and user-facing ID
-	KernelID  uint32         `json:"kernel_id"`
-	Load      LoadResult     `json:"load"`
-	Handles   ProgramHandles `json:"handles"`
-	Meta      ProgramMeta    `json:"meta"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	KernelID uint32   `json:"kernel_id"`
+	Load     LoadSpec `json:"load"`
+	// License and GPLCompatible are discovered at load time from the ELF.
+	// They live on ProgramSpec (not LoadSpec) because they're properties
+	// of the loaded program, not part of the load request.
+	License       string         `json:"license,omitempty"`
+	GPLCompatible bool           `json:"gpl_compatible"`
+	Handles       ProgramHandles `json:"handles"`
+	Meta          ProgramMeta    `json:"meta"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // ProgramStatus is observed state (kernel + filesystem).
@@ -183,7 +187,7 @@ func (p ProgramSpec) WithDescription(desc string) ProgramSpec {
 	cp.Meta.Description = desc
 	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
 	// Clone global data by reconstructing the LoadSpec with cloned data
-	cp.Load.LoadSpec = cp.Load.LoadSpec.WithGlobalData(cloneMap(p.Load.GlobalData()))
+	cp.Load = cp.Load.WithGlobalData(cloneMap(p.Load.GlobalData()))
 	return cp
 }
 
@@ -206,64 +210,6 @@ type LoadOutput struct {
 	InferredType ProgramType     // inferred from ELF if user didn't specify
 }
 
-// LoadResult combines a LoadSpec with properties discovered at load time.
-// This is what gets stored in ProgramSpec.Load.
-type LoadResult struct {
-	LoadSpec             // embedded - the validated input
-	License       string `json:"license,omitempty"`
-	GPLCompatible bool   `json:"gpl_compatible"`
-}
-
-// loadResultJSON is the JSON representation of LoadResult.
-// It combines LoadSpec fields with License and GPLCompatible.
-type loadResultJSON struct {
-	ObjectPath    string            `json:"object_path"`
-	ProgramName   string            `json:"program_name"`
-	ProgramType   ProgramType       `json:"program_type"`
-	GlobalData    map[string][]byte `json:"global_data,omitempty"`
-	ImageSource   *ImageSource      `json:"image_source,omitempty"`
-	AttachFunc    string            `json:"attach_func,omitempty"`
-	MapOwnerID    uint32            `json:"map_owner_id,omitempty"`
-	License       string            `json:"license,omitempty"`
-	GPLCompatible bool              `json:"gpl_compatible"`
-}
-
-// MarshalJSON implements json.Marshaler for LoadResult.
-func (r LoadResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(loadResultJSON{
-		ObjectPath:    r.LoadSpec.ObjectPath(),
-		ProgramName:   r.LoadSpec.ProgramName(),
-		ProgramType:   r.LoadSpec.ProgramType(),
-		GlobalData:    r.LoadSpec.GlobalData(),
-		ImageSource:   r.LoadSpec.ImageSource(),
-		AttachFunc:    r.LoadSpec.AttachFunc(),
-		MapOwnerID:    r.LoadSpec.MapOwnerID(),
-		License:       r.License,
-		GPLCompatible: r.GPLCompatible,
-	})
-}
-
-// UnmarshalJSON implements json.Unmarshaler for LoadResult.
-func (r *LoadResult) UnmarshalJSON(data []byte) error {
-	var js loadResultJSON
-	if err := json.Unmarshal(data, &js); err != nil {
-		return err
-	}
-	// Reconstruct the embedded LoadSpec
-	r.LoadSpec = LoadSpec{
-		objectPath:  js.ObjectPath,
-		programName: js.ProgramName,
-		programType: js.ProgramType,
-		globalData:  js.GlobalData,
-		imageSource: js.ImageSource,
-		attachFunc:  js.AttachFunc,
-		mapOwnerID:  js.MapOwnerID,
-	}
-	r.License = js.License
-	r.GPLCompatible = js.GPLCompatible
-	return nil
-}
-
 // IsGPLCompatible checks if a license string is GPL compatible.
 // This matches the kernel's license_is_gpl_compatible() function.
 func IsGPLCompatible(license string) bool {
@@ -276,22 +222,18 @@ func IsGPLCompatible(license string) bool {
 	}
 }
 
-// NewLoadResult creates a LoadResult with the given program type.
-// This is a convenience constructor for tests and simple cases.
-func NewLoadResult(programType ProgramType) LoadResult {
-	return LoadResult{
-		LoadSpec: LoadSpec{}.WithProgramType(programType),
-	}
+// TestLoadSpec creates a LoadSpec with the given program type.
+// This is a convenience constructor for tests.
+func TestLoadSpec(programType ProgramType) LoadSpec {
+	return LoadSpec{}.WithProgramType(programType)
 }
 
-// NewLoadResultWithPath creates a LoadResult with the given program type and object path.
+// TestLoadSpecWithPath creates a LoadSpec with the given program type and object path.
 // This is a convenience constructor for tests.
-func NewLoadResultWithPath(programType ProgramType, objectPath string) LoadResult {
-	return LoadResult{
-		LoadSpec: LoadSpec{}.
-			WithProgramType(programType).
-			WithObjectPath(objectPath),
-	}
+func TestLoadSpecWithPath(programType ProgramType, objectPath string) LoadSpec {
+	return LoadSpec{}.
+		WithProgramType(programType).
+		WithObjectPath(objectPath)
 }
 
 // HostInfo contains system information about the observed host.

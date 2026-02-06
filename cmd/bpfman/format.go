@@ -170,7 +170,12 @@ func formatProgramTable(prog bpfman.Program) string {
 	} else {
 		specFields = append(specFields, "    Global:\tNone")
 	}
-	specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.Load.GPLCompatible))
+	specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.GPLCompatible))
+	if p.License != "" {
+		specFields = append(specFields, fmt.Sprintf("    License:\t%s", p.License))
+	} else {
+		specFields = append(specFields, "    License:\tNone")
+	}
 	if p.Handles.MapOwnerID != nil {
 		specFields = append(specFields, fmt.Sprintf("    Map Owner ID:\t%d", *p.Handles.MapOwnerID))
 	} else {
@@ -671,7 +676,12 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 		} else {
 			specFields = append(specFields, "    Global:\tNone")
 		}
-		specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.Load.GPLCompatible))
+		specFields = append(specFields, fmt.Sprintf("    GPL Compatible:\t%t", p.GPLCompatible))
+		if p.License != "" {
+			specFields = append(specFields, fmt.Sprintf("    License:\t%s", p.License))
+		} else {
+			specFields = append(specFields, "    License:\tNone")
+		}
 		if p.Handles.MapOwnerID != nil {
 			specFields = append(specFields, fmt.Sprintf("    Map Owner ID:\t%d", *p.Handles.MapOwnerID))
 		} else {

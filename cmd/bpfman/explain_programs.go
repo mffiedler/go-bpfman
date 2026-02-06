@@ -32,13 +32,14 @@ func ProgramSchemaDoc() SchemaDoc {
 		Fields: []FieldInfo{
 			{Name: "spec", Type: "<ProgramSpec>", Children: []FieldInfo{
 				{Name: "kernel_id", Type: "<number>", Description: "Kernel-assigned program ID"},
-				{Name: "load", Type: "<LoadResult>", Children: []FieldInfo{
+				{Name: "load", Type: "<LoadSpec>", Children: []FieldInfo{
 					{Name: "program_type", Type: "<string>", Description: "Program type (xdp, tc, etc.)"},
 					{Name: "object_path", Type: "<string>", Description: "Path to BPF object file"},
 					{Name: "attach_func", Type: "<string>", Description: "Attach function (fentry/fexit)"},
 					{Name: "global_data", Type: "<map>", Description: "Global data overrides"},
-					{Name: "gpl_compatible", Type: "<bool>", Description: "GPL-compatible licence"},
 				}},
+				{Name: "license", Type: "<string>", Description: "License from ELF (e.g., GPL)"},
+				{Name: "gpl_compatible", Type: "<bool>", Description: "GPL-compatible licence"},
 				{Name: "handles", Type: "<ProgramHandles>", Children: []FieldInfo{
 					{Name: "pin_path", Type: "<string>", Description: "Pinned path in bpffs"},
 					{Name: "map_pin_path", Type: "<string>", Description: "Map pin directory"},

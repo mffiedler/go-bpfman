@@ -124,8 +124,8 @@ func TestSnapshot_ManagedPrograms(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_100"}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
-			200: {KernelID: 200, Load: bpfman.NewLoadResult(bpfman.ProgramTypeTC), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_200"}, Meta: bpfman.ProgramMeta{Name: "tc_filter"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_100"}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
+			200: {KernelID: 200, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTC), Handles: bpfman.ProgramHandles{PinPath: "/run/bpfman/fs/prog_200"}, Meta: bpfman.ProgramMeta{Name: "tc_filter"}},
 		},
 	}
 
@@ -155,7 +155,7 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "managed"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "managed"}},
 		},
 	}
 
@@ -390,7 +390,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: pinPath}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: pinPath}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
 		},
 	}
 
@@ -417,7 +417,7 @@ func TestGetProgram_StoreOnly(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "stale_prog"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Meta: bpfman.ProgramMeta{Name: "stale_prog"}},
 		},
 	}
 
@@ -649,7 +649,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	// Create links WITH details populated (simulating what the real store returns)
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
 		},
 		links: []bpfman.LinkSpec{
 			{
@@ -712,7 +712,7 @@ func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramSpec{
-			100: {KernelID: 100, Load: bpfman.NewLoadResult(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
+			100: {KernelID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeTracepoint), Meta: bpfman.ProgramMeta{Name: "test_prog"}},
 		},
 		links: []bpfman.LinkSpec{
 			{

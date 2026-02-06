@@ -187,17 +187,15 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	metadata := bpfman.ProgramSpec{
 		KernelID: loaded.Program.ID,
-		Load: bpfman.LoadResult{
-			LoadSpec: bpfman.LoadSpec{}.
-				WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
-				WithProgramName(spec.ProgramName()).
-				WithProgramType(loaded.InferredType).
-				WithGlobalData(spec.GlobalData()).
-				WithImageSource(spec.ImageSource()).
-				WithAttachFunc(spec.AttachFunc()),
-			License:       loaded.License,
-			GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
-		},
+		Load: bpfman.LoadSpec{}.
+			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
+			WithProgramName(spec.ProgramName()).
+			WithProgramType(loaded.InferredType).
+			WithGlobalData(spec.GlobalData()).
+			WithImageSource(spec.ImageSource()).
+			WithAttachFunc(spec.AttachFunc()),
+		License:       loaded.License,
+		GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
 		Handles: bpfman.ProgramHandles{
 			PinPath:    loaded.PinPath,
 			MapPinPath: loaded.MapsDir, // Maps directory for CSI/unload
