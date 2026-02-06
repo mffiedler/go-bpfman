@@ -348,7 +348,7 @@ func (f *fakeKernel) Reset() {
 	f.loadCount = 0
 }
 
-func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error) {
+func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
 	if spec.ProgramType() == bpfman.ProgramTypeUnspecified {
 		err := fmt.Errorf("program type must be specified")

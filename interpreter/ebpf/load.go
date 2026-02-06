@@ -30,7 +30,7 @@ import (
 // (<bpffsRoot>/maps/<owner_id>/) must exist and contain the required pinned maps.
 // This is used when loading multiple programs from the same image (e.g., via
 // the bpfman-operator) where all programs should share the same map instances.
-func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error) {
+func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
 	if err != nil {

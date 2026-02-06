@@ -20,13 +20,13 @@ const (
 	defaultScanMaxLineLen = 1024 * 1024
 )
 
-// Root represents a bpffs mount point path.
+// MountPoint represents a bpffs mount point path.
 // This is a newtype to prevent accidentally passing arbitrary strings
-// where a bpffs root is expected.
-type Root string
+// where a bpffs mount point is expected.
+type MountPoint string
 
 // String returns the path as a string.
-func (r Root) String() string { return string(r) }
+func (m MountPoint) String() string { return string(m) }
 
 // LinkPath represents a pinned link path within a bpffs.
 // This is a newtype to prevent accidentally passing arbitrary strings

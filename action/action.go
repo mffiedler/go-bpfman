@@ -67,7 +67,7 @@ func (DeleteLink) isAction() {}
 // LoadProgram loads a BPF program into the kernel.
 type LoadProgram struct {
 	Spec      bpfman.LoadSpec
-	BpffsRoot bpffs.Root // Required: bpffs mount point for pinning
+	BpffsRoot bpffs.MountPoint // Required: bpffs mount point for pinning
 }
 
 func (LoadProgram) isAction() {}
