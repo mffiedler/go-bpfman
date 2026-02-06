@@ -36,7 +36,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -217,12 +216,13 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
+	scanner := m.root.BPFFS().Scanner()
 	for id := range dbPrograms {
 		if !kernelProgramIDs[id] {
 			continue // already absent; store GC will reap
 		}
 		pinPath := m.root.BPFFS().ProgPinPath(id)
-		if _, err := os.Stat(pinPath); errors.Is(err, os.ErrNotExist) {
+		if !scanner.PathExists(pinPath) {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
 				"kernel_id", id, "pin_path", pinPath)
 			delete(kernelProgramIDs, id)

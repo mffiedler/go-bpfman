@@ -126,7 +126,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
+	fs := m.root.BPFFS()
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -137,14 +137,14 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		})
 		return fail(primaryErr)
 	}
-	linkPinPath := dispatcher.ExtensionLinkPath(revisionDir, position)
+	linkPinPath := fs.ExtensionLinkPath(dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision, position)
 
 	// COMPUTE: Use the program's MapPinPath which points to the correct maps
 	// directory (either the program's own or the map owner's if sharing).
 	mapPinDir := prog.Handles.MapPinPath
 
 	// KERNEL I/O: Attach user program as extension
-	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
+	progPinPath := fs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 	extSpec := dispatcher.XDPExtensionAttachSpec{
 		DispatcherPinPath: progPinPath,
 		ObjectPath:        prog.Load.ObjectPath(),
@@ -200,7 +200,6 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			})
 			return fail(primaryErr)
 		}
-		revisionDir = dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
 			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
@@ -211,8 +210,8 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			})
 			return fail(primaryErr)
 		}
-		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
-		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
+		linkPinPath = fs.ExtensionLinkPath(dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision, position)
+		progPinPath = fs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, uint32(ifindex), dispState.Revision)
 		extSpec = dispatcher.XDPExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
 			ObjectPath:        prog.Load.ObjectPath(),
@@ -361,10 +360,10 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 // Pattern: COMPUTE -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
 	// COMPUTE: Calculate paths according to Rust bpfman convention
+	fs := m.root.BPFFS()
 	revision := uint32(1)
-	linkPinPath := dispatcher.DispatcherLinkPath(m.root.BPFFS().MountPoint(), dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
-	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
+	linkPinPath := fs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
+	progPinPath := fs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
 
 	m.logger.InfoContext(ctx, "creating XDP dispatcher",
 		"nsid", nsid,

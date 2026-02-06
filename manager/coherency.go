@@ -3,8 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
@@ -348,26 +346,15 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	}
 
 	// Dispatcher prog pins and XDP link pins.
+	fs := root.BPFFS()
 	for _, d := range s.dbDispatchers {
-		revDir := dispatcher.DispatcherRevisionDir(root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex, d.Revision)
-		progPin := dispatcher.DispatcherProgPath(revDir)
+		progPin := fs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 		pathsToStat[progPin] = struct{}{}
 
 		if d.Type == dispatcher.DispatcherTypeXDP {
-			linkPin := dispatcher.DispatcherLinkPath(root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := fs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
 			pathsToStat[linkPin] = struct{}{}
 		}
-	}
-
-	// Stat all collected paths.
-	for path := range pathsToStat {
-		_, err := os.Stat(path)
-		if err == nil {
-			s.fsPinExists[path] = true
-		} else if os.IsNotExist(err) {
-			s.fsPinExists[path] = false
-		}
-		// Other errors (EPERM, EIO): path not in map = unknown.
 	}
 
 	// ----------------------------------------------------------------
@@ -378,6 +365,11 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 
 	// Delegate bpfman-specific bpffs scanning to the scanner.
 	scanner := root.BPFFS().Scanner()
+
+	// Stat all collected paths using the scanner.
+	for path := range pathsToStat {
+		s.fsPinExists[path] = scanner.PathExists(path)
+	}
 	fsState, err := scanner.Scan(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("scan bpffs: %w", err)
@@ -449,47 +441,41 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	// Phase 6a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 
-	if root.Valid() {
-		rt := root.Runtime()
-		programsPath := filepath.Join(root.Base(), "programs")
-		if entries, err := os.ReadDir(programsPath); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					continue
-				}
-				name := entry.Name()
-				var kernelID uint32
-				if n, _ := fmt.Sscanf(name, "%d", &kernelID); n == 1 {
-					if !s.dbProgIDs[kernelID] {
-						s.orphans = append(s.orphans, FsOrphan{
-							Path:     filepath.Join(programsPath, name),
-							KernelID: kernelID,
-							Kind:     OrphanProgramDir,
-						})
-					}
-				} else {
-					s.orphans = append(s.orphans, FsOrphan{
-						Path: filepath.Join(programsPath, name),
-						Kind: OrphanProgramDirUnk,
-					})
-				}
-			}
-		}
-
-		// ----------------------------------------------------------------
-		// Phase 6b: Scan <base>/.staging/ for orphan staging dirs
-		// ----------------------------------------------------------------
-
-		stagingPath := filepath.Join(root.Base(), ".staging")
-		if entries, err := os.ReadDir(stagingPath); err == nil {
-			for _, entry := range entries {
+	rt := root.Runtime()
+	programDirs, err := rt.ScanProgramDirs()
+	if err != nil {
+		return nil, fmt.Errorf("scan program dirs: %w", err)
+	}
+	for _, pde := range programDirs {
+		if pde.Numeric {
+			if !s.dbProgIDs[pde.KernelID] {
 				s.orphans = append(s.orphans, FsOrphan{
-					Path: filepath.Join(stagingPath, entry.Name()),
-					Kind: OrphanStagingDir,
+					Path:     pde.Path,
+					KernelID: pde.KernelID,
+					Kind:     OrphanProgramDir,
 				})
 			}
+		} else {
+			s.orphans = append(s.orphans, FsOrphan{
+				Path: pde.Path,
+				Kind: OrphanProgramDirUnk,
+			})
 		}
-		_ = rt // used in GC rule closures via s.root
+	}
+
+	// ----------------------------------------------------------------
+	// Phase 6b: Scan <base>/.staging/ for orphan staging dirs
+	// ----------------------------------------------------------------
+
+	stagingDirs, err := rt.ScanStagingDirs()
+	if err != nil {
+		return nil, fmt.Errorf("scan staging dirs: %w", err)
+	}
+	for _, path := range stagingDirs {
+		s.orphans = append(s.orphans, FsOrphan{
+			Path: path,
+			Kind: OrphanStagingDir,
+		})
 	}
 
 	// ----------------------------------------------------------------
@@ -568,10 +554,11 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	if s.dispatchers != nil {
 		return s.dispatchers
 	}
+	fs := s.root.BPFFS()
 	for _, d := range s.dbDispatchers {
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		revDir := dispatcher.DispatcherRevisionDir(s.root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex, d.Revision)
-		progPin := dispatcher.DispatcherProgPath(revDir)
+		revDir := fs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
+		progPin := fs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 
 		ds := DispatcherState{
 			DB:         &d,
@@ -589,7 +576,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		// XDP link checks from gathered facts.
 		if d.Type == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = d.LinkID != 0 && s.kernelLinks[d.LinkID]
-			linkPin := dispatcher.DispatcherLinkPath(s.root.BPFFS().MountPoint(), d.Type, d.Nsid, d.Ifindex)
+			linkPin := fs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
 			if exists, ok := s.fsPinExists[linkPin]; ok {
 				ds.LinkPinExist = &exists
 			}
@@ -1202,12 +1189,7 @@ Category: gc-dispatcher`,
 
 								// XDP has a separate link pin.
 								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
-									linkPin := dispatcher.DispatcherLinkPath(
-										b.MountPoint(),
-										dd.DB.Type,
-										dd.DB.Nsid,
-										dd.DB.Ifindex,
-									)
+									linkPin := b.DispatcherLinkPath(dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
 									if err := b.RemoveDispatcherLinkPin(linkPin); err != nil {
 										return err
 									}

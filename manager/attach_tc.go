@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -146,7 +145,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, uint32(ifindex), dispState.Revision)
+	fs := m.root.BPFFS()
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -157,14 +156,14 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		})
 		return fail(primaryErr)
 	}
-	linkPinPath := dispatcher.ExtensionLinkPath(revisionDir, position)
+	linkPinPath := fs.ExtensionLinkPath(dispType, nsid, uint32(ifindex), dispState.Revision, position)
 
 	// COMPUTE: Use the program's MapPinPath which points to the correct maps
 	// directory (either the program's own or the map owner's if sharing).
 	mapPinDir := prog.Handles.MapPinPath
 
 	// KERNEL I/O: Attach user program as extension
-	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
+	progPinPath := fs.DispatcherProgPath(dispType, nsid, uint32(ifindex), dispState.Revision)
 	extSpec := dispatcher.TCExtensionAttachSpec{
 		DispatcherPinPath: progPinPath,
 		ObjectPath:        prog.Load.ObjectPath(),
@@ -223,7 +222,6 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			return fail(primaryErr)
 		}
 		// Recalculate paths for the fresh dispatcher
-		revisionDir = dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, uint32(ifindex), dispState.Revision)
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
 			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
@@ -234,8 +232,8 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			})
 			return fail(primaryErr)
 		}
-		linkPinPath = dispatcher.ExtensionLinkPath(revisionDir, position)
-		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
+		linkPinPath = fs.ExtensionLinkPath(dispType, nsid, uint32(ifindex), dispState.Revision, position)
+		progPinPath = fs.DispatcherProgPath(dispType, nsid, uint32(ifindex), dispState.Revision)
 		extSpec = dispatcher.TCExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
 			ObjectPath:        prog.Load.ObjectPath(),
@@ -452,8 +450,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 	// The path must be unique per program to support multiple TCX programs
 	// on the same interface — each needs its own pinned link to keep the
 	// kernel attachment alive.
-	dirName := fmt.Sprintf("tcx-%s", direction)
-	linkPinPath := filepath.Join(m.root.BPFFS().MountPoint(), dirName, fmt.Sprintf("link_%d_%d_%d", nsid, ifindex, programKernelID))
+	linkPinPath := m.root.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
 
 	// KERNEL I/O: Remove stale pin if it exists from a previous daemon run.
 	if _, statErr := os.Stat(linkPinPath); statErr == nil {
@@ -663,9 +660,9 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 	// COMPUTE: Calculate paths according to Rust bpfman convention.
 	// TC dispatchers do not use a link pin — legacy netlink TC has no
 	// BPF link to pin. The filter is identified by handle + priority.
+	fs := m.root.BPFFS()
 	revision := uint32(1)
-	revisionDir := dispatcher.DispatcherRevisionDir(m.root.BPFFS().MountPoint(), dispType, nsid, ifindex, revision)
-	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
+	progPinPath := fs.DispatcherProgPath(dispType, nsid, ifindex, revision)
 
 	m.logger.InfoContext(ctx, "creating TC dispatcher",
 		"direction", direction,

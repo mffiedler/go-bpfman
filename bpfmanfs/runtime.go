@@ -204,3 +204,65 @@ func (rt Runtime) RemoveStagingDir(path string) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.stagingPath(), path)
 }
+
+// ProgramDirEntry represents a directory under <base>/programs/.
+type ProgramDirEntry struct {
+	Path     string // Full path to the directory
+	KernelID uint32 // Parsed kernel ID; 0 if name is not numeric
+	Numeric  bool   // True if directory name is a valid uint32
+}
+
+// ScanProgramDirs returns all directories under <base>/programs/.
+// Returns nil (not error) if the programs directory does not exist.
+func (rt Runtime) ScanProgramDirs() ([]ProgramDirEntry, error) {
+	rt.mustValid()
+	programsPath := rt.programsPath()
+
+	entries, err := os.ReadDir(programsPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, &PathError{Op: "scan_programs", Path: programsPath, Err: err}
+	}
+
+	var result []ProgramDirEntry
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		pde := ProgramDirEntry{
+			Path: filepath.Join(programsPath, name),
+		}
+		// Try to parse as uint32
+		var id uint32
+		if n, _ := fmt.Sscanf(name, "%d", &id); n == 1 {
+			pde.KernelID = id
+			pde.Numeric = true
+		}
+		result = append(result, pde)
+	}
+	return result, nil
+}
+
+// ScanStagingDirs returns all entry paths under <base>/.staging/.
+// Returns nil (not error) if the staging directory does not exist.
+func (rt Runtime) ScanStagingDirs() ([]string, error) {
+	rt.mustValid()
+	stagingPath := rt.stagingPath()
+
+	entries, err := os.ReadDir(stagingPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, &PathError{Op: "scan_staging", Path: stagingPath, Err: err}
+	}
+
+	var result []string
+	for _, entry := range entries {
+		result = append(result, filepath.Join(stagingPath, entry.Name()))
+	}
+	return result, nil
+}

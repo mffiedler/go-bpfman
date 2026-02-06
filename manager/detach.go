@@ -9,6 +9,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/outcome"
@@ -242,7 +243,7 @@ func (m *Manager) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.S
 		}
 	}
 
-	cleanupActions := computeDispatcherCleanupActions(m.root.BPFFS().MountPoint(), state, tcHandle)
+	cleanupActions := computeDispatcherCleanupActions(m.root.BPFFS(), state, tcHandle)
 	if err := m.executor.ExecuteAll(ctx, cleanupActions); err != nil {
 		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
 	}
@@ -302,9 +303,9 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 // remove a dispatcher. It is only called when no extension links remain.
 // For TC dispatchers, tcHandle is the kernel-assigned filter handle
 // (queried at detach time); it is zero for XDP dispatchers.
-func computeDispatcherCleanupActions(bpffsRoot string, state dispatcher.State, tcHandle uint32) []action.Action {
-	revisionDir := dispatcher.DispatcherRevisionDir(bpffsRoot, state.Type, state.Nsid, state.Ifindex, state.Revision)
-	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
+func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
+	progPinPath := fs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
+	revisionDir := fs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
 	var actions []action.Action
 
 	// TC dispatchers use legacy netlink and must be detached via
@@ -320,7 +321,7 @@ func computeDispatcherCleanupActions(bpffsRoot string, state dispatcher.State, t
 			})
 		}
 	} else {
-		linkPinPath := dispatcher.DispatcherLinkPath(bpffsRoot, state.Type, state.Nsid, state.Ifindex)
+		linkPinPath := fs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
 		actions = append(actions, action.RemovePin{Path: linkPinPath})
 	}
 
