@@ -12,6 +12,9 @@ type ServeCmd struct {
 	TCPAddress   string `name:"tcp-address" help:"TCP address for gRPC server." default:"[::]:50051"`
 	CSISupport   bool   `name:"csi-support" help:"Enable CSI driver support."`
 	PprofAddress string `name:"pprof-address" help:"Address for pprof HTTP server. Port 0 selects an ephemeral port. Empty string disables." env:"BPFMAN_PPROF_ADDRESS" default:"localhost:0"`
+	// SocketPath defaults to /run/bpfman-sock/bpfman.sock for compatibility
+	// with bpfman-operator which expects the socket at this location.
+	SocketPath string `name:"socket-path" help:"Unix socket path for gRPC server." env:"BPFMAN_SOCKET_PATH" default:"/run/bpfman-sock/bpfman.sock"`
 }
 
 // Run executes the serve command.
@@ -36,6 +39,7 @@ func (c *ServeCmd) Run(cli *CLI, ctx context.Context) error {
 		TCPAddress:   c.TCPAddress,
 		CSISupport:   c.CSISupport,
 		PprofAddress: c.PprofAddress,
+		SocketPath:   c.SocketPath,
 		Logger:       logger,
 		Config:       appConfig,
 	}

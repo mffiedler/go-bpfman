@@ -56,6 +56,7 @@ type RunConfig struct {
 	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
+	SocketPath   string // Optional override for Unix socket path (defaults to root.SocketPath())
 	Logger       *slog.Logger
 	Config       config.Config
 }
@@ -189,7 +190,14 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Start bpfman gRPC server
 	srv := newWithStore(root, st, puller, mgr, logger)
-	return srv.serve(ctx, root.SocketPath(), cfg.TCPAddress)
+
+	// Use override socket path if provided, otherwise use default from root
+	socketPath := cfg.SocketPath
+	if socketPath == "" {
+		socketPath = root.SocketPath()
+	}
+
+	return srv.serve(ctx, socketPath, cfg.TCPAddress)
 }
 
 // Server implements the bpfman gRPC service.
