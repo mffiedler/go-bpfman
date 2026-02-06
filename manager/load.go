@@ -93,47 +93,47 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		Kind:   outcome.StepKindKernelLoad,
 		Target: spec.ProgramName(),
 		Details: outcome.ProgramDetails{
-			KernelID: loaded.Kernel.ID,
-			PinPath:  loaded.Managed.PinPath,
+			KernelID: loaded.Program.ID,
+			PinPath:  loaded.PinPath,
 		},
 	})
 
 	m.logger.InfoContext(ctx, "loaded program",
 		"name", spec.ProgramName(),
-		"kernel_id", loaded.Kernel.ID,
-		"prog_pin", loaded.Managed.PinPath,
-		"maps_dir", loaded.Managed.PinDir)
+		"kernel_id", loaded.Program.ID,
+		"prog_pin", loaded.PinPath,
+		"maps_dir", loaded.MapsDir)
 
 	// Phase 1.5: DB existence check. If a DB row already exists for
 	// this kernel_id, it means something is seriously wrong (the
 	// kernel reused an ID that we still track, or a concurrent load
 	// raced). Hard error and rollback kernel state.
-	if _, err := m.store.Get(ctx, loaded.Kernel.ID); err == nil {
+	if _, err := m.store.Get(ctx, loaded.Program.ID); err == nil {
 		// DB row exists -- invariant violation.
-		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Kernel.ID)
+		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Program.ID)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Kernel.ID,
+				KernelID: loaded.Program.ID,
 			},
 			Error: primaryErr.Error(),
 		})
 		// Rollback kernel load.
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
 		}
 		return fail(primaryErr)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		// Unexpected store error.
-		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Kernel.ID, err)
+		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Program.ID, err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: spec.ProgramName(),
 			Error:  primaryErr.Error(),
 		})
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
 		}
 		return fail(primaryErr)
 	}
@@ -143,26 +143,26 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	rt := m.root.Runtime()
 	prov := fs.Provenance{
 		Version:     1,
-		KernelID:    loaded.Kernel.ID,
+		KernelID:    loaded.Program.ID,
 		ProgramName: spec.ProgramName(),
 		Source:      spec.ObjectPath(),
 		SourceKind:  sourceKindFromSpec(spec),
 		LoadedAt:    now,
 	}
 
-	if err := rt.PublishBytecode(loaded.Kernel.ID, spec.ObjectPath(), prov); err != nil {
-		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Kernel.ID, err)
+	if err := rt.PublishBytecode(loaded.Program.ID, spec.ObjectPath(), prov); err != nil {
+		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Program.ID, err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindFSPublish,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Kernel.ID,
+				KernelID: loaded.Program.ID,
 			},
 			Error: primaryErr.Error(),
 		})
 		// Rollback kernel load.
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Kernel.ID, "error", rbErr)
+		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
 		}
 		return fail(primaryErr)
 	}
@@ -171,7 +171,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		Kind:   outcome.StepKindFSPublish,
 		Target: spec.ProgramName(),
 		Details: outcome.ProgramDetails{
-			KernelID: loaded.Kernel.ID,
+			KernelID: loaded.Program.ID,
 		},
 	})
 
@@ -186,18 +186,21 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	}
 
 	metadata := bpfman.ProgramSpec{
-		KernelID: loaded.Kernel.ID,
-		Load: bpfman.ProgramLoadSpec{
-			ProgramType:   loaded.Managed.Type,
-			ObjectPath:    rt.ProgramBytecodePath(loaded.Kernel.ID),
-			ImageSource:   spec.ImageSource(),
-			AttachFunc:    spec.AttachFunc(),
-			GlobalData:    spec.GlobalData(),
-			GPLCompatible: bpfman.ExtractGPLCompatible(loaded.Kernel),
+		KernelID: loaded.Program.ID,
+		Load: bpfman.LoadResult{
+			LoadSpec: bpfman.LoadSpec{}.
+				WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
+				WithProgramName(spec.ProgramName()).
+				WithProgramType(loaded.InferredType).
+				WithGlobalData(spec.GlobalData()).
+				WithImageSource(spec.ImageSource()).
+				WithAttachFunc(spec.AttachFunc()),
+			License:       loaded.License,
+			GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
 		},
 		Handles: bpfman.ProgramHandles{
-			PinPath:    loaded.Managed.PinPath,
-			MapPinPath: loaded.Managed.PinDir, // Maps directory for CSI/unload
+			PinPath:    loaded.PinPath,
+			MapPinPath: loaded.MapsDir, // Maps directory for CSI/unload
 			MapOwnerID: mapOwnerID,
 		},
 		Meta: bpfman.ProgramMeta{
@@ -212,10 +215,10 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	// the upsert, tag updates, and metadata index updates all commit or
 	// roll back together.
 	err = m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
-		return txStore.Save(ctx, loaded.Kernel.ID, metadata)
+		return txStore.Save(ctx, loaded.Program.ID, metadata)
 	})
 	if err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back", "kernel_id", loaded.Kernel.ID, "error", err)
+		m.logger.ErrorContext(ctx, "persist failed, rolling back", "kernel_id", loaded.Program.ID, "error", err)
 
 		// Record store save failure
 		storeErr := fmt.Errorf("persist metadata: %w", err)
@@ -223,7 +226,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			Kind:   outcome.StepKindStoreSaveProgram,
 			Target: spec.ProgramName(),
 			Details: outcome.ProgramDetails{
-				KernelID: loaded.Kernel.ID,
+				KernelID: loaded.Program.ID,
 			},
 			Error: storeErr.Error(),
 		})
@@ -232,10 +235,10 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		// LIFO order: RemoveProgram runs first, then kernel unload.
 		var undo undoStack
 		undo.push(func() error {
-			return m.kernel.UnloadProgram(ctx, loaded.Managed.PinPath, loaded.Managed.PinDir)
+			return m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir)
 		})
 		undo.push(func() error {
-			return rt.RemoveProgram(loaded.Kernel.ID)
+			return rt.RemoveProgram(loaded.Program.ID)
 		})
 
 		rec.BeginRollback()
@@ -248,29 +251,29 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
 				Details: outcome.ProgramDetails{
-					KernelID:    loaded.Kernel.ID,
-					PinPath:     loaded.Managed.PinPath,
-					MapsDirPath: loaded.Managed.PinDir,
+					KernelID:    loaded.Program.ID,
+					PinPath:     loaded.PinPath,
+					MapsDirPath: loaded.MapsDir,
 				},
 				Error: rbErrs[0].Err.Error(),
 			})
 			// Set residual artefacts since rollback failed
 			rec.SetResidual([]outcome.Artefact{
-				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinPath},
-				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Kernel.ID, Path: loaded.Managed.PinDir},
-				{Kind: outcome.ArtefactProgramDir, KernelID: loaded.Kernel.ID, Path: rt.ProgramBytecodePath(loaded.Kernel.ID)},
+				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Program.ID, Path: loaded.PinPath},
+				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Program.ID, Path: loaded.MapsDir},
+				{Kind: outcome.ArtefactProgramDir, KernelID: loaded.Program.ID, Path: rt.ProgramBytecodePath(loaded.Program.ID)},
 			}, nil)
 		} else {
 			m.logger.DebugContext(ctx, "rollback: unloaded program",
-				"kernel_id", loaded.Kernel.ID,
-				"pin_path", loaded.Managed.PinPath)
+				"kernel_id", loaded.Program.ID,
+				"pin_path", loaded.PinPath)
 			_ = rec.RollbackComplete(outcome.Step{
 				Kind:   outcome.StepKindKernelUnload,
 				Target: spec.ProgramName(),
 				Details: outcome.ProgramDetails{
-					KernelID:    loaded.Kernel.ID,
-					PinPath:     loaded.Managed.PinPath,
-					MapsDirPath: loaded.Managed.PinDir,
+					KernelID:    loaded.Program.ID,
+					PinPath:     loaded.PinPath,
+					MapsDirPath: loaded.MapsDir,
 				},
 			})
 		}
@@ -282,13 +285,13 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		Kind:   outcome.StepKindStoreSaveProgram,
 		Target: spec.ProgramName(),
 		Details: outcome.ProgramDetails{
-			KernelID: loaded.Kernel.ID,
+			KernelID: loaded.Program.ID,
 		},
 	})
 
 	// Fetch kernel maps for status
 	var kernelMaps []kernel.Map
-	for _, mapID := range loaded.Kernel.MapIDs {
+	for _, mapID := range loaded.Program.MapIDs {
 		km, err := m.kernel.GetMapByID(ctx, mapID)
 		if err == nil {
 			kernelMaps = append(kernelMaps, km)
@@ -298,7 +301,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 	return bpfman.Program{
 		Spec: metadata,
 		Status: bpfman.ProgramStatus{
-			Kernel:      loaded.Kernel,
+			Kernel:      loaded.Program,
 			PinPresent:  true,
 			MapsPresent: len(kernelMaps) > 0,
 			Links:       nil, // No links yet, just loaded

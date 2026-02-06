@@ -131,6 +131,37 @@ func (s LoadSpec) WithMapOwnerID(id uint32) LoadSpec {
 	return s
 }
 
+// Builder methods for reconstructing LoadSpec from stored data.
+// These bypass constructor validation since the data was validated at creation time.
+
+// WithObjectPath returns a new LoadSpec with object path set.
+// Used when reconstructing from stored data.
+func (s LoadSpec) WithObjectPath(path string) LoadSpec {
+	s.objectPath = path
+	return s
+}
+
+// WithProgramName returns a new LoadSpec with program name set.
+// Used when reconstructing from stored data.
+func (s LoadSpec) WithProgramName(name string) LoadSpec {
+	s.programName = name
+	return s
+}
+
+// WithProgramType returns a new LoadSpec with program type set.
+// Used when reconstructing from stored data.
+func (s LoadSpec) WithProgramType(pt ProgramType) LoadSpec {
+	s.programType = pt
+	return s
+}
+
+// WithAttachFunc returns a new LoadSpec with attach function set.
+// Used when reconstructing from stored data.
+func (s LoadSpec) WithAttachFunc(fn string) LoadSpec {
+	s.attachFunc = fn
+	return s
+}
+
 // loadSpecJSON is the JSON representation of LoadSpec.
 // This allows LoadSpec to have private fields while still being serializable.
 type loadSpecJSON struct {

@@ -12,7 +12,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlGetProgram = `
 		SELECT m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
+		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m
 		WHERE m.kernel_id = ?`
 	if s.stmtGetProgram, err = s.db.PrepareContext(ctx, sqlGetProgram); err != nil {
@@ -35,8 +35,8 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlSaveProgram = `
 		INSERT INTO managed_programs
 		(kernel_id, program_name, program_type, object_path, pin_path, attach_func,
-		 global_data, map_owner_id, map_pin_path, image_source, owner, description, gpl_compatible, metadata_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 global_data, map_owner_id, map_pin_path, image_source, owner, description, license, gpl_compatible, metadata_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kernel_id) DO UPDATE SET
 		  program_name = excluded.program_name,
 		  program_type = excluded.program_type,
@@ -49,6 +49,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 		  image_source = excluded.image_source,
 		  owner = excluded.owner,
 		  description = excluded.description,
+		  license = excluded.license,
 		  gpl_compatible = excluded.gpl_compatible,
 		  metadata_json = excluded.metadata_json,
 		  updated_at = excluded.updated_at`
@@ -64,7 +65,7 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 	const sqlListPrograms = `
 		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
-		       m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
+		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m`
 	if s.stmtListPrograms, err = s.db.PrepareContext(ctx, sqlListPrograms); err != nil {
 		return fmt.Errorf("prepare ListPrograms: %w", err)

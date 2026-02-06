@@ -156,7 +156,7 @@ func (k *stubKernel) Links(ctx context.Context) iter.Seq2[kernel.Link, error] {
 }
 
 // ProgramLoader
-func (k *stubKernel) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.ManagedProgram, error) {
+func (k *stubKernel) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error) {
 	panic("stubKernel.Load not implemented")
 }
 

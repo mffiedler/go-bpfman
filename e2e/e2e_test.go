@@ -60,7 +60,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeTracepoint, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeTracepoint, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("tracepoint"), prog.Status.Kernel.ProgramType)
 
 	// Register cleanup for the program
@@ -183,7 +183,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeKprobe, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeKprobe, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("kprobe"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
@@ -295,7 +295,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeKretprobe, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeKretprobe, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("kprobe"), prog.Status.Kernel.ProgramType) // kernel sees kprobe for both kprobe and kretprobe
 
 	t.Cleanup(func() {
@@ -411,7 +411,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeUprobe, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeUprobe, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("kprobe"), prog.Status.Kernel.ProgramType) // kernel sees kprobe for uprobes
 
 	t.Cleanup(func() {
@@ -528,7 +528,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeUretprobe, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeUretprobe, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("kprobe"), prog.Status.Kernel.ProgramType) // kernel sees kprobe for uretprobes
 
 	t.Cleanup(func() {
@@ -641,7 +641,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeFentry, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeFentry, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("tracing"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
@@ -748,7 +748,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeFexit, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeFexit, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("tracing"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
@@ -857,7 +857,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeTC, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeTC, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("schedcls"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
@@ -1002,7 +1002,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeTCX, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeTCX, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("schedcls"), prog.Status.Kernel.ProgramType) // kernel sees schedcls for both tc and tcx
 
 	t.Cleanup(func() {
@@ -1116,7 +1116,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
-	require.Equal(t, bpfman.ProgramTypeXDP, prog.Spec.Load.ProgramType)
+	require.Equal(t, bpfman.ProgramTypeXDP, prog.Spec.Load.ProgramType())
 	require.Equal(t, kernel.ProgramType("xdp"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
@@ -1258,9 +1258,9 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 		"Get should return user metadata 'bpfman.io/application'")
 
 	// Verify global data is returned
-	require.Equal(t, []byte{0x42}, gotProg.Spec.Load.GlobalData["config_u8"],
+	require.Equal(t, []byte{0x42}, gotProg.Spec.Load.GlobalData()["config_u8"],
 		"Get should return global data 'config_u8'")
-	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, gotProg.Spec.Load.GlobalData["config_u32"],
+	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, gotProg.Spec.Load.GlobalData()["config_u32"],
 		"Get should return global data 'config_u32'")
 
 	// Then: List should also return the user metadata and global data
@@ -1275,9 +1275,9 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 		"List should return user metadata 'environment'")
 
 	// Verify global data via List
-	require.Equal(t, []byte{0x42}, listedProgs[0].Spec.Load.GlobalData["config_u8"],
+	require.Equal(t, []byte{0x42}, listedProgs[0].Spec.Load.GlobalData()["config_u8"],
 		"List should return global data 'config_u8'")
-	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, listedProgs[0].Spec.Load.GlobalData["config_u32"],
+	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, listedProgs[0].Spec.Load.GlobalData()["config_u32"],
 		"List should return global data 'config_u32'")
 
 	// When: unload

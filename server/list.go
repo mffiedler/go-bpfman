@@ -43,7 +43,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 		kp := row.Kernel
 
 		// Filter by program type if specified
-		if req.ProgramType != nil && *req.ProgramType != uint32(prog.Load.ProgramType) {
+		if req.ProgramType != nil && *req.ProgramType != uint32(prog.Load.ProgramType()) {
 			continue
 		}
 
@@ -63,9 +63,9 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 
 		info := &pb.ProgramInfo{
 			Name:       prog.Meta.Name,
-			Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath}},
+			Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath()}},
 			Metadata:   prog.Meta.Metadata,
-			GlobalData: prog.Load.GlobalData,
+			GlobalData: prog.Load.GlobalData(),
 			MapPinPath: prog.Handles.MapPinPath,
 		}
 		if prog.Handles.MapOwnerID != nil {
@@ -77,7 +77,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 			KernelInfo: &pb.KernelProgramInfo{
 				Id:          row.KernelID,
 				Name:        kp.Name,
-				ProgramType: uint32(prog.Load.ProgramType),
+				ProgramType: uint32(prog.Load.ProgramType()),
 				Tag:         kp.Tag,
 				LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
 				MapIds:      kp.MapIDs,
@@ -141,9 +141,9 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 
 	info := &pb.ProgramInfo{
 		Name:       prog.Meta.Name,
-		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath}},
+		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath()}},
 		Metadata:   prog.Meta.Metadata,
-		GlobalData: prog.Load.GlobalData,
+		GlobalData: prog.Load.GlobalData(),
 		MapPinPath: prog.Handles.MapPinPath,
 		Links:      linkIDs,
 	}
@@ -161,7 +161,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		KernelInfo: &pb.KernelProgramInfo{
 			Id:            req.Id,
 			Name:          kp.Name,
-			ProgramType:   uint32(prog.Load.ProgramType),
+			ProgramType:   uint32(prog.Load.ProgramType()),
 			Tag:           kp.Tag,
 			LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
 			GplCompatible: prog.Load.GPLCompatible,

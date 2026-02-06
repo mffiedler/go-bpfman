@@ -149,7 +149,7 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 	// Verify via Get
 	retrieved, err := fix.Manager.Get(ctx, prog.Spec.KernelID)
 	require.NoError(t, err, "Get failed")
-	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData, "GlobalData")
+	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData(), "GlobalData")
 }
 
 // TestLoadProgram_WithMetadataAndGlobalData verifies that:
@@ -187,7 +187,7 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 	assert.Equal(t, "combined-test", retrieved.Spec.Meta.Metadata["bpfman.io/ProgramName"])
 	assert.Equal(t, "test-app", retrieved.Spec.Meta.Metadata["app"])
 	assert.Equal(t, "2.0.0", retrieved.Spec.Meta.Metadata["version"])
-	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData)
+	assert.Equal(t, globalData, retrieved.Spec.Load.GlobalData())
 }
 
 // TestListPrograms_ReturnsAllFields verifies that:

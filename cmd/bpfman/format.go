@@ -148,7 +148,7 @@ func formatProgramTree(prog bpfman.Program) string {
 	if !p.CreatedAt.IsZero() {
 		fmt.Fprintf(&b, "   ├─ created:    %s\n", p.CreatedAt.Format(time.RFC3339))
 	}
-	fmt.Fprintf(&b, "   ├─ source:     %s\n", p.Load.ObjectPath)
+	fmt.Fprintf(&b, "   ├─ source:     %s\n", p.Load.ObjectPath())
 	fmt.Fprintf(&b, "   └─ pin_path:   %s\n", p.Handles.PinPath)
 
 	return b.String()
@@ -165,8 +165,8 @@ func formatProgramTable(prog bpfman.Program) string {
 	var specFields, statusFields []string
 
 	// Spec fields (sorted alphabetically)
-	if len(p.Load.GlobalData) > 0 {
-		specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData)))
+	if len(p.Load.GlobalData()) > 0 {
+		specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData())))
 	} else {
 		specFields = append(specFields, "    Global:\tNone")
 	}
@@ -183,8 +183,8 @@ func formatProgramTable(prog bpfman.Program) string {
 		specFields = append(specFields, "    Metadata:\tNone")
 	}
 	specFields = append(specFields, fmt.Sprintf("    Name:\t%s", p.Meta.Name))
-	specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath))
-	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType))
+	specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath()))
+	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType()))
 
 	// Status fields (sorted alphabetically)
 	if prog.Status.Kernel != nil {
@@ -319,8 +319,8 @@ func formatProgramListTable(programs []bpfman.Program) string {
 	for _, p := range programs {
 		id := p.Spec.KernelID
 		name := p.Spec.Meta.Name
-		progType := p.Spec.Load.ProgramType
-		source := p.Spec.Load.ObjectPath
+		progType := p.Spec.Load.ProgramType()
+		source := p.Spec.Load.ObjectPath()
 
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
 	}
@@ -666,8 +666,8 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 		var specFields, statusFields []string
 
 		// Spec fields (sorted alphabetically)
-		if len(p.Load.GlobalData) > 0 {
-			specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData)))
+		if len(p.Load.GlobalData()) > 0 {
+			specFields = append(specFields, fmt.Sprintf("    Global:\t%s", formatGlobalData(p.Load.GlobalData())))
 		} else {
 			specFields = append(specFields, "    Global:\tNone")
 		}
@@ -684,8 +684,8 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			specFields = append(specFields, "    Metadata:\tNone")
 		}
 		specFields = append(specFields, fmt.Sprintf("    Name:\t%s", p.Meta.Name))
-		specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath))
-		specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType))
+		specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath()))
+		specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType()))
 
 		// Status fields (sorted alphabetically)
 		if prog.Status.Kernel != nil {
@@ -798,8 +798,8 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 
 		// Get info from spec (always present as value type)
 		name := p.Spec.Meta.Name
-		progType := p.Spec.Load.ProgramType.String()
-		source := p.Spec.Load.ObjectPath
+		progType := p.Spec.Load.ProgramType().String()
+		source := p.Spec.Load.ObjectPath()
 
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
 	}

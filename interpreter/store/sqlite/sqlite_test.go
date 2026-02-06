@@ -30,10 +30,7 @@ func testLogger() *slog.Logger {
 // testProgram returns a valid ProgramRecord for testing.
 func testProgram() bpfman.ProgramRecord {
 	return bpfman.ProgramRecord{
-		Load: bpfman.ProgramLoadSpec{
-			ProgramType: bpfman.ProgramTypeTracepoint,
-			ObjectPath:  "/test/path/program.o",
-		},
+		Load: bpfman.NewLoadResultWithPath(bpfman.ProgramTypeTracepoint, "/test/path/program.o"),
 		Handles: bpfman.ProgramHandles{
 			PinPath: "/sys/fs/bpf/test",
 		},
@@ -701,7 +698,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 	// Create a program for the links to reference.
 	progID := uint32(100)
 	prog := testProgram()
-	prog.Load.ProgramType = bpfman.ProgramTypeTCX
+	prog.Load = bpfman.NewLoadResult(bpfman.ProgramTypeTCX)
 	require.NoError(t, store.Save(ctx, progID, prog), "Save program failed")
 
 	// Create TCX links with varying priorities (insert out of order).
@@ -768,7 +765,7 @@ func TestListTCXLinksByInterface_FiltersByInterfaceAndDirection(t *testing.T) {
 	// Create a program for the links to reference.
 	progID := uint32(100)
 	prog := testProgram()
-	prog.Load.ProgramType = bpfman.ProgramTypeTCX
+	prog.Load = bpfman.NewLoadResult(bpfman.ProgramTypeTCX)
 	require.NoError(t, store.Save(ctx, progID, prog), "Save program failed")
 
 	const nsid = uint64(4026531840)

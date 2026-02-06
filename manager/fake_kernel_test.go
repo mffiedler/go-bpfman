@@ -348,17 +348,17 @@ func (f *fakeKernel) Reset() {
 	f.loadCount = 0
 }
 
-func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.ManagedProgram, error) {
+func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
 	if spec.ProgramType() == bpfman.ProgramTypeUnspecified {
 		err := fmt.Errorf("program type must be specified")
 		f.recordOp("load", spec.ProgramName(), 0, err)
-		return bpfman.ManagedProgram{}, err
+		return bpfman.LoadOutput{}, err
 	}
 	if spec.ProgramType() < bpfman.ProgramTypeXDP || spec.ProgramType() > bpfman.ProgramTypeFexit {
 		err := fmt.Errorf("invalid program type: %d", spec.ProgramType())
 		f.recordOp("load", spec.ProgramName(), 0, err)
-		return bpfman.ManagedProgram{}, err
+		return bpfman.LoadOutput{}, err
 	}
 
 	// Check error injection
@@ -371,12 +371,12 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpf
 
 	if failErr != nil {
 		f.recordOp("load", spec.ProgramName(), 0, failErr)
-		return bpfman.ManagedProgram{}, failErr
+		return bpfman.LoadOutput{}, failErr
 	}
 	if failOnNth > 0 && loadNum == failOnNth {
 		err := fmt.Errorf("injected error on load %d", loadNum)
 		f.recordOp("load", spec.ProgramName(), 0, err)
-		return bpfman.ManagedProgram{}, err
+		return bpfman.LoadOutput{}, err
 	}
 
 	id := f.nextID.Add(1)
@@ -396,10 +396,10 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpf
 	// Create the pin file on disk so that GC's ownership check
 	// (os.Stat on the pin path) recognises this as our program.
 	if err := os.MkdirAll(string(bpffsRoot), 0755); err != nil {
-		return bpfman.ManagedProgram{}, fmt.Errorf("fake kernel: mkdir pin dir: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: mkdir pin dir: %w", err)
 	}
 	if err := os.WriteFile(progPinPath, nil, 0644); err != nil {
-		return bpfman.ManagedProgram{}, fmt.Errorf("fake kernel: create pin file: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: create pin file: %w", err)
 	}
 
 	fp := fakeProgram{
@@ -411,14 +411,12 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpf
 	}
 	f.programs[id] = fp
 	f.recordOp("load", spec.ProgramName(), id, nil)
-	return bpfman.ManagedProgram{
-		Managed: &bpfman.LoadedProgramInfo{
-			Name:    fp.name,
-			Type:    fp.programType,
-			PinPath: fp.pinPath,
-			PinDir:  fp.pinDir,
-		},
-		Kernel: &kernel.Program{
+	return bpfman.LoadOutput{
+		PinPath:      fp.pinPath,
+		MapsDir:      fp.pinDir,
+		License:      "GPL",
+		InferredType: fp.programType,
+		Program: &kernel.Program{
 			ID:            fp.id,
 			Name:          fp.name,
 			ProgramType:   kernel.NewProgramType(fp.programType.String()),

@@ -145,7 +145,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
 	extSpec := dispatcher.XDPExtensionAttachSpec{
 		DispatcherPinPath: progPinPath,
-		ObjectPath:        prog.Load.ObjectPath,
+		ObjectPath:        prog.Load.ObjectPath(),
 		ProgramName:       prog.Meta.Name,
 		Position:          position,
 		LinkPinPath:       linkPinPath,
@@ -213,7 +213,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
 		extSpec = dispatcher.XDPExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
-			ObjectPath:        prog.Load.ObjectPath,
+			ObjectPath:        prog.Load.ObjectPath(),
 			ProgramName:       prog.Meta.Name,
 			Position:          position,
 			LinkPinPath:       linkPinPath,

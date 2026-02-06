@@ -165,7 +165,7 @@ type ProgramLoader interface {
 	// Actual pin paths are computed from the kernel ID:
 	//   - Program: <bpffsRoot>/prog_<kernel_id>
 	//   - Maps: <bpffsRoot>/maps/<kernel_id>/<map_name>
-	Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.ManagedProgram, error)
+	Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error)
 }
 
 // ProgramUnloader removes BPF programs from the kernel.

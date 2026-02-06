@@ -193,10 +193,7 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 	prog := bpfman.Program{
 		Spec: bpfman.ProgramSpec{
 			KernelID: 42,
-			Load: bpfman.ProgramLoadSpec{
-				ProgramType: bpfman.ProgramTypeXDP,
-				ObjectPath:  "/path/to/prog.o",
-			},
+			Load:     bpfman.NewLoadResultWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
 			Meta: bpfman.ProgramMeta{
 				Name: "test_prog",
 			},
@@ -284,10 +281,7 @@ func TestColumnSet_FormatTable(t *testing.T) {
 		{
 			Spec: bpfman.ProgramSpec{
 				KernelID: 42,
-				Load: bpfman.ProgramLoadSpec{
-					ProgramType: bpfman.ProgramTypeXDP,
-					ObjectPath:  "/path/to/prog1.o",
-				},
+				Load:     bpfman.NewLoadResultWithPath(bpfman.ProgramTypeXDP, "/path/to/prog1.o"),
 				Meta: bpfman.ProgramMeta{
 					Name: "prog1",
 				},
@@ -296,10 +290,7 @@ func TestColumnSet_FormatTable(t *testing.T) {
 		{
 			Spec: bpfman.ProgramSpec{
 				KernelID: 43,
-				Load: bpfman.ProgramLoadSpec{
-					ProgramType: bpfman.ProgramTypeTC,
-					ObjectPath:  "/path/to/prog2.o",
-				},
+				Load:     bpfman.NewLoadResultWithPath(bpfman.ProgramTypeTC, "/path/to/prog2.o"),
 				Meta: bpfman.ProgramMeta{
 					Name: "prog2",
 				},
@@ -436,10 +427,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 			{
 				Spec: bpfman.ProgramSpec{
 					KernelID: 42,
-					Load: bpfman.ProgramLoadSpec{
-						ProgramType: bpfman.ProgramTypeXDP,
-						ObjectPath:  "/path/to/prog.o",
-					},
+					Load:     bpfman.NewLoadResultWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
 					Meta: bpfman.ProgramMeta{
 						Name: "xdp_pass",
 					},

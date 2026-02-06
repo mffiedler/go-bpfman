@@ -37,7 +37,7 @@ func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramS
 // scanProgram scans a single row into a ProgramSpec struct.
 func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 	var programName, programTypeStr, objectPath, pinPath string
-	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, metadataJSON sql.NullString
+	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
 	var gplCompatible int
 	var createdAtStr, updatedAtStr string
@@ -54,6 +54,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		&imageSourceJSON,
 		&owner,
 		&description,
+		&license,
 		&gplCompatible,
 		&createdAtStr,
 		&updatedAtStr,
@@ -114,14 +115,23 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 		return bpfman.ProgramSpec{}, fmt.Errorf("invalid updated_at timestamp %q: %w", updatedAtStr, err)
 	}
 
+	// Parse license field
+	var licenseVal string
+	if license.Valid {
+		licenseVal = license.String
+	}
+
 	// Build the ProgramSpec from the stored fields using nested structs
 	prog := bpfman.ProgramSpec{
-		Load: bpfman.ProgramLoadSpec{
-			ProgramType:   programType,
-			ObjectPath:    objectPath,
-			ImageSource:   imageSource,
-			AttachFunc:    attachFuncVal,
-			GlobalData:    globalData,
+		Load: bpfman.LoadResult{
+			LoadSpec: bpfman.LoadSpec{}.
+				WithObjectPath(objectPath).
+				WithProgramName(programName).
+				WithProgramType(programType).
+				WithGlobalData(globalData).
+				WithImageSource(imageSource).
+				WithAttachFunc(attachFuncVal),
+			License:       licenseVal,
 			GPLCompatible: gplCompatible != 0,
 		},
 		Handles: bpfman.ProgramHandles{
@@ -161,15 +171,15 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramSpec, error) {
 func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramSpec) error {
 	// Marshal JSON fields
 	var globalDataJSON, imageSourceJSON sql.NullString
-	if metadata.Load.GlobalData != nil {
-		data, err := json.Marshal(metadata.Load.GlobalData)
+	if metadata.Load.GlobalData() != nil {
+		data, err := json.Marshal(metadata.Load.GlobalData())
 		if err != nil {
 			return fmt.Errorf("failed to marshal global_data: %w", err)
 		}
 		globalDataJSON = sql.NullString{String: string(data), Valid: true}
 	}
-	if metadata.Load.ImageSource != nil {
-		data, err := json.Marshal(metadata.Load.ImageSource)
+	if metadata.Load.ImageSource() != nil {
+		data, err := json.Marshal(metadata.Load.ImageSource())
 		if err != nil {
 			return fmt.Errorf("failed to marshal image_source: %w", err)
 		}
@@ -195,15 +205,18 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	if metadata.Handles.MapPinPath != "" {
 		mapPinPath = sql.NullString{String: metadata.Handles.MapPinPath, Valid: true}
 	}
-	var attachFunc, owner, description sql.NullString
-	if metadata.Load.AttachFunc != "" {
-		attachFunc = sql.NullString{String: metadata.Load.AttachFunc, Valid: true}
+	var attachFunc, owner, description, license sql.NullString
+	if metadata.Load.AttachFunc() != "" {
+		attachFunc = sql.NullString{String: metadata.Load.AttachFunc(), Valid: true}
 	}
 	if metadata.Meta.Owner != "" {
 		owner = sql.NullString{String: metadata.Meta.Owner, Valid: true}
 	}
 	if metadata.Meta.Description != "" {
 		description = sql.NullString{String: metadata.Meta.Description, Valid: true}
+	}
+	if metadata.Load.License != "" {
+		license = sql.NullString{String: metadata.Load.License, Valid: true}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -218,8 +231,8 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 	result, err := s.stmtSaveProgram.ExecContext(ctx,
 		kernelID,
 		metadata.Meta.Name,
-		metadata.Load.ProgramType.String(),
-		metadata.Load.ObjectPath,
+		metadata.Load.ProgramType().String(),
+		metadata.Load.ObjectPath(),
 		metadata.Handles.PinPath,
 		attachFunc,
 		globalDataJSON,
@@ -228,6 +241,7 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 		imageSourceJSON,
 		owner,
 		description,
+		license,
 		gplCompatibleInt,
 		metadataJSON,
 		metadata.CreatedAt.Format(time.RFC3339),
@@ -428,7 +442,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramSpec, 
 func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.ProgramSpec, error) {
 	var kernelID uint32
 	var programName, programTypeStr, objectPath, pinPath string
-	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, metadataJSON sql.NullString
+	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
 	var gplCompatible int
 	var createdAtStr, updatedAtStr string
@@ -446,6 +460,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		&imageSourceJSON,
 		&owner,
 		&description,
+		&license,
 		&gplCompatible,
 		&createdAtStr,
 		&updatedAtStr,
@@ -506,15 +521,24 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		return 0, bpfman.ProgramSpec{}, fmt.Errorf("invalid updated_at timestamp for %d: %q: %w", kernelID, updatedAtStr, err)
 	}
 
+	// Parse license field
+	var licenseVal string
+	if license.Valid {
+		licenseVal = license.String
+	}
+
 	// Build the ProgramSpec from the stored fields using nested structs
 	prog := bpfman.ProgramSpec{
 		KernelID: kernelID,
-		Load: bpfman.ProgramLoadSpec{
-			ProgramType:   programType,
-			ObjectPath:    objectPath,
-			ImageSource:   imageSource,
-			AttachFunc:    attachFuncVal,
-			GlobalData:    globalData,
+		Load: bpfman.LoadResult{
+			LoadSpec: bpfman.LoadSpec{}.
+				WithObjectPath(objectPath).
+				WithProgramName(programName).
+				WithProgramType(programType).
+				WithGlobalData(globalData).
+				WithImageSource(imageSource).
+				WithAttachFunc(attachFuncVal),
+			License:       licenseVal,
 			GPLCompatible: gplCompatible != 0,
 		},
 		Handles: bpfman.ProgramHandles{

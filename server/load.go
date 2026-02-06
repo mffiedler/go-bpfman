@@ -212,7 +212,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			kernelInfo = &pb.KernelProgramInfo{
 				Id:            kp.ID,
 				Name:          kp.Name,
-				ProgramType:   uint32(loaded.Spec.Load.ProgramType),
+				ProgramType:   uint32(loaded.Spec.Load.ProgramType()),
 				LoadedAt:      loadedAt,
 				Tag:           kp.Tag,
 				GplCompatible: loaded.Spec.Load.GPLCompatible,

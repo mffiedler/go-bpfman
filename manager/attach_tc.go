@@ -165,7 +165,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 	progPinPath := dispatcher.DispatcherProgPath(revisionDir)
 	extSpec := dispatcher.TCExtensionAttachSpec{
 		DispatcherPinPath: progPinPath,
-		ObjectPath:        prog.Load.ObjectPath,
+		ObjectPath:        prog.Load.ObjectPath(),
 		ProgramName:       prog.Meta.Name,
 		Position:          position,
 		LinkPinPath:       linkPinPath,
@@ -236,7 +236,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		progPinPath = dispatcher.DispatcherProgPath(revisionDir)
 		extSpec = dispatcher.TCExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
-			ObjectPath:        prog.Load.ObjectPath,
+			ObjectPath:        prog.Load.ObjectPath(),
 			ProgramName:       prog.Meta.Name,
 			Position:          position,
 			LinkPinPath:       linkPinPath,
@@ -413,8 +413,8 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 	}
 
 	// Verify program type is TCX
-	if prog.Load.ProgramType != bpfman.ProgramTypeTCX {
-		primaryErr := fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType)
+	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
+		primaryErr := fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType())
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,

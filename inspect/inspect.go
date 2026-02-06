@@ -155,7 +155,7 @@ func (v ProgramView) Name() string {
 // Type returns the program type (from store if available, else kernel).
 func (v ProgramView) Type() string {
 	if v.Managed != nil {
-		return v.Managed.Load.ProgramType.String()
+		return v.Managed.Load.ProgramType().String()
 	}
 	if v.Kernel != nil {
 		return v.Kernel.ProgramType.String()

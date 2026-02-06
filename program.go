@@ -121,19 +121,6 @@ func ParseProgramType(s string) (ProgramType, bool) {
 	return pt, ok
 }
 
-// ProgramLoadSpec contains inputs for loading a program.
-// Reads like a load request: "what bytecode, what config?"
-type ProgramLoadSpec struct {
-	ProgramType ProgramType       `json:"program_type"`
-	ObjectPath  string            `json:"object_path,omitempty"`
-	ImageSource *ImageSource      `json:"image_source,omitempty"`
-	AttachFunc  string            `json:"attach_func,omitempty"` // For fentry/fexit
-	GlobalData  map[string][]byte `json:"global_data,omitempty"`
-	// GPLCompatible is determined at load time from the ELF licence.
-	// Persisted because it cannot be recovered reliably from the kernel later.
-	GPLCompatible bool `json:"gpl_compatible"`
-}
-
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
@@ -160,12 +147,12 @@ type ProgramMeta struct {
 // state (stored output). They share some fields but serve different purposes.
 type ProgramSpec struct {
 	// Identity - KernelID is the DB primary key and user-facing ID
-	KernelID  uint32          `json:"kernel_id"`
-	Load      ProgramLoadSpec `json:"load"`
-	Handles   ProgramHandles  `json:"handles"`
-	Meta      ProgramMeta     `json:"meta"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	KernelID  uint32         `json:"kernel_id"`
+	Load      LoadResult     `json:"load"`
+	Handles   ProgramHandles `json:"handles"`
+	Meta      ProgramMeta    `json:"meta"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 // ProgramStatus is observed state (kernel + filesystem).
@@ -195,7 +182,8 @@ func (p ProgramSpec) WithDescription(desc string) ProgramSpec {
 	cp := p
 	cp.Meta.Description = desc
 	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
-	cp.Load.GlobalData = cloneMap(p.Load.GlobalData)
+	// Clone global data by reconstructing the LoadSpec with cloned data
+	cp.Load.LoadSpec = cp.Load.LoadSpec.WithGlobalData(cloneMap(p.Load.GlobalData()))
 	return cp
 }
 
@@ -208,43 +196,102 @@ func cloneMap[K comparable, V any](m map[K]V) map[K]V {
 	return result
 }
 
-// LoadedProgramInfo holds transient information about a just-loaded program.
-// This is returned by the kernel Load operation and contains pin paths
-// that are used to construct the ProgramRecord for persistence.
-type LoadedProgramInfo struct {
-	Name       string      `json:"name"`
-	Type       ProgramType `json:"type"`
-	ObjectPath string      `json:"object_path,omitempty"`
-	PinPath    string      `json:"pin_path"`
-	PinDir     string      `json:"pin_dir,omitempty"`
+// LoadOutput is the raw result of kernel.Load().
+// This is transient I/O boundary data, not stored in the DB.
+type LoadOutput struct {
+	PinPath      string          // where program was pinned
+	MapsDir      string          // where maps were pinned
+	Program      *kernel.Program // kernel info (ID, MapIDs, etc)
+	License      string          // from ELF, for GPL check
+	InferredType ProgramType     // inferred from ELF if user didn't specify
 }
 
-// ManagedProgram is the result of loading a BPF program.
-// It combines bpfman-managed state with kernel-reported info.
-type ManagedProgram struct {
-	Managed *LoadedProgramInfo
-	Kernel  *kernel.Program
+// LoadResult combines a LoadSpec with properties discovered at load time.
+// This is what gets stored in ProgramSpec.Load.
+type LoadResult struct {
+	LoadSpec             // embedded - the validated input
+	License       string `json:"license,omitempty"`
+	GPLCompatible bool   `json:"gpl_compatible"`
 }
 
-// ExtractGPLCompatible extracts GPL compatibility from a kernel.Program.
-// Returns false if the program is nil or GPLCompatible is not set.
-func ExtractGPLCompatible(prog *kernel.Program) bool {
-	if prog == nil {
+// loadResultJSON is the JSON representation of LoadResult.
+// It combines LoadSpec fields with License and GPLCompatible.
+type loadResultJSON struct {
+	ObjectPath    string            `json:"object_path"`
+	ProgramName   string            `json:"program_name"`
+	ProgramType   ProgramType       `json:"program_type"`
+	GlobalData    map[string][]byte `json:"global_data,omitempty"`
+	ImageSource   *ImageSource      `json:"image_source,omitempty"`
+	AttachFunc    string            `json:"attach_func,omitempty"`
+	MapOwnerID    uint32            `json:"map_owner_id,omitempty"`
+	License       string            `json:"license,omitempty"`
+	GPLCompatible bool              `json:"gpl_compatible"`
+}
+
+// MarshalJSON implements json.Marshaler for LoadResult.
+func (r LoadResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(loadResultJSON{
+		ObjectPath:    r.LoadSpec.ObjectPath(),
+		ProgramName:   r.LoadSpec.ProgramName(),
+		ProgramType:   r.LoadSpec.ProgramType(),
+		GlobalData:    r.LoadSpec.GlobalData(),
+		ImageSource:   r.LoadSpec.ImageSource(),
+		AttachFunc:    r.LoadSpec.AttachFunc(),
+		MapOwnerID:    r.LoadSpec.MapOwnerID(),
+		License:       r.License,
+		GPLCompatible: r.GPLCompatible,
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler for LoadResult.
+func (r *LoadResult) UnmarshalJSON(data []byte) error {
+	var js loadResultJSON
+	if err := json.Unmarshal(data, &js); err != nil {
+		return err
+	}
+	// Reconstruct the embedded LoadSpec
+	r.LoadSpec = LoadSpec{
+		objectPath:  js.ObjectPath,
+		programName: js.ProgramName,
+		programType: js.ProgramType,
+		globalData:  js.GlobalData,
+		imageSource: js.ImageSource,
+		attachFunc:  js.AttachFunc,
+		mapOwnerID:  js.MapOwnerID,
+	}
+	r.License = js.License
+	r.GPLCompatible = js.GPLCompatible
+	return nil
+}
+
+// IsGPLCompatible checks if a license string is GPL compatible.
+// This matches the kernel's license_is_gpl_compatible() function.
+func IsGPLCompatible(license string) bool {
+	switch license {
+	case "GPL", "GPL v2", "GPL and additional rights",
+		"Dual BSD/GPL", "Dual MIT/GPL", "Dual MPL/GPL":
+		return true
+	default:
 		return false
 	}
-	return prog.GPLCompatible
 }
 
-// MarshalJSON implements json.Marshaler for ManagedProgram.
-// The kernel.Program is serialized directly as it has JSON tags.
-func (p ManagedProgram) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Managed *LoadedProgramInfo `json:"managed"`
-		Kernel  *kernel.Program    `json:"kernel"`
-	}{
-		Managed: p.Managed,
-		Kernel:  p.Kernel,
-	})
+// NewLoadResult creates a LoadResult with the given program type.
+// This is a convenience constructor for tests and simple cases.
+func NewLoadResult(programType ProgramType) LoadResult {
+	return LoadResult{
+		LoadSpec: LoadSpec{}.WithProgramType(programType),
+	}
+}
+
+// NewLoadResultWithPath creates a LoadResult with the given program type and object path.
+// This is a convenience constructor for tests.
+func NewLoadResultWithPath(programType ProgramType, objectPath string) LoadResult {
+	return LoadResult{
+		LoadSpec: LoadSpec{}.
+			WithProgramType(programType).
+			WithObjectPath(objectPath),
+	}
 }
 
 // HostInfo contains system information about the observed host.
@@ -295,7 +342,7 @@ func (o *listOptions) matchesType(prog *Program) bool {
 	if len(o.types) == 0 {
 		return true
 	}
-	_, ok := o.types[prog.Spec.Load.ProgramType]
+	_, ok := o.types[prog.Spec.Load.ProgramType()]
 	return ok
 }
 

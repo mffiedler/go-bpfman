@@ -30,18 +30,18 @@ import (
 // (<bpffsRoot>/maps/<owner_id>/) must exist and contain the required pinned maps.
 // This is used when loading multiple programs from the same image (e.g., via
 // the bpfman-operator) where all programs should share the same map instances.
-func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.ManagedProgram, error) {
+func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.Root) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
 	if err != nil {
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to load collection spec: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to load collection spec: %w", err)
 	}
 
 	// Set global data if provided
 	for name, data := range spec.GlobalData() {
 		if v, ok := collSpec.Variables[name]; ok {
 			if err := v.Set(data); err != nil {
-				return bpfman.ManagedProgram{}, fmt.Errorf("set variable %q: %w", name, err)
+				return bpfman.LoadOutput{}, fmt.Errorf("set variable %q: %w", name, err)
 			}
 		}
 	}
@@ -61,7 +61,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 			available = append(available, name)
 		}
 		sort.Strings(available)
-		return bpfman.ManagedProgram{}, fmt.Errorf("program %q not found in collection spec; available programs: %v", spec.ProgramName(), available)
+		return bpfman.LoadOutput{}, fmt.Errorf("program %q not found in collection spec; available programs: %v", spec.ProgramName(), available)
 	}
 	license := progSpec.License
 
@@ -103,7 +103,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 				for _, loaded := range mapReplacements {
 					loaded.Close()
 				}
-				return bpfman.ManagedProgram{}, fmt.Errorf("load shared map %q from owner %d: %w", name, mapOwnerID, err)
+				return bpfman.LoadOutput{}, fmt.Errorf("load shared map %q from owner %d: %w", name, mapOwnerID, err)
 			}
 			mapReplacements[name] = m
 			k.logger.Debug("loaded shared map from owner", "name", name, "path", mapPath)
@@ -124,23 +124,23 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 		for _, m := range mapReplacements {
 			m.Close()
 		}
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to load collection: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to load collection: %w", err)
 	}
 	defer coll.Close()
 
 	prog, ok := coll.Programs[spec.ProgramName()]
 	if !ok {
-		return bpfman.ManagedProgram{}, fmt.Errorf("program %q not found in collection", spec.ProgramName())
+		return bpfman.LoadOutput{}, fmt.Errorf("program %q not found in collection", spec.ProgramName())
 	}
 
 	// Get program info to obtain kernel ID
 	info, err := prog.Info()
 	if err != nil {
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to get program info: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program info: %w", err)
 	}
 	progID, ok := info.ID()
 	if !ok {
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to get program ID from kernel")
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program ID from kernel")
 	}
 	kernelID := uint32(progID)
 
@@ -157,7 +157,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 	// Pin program to <root>/prog_<kernel_id>
 	progPinPath := filepath.Join(string(bpffsRoot), fmt.Sprintf("prog_%d", kernelID))
 	if err := prog.Pin(progPinPath); err != nil {
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to pin program: %w", err)
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to pin program: %w", err)
 	}
 	pinnedPaths = append(pinnedPaths, progPinPath)
 
@@ -177,7 +177,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 		mapsDir = filepath.Join(string(bpffsRoot), "maps", fmt.Sprintf("%d", kernelID))
 		if err := os.MkdirAll(mapsDir, 0755); err != nil {
 			cleanup()
-			return bpfman.ManagedProgram{}, fmt.Errorf("failed to create maps directory: %w", err)
+			return bpfman.LoadOutput{}, fmt.Errorf("failed to create maps directory: %w", err)
 		}
 
 		// Pin all maps (skip internal maps like .rodata, .bss, .data)
@@ -191,7 +191,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 				if rmErr := os.Remove(mapsDir); rmErr != nil && !os.IsNotExist(rmErr) {
 					k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 				}
-				return bpfman.ManagedProgram{}, fmt.Errorf("failed to pin map %q: %w", name, err)
+				return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
 			}
 			pinnedPaths = append(pinnedPaths, mapPinPath)
 		}
@@ -205,19 +205,16 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 				k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 			}
 		}
-		return bpfman.ManagedProgram{}, fmt.Errorf("failed to get map IDs from kernel")
+		return bpfman.LoadOutput{}, fmt.Errorf("failed to get map IDs from kernel")
 	}
-	_ = ebpfMapIDs // MapIDs now accessed via KernelProgramInfo
+	_ = ebpfMapIDs // MapIDs now accessed via kernel.Program
 
-	return bpfman.ManagedProgram{
-		Managed: &bpfman.LoadedProgramInfo{
-			Name:       spec.ProgramName(),
-			Type:       programType,
-			ObjectPath: spec.ObjectPath(),
-			PinPath:    progPinPath,
-			PinDir:     mapsDir,
-		},
-		Kernel: ToKernelProgram(info, license),
+	return bpfman.LoadOutput{
+		PinPath:      progPinPath,
+		MapsDir:      mapsDir,
+		Program:      ToKernelProgram(info, license),
+		License:      license,
+		InferredType: programType,
 	}, nil
 }
 

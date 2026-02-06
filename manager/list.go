@@ -260,8 +260,8 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 			return programs[i].Spec.KernelID < programs[j].Spec.KernelID
 		}
 		// Fallback for zero IDs: sort by type, then name
-		if programs[i].Spec.Load.ProgramType != programs[j].Spec.Load.ProgramType {
-			return programs[i].Spec.Load.ProgramType < programs[j].Spec.Load.ProgramType
+		if programs[i].Spec.Load.ProgramType() != programs[j].Spec.Load.ProgramType() {
+			return programs[i].Spec.Load.ProgramType() < programs[j].Spec.Load.ProgramType()
 		}
 		return programs[i].Spec.Meta.Name < programs[j].Spec.Meta.Name
 	})

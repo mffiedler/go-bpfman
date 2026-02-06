@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     image_source TEXT,           -- JSON ImageSource struct, NULL if file-loaded
     owner TEXT,
     description TEXT,
+    license TEXT,                -- ELF license string from bytecode
     gpl_compatible INTEGER NOT NULL DEFAULT 0,
     metadata_json TEXT NOT NULL DEFAULT '{}', -- User key-value metadata as JSON
     created_at TEXT NOT NULL,
