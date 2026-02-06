@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
+	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
@@ -151,7 +153,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		LinkPinPath:       linkPinPath,
 		MapPinDir:         mapPinDir,
 	}
-	link, err := m.kernel.AttachXDPExtension(ctx, extSpec)
+	attachOut, err := m.kernel.AttachXDPExtension(ctx, extSpec)
 	if err != nil {
 		// Stale dispatcher recovery: the DB record exists but the
 		// bpffs pin is gone (e.g., fresh mount after pod restart while
@@ -219,7 +221,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 			LinkPinPath:       linkPinPath,
 			MapPinDir:         mapPinDir,
 		}
-		link, err = m.kernel.AttachXDPExtension(ctx, extSpec)
+		attachOut, err = m.kernel.AttachXDPExtension(ctx, extSpec)
 		if err != nil {
 			primaryErr := fmt.Errorf("attach XDP extension to %s slot %d (after recreate): %w", ifname, position, err)
 			_ = rec.Fail(outcome.Step{
@@ -237,12 +239,40 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		}
 	}
 
+	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
+	linkSpec := bpfman.NewPinnedLinkSpec(
+		bpfman.LinkID(attachOut.LinkID),
+		programKernelID,
+		bpfman.XDPDetails{
+			Interface:    ifname,
+			Ifindex:      uint32(ifindex),
+			Priority:     50, // Default priority
+			Position:     int32(position),
+			ProceedOn:    []int32{2}, // XDP_PASS
+			Nsid:         nsid,
+			DispatcherID: dispState.KernelID,
+			Revision:     dispState.Revision,
+		},
+		*bpffs.NewLinkPath(linkPinPath),
+		time.Now(),
+	)
+
+	// Construct Link with Status from AttachOutput
+	link := bpfman.Link{
+		Spec: linkSpec,
+		Status: bpfman.LinkStatus{
+			Kernel:     attachOut.KernelLink,
+			KernelSeen: attachOut.KernelLink != nil,
+			PinPresent: attachOut.PinPath != "",
+		},
+	}
+
 	// Record successful extension attach
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindAttachExtension,
 		Target: target,
 		Details: outcome.LinkDetails{
-			LinkID:       uint32(link.Spec.ID),
+			LinkID:       attachOut.LinkID,
 			ProgramID:    programKernelID,
 			Interface:    ifname,
 			PinPath:      linkPinPath,
@@ -256,23 +286,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		return m.kernel.DetachLink(ctx, linkPinPath)
 	})
 
-	// COMPUTE: Build link record with XDP details (enrich the kernel-returned record)
-	details := bpfman.XDPDetails{
-		Interface:    ifname,
-		Ifindex:      uint32(ifindex),
-		Priority:     50, // Default priority
-		Position:     int32(position),
-		ProceedOn:    []int32{2}, // XDP_PASS
-		Nsid:         nsid,
-		DispatcherID: dispState.KernelID,
-		Revision:     dispState.Revision,
-	}
-	// Use the ID from the kernel-returned link, rebuild record with enriched details
-	link.Spec.Details = details
-
 	// EXECUTE: Save link metadata directly to store
-	// Set the program ID before saving (kernel adapter doesn't know it)
-	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 

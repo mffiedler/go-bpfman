@@ -179,31 +179,31 @@ func (k *stubKernel) GetPinned(ctx context.Context, pinPath string) (*kernel.Pin
 }
 
 // ProgramAttacher
-func (k *stubKernel) AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTracepoint not implemented")
 }
 
-func (k *stubKernel) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachXDP not implemented")
 }
 
-func (k *stubKernel) AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachKprobe not implemented")
 }
 
-func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeLocal not implemented")
 }
 
-func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.Link, error) {
+func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeContainer not implemented")
 }
 
-func (k *stubKernel) AttachFentry(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachFentry(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachFentry not implemented")
 }
 
-func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.Link, error) {
+func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachFexit not implemented")
 }
 
@@ -212,7 +212,7 @@ func (k *stubKernel) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XD
 	panic("stubKernel.AttachXDPDispatcher not implemented")
 }
 
-func (k *stubKernel) AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.Link, error) {
+func (k *stubKernel) AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachXDPExtension not implemented")
 }
 
@@ -220,11 +220,11 @@ func (k *stubKernel) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCD
 	panic("stubKernel.AttachTCDispatcher not implemented")
 }
 
-func (k *stubKernel) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error) {
+func (k *stubKernel) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTCExtension not implemented")
 }
 
-func (k *stubKernel) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.Link, error) {
+func (k *stubKernel) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTCX not implemented")
 }
 

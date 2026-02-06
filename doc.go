@@ -2,7 +2,7 @@
 // This is the root package containing shared domain types used across
 // the client, manager, and server components.
 //
-// # Type Overview
+// # Program Type Overview
 //
 // The core types form a hierarchy reflecting the program lifecycle:
 //
@@ -17,7 +17,7 @@
 //	    ├── Links     - Attached links with their own spec/status
 //	    └── Maps      - Associated kernel maps
 //
-// # Lifecycle Flow
+// # Program Lifecycle Flow
 //
 // 1. LoadSpec: User provides validated input describing what to load.
 // Created via NewLoadSpec() or builder methods. Immutable after construction.
@@ -37,9 +37,63 @@
 // 5. Program: Combines Spec + Status. The coherency and GC systems compare
 // these to detect drift and generate remediation actions.
 //
-// # Key Distinction
+// # Link Type Overview
+//
+// Links follow a parallel pattern to programs:
+//
+//	Link              - The complete domain object combining Spec and Status
+//	├── LinkSpec      - DB-backed desired state (what bpfman manages)
+//	│   ├── ID        - Kernel-assigned or synthetic link ID
+//	│   ├── ProgramID - The program this link attaches
+//	│   ├── Kind      - Link type (tracepoint, kprobe, xdp, tc, etc.)
+//	│   ├── PinPath   - Optional bpffs pin path
+//	│   └── Details   - Type-specific details (sealed interface)
+//	└── LinkStatus    - Observed runtime state
+//	    ├── Kernel    - Live kernel link info (nil if synthetic/not present)
+//	    ├── KernelSeen - Whether kernel enumeration found the link
+//	    └── PinPresent - Whether the pin path exists on filesystem
+//
+// # Link Lifecycle Flow
+//
+// 1. *AttachSpec (e.g., TracepointAttachSpec): User provides validated input
+// describing what to attach. Each attach type has its own spec type containing
+// the program ID and type-specific parameters.
+//
+// 2. AttachOutput: Transient result from kernel attach operation. Contains
+// kernel-assigned link ID, kernel link info, and pin path. Not stored - just
+// passes data from I/O boundary to manager.
+//
+//	AttachOutput {
+//	    LinkID     uint32       // kernel-assigned or synthetic
+//	    KernelLink *kernel.Link // nil for synthetic links
+//	    PinPath    string       // where link was pinned
+//	    Synthetic  bool         // true for perf_event-based links
+//	}
+//
+// 3. LinkSpec: Manager combines *AttachSpec + AttachOutput and stores it in
+// the database. The manager constructs the LinkSpec using the attach spec's
+// details and the kernel-returned IDs/paths.
+//
+// 4. LinkStatus: Observed by querying kernel and filesystem. For synthetic
+// links (container uprobes), the kernel link is nil and KernelSeen is false.
+//
+// 5. Link: Combines Spec + Status. The coherency and GC systems compare
+// these to detect drift and generate remediation actions.
+//
+// # Synthetic Links
+//
+// Some attach types (e.g., container uprobes) use perf_event-based mechanisms
+// that cannot be pinned and don't have kernel link IDs. For these, bpfman
+// generates synthetic link IDs in the range 0x80000000-0xFFFFFFFF to avoid
+// collision with real kernel link IDs. The IsSyntheticLinkID() function
+// identifies these.
+//
+// # Key Distinctions
 //
 // LoadSpec is input (what to load), ProgramSpec is stored output (what was
-// loaded). They share some fields but serve different purposes in the
-// lifecycle.
+// loaded). They share some fields but serve different purposes.
+//
+// Similarly, *AttachSpec is input (what to attach), LinkSpec is stored output
+// (what was attached). The AttachOutput bridges the I/O boundary, carrying
+// kernel-assigned IDs to the manager for LinkSpec construction.
 package bpfman

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
+	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
@@ -171,7 +173,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		LinkPinPath:       linkPinPath,
 		MapPinDir:         mapPinDir,
 	}
-	link, err := m.kernel.AttachTCExtension(ctx, extSpec)
+	attachOut, err := m.kernel.AttachTCExtension(ctx, extSpec)
 	if err != nil {
 		// The dispatcher DB record may be stale: the kernel program
 		// survives (held by a tc filter) but its bpffs pin is gone
@@ -242,7 +244,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 			LinkPinPath:       linkPinPath,
 			MapPinDir:         mapPinDir,
 		}
-		link, err = m.kernel.AttachTCExtension(ctx, extSpec)
+		attachOut, err = m.kernel.AttachTCExtension(ctx, extSpec)
 		if err != nil {
 			primaryErr := fmt.Errorf("attach TC extension to %s %s slot %d (after recreate): %w", ifname, direction, position, err)
 			_ = rec.Fail(outcome.Step{
@@ -260,12 +262,41 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		}
 	}
 
+	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
+	linkSpec := bpfman.NewPinnedLinkSpec(
+		bpfman.LinkID(attachOut.LinkID),
+		programKernelID,
+		bpfman.TCDetails{
+			Interface:    ifname,
+			Ifindex:      uint32(ifindex),
+			Direction:    direction,
+			Priority:     int32(priority),
+			Position:     int32(position),
+			ProceedOn:    proceedOn,
+			Nsid:         nsid,
+			DispatcherID: dispState.KernelID,
+			Revision:     dispState.Revision,
+		},
+		*bpffs.NewLinkPath(linkPinPath),
+		time.Now(),
+	)
+
+	// Construct Link with Status from AttachOutput
+	link := bpfman.Link{
+		Spec: linkSpec,
+		Status: bpfman.LinkStatus{
+			Kernel:     attachOut.KernelLink,
+			KernelSeen: attachOut.KernelLink != nil,
+			PinPresent: attachOut.PinPath != "",
+		},
+	}
+
 	// Record successful extension attach
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindAttachExtension,
 		Target: target,
 		Details: outcome.LinkDetails{
-			LinkID:       uint32(link.Spec.ID),
+			LinkID:       attachOut.LinkID,
 			ProgramID:    programKernelID,
 			Interface:    ifname,
 			PinPath:      linkPinPath,
@@ -279,25 +310,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		return m.kernel.DetachLink(ctx, linkPinPath)
 	})
 
-	// COMPUTE: Update link record with TC details
-	// The kernel attach function populates ID, Kind, PinPath, CreatedAt
-	// We need to add the TC-specific details
-	link.Spec.Details = bpfman.TCDetails{
-		Interface:    ifname,
-		Ifindex:      uint32(ifindex),
-		Direction:    direction,
-		Priority:     int32(priority),
-		Position:     int32(position),
-		ProceedOn:    proceedOn,
-		Nsid:         nsid,
-		DispatcherID: dispState.KernelID,
-		Revision:     dispState.Revision,
-	}
-
 	// EXECUTE: Save link metadata directly to store
-	// The link ID is populated by the kernel attach function (kernel-assigned for real links)
-	// Set the program ID before saving (kernel adapter doesn't know it)
-	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
@@ -483,7 +496,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 		"order", order)
 
 	// KERNEL I/O: Attach program using TCX link with computed order
-	link, err := m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
+	attachOut, err := m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
 	if err != nil {
 		primaryErr := fmt.Errorf("attach TCX to %s %s: %w", ifname, direction, err)
 		_ = rec.Fail(outcome.Step{
@@ -499,12 +512,37 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 		return fail(primaryErr)
 	}
 
+	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
+	linkSpec := bpfman.NewPinnedLinkSpec(
+		bpfman.LinkID(attachOut.LinkID),
+		programKernelID,
+		bpfman.TCXDetails{
+			Interface: ifname,
+			Ifindex:   uint32(ifindex),
+			Direction: direction,
+			Priority:  int32(priority),
+			Nsid:      nsid,
+		},
+		*bpffs.NewLinkPath(linkPinPath),
+		time.Now(),
+	)
+
+	// Construct Link with Status from AttachOutput
+	link := bpfman.Link{
+		Spec: linkSpec,
+		Status: bpfman.LinkStatus{
+			Kernel:     attachOut.KernelLink,
+			KernelSeen: attachOut.KernelLink != nil,
+			PinPresent: attachOut.PinPath != "",
+		},
+	}
+
 	// Record successful TCX attach
 	_ = rec.Complete(outcome.Step{
 		Kind:   outcome.StepKindAttachTCX,
 		Target: target,
 		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Spec.ID),
+			LinkID:    attachOut.LinkID,
 			ProgramID: programKernelID,
 			Interface: ifname,
 			PinPath:   linkPinPath,
@@ -517,21 +555,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 		return m.kernel.DetachLink(ctx, linkPinPath)
 	})
 
-	// COMPUTE: Update link record with TCX details
-	// The kernel attach function populates ID, Kind, PinPath, CreatedAt
-	// We need to add the TCX-specific details
-	link.Spec.Details = bpfman.TCXDetails{
-		Interface: ifname,
-		Ifindex:   uint32(ifindex),
-		Direction: direction,
-		Priority:  int32(priority),
-		Nsid:      nsid,
-	}
-
 	// EXECUTE: Save link metadata directly to store
-	// The link ID is populated by the kernel attach function (kernel-assigned for real links)
-	// Set the program ID before saving (kernel adapter doesn't know it)
-	link.Spec.ProgramID = programKernelID
 	if err := m.store.SaveLink(ctx, link.Spec); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 

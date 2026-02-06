@@ -8,13 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/nsenter"
@@ -22,7 +20,7 @@ import (
 
 // AttachUprobeLocal attaches a pinned program to a user-space function
 // in the current namespace. Does not spawn a helper, so no lock scope needed.
-func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error) {
 	k.logger.Debug("AttachUprobeLocal called",
 		"target", target,
 		"fn_name", fnName,
@@ -33,55 +31,27 @@ func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath, targ
 
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
 	defer prog.Close()
 
 	// Regular uprobe - attach directly
-	linkID, err := k.doAttachUprobeLocal(progPinPath, target, fnName, offset, retprobe, linkPinPath)
+	linkID, kernelLink, err := k.doAttachUprobeLocal(progPinPath, target, fnName, offset, retprobe, linkPinPath)
 	if err != nil {
-		return bpfman.Link{}, err
+		return bpfman.AttachOutput{}, err
 	}
 
-	// Determine link kind based on retprobe flag
-	linkKind := bpfman.LinkKindUprobe
-	if retprobe {
-		linkKind = bpfman.LinkKindUretprobe
-	}
-
-	// Load pinned link to get full info
-	var kl kernel.Link
-	if linkPinPath != "" {
-		pinnedLink, err := link.LoadPinnedLink(linkPinPath, nil)
-		if err == nil {
-			if info, err := pinnedLink.Info(); err == nil {
-				kl = *ToKernelLink(info)
-			}
-			pinnedLink.Close()
-		}
-	}
-
-	return bpfman.Link{
-		Spec: bpfman.LinkSpec{
-			ID:        bpfman.LinkID(linkID),
-			Kind:      linkKind,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
-			CreatedAt: time.Now(),
-			Details:   bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: 0},
-			// ProgramID is set by the manager after this call
-		},
-		Status: bpfman.LinkStatus{
-			Kernel:     &kl,
-			KernelSeen: true,
-			PinPresent: linkPinPath != "",
-		},
+	return bpfman.AttachOutput{
+		LinkID:     linkID,
+		KernelLink: kernelLink,
+		PinPath:    linkPinPath,
 	}, nil
 }
 
 // AttachUprobeContainer attaches a pinned program to a user-space function
 // in a container's mount namespace. Spawns bpfman-ns helper, so requires
 // lock scope to pass fd.
-func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.AttachOutput, error) {
 	k.logger.Debug("AttachUprobeContainer called",
 		"target", target,
 		"fn_name", fnName,
@@ -94,7 +64,7 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
 	defer prog.Close()
 
@@ -103,46 +73,31 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 	// Note: syntheticID is returned, not a kernel link ID (container uprobes use perf_event)
 	syntheticID, err := k.attachUprobeViaHelper(scope, progPinPath, target, fnName, offset, retprobe, linkPinPath, containerPid)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach uprobe via helper: %w", err)
-	}
-
-	// Determine link kind based on retprobe flag
-	linkKind := bpfman.LinkKindUprobe
-	if retprobe {
-		linkKind = bpfman.LinkKindUretprobe
+		return bpfman.AttachOutput{}, fmt.Errorf("attach uprobe via helper: %w", err)
 	}
 
 	// Container uprobes use perf_event-based links which don't have kernel link IDs.
 	// The syntheticID is stored as the durable ID in the database.
 	// We also can't load the pinned link for container uprobes (they can't be pinned).
-	return bpfman.Link{
-		Spec: bpfman.LinkSpec{
-			ID:        bpfman.LinkID(syntheticID), // Store the synthetic ID
-			Kind:      linkKind,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
-			CreatedAt: time.Now(),
-			Details:   bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
-			// ProgramID is set by the manager after this call
-		},
-		Status: bpfman.LinkStatus{
-			Kernel:     nil, // No kernel link for perf_event-based uprobes
-			KernelSeen: false,
-			PinPresent: false, // Container uprobes can't be pinned
-		},
+	return bpfman.AttachOutput{
+		LinkID:     syntheticID,
+		KernelLink: nil, // No kernel link for perf_event-based uprobes
+		PinPath:    linkPinPath,
+		Synthetic:  true,
 	}, nil
 }
 
 // doAttachUprobeLocal attaches a uprobe directly (no namespace switching).
-func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (uint32, error) {
+func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (uint32, *kernel.Link, error) {
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
-		return 0, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+		return 0, nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
 	defer prog.Close()
 
 	ex, err := link.OpenExecutable(target)
 	if err != nil {
-		return 0, fmt.Errorf("open executable %s: %w", target, err)
+		return 0, nil, fmt.Errorf("open executable %s: %w", target, err)
 	}
 
 	opts := &link.UprobeOptions{Offset: offset}
@@ -153,14 +108,14 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		lnk, err = ex.Uprobe(fnName, prog, opts)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("attach uprobe to %s in %s: %w", fnName, target, err)
+		return 0, nil, fmt.Errorf("attach uprobe to %s in %s: %w", fnName, target, err)
 	}
 
 	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
 		lnk.Close()
-		return 0, fmt.Errorf("get link info: %w", err)
+		return 0, nil, fmt.Errorf("get link info: %w", err)
 	}
 	linkID := uint32(linkInfo.ID)
 
@@ -170,12 +125,12 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 	if linkPinPath != "" {
 		if err := pinWithRetry(lnk, linkPinPath); err != nil {
 			lnk.Close()
-			return 0, fmt.Errorf("pin link to %s: %w", linkPinPath, err)
+			return 0, nil, fmt.Errorf("pin link to %s: %w", linkPinPath, err)
 		}
 		k.logger.Debug("link pinned successfully", "path", linkPinPath)
 	}
 
-	return linkID, nil
+	return linkID, ToKernelLink(linkInfo), nil
 }
 
 // attachUprobeViaHelper re-execs the current binary with CGO-based namespace

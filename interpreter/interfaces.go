@@ -184,32 +184,34 @@ type PinInspector interface {
 }
 
 // ProgramAttacher attaches programs to hooks.
+// All methods return AttachOutput (raw kernel result) rather than Link,
+// allowing the manager to construct LinkSpec from AttachSpec + AttachOutput.
 type ProgramAttacher interface {
 	// AttachTracepoint attaches a pinned program to a tracepoint.
-	AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.Link, error)
+	AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.AttachOutput, error)
 	// AttachXDP attaches a pinned XDP program to a network interface.
-	AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.Link, error)
+	AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error)
 	// AttachKprobe attaches a pinned program to a kernel function.
 	// If retprobe is true, attaches as a kretprobe instead of kprobe.
-	AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.Link, error)
+	AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error)
 	// AttachUprobeLocal attaches a pinned program to a user-space function
 	// in the current namespace. Does not spawn a helper, so no lock scope needed.
 	// target is the path to the binary or library (e.g., /usr/lib/libc.so.6).
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
-	AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.Link, error)
+	AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error)
 	// AttachUprobeContainer attaches a pinned program to a user-space function
 	// in a container's mount namespace. Spawns bpfman-ns helper, so requires
 	// lock scope to pass fd.
 	// target is the path to the binary or library (resolved in the container's namespace).
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
 	// containerPid identifies the target container.
-	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.Link, error)
+	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.AttachOutput, error)
 	// AttachFentry attaches a pinned program to a kernel function entry point.
 	// The fnName was specified at load time and stored with the program.
-	AttachFentry(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.Link, error)
+	AttachFentry(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error)
 	// AttachFexit attaches a pinned program to a kernel function exit point.
 	// The fnName was specified at load time and stored with the program.
-	AttachFexit(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.Link, error)
+	AttachFexit(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error)
 }
 
 // XDPDispatcherResult holds the result of loading an XDP dispatcher.
@@ -240,7 +242,7 @@ type DispatcherAttacher interface {
 	// AttachXDPExtension loads a program from ELF as Extension type and attaches
 	// it to a dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
 	// targeting the dispatcher's slot function.
-	AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.Link, error)
+	AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error)
 
 	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
 	// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
@@ -250,7 +252,7 @@ type DispatcherAttacher interface {
 	// AttachTCExtension loads a program from ELF as Extension type and attaches
 	// it to a TC dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
 	// targeting the dispatcher's slot function.
-	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error)
+	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error)
 
 	// AttachTCX attaches a loaded program directly to an interface using TCX link.
 	// Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
@@ -263,7 +265,7 @@ type DispatcherAttacher interface {
 	//   - linkPinPath: Path to pin the TCX link
 	//   - netns: Optional network namespace path. If non-empty, attachment is performed in that namespace.
 	//   - order: Specifies where to insert the program in the TCX chain based on priority.
-	AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.Link, error)
+	AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error)
 }
 
 // LinkDetacher detaches links from hooks.

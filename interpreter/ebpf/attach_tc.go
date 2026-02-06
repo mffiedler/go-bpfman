@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -15,7 +14,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/netns"
@@ -237,28 +235,28 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 
 // AttachTCExtension loads a program from ELF as Extension type and attaches
 // it to a TC dispatcher slot. This follows the same pattern as XDP extension.
-func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	if err := spec.Validate(); err != nil {
-		return bpfman.Link{}, fmt.Errorf("invalid spec: %w", err)
+		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
 
 	// Load the pinned dispatcher to use as attach target
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned TC dispatcher %s: %w", spec.DispatcherPinPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load pinned TC dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
 	// Load the collection spec from the ELF file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load collection spec from %s: %w", spec.ObjectPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load collection spec from %s: %w", spec.ObjectPath, err)
 	}
 
 	// Verify the program exists in the collection
 	progSpec, ok := collSpec.Programs[spec.ProgramName]
 	if !ok {
-		return bpfman.Link{}, fmt.Errorf("program %q not found in %s", spec.ProgramName, spec.ObjectPath)
+		return bpfman.AttachOutput{}, fmt.Errorf("program %q not found in %s", spec.ProgramName, spec.ObjectPath)
 	}
 
 	// Modify the program spec to be Extension type targeting the dispatcher
@@ -285,7 +283,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 				for _, loaded := range mapReplacements {
 					loaded.Close()
 				}
-				return bpfman.Link{}, fmt.Errorf("load pinned map %s: %w", mapPath, err)
+				return bpfman.AttachOutput{}, fmt.Errorf("load pinned map %s: %w", mapPath, err)
 			}
 			mapReplacements[name] = m
 			k.logger.Debug("loaded pinned map for TC extension", "name", name, "path", mapPath)
@@ -310,20 +308,20 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 		MapReplacements: mapReplacements,
 	})
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load TC extension collection: %w", err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load TC extension collection: %w", err)
 	}
 	defer coll.Close()
 
 	// Get the loaded extension program
 	extensionProg := coll.Programs[spec.ProgramName]
 	if extensionProg == nil {
-		return bpfman.Link{}, fmt.Errorf("TC extension program %q not in loaded collection", spec.ProgramName)
+		return bpfman.AttachOutput{}, fmt.Errorf("TC extension program %q not in loaded collection", spec.ProgramName)
 	}
 
 	// Attach the extension using freplace link
 	lnk, err := link.AttachFreplace(dispatcherProg, progSpec.AttachTo, extensionProg)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("attach TC freplace to %s: %w", progSpec.AttachTo, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", progSpec.AttachTo, err)
 	}
 
 	success := false
@@ -343,45 +341,33 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	// Pin the link if path provided
 	if spec.LinkPinPath != "" {
 		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
-			return bpfman.Link{}, fmt.Errorf("pin TC extension link to %s: %w", spec.LinkPinPath, err)
+			return bpfman.AttachOutput{}, fmt.Errorf("pin TC extension link to %s: %w", spec.LinkPinPath, err)
 		}
 	}
 
 	// Get link info
 	linkInfo, err := lnk.Info()
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("get TC link info: %w", err)
+		return bpfman.AttachOutput{}, fmt.Errorf("get TC link info: %w", err)
 	}
 
 	success = true
 
-	kernelLinkID := uint32(linkInfo.ID)
-	kernelLink := ToKernelLink(linkInfo)
-	return bpfman.Link{
-		Spec: bpfman.LinkSpec{
-			ID:        bpfman.LinkID(kernelLinkID),
-			Kind:      bpfman.LinkKindTC,
-			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
-			CreatedAt: time.Now(),
-			Details:   bpfman.TCDetails{Position: int32(spec.Position)},
-			// ProgramID is set by the manager after this call
-		},
-		Status: bpfman.LinkStatus{
-			Kernel:     kernelLink,
-			KernelSeen: true,
-			PinPresent: spec.LinkPinPath != "",
-		},
+	return bpfman.AttachOutput{
+		LinkID:     uint32(linkInfo.ID),
+		KernelLink: ToKernelLink(linkInfo),
+		PinPath:    spec.LinkPinPath,
 	}, nil
 }
 
 // AttachTCX attaches a loaded program directly to an interface using TCX link.
 // Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
 // The order parameter specifies where to insert the program in the TCX chain.
-func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.Link, error) {
+func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
 	// Load the pinned program
 	prog, err := ebpf.LoadPinnedProgram(programPinPath, nil)
 	if err != nil {
-		return bpfman.Link{}, fmt.Errorf("load pinned program %s: %w", programPinPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", programPinPath, err)
 	}
 	defer prog.Close()
 
@@ -393,7 +379,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 	case "egress":
 		attachType = ebpf.AttachTCXEgress
 	default:
-		return bpfman.Link{}, fmt.Errorf("invalid TCX direction %q: must be ingress or egress", direction)
+		return bpfman.AttachOutput{}, fmt.Errorf("invalid TCX direction %q: must be ingress or egress", direction)
 	}
 
 	// Convert TCXAttachOrder to cilium/ebpf link.Anchor
@@ -417,7 +403,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		k.logger.Debug("entering network namespace for TCX attachment", "netns", netnsPath, "ifindex", ifindex, "direction", direction)
 	}
 
-	var result bpfman.Link
+	var result bpfman.AttachOutput
 	err = netns.Run(netnsPath, func() error {
 		// Attach using TCX link with ordering anchor
 		lnk, err := link.AttachTCX(link.TCXOptions{
@@ -458,26 +444,15 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		}
 
 		success = true
-		kernelLinkID := uint32(linkInfo.ID)
-		kernelLink := ToKernelLink(linkInfo)
-		result = bpfman.Link{
-			Spec: bpfman.LinkSpec{
-				ID:        bpfman.LinkID(kernelLinkID),
-				Kind:      bpfman.LinkKindTCX,
-				PinPath:   bpffs.NewLinkPath(linkPinPath),
-				CreatedAt: time.Now(),
-				// ProgramID is set by the manager after this call
-			},
-			Status: bpfman.LinkStatus{
-				Kernel:     kernelLink,
-				KernelSeen: true,
-				PinPresent: linkPinPath != "",
-			},
+		result = bpfman.AttachOutput{
+			LinkID:     uint32(linkInfo.ID),
+			KernelLink: ToKernelLink(linkInfo),
+			PinPath:    linkPinPath,
 		}
 		return nil
 	})
 	if err != nil {
-		return bpfman.Link{}, err
+		return bpfman.AttachOutput{}, err
 	}
 
 	return result, nil

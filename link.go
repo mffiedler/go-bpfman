@@ -397,6 +397,19 @@ type Link struct {
 	Status LinkStatus `json:"status"`
 }
 
+// AttachOutput is the raw result of a kernel attach operation.
+// This is transient I/O boundary data - the manager uses it along with
+// the AttachSpec to construct the stored LinkSpec.
+//
+// AttachOutput parallels LoadOutput for programs: it captures what the
+// kernel returned without mixing in user-provided metadata.
+type AttachOutput struct {
+	LinkID     uint32       // kernel-assigned link ID, or synthetic ID for perf_event
+	KernelLink *kernel.Link // kernel info, nil for synthetic links
+	PinPath    string       // where link was pinned, empty if ephemeral
+	Synthetic  bool         // true if this is a synthetic link (no kernel link)
+}
+
 // NewPinnedLinkSpec creates a fully-detailed spec for a pinned link.
 // Kind is derived from details to enforce the invariant.
 func NewPinnedLinkSpec(id LinkID, programID uint32, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkSpec {
