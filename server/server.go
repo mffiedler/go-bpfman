@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
 	"github.com/frobware/go-bpfman/interpreter"
@@ -84,10 +85,14 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Create kernel adapter
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
+	// Ensure runtime directories and bpffs mount
+	if err := runtime.Ensure(root, runtime.RealMounter{}, logger); err != nil {
+		return fmt.Errorf("ensure runtime: %w", err)
+	}
+
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	// Manager.New handles directory creation and bpffs mounting.
-	mgr, err := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	mgr, err := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}

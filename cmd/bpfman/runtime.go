@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/manager"
@@ -29,8 +30,14 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	// Create kernel adapter
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
-	// Create manager with real mounter
-	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	// Ensure runtime directories and bpffs mount
+	if err := runtime.Ensure(root, runtime.RealMounter{}, logger); err != nil {
+		store.Close()
+		return nil, nil, fmt.Errorf("ensure runtime: %w", err)
+	}
+
+	// Create manager
+	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("create manager: %w", err)

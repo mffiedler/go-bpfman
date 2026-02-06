@@ -38,7 +38,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -84,39 +83,23 @@ type Manager struct {
 //   - store: database for program/link metadata
 //   - kernel: kernel operations adapter
 //   - programDiscoverer: discovers existing kernel programs
-//   - mounter: handles bpffs mounting (use RealMounter for production, NoOpMounter for tests)
 //   - logger: structured logger (nil uses slog.Default())
 //
-// New ensures runtime directories exist and bpffs is mounted via the
-// provided mounter. For tests, use NoOpMounter to skip actual mounting.
+// Callers must call bpfmanfs/runtime.Ensure() before New() to create
+// runtime directories and mount bpffs.
 //
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
-func New(root bpfmanfs.Root, store interpreter.Store, kernel interpreter.KernelOperations, programDiscoverer interpreter.ProgramDiscoverer, mounter BPFFSMounter, logger *slog.Logger) (*Manager, error) {
+func New(
+	root bpfmanfs.Root,
+	store interpreter.Store,
+	kernel interpreter.KernelOperations,
+	programDiscoverer interpreter.ProgramDiscoverer,
+	logger *slog.Logger,
+) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	setupLogger := logger.With("component", "setup")
-
-	// Ensure runtime directories exist
-	setupLogger.Debug("ensuring runtime directories",
-		"base", root.Base(),
-		"fs", root.BPFFSMountPoint(),
-		"db", root.DBPath())
-
-	for _, dir := range root.RuntimeDirs() {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			setupLogger.Error("failed to create directory", "dir", dir, "error", err)
-			return nil, fmt.Errorf("create directory %s: %w", dir, err)
-		}
-	}
-
-	// Mount bpffs via the provided mounter
-	if err := mounter.EnsureMounted(root.BPFFSMountPoint()); err != nil {
-		setupLogger.Error("failed to mount bpffs", "error", err)
-		return nil, err
-	}
-	setupLogger.Debug("runtime directories ready")
 
 	return &Manager{
 		root:              root,
@@ -125,7 +108,7 @@ func New(root bpfmanfs.Root, store interpreter.Store, kernel interpreter.KernelO
 		programDiscoverer: programDiscoverer,
 		executor:          interpreter.NewExecutor(store, kernel),
 		logger:            logger.With("component", "manager"),
-		mutatedSinceGC:    true, // Force GC on first operation
+		mutatedSinceGC:    true,
 	}, nil
 }
 

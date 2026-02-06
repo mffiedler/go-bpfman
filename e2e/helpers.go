@@ -20,6 +20,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/interpreter/image/oci"
@@ -92,8 +93,11 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	// Create kernel adapter
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
-	// Create manager (handles directory creation and bpffs mounting)
-	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), manager.RealMounter{}, logger)
+	// Ensure runtime directories and bpffs mount
+	require.NoError(t, runtime.Ensure(root, runtime.RealMounter{}, logger), "failed to ensure runtime")
+
+	// Create manager
+	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	require.NoError(t, err, "failed to create manager")
 
 	cleanup := func() error {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
@@ -58,7 +59,11 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	if discoverer == nil {
 		discoverer = newFakeDiscoverer()
 	}
-	mgr, err := manager.New(root, store, kernel, discoverer, manager.NoOpMounter{}, testLogger())
+
+	// Centralised ensure call in fixture
+	require.NoError(t, runtime.Ensure(root, runtime.NoOpMounter{}, testLogger()))
+
+	mgr, err := manager.New(root, store, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{
