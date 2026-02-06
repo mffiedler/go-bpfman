@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
@@ -329,7 +329,7 @@ func Snapshot(
 	ctx context.Context,
 	store StoreLister,
 	kern KernelLister,
-	scanner *bpffs.Scanner,
+	scanner *bpfmanfs.Scanner,
 ) (*World, error) {
 	w := &World{
 		Meta: SnapshotMeta{
@@ -358,11 +358,11 @@ func Snapshot(
 	}
 
 	// FS indexes
-	fsProgPins := make(map[uint32]string)               // kernelID -> path
-	fsLinkDirs := make(map[uint32]string)               // programID -> path
-	fsMapDirs := make(map[uint32]string)                // programID -> path
-	fsDispDirs := make(map[string]*bpffs.DispatcherDir) // "type/nsid/ifindex" -> dir
-	fsDispLinks := make(map[string]string)              // "type/nsid/ifindex" -> path
+	fsProgPins := make(map[uint32]string)                  // kernelID -> path
+	fsLinkDirs := make(map[uint32]string)                  // programID -> path
+	fsMapDirs := make(map[uint32]string)                   // programID -> path
+	fsDispDirs := make(map[string]*bpfmanfs.DispatcherDir) // "type/nsid/ifindex" -> dir
+	fsDispLinks := make(map[string]string)                 // "type/nsid/ifindex" -> path
 
 	for pin, err := range scanner.ProgPins(ctx) {
 		if err != nil {
@@ -652,7 +652,7 @@ func GetProgram(
 	ctx context.Context,
 	storeGetter StoreGetter,
 	kern KernelGetter,
-	scanner *bpffs.Scanner,
+	scanner *bpfmanfs.Scanner,
 	kernelID uint32,
 ) (ProgramView, error) {
 	row := ProgramView{KernelID: kernelID}
@@ -702,7 +702,7 @@ func GetLink(
 	ctx context.Context,
 	linkGetter LinkGetter,
 	kern KernelLinkGetter,
-	scanner *bpffs.Scanner,
+	scanner *bpfmanfs.Scanner,
 	linkID bpfman.LinkID,
 ) (LinkInfo, error) {
 	info := LinkInfo{}
@@ -753,7 +753,7 @@ func GetDispatcher(
 	dispGetter DispatcherGetter,
 	kern KernelGetter,
 	kernLinkGetter KernelLinkGetter,
-	scanner *bpffs.Scanner,
+	scanner *bpfmanfs.Scanner,
 	dispType string,
 	nsid uint64,
 	ifindex uint32,

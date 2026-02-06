@@ -13,6 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
@@ -106,9 +107,9 @@ func (k *fakeKernelSource) GetLinkByID(ctx context.Context, id uint32) (kernel.L
 	return kernel.Link{}, errors.New("link not found")
 }
 
-func testScannerDirs(t *testing.T) bpffs.ScannerDirs {
+func testScannerDirs(t *testing.T) bpfmanfs.ScannerDirs {
 	base := t.TempDir()
-	return bpffs.ScannerDirs{
+	return bpfmanfs.ScannerDirs{
 		FS:        base,
 		XDP:       filepath.Join(base, "xdp"),
 		TCIngress: filepath.Join(base, "tc-ingress"),
@@ -120,7 +121,7 @@ func testScannerDirs(t *testing.T) bpffs.ScannerDirs {
 
 func TestSnapshot_ManagedPrograms(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramRecord{
@@ -151,7 +152,7 @@ func TestSnapshot_ManagedPrograms(t *testing.T) {
 
 func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramRecord{
@@ -197,7 +198,7 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 	// Create an orphan prog pin on FS
 	require.NoError(t, os.WriteFile(filepath.Join(dirs.FS, "prog_888"), nil, 0644))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
 
@@ -214,7 +215,7 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 
 func TestSnapshot_Links(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		links: []bpfman.LinkRecord{
@@ -263,7 +264,7 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dispDir, "link_0"), nil, 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dispDir, "link_1"), nil, 0644))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		dispatchers: []dispatcher.State{
@@ -307,7 +308,7 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 	dispDir := filepath.Join(dirs.XDP, "dispatcher_99_2_1")
 	require.NoError(t, os.Mkdir(dispDir, 0755))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
 
@@ -386,7 +387,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 	pinPath := filepath.Join(dirs.FS, "prog_100")
 	require.NoError(t, os.WriteFile(pinPath, nil, 0644))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramRecord{
@@ -413,7 +414,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 
 func TestGetProgram_StoreOnly(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramRecord{
@@ -436,7 +437,7 @@ func TestGetProgram_StoreOnly(t *testing.T) {
 
 func TestGetProgram_KernelOnly(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}} // Not in store
 
@@ -458,7 +459,7 @@ func TestGetProgram_KernelOnly(t *testing.T) {
 
 func TestGetProgram_NotFound(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
@@ -476,7 +477,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(pinPath), 0755))
 	require.NoError(t, os.WriteFile(pinPath, nil, 0644))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	// ID is now the kernel link ID for non-synthetic links
 	store := &fakeStore{
@@ -506,7 +507,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 
 func TestGetLink_StoreOnly(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	// ID is now the kernel link ID for non-synthetic links
 	store := &fakeStore{
@@ -530,7 +531,7 @@ func TestGetLink_NotInStore(t *testing.T) {
 	// GetLink requires the link to be in the store (it takes a durable LinkID).
 	// If the link is not in the store, it returns ErrNotFound.
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{} // Not in store
 
@@ -547,7 +548,7 @@ func TestGetLink_NotInStore(t *testing.T) {
 
 func TestGetLink_NotFound(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
@@ -569,7 +570,7 @@ func TestGetDispatcher_FullyPresent(t *testing.T) {
 	linkPin := filepath.Join(dirs.XDP, "dispatcher_1_2_link")
 	require.NoError(t, os.WriteFile(linkPin, nil, 0644))
 
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		dispatchers: []dispatcher.State{
@@ -604,7 +605,7 @@ func TestGetDispatcher_FullyPresent(t *testing.T) {
 
 func TestGetDispatcher_StoreOnly(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		dispatchers: []dispatcher.State{
@@ -630,7 +631,7 @@ func TestGetDispatcher_StoreOnly(t *testing.T) {
 
 func TestGetDispatcher_NotFound(t *testing.T) {
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
@@ -644,7 +645,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	// Verify that Snapshot() returns a World where links have Details populated.
 	// This is critical for the ATTACH column in CLI output.
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	// Create links WITH details populated (simulating what the real store returns)
 	store := &fakeStore{
@@ -708,7 +709,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 	// Verify that links correlated to programs also have details populated.
 	dirs := testScannerDirs(t)
-	scanner := bpffs.NewScanner(dirs)
+	scanner := bpfmanfs.NewScannerFromDirs(dirs)
 
 	store := &fakeStore{
 		programs: map[uint32]bpfman.ProgramRecord{

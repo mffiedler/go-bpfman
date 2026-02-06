@@ -1,4 +1,4 @@
-package bpffs
+package bpfmanfs
 
 import (
 	"context"
@@ -10,34 +10,37 @@ import (
 	"strings"
 )
 
-// ScannerDirs holds the directory paths needed by Scanner.
-// This avoids importing the config package, preventing import cycles.
-type ScannerDirs struct {
-	// FS is the bpffs mount point (e.g., /run/bpfman/fs).
-	FS string `json:"fs"`
-	// XDP is the XDP dispatcher directory.
-	XDP string `json:"xdp"`
-	// TCIngress is the TC ingress dispatcher directory.
-	TCIngress string `json:"tc_ingress"`
-	// TCEgress is the TC egress dispatcher directory.
-	TCEgress string `json:"tc_egress"`
-	// Maps is the maps directory.
-	Maps string `json:"maps"`
-	// Links is the links directory.
-	Links string `json:"links"`
-}
-
-// Scanner provides read-only access to bpfman's filesystem layout.
+// Scanner provides read-only access to bpfman's bpffs layout.
 // It encapsulates path conventions and provides streaming iterators
 // for filesystem facts.
 type Scanner struct {
-	dirs        ScannerDirs
+	b           BPFFS
 	onMalformed func(path string, err error)
 }
 
-// NewScanner creates a Scanner for the given directories.
-func NewScanner(dirs ScannerDirs) *Scanner {
-	return &Scanner{dirs: dirs}
+// NewScanner creates a Scanner for the given BPFFS domain.
+func NewScanner(b BPFFS) *Scanner {
+	b.mustValid()
+	return &Scanner{b: b}
+}
+
+// ScannerDirs holds explicit directory paths for Scanner construction.
+// Use this in tests where you don't have a full Root.
+type ScannerDirs struct {
+	FS        string `json:"fs"`
+	XDP       string `json:"xdp"`
+	TCIngress string `json:"tc_ingress"`
+	TCEgress  string `json:"tc_egress"`
+	Maps      string `json:"maps"`
+	Links     string `json:"links"`
+}
+
+// NewScannerFromDirs creates a Scanner from explicit directory paths.
+// This is primarily for tests that don't have a full Root.
+func NewScannerFromDirs(dirs ScannerDirs) *Scanner {
+	return &Scanner{
+		b: BPFFS{dirs: &dirs},
+	}
 }
 
 // WithOnMalformed sets a callback for unparseable filesystem entries.
@@ -55,26 +58,26 @@ func (s *Scanner) reportMalformed(path string, err error) {
 	}
 }
 
-// ProgPin represents a program pin: {dirs.FS}/prog_{kernel_id}
+// ProgPin represents a program pin: {fs}/prog_{kernel_id}
 type ProgPin struct {
 	Path     string `json:"path"`
 	KernelID uint32 `json:"kernel_id"`
 }
 
-// LinkDir represents a link directory: {dirs.FS}/links/{program_id}
+// LinkDir represents a link directory: {fs}/links/{program_id}
 type LinkDir struct {
 	Path      string `json:"path"`
 	ProgramID uint32 `json:"program_id"`
 }
 
-// MapDir represents a map directory: {dirs.FS}/maps/{program_id}
+// MapDir represents a map directory: {fs}/maps/{program_id}
 type MapDir struct {
 	Path      string `json:"path"`
 	ProgramID uint32 `json:"program_id"`
 }
 
 // DispatcherDir represents a dispatcher revision directory.
-// Path: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
+// Path: {fs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
 // LinkCount is derived by counting link_* files in the directory.
 type DispatcherDir struct {
 	Path      string `json:"path"`
@@ -85,8 +88,8 @@ type DispatcherDir struct {
 	LinkCount int    `json:"link_count"`
 }
 
-// DispatcherLinkPin represents a dispatcher link pin (XDP only).
-// Path: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_link
+// DispatcherLinkPin represents a dispatcher link pin.
+// Path: {fs}/{type}/dispatcher_{nsid}_{ifindex}_link
 type DispatcherLinkPin struct {
 	Path     string `json:"path"`
 	DispType string `json:"disp_type"`
@@ -104,17 +107,48 @@ type FSState struct {
 	DispatcherLinkPins []DispatcherLinkPin `json:"dispatcher_link_pins"`
 }
 
-// ProgPins returns an iterator over program pins in {dirs.FS}/prog_*.
+// fs returns the bpffs mount point path.
+func (s *Scanner) fs() string {
+	return s.b.mountPoint()
+}
+
+// xdpDir returns the XDP dispatcher directory.
+func (s *Scanner) xdpDir() string {
+	return s.b.xdpDir()
+}
+
+// tcIngressDir returns the TC ingress dispatcher directory.
+func (s *Scanner) tcIngressDir() string {
+	return s.b.tcIngressDir()
+}
+
+// tcEgressDir returns the TC egress dispatcher directory.
+func (s *Scanner) tcEgressDir() string {
+	return s.b.tcEgressDir()
+}
+
+// mapsDir returns the maps directory.
+func (s *Scanner) mapsDir() string {
+	return s.b.mapsDir()
+}
+
+// linksDir returns the links directory.
+func (s *Scanner) linksDir() string {
+	return s.b.linksDir()
+}
+
+// ProgPins returns an iterator over program pins in {fs}/prog_*.
 // Errors are yielded only for failures that prevent enumeration.
 // Malformed entries are skipped and reported via OnMalformed.
 func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 	return func(yield func(ProgPin, error) bool) {
-		entries, err := os.ReadDir(s.dirs.FS)
+		fs := s.fs()
+		entries, err := os.ReadDir(fs)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return // directory doesn't exist: no pins
 			}
-			yield(ProgPin{}, fmt.Errorf("read dir %s: %w", s.dirs.FS, err))
+			yield(ProgPin{}, fmt.Errorf("read dir %s: %w", fs, err))
 			return
 		}
 
@@ -132,12 +166,12 @@ func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 			suffix := strings.TrimPrefix(name, "prog_")
 			id, err := strconv.ParseUint(suffix, 10, 32)
 			if err != nil {
-				s.reportMalformed(filepath.Join(s.dirs.FS, name), fmt.Errorf("parse kernel ID: %w", err))
+				s.reportMalformed(filepath.Join(fs, name), fmt.Errorf("parse kernel ID: %w", err))
 				continue
 			}
 
 			pin := ProgPin{
-				Path:     filepath.Join(s.dirs.FS, name),
+				Path:     filepath.Join(fs, name),
 				KernelID: uint32(id),
 			}
 			if !yield(pin, nil) {
@@ -147,17 +181,18 @@ func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 	}
 }
 
-// LinkDirs returns an iterator over link directories in {dirs.FS}/links/{program_id}.
+// LinkDirs returns an iterator over link directories in {fs}/links/{program_id}.
 // Errors are yielded only for failures that prevent enumeration.
 // Malformed entries are skipped and reported via OnMalformed.
 func (s *Scanner) LinkDirs(ctx context.Context) iter.Seq2[LinkDir, error] {
 	return func(yield func(LinkDir, error) bool) {
-		entries, err := os.ReadDir(s.dirs.Links)
+		linksDir := s.linksDir()
+		entries, err := os.ReadDir(linksDir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return // directory doesn't exist: no link dirs
 			}
-			yield(LinkDir{}, fmt.Errorf("read dir %s: %w", s.dirs.Links, err))
+			yield(LinkDir{}, fmt.Errorf("read dir %s: %w", linksDir, err))
 			return
 		}
 
@@ -174,12 +209,12 @@ func (s *Scanner) LinkDirs(ctx context.Context) iter.Seq2[LinkDir, error] {
 			name := entry.Name()
 			id, err := strconv.ParseUint(name, 10, 32)
 			if err != nil {
-				s.reportMalformed(filepath.Join(s.dirs.Links, name), fmt.Errorf("parse program ID: %w", err))
+				s.reportMalformed(filepath.Join(linksDir, name), fmt.Errorf("parse program ID: %w", err))
 				continue
 			}
 
 			dir := LinkDir{
-				Path:      filepath.Join(s.dirs.Links, name),
+				Path:      filepath.Join(linksDir, name),
 				ProgramID: uint32(id),
 			}
 			if !yield(dir, nil) {
@@ -189,17 +224,18 @@ func (s *Scanner) LinkDirs(ctx context.Context) iter.Seq2[LinkDir, error] {
 	}
 }
 
-// MapDirs returns an iterator over map directories in {dirs.FS}/maps/{program_id}.
+// MapDirs returns an iterator over map directories in {fs}/maps/{program_id}.
 // Errors are yielded only for failures that prevent enumeration.
 // Malformed entries are skipped and reported via OnMalformed.
 func (s *Scanner) MapDirs(ctx context.Context) iter.Seq2[MapDir, error] {
 	return func(yield func(MapDir, error) bool) {
-		entries, err := os.ReadDir(s.dirs.Maps)
+		mapsDir := s.mapsDir()
+		entries, err := os.ReadDir(mapsDir)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return // directory doesn't exist: no map dirs
 			}
-			yield(MapDir{}, fmt.Errorf("read dir %s: %w", s.dirs.Maps, err))
+			yield(MapDir{}, fmt.Errorf("read dir %s: %w", mapsDir, err))
 			return
 		}
 
@@ -216,12 +252,12 @@ func (s *Scanner) MapDirs(ctx context.Context) iter.Seq2[MapDir, error] {
 			name := entry.Name()
 			id, err := strconv.ParseUint(name, 10, 32)
 			if err != nil {
-				s.reportMalformed(filepath.Join(s.dirs.Maps, name), fmt.Errorf("parse program ID: %w", err))
+				s.reportMalformed(filepath.Join(mapsDir, name), fmt.Errorf("parse program ID: %w", err))
 				continue
 			}
 
 			dir := MapDir{
-				Path:      filepath.Join(s.dirs.Maps, name),
+				Path:      filepath.Join(mapsDir, name),
 				ProgramID: uint32(id),
 			}
 			if !yield(dir, nil) {
@@ -232,7 +268,7 @@ func (s *Scanner) MapDirs(ctx context.Context) iter.Seq2[MapDir, error] {
 }
 
 // DispatcherDirs returns an iterator over dispatcher revision directories.
-// Path pattern: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
+// Path pattern: {fs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
 // LinkCount is the number of link_* files in each directory.
 // Errors are yielded only for failures that prevent enumeration.
 // Malformed entries are skipped and reported via OnMalformed.
@@ -242,9 +278,9 @@ func (s *Scanner) DispatcherDirs(ctx context.Context) iter.Seq2[DispatcherDir, e
 			name string
 			dir  string
 		}{
-			{"xdp", s.dirs.XDP},
-			{"tc-ingress", s.dirs.TCIngress},
-			{"tc-egress", s.dirs.TCEgress},
+			{"xdp", s.xdpDir()},
+			{"tc-ingress", s.tcIngressDir()},
+			{"tc-egress", s.tcEgressDir()},
 		}
 
 		for _, t := range dispTypes {
@@ -323,7 +359,7 @@ func (s *Scanner) countLinkFiles(dir string) int {
 }
 
 // DispatcherLinkPins returns an iterator over dispatcher link pins.
-// Path pattern: {dirs.FS}/{type}/dispatcher_{nsid}_{ifindex}_link
+// Path pattern: {fs}/{type}/dispatcher_{nsid}_{ifindex}_link
 // Errors are yielded only for failures that prevent enumeration.
 // Malformed entries are skipped and reported via OnMalformed.
 func (s *Scanner) DispatcherLinkPins(ctx context.Context) iter.Seq2[DispatcherLinkPin, error] {
@@ -332,9 +368,9 @@ func (s *Scanner) DispatcherLinkPins(ctx context.Context) iter.Seq2[DispatcherLi
 			name string
 			dir  string
 		}{
-			{"xdp", s.dirs.XDP},
-			{"tc-ingress", s.dirs.TCIngress},
-			{"tc-egress", s.dirs.TCEgress},
+			{"xdp", s.xdpDir()},
+			{"tc-ingress", s.tcIngressDir()},
+			{"tc-egress", s.tcEgressDir()},
 		}
 
 		for _, t := range dispTypes {
