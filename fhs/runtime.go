@@ -35,14 +35,9 @@ type Runtime struct {
 	root Root
 }
 
-// valid reports whether the Runtime was obtained from a valid Root.
-func (rt Runtime) valid() bool {
-	return rt.root.valid()
-}
-
 // Valid reports whether the Runtime was obtained from a valid Root.
 func (rt Runtime) Valid() bool {
-	return rt.valid()
+	return rt.root.Valid()
 }
 
 // programsPath returns <base>/programs.
@@ -78,7 +73,7 @@ func (rt Runtime) programDir(id uint32) string {
 // A provenance.json is written alongside the bytecode. Publish is
 // atomic (rename on the same filesystem).
 func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) error {
-	if !rt.valid() {
+	if !rt.Valid() {
 		return ErrInvalidRoot
 	}
 
@@ -146,7 +141,7 @@ func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) er
 // Returns nil if the directory does not exist. Uses safeRemoveAll to
 // verify the target is under the programs directory.
 func (rt Runtime) RemoveProgram(id uint32) error {
-	if !rt.valid() {
+	if !rt.Valid() {
 		return ErrInvalidRoot
 	}
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
@@ -154,7 +149,7 @@ func (rt Runtime) RemoveProgram(id uint32) error {
 
 // ProgramExists reports whether <base>/programs/{id}/ exists.
 func (rt Runtime) ProgramExists(id uint32) bool {
-	if !rt.valid() {
+	if !rt.Valid() {
 		return false
 	}
 	var exists bool
@@ -171,7 +166,7 @@ func (rt Runtime) ProgramBytecodePath(id uint32) string {
 // CleanStaging removes all entries under <base>/.staging/. Staging is
 // a writer-only concern and is never visible to readers.
 func (rt Runtime) CleanStaging() error {
-	if !rt.valid() {
+	if !rt.Valid() {
 		return ErrInvalidRoot
 	}
 	staging := rt.stagingPath()

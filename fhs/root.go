@@ -45,89 +45,109 @@ func New(base string) (Root, error) {
 	return Root{base: filepath.Join(base, "bpfman")}, nil
 }
 
-// valid reports whether r was constructed via New.
-func (r Root) valid() bool {
+// Valid reports whether r was constructed via New.
+func (r Root) Valid() bool {
 	return r.base != ""
 }
 
-// Valid reports whether r was constructed via New.
-func (r Root) Valid() bool {
-	return r.valid()
+// mustValid panics if r is a zero-value Root.
+// This catches programmer errors where a Root is used without construction via New.
+func (r Root) mustValid() {
+	if r.base == "" {
+		panic("fhs: zero Root used; construct via fhs.New")
+	}
 }
 
 // Base returns the runtime root path (e.g., /run/bpfman).
-func (r Root) Base() string { return r.base }
+func (r Root) Base() string {
+	r.mustValid()
+	return r.base
+}
 
-// Runtime returns the regular-filesystem domain rooted at base.
+// Runtime returns the regular-filesystem hierarchy domain.
 func (r Root) Runtime() Runtime {
+	r.mustValid()
 	return Runtime{root: r}
 }
 
-// BPFFS returns the bpffs layout domain rooted at base.
+// BPFFS returns the bpffs hierarchy domain.
 func (r Root) BPFFS() BPFFS {
+	r.mustValid()
 	return BPFFS{root: r}
 }
 
 // LockPath returns the global writer lock file path.
 func (r Root) LockPath() string {
+	r.mustValid()
 	return filepath.Join(r.base, ".lock")
 }
 
 // DBPath returns the full path to the SQLite database file.
 func (r Root) DBPath() string {
+	r.mustValid()
 	return filepath.Join(r.base, "db", "store.db")
 }
 
 // SocketPath returns the full path to the gRPC socket.
 func (r Root) SocketPath() string {
-	return filepath.Join(r.base+"-sock", "bpfman.sock")
+	r.mustValid()
+	return filepath.Join(r.base, "sock", "bpfman.sock")
 }
 
 // CSISocketPath returns the full path to the CSI socket.
 func (r Root) CSISocketPath() string {
+	r.mustValid()
 	return filepath.Join(r.base, "csi", "csi.sock")
 }
 
 // BPFFSMountPoint returns the bpffs mount point path.
 func (r Root) BPFFSMountPoint() string {
+	r.mustValid()
 	return filepath.Join(r.base, "fs")
 }
 
 // DBDir returns the directory containing the database file.
 func (r Root) DBDir() string {
+	r.mustValid()
 	return filepath.Join(r.base, "db")
 }
 
 // SocketDir returns the directory containing the gRPC socket.
 func (r Root) SocketDir() string {
-	return r.base + "-sock"
+	r.mustValid()
+	return filepath.Join(r.base, "sock")
 }
 
 // CSIDir returns the CSI directory path.
 func (r Root) CSIDir() string {
+	r.mustValid()
 	return filepath.Join(r.base, "csi")
 }
 
 // CSIFSDir returns the CSI filesystem directory path.
 func (r Root) CSIFSDir() string {
+	r.mustValid()
 	return filepath.Join(r.base, "csi", "fs")
 }
 
 // RuntimeDirs returns the directories required for basic runtime operation.
+// This includes Base() itself plus its required subdirectories.
 // Callers should create these directories at startup.
 func (r Root) RuntimeDirs() []string {
+	r.mustValid()
 	return []string{
-		r.Base(),
-		r.DBDir(),
-		r.SocketDir(),
+		r.base,
+		filepath.Join(r.base, "db"),
+		filepath.Join(r.base, "sock"),
 	}
 }
 
 // CSIDirs returns the directories required for CSI operation.
 // Callers should create these directories only when CSI is enabled.
 func (r Root) CSIDirs() []string {
+	r.mustValid()
 	return []string{
-		r.CSIDir(),
-		r.CSIFSDir(),
+		filepath.Join(r.base, "csi"),
+		filepath.Join(r.base, "csi", "fs"),
 	}
 }

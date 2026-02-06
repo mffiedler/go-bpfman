@@ -188,10 +188,6 @@ func TestCleanStaging_NoStagingDir(t *testing.T) {
 
 func TestZeroValueRuntime(t *testing.T) {
 	var root fhs.Root
-	rt := root.Runtime()
-
-	assert.ErrorIs(t, rt.PublishBytecode(1, "/tmp/x.o", fhs.Provenance{}), fhs.ErrInvalidRoot)
-	assert.ErrorIs(t, rt.RemoveProgram(1), fhs.ErrInvalidRoot)
-	assert.ErrorIs(t, rt.CleanStaging(), fhs.ErrInvalidRoot)
-	assert.False(t, rt.ProgramExists(1))
+	// Calling Runtime() on zero Root should panic
+	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
 }

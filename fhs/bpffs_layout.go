@@ -12,14 +12,9 @@ type BPFFS struct {
 	root Root
 }
 
-// valid reports whether the BPFFS was obtained from a valid Root.
-func (b BPFFS) valid() bool {
-	return b.root.valid()
-}
-
 // Valid reports whether the BPFFS was obtained from a valid Root.
 func (b BPFFS) Valid() bool {
-	return b.valid()
+	return b.root.Valid()
 }
 
 // FS returns the bpffs mount point path.

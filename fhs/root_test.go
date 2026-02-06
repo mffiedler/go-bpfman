@@ -96,8 +96,13 @@ func TestNew_CleansPathVariants(t *testing.T) {
 
 func TestZeroValueRoot(t *testing.T) {
 	var root fhs.Root
-	assert.Equal(t, "", root.Base())
-	assert.False(t, root.Valid())
+	assert.False(t, root.Valid(), "zero Root should not be valid")
+
+	// Methods on zero Root should panic
+	assert.Panics(t, func() { root.Base() }, "Base() on zero Root should panic")
+	assert.Panics(t, func() { root.DBPath() }, "DBPath() on zero Root should panic")
+	assert.Panics(t, func() { root.SocketPath() }, "SocketPath() on zero Root should panic")
+	assert.Panics(t, func() { root.RuntimeDirs() }, "RuntimeDirs() on zero Root should panic")
 }
 
 func TestRuntimeDirs(t *testing.T) {
@@ -125,12 +130,12 @@ func TestCSIDirs(t *testing.T) {
 
 func TestRuntime_ZeroValue(t *testing.T) {
 	var root fhs.Root
-	rt := root.Runtime()
-	assert.False(t, rt.Valid())
+	// Calling Runtime() on zero Root should panic
+	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {
 	var root fhs.Root
-	b := root.BPFFS()
-	assert.False(t, b.Valid())
+	// Calling BPFFS() on zero Root should panic
+	assert.Panics(t, func() { root.BPFFS() }, "BPFFS() on zero Root should panic")
 }
