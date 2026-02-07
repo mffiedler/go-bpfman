@@ -275,10 +275,8 @@ func (rt BytecodeFS) ScanProgramDirs() ([]ProgramDirEntry, error) {
 		pde := ProgramDirEntry{
 			Path: filepath.Join(programsPath, name),
 		}
-		// Try to parse as uint32
-		var id uint32
-		if n, _ := fmt.Sscanf(name, "%d", &id); n == 1 {
-			pde.KernelID = id
+		if id, err := strconv.ParseUint(name, 10, 32); err == nil {
+			pde.KernelID = uint32(id)
 			pde.Numeric = true
 		}
 		result = append(result, pde)

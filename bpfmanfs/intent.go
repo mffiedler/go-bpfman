@@ -142,7 +142,7 @@ func safeRemoveAll(parent, target string) error {
 	if err != nil {
 		return ErrOutsideLayout{Parent: cleanParent, Target: cleanTarget}
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return ErrOutsideLayout{Parent: cleanParent, Target: cleanTarget}
 	}
 	if err := os.RemoveAll(cleanTarget); err != nil {

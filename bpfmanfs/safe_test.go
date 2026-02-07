@@ -53,6 +53,19 @@ func TestBPFFS_SafeRemoveAll_RejectsDotDot(t *testing.T) {
 	assert.ErrorAs(t, err, &errOutside)
 }
 
+func TestBPFFS_SafeRemoveAll_RejectsMountRoot(t *testing.T) {
+	layout, err := bpfmanfs.New(t.TempDir())
+	require.NoError(t, err)
+
+	b := layout.BPFFS()
+	require.NoError(t, os.MkdirAll(b.MountPoint(), 0755))
+
+	err = b.SafeRemoveAll(b.MountPoint())
+	assert.Error(t, err)
+	var errOutside bpfmanfs.ErrOutsideLayout
+	assert.ErrorAs(t, err, &errOutside)
+}
+
 func TestBPFFS_SafeRemoveAll_PrefixFalsePositive(t *testing.T) {
 	// Ensure /base/fs/programs vs /base/fs/programsX doesn't match.
 	layout, err := bpfmanfs.New(t.TempDir())

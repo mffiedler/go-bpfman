@@ -162,6 +162,28 @@ func TestProgramBytecodePath(t *testing.T) {
 	assert.Equal(t, filepath.Join(root.Base(), "programs", "42", "bytecode.o"), path)
 }
 
+func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
+	root := mustNew(t)
+	rt := root.BytecodeFS()
+
+	programsPath := filepath.Join(root.Base(), "programs")
+	require.NoError(t, os.MkdirAll(filepath.Join(programsPath, "123abc"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(programsPath, "42"), 0755))
+
+	entries, err := rt.ScanProgramDirs()
+	require.NoError(t, err)
+
+	var numeric []bpfmanfs.ProgramDirEntry
+	for _, entry := range entries {
+		if entry.Numeric {
+			numeric = append(numeric, entry)
+		}
+	}
+
+	require.Len(t, numeric, 1)
+	assert.Equal(t, uint32(42), numeric[0].KernelID)
+}
+
 func TestCleanStaging(t *testing.T) {
 	root := mustNew(t)
 	rt := root.BytecodeFS()

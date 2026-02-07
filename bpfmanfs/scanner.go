@@ -297,10 +297,8 @@ func (s *Scanner) DispatcherDirs(ctx context.Context) iter.Seq2[DispatcherDir, e
 				}
 
 				// Parse dispatcher_{nsid}_{ifindex}_{revision}
-				var nsid uint64
-				var ifindex, revision uint32
-				n, err := fmt.Sscanf(name, "dispatcher_%d_%d_%d", &nsid, &ifindex, &revision)
-				if err != nil || n != 3 {
+				nsid, ifindex, revision, ok := parseDispatcherDirName(name)
+				if !ok {
 					s.reportMalformed(filepath.Join(t.dir, name), fmt.Errorf("parse dispatcher dir: expected dispatcher_NSID_IFINDEX_REV"))
 					continue
 				}
@@ -387,10 +385,8 @@ func (s *Scanner) DispatcherLinkPins(ctx context.Context) iter.Seq2[DispatcherLi
 				}
 
 				// Parse dispatcher_{nsid}_{ifindex}_link
-				var nsid uint64
-				var ifindex uint32
-				n, err := fmt.Sscanf(name, "dispatcher_%d_%d_link", &nsid, &ifindex)
-				if err != nil || n != 2 {
+				nsid, ifindex, ok := parseDispatcherLinkName(name)
+				if !ok {
 					s.reportMalformed(filepath.Join(t.dir, name), fmt.Errorf("parse dispatcher link pin: expected dispatcher_NSID_IFINDEX_link"))
 					continue
 				}
@@ -414,6 +410,49 @@ func (s *Scanner) DispatcherLinkPins(ctx context.Context) iter.Seq2[DispatcherLi
 func (s *Scanner) PathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func parseDispatcherDirName(name string) (nsid uint64, ifindex, revision uint32, ok bool) {
+	if !strings.HasPrefix(name, "dispatcher_") {
+		return 0, 0, 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(name, "dispatcher_"), "_")
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	parsedNsid, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	parsedIfindex, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	parsedRevision, err := strconv.ParseUint(parts[2], 10, 32)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return parsedNsid, uint32(parsedIfindex), uint32(parsedRevision), true
+}
+
+func parseDispatcherLinkName(name string) (nsid uint64, ifindex uint32, ok bool) {
+	if !strings.HasPrefix(name, "dispatcher_") || !strings.HasSuffix(name, "_link") {
+		return 0, 0, false
+	}
+	trim := strings.TrimSuffix(strings.TrimPrefix(name, "dispatcher_"), "_link")
+	parts := strings.Split(trim, "_")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	parsedNsid, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	parsedIfindex, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return 0, 0, false
+	}
+	return parsedNsid, uint32(parsedIfindex), true
 }
 
 // Scan materialises everything into an FSState.
