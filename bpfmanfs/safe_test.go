@@ -25,7 +25,7 @@ func TestSafeRemoveAll_RejectsEscape(t *testing.T) {
 
 	err := safeRemoveAll(parent, outside)
 	assert.Error(t, err)
-	var errOutside ErrOutsideRoot
+	var errOutside ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
@@ -35,7 +35,7 @@ func TestSafeRemoveAll_RejectsDotDot(t *testing.T) {
 
 	err := safeRemoveAll(parent, target)
 	assert.Error(t, err)
-	var errOutside ErrOutsideRoot
+	var errOutside ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
@@ -50,7 +50,7 @@ func TestSafeRemoveAll_PrefixFalsePositive(t *testing.T) {
 
 	err := safeRemoveAll(parent, falsePositive)
 	assert.Error(t, err)
-	var errOutside ErrOutsideRoot
+	var errOutside ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 
 	// The false positive target should still exist.

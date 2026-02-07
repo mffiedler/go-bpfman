@@ -57,13 +57,3 @@ func ParseImagePullPolicy(s string) (ImagePullPolicy, bool) {
 		return PullIfNotPresent, false
 	}
 }
-
-// ImageSource records where a BPF program was loaded from.
-type ImageSource struct {
-	// URL is the OCI image reference (e.g., "quay.io/bpfman-bytecode/xdp_pass:latest").
-	URL string `json:"url"`
-	// Digest is the resolved image digest after pulling.
-	Digest string `json:"digest,omitempty"`
-	// PullPolicy is the policy used when pulling the image.
-	PullPolicy ImagePullPolicy `json:"pull_policy,omitempty"`
-}

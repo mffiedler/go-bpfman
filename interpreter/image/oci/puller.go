@@ -131,7 +131,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 
 	// Check cache based on pull policy
 	if ref.PullPolicy != bpfman.PullAlways {
-		if cached, ok := p.checkCache(cacheDir, logger); ok {
+		if cached, ok := p.checkCache(cacheDir, ref, logger); ok {
 			logger.Info("using cached image", "digest", cached.Digest)
 			return cached, nil
 		}
@@ -327,12 +327,14 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		ObjectPath: destPath,
 		Programs:   programs,
 		Maps:       maps,
+		URL:        ref.URL,
 		Digest:     resolvedDigest,
+		PullPolicy: ref.PullPolicy,
 	}, nil
 }
 
 // checkCache checks if a valid cached image exists.
-func (p *puller) checkCache(cacheDir string, logger *slog.Logger) (interpreter.PulledImage, bool) {
+func (p *puller) checkCache(cacheDir string, ref interpreter.ImageRef, logger *slog.Logger) (interpreter.PulledImage, bool) {
 	bytecodeFile := filepath.Join(cacheDir, BytecodeFile)
 	metadataFile := filepath.Join(cacheDir, MetadataFile)
 
@@ -355,7 +357,9 @@ func (p *puller) checkCache(cacheDir string, logger *slog.Logger) (interpreter.P
 		ObjectPath: bytecodeFile,
 		Programs:   meta.Programs,
 		Maps:       meta.Maps,
+		URL:        ref.URL,
 		Digest:     meta.Digest,
+		PullPolicy: ref.PullPolicy,
 	}, true
 }
 

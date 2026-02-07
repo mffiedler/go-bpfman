@@ -2,9 +2,9 @@
 //
 // The package provides capability tokens for safe path construction:
 //
-//   - Root: validated runtime root, constructed via New
-//   - Runtime: bytecode persistence operations, obtained via Root.Runtime()
-//   - BPFFS: bpffs pin path conventions, obtained via Root.BPFFS()
+//   - Layout: validated filesystem layout, constructed via New
+//   - Runtime: bytecode persistence operations, obtained via Layout.Runtime()
+//   - BPFFS: bpffs pin path conventions, obtained via Layout.BPFFS()
 //
 // All types enforce validity: methods panic on zero-value receivers to
 // catch programmer errors. This prevents accidentally obtaining paths
@@ -16,9 +16,9 @@ import (
 	"fmt"
 )
 
-// ErrInvalidRoot is returned when an operation is called on a
-// zero-value Root, Runtime, or BPFFS.
-var ErrInvalidRoot = errors.New("bpfmanfs: invalid root (zero value)")
+// ErrInvalidLayout is returned when an operation is called on a
+// zero-value Layout, Runtime, or BPFFS.
+var ErrInvalidLayout = errors.New("bpfmanfs: invalid layout (zero value)")
 
 // ErrFinalExists is returned by PublishBytecode when the final
 // directory already exists. This is an invariant violation: GC
@@ -26,13 +26,13 @@ var ErrInvalidRoot = errors.New("bpfmanfs: invalid root (zero value)")
 // executes.
 var ErrFinalExists = errors.New("bpfmanfs: final directory already exists")
 
-// ErrOutsideRoot is returned when a path safety check fails.
-type ErrOutsideRoot struct {
+// ErrOutsideLayout is returned when a path safety check fails.
+type ErrOutsideLayout struct {
 	Parent string
 	Target string
 }
 
-func (e ErrOutsideRoot) Error() string {
+func (e ErrOutsideLayout) Error() string {
 	return fmt.Sprintf("bpfmanfs: target %q is outside parent %q", e.Target, e.Parent)
 }
 

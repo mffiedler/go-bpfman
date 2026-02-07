@@ -87,7 +87,8 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 
 	// Parse JSON fields
 	var globalData map[string][]byte
-	var imageSource *bpfman.ImageSource
+	var imageURL, imageDigest string
+	var imagePullPolicy bpfman.ImagePullPolicy
 	var metadata map[string]string
 	if globalDataJSON.Valid {
 		if err := json.Unmarshal([]byte(globalDataJSON.String), &globalData); err != nil {
@@ -95,9 +96,17 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 		}
 	}
 	if imageSourceJSON.Valid {
-		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imageSource); err != nil {
+		var imgSrc struct {
+			URL        string                 `json:"url"`
+			Digest     string                 `json:"digest,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imgSrc); err != nil {
 			return bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source: %w", err)
 		}
+		imageURL = imgSrc.URL
+		imageDigest = imgSrc.Digest
+		imagePullPolicy = imgSrc.PullPolicy
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
@@ -128,7 +137,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 			WithProgramName(programName).
 			WithProgramType(programType).
 			WithGlobalData(globalData).
-			WithImageSource(imageSource).
+			WithImageProvenance(imageURL, imageDigest, imagePullPolicy).
 			WithAttachFunc(attachFuncVal),
 		License:       licenseVal,
 		GPLCompatible: gplCompatible != 0,
@@ -176,8 +185,17 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 		}
 		globalDataJSON = sql.NullString{String: string(data), Valid: true}
 	}
-	if metadata.Load.ImageSource() != nil {
-		data, err := json.Marshal(metadata.Load.ImageSource())
+	if metadata.Load.HasImageSource() {
+		imgSrc := struct {
+			URL        string                 `json:"url"`
+			Digest     string                 `json:"digest,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+		}{
+			URL:        metadata.Load.ImageURL(),
+			Digest:     metadata.Load.ImageDigest(),
+			PullPolicy: metadata.Load.ImagePullPolicy(),
+		}
+		data, err := json.Marshal(imgSrc)
 		if err != nil {
 			return fmt.Errorf("failed to marshal image_source: %w", err)
 		}
@@ -491,7 +509,8 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 
 	// Parse JSON fields
 	var globalData map[string][]byte
-	var imageSource *bpfman.ImageSource
+	var imageURL, imageDigest string
+	var imagePullPolicy bpfman.ImagePullPolicy
 	var metadata map[string]string
 	if globalDataJSON.Valid {
 		if err := json.Unmarshal([]byte(globalDataJSON.String), &globalData); err != nil {
@@ -499,9 +518,17 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 		}
 	}
 	if imageSourceJSON.Valid {
-		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imageSource); err != nil {
+		var imgSrc struct {
+			URL        string                 `json:"url"`
+			Digest     string                 `json:"digest,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imgSrc); err != nil {
 			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", kernelID, err)
 		}
+		imageURL = imgSrc.URL
+		imageDigest = imgSrc.Digest
+		imagePullPolicy = imgSrc.PullPolicy
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
@@ -533,7 +560,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 			WithProgramName(programName).
 			WithProgramType(programType).
 			WithGlobalData(globalData).
-			WithImageSource(imageSource).
+			WithImageProvenance(imageURL, imageDigest, imagePullPolicy).
 			WithAttachFunc(attachFuncVal),
 		License:       licenseVal,
 		GPLCompatible: gplCompatible != 0,

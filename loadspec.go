@@ -15,13 +15,15 @@ import (
 // (where to pin). The bpffs root is provided separately by the Manager
 // when calling the kernel layer.
 type LoadSpec struct {
-	objectPath  string
-	programName string
-	programType ProgramType
-	globalData  map[string][]byte
-	imageSource *ImageSource
-	attachFunc  string
-	mapOwnerID  uint32
+	objectPath      string
+	programName     string
+	programType     ProgramType
+	globalData      map[string][]byte
+	imageURL        string
+	imageDigest     string
+	imagePullPolicy ImagePullPolicy
+	attachFunc      string
+	mapOwnerID      uint32
 }
 
 // RequiresAttachFunc returns true if this program type requires an attach
@@ -105,13 +107,18 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 
 // Getters for LoadSpec fields
 
-func (s LoadSpec) ObjectPath() string            { return s.objectPath }
-func (s LoadSpec) ProgramName() string           { return s.programName }
-func (s LoadSpec) ProgramType() ProgramType      { return s.programType }
-func (s LoadSpec) GlobalData() map[string][]byte { return s.globalData }
-func (s LoadSpec) ImageSource() *ImageSource     { return s.imageSource }
-func (s LoadSpec) AttachFunc() string            { return s.attachFunc }
-func (s LoadSpec) MapOwnerID() uint32            { return s.mapOwnerID }
+func (s LoadSpec) ObjectPath() string               { return s.objectPath }
+func (s LoadSpec) ProgramName() string              { return s.programName }
+func (s LoadSpec) ProgramType() ProgramType         { return s.programType }
+func (s LoadSpec) GlobalData() map[string][]byte    { return s.globalData }
+func (s LoadSpec) ImageURL() string                 { return s.imageURL }
+func (s LoadSpec) ImageDigest() string              { return s.imageDigest }
+func (s LoadSpec) ImagePullPolicy() ImagePullPolicy { return s.imagePullPolicy }
+func (s LoadSpec) AttachFunc() string               { return s.attachFunc }
+func (s LoadSpec) MapOwnerID() uint32               { return s.mapOwnerID }
+
+// HasImageSource returns true if this LoadSpec was loaded from an OCI image.
+func (s LoadSpec) HasImageSource() bool { return s.imageURL != "" }
 
 // WithGlobalData returns a new LoadSpec with global data set.
 func (s LoadSpec) WithGlobalData(data map[string][]byte) LoadSpec {
@@ -119,9 +126,12 @@ func (s LoadSpec) WithGlobalData(data map[string][]byte) LoadSpec {
 	return s
 }
 
-// WithImageSource returns a new LoadSpec with image source set.
-func (s LoadSpec) WithImageSource(src *ImageSource) LoadSpec {
-	s.imageSource = src
+// WithImageProvenance returns a new LoadSpec with image provenance set.
+// Used when loading from an OCI image.
+func (s LoadSpec) WithImageProvenance(url, digest string, policy ImagePullPolicy) LoadSpec {
+	s.imageURL = url
+	s.imageDigest = digest
+	s.imagePullPolicy = policy
 	return s
 }
 
@@ -162,6 +172,14 @@ func (s LoadSpec) WithAttachFunc(fn string) LoadSpec {
 	return s
 }
 
+// imageSourceJSON is the JSON representation of image provenance fields.
+// Kept as a nested object for backwards compatibility with existing DB rows.
+type imageSourceJSON struct {
+	URL        string          `json:"url"`
+	Digest     string          `json:"digest,omitempty"`
+	PullPolicy ImagePullPolicy `json:"pull_policy,omitempty"`
+}
+
 // loadSpecJSON is the JSON representation of LoadSpec.
 // This allows LoadSpec to have private fields while still being serializable.
 type loadSpecJSON struct {
@@ -169,19 +187,27 @@ type loadSpecJSON struct {
 	ProgramName string            `json:"program_name"`
 	ProgramType ProgramType       `json:"program_type"`
 	GlobalData  map[string][]byte `json:"global_data,omitempty"`
-	ImageSource *ImageSource      `json:"image_source,omitempty"`
+	ImageSource *imageSourceJSON  `json:"image_source,omitempty"`
 	AttachFunc  string            `json:"attach_func,omitempty"`
 	MapOwnerID  uint32            `json:"map_owner_id,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s LoadSpec) MarshalJSON() ([]byte, error) {
+	var imgSrc *imageSourceJSON
+	if s.imageURL != "" {
+		imgSrc = &imageSourceJSON{
+			URL:        s.imageURL,
+			Digest:     s.imageDigest,
+			PullPolicy: s.imagePullPolicy,
+		}
+	}
 	return json.Marshal(loadSpecJSON{
 		ObjectPath:  s.objectPath,
 		ProgramName: s.programName,
 		ProgramType: s.programType,
 		GlobalData:  s.globalData,
-		ImageSource: s.imageSource,
+		ImageSource: imgSrc,
 		AttachFunc:  s.attachFunc,
 		MapOwnerID:  s.mapOwnerID,
 	})
@@ -199,7 +225,11 @@ func (s *LoadSpec) UnmarshalJSON(data []byte) error {
 	s.programName = js.ProgramName
 	s.programType = js.ProgramType
 	s.globalData = js.GlobalData
-	s.imageSource = js.ImageSource
+	if js.ImageSource != nil {
+		s.imageURL = js.ImageSource.URL
+		s.imageDigest = js.ImageSource.Digest
+		s.imagePullPolicy = js.ImageSource.PullPolicy
+	}
 	s.attachFunc = js.AttachFunc
 	s.mapOwnerID = js.MapOwnerID
 	return nil

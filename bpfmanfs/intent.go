@@ -136,10 +136,10 @@ func osInterp(ops []op) error {
 func safeRemoveAll(parent, target string) error {
 	rel, err := filepath.Rel(parent, target)
 	if err != nil {
-		return ErrOutsideRoot{Parent: parent, Target: target}
+		return ErrOutsideLayout{Parent: parent, Target: target}
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return ErrOutsideRoot{Parent: parent, Target: target}
+		return ErrOutsideLayout{Parent: parent, Target: target}
 	}
 	if err := os.RemoveAll(target); err != nil {
 		return &PathError{Op: "remove_all", Path: target, Err: err}

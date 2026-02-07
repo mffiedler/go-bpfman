@@ -7,16 +7,16 @@
 //
 // Usage:
 //
-//	root, err := bpfmanfs.New("/run")
+//	layout, err := bpfmanfs.New("/run")
 //	if err != nil {
 //	    return err
 //	}
-//	if err := runtime.Ensure(root, runtime.RealMounter{}, logger); err != nil {
+//	if err := runtime.Ensure(layout, runtime.RealMounter{}, logger); err != nil {
 //	    return err
 //	}
-//	mgr, err := manager.New(root, store, kernel, discoverer, logger)
+//	mgr, err := manager.New(layout, store, kernel, discoverer, logger)
 //
 // For tests, use NoOpMounter to skip actual bpffs mounting:
 //
-//	runtime.Ensure(root, runtime.NoOpMounter{}, logger)
+//	runtime.Ensure(layout, runtime.NoOpMounter{}, logger)
 package runtime

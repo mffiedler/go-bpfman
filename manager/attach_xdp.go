@@ -126,7 +126,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	fs := m.root.BPFFS()
+	fs := m.layout.BPFFS()
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -360,7 +360,7 @@ func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts
 // Pattern: COMPUTE -> KERNEL I/O -> COMPUTE -> EXECUTE
 func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
 	// COMPUTE: Calculate paths according to Rust bpfman convention
-	fs := m.root.BPFFS()
+	fs := m.layout.BPFFS()
 	revision := uint32(1)
 	linkPinPath := fs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
 	progPinPath := fs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)

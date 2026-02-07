@@ -14,7 +14,7 @@ import (
 // Returns the manager and a cleanup function that releases resources.
 // The cleanup function should be called when the manager is no longer needed.
 func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, error) {
-	root, err := c.Root()
+	layout, err := c.Layout()
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid runtime directory: %w", err)
 	}
@@ -22,7 +22,7 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	logger := c.Logger()
 
 	// Create store
-	store, err := sqlite.New(ctx, root.DBPath(), logger)
+	store, err := sqlite.New(ctx, layout.DBPath(), logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
@@ -31,13 +31,13 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	if err := runtime.Ensure(root, runtime.RealMounter{}, logger); err != nil {
+	if err := runtime.Ensure(layout, runtime.RealMounter{}, logger); err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("ensure runtime: %w", err)
 	}
 
 	// Create manager
-	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(layout, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("create manager: %w", err)

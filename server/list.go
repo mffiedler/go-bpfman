@@ -24,7 +24,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	scanner := s.root.BPFFS().Scanner()
+	scanner := s.layout.BPFFS().Scanner()
 	world, err := inspect.Snapshot(ctx, s.store, s.kernel, scanner)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to snapshot: %v", err)
@@ -101,7 +101,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	scanner := s.root.BPFFS().Scanner()
+	scanner := s.layout.BPFFS().Scanner()
 	row, err := inspect.GetProgram(ctx, s.store, s.kernel, scanner, req.Id)
 	if errors.Is(err, inspect.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
@@ -181,7 +181,7 @@ func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.L
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	scanner := s.root.BPFFS().Scanner()
+	scanner := s.layout.BPFFS().Scanner()
 	world, err := inspect.Snapshot(ctx, s.store, s.kernel, scanner)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to snapshot: %v", err)
@@ -233,7 +233,7 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	scanner := s.root.BPFFS().Scanner()
+	scanner := s.layout.BPFFS().Scanner()
 	linkID := bpfman.LinkID(req.KernelLinkId)
 	info, err := inspect.GetLink(ctx, s.store, s.kernel, scanner, linkID)
 	if errors.Is(err, inspect.ErrNotFound) {

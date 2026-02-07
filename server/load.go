@@ -29,9 +29,9 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		return nil, status.Error(codes.InvalidArgument, "bytecode location is required")
 	}
 
-	// Get the bytecode path and optional image source
+	// Get the bytecode path and optional image provenance
 	var objectPath string
-	var imageSource *bpfman.ImageSource
+	var pulled *interpreter.PulledImage
 	switch loc := req.Bytecode.Location.(type) {
 	case *pb.BytecodeLocation_File:
 		objectPath = loc.File
@@ -56,16 +56,12 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		}
 
 		// Pull the image
-		pulled, err := s.imagePuller.Pull(ctx, ref)
+		p, err := s.imagePuller.Pull(ctx, ref)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", loc.Image.Url, err)
 		}
-		objectPath = pulled.ObjectPath
-		imageSource = &bpfman.ImageSource{
-			URL:        loc.Image.Url,
-			Digest:     pulled.Digest,
-			PullPolicy: pullPolicy,
-		}
+		objectPath = p.ObjectPath
+		pulled = &p
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid bytecode location")
 	}
@@ -142,8 +138,8 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if req.GlobalData != nil {
 			spec = spec.WithGlobalData(req.GlobalData)
 		}
-		if imageSource != nil {
-			spec = spec.WithImageSource(imageSource)
+		if pulled != nil {
+			spec = spec.WithImageProvenance(pulled.URL, pulled.Digest, pulled.PullPolicy)
 		}
 
 		// Map sharing: when loading multiple programs from the same image,

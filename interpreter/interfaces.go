@@ -340,8 +340,12 @@ type PulledImage struct {
 	Programs map[string]string
 	// Maps maps map names to their types from the io.ebpf.maps label.
 	Maps map[string]string
+	// URL is the OCI image reference that was pulled.
+	URL string
 	// Digest is the resolved image digest.
 	Digest string
+	// PullPolicy is the policy that was used when pulling.
+	PullPolicy bpfman.ImagePullPolicy
 }
 
 // ImagePuller fetches BPF bytecode from OCI images.

@@ -227,13 +227,8 @@ func (m *Manager) LoadImage(ctx context.Context, imagePuller interpreter.ImagePu
 			spec = spec.WithMapOwnerID(prog.MapOwnerID)
 		}
 
-		// Record image source in the spec
-		imageSource := &bpfman.ImageSource{
-			URL:        ref.URL,
-			Digest:     pulled.Digest,
-			PullPolicy: ref.PullPolicy,
-		}
-		spec = spec.WithImageSource(imageSource)
+		// Record image provenance in the spec
+		spec = spec.WithImageProvenance(pulled.URL, pulled.Digest, pulled.PullPolicy)
 
 		loadOpts := LoadOpts{
 			UserMetadata: opts.UserMetadata,

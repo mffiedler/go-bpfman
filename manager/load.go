@@ -77,7 +77,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, bpffs.MountPoint(m.root.BPFFS().MountPoint()))
+	loaded, err := m.kernel.Load(ctx, spec, bpffs.MountPoint(m.layout.BPFFS().MountPoint()))
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
@@ -140,7 +140,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
 	// Register undo step to remove it on failure.
-	rt := m.root.Runtime()
+	rt := m.layout.Runtime()
 	prov := bpfmanfs.Provenance{
 		Version:     1,
 		KernelID:    loaded.Program.ID,
@@ -192,7 +192,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 			WithProgramName(spec.ProgramName()).
 			WithProgramType(loaded.InferredType).
 			WithGlobalData(spec.GlobalData()).
-			WithImageSource(spec.ImageSource()).
+			WithImageProvenance(spec.ImageURL(), spec.ImageDigest(), spec.ImagePullPolicy()).
 			WithAttachFunc(spec.AttachFunc()),
 		License:       loaded.License,
 		GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
@@ -386,9 +386,9 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
 
 	// COMPUTE: Build paths from convention (kernel ID + bpffs root)
-	progPinPath := m.root.BPFFS().ProgPinPath(kernelID)
-	mapsDir := m.root.BPFFS().MapPinDir(kernelID)
-	linksDir := m.root.BPFFS().LinkPinDir(kernelID)
+	progPinPath := m.layout.BPFFS().ProgPinPath(kernelID)
+	mapsDir := m.layout.BPFFS().MapPinDir(kernelID)
+	linksDir := m.layout.BPFFS().LinkPinDir(kernelID)
 
 	// COMPUTE: Build unload actions and step mapping
 	actions := computeUnloadActions(kernelID, progPinPath, mapsDir, linksDir, links)
@@ -434,7 +434,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	// it fails, log and record the residual artefact but do not fail
 	// the unload. The DB row is about to be deleted (as part of the
 	// actions above), so GC will clean it on the next pass.
-	rt := m.root.Runtime()
+	rt := m.layout.Runtime()
 	if err := rt.RemoveProgram(kernelID); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
 		_ = rec.Fail(outcome.Step{
@@ -550,7 +550,7 @@ func computeUnloadActions(kernelID uint32, progPinPath, mapsDir, linksDir string
 
 // sourceKindFromSpec returns the provenance source kind for a LoadSpec.
 func sourceKindFromSpec(spec bpfman.LoadSpec) string {
-	if spec.ImageSource() != nil {
+	if spec.HasImageSource() {
 		return "image"
 	}
 	if spec.ObjectPath() != "" {
