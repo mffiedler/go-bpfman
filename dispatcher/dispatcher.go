@@ -1,10 +1,3 @@
-// Package dispatcher provides XDP and TC dispatcher programs for
-// multi-program chaining.
-//
-// The dispatchers allow multiple BPF programs to be attached to a single
-// interface, with priority ordering and proceed-on semantics. Each dispatcher
-// has 10 program slots (prog0-prog9) that can be replaced at runtime using
-// BPF extension programs (freplace).
 package dispatcher
 
 import (
