@@ -669,10 +669,15 @@ func NewTestInterface(t *testing.T, id string) TestInterface {
 }
 
 const staleTestDirPrefix = "bpfman-e2e-"
+const staleInterfacePrefix = "bpfman-"
 
-// cleanupStaleTestDirs removes leftover test directories from previous runs.
-// Returns an error if any cleanup operation fails.
+// cleanupStaleTestDirs removes leftover test directories and network
+// interfaces from previous runs.
 func cleanupStaleTestDirs() error {
+	if err := cleanupStaleInterfaces(); err != nil {
+		return err
+	}
+
 	tempDir := os.TempDir()
 	pattern := filepath.Join(tempDir, staleTestDirPrefix+"*")
 	matches, err := filepath.Glob(pattern)
@@ -699,21 +704,36 @@ func cleanupStaleTestDirs() error {
 			}
 		}
 
-		// Unmount bpffs using the same layout structure as test setup.
+		// Attempt to unmount bpffs; ignore errors as it may already
+		// be unmounted or never mounted.
 		layout, err := bpfmanfs.New(path)
-		if err != nil {
-			return fmt.Errorf("invalid layout at %s: %w", path, err)
-		}
-		bpffsMount := layout.BPFFSMountPoint()
-		if isMounted(bpffsMount) {
-			if err := unmount(bpffsMount); err != nil {
-				return fmt.Errorf("unmount %s: %w", bpffsMount, err)
-			}
+		if err == nil {
+			unmount(layout.BPFFSMountPoint())
 		}
 
 		// Remove the entire test directory
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("remove %s: %w", path, err)
+		}
+	}
+
+	return nil
+}
+
+// cleanupStaleInterfaces removes leftover bpfman-* network interfaces
+// from crashed test runs.
+func cleanupStaleInterfaces() error {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return fmt.Errorf("list interfaces: %w", err)
+	}
+
+	for _, link := range links {
+		name := link.Attrs().Name
+		if strings.HasPrefix(name, staleInterfacePrefix) {
+			if err := netlink.LinkDel(link); err != nil {
+				return fmt.Errorf("delete interface %s: %w", name, err)
+			}
 		}
 	}
 
