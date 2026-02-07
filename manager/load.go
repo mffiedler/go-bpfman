@@ -356,10 +356,14 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		}
 	}
 
+	// Fetch stats (nil if collection not enabled)
+	stats, _ := m.kernel.GetProgramStatsByID(ctx, loaded.Program.ID)
+
 	return bpfman.Program{
 		Record: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:      loaded.Program,
+			Stats:       stats,
 			PinPresent:  true,
 			MapsPresent: len(kernelMaps) > 0,
 			Links:       nil, // No links yet, just loaded

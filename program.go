@@ -158,11 +158,12 @@ type ProgramRecord struct {
 // ProgramStatus is observed state (kernel + filesystem).
 // This is "what actually exists right now".
 type ProgramStatus struct {
-	Kernel      *kernel.Program `json:"kernel,omitempty"` // nil means not in kernel
-	PinPresent  bool            `json:"pin_present"`      // filesystem check
-	MapsPresent bool            `json:"maps_present"`     // filesystem check
-	Links       []Link          `json:"links,omitempty"`  // links with spec + status
-	Maps        []kernel.Map    `json:"maps,omitempty"`   // kernel maps
+	Kernel      *kernel.Program      `json:"kernel,omitempty"` // nil means not in kernel
+	Stats       *kernel.ProgramStats `json:"stats,omitempty"`  // runtime stats (requires kernel.bpf_stats_enabled=1)
+	PinPresent  bool                 `json:"pin_present"`      // filesystem check
+	MapsPresent bool                 `json:"maps_present"`     // filesystem check
+	Links       []Link               `json:"links,omitempty"`  // links with spec + status
+	Maps        []kernel.Map         `json:"maps,omitempty"`   // kernel maps
 }
 
 // Program is the canonical domain object combining record and status.

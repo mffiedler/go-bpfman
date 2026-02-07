@@ -62,6 +62,28 @@ func (k *kernelAdapter) GetProgramByID(ctx context.Context, id uint32) (kernel.P
 	return infoToProgram(info, id), nil
 }
 
+// GetProgramStatsByID retrieves runtime statistics for a BPF program.
+// Returns nil if stats are not available (e.g., kernel.bpf_stats_enabled=0).
+func (k *kernelAdapter) GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error) {
+	prog, err := ebpf.NewProgramFromID(ebpf.ProgramID(id))
+	if err != nil {
+		return nil, fmt.Errorf("program %d: %w", id, err)
+	}
+	defer prog.Close()
+
+	stats, err := prog.Stats()
+	if err != nil {
+		// Stats unavailable (not enabled or not supported), not an error
+		return nil, nil
+	}
+
+	return &kernel.ProgramStats{
+		Runtime:         stats.Runtime,
+		RunCount:        stats.RunCount,
+		RecursionMisses: stats.RecursionMisses,
+	}, nil
+}
+
 // GetLinkByID retrieves a kernel link by its ID.
 func (k *kernelAdapter) GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error) {
 	lnk, err := link.NewFromID(link.ID(id))

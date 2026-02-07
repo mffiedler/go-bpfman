@@ -152,6 +152,7 @@ type ProgramStore interface {
 type KernelSource interface {
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
 	GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error)
+	GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error)
 	GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error)
 	GetMapByID(ctx context.Context, id uint32) (kernel.Map, error)
 	Maps(ctx context.Context) iter.Seq2[kernel.Map, error]

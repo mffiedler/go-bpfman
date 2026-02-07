@@ -100,10 +100,17 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 		kernelMaps = append(kernelMaps, km)
 	}
 
+	// Fetch stats (best-effort, don't fail if unavailable)
+	var stats *kernel.ProgramStats
+	if s, err := m.kernel.GetProgramStatsByID(ctx, kernelID); err == nil {
+		stats = s
+	}
+
 	return bpfman.Program{
 		Record: metadata,
 		Status: bpfman.ProgramStatus{
 			Kernel:      &kp,
+			Stats:       stats,
 			PinPresent:  true, // If we got here, program exists
 			MapsPresent: len(kernelMaps) > 0,
 			Links:       links,

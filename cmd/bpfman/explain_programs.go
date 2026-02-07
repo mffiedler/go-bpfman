@@ -56,6 +56,11 @@ func ProgramSchemaDoc() SchemaDoc {
 			}},
 			{Name: "status", Type: "<ProgramStatus>", Children: []FieldInfo{
 				{Name: "kernel", Type: "<kernel.Program>", Description: "Kernel-reported program info"},
+				{Name: "stats", Type: "<kernel.ProgramStats>", Description: "Runtime statistics (requires kernel.bpf_stats_enabled=1)", Children: []FieldInfo{
+					{Name: "runtime", Type: "<duration>", Description: "Total execution time"},
+					{Name: "run_count", Type: "<number>", Description: "Number of times program executed"},
+					{Name: "recursion_misses", Type: "<number>", Description: "Recursion limit hits (kernel 5.12+)"},
+				}},
 				{Name: "pin_present", Type: "<bool>", Description: "Pin file exists"},
 				{Name: "maps_present", Type: "<bool>", Description: "Maps directory exists"},
 				{Name: "links", Type: "<[]Link>", Description: "Attached links"},

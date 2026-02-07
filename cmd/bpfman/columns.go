@@ -50,6 +50,8 @@ func ProgramColumnRegistry() []ColumnInfo {
 		{Name: "LOADED_AT", JSONPath: ".status.kernel.loaded_at", Description: "Load timestamp"},
 		{Name: "JIT_SIZE", JSONPath: ".status.kernel.jited_size", Description: "JIT-compiled size in bytes"},
 		{Name: "MEMLOCK", JSONPath: ".status.kernel.memlock", Description: "Locked memory in bytes"},
+		{Name: "RUN_COUNT", JSONPath: ".status.stats.run_count", Description: "Number of times program executed"},
+		{Name: "RUNTIME", JSONPath: ".status.stats.runtime", Description: "Total execution time"},
 		{Name: "LINK_IDS", Computed: true, Description: "Comma-separated link IDs"},
 		{Name: "ATTACH", Computed: true, Description: "Attach point descriptions"},
 	}

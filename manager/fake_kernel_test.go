@@ -486,6 +486,11 @@ func (f *fakeKernel) GetProgramByID(_ context.Context, id uint32) (kernel.Progra
 	}, nil
 }
 
+func (f *fakeKernel) GetProgramStatsByID(_ context.Context, id uint32) (*kernel.ProgramStats, error) {
+	// fakeKernel doesn't track stats, return nil (stats unavailable)
+	return nil, nil
+}
+
 func (f *fakeKernel) GetLinkByID(_ context.Context, id uint32) (kernel.Link, error) {
 	link, ok := f.links[id]
 	if !ok {

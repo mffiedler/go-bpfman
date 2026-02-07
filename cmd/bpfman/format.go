@@ -161,8 +161,8 @@ func formatProgramTable(prog bpfman.Program) string {
 	// Header - kernel-assigned identifier
 	fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
 
-	// Collect Spec and Status fields, then align them together
-	var specFields, statusFields []string
+	// Collect Spec, Status, and Stats fields, then align them together
+	var specFields, statusFields, statsFields []string
 
 	// Spec fields (sorted alphabetically)
 	if len(p.Load.GlobalData()) > 0 {
@@ -234,6 +234,17 @@ func formatProgramTable(prog bpfman.Program) string {
 		statusFields = append(statusFields, "    (no kernel info available)")
 	}
 
+	// Stats fields (sorted alphabetically)
+	if prog.Status.Stats != nil {
+		if prog.Status.Stats.RecursionMisses > 0 {
+			statsFields = append(statsFields, fmt.Sprintf("    Recursion Misses:\t%d", prog.Status.Stats.RecursionMisses))
+		}
+		statsFields = append(statsFields, fmt.Sprintf("    Run Count:\t%d", prog.Status.Stats.RunCount))
+		statsFields = append(statsFields, fmt.Sprintf("    Runtime:\t%s", prog.Status.Stats.Runtime))
+	} else {
+		statsFields = append(statsFields, "    (not enabled, see sysctl kernel.bpf_stats_enabled)")
+	}
+
 	// Run all fields through single tabwriter to get unified alignment
 	var aligned strings.Builder
 	w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
@@ -243,17 +254,28 @@ func formatProgramTable(prog bpfman.Program) string {
 	for _, f := range statusFields {
 		fmt.Fprintln(w, f)
 	}
+	for _, f := range statsFields {
+		fmt.Fprintln(w, f)
+	}
 	w.Flush()
 
 	// Split aligned output and reassemble with headers
 	lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
+	specEnd := len(specFields)
+	statusEnd := specEnd + len(statusFields)
+
 	b.WriteString("  Spec:\n")
-	for _, line := range lines[:len(specFields)] {
+	for _, line := range lines[:specEnd] {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
 	b.WriteString("  Status:\n")
-	for _, line := range lines[len(specFields):] {
+	for _, line := range lines[specEnd:statusEnd] {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("  Stats:\n")
+	for _, line := range lines[statusEnd:] {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -667,8 +689,8 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 		// Header - kernel-assigned identifier
 		fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
 
-		// Collect Spec and Status fields, then align them together
-		var specFields, statusFields []string
+		// Collect Spec, Status, and Stats fields, then align them together
+		var specFields, statusFields, statsFields []string
 
 		// Spec fields (sorted alphabetically)
 		if len(p.Load.GlobalData()) > 0 {
@@ -740,6 +762,17 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			statusFields = append(statusFields, "    (no kernel info available)")
 		}
 
+		// Stats fields (sorted alphabetically)
+		if prog.Status.Stats != nil {
+			if prog.Status.Stats.RecursionMisses > 0 {
+				statsFields = append(statsFields, fmt.Sprintf("    Recursion Misses:\t%d", prog.Status.Stats.RecursionMisses))
+			}
+			statsFields = append(statsFields, fmt.Sprintf("    Run Count:\t%d", prog.Status.Stats.RunCount))
+			statsFields = append(statsFields, fmt.Sprintf("    Runtime:\t%s", prog.Status.Stats.Runtime))
+		} else {
+			statsFields = append(statsFields, "    (not enabled, see sysctl kernel.bpf_stats_enabled)")
+		}
+
 		// Run all fields through single tabwriter to get unified alignment
 		var aligned strings.Builder
 		w := tabwriter.NewWriter(&aligned, 0, 0, 1, ' ', 0)
@@ -749,17 +782,28 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 		for _, f := range statusFields {
 			fmt.Fprintln(w, f)
 		}
+		for _, f := range statsFields {
+			fmt.Fprintln(w, f)
+		}
 		w.Flush()
 
 		// Split aligned output and reassemble with headers
 		lines := strings.Split(strings.TrimSuffix(aligned.String(), "\n"), "\n")
+		specEnd := len(specFields)
+		statusEnd := specEnd + len(statusFields)
+
 		b.WriteString("  Spec:\n")
-		for _, line := range lines[:len(specFields)] {
+		for _, line := range lines[:specEnd] {
 			b.WriteString(line)
 			b.WriteString("\n")
 		}
 		b.WriteString("  Status:\n")
-		for _, line := range lines[len(specFields):] {
+		for _, line := range lines[specEnd:statusEnd] {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		b.WriteString("  Stats:\n")
+		for _, line := range lines[statusEnd:] {
 			b.WriteString(line)
 			b.WriteString("\n")
 		}

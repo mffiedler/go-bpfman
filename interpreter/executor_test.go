@@ -139,6 +139,10 @@ func (k *stubKernel) GetProgramByID(ctx context.Context, id uint32) (kernel.Prog
 	panic("stubKernel.GetProgramByID not implemented")
 }
 
+func (k *stubKernel) GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error) {
+	panic("stubKernel.GetProgramStatsByID not implemented")
+}
+
 func (k *stubKernel) GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error) {
 	panic("stubKernel.GetLinkByID not implemented")
 }
