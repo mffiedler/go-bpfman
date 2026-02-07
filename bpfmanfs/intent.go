@@ -131,18 +131,22 @@ func osInterp(ops []op) error {
 // safeRemoveAll removes target only if it is under parent. This
 // prevents accidental deletion of paths outside the expected tree.
 //
-// Uses filepath.Rel to avoid prefix false positives (e.g.,
-// /run/bpfman/programsX matching /run/bpfman/programs).
+// Both paths are cleaned before comparison to normalise "..", ".", and
+// redundant separators. Uses filepath.Rel to avoid prefix false positives
+// (e.g., /run/bpfman/programsX matching /run/bpfman/programs).
 func safeRemoveAll(parent, target string) error {
-	rel, err := filepath.Rel(parent, target)
+	cleanParent := filepath.Clean(parent)
+	cleanTarget := filepath.Clean(target)
+
+	rel, err := filepath.Rel(cleanParent, cleanTarget)
 	if err != nil {
-		return ErrOutsideLayout{Parent: parent, Target: target}
+		return ErrOutsideLayout{Parent: cleanParent, Target: cleanTarget}
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return ErrOutsideLayout{Parent: parent, Target: target}
+		return ErrOutsideLayout{Parent: cleanParent, Target: cleanTarget}
 	}
-	if err := os.RemoveAll(target); err != nil {
-		return &PathError{Op: "remove_all", Path: target, Err: err}
+	if err := os.RemoveAll(cleanTarget); err != nil {
+		return &PathError{Op: "remove_all", Path: cleanTarget, Err: err}
 	}
 	return nil
 }

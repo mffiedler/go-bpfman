@@ -11,26 +11,25 @@ import (
 	"github.com/cilium/ebpf"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
 // Load loads a BPF program into the kernel.
 //
 // Load loads a BPF program and pins it using kernel ID-based paths.
 //
-// Pin paths follow the upstream bpfman convention:
-//   - Program: <bpffsRoot>/prog_<kernel_id>
-//   - Maps: <bpffsRoot>/maps/<kernel_id>/<map_name>
+// Pin paths follow the upstream bpfman convention, computed via bpffs methods:
+//   - Program: bpffs.ProgPinPath(kernel_id)
+//   - Maps: bpffs.MapPinDir(kernel_id)/<map_name>
 //
-// bpffsRoot is the bpffs mount point (e.g., /run/bpfman/fs/).
 // On failure, all successfully pinned objects are cleaned up.
 //
 // Map sharing: If spec.MapOwnerID() is non-zero, this program will share maps
 // with the owner program instead of creating its own. The owner's maps directory
-// (<bpffsRoot>/maps/<owner_id>/) must exist and contain the required pinned maps.
-// This is used when loading multiple programs from the same image (e.g., via
-// the bpfman-operator) where all programs should share the same map instances.
-func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error) {
+// must exist and contain the required pinned maps. This is used when loading
+// multiple programs from the same image (e.g., via the bpfman-operator) where
+// all programs should share the same map instances.
+func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs bpfmanfs.BPFFS) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
 	if err != nil {
@@ -82,7 +81,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 	mapOwnerID := spec.MapOwnerID()
 
 	if mapOwnerID != 0 {
-		ownerMapsDir = filepath.Join(string(bpffsRoot), "maps", fmt.Sprintf("%d", mapOwnerID))
+		ownerMapsDir = bpffs.MapPinDir(mapOwnerID)
 		mapReplacements = make(map[string]*ebpf.Map)
 
 		k.logger.Debug("loading shared maps from owner program",
@@ -96,7 +95,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			mapPath := filepath.Join(ownerMapsDir, name)
+			mapPath := bpffs.MapPinPath(mapOwnerID, name)
 			m, err := ebpf.LoadPinnedMap(mapPath, nil)
 			if err != nil {
 				// Clean up any maps we've already loaded
@@ -144,18 +143,19 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 	}
 	kernelID := uint32(progID)
 
-	// Track pinned paths for rollback on failure
+	// Track pinned paths for rollback on failure.
+	// Use BPFFS safe removal to ensure we only remove paths under the bpffs mount.
 	var pinnedPaths []string
 	cleanup := func() {
 		for i := len(pinnedPaths) - 1; i >= 0; i-- {
-			if err := os.Remove(pinnedPaths[i]); err != nil && !os.IsNotExist(err) {
+			if err := bpffs.SafeRemove(pinnedPaths[i]); err != nil {
 				k.logger.Warn("failed to remove pin during cleanup", "path", pinnedPaths[i], "error", err)
 			}
 		}
 	}
 
-	// Pin program to <root>/prog_<kernel_id>
-	progPinPath := filepath.Join(string(bpffsRoot), fmt.Sprintf("prog_%d", kernelID))
+	// Pin program using bpffs convention
+	progPinPath := bpffs.ProgPinPath(kernelID)
 	if err := prog.Pin(progPinPath); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to pin program: %w", err)
 	}
@@ -173,9 +173,9 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 			"map_owner_id", mapOwnerID,
 			"maps_dir", mapsDir)
 	} else {
-		// Create our own maps directory: <root>/maps/<kernel_id>/
-		mapsDir = filepath.Join(string(bpffsRoot), "maps", fmt.Sprintf("%d", kernelID))
-		if err := os.MkdirAll(mapsDir, 0755); err != nil {
+		// Create our own maps directory using bpffs convention
+		mapsDir = bpffs.MapPinDir(kernelID)
+		if err := bpffs.EnsureMapsDir(kernelID); err != nil {
 			cleanup()
 			return bpfman.LoadOutput{}, fmt.Errorf("failed to create maps directory: %w", err)
 		}
@@ -185,10 +185,10 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			mapPinPath := filepath.Join(mapsDir, name)
+			mapPinPath := bpffs.MapPinPath(kernelID, name)
 			if err := m.Pin(mapPinPath); err != nil {
 				cleanup()
-				if rmErr := os.Remove(mapsDir); rmErr != nil && !os.IsNotExist(rmErr) {
+				if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
 					k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 				}
 				return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
@@ -201,7 +201,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoo
 	if !ok {
 		cleanup()
 		if mapOwnerID == 0 {
-			if rmErr := os.Remove(mapsDir); rmErr != nil && !os.IsNotExist(rmErr) {
+			if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
 				k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 			}
 		}

@@ -8,7 +8,7 @@ import (
 	"iter"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -160,12 +160,11 @@ type KernelSource interface {
 
 // ProgramLoader loads BPF programs into the kernel.
 type ProgramLoader interface {
-	// Load loads a BPF program and pins it to the specified bpffs root.
-	// The bpffsRoot is the bpffs mount point (e.g., /run/bpfman/fs/).
-	// Actual pin paths are computed from the kernel ID:
-	//   - Program: <bpffsRoot>/prog_<kernel_id>
-	//   - Maps: <bpffsRoot>/maps/<kernel_id>/<map_name>
-	Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error)
+	// Load loads a BPF program and pins it using the bpffs paths.
+	// Pin paths are computed from the kernel ID using bpffs methods:
+	//   - Program: bpffs.ProgPinPath(kernel_id)
+	//   - Maps: bpffs.MapPinDir(kernel_id) / <map_name>
+	Load(ctx context.Context, spec bpfman.LoadSpec, bpffs bpfmanfs.BPFFS) (bpfman.LoadOutput, error)
 }
 
 // ProgramUnloader removes BPF programs from the kernel.

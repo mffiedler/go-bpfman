@@ -2,7 +2,10 @@ package bpfmanfs
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/frobware/go-bpfman/dispatcher"
 )
@@ -111,41 +114,40 @@ func (b BPFFS) Links() string {
 // Format: {base}/fs/prog_{id}
 func (b BPFFS) ProgPinPath(kernelID uint32) string {
 	b.mustValid()
-	return filepath.Join(b.mountPoint(), "prog_"+uitoa(kernelID))
+	return filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(kernelID), 10))
 }
 
 // MapPinDir returns the directory for a program's map pins.
 // Format: {base}/fs/maps/{program_id}/
 func (b BPFFS) MapPinDir(programID uint32) string {
 	b.mustValid()
-	return filepath.Join(b.mapsDir(), uitoa(programID))
+	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10))
 }
 
 // LinkPinDir returns the directory for a program's link pins.
 // Format: {base}/fs/links/{program_id}/
 func (b BPFFS) LinkPinDir(programID uint32) string {
 	b.mustValid()
-	return filepath.Join(b.linksDir(), uitoa(programID))
+	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10))
+}
+
+// LinkPinPath returns the pin path for a specific link.
+// Format: {base}/fs/links/{program_id}/{link_name}
+func (b BPFFS) LinkPinPath(programID uint32, linkName string) string {
+	b.mustValid()
+	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10), linkName)
+}
+
+// MapPinPath returns the pin path for a specific map.
+// Format: {base}/fs/maps/{program_id}/{map_name}
+func (b BPFFS) MapPinPath(programID uint32, mapName string) string {
+	b.mustValid()
+	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10), mapName)
 }
 
 // Scanner returns a new Scanner for reading bpfman's bpffs layout.
 func (b BPFFS) Scanner() *Scanner {
 	return NewScanner(b)
-}
-
-// uitoa converts uint32 to string without importing strconv.
-func uitoa(n uint32) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [10]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }
 
 // --------------------------------------------------------------------
@@ -208,4 +210,51 @@ func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, progra
 		fmt.Sprintf("tcx-%s", direction),
 		fmt.Sprintf("link_%d_%d_%d", nsid, ifindex, programID),
 	)
+}
+
+// --------------------------------------------------------------------
+// I/O operations with path safety
+// --------------------------------------------------------------------
+
+// EnsureMapsDir creates the maps directory for a program if it doesn't exist.
+// Format: {base}/fs/maps/{program_id}/
+func (b BPFFS) EnsureMapsDir(kernelID uint32) error {
+	b.mustValid()
+	dir := b.MapPinDir(kernelID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return &PathError{Op: "ensure_maps_dir", Path: dir, Err: err}
+	}
+	return nil
+}
+
+// SafeRemove removes a single file (e.g., a pin) from bpffs.
+// Returns nil if the file does not exist.
+// Returns an error if the path is outside the bpffs mount point.
+//
+// Both paths are cleaned before comparison to normalise "..", ".", and
+// redundant separators.
+func (b BPFFS) SafeRemove(path string) error {
+	b.mustValid()
+	cleanParent := filepath.Clean(b.mountPoint())
+	cleanPath := filepath.Clean(path)
+
+	rel, err := filepath.Rel(cleanParent, cleanPath)
+	if err != nil {
+		return ErrOutsideLayout{Parent: cleanParent, Target: cleanPath}
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return ErrOutsideLayout{Parent: cleanParent, Target: cleanPath}
+	}
+	if err := os.Remove(cleanPath); err != nil && !os.IsNotExist(err) {
+		return &PathError{Op: "remove", Path: cleanPath, Err: err}
+	}
+	return nil
+}
+
+// SafeRemoveAll removes a directory and its contents from bpffs.
+// Returns nil if the directory does not exist.
+// Returns an error if the path is outside the bpffs mount point.
+func (b BPFFS) SafeRemoveAll(path string) error {
+	b.mustValid()
+	return safeRemoveAll(b.mountPoint(), path)
 }

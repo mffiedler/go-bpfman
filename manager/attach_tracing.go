@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -56,8 +55,7 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := fmt.Sprintf("%s_%s", group, name)
-	linksDir := m.layout.BPFFS().LinkPinDir(programKernelID)
-	linkPinPath := filepath.Join(linksDir, linkName)
+	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachTracepoint(ctx, progPinPath, group, name, linkPinPath)
@@ -223,8 +221,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	if retprobe {
 		linkName = "ret_" + linkName
 	}
-	linksDir := m.layout.BPFFS().LinkPinDir(programKernelID)
-	linkPinPath := filepath.Join(linksDir, linkName)
+	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachKprobe(ctx, progPinPath, fnName, offset, retprobe, linkPinPath)
@@ -406,8 +403,7 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	if retprobe {
 		linkName = "ret_" + linkName
 	}
-	linksDir := m.layout.BPFFS().LinkPinDir(programKernelID)
-	linkPinPath := filepath.Join(linksDir, linkName)
+	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Choose local vs container method based on spec
 	var attachOut bpfman.AttachOutput
@@ -603,8 +599,7 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := "fentry_" + fnName
-	linksDir := m.layout.BPFFS().LinkPinDir(programKernelID)
-	linkPinPath := filepath.Join(linksDir, linkName)
+	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachFentry(ctx, progPinPath, fnName, linkPinPath)
@@ -777,8 +772,7 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := "fexit_" + fnName
-	linksDir := m.layout.BPFFS().LinkPinDir(programKernelID)
-	linkPinPath := filepath.Join(linksDir, linkName)
+	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachFexit(ctx, progPinPath, fnName, linkPinPath)

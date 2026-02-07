@@ -1495,8 +1495,8 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	// The expected pin path follows the pattern: <fsRoot>/prog_<kernelID>
-	expectedPinPath := fmt.Sprintf("%s/prog_%d", fix.Layout.BPFFS().MountPoint(), prog.Record.KernelID)
+	// The expected pin path follows bpffs conventions
+	expectedPinPath := fix.Layout.BPFFS().ProgPinPath(prog.Record.KernelID)
 
 	// Attach the program
 	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.KernelID, "eth0", 2, bpfman.TCDirectionIngress)

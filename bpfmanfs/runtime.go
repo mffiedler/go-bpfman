@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -59,7 +60,7 @@ func (rt Runtime) stagingPath() string {
 
 // programDir returns <base>/programs/{id}.
 func (rt Runtime) programDir(id uint32) string {
-	return filepath.Join(rt.layout.base, programsDir, uitoa(id))
+	return filepath.Join(rt.layout.base, programsDir, strconv.FormatUint(uint64(id), 10))
 }
 
 // PublishBytecode publishes srcPath to:

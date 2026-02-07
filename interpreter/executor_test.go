@@ -8,7 +8,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
-	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
@@ -156,7 +156,7 @@ func (k *stubKernel) Links(ctx context.Context) iter.Seq2[kernel.Link, error] {
 }
 
 // ProgramLoader
-func (k *stubKernel) Load(ctx context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error) {
+func (k *stubKernel) Load(ctx context.Context, spec bpfman.LoadSpec, _ bpfmanfs.BPFFS) (bpfman.LoadOutput, error) {
 	panic("stubKernel.Load not implemented")
 }
 

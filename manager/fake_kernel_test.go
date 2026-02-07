@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
@@ -348,7 +349,7 @@ func (f *fakeKernel) Reset() {
 	f.loadCount = 0
 }
 
-func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpffs.MountPoint) (bpfman.LoadOutput, error) {
+func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs bpfmanfs.BPFFS) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
 	if spec.ProgramType() == bpfman.ProgramTypeUnspecified {
 		err := fmt.Errorf("program type must be specified")
@@ -380,22 +381,22 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffsRoot bpf
 	}
 
 	id := f.nextID.Add(1)
-	// Compute paths the same way the real kernel does - using kernel ID
-	progPinPath := fmt.Sprintf("%s/prog_%d", bpffsRoot, id)
+	// Compute paths the same way the real kernel does - using bpffs methods
+	progPinPath := bpffs.ProgPinPath(uint32(id))
 
 	// Map sharing: if MapOwnerID is set, use the owner's maps directory
 	var mapsDir string
 	if spec.MapOwnerID() != 0 {
 		// Share maps with the owner program
-		mapsDir = fmt.Sprintf("%s/maps/%d", bpffsRoot, spec.MapOwnerID())
+		mapsDir = bpffs.MapPinDir(spec.MapOwnerID())
 	} else {
 		// Own maps - use our kernel ID
-		mapsDir = fmt.Sprintf("%s/maps/%d", bpffsRoot, id)
+		mapsDir = bpffs.MapPinDir(uint32(id))
 	}
 
 	// Create the pin file on disk so that GC's ownership check
 	// (os.Stat on the pin path) recognises this as our program.
-	if err := os.MkdirAll(string(bpffsRoot), 0755); err != nil {
+	if err := os.MkdirAll(bpffs.MountPoint(), 0755); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: mkdir pin dir: %w", err)
 	}
 	if err := os.WriteFile(progPinPath, nil, 0644); err != nil {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
@@ -77,7 +76,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, bpffs.MountPoint(m.layout.BPFFS().MountPoint()))
+	loaded, err := m.kernel.Load(ctx, spec, m.layout.BPFFS())
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
