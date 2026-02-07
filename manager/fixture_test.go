@@ -36,7 +36,7 @@ type testFixture struct {
 	Kernel        *fakeKernel
 	Discoverer    *fakeDiscoverer
 	Store         interpreter.Store
-	Root          bpfmanfs.Root
+	Layout        bpfmanfs.FSLayout
 	t             *testing.T
 	bytecodeDir   string            // temp dir for dummy bytecode files
 	bytecodeFiles map[string]string // name -> path cache
@@ -53,17 +53,17 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
-	root, err := bpfmanfs.New(t.TempDir())
-	require.NoError(t, err, "failed to create fs root")
+	layout, err := bpfmanfs.New(t.TempDir())
+	require.NoError(t, err, "failed to create fs layout")
 	kernel := newFakeKernel()
 	if discoverer == nil {
 		discoverer = newFakeDiscoverer()
 	}
 
 	// Centralised ensure call in fixture
-	require.NoError(t, runtime.Ensure(root, runtime.NoOpMounter{}, testLogger()))
+	require.NoError(t, runtime.Ensure(layout, runtime.NoOpMounter{}, testLogger()))
 
-	mgr, err := manager.New(root, store, kernel, discoverer, testLogger())
+	mgr, err := manager.New(layout, store, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{
@@ -71,7 +71,7 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 		Kernel:        kernel,
 		Discoverer:    discoverer,
 		Store:         store,
-		Root:          root,
+		Layout:        layout,
 		t:             t,
 		bytecodeDir:   bcDir,
 		bytecodeFiles: make(map[string]string),
@@ -135,7 +135,7 @@ func (f *testFixture) AssertKernelOps(expected []string) {
 // Use this for operations that require a WriterScope (e.g., AttachUprobe).
 func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Context, scope lock.WriterScope) error) error {
 	f.t.Helper()
-	return lock.Run(ctx, f.Root.LockPath(), fn)
+	return lock.Run(ctx, f.Layout.LockPath(), fn)
 }
 
 // Load is a convenience wrapper that calls Manager.Load directly.

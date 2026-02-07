@@ -217,7 +217,7 @@ type ObservedState struct {
 	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
-	root bpfmanfs.Root
+	layout bpfmanfs.FSLayout
 
 	// Mutation capability for GC operations only.
 	// Not used during rule evaluation.
@@ -231,7 +231,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, root bpfmanfs.Root) (*ObservedState, error) {
+func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[uint32]bool),
 		kernelLinks:           make(map[uint32]bool),
@@ -242,7 +242,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 		dbProgPins:            make(map[string]bool),
 		dbProgIDs:             make(map[uint32]bool),
 		dbDispatcherKeys:      make(map[string]bool),
-		root:                  root,
+		layout:                layout,
 	}
 
 	var err error
@@ -346,7 +346,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	}
 
 	// Dispatcher prog pins and XDP link pins.
-	fs := root.BPFFS()
+	fs := layout.BPFFS()
 	for _, d := range s.dbDispatchers {
 		progPin := fs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 		pathsToStat[progPin] = struct{}{}
@@ -364,7 +364,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	s.orphans = make([]FsOrphan, 0)
 
 	// Delegate bpfman-specific bpffs scanning to the scanner.
-	scanner := root.BPFFS().Scanner()
+	scanner := layout.BPFFS().Scanner()
 
 	// Stat all collected paths using the scanner.
 	for path := range pathsToStat {
@@ -441,7 +441,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	// Phase 6a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 
-	rt := root.Runtime()
+	rt := layout.Runtime()
 	programDirs, err := rt.ScanProgramDirs()
 	if err != nil {
 		return nil, fmt.Errorf("scan program dirs: %w", err)
@@ -554,7 +554,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	if s.dispatchers != nil {
 		return s.dispatchers
 	}
-	fs := s.root.BPFFS()
+	fs := s.layout.BPFFS()
 	for _, d := range s.dbDispatchers {
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
 		revDir := fs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
@@ -1173,7 +1173,7 @@ Category: gc-dispatcher`,
 						Op: &Operation{
 							Description: fmt.Sprintf("delete dispatcher %s/%d/%d and filesystem artefacts", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
 							Execute: func() error {
-								b := s.root.BPFFS()
+								b := s.layout.BPFFS()
 
 								// Explicitly remove the dispatcher program
 								// pin (typed + validated).
@@ -1238,7 +1238,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
 							Execute: func() error {
-								b := s.root.BPFFS()
+								b := s.layout.BPFFS()
 								switch oo.Kind {
 								case OrphanLinkDir:
 									return b.RemoveLinkDir(oo.Path)
@@ -1285,7 +1285,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
 							Execute: func() error {
-								b := s.root.BPFFS()
+								b := s.layout.BPFFS()
 								switch oo.Kind {
 								case OrphanDispatcherDir:
 									return b.RemoveDispatcherRevDir(oo.Path)
@@ -1330,7 +1330,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove program dir %s", o.Path),
 							Execute: func() error {
-								return s.root.Runtime().RemoveProgramDir(oo.Path)
+								return s.layout.Runtime().RemoveProgramDir(oo.Path)
 							},
 						},
 					})
@@ -1362,7 +1362,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove staging dir %s", o.Path),
 							Execute: func() error {
-								return s.root.Runtime().RemoveStagingDir(oo.Path)
+								return s.layout.Runtime().RemoveStagingDir(oo.Path)
 							},
 						},
 					})
@@ -1418,7 +1418,7 @@ Category: gc-orphan-pin`,
 					Op: &Operation{
 						Description: fmt.Sprintf("remove %s", o.Path),
 						Execute: func() error {
-							b := s.root.BPFFS()
+							b := s.layout.BPFFS()
 							switch oo.Kind {
 							case OrphanLinkDir:
 								return b.RemoveLinkDir(oo.Path)
@@ -1444,7 +1444,7 @@ Category: gc-orphan-pin`,
 
 // Doctor gathers state and evaluates all coherency rules.
 func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.root)
+	state, err := GatherState(ctx, m.store, m.kernel, m.layout)
 	if err != nil {
 		return DoctorReport{}, fmt.Errorf("gather state: %w", err)
 	}
@@ -1464,7 +1464,7 @@ func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
 // Store-level GC (structural cleanup) is handled separately by
 // store.GC() called from Manager.GC().
 func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.root)
+	state, err := GatherState(ctx, m.store, m.kernel, m.layout)
 	if err != nil {
 		return 0, fmt.Errorf("gather state: %w", err)
 	}

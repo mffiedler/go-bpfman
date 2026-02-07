@@ -30,36 +30,36 @@ type Provenance struct {
 }
 
 // Runtime provides regular-filesystem operations for bytecode
-// persistence. Fields are unexported; obtain via Root.Runtime().
+// persistence. Fields are unexported; obtain via FSLayout.Runtime().
 type Runtime struct {
-	root Root
+	layout FSLayout
 }
 
-// Valid reports whether the Runtime was obtained from a valid Root.
+// Valid reports whether the Runtime was obtained from a valid Layout.
 func (rt Runtime) Valid() bool {
-	return rt.root.Valid()
+	return rt.layout.Valid()
 }
 
-// mustValid panics if rt was not obtained from Root.Runtime().
+// mustValid panics if rt was not obtained from FSLayout.Runtime().
 func (rt Runtime) mustValid() {
 	if !rt.Valid() {
-		panic("bpfmanfs: zero Runtime used; obtain via Root.Runtime()")
+		panic("bpfmanfs: zero Runtime used; obtain via FSLayout.Runtime()")
 	}
 }
 
 // programsPath returns <base>/programs.
 func (rt Runtime) programsPath() string {
-	return filepath.Join(rt.root.base, programsDir)
+	return filepath.Join(rt.layout.base, programsDir)
 }
 
 // stagingPath returns <base>/.staging.
 func (rt Runtime) stagingPath() string {
-	return filepath.Join(rt.root.base, stagingDir)
+	return filepath.Join(rt.layout.base, stagingDir)
 }
 
 // programDir returns <base>/programs/{id}.
 func (rt Runtime) programDir(id uint32) string {
-	return filepath.Join(rt.root.base, programsDir, uitoa(id))
+	return filepath.Join(rt.layout.base, programsDir, uitoa(id))
 }
 
 // PublishBytecode publishes srcPath to:

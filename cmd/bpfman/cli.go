@@ -61,9 +61,9 @@ type CLI struct {
 	Image   ImageCmd   `cmd:"" help:"Image operations (verify signatures)."`
 }
 
-// Root returns the filesystem root for the configured runtime directory.
+// Layout returns the filesystem layout for the configured runtime directory.
 // Returns an error if RuntimeDir is empty or not an absolute path.
-func (c *CLI) Root() (bpfmanfs.Root, error) {
+func (c *CLI) Layout() (bpfmanfs.FSLayout, error) {
 	return bpfmanfs.New(c.RuntimeDir)
 }
 
@@ -293,12 +293,12 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 		defer cancel()
 	}
 
-	root, err := c.Root()
+	layout, err := c.Layout()
 	if err != nil {
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
-	err = lock.RunWithTiming(ctx, root.LockPath(), c.Logger(), func(ctx context.Context, _ lock.WriterScope) error {
+	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, _ lock.WriterScope) error {
 		var fnErr error
 		result, fnErr = fn(ctx)
 		return fnErr
@@ -306,7 +306,7 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", root.LockPath(), c.LockTimeout)
+			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", layout.LockPath(), c.LockTimeout)
 		}
 		return result, err
 	}
@@ -326,12 +326,12 @@ func RunWithLockValueAndScope[T any](ctx context.Context, c *CLI, fn func(contex
 		defer cancel()
 	}
 
-	root, err := c.Root()
+	layout, err := c.Layout()
 	if err != nil {
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
-	err = lock.RunWithTiming(ctx, root.LockPath(), c.Logger(), func(ctx context.Context, scope lock.WriterScope) error {
+	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, scope lock.WriterScope) error {
 		var fnErr error
 		result, fnErr = fn(ctx, scope)
 		return fnErr
@@ -339,7 +339,7 @@ func RunWithLockValueAndScope[T any](ctx context.Context, c *CLI, fn func(contex
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", root.LockPath(), c.LockTimeout)
+			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", layout.LockPath(), c.LockTimeout)
 		}
 		return result, err
 	}

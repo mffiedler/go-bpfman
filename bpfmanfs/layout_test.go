@@ -20,9 +20,9 @@ func TestNew_ValidAbsolutePaths(t *testing.T) {
 		{"/", "/bpfman"},
 	}
 	for _, tt := range tests {
-		root, err := bpfmanfs.New(tt.input)
+		layout, err := bpfmanfs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
-		assert.Equal(t, tt.expected, root.Base(), "New(%q)", tt.input)
+		assert.Equal(t, tt.expected, layout.Base(), "New(%q)", tt.input)
 	}
 }
 
@@ -52,9 +52,9 @@ func TestNew_RejectsRelative(t *testing.T) {
 
 func TestNew_HandlesRootSafely(t *testing.T) {
 	// Even "/" is safe because we append /bpfman
-	root, err := bpfmanfs.New("/")
+	layout, err := bpfmanfs.New("/")
 	require.NoError(t, err)
-	assert.Equal(t, "/bpfman", root.Base())
+	assert.Equal(t, "/bpfman", layout.Base())
 }
 
 func TestNew_CleansPathVariants(t *testing.T) {
@@ -88,65 +88,65 @@ func TestNew_CleansPathVariants(t *testing.T) {
 		{"//run//test//", "/run/test/bpfman"},
 	}
 	for _, tt := range tests {
-		root, err := bpfmanfs.New(tt.input)
+		layout, err := bpfmanfs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
-		assert.Equal(t, tt.expected, root.Base(), "New(%q)", tt.input)
+		assert.Equal(t, tt.expected, layout.Base(), "New(%q)", tt.input)
 	}
 }
 
-func TestZeroValueRoot(t *testing.T) {
-	var root bpfmanfs.Root
-	assert.False(t, root.Valid(), "zero Root should not be valid")
+func TestZeroValueLayout(t *testing.T) {
+	var layout bpfmanfs.FSLayout
+	assert.False(t, layout.Valid(), "zero FSLayout should not be valid")
 
-	// Methods on zero Root should panic
-	assert.Panics(t, func() { root.Base() }, "Base() on zero Root should panic")
-	assert.Panics(t, func() { root.DBPath() }, "DBPath() on zero Root should panic")
-	assert.Panics(t, func() { root.SocketPath() }, "SocketPath() on zero Root should panic")
-	assert.Panics(t, func() { root.RuntimeDirs() }, "RuntimeDirs() on zero Root should panic")
+	// Methods on zero FSLayout should panic
+	assert.Panics(t, func() { layout.Base() }, "Base() on zero FSLayout should panic")
+	assert.Panics(t, func() { layout.DBPath() }, "DBPath() on zero FSLayout should panic")
+	assert.Panics(t, func() { layout.SocketPath() }, "SocketPath() on zero FSLayout should panic")
+	assert.Panics(t, func() { layout.RuntimeDirs() }, "RuntimeDirs() on zero FSLayout should panic")
 }
 
-func TestRootString(t *testing.T) {
-	// String() on zero Root should not panic and return a safe representation
-	var zero bpfmanfs.Root
-	assert.Equal(t, "bpfmanfs.Root(<invalid>)", zero.String())
+func TestLayoutString(t *testing.T) {
+	// String() on zero FSLayout should not panic and return a safe representation
+	var zero bpfmanfs.FSLayout
+	assert.Equal(t, "bpfmanfs.FSLayout(<invalid>)", zero.String())
 
-	// String() on valid Root should include the path
-	root, err := bpfmanfs.New("/run")
+	// String() on valid FSLayout should include the path
+	layout, err := bpfmanfs.New("/run")
 	require.NoError(t, err)
-	assert.Equal(t, "bpfmanfs.Root(/run/bpfman)", root.String())
+	assert.Equal(t, "bpfmanfs.FSLayout(/run/bpfman)", layout.String())
 }
 
 func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
-	root, err := bpfmanfs.New(parent)
+	layout, err := bpfmanfs.New(parent)
 	require.NoError(t, err)
 
-	dirs := root.RuntimeDirs()
+	dirs := layout.RuntimeDirs()
 	require.Len(t, dirs, 3)
-	assert.Equal(t, root.Base(), dirs[0])
-	assert.Equal(t, root.DBDir(), dirs[1])
-	assert.Equal(t, root.SocketDir(), dirs[2])
+	assert.Equal(t, layout.Base(), dirs[0])
+	assert.Equal(t, layout.DBDir(), dirs[1])
+	assert.Equal(t, layout.SocketDir(), dirs[2])
 }
 
 func TestCSIDirs(t *testing.T) {
 	parent := t.TempDir()
-	root, err := bpfmanfs.New(parent)
+	layout, err := bpfmanfs.New(parent)
 	require.NoError(t, err)
 
-	dirs := root.CSIDirs()
+	dirs := layout.CSIDirs()
 	require.Len(t, dirs, 2)
-	assert.Equal(t, root.CSIDir(), dirs[0])
-	assert.Equal(t, root.CSIFSDir(), dirs[1])
+	assert.Equal(t, layout.CSIDir(), dirs[0])
+	assert.Equal(t, layout.CSIFSDir(), dirs[1])
 }
 
 func TestRuntime_ZeroValue(t *testing.T) {
-	var root bpfmanfs.Root
-	// Calling Runtime() on zero Root should panic
-	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
+	var layout bpfmanfs.FSLayout
+	// Calling Runtime() on zero FSLayout should panic
+	assert.Panics(t, func() { layout.Runtime() }, "Runtime() on zero FSLayout should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {
-	var root bpfmanfs.Root
-	// Calling BPFFS() on zero Root should panic
-	assert.Panics(t, func() { root.BPFFS() }, "BPFFS() on zero Root should panic")
+	var layout bpfmanfs.FSLayout
+	// Calling BPFFS() on zero FSLayout should panic
+	assert.Panics(t, func() { layout.BPFFS() }, "BPFFS() on zero FSLayout should panic")
 }

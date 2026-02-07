@@ -36,7 +36,7 @@ import (
 // database, and socket, enabling t.Parallel() across all tests.
 type TestEnv struct {
 	T        *testing.T
-	Root     bpfmanfs.Root
+	Layout   bpfmanfs.FSLayout
 	Manager  *manager.Manager
 	Puller   interpreter.ImagePuller
 	logger   *slog.Logger
@@ -58,7 +58,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	testName := sanitizeTestName(t.Name())
 	baseDir := filepath.Join(os.TempDir(), fmt.Sprintf("bpfman-e2e-%d-%s", os.Getpid(), testName))
 
-	root, err := bpfmanfs.New(baseDir)
+	layout, err := bpfmanfs.New(baseDir)
 	if err != nil {
 		t.Fatalf("invalid runtime directory: %v", err)
 	}
@@ -87,17 +87,17 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 	// Create store
 	ctx := context.Background()
-	store, err := sqlite.New(ctx, root.DBPath(), logger)
+	store, err := sqlite.New(ctx, layout.DBPath(), logger)
 	require.NoError(t, err, "failed to create store")
 
 	// Create kernel adapter
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	require.NoError(t, runtime.Ensure(root, runtime.RealMounter{}, logger), "failed to ensure runtime")
+	require.NoError(t, runtime.Ensure(layout, runtime.RealMounter{}, logger), "failed to ensure runtime")
 
 	// Create manager
-	mgr, err := manager.New(root, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(layout, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	require.NoError(t, err, "failed to create manager")
 
 	cleanup := func() error {
@@ -116,7 +116,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 	env := &TestEnv{
 		T:        t,
-		Root:     root,
+		Layout:   layout,
 		Manager:  mgr,
 		Puller:   puller,
 		logger:   logger,
@@ -138,7 +138,7 @@ func (e *TestEnv) cleanup() {
 	}
 
 	// Unmount bpffs if mounted
-	bpffsMount := e.Root.BPFFSMountPoint()
+	bpffsMount := e.Layout.BPFFSMountPoint()
 	if isMounted(bpffsMount) {
 		if err := unmount(bpffsMount); err != nil {
 			e.T.Logf("warning: failed to unmount bpffs at %s: %v", bpffsMount, err)
@@ -146,10 +146,10 @@ func (e *TestEnv) cleanup() {
 	}
 
 	// Remove runtime directories
-	if err := os.RemoveAll(e.Root.Base()); err != nil {
-		e.T.Logf("warning: failed to remove %s: %v", e.Root.Base(), err)
+	if err := os.RemoveAll(e.Layout.Base()); err != nil {
+		e.T.Logf("warning: failed to remove %s: %v", e.Layout.Base(), err)
 	}
-	sockDir := e.Root.Base() + "-sock"
+	sockDir := e.Layout.Base() + "-sock"
 	if err := os.RemoveAll(sockDir); err != nil {
 		e.T.Logf("warning: failed to remove %s: %v", sockDir, err)
 	}
@@ -157,14 +157,14 @@ func (e *TestEnv) cleanup() {
 
 // runWithLock executes a function under the writer lock.
 func (e *TestEnv) runWithLock(ctx context.Context, fn func(context.Context) error) error {
-	return lock.Run(ctx, e.Root.LockPath(), func(ctx context.Context, _ lock.WriterScope) error {
+	return lock.Run(ctx, e.Layout.LockPath(), func(ctx context.Context, _ lock.WriterScope) error {
 		return fn(ctx)
 	})
 }
 
 // runWithLockAndScope executes a function under the writer lock with scope access.
 func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
-	return lock.Run(ctx, e.Root.LockPath(), fn)
+	return lock.Run(ctx, e.Layout.LockPath(), fn)
 }
 
 // LoadImage loads BPF programs from an OCI image.

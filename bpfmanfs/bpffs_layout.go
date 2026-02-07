@@ -8,22 +8,22 @@ import (
 )
 
 // BPFFS provides access to bpfman's bpffs path conventions.
-// Fields are unexported; obtain via Root.BPFFS().
+// Fields are unexported; obtain via FSLayout.BPFFS().
 type BPFFS struct {
-	root Root
+	layout FSLayout
 	// dirs is set only for test scanners constructed via NewScannerFromDirs.
 	dirs *ScannerDirs
 }
 
-// Valid reports whether the BPFFS was obtained from a valid Root.
+// Valid reports whether the BPFFS was obtained from a valid Layout.
 func (b BPFFS) Valid() bool {
-	return b.root.Valid() || b.dirs != nil
+	return b.layout.Valid() || b.dirs != nil
 }
 
-// mustValid panics if b was not obtained from Root.BPFFS().
+// mustValid panics if b was not obtained from FSLayout.BPFFS().
 func (b BPFFS) mustValid() {
 	if !b.Valid() {
-		panic("bpfmanfs: zero BPFFS used; obtain via Root.BPFFS()")
+		panic("bpfmanfs: zero BPFFS used; obtain via FSLayout.BPFFS()")
 	}
 }
 
@@ -33,42 +33,42 @@ func (b BPFFS) mountPoint() string {
 	if b.dirs != nil {
 		return b.dirs.FS
 	}
-	return filepath.Join(b.root.base, "fs")
+	return filepath.Join(b.layout.base, "fs")
 }
 
 func (b BPFFS) xdpDir() string {
 	if b.dirs != nil {
 		return b.dirs.XDP
 	}
-	return filepath.Join(b.root.base, "fs", "xdp")
+	return filepath.Join(b.layout.base, "fs", "xdp")
 }
 
 func (b BPFFS) tcIngressDir() string {
 	if b.dirs != nil {
 		return b.dirs.TCIngress
 	}
-	return filepath.Join(b.root.base, "fs", "tc-ingress")
+	return filepath.Join(b.layout.base, "fs", "tc-ingress")
 }
 
 func (b BPFFS) tcEgressDir() string {
 	if b.dirs != nil {
 		return b.dirs.TCEgress
 	}
-	return filepath.Join(b.root.base, "fs", "tc-egress")
+	return filepath.Join(b.layout.base, "fs", "tc-egress")
 }
 
 func (b BPFFS) mapsDir() string {
 	if b.dirs != nil {
 		return b.dirs.Maps
 	}
-	return filepath.Join(b.root.base, "fs", "maps")
+	return filepath.Join(b.layout.base, "fs", "maps")
 }
 
 func (b BPFFS) linksDir() string {
 	if b.dirs != nil {
 		return b.dirs.Links
 	}
-	return filepath.Join(b.root.base, "fs", "links")
+	return filepath.Join(b.layout.base, "fs", "links")
 }
 
 // MountPoint returns the bpffs mount point path.

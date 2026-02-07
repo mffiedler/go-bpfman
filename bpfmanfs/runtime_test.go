@@ -13,11 +13,11 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
-func mustNew(t *testing.T) bpfmanfs.Root {
+func mustNew(t *testing.T) bpfmanfs.FSLayout {
 	t.Helper()
-	root, err := bpfmanfs.New(t.TempDir())
+	layout, err := bpfmanfs.New(t.TempDir())
 	require.NoError(t, err)
-	return root
+	return layout
 }
 
 func writeDummyBytecode(t *testing.T, dir string) string {
@@ -187,7 +187,7 @@ func TestCleanStaging_NoStagingDir(t *testing.T) {
 }
 
 func TestZeroValueRuntime(t *testing.T) {
-	var root bpfmanfs.Root
-	// Calling Runtime() on zero Root should panic
-	assert.Panics(t, func() { root.Runtime() }, "Runtime() on zero Root should panic")
+	var layout bpfmanfs.FSLayout
+	// Calling Runtime() on zero FSLayout should panic
+	assert.Panics(t, func() { layout.Runtime() }, "Runtime() on zero FSLayout should panic")
 }

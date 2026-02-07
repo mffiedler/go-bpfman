@@ -52,11 +52,11 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 
 // RunConfig configures the server daemon.
 type RunConfig struct {
-	Root         bpfmanfs.Root
+	Layout       bpfmanfs.FSLayout
 	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
-	SocketPath   string // Optional override for Unix socket path (defaults to root.SocketPath())
+	SocketPath   string // Optional override for Unix socket path (defaults to layout.SocketPath())
 	Logger       *slog.Logger
 	Config       config.Config
 }
@@ -65,7 +65,7 @@ type RunConfig struct {
 // This is the main entry point for the serve command.
 // The context is used for cancellation - when cancelled, the server shuts down gracefully.
 func Run(ctx context.Context, cfg RunConfig) error {
-	root := cfg.Root
+	layout := cfg.Layout
 
 	logger := cfg.Logger
 	if logger == nil {
@@ -76,7 +76,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	logger = manager.WithOpIDHandler(logger)
 
 	// Open shared SQLite store
-	dbPath := root.DBPath()
+	dbPath := layout.DBPath()
 	st, err := sqlite.New(ctx, dbPath, logger)
 	if err != nil {
 		return fmt.Errorf("failed to open store at %s: %w", dbPath, err)
@@ -87,13 +87,13 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	if err := runtime.Ensure(root, runtime.RealMounter{}, logger); err != nil {
+	if err := runtime.Ensure(layout, runtime.RealMounter{}, logger); err != nil {
 		return fmt.Errorf("ensure runtime: %w", err)
 	}
 
 	// Create manager for orchestrating store + kernel operations.
 	// The manager is needed by CSI for reconciled program lookups.
-	mgr, err := manager.New(root, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(layout, st, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -125,7 +125,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Start CSI driver if enabled
 	if cfg.CSISupport {
-		for _, dir := range root.CSIDirs() {
+		for _, dir := range layout.CSIDirs() {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return fmt.Errorf("create CSI directory %s: %w", dir, err)
 			}
@@ -136,7 +136,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			return fmt.Errorf("failed to get hostname for node ID: %w", err)
 		}
 
-		csiSocketPath := root.CSISocketPath()
+		csiSocketPath := layout.CSISocketPath()
 		csiDriver = driver.New(
 			DefaultCSIDriverName,
 			DefaultCSIVersion,
@@ -189,12 +189,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	// Start bpfman gRPC server
-	srv := newWithStore(root, st, puller, mgr, logger)
+	srv := newWithStore(layout, st, puller, mgr, logger)
 
-	// Use override socket path if provided, otherwise use default from root
+	// Use override socket path if provided, otherwise use default from layout
 	socketPath := cfg.SocketPath
 	if socketPath == "" {
-		socketPath = root.SocketPath()
+		socketPath = layout.SocketPath()
 	}
 
 	return srv.serve(ctx, socketPath, cfg.TCPAddress)
@@ -205,7 +205,7 @@ type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	mu        sync.RWMutex
-	root      bpfmanfs.Root
+	layout    bpfmanfs.FSLayout
 	kernel    interpreter.KernelOperations
 	store     interpreter.Store
 	puller    interpreter.ImagePuller
@@ -217,12 +217,12 @@ type Server struct {
 
 // newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(root bpfmanfs.Root, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
+func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		root:     root,
+		layout:   layout,
 		kernel:   ebpf.New(ebpf.WithLogger(logger)),
 		store:    store,
 		puller:   puller,
@@ -235,14 +235,14 @@ func newWithStore(root bpfmanfs.Root, store interpreter.Store, puller interprete
 // New creates a server with the provided dependencies.
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
-func New(root bpfmanfs.Root, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{
-		root:     root,
+		layout:   layout,
 		kernel:   kernel,
 		store:    store,
 		puller:   puller,
@@ -378,7 +378,7 @@ func (s *Server) lockInterceptor() grpc.UnaryServerInterceptor {
 		var resp any
 		var handlerErr error
 
-		runErr := lock.RunWithTiming(ctx, s.root.LockPath(), s.logger,
+		runErr := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger,
 			func(ctx context.Context, scope lock.WriterScope) error {
 				// Stash scope in ctx so handlers can pass it to manager
 				// methods that need it (e.g., container uprobe).
