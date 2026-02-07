@@ -7,7 +7,7 @@
 //
 // Usage:
 //
-//	layout, err := bpfmanfs.New("/run")
+//	layout, err := bpfmanfs.New("/run/bpfman")
 //	if err != nil {
 //	    return err
 //	}

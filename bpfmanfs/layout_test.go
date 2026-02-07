@@ -1,6 +1,7 @@
 package bpfmanfs_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,10 +15,10 @@ func TestNew_ValidAbsolutePaths(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"/run", "/run/bpfman"},
-		{"/tmp/test", "/tmp/test/bpfman"},
-		{"/var/run", "/var/run/bpfman"},
-		{"/", "/bpfman"},
+		{"/run/bpfman", "/run/bpfman"},
+		{"/tmp/test/bpfman", "/tmp/test/bpfman"},
+		{"/var/run/bpfman", "/var/run/bpfman"},
+		{"/bpfman", "/bpfman"},
 	}
 	for _, tt := range tests {
 		layout, err := bpfmanfs.New(tt.input)
@@ -50,42 +51,18 @@ func TestNew_RejectsRelative(t *testing.T) {
 	}
 }
 
-func TestNew_HandlesRootSafely(t *testing.T) {
-	// Even "/" is safe because we append /bpfman
-	layout, err := bpfmanfs.New("/")
-	require.NoError(t, err)
-	assert.Equal(t, "/bpfman", layout.Base())
-}
-
-func TestNew_CleansPathVariants(t *testing.T) {
-	// All these paths that would be dangerous if used directly
-	// are safe because we append /bpfman after cleaning.
+func TestNew_CleansPath(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
 	}{
-		// Multiple slashes
-		{"//////", "/bpfman"},
-		{"//", "/bpfman"},
-		{"//run//", "/run/bpfman"},
+		// Multiple slashes are cleaned
+		{"//run//bpfman//", "/run/bpfman"},
 		// Dot navigation
-		{"/./", "/bpfman"},
-		{"/././.", "/bpfman"},
-		{"/../", "/bpfman"},
-		{"/../../", "/bpfman"},
-		{"/../../../../../../../", "/bpfman"},
-		// Mixed
-		{"//./", "/bpfman"},
-		{"//..", "/bpfman"},
-		{"/..//", "/bpfman"},
-		{"/.//../", "/bpfman"},
-		// Trailing components that resolve away
-		{"/tmp/..", "/bpfman"},
-		{"/run/../..", "/bpfman"},
-		{"/a/b/c/../../..", "/bpfman"},
-		{"/foo/bar/baz/../../../..", "/bpfman"},
-		// Normal paths with extra slashes
-		{"//run//test//", "/run/test/bpfman"},
+		{"/run/./bpfman", "/run/bpfman"},
+		{"/run/../run/bpfman", "/run/bpfman"},
+		// Trailing slashes
+		{"/run/bpfman/", "/run/bpfman"},
 	}
 	for _, tt := range tests {
 		layout, err := bpfmanfs.New(tt.input)
@@ -111,14 +88,14 @@ func TestLayoutString(t *testing.T) {
 	assert.Equal(t, "bpfmanfs.FSLayout(<invalid>)", zero.String())
 
 	// String() on valid FSLayout should include the path
-	layout, err := bpfmanfs.New("/run")
+	layout, err := bpfmanfs.New("/run/bpfman")
 	require.NoError(t, err)
 	assert.Equal(t, "bpfmanfs.FSLayout(/run/bpfman)", layout.String())
 }
 
 func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
-	layout, err := bpfmanfs.New(parent)
+	layout, err := bpfmanfs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
 
 	dirs := layout.RuntimeDirs()
@@ -130,7 +107,7 @@ func TestRuntimeDirs(t *testing.T) {
 
 func TestCSIDirs(t *testing.T) {
 	parent := t.TempDir()
-	layout, err := bpfmanfs.New(parent)
+	layout, err := bpfmanfs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
 
 	dirs := layout.CSIDirs()

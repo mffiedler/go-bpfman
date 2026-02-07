@@ -53,7 +53,7 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	t.Cleanup(func() { store.Close() })
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err, "failed to create fs layout")
 	kernel := newFakeKernel()
 	if discoverer == nil {

@@ -23,26 +23,22 @@ type FSLayout struct {
 
 // New creates an FSLayout for bpfman's runtime directory.
 //
-// The base path specifies the parent directory; New always appends
-// "bpfman" to create the actual runtime root. This ensures bpfman
-// operates in a controlled subdirectory regardless of what base is
-// provided, preventing accidental operations on system directories.
+// The root path is used directly - callers must provide the full path
+// including any "bpfman" suffix if desired.
 //
 // Examples:
-//   - New("/run") -> /run/bpfman
-//   - New("/tmp/test") -> /tmp/test/bpfman
-//   - New("/") -> /bpfman
+//   - New("/run/bpfman") -> /run/bpfman
+//   - New("/tmp/test/bpfman") -> /tmp/test/bpfman
 //
 // New rejects empty paths and relative paths.
-func New(base string) (FSLayout, error) {
-	if base == "" {
-		return FSLayout{}, fmt.Errorf("bpfmanfs: base path cannot be empty")
+func New(root string) (FSLayout, error) {
+	if root == "" {
+		return FSLayout{}, fmt.Errorf("bpfmanfs: root path cannot be empty")
 	}
-	if !filepath.IsAbs(base) {
-		return FSLayout{}, fmt.Errorf("bpfmanfs: base path must be absolute, got %q", base)
+	if !filepath.IsAbs(root) {
+		return FSLayout{}, fmt.Errorf("bpfmanfs: root path must be absolute, got %q", root)
 	}
-	base = filepath.Clean(base)
-	return FSLayout{base: filepath.Join(base, "bpfman")}, nil
+	return FSLayout{base: filepath.Clean(root)}, nil
 }
 
 // Valid reports whether l was constructed via New.

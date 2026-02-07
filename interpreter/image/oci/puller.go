@@ -3,8 +3,6 @@ package oci
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,19 +20,11 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/interpreter"
 )
 
 const (
-	// defaultCacheDirName is the subdirectory name within XDG_CACHE_HOME or ~/.cache.
-	defaultCacheDirName = "bpfman/images"
-
-	// MetadataFile is the name of the cached metadata file.
-	MetadataFile = "metadata.json"
-
-	// BytecodeFile is the name of the extracted bytecode file.
-	BytecodeFile = "bytecode.o"
-
 	// LabelPrograms is the OCI label containing program metadata.
 	LabelPrograms = "io.ebpf.programs"
 
@@ -52,70 +42,57 @@ type cachedMetadata struct {
 
 // puller implements ImagePuller using ORAS for OCI registry access.
 type puller struct {
-	cacheDir string
+	cache    bpfmanfs.ImageCache
 	logger   *slog.Logger
 	verifier interpreter.SignatureVerifier
 }
 
 // Option configures a puller.
-type Option func(*puller)
-
-// WithCacheDir sets the cache directory.
-func WithCacheDir(dir string) Option {
-	return func(p *puller) {
-		p.cacheDir = dir
-	}
-}
+type Option func(*puller) error
 
 // WithLogger sets the logger.
 func WithLogger(logger *slog.Logger) Option {
-	return func(p *puller) {
+	return func(p *puller) error {
 		p.logger = logger
+		return nil
 	}
 }
 
 // WithVerifier sets the signature verifier.
 // If not set, no signature verification is performed.
 func WithVerifier(v interpreter.SignatureVerifier) Option {
-	return func(p *puller) {
+	return func(p *puller) error {
 		p.verifier = v
+		return nil
 	}
 }
 
 // NewPuller creates a new OCI image puller.
-func NewPuller(opts ...Option) (interpreter.ImagePuller, error) {
+// The cache parameter specifies where pulled images are stored; obtain it
+// via FSLayout.ImageCache().
+func NewPuller(cache bpfmanfs.ImageCache, opts ...Option) (interpreter.ImagePuller, error) {
+	if !cache.Valid() {
+		return nil, fmt.Errorf("invalid image cache")
+	}
+
 	p := &puller{
-		cacheDir: DefaultCacheDir(),
-		logger:   slog.Default(),
+		cache:  cache,
+		logger: slog.Default(),
 	}
 
 	for _, opt := range opts {
-		opt(p)
+		if err := opt(p); err != nil {
+			return nil, err
+		}
 	}
 
-	p.logger.Debug("initialising OCI puller", "cache_dir", p.cacheDir)
+	p.logger.Debug("initialising OCI puller", "cache_dir", p.cache.Root())
 
-	if err := os.MkdirAll(p.cacheDir, 0755); err != nil {
+	if err := p.cache.EnsureRoot(); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	return p, nil
-}
-
-// DefaultCacheDir returns the default cache directory following XDG Base Directory spec.
-func DefaultCacheDir() string {
-	// Use XDG_CACHE_HOME if set
-	if cacheHome := os.Getenv("XDG_CACHE_HOME"); cacheHome != "" {
-		return filepath.Join(cacheHome, defaultCacheDirName)
-	}
-
-	// Fall back to ~/.cache
-	if home := os.Getenv("HOME"); home != "" {
-		return filepath.Join(home, ".cache", defaultCacheDirName)
-	}
-
-	// Last resort: use /tmp
-	return filepath.Join(os.TempDir(), "bpfman-cache", "images")
 }
 
 // Pull downloads an image and returns the extracted bytecode.
@@ -124,14 +101,12 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	logger.Info("pulling OCI image")
 
 	// Compute cache key from URL
-	cacheKey := computeCacheKey(ref.URL)
-	cacheDir := filepath.Join(p.cacheDir, cacheKey)
-
+	cacheKey := p.cache.CacheKey(ref.URL)
 	logger = logger.With("cache_key", cacheKey)
 
 	// Check cache based on pull policy
 	if ref.PullPolicy != bpfman.PullAlways {
-		if cached, ok := p.checkCache(cacheDir, ref, logger); ok {
+		if cached, ok := p.checkCache(cacheKey, ref, logger); ok {
 			logger.Info("using cached image", "digest", cached.Digest)
 			return cached, nil
 		}
@@ -259,21 +234,18 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	logger.Info("layer fetched", "size", len(layerContent))
 
 	// Create temp directory for extraction
-	tempDir, err := os.MkdirTemp(p.cacheDir, "pull-*")
+	tempDir, cleanup, err := p.cache.CreateTempDir()
 	if err != nil {
 		return interpreter.PulledImage{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			logger.Warn("failed to clean up temp directory", "error", err)
-		}
-	}()
+	defer cleanup()
 
 	// Write layer content to temp file
 	layerFile := filepath.Join(tempDir, "layer.blob")
-	if err := os.WriteFile(layerFile, layerContent, 0644); err != nil {
+	if err := p.cache.WriteTempFile(tempDir, "layer.blob", layerContent); err != nil {
 		return interpreter.PulledImage{}, fmt.Errorf("failed to write layer: %w", err)
 	}
+	_ = layerFile // used by extractBytecode via the tempDir
 
 	// Extract bytecode from the layer
 	bytecodeFile, err := extractBytecode(tempDir, logger)
@@ -282,25 +254,22 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	}
 
 	// Create cache directory and move bytecode
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := p.cache.EnsureCacheDir(cacheKey); err != nil {
 		return interpreter.PulledImage{}, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	destPath := filepath.Join(cacheDir, BytecodeFile)
-	if err := os.Rename(bytecodeFile, destPath); err != nil {
-		// If rename fails (cross-device), try copy
-		if err := copyFile(bytecodeFile, destPath); err != nil {
-			return interpreter.PulledImage{}, fmt.Errorf("failed to cache bytecode: %w", err)
-		}
+	if err := p.cache.CacheBytecode(cacheKey, bytecodeFile); err != nil {
+		return interpreter.PulledImage{}, fmt.Errorf("failed to cache bytecode: %w", err)
 	}
 
+	destPath := p.cache.BytecodePath(cacheKey)
 	logger.Debug("bytecode cached", "path", destPath)
 
 	// Validate the ELF file
 	if err := validateELF(destPath, logger); err != nil {
 		// Clean up invalid file
-		if rmErr := os.RemoveAll(cacheDir); rmErr != nil {
-			logger.Warn("failed to remove cache directory during cleanup", "path", cacheDir, "error", rmErr)
+		if rmErr := p.cache.RemoveCacheEntry(cacheKey); rmErr != nil {
+			logger.Warn("failed to remove cache directory during cleanup", "cache_key", cacheKey, "error", rmErr)
 		}
 		return interpreter.PulledImage{}, err
 	}
@@ -315,8 +284,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		PulledAt: time.Now(),
 	}
 
-	metaPath := filepath.Join(cacheDir, MetadataFile)
-	if err := saveMetadata(metaPath, meta); err != nil {
+	if err := p.cache.SaveMetadata(cacheKey, meta); err != nil {
 		logger.Warn("failed to save metadata", "error", err)
 		// Not fatal - continue
 	}
@@ -334,19 +302,16 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 }
 
 // checkCache checks if a valid cached image exists.
-func (p *puller) checkCache(cacheDir string, ref interpreter.ImageRef, logger *slog.Logger) (interpreter.PulledImage, bool) {
-	bytecodeFile := filepath.Join(cacheDir, BytecodeFile)
-	metadataFile := filepath.Join(cacheDir, MetadataFile)
-
+func (p *puller) checkCache(cacheKey string, ref interpreter.ImageRef, logger *slog.Logger) (interpreter.PulledImage, bool) {
 	// Check if bytecode exists
-	if _, err := os.Stat(bytecodeFile); err != nil {
+	if !p.cache.BytecodeExists(cacheKey) {
 		logger.Debug("cache miss: bytecode not found")
 		return interpreter.PulledImage{}, false
 	}
 
 	// Try to load metadata
-	meta, err := loadMetadata(metadataFile)
-	if err != nil {
+	var meta cachedMetadata
+	if err := p.cache.LoadMetadata(cacheKey, &meta); err != nil {
 		logger.Debug("cache miss: metadata not found", "error", err)
 		return interpreter.PulledImage{}, false
 	}
@@ -354,7 +319,7 @@ func (p *puller) checkCache(cacheDir string, ref interpreter.ImageRef, logger *s
 	logger.Debug("cache hit", "digest", meta.Digest, "pulled_at", meta.PulledAt)
 
 	return interpreter.PulledImage{
-		ObjectPath: bytecodeFile,
+		ObjectPath: p.cache.BytecodePath(cacheKey),
 		Programs:   meta.Programs,
 		Maps:       meta.Maps,
 		URL:        ref.URL,
@@ -568,41 +533,4 @@ func (p *puller) extractLabels(ctx context.Context, repo *remote.Repository, con
 	}
 
 	return programs, maps, nil
-}
-
-// computeCacheKey generates a deterministic cache key from a URL.
-func computeCacheKey(url string) string {
-	hash := sha256.Sum256([]byte(url))
-	return "sha256_" + hex.EncodeToString(hash[:16]) // Use first 16 bytes for shorter paths
-}
-
-// saveMetadata writes metadata to a JSON file.
-func saveMetadata(path string, meta cachedMetadata) error {
-	data, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-// loadMetadata reads metadata from a JSON file.
-func loadMetadata(path string) (cachedMetadata, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return cachedMetadata{}, err
-	}
-	var meta cachedMetadata
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return cachedMetadata{}, err
-	}
-	return meta, nil
-}
-
-// copyFile copies a file from src to dst.
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0644)
 }

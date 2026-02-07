@@ -53,6 +53,7 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 // RunConfig configures the server daemon.
 type RunConfig struct {
 	Layout       bpfmanfs.FSLayout
+	ImageCache   bpfmanfs.ImageCache
 	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
@@ -113,6 +114,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Create image puller for OCI images
 	puller, err := oci.NewPuller(
+		cfg.ImageCache,
 		oci.WithLogger(logger),
 		oci.WithVerifier(verifier),
 	)

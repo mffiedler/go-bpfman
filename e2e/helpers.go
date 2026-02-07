@@ -58,9 +58,14 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	testName := sanitizeTestName(t.Name())
 	baseDir := filepath.Join(os.TempDir(), fmt.Sprintf("bpfman-e2e-%d-%s", os.Getpid(), testName))
 
-	layout, err := bpfmanfs.New(baseDir)
+	layout, err := bpfmanfs.New(filepath.Join(baseDir, "bpfman"))
 	if err != nil {
 		t.Fatalf("invalid runtime directory: %v", err)
+	}
+
+	imageCache, err := bpfmanfs.NewImageCache(filepath.Join(baseDir, "cache"))
+	if err != nil {
+		t.Fatalf("invalid image cache directory: %v", err)
 	}
 
 	// Set up logger based on BPFMAN_LOG environment variable.
@@ -109,6 +114,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 	// Create image puller for OCI images
 	puller, err := oci.NewPuller(
+		imageCache,
 		oci.WithLogger(logger),
 		oci.WithVerifier(verifier),
 	)

@@ -162,6 +162,11 @@ func (c *LoadImageCmd) buildPuller(cli *CLI, logger *slog.Logger) (interpreter.I
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
+	cache, err := cli.ImageCache()
+	if err != nil {
+		return nil, fmt.Errorf("get image cache: %w", err)
+	}
+
 	// Build signature verifier based on config
 	var verifier interpreter.SignatureVerifier
 	if cfg.Signing.ShouldVerify() {
@@ -176,6 +181,7 @@ func (c *LoadImageCmd) buildPuller(cli *CLI, logger *slog.Logger) (interpreter.I
 	}
 
 	return oci.NewPuller(
+		cache,
 		oci.WithLogger(logger),
 		oci.WithVerifier(verifier),
 	)

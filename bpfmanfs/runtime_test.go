@@ -15,7 +15,7 @@ import (
 
 func mustNew(t *testing.T) bpfmanfs.FSLayout {
 	t.Helper()
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 	return layout
 }

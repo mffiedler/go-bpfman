@@ -34,8 +34,14 @@ func (c *ServeCmd) Run(cli *CLI, ctx context.Context) error {
 		return fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
+	imageCache, err := cli.ImageCache()
+	if err != nil {
+		return fmt.Errorf("invalid image cache directory: %w", err)
+	}
+
 	cfg := server.RunConfig{
 		Layout:       layout,
+		ImageCache:   imageCache,
 		TCPAddress:   c.TCPAddress,
 		CSISupport:   c.CSISupport,
 		PprofAddress: c.PprofAddress,

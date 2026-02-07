@@ -24,10 +24,11 @@ import (
 
 // CLI is the root command structure for bpfman.
 type CLI struct {
-	RuntimeDir  string        `name:"runtime-dir" help:"Parent directory for runtime files (bpfman subdirectory is created)." default:"${default_runtime_dir}"`
-	Config      string        `name:"config" help:"Config file path." default:"${default_config_path}"`
-	Log         string        `name:"log" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
-	LockTimeout time.Duration `name:"lock-timeout" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
+	RuntimeDir    string        `name:"runtime-dir" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
+	ImageCacheDir string        `name:"image-cache-dir" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
+	Config        string        `name:"config" help:"Config file path." default:"${default_config_path}"`
+	Log           string        `name:"log" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
+	LockTimeout   time.Duration `name:"lock-timeout" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
 
 	// Out is the writer for command output. Defaults to os.Stdout.
 	// Injected for testability.
@@ -65,6 +66,12 @@ type CLI struct {
 // Returns an error if RuntimeDir is empty or not an absolute path.
 func (c *CLI) Layout() (bpfmanfs.FSLayout, error) {
 	return bpfmanfs.New(c.RuntimeDir)
+}
+
+// ImageCache returns the image cache for the configured cache directory.
+// Returns an error if ImageCacheDir is empty or not an absolute path.
+func (c *CLI) ImageCache() (bpfmanfs.ImageCache, error) {
+	return bpfmanfs.NewImageCache(c.ImageCacheDir)
 }
 
 // WriteOut writes bytes to Out, returning an error if the write fails or
@@ -185,8 +192,9 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
 		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
 		kong.Vars{
-			"default_runtime_dir": "/run",
-			"default_config_path": "/etc/bpfman/bpfman.toml",
+			"default_runtime_dir":     "/run/bpfman",
+			"default_image_cache_dir": "/var/cache/bpfman",
+			"default_config_path":     "/etc/bpfman/bpfman.toml",
 		},
 	}
 }
