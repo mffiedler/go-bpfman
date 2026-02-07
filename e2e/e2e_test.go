@@ -841,10 +841,12 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 // TestTC_LoadAttachDetachUnload tests the full lifecycle of a TC program.
 // TC programs use dispatchers for multi-program support.
 func TestTC_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireTC(t)
 
 	env := NewTestEnv(t)
+	iface := NewTestInterface(t, "tc")
 	ctx := context.Background()
 
 	// Given: clean state
@@ -899,9 +901,9 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "stats", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to lo interface (always available)
+	// When: attach via client to test interface
 	// TC uses dispatchers and supports both ingress and egress
-	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, "lo", 1, "ingress")
+	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
 	require.NoError(t, err)
 	tcSpec = tcSpec.WithPriority(50)
 	link, err := env.AttachTC(ctx, tcSpec, bpfman.AttachOpts{})
@@ -913,7 +915,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// Verify tc filter is visible to tc(8) tooling.
 	// The dispatcher is attached as a legacy netlink BPF filter with pref 50.
-	filterCount := tcFilterCount(t, "lo", "ingress")
+	filterCount := tcFilterCount(t, iface.Name, "ingress")
 	require.GreaterOrEqual(t, filterCount, 1, "tc filter should be visible after attach")
 
 	t.Cleanup(func() {
@@ -929,16 +931,16 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	tcDetails, ok := gotLinkDetails.(bpfman.TCDetails)
 	require.True(t, ok, "expected TCDetails, got %T", gotLinkDetails)
-	require.Equal(t, "lo", tcDetails.Interface)
-	require.Equal(t, uint32(1), tcDetails.Ifindex, "ifindex should match lo")
+	require.Equal(t, iface.Name, tcDetails.Interface)
+	require.Equal(t, uint32(iface.Ifindex), tcDetails.Ifindex)
 	require.Equal(t, bpfman.TCDirectionIngress, tcDetails.Direction)
 	require.Equal(t, int32(50), tcDetails.Priority)
 	require.NotZero(t, tcDetails.DispatcherID, "TC should use dispatcher")
 	require.NotZero(t, tcDetails.Revision, "dispatcher should have revision")
 
 	// Verify TC ingress filters exist on the interface via netlink
-	filters := tcIngressFilters(t, "lo")
-	require.NotEmpty(t, filters, "expected at least one TC ingress filter on lo after attach")
+	filters := tcIngressFilters(t, iface.Name)
+	require.NotEmpty(t, filters, "expected at least one TC ingress filter after attach")
 	foundPriority := false
 	for _, f := range filters {
 		if f.Attrs().Priority == 50 {
@@ -946,7 +948,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 			break
 		}
 	}
-	require.True(t, foundPriority, "expected a TC filter with priority 50 on lo")
+	require.True(t, foundPriority, "expected a TC filter with priority 50")
 
 	// Round-trip: ListLinks should include our link
 	// Note: TC uses dispatchers, so ProgramID is the dispatcher's program ID.
@@ -966,7 +968,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Verify tc filter has been removed by the detach
-	filterCountAfter := tcFilterCount(t, "lo", "ingress")
+	filterCountAfter := tcFilterCount(t, iface.Name, "ingress")
 	require.Equal(t, 0, filterCountAfter, "tc filter should be removed after detach")
 
 	// When: unload
@@ -979,17 +981,19 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "Get should fail after unload")
 
 	// Verify TC ingress filters are removed after detach/unload
-	filtersAfter := tcIngressFilters(t, "lo")
-	require.Empty(t, filtersAfter, "expected no TC ingress filters on lo after detach/unload")
+	filtersAfter := tcIngressFilters(t, iface.Name)
+	require.Empty(t, filtersAfter, "expected no TC ingress filters after detach/unload")
 }
 
 // TestTCX_LoadAttachDetachUnload tests the full lifecycle of a TCX program.
 // TCX requires kernel 6.6+ and uses native multi-program support.
 func TestTCX_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
+	iface := NewTestInterface(t, "tcx")
 	ctx := context.Background()
 
 	// Given: clean state
@@ -1044,8 +1048,8 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "stats", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to lo interface
-	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, "lo", 1, "ingress")
+	// When: attach via client to test interface
+	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
 	require.NoError(t, err)
 	tcxSpec = tcxSpec.WithPriority(50)
 	link, err := env.AttachTCX(ctx, tcxSpec, bpfman.AttachOpts{})
@@ -1066,8 +1070,8 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	tcxDetails, ok := gotLinkDetails.(bpfman.TCXDetails)
 	require.True(t, ok, "expected TCXDetails, got %T", gotLinkDetails)
-	require.Equal(t, "lo", tcxDetails.Interface)
-	require.Equal(t, uint32(1), tcxDetails.Ifindex, "ifindex should match lo")
+	require.Equal(t, iface.Name, tcxDetails.Interface)
+	require.Equal(t, uint32(iface.Ifindex), tcxDetails.Ifindex)
 	require.Equal(t, bpfman.TCDirectionIngress, tcxDetails.Direction)
 	require.Equal(t, int32(50), tcxDetails.Priority)
 	// TCX uses native kernel multi-prog support, not dispatchers
@@ -1101,9 +1105,11 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 // TestXDP_LoadAttachDetachUnload tests the full lifecycle of an XDP program.
 // XDP programs use dispatchers for multi-program support.
 func TestXDP_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
+	iface := NewTestInterface(t, "xdp")
 	ctx := context.Background()
 
 	// Given: clean state
@@ -1158,8 +1164,8 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "pass", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to lo interface
-	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, "lo", 1)
+	// When: attach via client to test interface
+	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex)
 	require.NoError(t, err)
 	link, err := env.AttachXDP(ctx, xdpSpec, bpfman.AttachOpts{})
 	require.NoError(t, err)
@@ -1181,8 +1187,8 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	xdpDetails, ok := gotLinkDetails.(bpfman.XDPDetails)
 	require.True(t, ok, "expected XDPDetails, got %T", gotLinkDetails)
-	require.Equal(t, "lo", xdpDetails.Interface)
-	require.Equal(t, uint32(1), xdpDetails.Ifindex, "ifindex should match lo")
+	require.Equal(t, iface.Name, xdpDetails.Interface)
+	require.Equal(t, uint32(iface.Ifindex), xdpDetails.Ifindex)
 	require.NotZero(t, xdpDetails.DispatcherID, "XDP should use dispatcher")
 	require.NotZero(t, xdpDetails.Revision, "dispatcher should have revision")
 

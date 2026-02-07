@@ -614,6 +614,60 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 	return count
 }
 
+// TestInterface holds information about a test network interface.
+type TestInterface struct {
+	Name    string
+	Ifindex int
+}
+
+// NewTestInterface creates a dummy network interface for testing.
+// The interface is automatically deleted via t.Cleanup().
+// Each test gets a unique interface, enabling parallel execution.
+func NewTestInterface(t *testing.T, id string) TestInterface {
+	t.Helper()
+
+	// Interface name: "bpfman-<id>", max 15 chars (IFNAMSIZ - 1).
+	// The "bpfman-" prefix identifies leaked interfaces.
+	name := "bpfman-" + id
+	if len(name) > 15 {
+		t.Fatalf("interface name %q exceeds 15 chars", name)
+	}
+
+	// Fail if interface already exists - indicates a leak from a previous test.
+	if _, err := netlink.LinkByName(name); err == nil {
+		t.Fatalf("interface %s already exists (leaked from previous test?)", name)
+	}
+
+	dummy := &netlink.Dummy{
+		LinkAttrs: netlink.LinkAttrs{Name: name},
+	}
+
+	if err := netlink.LinkAdd(dummy); err != nil {
+		t.Fatalf("failed to create dummy interface %s: %v", name, err)
+	}
+
+	t.Cleanup(func() {
+		// Best effort cleanup - interface may already be gone
+		if link, err := netlink.LinkByName(name); err == nil {
+			netlink.LinkDel(link)
+		}
+	})
+
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatalf("failed to find dummy interface %s: %v", name, err)
+	}
+
+	if err := netlink.LinkSetUp(link); err != nil {
+		t.Fatalf("failed to bring up interface %s: %v", name, err)
+	}
+
+	return TestInterface{
+		Name:    name,
+		Ifindex: link.Attrs().Index,
+	}
+}
+
 const staleTestDirPrefix = "bpfman-e2e-"
 
 // cleanupStaleTestDirs removes leftover test directories from previous runs.
