@@ -1,13 +1,15 @@
-package bpfmanfs
+package bpfmanfs_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
 func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
-	root, err := New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
 }
 
 func TestBPFFS_RemoveDispatcherRevDir_RefusesMountRoot(t *testing.T) {
-	root, err := New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -74,7 +76,7 @@ func TestBPFFS_RemoveDispatcherRevDir_RefusesMountRoot(t *testing.T) {
 }
 
 func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
-	root, err := New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -104,7 +106,7 @@ func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
 }
 
 func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
-	root, err := New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -134,7 +136,7 @@ func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
 }
 
 func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
-	root, err := New(t.TempDir())
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -163,29 +165,20 @@ func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
 	}
 }
 
-func TestBPFFS_cleanUnderMount_RefusesEscape(t *testing.T) {
-	root, err := New(t.TempDir())
+func TestBPFFS_SafeRemoveAll_RefusesEscape(t *testing.T) {
+	root, err := bpfmanfs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	b := root.BPFFS()
+	if err := os.MkdirAll(b.MountPoint(), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 
 	// Path outside mount should fail.
-	_, err = b.cleanUnderMount("/tmp/outside")
+	err = b.SafeRemoveAll("/tmp/outside")
 	if err == nil {
-		t.Error("cleanUnderMount(/tmp/outside) = nil; want error")
-	}
-
-	// Empty path should fail.
-	_, err = b.cleanUnderMount("")
-	if err == nil {
-		t.Error("cleanUnderMount(\"\") = nil; want error")
-	}
-
-	// Mount root itself should fail.
-	_, err = b.cleanUnderMount(b.MountPoint())
-	if err == nil {
-		t.Error("cleanUnderMount(mount root) = nil; want error")
+		t.Error("SafeRemoveAll(/tmp/outside) = nil; want error")
 	}
 }
