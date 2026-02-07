@@ -24,25 +24,6 @@ func NewScanner(b BPFFS) *Scanner {
 	return &Scanner{b: b}
 }
 
-// ScannerDirs holds explicit directory paths for Scanner construction.
-// Use this in tests where you don't have a full Root.
-type ScannerDirs struct {
-	FS        string `json:"fs"`
-	XDP       string `json:"xdp"`
-	TCIngress string `json:"tc_ingress"`
-	TCEgress  string `json:"tc_egress"`
-	Maps      string `json:"maps"`
-	Links     string `json:"links"`
-}
-
-// NewScannerFromDirs creates a Scanner from explicit directory paths.
-// This is primarily for tests that don't have a full Root.
-func NewScannerFromDirs(dirs ScannerDirs) *Scanner {
-	return &Scanner{
-		b: BPFFS{dirs: &dirs},
-	}
-}
-
 // WithOnMalformed sets a callback for unparseable filesystem entries.
 // The callback receives the path and the parse error. Returns the
 // Scanner for chaining.

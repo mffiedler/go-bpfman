@@ -14,13 +14,11 @@ import (
 // Fields are unexported; obtain via FSLayout.BPFFS().
 type BPFFS struct {
 	layout FSLayout
-	// dirs is set only for test scanners constructed via NewScannerFromDirs.
-	dirs *ScannerDirs
 }
 
 // Valid reports whether the BPFFS was obtained from a valid Layout.
 func (b BPFFS) Valid() bool {
-	return b.layout.Valid() || b.dirs != nil
+	return b.layout.Valid()
 }
 
 // mustValid panics if b was not obtained from FSLayout.BPFFS().
@@ -30,47 +28,29 @@ func (b BPFFS) mustValid() {
 	}
 }
 
-// Internal path accessors used by Scanner. These check for dirs override first.
+// Internal path accessors used by Scanner.
 
 func (b BPFFS) mountPoint() string {
-	if b.dirs != nil {
-		return b.dirs.FS
-	}
 	return filepath.Join(b.layout.base, "fs")
 }
 
 func (b BPFFS) xdpDir() string {
-	if b.dirs != nil {
-		return b.dirs.XDP
-	}
 	return filepath.Join(b.layout.base, "fs", "xdp")
 }
 
 func (b BPFFS) tcIngressDir() string {
-	if b.dirs != nil {
-		return b.dirs.TCIngress
-	}
 	return filepath.Join(b.layout.base, "fs", "tc-ingress")
 }
 
 func (b BPFFS) tcEgressDir() string {
-	if b.dirs != nil {
-		return b.dirs.TCEgress
-	}
 	return filepath.Join(b.layout.base, "fs", "tc-egress")
 }
 
 func (b BPFFS) mapsDir() string {
-	if b.dirs != nil {
-		return b.dirs.Maps
-	}
 	return filepath.Join(b.layout.base, "fs", "maps")
 }
 
 func (b BPFFS) linksDir() string {
-	if b.dirs != nil {
-		return b.dirs.Links
-	}
 	return filepath.Join(b.layout.base, "fs", "links")
 }
 
