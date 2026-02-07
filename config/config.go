@@ -1,17 +1,3 @@
-// Package config handles bpfman daemon configuration.
-//
-// Configuration is loaded with overlay semantics:
-//
-//  1. Start with built-in defaults (embedded via go:embed from default.toml)
-//  2. Overlay with config file values (if file exists)
-//  3. CLI flags and environment variables override at runtime (handled by CLI layer)
-//
-// This ensures a valid configuration is always available, even when no
-// config file exists. The TOML decoder only sets fields present in the
-// file, leaving unspecified fields at their default values.
-//
-// If the config file exists but is invalid, Load returns an error rather
-// than silently falling back to defaults.
 package config
 
 import (
@@ -21,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/frobware/go-bpfman/logging"
 )
 
 //go:embed default.toml
@@ -48,19 +35,19 @@ type LoggingConfig struct {
 }
 
 // ToSpec converts the LoggingConfig to a log spec string.
-// If Level is set, it takes precedence. Otherwise, Components are used.
+// Level provides the base level; Components override per-component.
 func (c *LoggingConfig) ToSpec() string {
-	if c.Level != "" {
-		return c.Level
-	}
-
-	// Build spec from components
-	if len(c.Components) == 0 {
+	if c.Level == "" && len(c.Components) == 0 {
 		return ""
 	}
 
+	base := c.Level
+	if base == "" {
+		base = "info"
+	}
+
 	parts := make([]string, 0, len(c.Components)+1)
-	parts = append(parts, "info") // default base level
+	parts = append(parts, base)
 
 	for component, level := range c.Components {
 		parts = append(parts, component+"="+level)
@@ -127,12 +114,23 @@ func Load(path string) (Config, error) {
 		return cfg, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("invalid config: %w", err)
+	}
+
 	return cfg, nil
 }
 
 // Validate checks the configuration for consistency.
 func (c *Config) Validate() error {
-	// Currently no cross-field validation needed
+	if _, err := logging.ParseFormat(c.Logging.Format); err != nil {
+		return err
+	}
+
+	if _, err := logging.ParseSpec(c.Logging.ToSpec()); err != nil {
+		return err
+	}
+
 	return nil
 }
 
