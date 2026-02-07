@@ -1,37 +1,3 @@
-// Package manager provides high-level orchestration using
-// the fetch/compute/execute pattern.
-//
-// # Atomic Load Model
-//
-// The Manager provides atomic semantics for loading BPF programs.
-// The goal is to ensure that either a program is fully loaded with its
-// metadata persisted, or nothing is left behind (no partial state).
-//
-// The atomic model:
-//  1. Load program into kernel and pin to bpffs
-//  2. On success: persist metadata to DB in a single transaction
-//  3. On failure: cleanup kernel state, nothing in DB
-//  4. GC handles orphans from crashes
-//
-// This is simpler than the previous 2PC reservation pattern because:
-//   - Programs only exist in DB after successful load
-//   - No "loading" or "error" states to manage
-//   - GC only needs to handle orphan pins (crash recovery)
-//
-// # CSI Integration
-//
-// The CSI driver is a consumer of loaded programs, not part of the
-// transaction. It creates per-pod views of maps via re-pinning:
-//
-//	canonical: /sys/fs/bpf/bpfman/<kernel_id>/<map>     (managed by bpfman)
-//	per-pod:   /run/bpfman/csi/fs/<vol>/<map>          (per-pod bpffs mount)
-//
-// The per-pod path is a separate bpffs mount. Re-pinning creates a new
-// pin from the map's file descriptor - this is not a rename across
-// filesystems, so there are no cross-device issues.
-//
-// CSI cleanup removes the per-pod bpffs mount; canonical pins are
-// unaffected and remain managed by bpfman.
 package manager
 
 import (
