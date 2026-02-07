@@ -4,8 +4,10 @@ package bpffs
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -92,7 +94,7 @@ func IsMounted(mountInfoPath, mountPoint string) (bool, error) {
 		if len(fields) < 5 {
 			continue
 		}
-		mntPoint := fields[4]
+		mntPoint := unescapeMountInfo(fields[4])
 
 		// Parse the suffix after " - ": fstype source
 		// super_options.
@@ -157,6 +159,12 @@ func Unmount(mountPoint string) error {
 //	  mount bpffs <mountPoint> -t bpf
 //	fi
 func EnsureMounted(mountInfoPath, mountPoint string) error {
+	return EnsureMountedWith(mountInfoPath, mountPoint, Mount)
+}
+
+// EnsureMountedWith is like EnsureMounted but accepts a mount function.
+// This is primarily for tests that need to simulate mount errors.
+func EnsureMountedWith(mountInfoPath, mountPoint string, mountFn func(string) error) error {
 	mounted, err := IsMounted(mountInfoPath, mountPoint)
 	if err != nil {
 		return err
@@ -164,5 +172,59 @@ func EnsureMounted(mountInfoPath, mountPoint string) error {
 	if mounted {
 		return nil
 	}
-	return Mount(mountPoint)
+	if err := mountFn(mountPoint); err != nil {
+		if errors.Is(err, syscall.EBUSY) {
+			mounted, recheckErr := IsMounted(mountInfoPath, mountPoint)
+			if recheckErr == nil && mounted {
+				return nil
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// unescapeMountInfo converts an escaped mountinfo field into its literal form.
+// The kernel escapes space, tab, newline, and backslash in mount point fields
+// using 3-digit octal sequences (e.g., "\040" for space). See mangle_path() in
+// fs/seq_file.c and its usage in fs/proc_namespace.c.
+// This mirrors util-linux/libmount's handling of mountinfo escaping.
+//
+// We unescape because comparisons against mountPoint should use the literal
+// path as provided by callers, not the escaped representation from /proc.
+//
+// Examples:
+//   - "/sys/fs/bpf\\040extra" -> "/sys/fs/bpf extra"
+//   - "tab\\011sep" -> "tab\tsep"
+//   - "newline\\012here" -> "newline\nhere"
+//   - "backslash\\134path" -> "backslash\\path"
+//
+// The logic scans for backslash-escaped octal triplets and replaces them with
+// the corresponding byte. Non-escape sequences are left as-is. This matches
+// util-linux's unmangle_to_buffer() in lib/mangle.c, which only decodes
+// backslash plus three octal digits and leaves other sequences untouched.
+func unescapeMountInfo(s string) string {
+	if strings.IndexByte(s, '\\') == -1 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+3 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		if s[i+1] < '0' || s[i+1] > '7' || s[i+2] < '0' || s[i+2] > '7' || s[i+3] < '0' || s[i+3] > '7' {
+			b.WriteByte(s[i])
+			continue
+		}
+		v, err := strconv.ParseUint(s[i+1:i+4], 8, 8)
+		if err != nil {
+			b.WriteByte(s[i])
+			continue
+		}
+		b.WriteByte(byte(v))
+		i += 3
+	}
+	return b.String()
 }

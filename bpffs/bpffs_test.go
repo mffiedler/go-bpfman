@@ -1,9 +1,11 @@
 package bpffs_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/frobware/go-bpfman/bpffs"
@@ -161,5 +163,46 @@ func TestBPFFSIsMounted_LongLine(t *testing.T) {
 	}
 	if !got {
 		t.Error("IsMounted() = false, want true")
+	}
+}
+
+func TestBPFFSIsMounted_EscapedMountPoint(t *testing.T) {
+	mountinfo := "30 22 0:27 / /sys/fs/bpf\\040extra rw,nosuid shared:9 - bpf bpf rw,mode=700\n"
+
+	tmpDir := t.TempDir()
+	mountInfoPath := filepath.Join(tmpDir, "mountinfo")
+	if err := os.WriteFile(mountInfoPath, []byte(mountinfo), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	got, err := bpffs.IsMounted(mountInfoPath, "/sys/fs/bpf extra")
+	if err != nil {
+		t.Fatalf("IsMounted() error = %v", err)
+	}
+	if !got {
+		t.Error("IsMounted() = false, want true")
+	}
+}
+
+func TestEnsureMounted_EbusyRecheck(t *testing.T) {
+	mountPoint := "/sys/fs/bpf"
+	mountinfo := "15 20 0:3 / /proc rw,relatime - proc /proc rw\n"
+
+	tmpDir := t.TempDir()
+	mountInfoPath := filepath.Join(tmpDir, "mountinfo")
+	if err := os.WriteFile(mountInfoPath, []byte(mountinfo), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	mountFn := func(mp string) error {
+		updated := mountinfo + "30 22 0:27 / /sys/fs/bpf rw,nosuid shared:9 - bpf bpf rw,mode=700\n"
+		if err := os.WriteFile(mountInfoPath, []byte(updated), 0644); err != nil {
+			t.Fatalf("failed to update test file: %v", err)
+		}
+		return fmt.Errorf("mount syscall: %w", syscall.EBUSY)
+	}
+
+	if err := bpffs.EnsureMountedWith(mountInfoPath, mountPoint, mountFn); err != nil {
+		t.Fatalf("EnsureMounted() error = %v", err)
 	}
 }
