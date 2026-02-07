@@ -441,7 +441,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 	// Phase 6a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 
-	rt := layout.Runtime()
+	rt := layout.BytecodeFS()
 	programDirs, err := rt.ScanProgramDirs()
 	if err != nil {
 		return nil, fmt.Errorf("scan program dirs: %w", err)
@@ -1330,7 +1330,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove program dir %s", o.Path),
 							Execute: func() error {
-								return s.layout.Runtime().RemoveProgramDir(oo.Path)
+								return s.layout.BytecodeFS().RemoveProgramDir(oo.Path)
 							},
 						},
 					})
@@ -1362,7 +1362,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove staging dir %s", o.Path),
 							Execute: func() error {
-								return s.layout.Runtime().RemoveStagingDir(oo.Path)
+								return s.layout.BytecodeFS().RemoveStagingDir(oo.Path)
 							},
 						},
 					})
@@ -1444,7 +1444,7 @@ Category: gc-orphan-pin`,
 
 // Doctor gathers state and evaluates all coherency rules.
 func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.layout)
+	state, err := GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {
 		return DoctorReport{}, fmt.Errorf("gather state: %w", err)
 	}
@@ -1464,7 +1464,7 @@ func (m *Manager) Doctor(ctx context.Context) (DoctorReport, error) {
 // Store-level GC (structural cleanup) is handled separately by
 // store.GC() called from Manager.GC().
 func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
-	state, err := GatherState(ctx, m.store, m.kernel, m.layout)
+	state, err := GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {
 		return 0, fmt.Errorf("gather state: %w", err)
 	}

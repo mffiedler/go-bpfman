@@ -30,36 +30,75 @@ type Provenance struct {
 	LoadedAt    time.Time `json:"loaded_at"`   // RFC 3339 UTC
 }
 
-// Runtime provides regular-filesystem operations for bytecode
-// persistence. Fields are unexported; obtain via FSLayout.Runtime().
-type Runtime struct {
+// BytecodeFS provides regular-filesystem operations for bytecode
+// persistence. Fields are unexported; obtain via FSLayout.BytecodeFS().
+type BytecodeFS struct {
 	layout FSLayout
 }
 
-// Valid reports whether the Runtime was obtained from a valid Layout.
-func (rt Runtime) Valid() bool {
+// Valid reports whether the BytecodeFS was obtained from a valid Layout.
+func (rt BytecodeFS) Valid() bool {
 	return rt.layout.Valid()
 }
 
-// mustValid panics if rt was not obtained from FSLayout.Runtime().
-func (rt Runtime) mustValid() {
+// mustValid panics if rt was not obtained from FSLayout.BytecodeFS().
+func (rt BytecodeFS) mustValid() {
 	if !rt.Valid() {
-		panic("bpfmanfs: zero Runtime used; obtain via FSLayout.Runtime()")
+		panic("bpfmanfs: zero BytecodeFS used; obtain via FSLayout.BytecodeFS()")
 	}
 }
 
+// EnsuredRuntime is a capability token proving that the runtime
+// directories exist and bpffs is mounted. Obtain via runtime.Ensure().
+//
+// Holding an EnsuredRuntime guarantees:
+//   - Base directory and subdirectories exist
+//   - bpffs is mounted at the expected mount point
+//
+// This enables upfront validation before operations begin.
+type EnsuredRuntime struct {
+	layout FSLayout
+}
+
+// NewEnsuredRuntime creates an EnsuredRuntime from a validated FSLayout.
+// This is called by runtime.Ensure() after directories and bpffs are ready.
+// Direct callers must ensure the runtime is properly initialised.
+func NewEnsuredRuntime(layout FSLayout) EnsuredRuntime {
+	return EnsuredRuntime{layout: layout}
+}
+
+// Layout returns the underlying FSLayout.
+func (r EnsuredRuntime) Layout() FSLayout {
+	return r.layout
+}
+
+// BPFFS returns the bpffs accessor for pin path conventions.
+func (r EnsuredRuntime) BPFFS() BPFFS {
+	return r.layout.BPFFS()
+}
+
+// BytecodeFS returns the bytecode filesystem accessor for program persistence.
+func (r EnsuredRuntime) BytecodeFS() BytecodeFS {
+	return r.layout.BytecodeFS()
+}
+
+// Valid reports whether the EnsuredRuntime was properly constructed.
+func (r EnsuredRuntime) Valid() bool {
+	return r.layout.Valid()
+}
+
 // programsPath returns <base>/programs.
-func (rt Runtime) programsPath() string {
+func (rt BytecodeFS) programsPath() string {
 	return filepath.Join(rt.layout.base, programsDir)
 }
 
 // stagingPath returns <base>/.staging.
-func (rt Runtime) stagingPath() string {
+func (rt BytecodeFS) stagingPath() string {
 	return filepath.Join(rt.layout.base, stagingDir)
 }
 
 // programDir returns <base>/programs/{id}.
-func (rt Runtime) programDir(id uint32) string {
+func (rt BytecodeFS) programDir(id uint32) string {
 	return filepath.Join(rt.layout.base, programsDir, strconv.FormatUint(uint64(id), 10))
 }
 
@@ -80,7 +119,7 @@ func (rt Runtime) programDir(id uint32) string {
 //
 // A provenance.json is written alongside the bytecode. Publish is
 // atomic (rename on the same filesystem).
-func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) error {
+func (rt BytecodeFS) PublishBytecode(id uint32, srcPath string, prov Provenance) error {
 	rt.mustValid()
 
 	// Validate source file.
@@ -146,7 +185,7 @@ func (rt Runtime) PublishBytecode(id uint32, srcPath string, prov Provenance) er
 // RemoveProgram removes <base>/programs/{id}/ and its contents.
 // Returns nil if the directory does not exist. Uses safeRemoveAll to
 // verify the target is under the programs directory.
-func (rt Runtime) RemoveProgram(id uint32) error {
+func (rt BytecodeFS) RemoveProgram(id uint32) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
 }
@@ -155,13 +194,13 @@ func (rt Runtime) RemoveProgram(id uint32) error {
 // be a direct child of <base>/programs/. Returns nil if the directory
 // does not exist. This handles both numeric and non-numeric directory
 // names (e.g., orphaned directories with unexpected names).
-func (rt Runtime) RemoveProgramDir(path string) error {
+func (rt BytecodeFS) RemoveProgramDir(path string) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), path)
 }
 
 // ProgramExists reports whether <base>/programs/{id}/ exists.
-func (rt Runtime) ProgramExists(id uint32) bool {
+func (rt BytecodeFS) ProgramExists(id uint32) bool {
 	rt.mustValid()
 	var exists bool
 	_ = (statExistsOp{path: rt.programDir(id), exists: &exists}).exec()
@@ -170,14 +209,14 @@ func (rt Runtime) ProgramExists(id uint32) bool {
 
 // ProgramBytecodePath returns the published bytecode path for DB
 // ObjectPath storage.
-func (rt Runtime) ProgramBytecodePath(id uint32) string {
+func (rt BytecodeFS) ProgramBytecodePath(id uint32) string {
 	rt.mustValid()
 	return filepath.Join(rt.programDir(id), bytecodeName)
 }
 
 // CleanStaging removes all entries under <base>/.staging/. Staging is
 // a writer-only concern and is never visible to readers.
-func (rt Runtime) CleanStaging() error {
+func (rt BytecodeFS) CleanStaging() error {
 	rt.mustValid()
 	staging := rt.stagingPath()
 
@@ -201,7 +240,7 @@ func (rt Runtime) CleanStaging() error {
 // RemoveStagingDir removes a staging directory by path. The path must
 // be a direct child of <base>/.staging/. Returns nil if the directory
 // does not exist.
-func (rt Runtime) RemoveStagingDir(path string) error {
+func (rt BytecodeFS) RemoveStagingDir(path string) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.stagingPath(), path)
 }
@@ -215,7 +254,7 @@ type ProgramDirEntry struct {
 
 // ScanProgramDirs returns all directories under <base>/programs/.
 // Returns nil (not error) if the programs directory does not exist.
-func (rt Runtime) ScanProgramDirs() ([]ProgramDirEntry, error) {
+func (rt BytecodeFS) ScanProgramDirs() ([]ProgramDirEntry, error) {
 	rt.mustValid()
 	programsPath := rt.programsPath()
 
@@ -249,7 +288,7 @@ func (rt Runtime) ScanProgramDirs() ([]ProgramDirEntry, error) {
 
 // ScanStagingDirs returns all entry paths under <base>/.staging/.
 // Returns nil (not error) if the staging directory does not exist.
-func (rt Runtime) ScanStagingDirs() ([]string, error) {
+func (rt BytecodeFS) ScanStagingDirs() ([]string, error) {
 	rt.mustValid()
 	stagingPath := rt.stagingPath()
 

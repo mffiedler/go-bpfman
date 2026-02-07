@@ -2,8 +2,9 @@
 //
 // The package provides capability tokens for safe path construction:
 //
-//   - Layout: validated filesystem layout, constructed via New
-//   - Runtime: bytecode persistence operations, obtained via Layout.Runtime()
+//   - FSLayout: validated filesystem layout, constructed via New
+//   - EnsuredRuntime: capability token from runtime.Ensure() proving directories and bpffs are ready
+//   - BytecodeFS: bytecode persistence operations, obtained via Layout.BytecodeFS()
 //   - BPFFS: bpffs pin path conventions, obtained via Layout.BPFFS()
 //
 // All types enforce validity: methods panic on zero-value receivers to

@@ -22,6 +22,8 @@ type LoadSpec struct {
 	imageURL        string
 	imageDigest     string
 	imagePullPolicy ImagePullPolicy
+	imageUsername   string // for registry auth
+	imagePassword   string // for registry auth
 	attachFunc      string
 	mapOwnerID      uint32
 }
@@ -105,6 +107,73 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 	}, nil
 }
 
+// NewImageLoadSpec creates a LoadSpec for loading a program from an OCI image.
+// The objectPath will be resolved when the image is pulled.
+//
+// This is used for the unified Load interface where the caller specifies
+// an image reference and the manager handles pulling.
+//
+// For fentry/fexit, use NewImageAttachLoadSpec instead.
+//
+// Returns an error if:
+//   - imageURL is empty
+//   - programName is empty
+//   - programType is invalid or unspecified
+//   - programType requires an attach function (use NewImageAttachLoadSpec)
+func NewImageLoadSpec(imageURL, programName string, programType ProgramType, pullPolicy ImagePullPolicy) (LoadSpec, error) {
+	if imageURL == "" {
+		return LoadSpec{}, errors.New("imageURL is required")
+	}
+	if programName == "" {
+		return LoadSpec{}, errors.New("programName is required")
+	}
+	if !programType.Valid() {
+		return LoadSpec{}, fmt.Errorf("invalid program type: %s", programType)
+	}
+	if programType.RequiresAttachFunc() {
+		return LoadSpec{}, fmt.Errorf("%s requires NewImageAttachLoadSpec with attachFunc", programType)
+	}
+	return LoadSpec{
+		programName:     programName,
+		programType:     programType,
+		imageURL:        imageURL,
+		imagePullPolicy: pullPolicy,
+	}, nil
+}
+
+// NewImageAttachLoadSpec creates a LoadSpec for loading a program from an OCI
+// image that requires an attach function (fentry/fexit).
+//
+// Returns an error if:
+//   - imageURL is empty
+//   - programName is empty
+//   - programType is invalid or does not require an attach function
+//   - attachFunc is empty
+func NewImageAttachLoadSpec(imageURL, programName string, programType ProgramType, attachFunc string, pullPolicy ImagePullPolicy) (LoadSpec, error) {
+	if imageURL == "" {
+		return LoadSpec{}, errors.New("imageURL is required")
+	}
+	if programName == "" {
+		return LoadSpec{}, errors.New("programName is required")
+	}
+	if !programType.Valid() {
+		return LoadSpec{}, fmt.Errorf("invalid program type: %s", programType)
+	}
+	if !programType.RequiresAttachFunc() {
+		return LoadSpec{}, fmt.Errorf("%s does not require attachFunc, use NewImageLoadSpec", programType)
+	}
+	if attachFunc == "" {
+		return LoadSpec{}, fmt.Errorf("attachFunc is required for %s", programType)
+	}
+	return LoadSpec{
+		programName:     programName,
+		programType:     programType,
+		attachFunc:      attachFunc,
+		imageURL:        imageURL,
+		imagePullPolicy: pullPolicy,
+	}, nil
+}
+
 // Getters for LoadSpec fields
 
 func (s LoadSpec) ObjectPath() string               { return s.objectPath }
@@ -114,11 +183,23 @@ func (s LoadSpec) GlobalData() map[string][]byte    { return s.globalData }
 func (s LoadSpec) ImageURL() string                 { return s.imageURL }
 func (s LoadSpec) ImageDigest() string              { return s.imageDigest }
 func (s LoadSpec) ImagePullPolicy() ImagePullPolicy { return s.imagePullPolicy }
+func (s LoadSpec) ImageUsername() string            { return s.imageUsername }
+func (s LoadSpec) ImagePassword() string            { return s.imagePassword }
 func (s LoadSpec) AttachFunc() string               { return s.attachFunc }
 func (s LoadSpec) MapOwnerID() uint32               { return s.mapOwnerID }
 
-// HasImageSource returns true if this LoadSpec was loaded from an OCI image.
+// HasImageAuth returns true if this LoadSpec has registry authentication configured.
+func (s LoadSpec) HasImageAuth() bool { return s.imageUsername != "" }
+
+// HasImageSource returns true if this LoadSpec specifies an OCI image source.
+// This is true both when the image URL was set as input (for pulling) and
+// when it was set as provenance (after loading from an image).
 func (s LoadSpec) HasImageSource() bool { return s.imageURL != "" }
+
+// IsImageLoad returns true if this LoadSpec should load from an OCI image.
+// This differs from HasImageSource in that it returns true only when the
+// image URL is set AND the objectPath is not set (meaning we need to pull).
+func (s LoadSpec) IsImageLoad() bool { return s.imageURL != "" && s.objectPath == "" }
 
 // WithGlobalData returns a new LoadSpec with global data set.
 func (s LoadSpec) WithGlobalData(data map[string][]byte) LoadSpec {
@@ -138,6 +219,13 @@ func (s LoadSpec) WithImageProvenance(url, digest string, policy ImagePullPolicy
 // WithMapOwnerID returns a new LoadSpec with map owner ID set.
 func (s LoadSpec) WithMapOwnerID(id uint32) LoadSpec {
 	s.mapOwnerID = id
+	return s
+}
+
+// WithImageAuth returns a new LoadSpec with registry authentication set.
+func (s LoadSpec) WithImageAuth(username, password string) LoadSpec {
+	s.imageUsername = username
+	s.imagePassword = password
 	return s
 }
 

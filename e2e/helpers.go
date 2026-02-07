@@ -63,9 +63,13 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		t.Fatalf("invalid runtime directory: %v", err)
 	}
 
-	imageCache, err := bpfmanfs.NewImageCache(filepath.Join(baseDir, "cache"))
+	imageCacheBase, err := bpfmanfs.NewImageCache(filepath.Join(baseDir, "cache"))
 	if err != nil {
 		t.Fatalf("invalid image cache directory: %v", err)
+	}
+	imageCache, err := bpfmanfs.EnsureCache(imageCacheBase)
+	if err != nil {
+		t.Fatalf("failed to ensure image cache: %v", err)
 	}
 
 	// Set up logger based on BPFMAN_LOG environment variable.
@@ -99,10 +103,11 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	require.NoError(t, runtime.Ensure(layout, runtime.RealMounter{}, logger), "failed to ensure runtime")
+	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+	require.NoError(t, err, "failed to ensure runtime")
 
 	// Create manager
-	mgr, err := manager.New(layout, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	require.NoError(t, err, "failed to create manager")
 
 	cleanup := func() error {

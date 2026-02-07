@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/manager"
 	pb "github.com/frobware/go-bpfman/server/pb"
@@ -29,39 +28,37 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		return nil, status.Error(codes.InvalidArgument, "bytecode location is required")
 	}
 
-	// Get the bytecode path and optional image provenance
-	var objectPath string
-	var pulled *interpreter.PulledImage
+	// Extract bytecode source info for building LoadSpecs
+	var fileSource string     // path for file-based loading
+	var imageSource *struct { // info for image-based loading
+		url        string
+		pullPolicy bpfman.ImagePullPolicy
+		username   string
+		password   string
+	}
+
 	switch loc := req.Bytecode.Location.(type) {
 	case *pb.BytecodeLocation_File:
-		objectPath = loc.File
+		fileSource = loc.File
 	case *pb.BytecodeLocation_Image:
-		if s.imagePuller == nil {
+		if s.mgr.ImagePuller() == nil {
 			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
 		}
-
-		// Convert proto to interpreter types
-		pullPolicy := protoToPullPolicy(loc.Image.ImagePullPolicy)
-		ref := interpreter.ImageRef{
-			URL:        loc.Image.Url,
-			PullPolicy: pullPolicy,
+		imageSource = &struct {
+			url        string
+			pullPolicy bpfman.ImagePullPolicy
+			username   string
+			password   string
+		}{
+			url:        loc.Image.Url,
+			pullPolicy: protoToPullPolicy(loc.Image.ImagePullPolicy),
 		}
 		if loc.Image.Username != nil && *loc.Image.Username != "" {
-			ref.Auth = &interpreter.ImageAuth{
-				Username: *loc.Image.Username,
-			}
+			imageSource.username = *loc.Image.Username
 			if loc.Image.Password != nil {
-				ref.Auth.Password = *loc.Image.Password
+				imageSource.password = *loc.Image.Password
 			}
 		}
-
-		// Pull the image
-		p, err := s.imagePuller.Pull(ctx, ref)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", loc.Image.Url, err)
-		}
-		objectPath = p.ObjectPath
-		pulled = &p
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid bytecode location")
 	}
@@ -124,10 +121,26 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		// Create LoadSpec using the appropriate constructor (validates required fields)
 		var spec bpfman.LoadSpec
 		var constructErr error
-		if progType.RequiresAttachFunc() {
-			spec, constructErr = bpfman.NewAttachLoadSpec(objectPath, info.Name, progType, attachFunc)
+		if imageSource != nil {
+			// Image-based loading: manager handles pulling
+			if progType.RequiresAttachFunc() {
+				spec, constructErr = bpfman.NewImageAttachLoadSpec(
+					imageSource.url, info.Name, progType, attachFunc, imageSource.pullPolicy)
+			} else {
+				spec, constructErr = bpfman.NewImageLoadSpec(
+					imageSource.url, info.Name, progType, imageSource.pullPolicy)
+			}
+			// Add auth if provided
+			if constructErr == nil && imageSource.username != "" {
+				spec = spec.WithImageAuth(imageSource.username, imageSource.password)
+			}
 		} else {
-			spec, constructErr = bpfman.NewLoadSpec(objectPath, info.Name, progType)
+			// File-based loading
+			if progType.RequiresAttachFunc() {
+				spec, constructErr = bpfman.NewAttachLoadSpec(fileSource, info.Name, progType, attachFunc)
+			} else {
+				spec, constructErr = bpfman.NewLoadSpec(fileSource, info.Name, progType)
+			}
 		}
 		if constructErr != nil {
 			rollback()
@@ -137,9 +150,6 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		// Apply optional fields
 		if req.GlobalData != nil {
 			spec = spec.WithGlobalData(req.GlobalData)
-		}
-		if pulled != nil {
-			spec = spec.WithImageProvenance(pulled.URL, pulled.Digest, pulled.PullPolicy)
 		}
 
 		// Map sharing: when loading multiple programs from the same image,

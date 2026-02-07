@@ -64,11 +64,12 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	layout            bpfmanfs.FSLayout
+	runtime           bpfmanfs.EnsuredRuntime
 	store             interpreter.Store
 	kernel            interpreter.KernelOperations
 	executor          interpreter.ActionExecutor
 	programDiscoverer interpreter.ProgramDiscoverer
+	imagePuller       interpreter.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
 
 	// GC coordination - separate from request-level locking
@@ -78,20 +79,24 @@ type Manager struct {
 
 // New creates a new Manager with all required dependencies.
 //
-// All parameters are required:
-//   - layout: filesystem layout for runtime directories
+// Required parameters:
+//   - runtime: ensured runtime (from runtime.Ensure()) proving directories and bpffs are ready
 //   - store: database for program/link metadata
 //   - kernel: kernel operations adapter
 //   - programDiscoverer: discovers existing kernel programs
 //   - logger: structured logger (nil uses slog.Default())
 //
-// Callers must call bpfmanfs/runtime.Ensure() before New() to create
-// runtime directories and mount bpffs.
+// Optional parameters:
+//   - imagePuller: OCI image puller for loading programs from container images (nil to disable)
+//
+// The runtime parameter is a capability token from bpfmanfs/runtime.Ensure()
+// that proves the runtime directories exist and bpffs is mounted.
 //
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
 func New(
-	layout bpfmanfs.FSLayout,
+	runtime bpfmanfs.EnsuredRuntime,
+	imagePuller interpreter.ImagePuller,
 	store interpreter.Store,
 	kernel interpreter.KernelOperations,
 	programDiscoverer interpreter.ProgramDiscoverer,
@@ -102,10 +107,11 @@ func New(
 	}
 
 	return &Manager{
-		layout:            layout,
+		runtime:           runtime,
 		store:             store,
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
+		imagePuller:       imagePuller,
 		executor:          interpreter.NewExecutor(store, kernel),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
@@ -114,7 +120,17 @@ func New(
 
 // Layout returns the filesystem layout.
 func (m *Manager) Layout() bpfmanfs.FSLayout {
-	return m.layout
+	return m.runtime.Layout()
+}
+
+// Runtime returns the ensured runtime.
+func (m *Manager) Runtime() bpfmanfs.EnsuredRuntime {
+	return m.runtime
+}
+
+// ImagePuller returns the image puller, or nil if not configured.
+func (m *Manager) ImagePuller() interpreter.ImagePuller {
+	return m.imagePuller
 }
 
 // GCResult contains statistics and outcome from garbage collection.
@@ -199,12 +215,12 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
-	scanner := m.layout.BPFFS().Scanner()
+	scanner := m.runtime.BPFFS().Scanner()
 	for id := range dbPrograms {
 		if !kernelProgramIDs[id] {
 			continue // already absent; store GC will reap
 		}
-		pinPath := m.layout.BPFFS().ProgPinPath(id)
+		pinPath := m.runtime.BPFFS().ProgPinPath(id)
 		if !scanner.PathExists(pinPath) {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
 				"kernel_id", id, "pin_path", pinPath)
@@ -263,7 +279,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
-	state, err := GatherState(ctx, m.store, m.kernel, m.layout)
+	state, err := GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
 	} else {

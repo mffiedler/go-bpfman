@@ -69,10 +69,10 @@ func (l FSLayout) Base() string {
 	return l.base
 }
 
-// Runtime returns the regular-filesystem hierarchy domain.
-func (l FSLayout) Runtime() Runtime {
+// BytecodeFS returns the regular-filesystem hierarchy domain for bytecode persistence.
+func (l FSLayout) BytecodeFS() BytecodeFS {
 	l.mustValid()
-	return Runtime{layout: l}
+	return BytecodeFS{layout: l}
 }
 
 // BPFFS returns the bpffs hierarchy domain.

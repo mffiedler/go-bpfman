@@ -51,11 +51,11 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(programKernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(programKernelID)
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := fmt.Sprintf("%s_%s", group, name)
-	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
+	linkPinPath := m.runtime.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachTracepoint(ctx, progPinPath, group, name, linkPinPath)
@@ -214,14 +214,14 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeKretprobe
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(programKernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(programKernelID)
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := fnName
 	if retprobe {
 		linkName = "ret_" + linkName
 	}
-	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
+	linkPinPath := m.runtime.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachKprobe(ctx, progPinPath, fnName, offset, retprobe, linkPinPath)
@@ -396,14 +396,14 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeUretprobe
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(programKernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(programKernelID)
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := fnName
 	if retprobe {
 		linkName = "ret_" + linkName
 	}
-	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
+	linkPinPath := m.runtime.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Choose local vs container method based on spec
 	var attachOut bpfman.AttachOutput
@@ -595,11 +595,11 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(programKernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(programKernelID)
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := "fentry_" + fnName
-	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
+	linkPinPath := m.runtime.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachFentry(ctx, progPinPath, fnName, linkPinPath)
@@ -768,11 +768,11 @@ func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, 
 	}
 
 	// COMPUTE: Construct paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(programKernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(programKernelID)
 
 	// COMPUTE: Calculate link pin path from conventions
 	linkName := "fexit_" + fnName
-	linkPinPath := m.layout.BPFFS().LinkPinPath(programKernelID, linkName)
+	linkPinPath := m.runtime.BPFFS().LinkPinPath(programKernelID, linkName)
 
 	// KERNEL I/O: Attach to the kernel
 	attachOut, err := m.kernel.AttachFexit(ctx, progPinPath, fnName, linkPinPath)

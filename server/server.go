@@ -53,8 +53,8 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 // RunConfig configures the server daemon.
 type RunConfig struct {
 	Layout       bpfmanfs.FSLayout
-	ImageCache   bpfmanfs.ImageCache
-	TCPAddress   string // Optional TCP address (e.g., ":50051") for remote access
+	ImageCache   bpfmanfs.EnsuredImageCache // Capability token proving cache directory exists
+	TCPAddress   string                     // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
 	SocketPath   string // Optional override for Unix socket path (defaults to layout.SocketPath())
@@ -88,15 +88,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	if err := runtime.Ensure(layout, runtime.RealMounter{}, logger); err != nil {
-		return fmt.Errorf("ensure runtime: %w", err)
-	}
-
-	// Create manager for orchestrating store + kernel operations.
-	// The manager is needed by CSI for reconciled program lookups.
-	mgr, err := manager.New(layout, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create manager: %w", err)
+		return fmt.Errorf("ensure runtime: %w", err)
 	}
 
 	// Build signature verifier based on config
@@ -120,6 +114,13 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create image puller: %w", err)
+	}
+
+	// Create manager for orchestrating store + kernel operations.
+	// The manager is needed by CSI for reconciled program lookups.
+	mgr, err := manager.New(ensuredRuntime, puller, st, kernel, ebpf.NewProgramDiscoverer(), logger)
+	if err != nil {
+		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
 	// Track CSI driver for graceful shutdown
@@ -191,7 +192,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	// Start bpfman gRPC server
-	srv := newWithStore(layout, st, puller, mgr, logger)
+	srv := newWithStore(layout, st, mgr, logger)
 
 	// Use override socket path if provided, otherwise use default from layout
 	socketPath := cfg.SocketPath
@@ -206,51 +207,49 @@ func Run(ctx context.Context, cfg RunConfig) error {
 type Server struct {
 	pb.UnimplementedBpfmanServer
 
-	mu          sync.RWMutex
-	layout      bpfmanfs.FSLayout
-	kernel      interpreter.KernelOperations
-	store       interpreter.Store
-	imagePuller interpreter.ImagePuller
-	netIface    NetIfaceResolver
-	mgr         *manager.Manager
-	logger      *slog.Logger
-	opCounter   atomic.Uint64
+	mu        sync.RWMutex
+	layout    bpfmanfs.FSLayout
+	kernel    interpreter.KernelOperations
+	store     interpreter.Store
+	netIface  NetIfaceResolver
+	mgr       *manager.Manager
+	logger    *slog.Logger
+	opCounter atomic.Uint64
 }
 
 // newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, imagePuller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
+func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		layout:      layout,
-		kernel:      ebpf.New(ebpf.WithLogger(logger)),
-		store:       store,
-		imagePuller: imagePuller,
-		netIface:    DefaultNetIfaceResolver{},
-		mgr:         mgr,
-		logger:      logger.With("component", "server"),
+		layout:   layout,
+		kernel:   ebpf.New(ebpf.WithLogger(logger)),
+		store:    store,
+		netIface: DefaultNetIfaceResolver{},
+		mgr:      mgr,
+		logger:   logger.With("component", "server"),
 	}
 }
 
 // New creates a server with the provided dependencies.
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
-func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, imagePuller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+// The manager should include an ImagePuller if OCI image loading is needed.
+func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{
-		layout:      layout,
-		kernel:      kernel,
-		store:       store,
-		imagePuller: imagePuller,
-		netIface:    netIface,
-		mgr:         mgr,
-		logger:      logger.With("component", "server"),
+		layout:   layout,
+		kernel:   kernel,
+		store:    store,
+		netIface: netIface,
+		mgr:      mgr,
+		logger:   logger.With("component", "server"),
 	}
 }
 

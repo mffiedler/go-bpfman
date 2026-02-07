@@ -42,7 +42,7 @@ type cachedMetadata struct {
 
 // puller implements ImagePuller using ORAS for OCI registry access.
 type puller struct {
-	cache    bpfmanfs.ImageCache
+	cache    bpfmanfs.EnsuredImageCache
 	logger   *slog.Logger
 	verifier interpreter.SignatureVerifier
 }
@@ -68,9 +68,9 @@ func WithVerifier(v interpreter.SignatureVerifier) Option {
 }
 
 // NewPuller creates a new OCI image puller.
-// The cache parameter specifies where pulled images are stored; obtain it
-// via FSLayout.ImageCache().
-func NewPuller(cache bpfmanfs.ImageCache, opts ...Option) (interpreter.ImagePuller, error) {
+// The cache parameter must be an EnsuredImageCache obtained via EnsureCache(),
+// which proves the cache directory exists.
+func NewPuller(cache bpfmanfs.EnsuredImageCache, opts ...Option) (interpreter.ImagePuller, error) {
 	if !cache.Valid() {
 		return nil, fmt.Errorf("invalid image cache")
 	}
@@ -87,10 +87,6 @@ func NewPuller(cache bpfmanfs.ImageCache, opts ...Option) (interpreter.ImagePull
 	}
 
 	p.logger.Debug("initialising OCI puller", "cache_dir", p.cache.Root())
-
-	if err := p.cache.EnsureRoot(); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
-	}
 
 	return p, nil
 }

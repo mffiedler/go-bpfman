@@ -5,13 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/image/oci"
-	"github.com/frobware/go-bpfman/interpreter/image/verify"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
 )
@@ -40,17 +37,12 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 
 	logger := cli.Logger()
 
-	mgr, cleanup, err := cli.NewManager(ctx)
+	// Use NewManagerWithPuller for image loading operations
+	mgr, cleanup, err := cli.NewManagerWithPuller(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
-
-	// Build image puller with signature verification settings from config
-	puller, err := c.buildPuller(cli, logger)
-	if err != nil {
-		return fmt.Errorf("create image puller: %w", err)
-	}
 
 	logger.Info("loading BPF programs from OCI image",
 		"image", c.ImageURL,
@@ -67,25 +59,15 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {
 		var res loadImageResult
 
-		// Build auth config from base64-encoded registry-auth
-		var authConfig *interpreter.ImageAuth
+		// Parse auth config from base64-encoded registry-auth
+		var username, password string
 		if c.RegistryAuth != "" {
-			username, password, err := parseRegistryAuth(c.RegistryAuth)
-			if err != nil {
-				return res, fmt.Errorf("invalid registry-auth: %w", err)
+			var parseErr error
+			username, password, parseErr = parseRegistryAuth(c.RegistryAuth)
+			if parseErr != nil {
+				return res, fmt.Errorf("invalid registry-auth: %w", parseErr)
 			}
 			logger.Debug("using registry auth", "username", username)
-			authConfig = &interpreter.ImageAuth{
-				Username: username,
-				Password: password,
-			}
-		}
-
-		// Build image reference
-		ref := interpreter.ImageRef{
-			URL:        c.ImageURL,
-			PullPolicy: pullPolicy,
-			Auth:       authConfig,
 		}
 
 		// Convert global data
@@ -103,38 +85,83 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		// Build ImageProgramSpecs for each program
-		programs := make([]manager.ImageProgramSpec, 0, len(c.Programs))
-		for _, spec := range c.Programs {
-			progSpec := manager.ImageProgramSpec{
-				ProgramName: spec.Name,
-				ProgramType: spec.Type,
-				AttachFunc:  spec.AttachFunc,
-				GlobalData:  globalData,
-				MapOwnerID:  c.MapOwnerID,
+		// If no programs specified, use LoadImage for auto-discovery
+		if len(c.Programs) == 0 {
+			// Fall back to LoadImage for auto-discovery (legacy path)
+			ref := interpreter.ImageRef{
+				URL:        c.ImageURL,
+				PullPolicy: pullPolicy,
 			}
-			programs = append(programs, progSpec)
+			if username != "" {
+				ref.Auth = &interpreter.ImageAuth{
+					Username: username,
+					Password: password,
+				}
+			}
+			loaded, err := mgr.LoadImage(ctx, mgr.ImagePuller(), ref, nil, manager.LoadImageOpts{
+				UserMetadata: metadata,
+				GlobalData:   globalData,
+			})
+			if err != nil {
+				var me *manager.ManagerError
+				if errors.As(err, &me) {
+					res.FailedOutcome = me.Outcome
+				}
+				return res, fmt.Errorf("failed to load from image: %w", err)
+			}
+			res.Programs = loaded
+			return res, nil
 		}
 
-		// Load via manager directly
-		loaded, err := mgr.LoadImage(ctx, puller, ref, programs, manager.LoadImageOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
-		})
-		if err != nil {
-			var me *manager.ManagerError
-			if errors.As(err, &me) {
-				res.FailedOutcome = me.Outcome
+		// Load each specified program using the unified Load interface
+		var loaded []bpfman.Program
+		for _, prog := range c.Programs {
+			// Build LoadSpec for this program from the image
+			var spec bpfman.LoadSpec
+			var specErr error
+			if prog.Type.RequiresAttachFunc() {
+				spec, specErr = bpfman.NewImageAttachLoadSpec(c.ImageURL, prog.Name, prog.Type, prog.AttachFunc, pullPolicy)
+			} else {
+				spec, specErr = bpfman.NewImageLoadSpec(c.ImageURL, prog.Name, prog.Type, pullPolicy)
 			}
-			return res, fmt.Errorf("failed to load from image: %w", err)
-		}
+			if specErr != nil {
+				return res, fmt.Errorf("invalid load spec for %q: %w", prog.Name, specErr)
+			}
 
-		for _, prog := range loaded {
+			// Add auth if configured
+			if username != "" {
+				spec = spec.WithImageAuth(username, password)
+			}
+
+			// Add global data if configured
+			if globalData != nil {
+				spec = spec.WithGlobalData(globalData)
+			}
+
+			// Set map owner ID if specified
+			if c.MapOwnerID != 0 {
+				spec = spec.WithMapOwnerID(c.MapOwnerID)
+			}
+
+			// Load through manager using unified interface
+			loadedProg, loadErr := mgr.Load(ctx, spec, manager.LoadOpts{
+				UserMetadata: metadata,
+			})
+			if loadErr != nil {
+				var me *manager.ManagerError
+				if errors.As(loadErr, &me) {
+					res.FailedOutcome = me.Outcome
+				}
+				return res, fmt.Errorf("failed to load program %q from image: %w", prog.Name, loadErr)
+			}
+
 			logger.Info("program loaded successfully",
-				"name", prog.Record.Meta.Name,
-				"kernel_id", prog.Record.KernelID,
-				"pin_path", prog.Record.Handles.PinPath,
+				"name", loadedProg.Record.Meta.Name,
+				"kernel_id", loadedProg.Record.KernelID,
+				"pin_path", loadedProg.Record.Handles.PinPath,
 			)
+
+			loaded = append(loaded, loadedProg)
 		}
 
 		res.Programs = loaded
@@ -153,38 +180,6 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 	return cli.PrintOut(output)
-}
-
-// buildPuller creates an image puller with signature verification settings from config.
-func (c *LoadImageCmd) buildPuller(cli *CLI, logger *slog.Logger) (interpreter.ImagePuller, error) {
-	cfg, err := cli.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-
-	cache, err := cli.ImageCache()
-	if err != nil {
-		return nil, fmt.Errorf("get image cache: %w", err)
-	}
-
-	// Build signature verifier based on config
-	var verifier interpreter.SignatureVerifier
-	if cfg.Signing.ShouldVerify() {
-		logger.Info("signature verification enabled")
-		verifier = verify.Cosign(
-			verify.WithLogger(logger),
-			verify.WithAllowUnsigned(cfg.Signing.AllowUnsigned),
-		)
-	} else {
-		logger.Debug("signature verification disabled")
-		verifier = verify.NoSign()
-	}
-
-	return oci.NewPuller(
-		cache,
-		oci.WithLogger(logger),
-		oci.WithVerifier(verifier),
-	)
 }
 
 // parseRegistryAuth parses a base64-encoded "username:password" string.

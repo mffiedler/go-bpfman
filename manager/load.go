@@ -51,6 +51,10 @@ func (e *ManagerError) Unwrap() error {
 
 // Load loads a BPF program and stores its metadata atomically.
 //
+// If the spec specifies an image source (via NewImageLoadSpec), Load will
+// first pull the image using the manager's ImagePuller. If no puller is
+// configured, an error is returned.
+//
 // See package documentation for details on the atomic load model.
 //
 // Pin paths are computed from the kernel ID following the upstream convention:
@@ -74,9 +78,66 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		return bpfman.Program{}, &ManagerError{Outcome: o, Cause: primaryErr}
 	}
 
+	// Phase 0: If this is an image load, pull the image first
+	if spec.IsImageLoad() {
+		if m.imagePuller == nil {
+			primaryErr := fmt.Errorf("image loading requires an image puller, but none configured")
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindPreflight,
+				Target: "validation",
+				Error:  primaryErr.Error(),
+			})
+			return fail(primaryErr)
+		}
+
+		ref := interpreter.ImageRef{
+			URL:        spec.ImageURL(),
+			PullPolicy: spec.ImagePullPolicy(),
+		}
+		if spec.HasImageAuth() {
+			ref.Auth = &interpreter.ImageAuth{
+				Username: spec.ImageUsername(),
+				Password: spec.ImagePassword(),
+			}
+		}
+
+		m.logger.InfoContext(ctx, "pulling OCI image",
+			"url", ref.URL,
+			"pull_policy", ref.PullPolicy)
+
+		pulled, err := m.imagePuller.Pull(ctx, ref)
+		if err != nil {
+			primaryErr := fmt.Errorf("pull image %s: %w", ref.URL, err)
+			_ = rec.Fail(outcome.Step{
+				Kind:   outcome.StepKindPullImage,
+				Target: ref.URL,
+				Error:  primaryErr.Error(),
+			})
+			return fail(primaryErr)
+		}
+
+		_ = rec.Complete(outcome.Step{
+			Kind:   outcome.StepKindPullImage,
+			Target: ref.URL,
+			Details: outcome.ImageDetails{
+				URL:        ref.URL,
+				Digest:     pulled.Digest,
+				ObjectPath: pulled.ObjectPath,
+			},
+		})
+
+		m.logger.InfoContext(ctx, "pulled OCI image",
+			"url", ref.URL,
+			"object_path", pulled.ObjectPath)
+
+		// Update spec with the resolved object path and digest
+		spec = spec.WithObjectPath(pulled.ObjectPath).
+			WithImageProvenance(pulled.URL, pulled.Digest, pulled.PullPolicy)
+	}
+
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, m.layout.BPFFS())
+	loaded, err := m.kernel.Load(ctx, spec, m.runtime.BPFFS())
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
@@ -139,7 +200,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
 	// Register undo step to remove it on failure.
-	rt := m.layout.Runtime()
+	rt := m.runtime.BytecodeFS()
 	prov := bpfmanfs.Provenance{
 		Version:     1,
 		KernelID:    loaded.Program.ID,
@@ -385,9 +446,9 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
 
 	// COMPUTE: Build paths from convention (kernel ID + bpffs root)
-	progPinPath := m.layout.BPFFS().ProgPinPath(kernelID)
-	mapsDir := m.layout.BPFFS().MapPinDir(kernelID)
-	linksDir := m.layout.BPFFS().LinkPinDir(kernelID)
+	progPinPath := m.runtime.BPFFS().ProgPinPath(kernelID)
+	mapsDir := m.runtime.BPFFS().MapPinDir(kernelID)
+	linksDir := m.runtime.BPFFS().LinkPinDir(kernelID)
 
 	// COMPUTE: Build unload actions and step mapping
 	actions := computeUnloadActions(kernelID, progPinPath, mapsDir, linksDir, links)
@@ -433,7 +494,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	// it fails, log and record the residual artefact but do not fail
 	// the unload. The DB row is about to be deleted (as part of the
 	// actions above), so GC will clean it on the next pass.
-	rt := m.layout.Runtime()
+	rt := m.runtime.BytecodeFS()
 	if err := rt.RemoveProgram(kernelID); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
 		_ = rec.Fail(outcome.Step{

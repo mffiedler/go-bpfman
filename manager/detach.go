@@ -243,7 +243,7 @@ func (m *Manager) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.S
 		}
 	}
 
-	cleanupActions := computeDispatcherCleanupActions(m.layout.BPFFS(), state, tcHandle)
+	cleanupActions := computeDispatcherCleanupActions(m.runtime.BPFFS(), state, tcHandle)
 	if err := m.executor.ExecuteAll(ctx, cleanupActions); err != nil {
 		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
 	}

@@ -29,7 +29,7 @@ func writeDummyBytecode(t *testing.T, dir string) string {
 
 func TestPublishBytecode(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
@@ -68,7 +68,7 @@ func TestPublishBytecode(t *testing.T) {
 
 func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
@@ -85,7 +85,7 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 
 func TestPublishBytecode_InvalidSource(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
 
@@ -101,7 +101,7 @@ func TestPublishBytecode_InvalidSource(t *testing.T) {
 
 func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	// Create a valid source file, then publish with ID 1.
 	srcDir := t.TempDir()
@@ -119,7 +119,7 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 
 func TestRemoveProgram(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
@@ -134,7 +134,7 @@ func TestRemoveProgram(t *testing.T) {
 
 func TestRemoveProgram_Idempotent(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	// Removing a non-existent program should not error.
 	require.NoError(t, rt.RemoveProgram(999))
@@ -142,7 +142,7 @@ func TestRemoveProgram_Idempotent(t *testing.T) {
 
 func TestProgramExists(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	assert.False(t, rt.ProgramExists(1))
 
@@ -156,7 +156,7 @@ func TestProgramExists(t *testing.T) {
 
 func TestProgramBytecodePath(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	path := rt.ProgramBytecodePath(42)
 	assert.Equal(t, filepath.Join(root.Base(), "programs", "42", "bytecode.o"), path)
@@ -164,7 +164,7 @@ func TestProgramBytecodePath(t *testing.T) {
 
 func TestCleanStaging(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	// Create some staging leftovers.
 	stagingPath := filepath.Join(root.Base(), ".staging")
@@ -180,14 +180,14 @@ func TestCleanStaging(t *testing.T) {
 
 func TestCleanStaging_NoStagingDir(t *testing.T) {
 	root := mustNew(t)
-	rt := root.Runtime()
+	rt := root.BytecodeFS()
 
 	// No staging directory exists; should not error.
 	require.NoError(t, rt.CleanStaging())
 }
 
-func TestZeroValueRuntime(t *testing.T) {
+func TestZeroValueBytecodeFS(t *testing.T) {
 	var layout bpfmanfs.FSLayout
-	// Calling Runtime() on zero FSLayout should panic
-	assert.Panics(t, func() { layout.Runtime() }, "Runtime() on zero FSLayout should panic")
+	// Calling BytecodeFS() on zero FSLayout should panic
+	assert.Panics(t, func() { layout.BytecodeFS() }, "BytecodeFS() on zero FSLayout should panic")
 }

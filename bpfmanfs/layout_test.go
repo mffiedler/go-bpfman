@@ -116,10 +116,10 @@ func TestCSIDirs(t *testing.T) {
 	assert.Equal(t, layout.CSIFSDir(), dirs[1])
 }
 
-func TestRuntime_ZeroValue(t *testing.T) {
+func TestBytecodeFS_ZeroValue(t *testing.T) {
 	var layout bpfmanfs.FSLayout
-	// Calling Runtime() on zero FSLayout should panic
-	assert.Panics(t, func() { layout.Runtime() }, "Runtime() on zero FSLayout should panic")
+	// Calling BytecodeFS() on zero FSLayout should panic
+	assert.Panics(t, func() { layout.BytecodeFS() }, "BytecodeFS() on zero FSLayout should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {

@@ -74,6 +74,17 @@ func (c *CLI) ImageCache() (bpfmanfs.ImageCache, error) {
 	return bpfmanfs.NewImageCache(c.ImageCacheDir)
 }
 
+// EnsuredImageCache returns an EnsuredImageCache capability token, creating
+// the cache directory if needed. Use this when you need to pass the cache
+// to functions that require proof the directory exists.
+func (c *CLI) EnsuredImageCache() (bpfmanfs.EnsuredImageCache, error) {
+	cache, err := c.ImageCache()
+	if err != nil {
+		return bpfmanfs.EnsuredImageCache{}, err
+	}
+	return bpfmanfs.EnsureCache(cache)
+}
+
 // WriteOut writes bytes to Out, returning an error if the write fails or
 // is short. Use this for all command output to ensure I/O errors are
 // propagated.

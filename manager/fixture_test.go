@@ -61,9 +61,10 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	}
 
 	// Centralised ensure call in fixture
-	require.NoError(t, runtime.Ensure(layout, runtime.NoOpMounter{}, testLogger()))
+	ensuredRuntime, err := runtime.Ensure(layout, runtime.NoOpMounter{}, testLogger())
+	require.NoError(t, err, "failed to ensure runtime")
 
-	mgr, err := manager.New(layout, store, kernel, discoverer, testLogger())
+	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{

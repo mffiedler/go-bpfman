@@ -5,18 +5,23 @@
 // from the bpfmanfs package to maintain the distinction between pure path
 // computation (bpfmanfs) and actual I/O operations (bpfmanfs/runtime).
 //
+// The Ensure function returns an EnsuredRuntime capability token that proves
+// the runtime is ready. This token is required by manager.New(), enforcing
+// that setup is complete before any operations.
+//
 // Usage:
 //
 //	layout, err := bpfmanfs.New("/run/bpfman")
 //	if err != nil {
 //	    return err
 //	}
-//	if err := runtime.Ensure(layout, runtime.RealMounter{}, logger); err != nil {
+//	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+//	if err != nil {
 //	    return err
 //	}
-//	mgr, err := manager.New(layout, store, kernel, discoverer, logger)
+//	mgr, err := manager.New(ensuredRuntime, store, kernel, discoverer, logger)
 //
 // For tests, use NoOpMounter to skip actual bpffs mounting:
 //
-//	runtime.Ensure(layout, runtime.NoOpMounter{}, logger)
+//	ensuredRuntime, _ := runtime.Ensure(layout, runtime.NoOpMounter{}, logger)
 package runtime

@@ -206,3 +206,93 @@ func (c ImageCache) BytecodeExists(cacheKey string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// EnsuredImageCache is a capability token proving that the image cache
+// directory exists and is ready for use. Obtain via EnsureCache().
+type EnsuredImageCache struct {
+	cache ImageCache
+}
+
+// EnsureCache creates the cache root directory if it does not exist
+// and returns an EnsuredImageCache capability token.
+func EnsureCache(cache ImageCache) (EnsuredImageCache, error) {
+	if err := cache.EnsureRoot(); err != nil {
+		return EnsuredImageCache{}, err
+	}
+	return EnsuredImageCache{cache: cache}, nil
+}
+
+// Cache returns the underlying ImageCache.
+func (e EnsuredImageCache) Cache() ImageCache {
+	return e.cache
+}
+
+// Valid reports whether the EnsuredImageCache was obtained from EnsureCache.
+func (e EnsuredImageCache) Valid() bool {
+	return e.cache.Valid()
+}
+
+// Root returns the cache root path.
+func (e EnsuredImageCache) Root() string {
+	return e.cache.Root()
+}
+
+// CacheKey computes a deterministic cache key from a URL.
+func (e EnsuredImageCache) CacheKey(url string) string {
+	return e.cache.CacheKey(url)
+}
+
+// CacheKeyDir returns the directory path for a cache key.
+func (e EnsuredImageCache) CacheKeyDir(cacheKey string) string {
+	return e.cache.CacheKeyDir(cacheKey)
+}
+
+// BytecodePath returns the bytecode file path for a cache key.
+func (e EnsuredImageCache) BytecodePath(cacheKey string) string {
+	return e.cache.BytecodePath(cacheKey)
+}
+
+// MetadataPath returns the metadata file path for a cache key.
+func (e EnsuredImageCache) MetadataPath(cacheKey string) string {
+	return e.cache.MetadataPath(cacheKey)
+}
+
+// EnsureCacheDir creates the cache entry directory for a cache key.
+func (e EnsuredImageCache) EnsureCacheDir(cacheKey string) error {
+	return e.cache.EnsureCacheDir(cacheKey)
+}
+
+// RemoveCacheEntry removes a cache entry directory safely.
+func (e EnsuredImageCache) RemoveCacheEntry(cacheKey string) error {
+	return e.cache.RemoveCacheEntry(cacheKey)
+}
+
+// CreateTempDir creates a temporary directory under the cache root.
+func (e EnsuredImageCache) CreateTempDir() (path string, cleanup func(), err error) {
+	return e.cache.CreateTempDir()
+}
+
+// WriteTempFile writes data to a file within a directory.
+func (e EnsuredImageCache) WriteTempFile(dir, name string, data []byte) error {
+	return e.cache.WriteTempFile(dir, name, data)
+}
+
+// CacheBytecode moves a bytecode file from srcPath to the cache entry.
+func (e EnsuredImageCache) CacheBytecode(cacheKey, srcPath string) error {
+	return e.cache.CacheBytecode(cacheKey, srcPath)
+}
+
+// SaveMetadata writes metadata to the cache entry as JSON.
+func (e EnsuredImageCache) SaveMetadata(cacheKey string, meta any) error {
+	return e.cache.SaveMetadata(cacheKey, meta)
+}
+
+// LoadMetadata reads metadata from the cache entry.
+func (e EnsuredImageCache) LoadMetadata(cacheKey string, dest any) error {
+	return e.cache.LoadMetadata(cacheKey, dest)
+}
+
+// BytecodeExists reports whether the bytecode file exists for a cache key.
+func (e EnsuredImageCache) BytecodeExists(cacheKey string) bool {
+	return e.cache.BytecodeExists(cacheKey)
+}
