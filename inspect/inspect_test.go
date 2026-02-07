@@ -1,4 +1,4 @@
-package inspect
+package inspect_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -136,7 +137,7 @@ func TestSnapshot_ManagedPrograms(t *testing.T) {
 		},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	managed := w.ManagedPrograms()
@@ -166,7 +167,7 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 		},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	// All programs (managed + kernel-only)
@@ -178,7 +179,7 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 	assert.Equal(t, uint32(100), managed[0].KernelID)
 
 	// Find kernel-only
-	var kernelOnly *ProgramRow
+	var kernelOnly *inspect.ProgramRow
 	for i := range w.Programs {
 		if w.Programs[i].Presence.KernelOnly() {
 			kernelOnly = &w.Programs[i]
@@ -202,7 +203,7 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	assert.Len(t, w.Programs, 1)
@@ -233,7 +234,7 @@ func TestSnapshot_Links(t *testing.T) {
 		},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	assert.Len(t, w.Links, 3)
@@ -242,7 +243,7 @@ func TestSnapshot_Links(t *testing.T) {
 	assert.Len(t, managed, 2)
 
 	// Check kernel-only link
-	var kernelOnly *LinkRow
+	var kernelOnly *inspect.LinkRow
 	for i := range w.Links {
 		if w.Links[i].Presence.KernelOnly() {
 			kernelOnly = &w.Links[i]
@@ -284,7 +285,7 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 		links:    []kernel.Link{{ID: 50}},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	assert.Len(t, w.Dispatchers, 1)
@@ -312,7 +313,7 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	assert.Len(t, w.Dispatchers, 1)
@@ -329,42 +330,42 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 func TestPresence_Methods(t *testing.T) {
 	tests := []struct {
 		name       string
-		p          Presence
+		p          inspect.Presence
 		managed    bool
 		orphanFS   bool
 		kernelOnly bool
 	}{
 		{
 			name:       "in store only",
-			p:          Presence{InStore: true, InKernel: false, InFS: false},
+			p:          inspect.Presence{InStore: true, InKernel: false, InFS: false},
 			managed:    true,
 			orphanFS:   false,
 			kernelOnly: false,
 		},
 		{
 			name:       "fully present",
-			p:          Presence{InStore: true, InKernel: true, InFS: true},
+			p:          inspect.Presence{InStore: true, InKernel: true, InFS: true},
 			managed:    true,
 			orphanFS:   false,
 			kernelOnly: false,
 		},
 		{
 			name:       "kernel only",
-			p:          Presence{InStore: false, InKernel: true, InFS: false},
+			p:          inspect.Presence{InStore: false, InKernel: true, InFS: false},
 			managed:    false,
 			orphanFS:   false,
 			kernelOnly: true,
 		},
 		{
 			name:       "kernel and fs, not store",
-			p:          Presence{InStore: false, InKernel: true, InFS: true},
+			p:          inspect.Presence{InStore: false, InKernel: true, InFS: true},
 			managed:    false,
 			orphanFS:   false,
 			kernelOnly: true,
 		},
 		{
 			name:       "fs only (orphan)",
-			p:          Presence{InStore: false, InKernel: false, InFS: true},
+			p:          inspect.Presence{InStore: false, InKernel: false, InFS: true},
 			managed:    false,
 			orphanFS:   true,
 			kernelOnly: false,
@@ -400,7 +401,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 		programs: []kernel.Program{{ID: 100, Name: "xdp_pass"}},
 	}
 
-	row, err := GetProgram(context.Background(), store, kern, scanner, 100)
+	row, err := inspect.GetProgram(context.Background(), store, kern, scanner, 100)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint32(100), row.KernelID)
@@ -425,7 +426,7 @@ func TestGetProgram_StoreOnly(t *testing.T) {
 
 	kern := &fakeKernelSource{} // Program not in kernel
 
-	row, err := GetProgram(context.Background(), store, kern, scanner, 100)
+	row, err := inspect.GetProgram(context.Background(), store, kern, scanner, 100)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint32(100), row.KernelID)
@@ -446,7 +447,7 @@ func TestGetProgram_KernelOnly(t *testing.T) {
 		programs: []kernel.Program{{ID: 999, Name: "unmanaged"}},
 	}
 
-	row, err := GetProgram(context.Background(), store, kern, scanner, 999)
+	row, err := inspect.GetProgram(context.Background(), store, kern, scanner, 999)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint32(999), row.KernelID)
@@ -465,9 +466,9 @@ func TestGetProgram_NotFound(t *testing.T) {
 	store := &fakeStore{programs: map[uint32]bpfman.ProgramRecord{}}
 	kern := &fakeKernelSource{}
 
-	_, err := GetProgram(context.Background(), store, kern, scanner, 12345)
+	_, err := inspect.GetProgram(context.Background(), store, kern, scanner, 12345)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNotFound)
+	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
 
 func TestGetLink_FullyPresent(t *testing.T) {
@@ -496,7 +497,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 		links: []kernel.Link{{ID: 10, ProgramID: 100}},
 	}
 
-	info, err := GetLink(context.Background(), store, kern, scanner, 10) // LinkID 10 (same as kernel link ID)
+	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 10) // LinkID 10 (same as kernel link ID)
 	require.NoError(t, err)
 
 	assert.Equal(t, bpfman.LinkID(10), info.Record.ID)
@@ -519,7 +520,7 @@ func TestGetLink_StoreOnly(t *testing.T) {
 
 	kern := &fakeKernelSource{} // Link not in kernel
 
-	info, err := GetLink(context.Background(), store, kern, scanner, 20) // LinkID 20 (same as kernel link ID)
+	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 20) // LinkID 20 (same as kernel link ID)
 	require.NoError(t, err)
 
 	assert.Equal(t, bpfman.LinkID(20), info.Record.ID)
@@ -530,7 +531,7 @@ func TestGetLink_StoreOnly(t *testing.T) {
 
 func TestGetLink_NotInStore(t *testing.T) {
 	// GetLink requires the link to be in the store (it takes a durable LinkID).
-	// If the link is not in the store, it returns ErrNotFound.
+	// If the link is not in the store, it returns inspect.ErrNotFound.
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -542,9 +543,9 @@ func TestGetLink_NotInStore(t *testing.T) {
 
 	// Even though link 999 exists in kernel, we can't look it up by LinkID 999
 	// because LinkID is a store-assigned durable ID, not a kernel link ID.
-	_, err := GetLink(context.Background(), store, kern, scanner, 999)
+	_, err := inspect.GetLink(context.Background(), store, kern, scanner, 999)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNotFound)
+	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
 
 func TestGetLink_NotFound(t *testing.T) {
@@ -554,9 +555,9 @@ func TestGetLink_NotFound(t *testing.T) {
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
 
-	_, err := GetLink(context.Background(), store, kern, scanner, 12345)
+	_, err := inspect.GetLink(context.Background(), store, kern, scanner, 12345)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNotFound)
+	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
 
 func TestGetDispatcher_FullyPresent(t *testing.T) {
@@ -591,7 +592,7 @@ func TestGetDispatcher_FullyPresent(t *testing.T) {
 		links:    []kernel.Link{{ID: 50}},
 	}
 
-	info, err := GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
+	info, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint32(500), info.State.KernelID)
@@ -622,7 +623,7 @@ func TestGetDispatcher_StoreOnly(t *testing.T) {
 
 	kern := &fakeKernelSource{} // Not in kernel
 
-	info, err := GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
+	info, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
 	require.NoError(t, err)
 
 	assert.True(t, info.ProgPresence.InStore)
@@ -637,9 +638,9 @@ func TestGetDispatcher_NotFound(t *testing.T) {
 	store := &fakeStore{}
 	kern := &fakeKernelSource{}
 
-	_, err := GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 99, 99)
+	_, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 99, 99)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNotFound)
+	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }
 
 func TestSnapshot_LinksHaveDetails(t *testing.T) {
@@ -677,7 +678,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 		},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	// Verify links in World have details
@@ -690,7 +691,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	}
 
 	// Verify details are correct types
-	linksByID := make(map[bpfman.LinkID]LinkRow)
+	linksByID := make(map[bpfman.LinkID]inspect.LinkRow)
 	for _, l := range managed {
 		linksByID[l.ID()] = l
 	}
@@ -731,7 +732,7 @@ func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 		links:    []kernel.Link{{ID: 10, ProgramID: 100}},
 	}
 
-	w, err := Snapshot(context.Background(), store, kern, scanner)
+	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
 	// Find the program and verify its correlated links have details
