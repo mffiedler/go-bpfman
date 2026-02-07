@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
@@ -40,6 +41,7 @@ type TestEnv struct {
 	Manager     *manager.Manager
 	ImagePuller interpreter.ImagePuller
 	logger      *slog.Logger
+	baseDir     string // parent directory containing layout and cache
 	closeEnv    func() error
 }
 
@@ -55,15 +57,17 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	t.Helper()
 
 	// Create unique directory for this test
-	testName := sanitizeTestName(t.Name())
-	baseDir := filepath.Join(os.TempDir(), fmt.Sprintf("bpfman-e2e-%d-%s", os.Getpid(), testName))
+	baseDir, err := os.MkdirTemp("", fmt.Sprintf("bpfman-e2e-%d-", os.Getpid()))
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
 
-	layout, err := bpfmanfs.New(filepath.Join(baseDir, "bpfman"))
+	layout, err := bpfmanfs.New(baseDir)
 	if err != nil {
 		t.Fatalf("invalid runtime directory: %v", err)
 	}
 
-	imageCacheBase, err := bpfmanfs.NewImageCache(filepath.Join(baseDir, "cache"))
+	imageCacheBase, err := bpfmanfs.NewImageCache(filepath.Join(layout.Base(), "cache", "image"))
 	if err != nil {
 		t.Fatalf("invalid image cache directory: %v", err)
 	}
@@ -131,6 +135,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		Manager:     mgr,
 		ImagePuller: puller,
 		logger:      logger,
+		baseDir:     baseDir,
 		closeEnv:    cleanup,
 	}
 
@@ -143,26 +148,25 @@ func NewTestEnv(t *testing.T) *TestEnv {
 }
 
 // cleanup releases resources and removes test directories.
+// Failures are reported and cause the test to fail.
 func (e *TestEnv) cleanup() {
 	if e.closeEnv != nil {
-		e.closeEnv()
-	}
-
-	// Unmount bpffs if mounted
-	bpffsMount := e.Layout.BPFFSMountPoint()
-	if isMounted(bpffsMount) {
-		if err := unmount(bpffsMount); err != nil {
-			e.T.Logf("warning: failed to unmount bpffs at %s: %v", bpffsMount, err)
+		if err := e.closeEnv(); err != nil {
+			e.T.Errorf("failed to close environment: %v", err)
 		}
 	}
 
-	// Remove runtime directories
-	if err := os.RemoveAll(e.Layout.Base()); err != nil {
-		e.T.Logf("warning: failed to remove %s: %v", e.Layout.Base(), err)
+	// Unmount bpffs that was mounted by NewTestEnv
+	bpffsMount := e.Layout.BPFFSMountPoint()
+	e.T.Logf("unmounting bpffs at %s", bpffsMount)
+	if err := unmount(bpffsMount); err != nil {
+		e.T.Errorf("failed to unmount bpffs: %v", err)
 	}
-	sockDir := e.Layout.Base() + "-sock"
-	if err := os.RemoveAll(sockDir); err != nil {
-		e.T.Logf("warning: failed to remove %s: %v", sockDir, err)
+
+	// Remove the test directory
+	e.T.Logf("removing test directory %s", e.baseDir)
+	if err := os.RemoveAll(e.baseDir); err != nil {
+		e.T.Errorf("failed to remove %s: %v", e.baseDir, err)
 	}
 }
 
@@ -504,12 +508,33 @@ func RequireKernelVersion(t *testing.T, major, minor int) {
 }
 
 // RequireTracepoint fails the test if the specified tracepoint doesn't exist.
+// Checks both tracefs locations: /sys/kernel/tracing (modern) and
+// /sys/kernel/debug/tracing (legacy debugfs mount).
 func RequireTracepoint(t *testing.T, group, name string) {
 	t.Helper()
 
-	path := filepath.Join("/sys/kernel/debug/tracing/events", group, name)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Fatalf("tracepoint %s/%s not found", group, name)
+	// Modern kernels mount tracefs at /sys/kernel/tracing
+	// Older systems use /sys/kernel/debug/tracing via debugfs
+	paths := []string{
+		filepath.Join("/sys/kernel/tracing/events", group, name),
+		filepath.Join("/sys/kernel/debug/tracing/events", group, name),
+	}
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+	}
+
+	t.Fatalf("tracepoint %s/%s not found (checked %v)", group, name, paths)
+}
+
+// RequireTC fails the test if the tc command is not available.
+func RequireTC(t *testing.T) {
+	t.Helper()
+
+	if _, err := exec.LookPath("tc"); err != nil {
+		t.Fatal("test requires tc command (iproute2)")
 	}
 }
 
@@ -522,18 +547,6 @@ func tcIngressFilters(t *testing.T, ifaceName string) []netlink.Filter {
 	filters, err := netlink.FilterList(link, netlink.HANDLE_MIN_INGRESS)
 	require.NoError(t, err)
 	return filters
-}
-
-// sanitizeTestName converts a test name to a safe directory name.
-func sanitizeTestName(name string) string {
-	// Replace characters that might be problematic in paths
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, " ", "_")
-	// Limit length
-	if len(name) > 50 {
-		name = name[:50]
-	}
-	return name
 }
 
 // isMounted checks if a path is a mount point.
@@ -584,7 +597,10 @@ func runCommand(cmd string) error {
 func tcFilterCount(t *testing.T, iface, direction string) int {
 	t.Helper()
 
-	out, err := exec.Command("tc", "filter", "show", "dev", iface, direction).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "tc", "filter", "show", "dev", iface, direction).CombinedOutput()
 	if err != nil {
 		t.Logf("tc filter show dev %s %s: %v (output: %s)", iface, direction, err, out)
 		return 0
@@ -598,15 +614,24 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 	return count
 }
 
+const staleTestDirPrefix = "bpfman-e2e-"
+
 // cleanupStaleTestDirs removes leftover test directories from previous runs.
-func cleanupStaleTestDirs() {
-	pattern := filepath.Join(os.TempDir(), "bpfman-e2e-*")
+// Returns an error if any cleanup operation fails.
+func cleanupStaleTestDirs() error {
+	tempDir := os.TempDir()
+	pattern := filepath.Join(tempDir, staleTestDirPrefix+"*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return
+		return fmt.Errorf("glob %s: %w", pattern, err)
 	}
 
 	for _, path := range matches {
+		// Safety: verify path is under tempDir and has expected prefix
+		if err := validateStaleTestDir(path, tempDir); err != nil {
+			return fmt.Errorf("refusing to remove %s: %w", path, err)
+		}
+
 		// Check if the PID in the directory name is still running
 		parts := strings.Split(filepath.Base(path), "-")
 		if len(parts) >= 3 {
@@ -620,15 +645,51 @@ func cleanupStaleTestDirs() {
 			}
 		}
 
-		// Try to unmount bpffs if present
-		fsPath := filepath.Join(path, "fs")
-		if isMounted(fsPath) {
-			unmount(fsPath)
+		// Unmount bpffs using the same layout structure as test setup.
+		layout, err := bpfmanfs.New(path)
+		if err != nil {
+			return fmt.Errorf("invalid layout at %s: %w", path, err)
+		}
+		bpffsMount := layout.BPFFSMountPoint()
+		if isMounted(bpffsMount) {
+			if err := unmount(bpffsMount); err != nil {
+				return fmt.Errorf("unmount %s: %w", bpffsMount, err)
+			}
 		}
 
-		// Remove the directory
-		os.RemoveAll(path)
-		// Also remove the -sock directory
-		os.RemoveAll(path + "-sock")
+		// Remove the entire test directory
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove %s: %w", path, err)
+		}
 	}
+
+	return nil
+}
+
+// validateStaleTestDir ensures path is safe to remove.
+func validateStaleTestDir(path, tempDir string) error {
+	// Must be absolute
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("path is not absolute")
+	}
+
+	// Must be under tempDir
+	cleanPath := filepath.Clean(path)
+	cleanTempDir := filepath.Clean(tempDir)
+	if !strings.HasPrefix(cleanPath, cleanTempDir+string(filepath.Separator)) {
+		return fmt.Errorf("path %q is not under temp dir %q", cleanPath, cleanTempDir)
+	}
+
+	// Must have the expected prefix
+	base := filepath.Base(cleanPath)
+	if !strings.HasPrefix(base, staleTestDirPrefix) {
+		return fmt.Errorf("path %q does not have prefix %q", base, staleTestDirPrefix)
+	}
+
+	// Must not be a top-level directory (sanity check)
+	if cleanPath == "/" || strings.Count(cleanPath, string(filepath.Separator)) < 2 {
+		return fmt.Errorf("path %q is too short", cleanPath)
+	}
+
+	return nil
 }

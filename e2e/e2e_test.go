@@ -26,7 +26,10 @@ func TestMain(m *testing.M) {
 	}
 
 	// Clean up stale test directories from crashed runs
-	cleanupStaleTestDirs()
+	if err := cleanupStaleTestDirs(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to clean stale test dirs: %v\n", err)
+		os.Exit(1)
+	}
 
 	os.Exit(m.Run())
 }
@@ -832,6 +835,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 // TC programs use dispatchers for multi-program support.
 func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
+	RequireTC(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
