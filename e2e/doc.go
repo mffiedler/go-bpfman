@@ -23,21 +23,123 @@
 //   - Dedicated bpffs mount
 //   - Independent manager instance
 //
-// This isolation enables parallel test execution. The environment is
-// automatically cleaned up via t.Cleanup, including unmounting bpffs
-// and removing all temporary directories.
+// This isolation enables parallel test execution for most tests. The
+// environment is automatically cleaned up via t.Cleanup, including
+// unmounting bpffs and removing all temporary directories.
+//
+// # Parallelism Constraints
+//
+// While each test has isolated storage and bpffs mounts, the loopback
+// interface (lo) is a shared kernel resource. Tests that attach BPF
+// programs to the loopback interface cannot safely run in parallel:
+//
+//   - [TestXDP_LoadAttachDetachUnload]: attaches XDP dispatcher to lo
+//   - [TestTC_LoadAttachDetachUnload]: attaches TC dispatcher/filter to lo ingress
+//   - [TestTCX_LoadAttachDetachUnload]: attaches TCX program to lo ingress
+//
+// These tests verify filter counts and interface state, which would
+// produce incorrect results if multiple tests manipulate the same
+// interface concurrently. Do not use t.Parallel() with these tests.
+//
+// Tests that do not attach to shared resources can run in parallel:
+//
+//   - [TestTracepoint_LoadAttachDetachUnload]
+//   - [TestKprobe_LoadAttachDetachUnload]
+//   - [TestKretprobe_LoadAttachDetachUnload]
+//   - [TestUprobe_LoadAttachDetachUnload]
+//   - [TestUretprobe_LoadAttachDetachUnload]
+//   - [TestFentry_LoadAttachDetachUnload]
+//   - [TestFexit_LoadAttachDetachUnload]
+//   - [TestLoadWithMetadataAndGlobalData] (load only, no attach)
+//
+// # Test Descriptions
+//
+// ## Tracepoint Tests
+//
+// [TestTracepoint_LoadAttachDetachUnload] tests the full lifecycle of
+// a tracepoint program. Loads go-tracepoint-counter from OCI, attaches
+// to syscalls/sys_enter_kill, verifies link properties including group
+// and name, then detaches and unloads. No traffic generation required.
+//
+// ## Kprobe Tests
+//
+// [TestKprobe_LoadAttachDetachUnload] tests the full lifecycle of a
+// kprobe program. Loads go-kprobe-counter from OCI, attaches to the
+// try_to_wake_up kernel function, verifies link properties including
+// function name and offset, then detaches and unloads.
+//
+// [TestKretprobe_LoadAttachDetachUnload] tests the full lifecycle of
+// a kretprobe program. Uses the same image as kprobe but loads as
+// kretprobe type. Attaches to try_to_wake_up return, verifies the
+// Retprobe flag is set in link details.
+//
+// ## Uprobe Tests
+//
+// [TestUprobe_LoadAttachDetachUnload] tests the full lifecycle of a
+// uprobe program. Loads go-uprobe-counter from OCI, attaches to malloc
+// in libc, verifies link properties including target binary and
+// function name, then detaches and unloads.
+//
+// [TestUretprobe_LoadAttachDetachUnload] tests the full lifecycle of
+// a uretprobe program. Uses the same image as uprobe but loads as
+// uretprobe type. Attaches to malloc return in libc, verifies the
+// Retprobe flag is set in link details.
+//
+// ## Tracing Tests (BTF Required)
+//
+// [TestFentry_LoadAttachDetachUnload] tests the full lifecycle of a
+// fentry program. Requires BTF support. Loads fentry.bpf.o from local
+// bytecode, attaches to do_unlinkat kernel function entry, verifies
+// link properties. Skipped if BTF unavailable.
+//
+// [TestFexit_LoadAttachDetachUnload] tests the full lifecycle of a
+// fexit program. Requires BTF support. Loads fentry.bpf.o from local
+// bytecode, attaches to do_unlinkat kernel function exit, verifies
+// link properties. Skipped if BTF unavailable.
+//
+// ## Network Tests (Loopback Interface)
+//
+// [TestXDP_LoadAttachDetachUnload] tests the full lifecycle of an XDP
+// program. Loads xdp_pass from OCI, attaches to the loopback interface
+// using a dispatcher for multi-program support. Verifies dispatcher ID
+// and revision in link details. The dispatcher manages a chain of XDP
+// programs on the interface. Cannot run in parallel with other
+// loopback interface tests.
+//
+// [TestTC_LoadAttachDetachUnload] tests the full lifecycle of a TC
+// program. Loads go-tc-counter from OCI, attaches to lo ingress with
+// priority 50 using a dispatcher. Verifies the TC filter is visible
+// via tc(8) tooling and netlink. Confirms filter removal after detach.
+// Uses legacy netlink BPF filter attachment. Cannot run in parallel
+// with other loopback interface tests.
+//
+// [TestTCX_LoadAttachDetachUnload] tests the full lifecycle of a TCX
+// program. Requires kernel 6.6+. Loads go-tc-counter from OCI, attaches
+// to lo ingress with priority 50 using native kernel multi-program
+// support (no dispatcher). Verifies link properties including interface
+// and direction. Cannot run in parallel with other loopback interface
+// tests.
+//
+// ## Metadata Tests
+//
+// [TestLoadWithMetadataAndGlobalData] verifies that user-supplied
+// metadata and global data are stored and returned correctly through
+// the full stack. Loads xdp_pass with custom metadata labels and
+// global data bytes, verifies they are returned by Get and List
+// operations. Does not attach to an interface, so can run in parallel
+// with other tests.
 //
 // # Program Types Tested
 //
 // The test suite covers all supported BPF program types:
 //
-//   - Tracepoint: kernel tracepoint hooks (sched/sched_switch, etc.)
-//   - Kprobe/Kretprobe: kernel function entry and return probes
-//   - Uprobe/Uretprobe: userspace function probes (typically libc)
-//   - Fentry/Fexit: fast kernel function tracing (requires BTF)
-//   - XDP: network ingress via dispatcher programs
-//   - TC: traffic control via dispatcher programs
-//   - TCX: native kernel multi-program TC (requires kernel 6.6+)
+//   - Tracepoint: kernel tracepoint hooks (syscalls/sys_enter_kill)
+//   - Kprobe/Kretprobe: kernel function entry and return probes (try_to_wake_up)
+//   - Uprobe/Uretprobe: userspace function probes (malloc in libc)
+//   - Fentry/Fexit: fast kernel function tracing (do_unlinkat, requires BTF)
+//   - XDP: network ingress via dispatcher programs (loopback interface)
+//   - TC: traffic control via dispatcher programs (loopback interface)
+//   - TCX: native kernel multi-program TC (loopback interface, requires kernel 6.6+)
 //
 // Each test follows the same pattern: load from OCI image or bytecode
 // file, verify program properties, attach to a hook point, verify link
