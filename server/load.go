@@ -36,7 +36,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	case *pb.BytecodeLocation_File:
 		objectPath = loc.File
 	case *pb.BytecodeLocation_Image:
-		if s.puller == nil {
+		if s.imagePuller == nil {
 			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
 		}
 
@@ -56,7 +56,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		}
 
 		// Pull the image
-		pulled, err := s.puller.Pull(ctx, ref)
+		pulled, err := s.imagePuller.Pull(ctx, ref)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", loc.Image.Url, err)
 		}

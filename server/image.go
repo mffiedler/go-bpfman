@@ -13,7 +13,7 @@ import (
 // PullBytecode implements the PullBytecode RPC method.
 // It pre-pulls an OCI image to the local cache without loading any programs.
 func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) (*pb.PullBytecodeResponse, error) {
-	if s.puller == nil {
+	if s.imagePuller == nil {
 		return nil, status.Error(codes.Unimplemented, "OCI image pulling not configured on this server")
 	}
 
@@ -37,7 +37,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	}
 
 	// Pull the image (this caches it)
-	_, err := s.puller.Pull(ctx, ref)
+	_, err := s.imagePuller.Pull(ctx, ref)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", req.Image.Url, err)
 	}

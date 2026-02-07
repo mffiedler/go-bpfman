@@ -35,12 +35,12 @@ import (
 // Each test gets a fully isolated environment with unique directories,
 // database, and socket, enabling t.Parallel() across all tests.
 type TestEnv struct {
-	T        *testing.T
-	Layout   bpfmanfs.FSLayout
-	Manager  *manager.Manager
-	Puller   interpreter.ImagePuller
-	logger   *slog.Logger
-	closeEnv func() error
+	T           *testing.T
+	Layout      bpfmanfs.FSLayout
+	Manager     *manager.Manager
+	ImagePuller interpreter.ImagePuller
+	logger      *slog.Logger
+	closeEnv    func() error
 }
 
 // NewTestEnv creates an isolated test environment for e2e testing.
@@ -115,12 +115,12 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	require.NoError(t, err, "failed to create image puller")
 
 	env := &TestEnv{
-		T:        t,
-		Layout:   layout,
-		Manager:  mgr,
-		Puller:   puller,
-		logger:   logger,
-		closeEnv: cleanup,
+		T:           t,
+		Layout:      layout,
+		Manager:     mgr,
+		ImagePuller: puller,
+		logger:      logger,
+		closeEnv:    cleanup,
 	}
 
 	// Register cleanup
@@ -172,7 +172,7 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, progr
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
-		result, loadErr = e.Manager.LoadImage(ctx, e.Puller, ref, programs, opts)
+		result, loadErr = e.Manager.LoadImage(ctx, e.ImagePuller, ref, programs, opts)
 		return loadErr
 	})
 	return result, err

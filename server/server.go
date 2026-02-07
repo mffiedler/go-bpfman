@@ -204,51 +204,51 @@ func Run(ctx context.Context, cfg RunConfig) error {
 type Server struct {
 	pb.UnimplementedBpfmanServer
 
-	mu        sync.RWMutex
-	layout    bpfmanfs.FSLayout
-	kernel    interpreter.KernelOperations
-	store     interpreter.Store
-	puller    interpreter.ImagePuller
-	netIface  NetIfaceResolver
-	mgr       *manager.Manager
-	logger    *slog.Logger
-	opCounter atomic.Uint64
+	mu          sync.RWMutex
+	layout      bpfmanfs.FSLayout
+	kernel      interpreter.KernelOperations
+	store       interpreter.Store
+	imagePuller interpreter.ImagePuller
+	netIface    NetIfaceResolver
+	mgr         *manager.Manager
+	logger      *slog.Logger
+	opCounter   atomic.Uint64
 }
 
 // newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
 // The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, puller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
+func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, imagePuller interpreter.ImagePuller, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		layout:   layout,
-		kernel:   ebpf.New(ebpf.WithLogger(logger)),
-		store:    store,
-		puller:   puller,
-		netIface: DefaultNetIfaceResolver{},
-		mgr:      mgr,
-		logger:   logger.With("component", "server"),
+		layout:      layout,
+		kernel:      ebpf.New(ebpf.WithLogger(logger)),
+		store:       store,
+		imagePuller: imagePuller,
+		netIface:    DefaultNetIfaceResolver{},
+		mgr:         mgr,
+		logger:      logger.With("component", "server"),
 	}
 }
 
 // New creates a server with the provided dependencies.
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
-func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, puller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, imagePuller interpreter.ImagePuller, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{
-		layout:   layout,
-		kernel:   kernel,
-		store:    store,
-		puller:   puller,
-		netIface: netIface,
-		mgr:      mgr,
-		logger:   logger.With("component", "server"),
+		layout:      layout,
+		kernel:      kernel,
+		store:       store,
+		imagePuller: imagePuller,
+		netIface:    netIface,
+		mgr:         mgr,
+		logger:      logger.With("component", "server"),
 	}
 }
 
