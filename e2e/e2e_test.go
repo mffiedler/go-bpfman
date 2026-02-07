@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 
 // TestTracepoint_LoadAttachDetachUnload tests the full lifecycle of a tracepoint program.
 func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireTracepoint(t, "syscalls", "sys_enter_kill")
 
@@ -159,6 +160,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 
 // TestKprobe_LoadAttachDetachUnload tests the full lifecycle of a kprobe program.
 func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "try_to_wake_up")
 
@@ -270,6 +272,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 
 // TestKretprobe_LoadAttachDetachUnload tests the full lifecycle of a kretprobe program.
 func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "try_to_wake_up")
 
@@ -383,6 +386,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 // TestUprobe_LoadAttachDetachUnload tests the full lifecycle of a uprobe program.
 func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 
 	target, fnName := uprobeTarget()
@@ -500,6 +504,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 
 // TestUretprobe_LoadAttachDetachUnload tests the full lifecycle of a uretprobe program.
 func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 
 	target, fnName := uprobeTarget()
@@ -618,6 +623,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 // TestFentry_LoadAttachDetachUnload tests the full lifecycle of a fentry program.
 func TestFentry_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
@@ -726,6 +732,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 
 // TestFexit_LoadAttachDetachUnload tests the full lifecycle of a fexit program.
 func TestFexit_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
@@ -1209,6 +1216,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 // TestLoadWithMetadataAndGlobalData verifies that user-supplied metadata and
 // global data are stored and returned correctly through the full stack.
 func TestLoadWithMetadataAndGlobalData(t *testing.T) {
+	t.Parallel()
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
