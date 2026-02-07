@@ -137,7 +137,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1: Load into kernel and pin to bpffs
 	// The Manager owns the bpffs root path - callers don't need to know it
-	loaded, err := m.kernel.Load(ctx, spec, m.runtime.BPFFS())
+	loaded, err := m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
 		_ = rec.Fail(outcome.Step{
@@ -200,7 +200,7 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 
 	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
 	// Register undo step to remove it on failure.
-	rt := m.runtime.BytecodeFS()
+	rt := m.fsctx.BytecodeFS()
 	prov := bpfmanfs.Provenance{
 		Version:     1,
 		KernelID:    loaded.Program.ID,
@@ -446,9 +446,9 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
 
 	// COMPUTE: Build paths from convention (kernel ID + bpffs root)
-	progPinPath := m.runtime.BPFFS().ProgPinPath(kernelID)
-	mapsDir := m.runtime.BPFFS().MapPinDir(kernelID)
-	linksDir := m.runtime.BPFFS().LinkPinDir(kernelID)
+	progPinPath := m.fsctx.BPFFS().ProgPinPath(kernelID)
+	mapsDir := m.fsctx.BPFFS().MapPinDir(kernelID)
+	linksDir := m.fsctx.BPFFS().LinkPinDir(kernelID)
 
 	// COMPUTE: Build unload actions and step mapping
 	actions := computeUnloadActions(kernelID, progPinPath, mapsDir, linksDir, links)
@@ -494,7 +494,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	// it fails, log and record the residual artefact but do not fail
 	// the unload. The DB row is about to be deleted (as part of the
 	// actions above), so GC will clean it on the next pass.
-	rt := m.runtime.BytecodeFS()
+	rt := m.fsctx.BytecodeFS()
 	if err := rt.RemoveProgram(kernelID); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
 		_ = rec.Fail(outcome.Step{

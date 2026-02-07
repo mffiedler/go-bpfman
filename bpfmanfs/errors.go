@@ -3,7 +3,7 @@
 // The package provides capability tokens for safe path construction:
 //
 //   - FSLayout: validated filesystem layout, constructed via New
-//   - EnsuredRuntime: capability token from runtime.Ensure() proving directories and bpffs are ready
+//   - FilesystemContext: capability token from runtime.New() proving directories and bpffs are ready
 //   - BytecodeFS: bytecode persistence operations, obtained via Layout.BytecodeFS()
 //   - BPFFS: bpffs pin path conventions, obtained via Layout.BPFFS()
 //

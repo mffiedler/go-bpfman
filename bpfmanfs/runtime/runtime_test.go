@@ -29,7 +29,7 @@ func TestEnsure_CreatesDirectories(t *testing.T) {
 	require.NoError(t, err)
 
 	mounter := &mockMounter{}
-	ensuredRuntime, err := runtime.Ensure(root, mounter, nil)
+	ensuredRuntime, err := runtime.New(root, mounter, nil)
 	require.NoError(t, err)
 	assert.True(t, ensuredRuntime.Valid(), "ensured runtime should be valid")
 
@@ -46,7 +46,7 @@ func TestEnsure_CallsMounter(t *testing.T) {
 	require.NoError(t, err)
 
 	mounter := &mockMounter{}
-	_, err = runtime.Ensure(root, mounter, nil)
+	_, err = runtime.New(root, mounter, nil)
 	require.NoError(t, err)
 
 	require.Len(t, mounter.calls, 1)
@@ -60,7 +60,7 @@ func TestEnsure_MounterError(t *testing.T) {
 	expectedErr := errors.New("mount failed")
 	mounter := &mockMounter{err: expectedErr}
 
-	_, err = runtime.Ensure(root, mounter, nil)
+	_, err = runtime.New(root, mounter, nil)
 	assert.ErrorIs(t, err, expectedErr)
 }
 
@@ -75,7 +75,7 @@ func TestEnsure_DirectoryCreationError(t *testing.T) {
 	require.NoError(t, err)
 
 	mounter := &mockMounter{}
-	_, err = runtime.Ensure(root, mounter, nil)
+	_, err = runtime.New(root, mounter, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "create directory")
 }

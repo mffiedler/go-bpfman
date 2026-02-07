@@ -145,7 +145,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 		"dispatcher_id", dispState.KernelID)
 
 	// COMPUTE: Calculate extension link path from conventions
-	fs := m.runtime.BPFFS()
+	fs := m.fsctx.BPFFS()
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
@@ -450,7 +450,7 @@ func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts
 	// The path must be unique per program to support multiple TCX programs
 	// on the same interface — each needs its own pinned link to keep the
 	// kernel attachment alive.
-	linkPinPath := m.runtime.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
+	linkPinPath := m.fsctx.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
 
 	// KERNEL I/O: Remove stale pin if it exists from a previous daemon run.
 	if _, statErr := os.Stat(linkPinPath); statErr == nil {
@@ -660,7 +660,7 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 	// COMPUTE: Calculate paths according to Rust bpfman convention.
 	// TC dispatchers do not use a link pin — legacy netlink TC has no
 	// BPF link to pin. The filter is identified by handle + priority.
-	fs := m.runtime.BPFFS()
+	fs := m.fsctx.BPFFS()
 	revision := uint32(1)
 	progPinPath := fs.DispatcherProgPath(dispType, nsid, ifindex, revision)
 

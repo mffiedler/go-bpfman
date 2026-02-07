@@ -34,7 +34,7 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("ensure runtime: %w", err)
@@ -75,7 +75,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("ensure runtime: %w", err)

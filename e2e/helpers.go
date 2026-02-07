@@ -103,7 +103,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
 	require.NoError(t, err, "failed to ensure runtime")
 
 	// Create manager

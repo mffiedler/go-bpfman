@@ -14,7 +14,7 @@ import (
 // has been validated.
 //
 // FSLayout is deliberately I/O free - it only computes and validates paths.
-// Callers use bpfmanfs/runtime.Ensure() to create directories and mount
+// Callers use bpfmanfs/runtime.New() to create directories and mount
 // bpffs before constructing a manager. This separation enables testing
 // without root privileges or real filesystems.
 type FSLayout struct {

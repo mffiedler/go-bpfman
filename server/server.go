@@ -88,7 +88,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.Ensure(layout, runtime.RealMounter{}, logger)
+	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
 	if err != nil {
 		return fmt.Errorf("ensure runtime: %w", err)
 	}

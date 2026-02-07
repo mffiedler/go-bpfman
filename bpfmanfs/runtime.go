@@ -48,42 +48,42 @@ func (rt BytecodeFS) mustValid() {
 	}
 }
 
-// EnsuredRuntime is a capability token proving that the runtime
-// directories exist and bpffs is mounted. Obtain via runtime.Ensure().
+// FilesystemContext is a capability token proving that the filesystem
+// directories exist and bpffs is mounted. Obtain via runtime.New().
 //
-// Holding an EnsuredRuntime guarantees:
+// Holding a FilesystemContext guarantees:
 //   - Base directory and subdirectories exist
 //   - bpffs is mounted at the expected mount point
 //
 // This enables upfront validation before operations begin.
-type EnsuredRuntime struct {
+type FilesystemContext struct {
 	layout FSLayout
 }
 
-// NewEnsuredRuntime creates an EnsuredRuntime from a validated FSLayout.
-// This is called by runtime.Ensure() after directories and bpffs are ready.
-// Direct callers must ensure the runtime is properly initialised.
-func NewEnsuredRuntime(layout FSLayout) EnsuredRuntime {
-	return EnsuredRuntime{layout: layout}
+// NewFilesystemContext creates a FilesystemContext from a validated FSLayout.
+// This is called by runtime.New() after directories and bpffs are ready.
+// Direct callers must ensure the filesystem is properly initialised.
+func NewFilesystemContext(layout FSLayout) FilesystemContext {
+	return FilesystemContext{layout: layout}
 }
 
 // Layout returns the underlying FSLayout.
-func (r EnsuredRuntime) Layout() FSLayout {
+func (r FilesystemContext) Layout() FSLayout {
 	return r.layout
 }
 
 // BPFFS returns the bpffs accessor for pin path conventions.
-func (r EnsuredRuntime) BPFFS() BPFFS {
+func (r FilesystemContext) BPFFS() BPFFS {
 	return r.layout.BPFFS()
 }
 
 // BytecodeFS returns the bytecode filesystem accessor for program persistence.
-func (r EnsuredRuntime) BytecodeFS() BytecodeFS {
+func (r FilesystemContext) BytecodeFS() BytecodeFS {
 	return r.layout.BytecodeFS()
 }
 
-// Valid reports whether the EnsuredRuntime was properly constructed.
-func (r EnsuredRuntime) Valid() bool {
+// Valid reports whether the FilesystemContext was properly constructed.
+func (r FilesystemContext) Valid() bool {
 	return r.layout.Valid()
 }
 

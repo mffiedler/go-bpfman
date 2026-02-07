@@ -8,12 +8,12 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 )
 
-// Ensure creates runtime directories and ensures bpffs is mounted.
-// Returns an EnsuredRuntime capability token that proves the runtime
+// New creates runtime directories and ensures bpffs is mounted.
+// Returns a FilesystemContext capability token that proves the filesystem
 // is ready. Call once at startup before constructing a manager.
 //
-// The returned EnsuredRuntime should be passed to manager.New().
-func Ensure(layout bpfmanfs.FSLayout, mounter Mounter, logger *slog.Logger) (bpfmanfs.EnsuredRuntime, error) {
+// The returned FilesystemContext should be passed to manager.New().
+func New(layout bpfmanfs.FSLayout, mounter Mounter, logger *slog.Logger) (bpfmanfs.FilesystemContext, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -28,15 +28,15 @@ func Ensure(layout bpfmanfs.FSLayout, mounter Mounter, logger *slog.Logger) (bpf
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			setupLogger.Error("failed to create directory",
 				"dir", dir, "error", err)
-			return bpfmanfs.EnsuredRuntime{}, fmt.Errorf("create directory %s: %w", dir, err)
+			return bpfmanfs.FilesystemContext{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 
 	if err := mounter.EnsureMounted(layout.BPFFSMountPoint()); err != nil {
 		setupLogger.Error("failed to mount bpffs", "error", err)
-		return bpfmanfs.EnsuredRuntime{}, err
+		return bpfmanfs.FilesystemContext{}, err
 	}
 
 	setupLogger.Debug("runtime directories ready")
-	return bpfmanfs.NewEnsuredRuntime(layout), nil
+	return bpfmanfs.NewFilesystemContext(layout), nil
 }
