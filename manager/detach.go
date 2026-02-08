@@ -15,11 +15,6 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-// isNotFoundError returns true if err wraps store.ErrNotFound.
-func isNotFoundError(err error) bool {
-	return errors.Is(err, store.ErrNotFound)
-}
-
 // Detach removes a link by link ID.
 //
 // This detaches the link from the kernel (if pinned) and removes it from the
@@ -48,7 +43,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	record, err := m.store.GetLink(ctx, linkID)
 	if err != nil {
 		var primaryErr error
-		if isNotFoundError(err) {
+		if errors.Is(err, store.ErrNotFound) {
 			// Check if link exists in kernel but isn't managed by bpfman
 			if _, kerr := m.kernel.GetLinkByID(ctx, uint32(linkID)); kerr == nil {
 				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
