@@ -1,4 +1,3 @@
-// Package ebpf provides kernel operations using cilium/ebpf.
 package ebpf
 
 import (
