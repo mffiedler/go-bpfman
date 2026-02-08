@@ -1,4 +1,3 @@
-// Package server implements the bpfman gRPC server.
 package server
 
 import (
