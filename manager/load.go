@@ -460,38 +460,25 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 
 	m.logger.InfoContext(ctx, "unloading program", "kernel_id", kernelID, "links", len(links))
 
-	// EXECUTE: Run all actions using ExecuteAllWithResult for outcome tracking
-	execWithResult, ok := m.executor.(interpreter.ActionExecutorWithResult)
-	if !ok {
-		// Fallback for executors that don't support result tracking
-		if err := m.executor.ExecuteAll(ctx, actions); err != nil {
-			primaryErr := fmt.Errorf("execute unload actions: %w", err)
-			return fail(primaryErr)
-		}
-		// Record all steps as completed
-		for _, step := range steps {
-			_ = rec.Complete(step)
-		}
-	} else {
-		execResult := execWithResult.ExecuteAllWithResult(ctx, actions)
+	// EXECUTE: Run all actions with structured result tracking.
+	execResult := m.executor.ExecuteAllWithResult(ctx, actions)
 
-		// Record completed steps
-		for i := 0; i < execResult.CompletedCount; i++ {
-			if i < len(steps) {
-				_ = rec.Complete(steps[i])
-			}
+	// Record completed steps.
+	for i := 0; i < execResult.CompletedCount; i++ {
+		if i < len(steps) {
+			_ = rec.Complete(steps[i])
 		}
+	}
 
-		// If there was a failure, record it
-		if execResult.Error != nil {
-			if execResult.FailedIndex < len(steps) {
-				failedStep := steps[execResult.FailedIndex]
-				failedStep.Error = execResult.Error.Error()
-				_ = rec.Fail(failedStep)
-			}
-			primaryErr := fmt.Errorf("execute unload actions: %w", execResult.Error)
-			return fail(primaryErr)
+	// If there was a failure, record it.
+	if execResult.Error != nil {
+		if execResult.FailedIndex < len(steps) {
+			failedStep := steps[execResult.FailedIndex]
+			failedStep.Error = execResult.Error.Error()
+			_ = rec.Fail(failedStep)
 		}
+		primaryErr := fmt.Errorf("execute unload actions: %w", execResult.Error)
+		return fail(primaryErr)
 	}
 
 	// Remove persisted bytecode directory. This is best-effort: if

@@ -33,7 +33,7 @@ type Manager struct {
 	fsctx             bpfmanfs.FilesystemContext
 	store             interpreter.Store
 	kernel            interpreter.KernelOperations
-	executor          interpreter.ActionExecutor
+	executor          interpreter.ActionExecutorWithResult
 	programDiscoverer interpreter.ProgramDiscoverer
 	imagePuller       interpreter.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
@@ -78,7 +78,7 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          interpreter.NewExecutor(store, kernel),
+		executor:          interpreter.NewExecutor(store, kernel).(interpreter.ActionExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil
