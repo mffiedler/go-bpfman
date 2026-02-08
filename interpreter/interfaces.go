@@ -1,5 +1,3 @@
-// Package interpreter contains interfaces and executors for effects.
-// This is the only package that performs actual I/O.
 package interpreter
 
 import (
