@@ -1,15 +1,3 @@
-// Package bpfmanfs models bpfman's runtime filesystem hierarchy.
-//
-// The package provides capability tokens for safe path construction:
-//
-//   - FSLayout: validated filesystem layout, constructed via New
-//   - FilesystemContext: capability token from runtime.New() proving directories and bpffs are ready
-//   - BytecodeFS: bytecode persistence operations, obtained via Layout.BytecodeFS()
-//   - BPFFS: bpffs pin path conventions, obtained via Layout.BPFFS()
-//
-// All types enforce validity: methods panic on zero-value receivers to
-// catch programmer errors. This prevents accidentally obtaining paths
-// from uninitialised values.
 package bpfmanfs
 
 import (
