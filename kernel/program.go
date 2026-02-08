@@ -1,9 +1,3 @@
-// Package kernel contains types representing BPF objects as observed
-// from the kernel. These are read-only data structures populated by
-// querying the BPF subsystem.
-//
-// These types wrap cilium/ebpf types to avoid exposing that dependency
-// directly while preserving all available information from the kernel.
 package kernel
 
 import "time"
