@@ -109,11 +109,14 @@ type fakeImagePuller struct {
 	pullErr    error
 }
 
-func newFakeImagePuller(objectPath string) *fakeImagePuller {
+func newFakeImagePuller() *fakeImagePuller {
 	return &fakeImagePuller{
-		objectPath: objectPath,
-		digest:     "sha256:fake",
+		digest: "sha256:fake",
 	}
+}
+
+func (p *fakeImagePuller) SetObjectPath(path string) {
+	p.objectPath = path
 }
 
 func (p *fakeImagePuller) SetPullError(err error) {

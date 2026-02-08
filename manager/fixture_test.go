@@ -44,11 +44,16 @@ type testFixture struct {
 
 // newTestFixture creates a complete test fixture with accessible components.
 func newTestFixture(t *testing.T) *testFixture {
-	return newTestFixtureWithDiscoverer(t, nil)
+	return newTestFixtureWithOptions(t, nil, nil)
 }
 
 // newTestFixtureWithDiscoverer creates a test fixture with a custom discoverer.
 func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *testFixture {
+	return newTestFixtureWithOptions(t, discoverer, nil)
+}
+
+// newTestFixtureWithOptions creates a test fixture with optional overrides.
+func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller interpreter.ImagePuller) *testFixture {
 	t.Helper()
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
@@ -64,7 +69,7 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 	ensuredRuntime, err := runtime.New(layout, runtime.NoOpMounter{}, testLogger())
 	require.NoError(t, err, "failed to ensure runtime")
 
-	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, discoverer, testLogger())
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{

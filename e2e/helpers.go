@@ -110,14 +110,6 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
 	require.NoError(t, err, "failed to ensure runtime")
 
-	// Create manager
-	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, ebpf.NewProgramDiscoverer(), logger)
-	require.NoError(t, err, "failed to create manager")
-
-	cleanup := func() error {
-		return store.Close()
-	}
-
 	// Create signature verifier (disabled for tests)
 	verifier := verify.NoSign()
 
@@ -128,6 +120,14 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		oci.WithVerifier(verifier),
 	)
 	require.NoError(t, err, "failed to create image puller")
+
+	// Create manager
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	require.NoError(t, err, "failed to create manager")
+
+	cleanup := func() error {
+		return store.Close()
+	}
 
 	env := &TestEnv{
 		T:           t,
@@ -187,7 +187,7 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, progr
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
-		result, loadErr = e.Manager.LoadImage(ctx, e.ImagePuller, ref, programs, opts)
+		result, loadErr = e.Manager.LoadImage(ctx, ref, programs, opts)
 		return loadErr
 	})
 	return result, err

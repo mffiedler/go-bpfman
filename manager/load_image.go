@@ -32,7 +32,7 @@ type LoadImageOpts struct {
 // On success, returns the loaded programs.
 // On failure, returns a *ManagerError containing the full operation outcome
 // with timeline, rollback errors, and residual artefacts.
-func (m *Manager) LoadImage(ctx context.Context, imagePuller interpreter.ImagePuller, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result []bpfman.Program, retErr error) {
+func (m *Manager) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []ImageProgramSpec, opts LoadImageOpts) (result []bpfman.Program, retErr error) {
 	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
@@ -92,7 +92,7 @@ func (m *Manager) LoadImage(ctx context.Context, imagePuller interpreter.ImagePu
 		}
 	}()
 
-	if imagePuller == nil {
+	if m.imagePuller == nil {
 		retErr = fmt.Errorf("image puller is required")
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
@@ -108,7 +108,7 @@ func (m *Manager) LoadImage(ctx context.Context, imagePuller interpreter.ImagePu
 		"url", ref.URL,
 		"pull_policy", ref.PullPolicy)
 
-	pulled, err := imagePuller.Pull(ctx, ref)
+	pulled, err := m.imagePuller.Pull(ctx, ref)
 	if err != nil {
 		retErr = fmt.Errorf("pull image %s: %w", ref.URL, err)
 		_ = rec.Fail(outcome.Step{

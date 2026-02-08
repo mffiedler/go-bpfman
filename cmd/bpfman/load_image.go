@@ -98,7 +98,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 					Password: password,
 				}
 			}
-			loaded, err := mgr.LoadImage(ctx, mgr.ImagePuller(), ref, nil, manager.LoadImageOpts{
+			loaded, err := mgr.LoadImage(ctx, ref, nil, manager.LoadImageOpts{
 				UserMetadata: metadata,
 				GlobalData:   globalData,
 			})
