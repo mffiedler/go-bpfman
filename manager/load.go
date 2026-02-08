@@ -164,140 +164,19 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		"prog_pin", loaded.PinPath,
 		"maps_dir", loaded.MapsDir)
 
-	// Phase 1.5: DB existence check. If a DB row already exists for
-	// this kernel_id, it means something is seriously wrong (the
-	// kernel reused an ID that we still track, or a concurrent load
-	// raced). Hard error and rollback kernel state.
-	if _, err := m.store.Get(ctx, loaded.Program.ID); err == nil {
-		// DB row exists -- invariant violation.
-		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Program.ID)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: primaryErr.Error(),
-		})
-		// Rollback kernel load.
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
-		}
-		return fail(primaryErr)
-	} else if !errors.Is(err, store.ErrNotFound) {
-		// Unexpected store error.
-		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Program.ID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: spec.ProgramName(),
-			Error:  primaryErr.Error(),
-		})
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
-		}
-		return fail(primaryErr)
-	}
-
-	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
-	// Register undo step to remove it on failure.
+	// Accumulate rollback steps as each phase succeeds.  Every
+	// failure path after this point calls rollbackLoad rather than
+	// doing ad-hoc cleanup.
+	var undo undoStack
 	rt := m.fsctx.BytecodeFS()
-	prov := bpfmanfs.Provenance{
-		Version:     1,
-		KernelID:    loaded.Program.ID,
-		ProgramName: spec.ProgramName(),
-		Source:      spec.ObjectPath(),
-		SourceKind:  sourceKindFromSpec(spec),
-		LoadedAt:    now,
-	}
 
-	if err := rt.PublishBytecode(loaded.Program.ID, spec.ObjectPath(), prov); err != nil {
-		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Program.ID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindFSPublish,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: primaryErr.Error(),
-		})
-		// Rollback kernel load.
-		if rbErr := m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback kernel unload failed", "kernel_id", loaded.Program.ID, "error", rbErr)
-		}
-		return fail(primaryErr)
-	}
-
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindFSPublish,
-		Target: spec.ProgramName(),
-		Details: outcome.ProgramDetails{
-			KernelID: loaded.Program.ID,
-		},
+	undo.push(func() error {
+		return m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir)
 	})
 
-	// Phase 2: Persist metadata to DB (single transaction)
-	// Use the inferred type from the kernel layer (from ELF section name)
-	// rather than the user-specified type.
-	//
-	// Convert MapOwnerID: 0 means self/no owner (nil), non-zero is a pointer.
-	var mapOwnerID *uint32
-	if ownerID := spec.MapOwnerID(); ownerID != 0 {
-		mapOwnerID = &ownerID
-	}
-
-	metadata := bpfman.ProgramRecord{
-		KernelID: loaded.Program.ID,
-		Load: bpfman.LoadSpec{}.
-			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
-			WithProgramName(spec.ProgramName()).
-			WithProgramType(loaded.InferredType).
-			WithGlobalData(spec.GlobalData()).
-			WithImageProvenance(spec.ImageURL(), spec.ImageDigest(), spec.ImagePullPolicy()).
-			WithAttachFunc(spec.AttachFunc()),
-		License:       loaded.License,
-		GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
-		Handles: bpfman.ProgramHandles{
-			PinPath:    loaded.PinPath,
-			MapPinPath: loaded.MapsDir, // Maps directory for CSI/unload
-			MapOwnerID: mapOwnerID,
-		},
-		Meta: bpfman.ProgramMeta{
-			Name:     spec.ProgramName(),
-			Owner:    opts.Owner,
-			Metadata: opts.UserMetadata,
-		},
-		CreatedAt: now,
-	}
-
-	// Save atomically persists program metadata. RunInTransaction ensures
-	// the upsert, tag updates, and metadata index updates all commit or
-	// roll back together.
-	err = m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
-		return txStore.Save(ctx, loaded.Program.ID, metadata)
-	})
-	if err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back", "kernel_id", loaded.Program.ID, "error", err)
-
-		// Record store save failure
-		storeErr := fmt.Errorf("persist metadata: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindStoreSaveProgram,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: storeErr.Error(),
-		})
-
-		// Attempt rollback using undoStack for consistent pattern.
-		// LIFO order: RemoveProgram runs first, then kernel unload.
-		var undo undoStack
-		undo.push(func() error {
-			return m.kernel.UnloadProgram(ctx, loaded.PinPath, loaded.MapsDir)
-		})
-		undo.push(func() error {
-			return rt.RemoveProgram(loaded.Program.ID)
-		})
+	rollbackLoad := func(primaryErr error) (bpfman.Program, error) {
+		m.logger.ErrorContext(ctx, "load failed, rolling back",
+			"kernel_id", loaded.Program.ID, "error", primaryErr)
 
 		rec.BeginRollback()
 		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
@@ -315,7 +194,6 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 				},
 				Error: rbErrs[0].Err.Error(),
 			})
-			// Set residual artefacts since rollback failed
 			rec.SetResidual([]outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Program.ID, Path: loaded.PinPath},
 				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Program.ID, Path: loaded.MapsDir},
@@ -335,7 +213,113 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 				},
 			})
 		}
-		return fail(storeErr)
+		return fail(primaryErr)
+	}
+
+	// Phase 1.5: DB existence check.  If a row already exists for
+	// this kernel_id the kernel reused an ID we still track, or a
+	// concurrent load raced.
+	if _, err := m.store.Get(ctx, loaded.Program.ID); err == nil {
+		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Program.ID)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Program.ID,
+			},
+			Error: primaryErr.Error(),
+		})
+		return rollbackLoad(primaryErr)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Program.ID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindPreflight,
+			Target: spec.ProgramName(),
+			Error:  primaryErr.Error(),
+		})
+		return rollbackLoad(primaryErr)
+	}
+
+	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
+	prov := bpfmanfs.Provenance{
+		Version:     1,
+		KernelID:    loaded.Program.ID,
+		ProgramName: spec.ProgramName(),
+		Source:      spec.ObjectPath(),
+		SourceKind:  sourceKindFromSpec(spec),
+		LoadedAt:    now,
+	}
+
+	if err := rt.PublishBytecode(loaded.Program.ID, spec.ObjectPath(), prov); err != nil {
+		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Program.ID, err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindFSPublish,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Program.ID,
+			},
+			Error: primaryErr.Error(),
+		})
+		return rollbackLoad(primaryErr)
+	}
+
+	_ = rec.Complete(outcome.Step{
+		Kind:   outcome.StepKindFSPublish,
+		Target: spec.ProgramName(),
+		Details: outcome.ProgramDetails{
+			KernelID: loaded.Program.ID,
+		},
+	})
+
+	// Bytecode published; add its removal to the undo stack.
+	undo.push(func() error {
+		return rt.RemoveProgram(loaded.Program.ID)
+	})
+
+	// Phase 2: Persist metadata to DB (single transaction)
+	var mapOwnerID *uint32
+	if ownerID := spec.MapOwnerID(); ownerID != 0 {
+		mapOwnerID = &ownerID
+	}
+
+	metadata := bpfman.ProgramRecord{
+		KernelID: loaded.Program.ID,
+		Load: bpfman.LoadSpec{}.
+			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
+			WithProgramName(spec.ProgramName()).
+			WithProgramType(loaded.InferredType).
+			WithGlobalData(spec.GlobalData()).
+			WithImageProvenance(spec.ImageURL(), spec.ImageDigest(), spec.ImagePullPolicy()).
+			WithAttachFunc(spec.AttachFunc()),
+		License:       loaded.License,
+		GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
+		Handles: bpfman.ProgramHandles{
+			PinPath:    loaded.PinPath,
+			MapPinPath: loaded.MapsDir,
+			MapOwnerID: mapOwnerID,
+		},
+		Meta: bpfman.ProgramMeta{
+			Name:     spec.ProgramName(),
+			Owner:    opts.Owner,
+			Metadata: opts.UserMetadata,
+		},
+		CreatedAt: now,
+	}
+
+	err = m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
+		return txStore.Save(ctx, loaded.Program.ID, metadata)
+	})
+	if err != nil {
+		storeErr := fmt.Errorf("persist metadata: %w", err)
+		_ = rec.Fail(outcome.Step{
+			Kind:   outcome.StepKindStoreSaveProgram,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID: loaded.Program.ID,
+			},
+			Error: storeErr.Error(),
+		})
+		return rollbackLoad(storeErr)
 	}
 
 	// Record successful store save
