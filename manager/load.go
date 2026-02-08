@@ -454,26 +454,24 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	mapsDir := m.fsctx.BPFFS().MapPinDir(kernelID)
 	linksDir := m.fsctx.BPFFS().LinkPinDir(kernelID)
 
-	// COMPUTE: Build unload actions and step mapping
-	actions := computeUnloadActions(kernelID, progPinPath, mapsDir, linksDir, links)
-	steps := computeUnloadSteps(kernelID, programName, progPinPath, mapsDir, linksDir, links)
+	// COMPUTE: Build paired unload plan (action + outcome step).
+	plan := computeUnloadPlan(kernelID, programName, progPinPath, mapsDir, linksDir, links)
 
 	m.logger.InfoContext(ctx, "unloading program", "kernel_id", kernelID, "links", len(links))
 
-	// EXECUTE: Run all actions with structured result tracking.
+	// EXECUTE: Extract actions for the executor and record outcomes.
+	actions := make([]action.Action, len(plan))
+	for i, p := range plan {
+		actions[i] = p.action
+	}
 	execResult := m.executor.ExecuteAllWithResult(ctx, actions)
 
-	// Record completed steps.
 	for i := 0; i < execResult.CompletedCount; i++ {
-		if i < len(steps) {
-			_ = rec.Complete(steps[i])
-		}
+		_ = rec.Complete(plan[i].step)
 	}
-
-	// If there was a failure, record it.
 	if execResult.Error != nil {
-		if execResult.FailedIndex < len(steps) {
-			failedStep := steps[execResult.FailedIndex]
+		if execResult.FailedIndex < len(plan) {
+			failedStep := plan[execResult.FailedIndex].step
 			failedStep.Error = execResult.Error.Error()
 			_ = rec.Fail(failedStep)
 		}
@@ -513,90 +511,82 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	return nil
 }
 
-// computeUnloadSteps generates outcome.Step entries corresponding to computeUnloadActions.
-// The steps are in the same order as the actions for easy mapping.
-func computeUnloadSteps(kernelID uint32, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord) []outcome.Step {
-	var steps []outcome.Step
+// unloadEntry pairs an action with the outcome step that describes it.
+// This eliminates the parallel-array coupling between the former
+// computeUnloadActions and computeUnloadSteps functions.
+type unloadEntry struct {
+	action action.Action
+	step   outcome.Step
+}
 
-	// Detach links
+// computeUnloadPlan returns the paired action/step sequence for
+// unloading a program and its associated links.
+//
+// Order: detach each link, remove links directory, unload program
+// pin, unload maps directory, delete program metadata.
+func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord) []unloadEntry {
+	var plan []unloadEntry
+
 	for _, link := range links {
 		if link.PinPath != nil {
-			steps = append(steps, outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.ID),
-				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.ID),
-					PinPath: link.PinPath.String(),
+			plan = append(plan, unloadEntry{
+				action: action.DetachLink{PinPath: link.PinPath.String()},
+				step: outcome.Step{
+					Kind:   outcome.StepKindKernelDetachLink,
+					Target: fmt.Sprintf("%d", link.ID),
+					Details: outcome.LinkDetails{
+						LinkID:  uint32(link.ID),
+						PinPath: link.PinPath.String(),
+					},
 				},
 			})
 		}
 	}
 
-	// Remove links directory
-	steps = append(steps, outcome.Step{
-		Kind:   outcome.StepKindKernelRemovePin,
-		Target: linksDir,
-	})
-
-	// Unload program pin
-	steps = append(steps, outcome.Step{
-		Kind:   outcome.StepKindKernelUnload,
-		Target: programName,
-		Details: outcome.ProgramDetails{
-			KernelID: kernelID,
-			PinPath:  progPinPath,
+	plan = append(plan, unloadEntry{
+		action: action.RemovePin{Path: linksDir},
+		step: outcome.Step{
+			Kind:   outcome.StepKindKernelRemovePin,
+			Target: linksDir,
 		},
 	})
 
-	// Unload maps directory
-	steps = append(steps, outcome.Step{
-		Kind:   outcome.StepKindKernelUnload,
-		Target: programName,
-		Details: outcome.ProgramDetails{
-			KernelID:    kernelID,
-			MapsDirPath: mapsDir,
+	plan = append(plan, unloadEntry{
+		action: action.UnloadProgram{PinPath: progPinPath},
+		step: outcome.Step{
+			Kind:   outcome.StepKindKernelUnload,
+			Target: programName,
+			Details: outcome.ProgramDetails{
+				KernelID: kernelID,
+				PinPath:  progPinPath,
+			},
 		},
 	})
 
-	// Delete program metadata
-	steps = append(steps, outcome.Step{
-		Kind:   outcome.StepKindStoreDeleteProgram,
-		Target: programName,
-		Details: outcome.ProgramDetails{
-			KernelID: kernelID,
+	plan = append(plan, unloadEntry{
+		action: action.UnloadProgram{PinPath: mapsDir},
+		step: outcome.Step{
+			Kind:   outcome.StepKindKernelUnload,
+			Target: programName,
+			Details: outcome.ProgramDetails{
+				KernelID:    kernelID,
+				MapsDirPath: mapsDir,
+			},
 		},
 	})
 
-	return steps
-}
+	plan = append(plan, unloadEntry{
+		action: action.DeleteProgram{KernelID: kernelID},
+		step: outcome.Step{
+			Kind:   outcome.StepKindStoreDeleteProgram,
+			Target: programName,
+			Details: outcome.ProgramDetails{
+				KernelID: kernelID,
+			},
+		},
+	})
 
-// computeUnloadActions is a pure function that computes the actions needed
-// to unload a program and its associated links.
-//
-// Action order:
-// 1. DetachLink for each link
-// 2. UnloadProgram (program pin)
-// 3. UnloadProgram (maps directory)
-// 4. DeleteProgram
-func computeUnloadActions(kernelID uint32, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord) []action.Action {
-	var actions []action.Action
-
-	// Detach links first, then remove the links directory.
-	for _, link := range links {
-		if link.PinPath != nil {
-			actions = append(actions, action.DetachLink{PinPath: link.PinPath.String()})
-		}
-	}
-	actions = append(actions, action.RemovePin{Path: linksDir})
-
-	// Unload program pin and maps directory, then delete metadata
-	actions = append(actions,
-		action.UnloadProgram{PinPath: progPinPath},
-		action.UnloadProgram{PinPath: mapsDir},
-		action.DeleteProgram{KernelID: kernelID},
-	)
-
-	return actions
+	return plan
 }
 
 // sourceKindFromSpec returns the provenance source kind for a LoadSpec.
