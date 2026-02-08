@@ -60,14 +60,17 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		var res loadImageResult
 
 		// Parse auth config from base64-encoded registry-auth
-		var username, password string
+		var auth *interpreter.ImageAuth
 		if c.RegistryAuth != "" {
-			var parseErr error
-			username, password, parseErr = parseRegistryAuth(c.RegistryAuth)
+			username, password, parseErr := parseRegistryAuth(c.RegistryAuth)
 			if parseErr != nil {
 				return res, fmt.Errorf("invalid registry-auth: %w", parseErr)
 			}
 			logger.Debug("using registry auth", "username", username)
+			auth = &interpreter.ImageAuth{
+				Username: username,
+				Password: password,
+			}
 		}
 
 		// Convert global data
@@ -85,85 +88,38 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		// If no programs specified, use LoadImage for auto-discovery
-		if len(c.Programs) == 0 {
-			// Fall back to LoadImage for auto-discovery (legacy path)
-			ref := interpreter.ImageRef{
-				URL:        c.ImageURL,
-				PullPolicy: pullPolicy,
-			}
-			if username != "" {
-				ref.Auth = &interpreter.ImageAuth{
-					Username: username,
-					Password: password,
-				}
-			}
-			loaded, err := mgr.LoadImage(ctx, ref, nil, manager.LoadImageOpts{
-				UserMetadata: metadata,
-				GlobalData:   globalData,
-			})
-			if err != nil {
-				var me *manager.ManagerError
-				if errors.As(err, &me) {
-					res.FailedOutcome = me.Outcome
-				}
-				return res, fmt.Errorf("failed to load from image: %w", err)
-			}
-			res.Programs = loaded
-			return res, nil
+		// Build image ref
+		ref := interpreter.ImageRef{
+			URL:        c.ImageURL,
+			PullPolicy: pullPolicy,
+			Auth:       auth,
 		}
 
-		// Load each specified program using the unified Load interface
-		var loaded []bpfman.Program
+		// Convert CLI ProgramSpec to manager.ProgramSpec
+		var programs []manager.ProgramSpec
 		for _, prog := range c.Programs {
-			// Build LoadSpec for this program from the image
-			var spec bpfman.LoadSpec
-			var specErr error
-			if prog.Type.RequiresAttachFunc() {
-				spec, specErr = bpfman.NewImageAttachLoadSpec(c.ImageURL, prog.Name, prog.Type, prog.AttachFunc, pullPolicy)
-			} else {
-				spec, specErr = bpfman.NewImageLoadSpec(c.ImageURL, prog.Name, prog.Type, pullPolicy)
-			}
-			if specErr != nil {
-				return res, fmt.Errorf("invalid load spec for %q: %w", prog.Name, specErr)
-			}
-
-			// Add auth if configured
-			if username != "" {
-				spec = spec.WithImageAuth(username, password)
-			}
-
-			// Add global data if configured
-			if globalData != nil {
-				spec = spec.WithGlobalData(globalData)
-			}
-
-			// Set map owner ID if specified
-			if c.MapOwnerID != 0 {
-				spec = spec.WithMapOwnerID(c.MapOwnerID)
-			}
-
-			// Load through manager using unified interface
-			loadedProg, loadErr := mgr.Load(ctx, spec, manager.LoadOpts{
-				UserMetadata: metadata,
+			programs = append(programs, manager.ProgramSpec{
+				Name:       prog.Name,
+				Type:       prog.Type,
+				AttachFunc: prog.AttachFunc,
+				MapOwnerID: c.MapOwnerID,
 			})
-			if loadErr != nil {
-				var me *manager.ManagerError
-				if errors.As(loadErr, &me) {
-					res.FailedOutcome = me.Outcome
-				}
-				return res, fmt.Errorf("failed to load program %q from image: %w", prog.Name, loadErr)
-			}
-
-			logger.Info("program loaded successfully",
-				"name", loadedProg.Record.Meta.Name,
-				"kernel_id", loadedProg.Record.KernelID,
-				"pin_path", loadedProg.Record.Handles.PinPath,
-			)
-
-			loaded = append(loaded, loadedProg)
 		}
 
+		loaded, loadErr := mgr.LoadAll(ctx, manager.LoadSource{
+			Image: &ref,
+		}, programs, manager.LoadAllOpts{
+			UserMetadata: metadata,
+			GlobalData:   globalData,
+		})
+
+		if loadErr != nil {
+			var me *manager.ManagerError
+			if errors.As(loadErr, &me) {
+				res.FailedOutcome = me.Outcome
+			}
+			return res, fmt.Errorf("failed to load from image: %w", loadErr)
+		}
 		res.Programs = loaded
 		return res, nil
 	})

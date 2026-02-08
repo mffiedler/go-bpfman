@@ -183,11 +183,13 @@ func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Conte
 }
 
 // LoadImage loads BPF programs from an OCI image.
-func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ImageProgramSpec, opts manager.LoadImageOpts) ([]bpfman.Program, error) {
+func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ProgramSpec, opts manager.LoadAllOpts) ([]bpfman.Program, error) {
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
-		result, loadErr = e.Manager.LoadImage(ctx, ref, programs, opts)
+		result, loadErr = e.Manager.LoadAll(ctx, manager.LoadSource{
+			Image: &ref,
+		}, programs, opts)
 		return loadErr
 	})
 	return result, err

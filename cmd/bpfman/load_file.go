@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter/ebpf"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
 )
@@ -43,39 +42,11 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	// If no programs specified, auto-discover from object file
-	programs := c.Programs
-	if len(programs) == 0 {
-		discovered, err := ebpf.DiscoverPrograms(objPath.Path)
-		if err != nil {
-			return fmt.Errorf("discover programs: %w", err)
-		}
-		programs = make([]ProgramSpec, 0, len(discovered))
-		for _, d := range discovered {
-			programs = append(programs, ProgramSpec{
-				Name:       d.Name,
-				Type:       d.Type,
-				AttachFunc: d.AttachFunc,
-			})
-		}
-	} else {
-		// Validate all requested programs exist before loading any
-		programNames := make([]string, len(programs))
-		for i, p := range programs {
-			programNames[i] = p.Name
-		}
-		if err := ebpf.ValidatePrograms(objPath.Path, programNames); err != nil {
-			return err
-		}
-	}
-
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
-
-	logger := cli.Logger()
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data
@@ -93,69 +64,33 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		var res loadFileResult
-		res.Programs = make([]bpfman.Program, 0, len(programs))
-
-		// Use defer with success flag to ensure cleanup on any error path
-		success := false
-		defer func() {
-			if success {
-				return
-			}
-			for _, loaded := range res.Programs {
-				kernelID := loaded.Record.KernelID
-				progName := loaded.Record.Meta.Name
-				if err := mgr.Unload(ctx, kernelID); err != nil {
-					logger.Warn("rollback: failed to unload program",
-						"kernel_id", kernelID,
-						"name", progName,
-						"error", err)
-				} else {
-					logger.Debug("rollback: unloaded program",
-						"kernel_id", kernelID,
-						"name", progName)
-				}
-			}
-		}()
-
-		for _, prog := range programs {
-			// Build load spec using the appropriate constructor
-			var spec bpfman.LoadSpec
-			var err error
-			if prog.Type.RequiresAttachFunc() {
-				spec, err = bpfman.NewAttachLoadSpec(objPath.Path, prog.Name, prog.Type, prog.AttachFunc)
-			} else {
-				spec, err = bpfman.NewLoadSpec(objPath.Path, prog.Name, prog.Type)
-			}
-			if err != nil {
-				return res, fmt.Errorf("invalid load spec for %q: %w", prog.Name, err)
-			}
-
-			// Apply optional fields
-			if globalData != nil {
-				spec = spec.WithGlobalData(globalData)
-			}
-			if c.MapOwnerID != 0 {
-				spec = spec.WithMapOwnerID(c.MapOwnerID)
-			}
-
-			opts := manager.LoadOpts{
-				UserMetadata: metadata,
-			}
-
-			// Load through manager
-			loaded, err := mgr.Load(ctx, spec, opts)
-			if err != nil {
-				var me *manager.ManagerError
-				if errors.As(err, &me) {
-					res.FailedOutcome = me.Outcome
-				}
-				return res, fmt.Errorf("failed to load program %q: %w", prog.Name, err)
-			}
-			res.Programs = append(res.Programs, loaded)
+		// Convert CLI ProgramSpec to manager.ProgramSpec
+		var programs []manager.ProgramSpec
+		for _, prog := range c.Programs {
+			programs = append(programs, manager.ProgramSpec{
+				Name:       prog.Name,
+				Type:       prog.Type,
+				AttachFunc: prog.AttachFunc,
+				MapOwnerID: c.MapOwnerID,
+			})
 		}
 
-		success = true
+		loaded, loadErr := mgr.LoadAll(ctx, manager.LoadSource{
+			FilePath: objPath.Path,
+		}, programs, manager.LoadAllOpts{
+			UserMetadata: metadata,
+			GlobalData:   globalData,
+		})
+
+		var res loadFileResult
+		if loadErr != nil {
+			var me *manager.ManagerError
+			if errors.As(loadErr, &me) {
+				res.FailedOutcome = me.Outcome
+			}
+			return res, fmt.Errorf("failed to load programs: %w", loadErr)
+		}
+		res.Programs = loaded
 		return res, nil
 	})
 	if err != nil {

@@ -194,6 +194,11 @@ func (f *testFixture) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, 
 	return f.Manager.AttachTCX(ctx, spec, opts)
 }
 
+// LoadAll is a convenience wrapper that calls Manager.LoadAll directly.
+func (f *testFixture) LoadAll(ctx context.Context, source manager.LoadSource, programs []manager.ProgramSpec, opts manager.LoadAllOpts) ([]bpfman.Program, error) {
+	return f.Manager.LoadAll(ctx, source, programs, opts)
+}
+
 // Detach is a convenience wrapper that calls Manager.Detach directly.
 func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	return f.Manager.Detach(ctx, linkID)

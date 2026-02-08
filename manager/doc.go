@@ -31,7 +31,7 @@
 // These deviations are driven by kernel observability: some decisions can
 // only be made after observing post-operation kernel or netlink state.
 //
-// Load()/LoadImage() are intentionally staged rather than action-driven: they
+// Load()/LoadAll() are intentionally staged rather than action-driven: they
 // must sequence kernel load, filesystem publish, and store transactions
 // to preserve atomicity and rollback semantics. Read-only methods (Get,
 // ListPrograms, GetLink, etc.) are fetch-only and do not build action
@@ -59,7 +59,7 @@
 //
 // # Rollback and Error Reporting
 //
-// Failed mutating operations (Load, LoadImage, Unload, Attach*, Detach*)
+// Failed mutating operations (Load, LoadAll, Unload, Attach*, Detach*)
 // return *ManagerError, which wraps the underlying error and includes a
 // structured OperationOutcome containing:
 //

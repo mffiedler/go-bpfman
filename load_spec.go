@@ -107,73 +107,6 @@ func NewAttachLoadSpec(objectPath, programName string, programType ProgramType, 
 	}, nil
 }
 
-// NewImageLoadSpec creates a LoadSpec for loading a program from an OCI image.
-// The objectPath will be resolved when the image is pulled.
-//
-// This is used for the unified Load interface where the caller specifies
-// an image reference and the manager handles pulling.
-//
-// For fentry/fexit, use NewImageAttachLoadSpec instead.
-//
-// Returns an error if:
-//   - imageURL is empty
-//   - programName is empty
-//   - programType is invalid or unspecified
-//   - programType requires an attach function (use NewImageAttachLoadSpec)
-func NewImageLoadSpec(imageURL, programName string, programType ProgramType, pullPolicy ImagePullPolicy) (LoadSpec, error) {
-	if imageURL == "" {
-		return LoadSpec{}, errors.New("imageURL is required")
-	}
-	if programName == "" {
-		return LoadSpec{}, errors.New("programName is required")
-	}
-	if !programType.Valid() {
-		return LoadSpec{}, fmt.Errorf("invalid program type: %s", programType)
-	}
-	if programType.RequiresAttachFunc() {
-		return LoadSpec{}, fmt.Errorf("%s requires NewImageAttachLoadSpec with attachFunc", programType)
-	}
-	return LoadSpec{
-		programName:     programName,
-		programType:     programType,
-		imageURL:        imageURL,
-		imagePullPolicy: pullPolicy,
-	}, nil
-}
-
-// NewImageAttachLoadSpec creates a LoadSpec for loading a program from an OCI
-// image that requires an attach function (fentry/fexit).
-//
-// Returns an error if:
-//   - imageURL is empty
-//   - programName is empty
-//   - programType is invalid or does not require an attach function
-//   - attachFunc is empty
-func NewImageAttachLoadSpec(imageURL, programName string, programType ProgramType, attachFunc string, pullPolicy ImagePullPolicy) (LoadSpec, error) {
-	if imageURL == "" {
-		return LoadSpec{}, errors.New("imageURL is required")
-	}
-	if programName == "" {
-		return LoadSpec{}, errors.New("programName is required")
-	}
-	if !programType.Valid() {
-		return LoadSpec{}, fmt.Errorf("invalid program type: %s", programType)
-	}
-	if !programType.RequiresAttachFunc() {
-		return LoadSpec{}, fmt.Errorf("%s does not require attachFunc, use NewImageLoadSpec", programType)
-	}
-	if attachFunc == "" {
-		return LoadSpec{}, fmt.Errorf("attachFunc is required for %s", programType)
-	}
-	return LoadSpec{
-		programName:     programName,
-		programType:     programType,
-		attachFunc:      attachFunc,
-		imageURL:        imageURL,
-		imagePullPolicy: pullPolicy,
-	}, nil
-}
-
 // Getters for LoadSpec fields
 
 func (s LoadSpec) ObjectPath() string               { return s.objectPath }
@@ -195,11 +128,6 @@ func (s LoadSpec) HasImageAuth() bool { return s.imageUsername != "" }
 // This is true both when the image URL was set as input (for pulling) and
 // when it was set as provenance (after loading from an image).
 func (s LoadSpec) HasImageSource() bool { return s.imageURL != "" }
-
-// IsImageLoad returns true if this LoadSpec should load from an OCI image.
-// This differs from HasImageSource in that it returns true only when the
-// image URL is set AND the objectPath is not set (meaning we need to pull).
-func (s LoadSpec) IsImageLoad() bool { return s.imageURL != "" && s.objectPath == "" }
 
 // WithGlobalData returns a new LoadSpec with global data set.
 func (s LoadSpec) WithGlobalData(data map[string][]byte) LoadSpec {

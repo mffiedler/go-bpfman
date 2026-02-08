@@ -50,12 +50,12 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tracepoint-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeTracepoint,
-			ProgramName: "tracepoint_kill_recorder",
+			Type: bpfman.ProgramTypeTracepoint,
+			Name: "tracepoint_kill_recorder",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -174,12 +174,12 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-kprobe-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeKprobe,
-			ProgramName: "kprobe_counter",
+			Type: bpfman.ProgramTypeKprobe,
+			Name: "kprobe_counter",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -287,12 +287,12 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-kprobe-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeKretprobe,
-			ProgramName: "kprobe_counter", // Same program as kprobe, loaded as kretprobe
+			Type: bpfman.ProgramTypeKretprobe,
+			Name: "kprobe_counter", // Same program as kprobe, loaded as kretprobe
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -404,12 +404,12 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-uprobe-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeUprobe,
-			ProgramName: "uprobe_counter",
+			Type: bpfman.ProgramTypeUprobe,
+			Name: "uprobe_counter",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -522,12 +522,12 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-uprobe-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeUretprobe,
-			ProgramName: "uprobe_counter", // Same program as uprobe, loaded as uretprobe
+			Type: bpfman.ProgramTypeUretprobe,
+			Name: "uprobe_counter", // Same program as uprobe, loaded as uretprobe
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -856,12 +856,12 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tc-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeTC,
-			ProgramName: "stats",
+			Type: bpfman.ProgramTypeTC,
+			Name: "stats",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1003,12 +1003,12 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tc-counter:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeTCX,
-			ProgramName: "stats",
+			Type: bpfman.ProgramTypeTCX,
+			Name: "stats",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1119,12 +1119,12 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/xdp_pass:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeXDP,
-			ProgramName: "pass",
+			Type: bpfman.ProgramTypeXDP,
+			Name: "pass",
 		},
-	}, manager.LoadImageOpts{})
+	}, manager.LoadAllOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1246,12 +1246,12 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	imageRef := interpreter.ImageRef{
 		URL: "quay.io/bpfman-bytecode/xdp_pass:latest",
 	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ImageProgramSpec{
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
-			ProgramType: bpfman.ProgramTypeXDP,
-			ProgramName: "pass",
+			Type: bpfman.ProgramTypeXDP,
+			Name: "pass",
 		},
-	}, manager.LoadImageOpts{
+	}, manager.LoadAllOpts{
 		UserMetadata: userMetadata,
 		GlobalData:   globalData,
 	})
