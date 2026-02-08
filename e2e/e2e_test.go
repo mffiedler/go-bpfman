@@ -55,7 +55,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeTracepoint,
 			Name: "tracepoint_kill_recorder",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -179,7 +179,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeKprobe,
 			Name: "kprobe_counter",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -292,7 +292,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeKretprobe,
 			Name: "kprobe_counter", // Same program as kprobe, loaded as kretprobe
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -409,7 +409,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeUprobe,
 			Name: "uprobe_counter",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -527,7 +527,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeUretprobe,
 			Name: "uprobe_counter", // Same program as uprobe, loaded as uretprobe
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -642,10 +642,12 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	}
 
 	// When: load from file via client
-	spec, err := bpfman.NewAttachLoadSpec(bytecodeFile, "test_fentry", bpfman.ProgramTypeFentry, "do_unlinkat")
+	programs, err := env.LoadFile(ctx, bytecodeFile, []manager.ProgramSpec{
+		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: "do_unlinkat"},
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
-	prog, err := env.Load(ctx, spec, manager.LoadOpts{})
-	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	prog := programs[0]
 
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
@@ -750,10 +752,12 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	}
 
 	// When: load from file via client
-	spec, err := bpfman.NewAttachLoadSpec(bytecodeFile, "test_fexit", bpfman.ProgramTypeFexit, "do_unlinkat")
+	programs, err := env.LoadFile(ctx, bytecodeFile, []manager.ProgramSpec{
+		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: "do_unlinkat"},
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
-	prog, err := env.Load(ctx, spec, manager.LoadOpts{})
-	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	prog := programs[0]
 
 	// Then: program has expected properties
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
@@ -861,7 +865,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeTC,
 			Name: "stats",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1008,7 +1012,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeTCX,
 			Name: "stats",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1124,7 +1128,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
 		},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 	require.NoError(t, err)
 	require.Len(t, programs, 1)
 
@@ -1251,7 +1255,7 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
 		},
-	}, manager.LoadAllOpts{
+	}, manager.LoadOpts{
 		UserMetadata: userMetadata,
 		GlobalData:   globalData,
 	})

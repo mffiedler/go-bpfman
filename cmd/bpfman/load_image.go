@@ -106,9 +106,9 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			})
 		}
 
-		loaded, loadErr := mgr.LoadAll(ctx, manager.LoadSource{
+		loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
 			Image: &ref,
-		}, programs, manager.LoadAllOpts{
+		}, programs, manager.LoadOpts{
 			UserMetadata: metadata,
 			GlobalData:   globalData,
 		})

@@ -395,14 +395,14 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	// Load first program
 	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_one", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	prog1, err := fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
+	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
 	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
 	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_two", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
@@ -452,7 +452,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("single.o"), "single_prog", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 
 	require.Error(t, err, "Load should fail")
 
@@ -493,14 +493,14 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 	// Load first program - should succeed
 	spec1, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_a", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec1, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err, "First Load should succeed")
 	// Outcome is not accessible on success - absence of error implies success
 
 	// Load second program - should fail
 	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "prog_b", bpfman.ProgramTypeXDP)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec2, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail on 2nd program")
 
 	// Verify second load has failure outcome

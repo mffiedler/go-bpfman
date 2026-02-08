@@ -40,6 +40,11 @@ func (d *fakeDiscoverer) SetPrograms(objectPath string, programs []interpreter.D
 	d.programs[objectPath] = programs
 }
 
+// AddPrograms appends programs to the list for the given object path.
+func (d *fakeDiscoverer) AddPrograms(objectPath string, programs ...interpreter.DiscoveredProgram) {
+	d.programs[objectPath] = append(d.programs[objectPath], programs...)
+}
+
 // SetDiscoverError configures DiscoverPrograms to return the given error.
 func (d *fakeDiscoverer) SetDiscoverError(err error) {
 	d.discoverErr = err

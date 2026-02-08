@@ -98,8 +98,8 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		})
 	}
 
-	// Call LoadAll with ShareMaps enabled for multi-program loads
-	loaded, err := s.mgr.LoadAll(ctx, source, programs, manager.LoadAllOpts{
+	// Call Load with ShareMaps enabled for multi-program loads
+	loaded, err := s.mgr.Load(ctx, source, programs, manager.LoadOpts{
 		UserMetadata: req.Metadata,
 		GlobalData:   req.GlobalData,
 		Owner:        "bpfman",

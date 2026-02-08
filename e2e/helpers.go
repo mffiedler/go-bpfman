@@ -183,11 +183,11 @@ func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Conte
 }
 
 // LoadImage loads BPF programs from an OCI image.
-func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ProgramSpec, opts manager.LoadAllOpts) ([]bpfman.Program, error) {
+func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
-		result, loadErr = e.Manager.LoadAll(ctx, manager.LoadSource{
+		result, loadErr = e.Manager.Load(ctx, manager.LoadSource{
 			Image: &ref,
 		}, programs, opts)
 		return loadErr
@@ -195,12 +195,14 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, progr
 	return result, err
 }
 
-// Load loads a BPF program from a file.
-func (e *TestEnv) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
-	var result bpfman.Program
+// LoadFile loads BPF programs from a local object file.
+func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
+	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		prog, loadErr := e.Manager.Load(ctx, spec, opts)
-		result = prog
+		var loadErr error
+		result, loadErr = e.Manager.Load(ctx, manager.LoadSource{
+			FilePath: filePath,
+		}, programs, opts)
 		return loadErr
 	})
 	return result, err

@@ -15,8 +15,8 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-// extractLoadAllOutcome extracts the outcome from a LoadAll error.
-func extractLoadAllOutcome(t *testing.T, err error) outcome.OperationOutcome {
+// extractLoadOutcome extracts the outcome from a Load error.
+func extractLoadOutcome(t *testing.T, err error) outcome.OperationOutcome {
 	t.Helper()
 	var me *manager.ManagerError
 	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
@@ -85,7 +85,7 @@ func timelineKinds(entries []outcome.TimelineEntry) []outcome.StepKind {
 	return kinds
 }
 
-func TestLoadAll_AutoDiscover_SingleProgram(t *testing.T) {
+func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -95,9 +95,9 @@ func TestLoadAll_AutoDiscover_SingleProgram(t *testing.T) {
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
 	assert.Len(t, programs, 1)
@@ -105,7 +105,7 @@ func TestLoadAll_AutoDiscover_SingleProgram(t *testing.T) {
 	assert.Equal(t, 1, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_AutoDiscover_MultiplePrograms(t *testing.T) {
+func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -117,9 +117,9 @@ func TestLoadAll_AutoDiscover_MultiplePrograms(t *testing.T) {
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
 	assert.Len(t, programs, 3)
@@ -131,7 +131,7 @@ func TestLoadAll_AutoDiscover_MultiplePrograms(t *testing.T) {
 	assert.Equal(t, "prog_c", programs[2].Record.Meta.Name)
 }
 
-func TestLoadAll_AutoDiscover_NoPrograms(t *testing.T) {
+func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -139,16 +139,16 @@ func TestLoadAll_AutoDiscover_NoPrograms(t *testing.T) {
 	puller.SetObjectPath(objPath)
 	// Don't set any programs - empty object file
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no programs found")
 	assert.Equal(t, 0, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_ExplicitPrograms_Valid(t *testing.T) {
+func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -160,11 +160,11 @@ func TestLoadAll_ExplicitPrograms_Valid(t *testing.T) {
 	})
 
 	// Request only prog_b
-	programs, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "prog_b", Type: bpfman.ProgramTypeXDP},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 
 	require.NoError(t, err)
 	assert.Len(t, programs, 1)
@@ -172,7 +172,7 @@ func TestLoadAll_ExplicitPrograms_Valid(t *testing.T) {
 	assert.Equal(t, 1, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_ExplicitPrograms_InvalidName(t *testing.T) {
+func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -183,18 +183,18 @@ func TestLoadAll_ExplicitPrograms_InvalidName(t *testing.T) {
 	})
 
 	// Request non-existent program
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "nonexistent", Type: bpfman.ProgramTypeXDP},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	assert.Equal(t, 0, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_Rollback_SecondProgramFails(t *testing.T) {
+func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -208,9 +208,9 @@ func TestLoadAll_Rollback_SecondProgramFails(t *testing.T) {
 	// Make second program fail to load
 	f.Kernel.FailOnProgram("prog_b", fmt.Errorf("injected load failure"))
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prog_b")
@@ -219,7 +219,7 @@ func TestLoadAll_Rollback_SecondProgramFails(t *testing.T) {
 	f.AssertCleanState()
 
 	// Verify outcome structure on failure
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := timelineFindFailed(o.Timeline)
@@ -269,7 +269,7 @@ func TestLoadAll_Rollback_SecondProgramFails(t *testing.T) {
 	assert.True(t, unloadA, "expected prog_a to be unloaded during rollback")
 }
 
-func TestLoadAll_Rollback_ThirdProgramFails(t *testing.T) {
+func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -284,15 +284,15 @@ func TestLoadAll_Rollback_ThirdProgramFails(t *testing.T) {
 	// Make third program fail to load
 	f.Kernel.FailOnProgram("prog_c", fmt.Errorf("injected load failure"))
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prog_c")
 
 	// Verify outcome structure
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := timelineFindFailed(o.Timeline)
@@ -319,7 +319,7 @@ func TestLoadAll_Rollback_ThirdProgramFails(t *testing.T) {
 	f.AssertCleanState()
 }
 
-func TestLoadAll_PullError(t *testing.T) {
+func TestLoad_PullError(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	puller.SetPullError(fmt.Errorf("network error"))
@@ -327,16 +327,16 @@ func TestLoadAll_PullError(t *testing.T) {
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pull image")
 	assert.Equal(t, 0, f.Kernel.ProgramCount())
 
 	// Verify outcome structure - early failure, no completed steps
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := timelineFindFailed(o.Timeline)
@@ -348,7 +348,7 @@ func TestLoadAll_PullError(t *testing.T) {
 	assert.False(t, timelineHasRollback(o.Timeline))
 }
 
-func TestLoadAll_DiscoverError(t *testing.T) {
+func TestLoad_DiscoverError(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	discoverer.SetDiscoverError(fmt.Errorf("corrupt ELF file"))
 	puller := newFakeImagePuller()
@@ -356,16 +356,16 @@ func TestLoadAll_DiscoverError(t *testing.T) {
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "discover programs")
 	assert.Equal(t, 0, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_AutoDiscover_FentryFexit(t *testing.T) {
+func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -376,9 +376,9 @@ func TestLoadAll_AutoDiscover_FentryFexit(t *testing.T) {
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	programs, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
 	assert.Len(t, programs, 2)
@@ -389,7 +389,7 @@ func TestLoadAll_AutoDiscover_FentryFexit(t *testing.T) {
 	assert.Equal(t, "trace_vfs_write", programs[1].Record.Meta.Name)
 }
 
-func TestLoadAll_Rollback_FentryFexitSecondFails(t *testing.T) {
+func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -403,15 +403,15 @@ func TestLoadAll_Rollback_FentryFexitSecondFails(t *testing.T) {
 	// Make second program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "trace_vfs_write")
 
 	// Verify outcome structure
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := timelineFindFailed(o.Timeline)
@@ -456,7 +456,7 @@ func TestLoadAll_Rollback_FentryFexitSecondFails(t *testing.T) {
 	assert.True(t, unloadFentry, "expected fentry program to be unloaded during rollback")
 }
 
-func TestLoadAll_Rollback_FentryFexitFirstFails(t *testing.T) {
+func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -470,9 +470,9 @@ func TestLoadAll_Rollback_FentryFexitFirstFails(t *testing.T) {
 	// Make first program (fentry) fail to load - no rollback needed
 	f.Kernel.FailOnProgram("trace_vfs_read", fmt.Errorf("injected fentry load failure"))
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "trace_vfs_read")
@@ -481,7 +481,7 @@ func TestLoadAll_Rollback_FentryFexitFirstFails(t *testing.T) {
 	f.AssertCleanState()
 
 	// Verify outcome structure
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	failed := timelineFindFailed(o.Timeline)
 	require.NotNil(t, failed)
@@ -518,7 +518,7 @@ func TestLoadAll_Rollback_FentryFexitFirstFails(t *testing.T) {
 	assert.False(t, loadFexit, "expected fexit program load to NOT be attempted after first failure")
 }
 
-func TestLoadAll_Rollback_MixedTypesThirdFails(t *testing.T) {
+func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -533,15 +533,15 @@ func TestLoadAll_Rollback_MixedTypesThirdFails(t *testing.T) {
 	// Make third program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "trace_vfs_write")
 
 	// Verify outcome structure
-	o := extractLoadAllOutcome(t, err)
+	o := extractLoadOutcome(t, err)
 	assert.Equal(t, outcome.StatusFailure, o.Status)
 	assert.NotEmpty(t, o.PrimaryError)
 	failed := timelineFindFailed(o.Timeline)
@@ -594,7 +594,7 @@ func TestLoadAll_Rollback_MixedTypesThirdFails(t *testing.T) {
 	assert.True(t, unloadFentry, "expected fentry program to be unloaded during rollback")
 }
 
-func TestLoadAll_ValidationError(t *testing.T) {
+func TestLoad_ValidationError(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -606,18 +606,18 @@ func TestLoadAll_ValidationError(t *testing.T) {
 	discoverer.SetValidateError(fmt.Errorf("custom validation error"))
 
 	// Request explicit programs to trigger validation
-	_, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
-	}, manager.LoadAllOpts{})
+	}, manager.LoadOpts{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "custom validation error")
 	assert.Equal(t, 0, f.Kernel.ProgramCount())
 }
 
-func TestLoadAll_FileSource(t *testing.T) {
+func TestLoad_FileSource(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	f := newTestFixtureWithDiscoverer(t, discoverer)
 	objPath := f.BytecodeFile("object.o")
@@ -625,9 +625,9 @@ func TestLoadAll_FileSource(t *testing.T) {
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.LoadAll(context.Background(), manager.LoadSource{
+	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
 		FilePath: objPath,
-	}, nil, manager.LoadAllOpts{})
+	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
 	assert.Len(t, programs, 1)

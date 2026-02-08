@@ -869,7 +869,7 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	// Load first program - should fail
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "first_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "First Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
@@ -906,7 +906,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	for i, name := range []string{"first_prog", "second_prog"} {
 		spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), name, bpfman.ProgramTypeTracepoint)
 		require.NoError(t, err)
-		_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+		_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 		require.NoError(t, err, "Load %d should succeed", i+1)
 		// Outcome is not accessible on success - absence of error implies success
 	}
@@ -914,7 +914,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	// Load third program - should fail
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "third_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
-	_, err = fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "Third Load should fail")
 
 	// Verify third load outcome records the failure

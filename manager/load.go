@@ -16,8 +16,8 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-// LoadOpts contains optional metadata for a Load operation.
-type LoadOpts struct {
+// loadOpts contains optional metadata for a single-program load operation.
+type loadOpts struct {
 	UserMetadata map[string]string
 	Owner        string
 }
@@ -50,24 +50,11 @@ func (e *ManagerError) Unwrap() error {
 	return e.Cause
 }
 
-// Load loads a BPF program and stores its metadata atomically.
+// load loads a single BPF program and stores its metadata atomically.
 //
-// Load expects spec.ObjectPath() to be set (file-based loading).
-// For image-based batch loading, use LoadAll instead.
-//
-// See package documentation for details on the atomic load model.
-//
-// Pin paths are computed from the kernel ID following the upstream convention:
-//   - Program: <bpffs>/prog_<kernel_id>
-//   - Maps: <bpffs>/maps/<kernel_id>/<map_name>
-//
-// On failure, previously completed steps are rolled back:
-//   - If kernel load fails: nothing to clean up
-//   - If DB persist fails: unpin program and maps from kernel
-//
-// On failure, returns a *ManagerError containing the full operation outcome
-// with timeline, rollback errors, and residual artefacts.
-func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts) (bpfman.Program, error) {
+// This is an internal method called by Load for each program in a batch.
+// Callers should use the public Load method instead.
+func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
 	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 	now := time.Now()
@@ -78,9 +65,9 @@ func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts)
 		return bpfman.Program{}, &ManagerError{Outcome: o, Cause: primaryErr}
 	}
 
-	// Reject image-based specs: callers should use LoadAll
+	// Reject image-based specs without an object path
 	if spec.HasImageSource() && spec.ObjectPath() == "" {
-		primaryErr := fmt.Errorf("Load does not support image-based specs; use LoadAll instead")
+		primaryErr := fmt.Errorf("load requires objectPath to be set; image pulling is handled by Load")
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: "validation",
@@ -466,15 +453,15 @@ type ProgramSpec struct {
 	MapOwnerID uint32            // explicit external map owner (0 = none)
 }
 
-// LoadAllOpts configures a batch load operation.
-type LoadAllOpts struct {
+// LoadOpts configures a Load operation.
+type LoadOpts struct {
 	UserMetadata map[string]string
 	GlobalData   map[string][]byte // batch-level, overridden per-program
 	Owner        string
 	ShareMaps    bool // first program owns maps, subsequent auto-share
 }
 
-// LoadAll loads one or more BPF programs from a source.
+// Load loads one or more BPF programs from a file or OCI image.
 //
 // If programs is nil, all programs in the ELF are auto-discovered.
 // If programs is non-nil, only those programs are loaded after
@@ -485,7 +472,7 @@ type LoadAllOpts struct {
 // specifies an explicit MapOwnerID.
 //
 // On failure, all previously loaded programs are rolled back.
-func (m *Manager) LoadAll(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadAllOpts) (result []bpfman.Program, retErr error) {
+func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) (result []bpfman.Program, retErr error) {
 	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 
@@ -723,12 +710,12 @@ func (m *Manager) LoadAll(ctx context.Context, source LoadSource, programs []Pro
 			spec = spec.WithImageProvenance(pulled.URL, pulled.Digest, pulled.PullPolicy)
 		}
 
-		loadOpts := LoadOpts{
+		singleOpts := loadOpts{
 			UserMetadata: opts.UserMetadata,
 			Owner:        opts.Owner,
 		}
 
-		loadedProg, loadErr := m.Load(ctx, spec, loadOpts)
+		loadedProg, loadErr := m.load(ctx, spec, singleOpts)
 		if loadErr != nil {
 			retErr = fmt.Errorf("load program %q: %w", spec.ProgramName(), loadErr)
 			for j := i + 1; j < len(programs); j++ {

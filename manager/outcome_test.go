@@ -62,7 +62,7 @@ func TestLoad_Success(t *testing.T) {
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
-	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
 	// Verify program was loaded
@@ -80,7 +80,7 @@ func TestUnload_Success(t *testing.T) {
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
-	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
 	// Now unload it
@@ -154,7 +154,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
-	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
 	// Attach it
@@ -206,7 +206,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("path.o"), "test_prog", bpfman.ProgramTypeTracepoint)
 	require.NoError(t, err)
 
-	prog, err := fix.Manager.Load(ctx, spec, manager.LoadOpts{})
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
 	err = fix.Manager.Unload(ctx, prog.Record.KernelID)

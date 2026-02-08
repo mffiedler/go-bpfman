@@ -75,9 +75,9 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			})
 		}
 
-		loaded, loadErr := mgr.LoadAll(ctx, manager.LoadSource{
+		loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
 			FilePath: objPath.Path,
-		}, programs, manager.LoadAllOpts{
+		}, programs, manager.LoadOpts{
 			UserMetadata: metadata,
 			GlobalData:   globalData,
 		})

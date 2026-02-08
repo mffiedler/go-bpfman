@@ -144,9 +144,34 @@ func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Conte
 	return lock.Run(ctx, f.Layout.LockPath(), fn)
 }
 
-// Load is a convenience wrapper that calls Manager.Load directly.
+// Load is a convenience wrapper that loads a single program from a LoadSpec.
+// It translates the LoadSpec into the LoadSource/ProgramSpec form expected
+// by Manager.Load, ensures the fake discoverer knows about the program,
+// and returns the single loaded program.
 func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
-	return f.Manager.Load(ctx, spec, opts)
+	source := manager.LoadSource{FilePath: spec.ObjectPath()}
+	programs := []manager.ProgramSpec{{
+		Name:       spec.ProgramName(),
+		Type:       spec.ProgramType(),
+		AttachFunc: spec.AttachFunc(),
+	}}
+	if gd := spec.GlobalData(); gd != nil {
+		programs[0].GlobalData = gd
+	}
+	if id := spec.MapOwnerID(); id != 0 {
+		programs[0].MapOwnerID = id
+	}
+	// Ensure the discoverer knows about the program so validation passes.
+	f.Discoverer.AddPrograms(spec.ObjectPath(), interpreter.DiscoveredProgram{
+		Name:       spec.ProgramName(),
+		Type:       spec.ProgramType(),
+		AttachFunc: spec.AttachFunc(),
+	})
+	result, err := f.Manager.Load(ctx, source, programs, opts)
+	if err != nil {
+		return bpfman.Program{}, err
+	}
+	return result[0], nil
 }
 
 // Unload is a convenience wrapper that calls Manager.Unload directly.
@@ -192,11 +217,6 @@ func (f *testFixture) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, op
 // AttachTCX is a convenience wrapper that calls Manager.AttachTCX directly.
 func (f *testFixture) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	return f.Manager.AttachTCX(ctx, spec, opts)
-}
-
-// LoadAll is a convenience wrapper that calls Manager.LoadAll directly.
-func (f *testFixture) LoadAll(ctx context.Context, source manager.LoadSource, programs []manager.ProgramSpec, opts manager.LoadAllOpts) ([]bpfman.Program, error) {
-	return f.Manager.LoadAll(ctx, source, programs, opts)
 }
 
 // Detach is a convenience wrapper that calls Manager.Detach directly.
