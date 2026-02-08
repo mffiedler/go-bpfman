@@ -70,14 +70,6 @@ func (r DoctorReport) HasWarnings() bool {
 	return false
 }
 
-// tcParent returns the TC parent handle for the given dispatcher type.
-func tcParent(dt dispatcher.DispatcherType) uint32 {
-	if dt == dispatcher.DispatcherTypeTCIngress {
-		return 0xFFFFFFF1 // TC_H_CLSACT | TC_H_MIN_INGRESS
-	}
-	return 0xFFFFFFF3 // TC_H_CLSACT | TC_H_MIN_EGRESS
-}
-
 // --------------------------------------------------------------------
 // Tuple types: correlated views across DB, kernel, and filesystem.
 // Each field is nil when the object is absent in that source.
@@ -319,7 +311,7 @@ func GatherState(ctx context.Context, store interpreter.Store, kernel interprete
 			continue
 		}
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		parent := tcParent(d.Type)
+		parent := tcParentHandle(d.Type)
 		_, err := kernel.FindTCFilterHandle(ctx, int(d.Ifindex), parent, d.Priority)
 		s.tcFilterOK[key] = (err == nil)
 	}
