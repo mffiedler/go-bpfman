@@ -1,6 +1,3 @@
-// Package inspect provides a correlated view of bpfman's state across
-// store, kernel, and filesystem. It is the "state of the bpfman world"
-// abstraction used by CLI commands and diagnostics.
 package inspect
 
 import (
