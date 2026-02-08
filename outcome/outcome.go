@@ -1,22 +1,3 @@
-// Package outcome models the externally visible result of manager-level operations.
-//
-// It is a first-class description of what happened, intended for:
-//   - operators (human-readable failure reports)
-//   - automation (JSON output for CI/K8s)
-//   - post-mortems (what succeeded, what failed, what rollback was attempted)
-//   - reconciliation logic (what residue remains)
-//
-// The outcome uses a "timeline-first" design: all steps (primary and rollback)
-// appear in a single ordered Timeline array. This makes it easy to understand
-// exactly what happened in chronological order.
-//
-// outcome is intentionally dumber than the manager. It does not know:
-//   - rollback policy
-//   - step ordering semantics
-//   - GC rules
-//   - attach vs load differences
-//
-// It only defines structure, invariants, and recording discipline.
 package outcome
 
 import (
