@@ -10,14 +10,17 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // TestDetach_NonExistentLink_ReturnsNotFound verifies that:
 //
 //	Given an empty manager with no links,
 //	When I attempt to detach a non-existent link ID,
-//	Then the manager returns ErrLinkNotFound with failure outcome.
+//	Then the manager returns ErrLinkNotFound as a plain error.
+//
+// Preflight failures from Detach return plain errors (not
+// *ManagerError) because no operation state is created until
+// the plan executes.
 func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -29,24 +32,20 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
 	assert.Equal(t, bpfman.LinkID(999), notFound.LinkID)
 
-	// Verify outcome records the preflight failure
+	// Preflight errors are plain errors, not *ManagerError.
 	var me *manager.ManagerError
-	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestDetach_KernelOnlyLink_ReturnsNotManaged verifies that:
 //
 //	Given a link that exists in the kernel but is not managed by bpfman,
 //	When I attempt to detach it,
-//	Then the manager returns ErrLinkNotManaged with failure outcome.
+//	Then the manager returns ErrLinkNotManaged as a plain error.
+//
+// Preflight failures from Detach return plain errors (not
+// *ManagerError) because no operation state is created until
+// the plan executes.
 func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -62,17 +61,9 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	assert.True(t, errors.As(err, &notManaged), "expected ErrLinkNotManaged, got %T", err)
 	assert.Equal(t, bpfman.LinkID(kernelOnlyLinkID), notManaged.LinkID)
 
-	// Verify outcome records the preflight failure
+	// Preflight errors are plain errors, not *ManagerError.
 	var me *manager.ManagerError
-	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_NonExistentProgram_ReturnsNotFound verifies that:

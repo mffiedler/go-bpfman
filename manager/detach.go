@@ -11,58 +11,42 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/outcome"
 )
 
 // Detach removes a link by link ID.
 //
-// This detaches the link from the kernel (if pinned) and removes it from the
-// store. The associated program remains loaded.
+// This detaches the link from the kernel (if pinned) and removes it
+// from the store. The associated program remains loaded.
 //
-// For XDP and TC links attached via dispatchers, the dispatcher link count
-// is queried after the link is removed. If no extensions remain, the
-// dispatcher is cleaned up automatically (pins removed, deleted from store).
+// For XDP and TC links attached via dispatchers, the dispatcher link
+// count is queried after the link is removed. If no extensions
+// remain, the dispatcher is cleaned up automatically (pins removed,
+// deleted from store).
 //
-// Pattern: FETCH -> EXECUTE (detach link) -> QUERY -> EXECUTE (cleanup)
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
+// Preflight failures (store lookup, not-managed check, dispatcher key
+// extraction) return plain errors. Execution failures return
+// *ManagerError with the full operation outcome.
 func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
-	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o, func(err error) {
-		m.logger.Error("outcome recorder: invariant violation", "error", err)
-	})
-
-	fail := func(primaryErr error) error {
-		o.PrimaryError = primaryErr.Error()
-		rec.Finalise()
-		return &ManagerError{Outcome: o, Cause: primaryErr}
-	}
-
-	target := fmt.Sprintf("%d", linkID)
-
-	// FETCH: Get link record (includes details)
+	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {
-		primaryErr := err
-		// Distinguish "not found" from "not managed" by checking kernel.
 		var notFound bpfman.ErrLinkNotFound
 		if errors.As(err, &notFound) {
 			if _, kerr := m.kernel.GetLinkByID(ctx, uint32(linkID)); kerr == nil {
-				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
+				return bpfman.ErrLinkNotManaged{LinkID: linkID}
 			}
 		}
-		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
-		return fail(primaryErr)
+		return err
 	}
 
-	// FETCH: Get dispatcher state if this is a dispatcher-based link
+	// Preflight: get dispatcher state for post-detach cleanup.
 	var dispState *dispatcher.State
 	if record.Kind == bpfman.LinkKindXDP || record.Kind == bpfman.LinkKindTC {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
-			primaryErr := fmt.Errorf("extract dispatcher key: %w", err)
-			rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
-			return fail(primaryErr)
+			return fmt.Errorf("extract dispatcher key: %w", err)
 		}
 		if dispType != "" {
 			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
@@ -74,100 +58,79 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		}
 	}
 
-	// Log before executing
 	m.logger.InfoContext(ctx, "detaching link",
-		"link_id", linkID,
-		"kind", record.Kind,
-		"pin_path", record.PinPath)
+		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
-	// Phase 1: Detach the link and delete it from the store.
-	linkActions := computeDetachLinkActions(record)
-	linkSteps := computeDetachLinkSteps(record)
-	if err := m.executor.ExecuteAll(ctx, linkActions); err != nil {
-		primaryErr := fmt.Errorf("execute detach link actions: %w", err)
-		// Record the failed step (we don't know which one failed, so mark the first)
-		if len(linkSteps) > 0 {
-			failedStep := linkSteps[0]
-			failedStep.Error = primaryErr.Error()
-			if _, recErr := rec.Fail(failedStep); recErr != nil {
-				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
-			}
-		} else {
-			if _, recErr := rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: target,
-				Error:  primaryErr.Error(),
-			}); recErr != nil {
-				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
-			}
-		}
-		return fail(primaryErr)
+	plan := m.detachPlan(record, dispState)
+	begin := func(_ context.Context) *operation.RunState {
+		return m.beginOp(ctx)
 	}
-
-	// Record successful detach steps
-	for _, step := range linkSteps {
-		if _, recErr := rec.Complete(step); recErr != nil {
-			m.logger.Error("outcome recorder: invariant violation", "error", recErr)
-		}
-	}
-
-	// Phase 2: If this was a dispatcher-based link, check whether the
-	// dispatcher has any remaining extensions. Clean up if empty.
-	if dispState != nil {
-		if err := m.cleanupEmptyDispatcher(ctx, *dispState); err != nil {
-			rec.FailStep(outcome.StepKindStoreDeleteDispatcher,
-				fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
-				err, outcome.DispatcherDetails{DispatcherID: dispState.KernelID})
-			return fail(err)
-		}
+	if err := operation.Run0(ctx, begin, m.executor, plan); err != nil {
+		return wrapOpErr(err)
 	}
 
 	m.logger.InfoContext(ctx, "removed link", "link_id", linkID, "kind", record.Kind)
 	return nil
 }
 
-// computeDetachLinkSteps generates outcome.Step entries corresponding to computeDetachLinkActions.
-func computeDetachLinkSteps(record bpfman.LinkRecord) []outcome.Step {
-	var steps []outcome.Step
+// detachPlan builds the operation plan for detaching a single link.
+//
+// Nodes:
+//  1. (conditional) Do "detach-link" -- kernel detach via DetachLink.
+//     Only included when the link has a pin path.
+//  2. Do "delete-link" -- store delete via DeleteLink.
+//  3. (conditional) Do "dispatcher-cleanup" -- calls
+//     cleanupEmptyDispatcher. Only included when the link uses a
+//     dispatcher (XDP/TC).
+//
+// No undo entries on any node. Detach is destructive and
+// non-reversible.
+func (m *Manager) detachPlan(
+	record bpfman.LinkRecord, dispState *dispatcher.State,
+) operation.Plan {
+	var nodes []operation.Node
+	linkID := uint32(record.ID)
+	target := fmt.Sprintf("%d", record.ID)
 
-	// Detach link from kernel if pinned
 	if record.PinPath != nil {
-		steps = append(steps, outcome.Step{
-			Kind:   outcome.StepKindKernelDetachLink,
-			Target: fmt.Sprintf("%d", record.ID),
-			Details: outcome.LinkDetails{
-				LinkID:  uint32(record.ID),
-				PinPath: record.PinPath.String(),
+		pinPath := record.PinPath.String()
+		nodes = append(nodes, operation.Do(
+			"detach-link", outcome.StepKindKernelDetachLink, target,
+			func(ctx context.Context, _ *operation.Bindings) error {
+				return m.executor.Execute(ctx, action.DetachLink{PinPath: pinPath})
 			},
-		})
+			operation.DetailsFn(func(_ *operation.Bindings) any {
+				return outcome.LinkDetails{LinkID: linkID, PinPath: pinPath}
+			}),
+		))
 	}
 
-	// Delete link from store
-	steps = append(steps, outcome.Step{
-		Kind:   outcome.StepKindStoreDeleteLink,
-		Target: fmt.Sprintf("%d", record.ID),
-		Details: outcome.LinkDetails{
-			LinkID: uint32(record.ID),
+	nodes = append(nodes, operation.Do(
+		"delete-link", outcome.StepKindStoreDeleteLink, target,
+		func(ctx context.Context, _ *operation.Bindings) error {
+			return m.executor.Execute(ctx, action.DeleteLink{LinkID: record.ID})
 		},
-	})
+		operation.DetailsFn(func(_ *operation.Bindings) any {
+			return outcome.LinkDetails{LinkID: linkID}
+		}),
+	))
 
-	return steps
-}
-
-// computeDetachLinkActions is a pure function that computes the actions
-// needed to detach and delete a link from the store.
-func computeDetachLinkActions(record bpfman.LinkRecord) []action.Action {
-	var actions []action.Action
-
-	// Detach link from kernel if pinned
-	if record.PinPath != nil {
-		actions = append(actions, action.DetachLink{PinPath: record.PinPath.String()})
+	if dispState != nil {
+		ds := *dispState
+		nodes = append(nodes, operation.Do(
+			"dispatcher-cleanup",
+			outcome.StepKindStoreDeleteDispatcher,
+			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
+			func(ctx context.Context, _ *operation.Bindings) error {
+				return m.cleanupEmptyDispatcher(ctx, ds)
+			},
+			operation.DetailsFn(func(_ *operation.Bindings) any {
+				return outcome.DispatcherDetails{DispatcherID: ds.KernelID}
+			}),
+		))
 	}
 
-	// Delete link from store
-	actions = append(actions, action.DeleteLink{LinkID: record.ID})
-
-	return actions
+	return operation.Build(nodes...)
 }
 
 // extractDispatcherKey extracts dispatcher identification from link details.

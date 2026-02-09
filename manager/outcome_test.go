@@ -3,6 +3,7 @@ package manager_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,27 +19,6 @@ func outcomeTestCompletedPrimary(timeline []outcome.TimelineEntry) []outcome.Tim
 	var result []outcome.TimelineEntry
 	for _, e := range timeline {
 		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
-			result = append(result, e)
-		}
-	}
-	return result
-}
-
-// outcomeTestFindFailed returns the first failed entry from the timeline, or nil if none.
-func outcomeTestFindFailed(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
-	for i := range timeline {
-		if timeline[i].Status == outcome.StepStatusFailed {
-			return &timeline[i]
-		}
-	}
-	return nil
-}
-
-// outcomeTestSkipped returns skipped entries from the timeline.
-func outcomeTestSkipped(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
-	var result []outcome.TimelineEntry
-	for _, e := range timeline {
-		if e.Status == outcome.StepStatusSkipped {
 			result = append(result, e)
 		}
 	}
@@ -91,31 +71,21 @@ func TestUnload_Success(t *testing.T) {
 	fix.AssertCleanState()
 }
 
-// TestDetach_NotFound_OutcomeRecordsFailure verifies that a detach
-// operation for a non-existent link records the failure in the outcome.
-func TestDetach_NotFound_OutcomeRecordsFailure(t *testing.T) {
+// TestDetach_NotFound_ReturnsPlainError verifies that a detach
+// operation for a non-existent link returns a plain error (not
+// *ManagerError) because preflight failures bypass plan execution.
+func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
 	require.Error(t, err)
 
-	// Extract outcome from error
-	me := extractManagerError(t, err)
-	o := me.Outcome
+	var notFound bpfman.ErrLinkNotFound
+	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
 
-	// Verify outcome indicates failure
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-
-	// Verify failed step is recorded
-	failed := outcomeTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.NotEmpty(t, failed.Error)
-
-	// System state should be clean (no residue on preflight failure)
-	assert.Equal(t, "clean", o.SystemState)
+	var me *manager.ManagerError
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_NotFound_ReturnsPlainError verifies that an unload
@@ -207,19 +177,33 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	fix.AssertCleanState()
 }
 
-// TestOutcome_Started verifies that an operation that fails in preflight
-// produces an error with timeline entries.
-func TestOutcome_Started(t *testing.T) {
+// TestOutcome_ExecutionFailure_HasTimeline verifies that an operation
+// that fails during plan execution produces a *ManagerError with
+// timeline entries.
+func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	// An operation that fails in preflight should have timeline entries
-	err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
+	// Load a program and attach it.
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("prog.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, "syscalls", "sys_enter_close")
+	require.NoError(t, err)
+	link, err := fix.Attach(ctx, nil, attachSpec)
+	require.NoError(t, err)
+
+	// Inject a kernel failure on detach so the plan fails mid-execution.
+	fix.Kernel.FailOnDetach(uint32(link.Record.ID), fmt.Errorf("injected failure"))
+
+	err = fix.Manager.Detach(ctx, link.Record.ID)
 	require.Error(t, err)
 
 	// Extract outcome from error
 	me := extractManagerError(t, err)
 
 	// Timeline should have at least one entry (the failed step)
-	assert.NotEmpty(t, me.Outcome.Timeline, "preflight failure should have timeline entry")
+	assert.NotEmpty(t, me.Outcome.Timeline, "execution failure should have timeline entry")
 }
