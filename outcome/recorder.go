@@ -238,6 +238,63 @@ func (r ManagerOperationRecorder) Validate() error {
 	return nil
 }
 
+// Warn appends a warned step to the timeline. A warned step records a
+// non-fatal failure: the operation status is NOT flipped to failure.
+// This is used by Try nodes in the plan interpreter.
+func (r *ManagerOperationRecorder) Warn(step Step) (StepHandle, error) {
+	ix := len(r.o.Timeline)
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:       r.nextSeq(),
+		Timestamp: stepTimestamp(step),
+		Phase:     r.currentPhase(),
+		Status:    StepStatusWarned,
+		Kind:      step.Kind,
+		Target:    step.Target,
+		Error:     step.Error,
+		Details:   step.Details,
+	})
+	return StepHandle{ix: ix}, nil
+}
+
+// SkipStep records a skipped step and returns its handle. Unlike the
+// low-level Skip method, SkipStep always succeeds -- it is designed for
+// the auto-skip pattern where every node after the first failure is
+// recorded as skipped.
+func (r *ManagerOperationRecorder) SkipStep(kind StepKind, target, reason string) StepHandle {
+	ix := len(r.o.Timeline)
+	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
+		Seq:       r.nextSeq(),
+		Timestamp: time.Now(),
+		Phase:     r.currentPhase(),
+		Status:    StepStatusSkipped,
+		Kind:      kind,
+		Target:    target,
+		Error:     reason,
+	})
+	return StepHandle{ix: ix}
+}
+
+// WarnStep records a warned step and returns its handle.
+// An optional single Details value may be provided.
+func (r *ManagerOperationRecorder) WarnStep(kind StepKind, target string, err error, details ...any) StepHandle {
+	step := Step{Kind: kind, Target: target, Error: err.Error()}
+	if len(details) > 0 {
+		step.Details = details[0]
+	}
+	h, _ := r.Warn(step)
+	return h
+}
+
+// SetDetails attaches or replaces the Details field on a previously
+// recorded timeline entry. Invalid or out-of-range handles are a
+// silent no-op.
+func (r *ManagerOperationRecorder) SetDetails(h StepHandle, details any) {
+	if !h.Valid() || h.ix >= len(r.o.Timeline) {
+		return
+	}
+	r.o.Timeline[h.ix].Details = details
+}
+
 // FailStep records a failed step and returns err for convenient chaining.
 //
 // An optional single Details value may be provided.

@@ -29,6 +29,7 @@ const (
 	StepStatusCompleted StepStatus = "completed"
 	StepStatusFailed    StepStatus = "failed"
 	StepStatusSkipped   StepStatus = "skipped"
+	StepStatusWarned    StepStatus = "warned"
 )
 
 // StepKind identifies the type of operation step.
@@ -169,6 +170,22 @@ type OperationOutcome struct {
 	// Each entry is a command ready for exec (e.g., ["bpfman", "unload", "123"]).
 	// Only populated when ManualCleanupRequired is true and state is "inconsistent".
 	ManualCleanupCommands [][]string `json:"manual_cleanup_commands,omitempty"`
+}
+
+// StepHandle is an opaque reference to a recorded timeline entry.
+// The plan interpreter uses handles to attach details after the fact
+// via SetDetails, avoiding the need to search by (kind, target).
+type StepHandle struct{ ix int }
+
+// InvalidStepHandle returns a handle that refers to no entry.
+func InvalidStepHandle() StepHandle { return StepHandle{ix: -1} }
+
+// Valid reports whether h refers to an actual timeline entry.
+func (h StepHandle) Valid() bool { return h.ix >= 0 }
+
+// NewStep constructs a Step with the given kind, target, and optional details.
+func NewStep(kind StepKind, target string, details any) Step {
+	return Step{Kind: kind, Target: target, Details: details}
 }
 
 // Step is the internal representation used during recording.

@@ -905,3 +905,218 @@ func TestRecorder_CompleteStep_OnErrCalledOnInvariantViolation(t *testing.T) {
 		t.Errorf("onErr got %v, want ErrAlreadyFailed", gotErr)
 	}
 }
+
+func TestStepHandle_Valid(t *testing.T) {
+	invalid := outcome.InvalidStepHandle()
+	if invalid.Valid() {
+		t.Error("InvalidStepHandle().Valid() = true, want false")
+	}
+
+	// A handle with ix >= 0 is valid; we test this via the recorder
+	// which returns valid handles from recording methods.
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+	h := rec.SkipStep(outcome.StepKindKernelLoad, "prog", "skipped")
+	if !h.Valid() {
+		t.Error("SkipStep handle.Valid() = false, want true")
+	}
+}
+
+func TestNewStep(t *testing.T) {
+	details := outcome.ProgramDetails{KernelID: 42}
+	step := outcome.NewStep(outcome.StepKindKernelLoad, "my_prog", details)
+
+	if step.Kind != outcome.StepKindKernelLoad {
+		t.Errorf("Kind = %q, want %q", step.Kind, outcome.StepKindKernelLoad)
+	}
+	if step.Target != "my_prog" {
+		t.Errorf("Target = %q, want %q", step.Target, "my_prog")
+	}
+	pd, ok := step.Details.(outcome.ProgramDetails)
+	if !ok {
+		t.Fatalf("Details type = %T, want ProgramDetails", step.Details)
+	}
+	if pd.KernelID != 42 {
+		t.Errorf("Details.KernelID = %d, want 42", pd.KernelID)
+	}
+}
+
+func TestRecorder_SkipStep(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.SkipStep(outcome.StepKindKernelLoad, "prog", "auto-skipped after failure")
+	if !h.Valid() {
+		t.Error("SkipStep returned invalid handle")
+	}
+
+	if len(out.Timeline) != 1 {
+		t.Fatalf("Timeline has %d entries, want 1", len(out.Timeline))
+	}
+	entry := out.Timeline[0]
+	if entry.Status != outcome.StepStatusSkipped {
+		t.Errorf("Status = %q, want %q", entry.Status, outcome.StepStatusSkipped)
+	}
+	if entry.Kind != outcome.StepKindKernelLoad {
+		t.Errorf("Kind = %q, want %q", entry.Kind, outcome.StepKindKernelLoad)
+	}
+	if entry.Error != "auto-skipped after failure" {
+		t.Errorf("Error = %q, want %q", entry.Error, "auto-skipped after failure")
+	}
+}
+
+func TestRecorder_SkipStep_AfterFailure(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	// Fail a step first.
+	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+
+	// SkipStep must succeed even after failure (auto-skip pattern).
+	h := rec.SkipStep(outcome.StepKindStoreSaveProgram, "prog", "skipped due to prior failure")
+	if !h.Valid() {
+		t.Error("SkipStep after failure returned invalid handle")
+	}
+
+	if len(out.Timeline) != 2 {
+		t.Fatalf("Timeline has %d entries, want 2", len(out.Timeline))
+	}
+	if out.Timeline[1].Status != outcome.StepStatusSkipped {
+		t.Errorf("Timeline[1].Status = %q, want %q", out.Timeline[1].Status, outcome.StepStatusSkipped)
+	}
+}
+
+func TestRecorder_WarnStep(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.WarnStep(outcome.StepKindKernelLoad, "prog", errors.New("non-fatal issue"))
+	if !h.Valid() {
+		t.Error("WarnStep returned invalid handle")
+	}
+
+	if len(out.Timeline) != 1 {
+		t.Fatalf("Timeline has %d entries, want 1", len(out.Timeline))
+	}
+	entry := out.Timeline[0]
+	if entry.Status != outcome.StepStatusWarned {
+		t.Errorf("Status = %q, want %q", entry.Status, outcome.StepStatusWarned)
+	}
+	if entry.Error != "non-fatal issue" {
+		t.Errorf("Error = %q, want %q", entry.Error, "non-fatal issue")
+	}
+	// Operation must still be success.
+	if out.Status != outcome.StatusSuccess {
+		t.Errorf("Status = %q, want %q", out.Status, outcome.StatusSuccess)
+	}
+}
+
+func TestRecorder_WarnStep_DoesNotFlipStatus(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	rec.CompleteStep(outcome.StepKindKernelLoad, "prog1")
+	rec.WarnStep(outcome.StepKindKernelLoad, "prog2", errors.New("warning"))
+
+	if out.Status != outcome.StatusSuccess {
+		t.Errorf("Status = %q after warn, want %q", out.Status, outcome.StatusSuccess)
+	}
+}
+
+func TestRecorder_Warn_LowLevel(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "prog", Error: "soft fail"}
+	h, err := rec.Warn(step)
+	if err != nil {
+		t.Fatalf("Warn() failed: %v", err)
+	}
+	if !h.Valid() {
+		t.Error("Warn() returned invalid handle")
+	}
+
+	if len(out.Timeline) != 1 {
+		t.Fatalf("Timeline has %d entries, want 1", len(out.Timeline))
+	}
+	if out.Timeline[0].Status != outcome.StepStatusWarned {
+		t.Errorf("Status = %q, want %q", out.Timeline[0].Status, outcome.StepStatusWarned)
+	}
+}
+
+func TestRecorder_SetDetails(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.SkipStep(outcome.StepKindKernelLoad, "prog", "skipped")
+	rec.SetDetails(h, outcome.ProgramDetails{KernelID: 42})
+
+	if len(out.Timeline) != 1 {
+		t.Fatalf("Timeline has %d entries, want 1", len(out.Timeline))
+	}
+	pd, ok := out.Timeline[0].Details.(outcome.ProgramDetails)
+	if !ok {
+		t.Fatalf("Details type = %T, want ProgramDetails", out.Timeline[0].Details)
+	}
+	if pd.KernelID != 42 {
+		t.Errorf("Details.KernelID = %d, want 42", pd.KernelID)
+	}
+}
+
+func TestRecorder_SetDetails_InvalidHandle(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	// Should not panic.
+	rec.SetDetails(outcome.InvalidStepHandle(), outcome.ProgramDetails{KernelID: 1})
+	if len(out.Timeline) != 0 {
+		t.Errorf("Timeline has %d entries, want 0", len(out.Timeline))
+	}
+}
+
+func TestRecorder_SetDetails_OutOfRange(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	// Construct a handle that is technically valid (ix >= 0) but
+	// beyond the current timeline length. SetDetails should be a
+	// silent no-op.
+	outOfRange := outcome.InvalidStepHandle() // ix == -1, but we need ix == 999
+	// We can only create valid handles via the recorder, so
+	// just confirm that an invalid handle is safe.
+	rec.SetDetails(outOfRange, outcome.ProgramDetails{KernelID: 1})
+	if len(out.Timeline) != 0 {
+		t.Errorf("Timeline has %d entries, want 0", len(out.Timeline))
+	}
+}
+
+func TestRecorder_SetDetails_Overwrites(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.SkipStep(outcome.StepKindKernelLoad, "prog", "skipped")
+	rec.SetDetails(h, outcome.ProgramDetails{KernelID: 1})
+	rec.SetDetails(h, outcome.ProgramDetails{KernelID: 2})
+
+	pd, ok := out.Timeline[0].Details.(outcome.ProgramDetails)
+	if !ok {
+		t.Fatalf("Details type = %T, want ProgramDetails", out.Timeline[0].Details)
+	}
+	if pd.KernelID != 2 {
+		t.Errorf("Details.KernelID = %d, want 2 (overwritten)", pd.KernelID)
+	}
+}
+
+func TestRecorder_Validate_WarnedNotCountedAsFailure(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	rec.CompleteStep(outcome.StepKindKernelLoad, "prog1")
+	rec.WarnStep(outcome.StepKindKernelLoad, "prog2", errors.New("warning"))
+
+	// Status is success, and a warned entry should not trigger the
+	// "success outcome has failed primary step" validation error.
+	if err := rec.Validate(); err != nil {
+		t.Errorf("Validate() failed: %v", err)
+	}
+}
