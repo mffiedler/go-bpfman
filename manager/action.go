@@ -1,4 +1,4 @@
-package action
+package manager
 
 import (
 	"github.com/frobware/go-bpfman"

@@ -19,7 +19,7 @@
 // Mutating operations generally follow a phased pattern:
 //
 //  1. FETCH: gather state from store, kernel, and filesystem
-//  2. COMPUTE: determine actions as reified effect values (action/)
+//  2. COMPUTE: determine actions as reified effect values
 //  3. EXECUTE: interpret actions via ActionExecutor
 //
 // Variations exist: Unload() is a straight FETCH -> COMPUTE -> EXECUTE

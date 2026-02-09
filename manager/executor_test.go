@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
@@ -270,10 +269,10 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 		t.Fatal("executor does not implement ActionExecutorWithResult")
 	}
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -327,10 +326,10 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kernel)
 	execWithResult := exec.(manager.ActionExecutorWithResult)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -365,10 +364,10 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kernel)
 	execWithResult := exec.(manager.ActionExecutorWithResult)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -403,10 +402,10 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kernel)
 	execWithResult := exec.(manager.ActionExecutorWithResult)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -442,11 +441,11 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kernel)
 	execWithResult := exec.(manager.ActionExecutorWithResult)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
-		action.SaveProgram{KernelID: 4},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
+		manager.SaveProgram{KernelID: 4},
 	}
 
 	_ = execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -471,10 +470,10 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kernel)
 	execWithResult := exec.(manager.ActionExecutorWithResult)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
+		manager.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -491,7 +490,7 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	}
 
 	failed := result.Actions[result.FailedIndex]
-	if sp, ok := failed.(action.SaveProgram); !ok || sp.KernelID != 2 {
+	if sp, ok := failed.(manager.SaveProgram); !ok || sp.KernelID != 2 {
 		t.Errorf("failed action = %v, want SaveProgram{KernelID: 2}", failed)
 	}
 
@@ -515,9 +514,9 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 
 	exec := manager.NewExecutorForTest(store, kernel)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)
@@ -532,9 +531,9 @@ func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
 	kernel := newStubKernel()
 	exec := manager.NewExecutorForTest(store, kernel)
 
-	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
+	actions := []manager.Action{
+		manager.SaveProgram{KernelID: 1},
+		manager.SaveProgram{KernelID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)

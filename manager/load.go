@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/outcome"
@@ -380,7 +379,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	m.logger.InfoContext(ctx, "unloading program", "kernel_id", kernelID, "links", len(links))
 
 	// EXECUTE: Extract actions for the executor and record outcomes.
-	actions := make([]action.Action, len(plan))
+	actions := make([]Action, len(plan))
 	for i, p := range plan {
 		actions[i] = p.action
 	}
@@ -772,7 +771,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 // This eliminates the parallel-array coupling between the former
 // computeUnloadActions and computeUnloadSteps functions.
 type unloadEntry struct {
-	action action.Action
+	action Action
 	step   outcome.Step
 }
 
@@ -787,7 +786,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	for _, link := range links {
 		if link.PinPath != nil {
 			plan = append(plan, unloadEntry{
-				action: action.DetachLink{PinPath: link.PinPath.String()},
+				action: DetachLink{PinPath: link.PinPath.String()},
 				step: outcome.Step{
 					Kind:   outcome.StepKindKernelDetachLink,
 					Target: fmt.Sprintf("%d", link.ID),
@@ -801,7 +800,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	}
 
 	plan = append(plan, unloadEntry{
-		action: action.RemovePin{Path: linksDir},
+		action: RemovePin{Path: linksDir},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelRemovePin,
 			Target: linksDir,
@@ -809,7 +808,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: action.UnloadProgram{PinPath: progPinPath},
+		action: UnloadProgram{PinPath: progPinPath},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelUnload,
 			Target: programName,
@@ -821,7 +820,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: action.UnloadProgram{PinPath: mapsDir},
+		action: UnloadProgram{PinPath: mapsDir},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelUnload,
 			Target: programName,
@@ -833,7 +832,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: action.DeleteProgram{KernelID: kernelID},
+		action: DeleteProgram{KernelID: kernelID},
 		step: outcome.Step{
 			Kind:   outcome.StepKindStoreDeleteProgram,
 			Target: programName,

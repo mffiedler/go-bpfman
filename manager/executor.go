@@ -4,21 +4,20 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/platform"
 )
 
 // ActionExecutor executes reified actions.
 type ActionExecutor interface {
-	Execute(ctx context.Context, a action.Action) error
-	ExecuteAll(ctx context.Context, actions []action.Action) error
+	Execute(ctx context.Context, a Action) error
+	ExecuteAll(ctx context.Context, actions []Action) error
 }
 
 // ActionExecutorWithResult extends ActionExecutor with structured result.
 // Manager can type-assert to this interface if it needs result info.
 type ActionExecutorWithResult interface {
 	ActionExecutor
-	ExecuteAllWithResult(ctx context.Context, actions []action.Action) ActionExecutionResult
+	ExecuteAllWithResult(ctx context.Context, actions []Action) ActionExecutionResult
 }
 
 // ActionExecutionResult describes the outcome of executing a batch of
@@ -35,7 +34,7 @@ type ActionExecutionResult struct {
 	Error error
 
 	// Actions is the original actions slice (for slicing the completed prefix).
-	Actions []action.Action
+	Actions []Action
 }
 
 // executor interprets and executes actions.
@@ -53,46 +52,46 @@ func newExecutor(store platform.Store, kernel platform.KernelOperations) ActionE
 }
 
 // Execute runs a single action.
-func (e *executor) Execute(ctx context.Context, a action.Action) error {
+func (e *executor) Execute(ctx context.Context, a Action) error {
 	switch a := a.(type) {
-	case action.SaveProgram:
+	case SaveProgram:
 		return e.store.Save(ctx, a.KernelID, a.Metadata)
 
-	case action.DeleteProgram:
+	case DeleteProgram:
 		return e.store.Delete(ctx, a.KernelID)
 
-	case action.SaveLink:
+	case SaveLink:
 		return e.store.SaveLink(ctx, a.Record)
 
-	case action.DeleteLink:
+	case DeleteLink:
 		return e.store.DeleteLink(ctx, a.LinkID)
 
-	case action.LoadProgram:
+	case LoadProgram:
 		_, err := e.kernel.Load(ctx, a.Spec, a.BPFFS)
 		return err
 
-	case action.UnloadProgram:
+	case UnloadProgram:
 		return e.kernel.Unload(ctx, a.PinPath)
 
-	case action.Batch:
+	case Batch:
 		return e.ExecuteAll(ctx, a.Actions)
 
-	case action.Sequence:
+	case Sequence:
 		return e.ExecuteAll(ctx, a.Actions)
 
-	case action.SaveDispatcher:
+	case SaveDispatcher:
 		return e.store.SaveDispatcher(ctx, a.State)
 
-	case action.DeleteDispatcher:
+	case DeleteDispatcher:
 		return e.store.DeleteDispatcher(ctx, a.Type, a.Nsid, a.Ifindex)
 
-	case action.DetachLink:
+	case DetachLink:
 		return e.kernel.DetachLink(ctx, a.PinPath)
 
-	case action.RemovePin:
+	case RemovePin:
 		return e.kernel.RemovePin(ctx, a.Path)
 
-	case action.DetachTCFilter:
+	case DetachTCFilter:
 		return e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
 
 	default:
@@ -101,13 +100,13 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 }
 
 // ExecuteAll runs multiple actions, stopping on first error.
-func (e *executor) ExecuteAll(ctx context.Context, actions []action.Action) error {
+func (e *executor) ExecuteAll(ctx context.Context, actions []Action) error {
 	return e.ExecuteAllWithResult(ctx, actions).Error
 }
 
 // ExecuteAllWithResult runs multiple actions, stopping on first error,
 // and returns structured information about what completed and what failed.
-func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Action) ActionExecutionResult {
+func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []Action) ActionExecutionResult {
 	res := ActionExecutionResult{
 		CompletedCount: 0,
 		FailedIndex:    -1,

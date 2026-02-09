@@ -8,7 +8,6 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/outcome"
@@ -165,16 +164,16 @@ func computeDetachLinkSteps(record bpfman.LinkRecord) []outcome.Step {
 
 // computeDetachLinkActions is a pure function that computes the actions
 // needed to detach and delete a link from the store.
-func computeDetachLinkActions(record bpfman.LinkRecord) []action.Action {
-	var actions []action.Action
+func computeDetachLinkActions(record bpfman.LinkRecord) []Action {
+	var actions []Action
 
 	// Detach link from kernel if pinned
 	if record.PinPath != nil {
-		actions = append(actions, action.DetachLink{PinPath: record.PinPath.String()})
+		actions = append(actions, DetachLink{PinPath: record.PinPath.String()})
 	}
 
 	// Delete link from store
-	actions = append(actions, action.DeleteLink{LinkID: record.ID})
+	actions = append(actions, DeleteLink{LinkID: record.ID})
 
 	return actions
 }
@@ -298,17 +297,17 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 // remove a dispatcher. It is only called when no extension links remain.
 // For TC dispatchers, tcHandle is the kernel-assigned filter handle
 // (queried at detach time); it is zero for XDP dispatchers.
-func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
+func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, tcHandle uint32) []Action {
 	progPinPath := fs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
 	revisionDir := fs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
-	var actions []action.Action
+	var actions []Action
 
 	// TC dispatchers use legacy netlink and must be detached via
 	// RTM_DELTFILTER. XDP dispatchers use BPF links and are
 	// detached by removing the link pin.
 	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
 		if tcHandle != 0 {
-			actions = append(actions, action.DetachTCFilter{
+			actions = append(actions, DetachTCFilter{
 				Ifindex:  int(state.Ifindex),
 				Parent:   tcParentHandle(state.Type),
 				Priority: state.Priority,
@@ -317,13 +316,13 @@ func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, 
 		}
 	} else {
 		linkPinPath := fs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
-		actions = append(actions, action.RemovePin{Path: linkPinPath})
+		actions = append(actions, RemovePin{Path: linkPinPath})
 	}
 
 	actions = append(actions,
-		action.RemovePin{Path: progPinPath},
-		action.RemovePin{Path: revisionDir},
-		action.DeleteDispatcher{
+		RemovePin{Path: progPinPath},
+		RemovePin{Path: revisionDir},
+		DeleteDispatcher{
 			Type:    string(state.Type),
 			Nsid:    state.Nsid,
 			Ifindex: state.Ifindex,

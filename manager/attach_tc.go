@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/netns"
@@ -418,7 +417,7 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 
 	// COMPUTE: Build save action from kernel result
 	state := computeTCDispatcherState(dispType, nsid, ifindex, revision, result)
-	saveAction := action.SaveDispatcher{State: state}
+	saveAction := SaveDispatcher{State: state}
 
 	// EXECUTE: Save through executor
 	if err := m.executor.Execute(ctx, saveAction); err != nil {
