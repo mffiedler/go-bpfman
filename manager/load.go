@@ -330,9 +330,6 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	rt := m.fsctx.BytecodeFS()
 	if err := rt.RemoveProgram(kernelID); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
-		_ = rec.FailStep(outcome.StepKindFSRemoveProgram, programName, err, outcome.ProgramDetails{
-			KernelID: kernelID,
-		})
 	} else {
 		rec.CompleteStep(outcome.StepKindFSRemoveProgram, programName, outcome.ProgramDetails{
 			KernelID: kernelID,
