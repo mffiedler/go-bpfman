@@ -27,7 +27,9 @@ import (
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 
 	fail := func(primaryErr error) error {
 		o.PrimaryError = primaryErr.Error()
@@ -48,12 +50,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
 			}
 		}
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: target,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
 	}
 
 	// FETCH: Get dispatcher state if this is a dispatcher-based link
@@ -62,12 +59,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
 			primaryErr := fmt.Errorf("extract dispatcher key: %w", err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPreflight,
-				Target: target,
-				Error:  primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
 		}
 		if dispType != "" {
 			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
@@ -94,35 +86,35 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		if len(linkSteps) > 0 {
 			failedStep := linkSteps[0]
 			failedStep.Error = primaryErr.Error()
-			_ = rec.Fail(failedStep)
+			if recErr := rec.Fail(failedStep); recErr != nil {
+				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+			}
 		} else {
-			_ = rec.Fail(outcome.Step{
+			if recErr := rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: target,
 				Error:  primaryErr.Error(),
-			})
+			}); recErr != nil {
+				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+			}
 		}
 		return fail(primaryErr)
 	}
 
 	// Record successful detach steps
 	for _, step := range linkSteps {
-		_ = rec.Complete(step)
+		if recErr := rec.Complete(step); recErr != nil {
+			m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+		}
 	}
 
 	// Phase 2: If this was a dispatcher-based link, check whether the
 	// dispatcher has any remaining extensions. Clean up if empty.
 	if dispState != nil {
 		if err := m.cleanupEmptyDispatcher(ctx, *dispState); err != nil {
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindStoreDeleteDispatcher,
-				Target: fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
-				Details: outcome.DispatcherDetails{
-					DispatcherID: dispState.KernelID,
-				},
-				Error: err.Error(),
-			})
-			return fail(err)
+			return fail(rec.FailStep(outcome.StepKindStoreDeleteDispatcher,
+				fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
+				err, outcome.DispatcherDetails{DispatcherID: dispState.KernelID}))
 		}
 	}
 

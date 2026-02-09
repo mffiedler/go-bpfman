@@ -801,7 +801,9 @@ Restructure `Manager.Load` as:
 ```go
 func (m *Manager) Load(ctx context.Context, spec bpfman.LoadSpec, opts LoadOpts) (bpfman.Program, error) {
     var o outcome.OperationOutcome
-    rec := outcome.NewRecorder(&o)
+    rec := outcome.NewRecorder(&o, func(err error) {
+        m.logger.Error("outcome recorder: invariant violation", "error", err)
+    })
 
     // Stage 1: Kernel load (imperative, yields data)
     loaded, err := m.kernel.Load(ctx, spec, bpffs.Root(m.dirs.FS()))

@@ -56,7 +56,9 @@ type dispatcherAttachParams struct {
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams) (bpfman.Link, error) {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
 		o.PrimaryError = primaryErr.Error()
@@ -67,24 +69,14 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	// FETCH: Get program metadata to access ObjectPath and ProgramName
 	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: p.target,
-			Error:  err.Error(),
-		})
-		return fail(err)
+		return fail(rec.FailStep(outcome.StepKindPreflight, p.target, err))
 	}
 
 	// FETCH: Get network namespace ID (from target namespace if specified)
 	nsid, err := netns.GetNsid(p.netnsPath)
 	if err != nil {
 		primaryErr := fmt.Errorf("get nsid: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: p.target,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr))
 	}
 
 	ifindex := uint32(p.ifindex)
@@ -96,35 +88,20 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 		dispState, err = p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
 		if err != nil {
 			primaryErr := fmt.Errorf("create %s dispatcher for %s: %w", p.dispType, p.target, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   p.dispStepKind,
-				Target: p.target,
-				Details: outcome.DispatcherDetails{
-					Interface: p.ifname,
-					Direction: p.direction,
-				},
-				Error: primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(p.dispStepKind, p.target, primaryErr, outcome.DispatcherDetails{
+				Interface: p.ifname,
+				Direction: p.direction,
+			}))
 		}
 		// Record dispatcher creation
-		_ = rec.Complete(outcome.Step{
-			Kind:   p.dispStepKind,
-			Target: p.target,
-			Details: outcome.DispatcherDetails{
-				DispatcherID: dispState.KernelID,
-				Interface:    p.ifname,
-				Direction:    p.direction,
-			},
+		rec.CompleteStep(p.dispStepKind, p.target, outcome.DispatcherDetails{
+			DispatcherID: dispState.KernelID,
+			Interface:    p.ifname,
+			Direction:    p.direction,
 		})
 	} else if err != nil {
 		primaryErr := fmt.Errorf("get dispatcher: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: p.target,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr))
 	}
 
 	m.logger.DebugContext(ctx, "using dispatcher",
@@ -140,12 +117,7 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: p.target,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr))
 	}
 	linkPinPath := fs.ExtensionLinkPath(p.dispType, nsid, ifindex, dispState.Revision, position)
 
@@ -163,18 +135,12 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 		// retry with a fresh dispatcher.
 		if !errors.Is(err, os.ErrNotExist) {
 			primaryErr := fmt.Errorf("attach extension to %s slot %d: %w", p.target, position, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindAttachExtension,
-				Target: p.target,
-				Details: outcome.LinkDetails{
-					ProgramID:    p.programKernelID,
-					Interface:    p.ifname,
-					PinPath:      linkPinPath,
-					DispatcherID: dispState.KernelID,
-				},
-				Error: primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(outcome.StepKindAttachExtension, p.target, primaryErr, outcome.LinkDetails{
+				ProgramID:    p.programKernelID,
+				Interface:    p.ifname,
+				PinPath:      linkPinPath,
+				DispatcherID: dispState.KernelID,
+			}))
 		}
 		m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
 			"prog_pin_path", progPinPath,
@@ -182,54 +148,32 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 			"error", err)
 		if delErr := m.store.DeleteDispatcher(ctx, string(p.dispType), nsid, ifindex); delErr != nil {
 			primaryErr := fmt.Errorf("delete stale %s dispatcher: %w", p.dispType, delErr)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindStoreDeleteDispatcher,
-				Target: p.target,
-				Error:  primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(outcome.StepKindStoreDeleteDispatcher, p.target, primaryErr))
 		}
 		dispState, err = p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
 		if err != nil {
 			primaryErr := fmt.Errorf("recreate %s dispatcher for %s: %w", p.dispType, p.target, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   p.dispStepKind,
-				Target: p.target,
-				Details: outcome.DispatcherDetails{
-					Interface: p.ifname,
-					Direction: p.direction,
-				},
-				Error: primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(p.dispStepKind, p.target, primaryErr, outcome.DispatcherDetails{
+				Interface: p.ifname,
+				Direction: p.direction,
+			}))
 		}
 		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
 		if err != nil {
 			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPreflight,
-				Target: p.target,
-				Error:  primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr))
 		}
 		linkPinPath = fs.ExtensionLinkPath(p.dispType, nsid, ifindex, dispState.Revision, position)
 		progPinPath = fs.DispatcherProgPath(p.dispType, nsid, ifindex, dispState.Revision)
 		attachOut, err = p.attachExtension(ctx, progPinPath, prog.Load.ObjectPath(), prog.Meta.Name, position, linkPinPath, mapPinDir)
 		if err != nil {
 			primaryErr := fmt.Errorf("attach extension to %s slot %d (after recreate): %w", p.target, position, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindAttachExtension,
-				Target: p.target,
-				Details: outcome.LinkDetails{
-					ProgramID:    p.programKernelID,
-					Interface:    p.ifname,
-					PinPath:      linkPinPath,
-					DispatcherID: dispState.KernelID,
-				},
-				Error: primaryErr.Error(),
-			})
-			return fail(primaryErr)
+			return fail(rec.FailStep(outcome.StepKindAttachExtension, p.target, primaryErr, outcome.LinkDetails{
+				ProgramID:    p.programKernelID,
+				Interface:    p.ifname,
+				PinPath:      linkPinPath,
+				DispatcherID: dispState.KernelID,
+			}))
 		}
 	}
 
@@ -252,16 +196,12 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	}
 
 	// Record successful extension attach
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindAttachExtension,
-		Target: p.target,
-		Details: outcome.LinkDetails{
-			LinkID:       attachOut.LinkID,
-			ProgramID:    p.programKernelID,
-			Interface:    p.ifname,
-			PinPath:      linkPinPath,
-			DispatcherID: dispState.KernelID,
-		},
+	rec.CompleteStep(outcome.StepKindAttachExtension, p.target, outcome.LinkDetails{
+		LinkID:       attachOut.LinkID,
+		ProgramID:    p.programKernelID,
+		Interface:    p.ifname,
+		PinPath:      linkPinPath,
+		DispatcherID: dispState.KernelID,
 	})
 
 	// PERSIST with rollback.
@@ -274,58 +214,30 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 		m.logger.ErrorContext(ctx, "persist failed, rolling back",
 			"program_id", p.programKernelID, "error", err)
 
-		storeErr := fmt.Errorf("save link metadata: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Record.ID),
-			Details: outcome.LinkDetails{
+		storeErr := rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
+			fmt.Errorf("save link metadata: %w", err), outcome.LinkDetails{
 				LinkID:    uint32(link.Record.ID),
 				ProgramID: p.programKernelID,
 				Interface: p.ifname,
 				PinPath:   linkPinPath,
+			})
+		recordRollback(&rec, undo, outcome.Step{
+			Kind:   outcome.StepKindKernelDetachLink,
+			Target: fmt.Sprintf("%d", link.Record.ID),
+			Details: outcome.LinkDetails{
+				LinkID:  uint32(link.Record.ID),
+				PinPath: linkPinPath,
 			},
-			Error: storeErr.Error(),
-		})
-
-		rec.BeginRollback()
-		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
-			for _, f := range rbErrs {
-				m.logger.ErrorContext(ctx, "rollback step failed",
-					"step", f.Step, "error", f.Err)
-			}
-			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
-			_ = rec.RollbackFail(outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Record.ID),
-				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Record.ID),
-					PinPath: linkPinPath,
-				},
-				Error: rbErrs[0].Err.Error(),
-			})
-		} else {
-			_ = rec.RollbackComplete(outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Record.ID),
-				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Record.ID),
-					PinPath: linkPinPath,
-				},
-			})
-		}
+		}, m.logger)
 		return fail(storeErr)
 	}
 
 	// Record successful store save
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Record.ID),
-		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Record.ID),
-			ProgramID: p.programKernelID,
-			Interface: p.ifname,
-			PinPath:   linkPinPath,
-		},
+	rec.CompleteStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID), outcome.LinkDetails{
+		LinkID:    uint32(link.Record.ID),
+		ProgramID: p.programKernelID,
+		Interface: p.ifname,
+		PinPath:   linkPinPath,
 	})
 
 	m.logger.InfoContext(ctx, "attached via dispatcher",

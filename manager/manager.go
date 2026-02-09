@@ -152,7 +152,9 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 
 // GCWithOptions runs garbage collection with the given options.
 func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome)
+	rec := outcome.NewRecorder(&result.Outcome, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 	defer func() { rec.Finalise() }()
 	result.Outcome.OpID = OpIDFromContext(ctx)
 	start := time.Now()
@@ -173,12 +175,8 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// remove it from the live set so the store GC reaps the row.
 	dbPrograms, err := m.store.List(ctx)
 	if err != nil {
-		retErr = fmt.Errorf("list programs: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: "store",
-			Error:  retErr.Error(),
-		})
+		retErr = rec.FailStep(outcome.StepKindPreflight, "store",
+			fmt.Errorf("list programs: %w", err))
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
@@ -207,12 +205,8 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// Phase 1: Delegate to store - it handles ordering constraints internally
 	storeResult, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
 	if err != nil {
-		retErr = fmt.Errorf("store gc: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindStoreGCPrograms,
-			Target: "store",
-			Error:  retErr.Error(),
-		})
+		retErr = rec.FailStep(outcome.StepKindStoreGCPrograms, "store",
+			fmt.Errorf("store gc: %w", err))
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
@@ -222,26 +216,14 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	result.LinksRemoved = storeResult.LinksRemoved
 	result.DispatchersRemoved = storeResult.DispatchersRemoved
 
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreGCPrograms,
-		Target: "store",
-		Details: outcome.GCPhaseDetails{
-			Removed: storeResult.ProgramsRemoved,
-		},
+	rec.CompleteStep(outcome.StepKindStoreGCPrograms, "store", outcome.GCPhaseDetails{
+		Removed: storeResult.ProgramsRemoved,
 	})
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreGCLinks,
-		Target: "store",
-		Details: outcome.GCPhaseDetails{
-			Removed: storeResult.LinksRemoved,
-		},
+	rec.CompleteStep(outcome.StepKindStoreGCLinks, "store", outcome.GCPhaseDetails{
+		Removed: storeResult.LinksRemoved,
 	})
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreGCDispatchers,
-		Target: "store",
-		Details: outcome.GCPhaseDetails{
-			Removed: storeResult.DispatchersRemoved,
-		},
+	rec.CompleteStep(outcome.StepKindStoreGCDispatchers, "store", outcome.GCPhaseDetails{
+		Removed: storeResult.DispatchersRemoved,
 	})
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
@@ -276,27 +258,17 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 			}
 			if err := v.Op.Execute(); err != nil {
 				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
-				// Record failed orphan removal step
-				_ = rec.Fail(outcome.Step{
-					Kind:   outcome.StepKindGCRemoveOrphan,
-					Target: v.Op.Description,
-					Details: outcome.OrphanDetails{
+				retErr = rec.FailStep(outcome.StepKindGCRemoveOrphan, v.Op.Description,
+					fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err), outcome.OrphanDetails{
 						Category: v.Category,
-					},
-					Error: err.Error(),
-				})
-				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
+					})
 				result.Outcome.PrimaryError = retErr.Error()
 				// Continue to attempt other cleanup operations but mark overall as failed
 				continue
 			}
 			m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
-			_ = rec.Complete(outcome.Step{
-				Kind:   outcome.StepKindGCRemoveOrphan,
-				Target: v.Op.Description,
-				Details: outcome.OrphanDetails{
-					Category: v.Category,
-				},
+			rec.CompleteStep(outcome.StepKindGCRemoveOrphan, v.Op.Description, outcome.OrphanDetails{
+				Category: v.Category,
 			})
 			switch v.Category {
 			case "gc-dispatcher":

@@ -52,7 +52,9 @@ type attachParams struct {
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link, error) {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 
 	fail := func(primaryErr error) (bpfman.Link, error) {
 		o.PrimaryError = primaryErr.Error()
@@ -68,12 +70,7 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	// FETCH: Verify program exists in store.
 	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: preTarget,
-			Error:  err.Error(),
-		})
-		return fail(err)
+		return fail(rec.FailStep(outcome.StepKindPreflight, preTarget, err))
 	}
 
 	progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
@@ -85,12 +82,7 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 		if target == "" {
 			target = preTarget
 		}
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: target,
-			Error:  err.Error(),
-		})
-		return fail(err)
+		return fail(rec.FailStep(outcome.StepKindPreflight, target, err))
 	}
 
 	linkPinPath := m.fsctx.BPFFS().LinkPinPath(p.programKernelID, plan.linkName)
@@ -99,17 +91,11 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	attachOut, err := plan.attach(linkPinPath)
 	if err != nil {
 		primaryErr := fmt.Errorf("attach %s: %w", plan.target, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   p.stepKind,
-			Target: plan.target,
-			Details: outcome.LinkDetails{
-				ProgramID: p.programKernelID,
-				PinPath:   linkPinPath,
-				Function:  plan.function,
-			},
-			Error: primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(p.stepKind, plan.target, primaryErr, outcome.LinkDetails{
+			ProgramID: p.programKernelID,
+			PinPath:   linkPinPath,
+			Function:  plan.function,
+		}))
 	}
 
 	// CONSTRUCT
@@ -130,15 +116,11 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 		},
 	}
 
-	_ = rec.Complete(outcome.Step{
-		Kind:   p.stepKind,
-		Target: plan.target,
-		Details: outcome.LinkDetails{
-			LinkID:    attachOut.LinkID,
-			ProgramID: p.programKernelID,
-			PinPath:   linkPinPath,
-			Function:  plan.function,
-		},
+	rec.CompleteStep(p.stepKind, plan.target, outcome.LinkDetails{
+		LinkID:    attachOut.LinkID,
+		ProgramID: p.programKernelID,
+		PinPath:   linkPinPath,
+		Function:  plan.function,
 	})
 
 	// PERSIST with rollback.
@@ -151,57 +133,29 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 		m.logger.ErrorContext(ctx, "persist failed, rolling back",
 			"program_id", p.programKernelID, "error", err)
 
-		storeErr := fmt.Errorf("save link metadata: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindStoreSaveLink,
-			Target: fmt.Sprintf("%d", link.Record.ID),
-			Details: outcome.LinkDetails{
+		storeErr := rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
+			fmt.Errorf("save link metadata: %w", err), outcome.LinkDetails{
 				LinkID:    uint32(link.Record.ID),
 				ProgramID: p.programKernelID,
 				PinPath:   linkPinPath,
 				Function:  plan.function,
+			})
+		recordRollback(&rec, undo, outcome.Step{
+			Kind:   outcome.StepKindKernelDetachLink,
+			Target: fmt.Sprintf("%d", link.Record.ID),
+			Details: outcome.LinkDetails{
+				LinkID:  uint32(link.Record.ID),
+				PinPath: linkPinPath,
 			},
-			Error: storeErr.Error(),
-		})
-
-		rec.BeginRollback()
-		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
-			for _, f := range rbErrs {
-				m.logger.ErrorContext(ctx, "rollback step failed",
-					"step", f.Step, "error", f.Err)
-			}
-			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
-			_ = rec.RollbackFail(outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Record.ID),
-				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Record.ID),
-					PinPath: linkPinPath,
-				},
-				Error: rbErrs[0].Err.Error(),
-			})
-		} else {
-			_ = rec.RollbackComplete(outcome.Step{
-				Kind:   outcome.StepKindKernelDetachLink,
-				Target: fmt.Sprintf("%d", link.Record.ID),
-				Details: outcome.LinkDetails{
-					LinkID:  uint32(link.Record.ID),
-					PinPath: linkPinPath,
-				},
-			})
-		}
+		}, m.logger)
 		return fail(storeErr)
 	}
 
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreSaveLink,
-		Target: fmt.Sprintf("%d", link.Record.ID),
-		Details: outcome.LinkDetails{
-			LinkID:    uint32(link.Record.ID),
-			ProgramID: p.programKernelID,
-			PinPath:   linkPinPath,
-			Function:  plan.function,
-		},
+	rec.CompleteStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID), outcome.LinkDetails{
+		LinkID:    uint32(link.Record.ID),
+		ProgramID: p.programKernelID,
+		PinPath:   linkPinPath,
+		Function:  plan.function,
 	})
 
 	m.logger.InfoContext(ctx, "attached",

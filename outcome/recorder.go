@@ -22,19 +22,25 @@ var (
 // OperationOutcome structure cannot contradict itself.
 type ManagerOperationRecorder struct {
 	o              *OperationOutcome
-	seq            int  // current sequence number
-	inRollback     bool // whether we're in rollback phase
-	rollbackFailed bool // whether any rollback step has failed
+	seq            int         // current sequence number
+	inRollback     bool        // whether we're in rollback phase
+	rollbackFailed bool        // whether any rollback step has failed
+	onErr          func(error) // called on invariant violation
 }
 
 // NewRecorder initialises a OperationOutcome in a consistent state.
 // Status defaults to success; failure flips status and sets PrimaryError at the
 // boundary (manager), not here.
-func NewRecorder(o *OperationOutcome) ManagerOperationRecorder {
+//
+// The onErr closure is called when an invariant violation occurs in
+// convenience methods (FailStep, CompleteStep). These errors are
+// programming errors, not runtime failures; the closure decides how
+// to handle them (e.g., log via the caller's logger).
+func NewRecorder(o *OperationOutcome, onErr func(error)) ManagerOperationRecorder {
 	if o.Status == "" {
 		o.Status = StatusSuccess
 	}
-	return ManagerOperationRecorder{o: o, seq: 0}
+	return ManagerOperationRecorder{o: o, seq: 0, onErr: onErr}
 }
 
 // Outcome returns the underlying OperationOutcome.
@@ -232,7 +238,46 @@ func (r ManagerOperationRecorder) Validate() error {
 	return nil
 }
 
+// FailStep records a failed step and returns err for convenient chaining.
+//
+// An optional single Details value may be provided.
+//
+//	return fail(rec.FailStep(kind, target, err))
+//	return fail(rec.FailStep(kind, target, err, outcome.LinkDetails{...}))
+func (r *ManagerOperationRecorder) FailStep(kind StepKind, target string, err error, details ...any) error {
+	step := Step{Kind: kind, Target: target, Error: err.Error()}
+	if len(details) > 0 {
+		step.Details = details[0]
+	}
+	if recErr := r.Fail(step); recErr != nil {
+		r.onErr(recErr)
+	}
+	return err
+}
+
+// CompleteStep records a completed step.
+//
+// An optional single Details value may be provided.
+//
+//	rec.CompleteStep(kind, target)
+//	rec.CompleteStep(kind, target, outcome.ProgramDetails{...})
+func (r *ManagerOperationRecorder) CompleteStep(kind StepKind, target string, details ...any) {
+	step := Step{Kind: kind, Target: target}
+	if len(details) > 0 {
+		step.Details = details[0]
+	}
+	if recErr := r.Complete(step); recErr != nil {
+		r.onErr(recErr)
+	}
+}
+
 // FailFromErr is a helper to create a failed step from an error.
-func FailFromErr(kind StepKind, target string, err error) Step {
-	return Step{Kind: kind, Target: target, Error: err.Error()}
+//
+// An optional single Details value may be provided.
+func FailFromErr(kind StepKind, target string, err error, details ...any) Step {
+	step := Step{Kind: kind, Target: target, Error: err.Error()}
+	if len(details) > 0 {
+		step.Details = details[0]
+	}
+	return step
 }

@@ -55,7 +55,9 @@ func (e *ManagerError) Unwrap() error {
 // Callers should use the public Load method instead.
 func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 	now := time.Now()
 
 	fail := func(primaryErr error) (bpfman.Program, error) {
@@ -67,12 +69,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 	// Reject image-based specs without an object path
 	if spec.HasImageSource() && spec.ObjectPath() == "" {
 		primaryErr := fmt.Errorf("load requires objectPath to be set; image pulling is handled by Load")
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: "validation",
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, "validation", primaryErr))
 	}
 
 	// Phase 1: Load into kernel and pin to bpffs
@@ -80,22 +77,13 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 	loaded, err := m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
 	if err != nil {
 		primaryErr := fmt.Errorf("load program %s: %w", spec.ProgramName(), err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindKernelLoad,
-			Target: spec.ProgramName(),
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindKernelLoad, spec.ProgramName(), primaryErr))
 	}
 
 	// Record successful kernel load
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindKernelLoad,
-		Target: spec.ProgramName(),
-		Details: outcome.ProgramDetails{
-			KernelID: loaded.Program.ID,
-			PinPath:  loaded.PinPath,
-		},
+	rec.CompleteStep(outcome.StepKindKernelLoad, spec.ProgramName(), outcome.ProgramDetails{
+		KernelID: loaded.Program.ID,
+		PinPath:  loaded.PinPath,
 	})
 
 	m.logger.InfoContext(ctx, "loaded program",
@@ -118,22 +106,16 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		m.logger.ErrorContext(ctx, "load failed, rolling back",
 			"kernel_id", loaded.Program.ID, "error", primaryErr)
 
-		rec.BeginRollback()
-		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
-			for _, f := range rbErrs {
-				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
-			}
-			rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
-			_ = rec.RollbackFail(outcome.Step{
-				Kind:   outcome.StepKindKernelUnload,
-				Target: spec.ProgramName(),
-				Details: outcome.ProgramDetails{
-					KernelID:    loaded.Program.ID,
-					PinPath:     loaded.PinPath,
-					MapsDirPath: loaded.MapsDir,
-				},
-				Error: rbErrs[0].Err.Error(),
-			})
+		rbFailed := recordRollback(&rec, undo, outcome.Step{
+			Kind:   outcome.StepKindKernelUnload,
+			Target: spec.ProgramName(),
+			Details: outcome.ProgramDetails{
+				KernelID:    loaded.Program.ID,
+				PinPath:     loaded.PinPath,
+				MapsDirPath: loaded.MapsDir,
+			},
+		}, m.logger)
+		if rbFailed {
 			rec.SetResidual([]outcome.Artefact{
 				{Kind: outcome.ArtefactProgramPin, KernelID: loaded.Program.ID, Path: loaded.PinPath},
 				{Kind: outcome.ArtefactMapsDir, KernelID: loaded.Program.ID, Path: loaded.MapsDir},
@@ -143,15 +125,6 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 			m.logger.DebugContext(ctx, "rollback: unloaded program",
 				"kernel_id", loaded.Program.ID,
 				"pin_path", loaded.PinPath)
-			_ = rec.RollbackComplete(outcome.Step{
-				Kind:   outcome.StepKindKernelUnload,
-				Target: spec.ProgramName(),
-				Details: outcome.ProgramDetails{
-					KernelID:    loaded.Program.ID,
-					PinPath:     loaded.PinPath,
-					MapsDirPath: loaded.MapsDir,
-				},
-			})
 		}
 		return fail(primaryErr)
 	}
@@ -161,23 +134,12 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 	// concurrent load raced.
 	if _, err := m.store.Get(ctx, loaded.Program.ID); err == nil {
 		primaryErr := fmt.Errorf("program %d already exists in database", loaded.Program.ID)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: primaryErr.Error(),
-		})
-		return rollbackLoad(primaryErr)
+		return rollbackLoad(rec.FailStep(outcome.StepKindPreflight, spec.ProgramName(), primaryErr, outcome.ProgramDetails{
+			KernelID: loaded.Program.ID,
+		}))
 	} else if !errors.Is(err, store.ErrNotFound) {
 		primaryErr := fmt.Errorf("check existing program %d: %w", loaded.Program.ID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: spec.ProgramName(),
-			Error:  primaryErr.Error(),
-		})
-		return rollbackLoad(primaryErr)
+		return rollbackLoad(rec.FailStep(outcome.StepKindPreflight, spec.ProgramName(), primaryErr))
 	}
 
 	// Phase 1.6: Publish bytecode to <base>/programs/{id}/.
@@ -192,23 +154,13 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 
 	if err := rt.PublishBytecode(loaded.Program.ID, spec.ObjectPath(), prov); err != nil {
 		primaryErr := fmt.Errorf("publish bytecode for %d: %w", loaded.Program.ID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindFSPublish,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: primaryErr.Error(),
-		})
-		return rollbackLoad(primaryErr)
+		return rollbackLoad(rec.FailStep(outcome.StepKindFSPublish, spec.ProgramName(), primaryErr, outcome.ProgramDetails{
+			KernelID: loaded.Program.ID,
+		}))
 	}
 
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindFSPublish,
-		Target: spec.ProgramName(),
-		Details: outcome.ProgramDetails{
-			KernelID: loaded.Program.ID,
-		},
+	rec.CompleteStep(outcome.StepKindFSPublish, spec.ProgramName(), outcome.ProgramDetails{
+		KernelID: loaded.Program.ID,
 	})
 
 	// Bytecode published; add its removal to the undo stack.
@@ -250,24 +202,14 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		return txStore.Save(ctx, loaded.Program.ID, record)
 	}); err != nil {
 		storeErr := fmt.Errorf("persist metadata: %w", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindStoreSaveProgram,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loaded.Program.ID,
-			},
-			Error: storeErr.Error(),
-		})
-		return rollbackLoad(storeErr)
+		return rollbackLoad(rec.FailStep(outcome.StepKindStoreSaveProgram, spec.ProgramName(), storeErr, outcome.ProgramDetails{
+			KernelID: loaded.Program.ID,
+		}))
 	}
 
 	// Record successful store save
-	_ = rec.Complete(outcome.Step{
-		Kind:   outcome.StepKindStoreSaveProgram,
-		Target: spec.ProgramName(),
-		Details: outcome.ProgramDetails{
-			KernelID: loaded.Program.ID,
-		},
+	rec.CompleteStep(outcome.StepKindStoreSaveProgram, spec.ProgramName(), outcome.ProgramDetails{
+		KernelID: loaded.Program.ID,
 	})
 
 	var kernelMaps []kernel.Map
@@ -298,7 +240,9 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 // On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 
 	fail := func(primaryErr error) error {
 		o.PrimaryError = primaryErr.Error()
@@ -317,12 +261,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 				primaryErr = bpfman.ErrProgramNotManaged{ID: kernelID}
 			}
 		}
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: fmt.Sprintf("%d", kernelID),
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, fmt.Sprintf("%d", kernelID), primaryErr))
 	}
 
 	programName := progSpec.Meta.Name
@@ -332,32 +271,17 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	depCount, err := m.store.CountDependentPrograms(ctx, kernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("check dependent programs for %d: %w", kernelID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: programName,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, programName, primaryErr))
 	}
 	if depCount > 0 {
 		primaryErr := fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", kernelID, depCount)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: programName,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, programName, primaryErr))
 	}
 
 	links, err := m.store.ListLinksByProgram(ctx, kernelID)
 	if err != nil {
 		primaryErr := fmt.Errorf("list links for program %d: %w", kernelID, err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: programName,
-			Error:  primaryErr.Error(),
-		})
-		return fail(primaryErr)
+		return fail(rec.FailStep(outcome.StepKindPreflight, programName, primaryErr))
 	}
 
 	// FETCH: Collect dispatcher keys for any TC/XDP links before
@@ -383,13 +307,17 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	execResult := m.executor.ExecuteAllWithResult(ctx, actions)
 
 	for i := 0; i < execResult.CompletedCount; i++ {
-		_ = rec.Complete(plan[i].step)
+		if recErr := rec.Complete(plan[i].step); recErr != nil {
+			m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+		}
 	}
 	if execResult.Error != nil {
 		if execResult.FailedIndex < len(plan) {
 			failedStep := plan[execResult.FailedIndex].step
 			failedStep.Error = execResult.Error.Error()
-			_ = rec.Fail(failedStep)
+			if recErr := rec.Fail(failedStep); recErr != nil {
+				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+			}
 		}
 		primaryErr := fmt.Errorf("execute unload actions: %w", execResult.Error)
 		return fail(primaryErr)
@@ -402,21 +330,12 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	rt := m.fsctx.BytecodeFS()
 	if err := rt.RemoveProgram(kernelID); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindFSRemoveProgram,
-			Target: programName,
-			Details: outcome.ProgramDetails{
-				KernelID: kernelID,
-			},
-			Error: err.Error(),
+		_ = rec.FailStep(outcome.StepKindFSRemoveProgram, programName, err, outcome.ProgramDetails{
+			KernelID: kernelID,
 		})
 	} else {
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindFSRemoveProgram,
-			Target: programName,
-			Details: outcome.ProgramDetails{
-				KernelID: kernelID,
-			},
+		rec.CompleteStep(outcome.StepKindFSRemoveProgram, programName, outcome.ProgramDetails{
+			KernelID: kernelID,
 		})
 	}
 
@@ -465,7 +384,9 @@ type LoadOpts struct {
 // On failure, all previously loaded programs are rolled back.
 func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) (result []bpfman.Program, retErr error) {
 	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o)
+	rec := outcome.NewRecorder(&o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
 
 	var loaded []bpfman.Program
 
@@ -482,7 +403,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 						"kernel_id", kernelID,
 						"name", progName,
 						"error", err)
-					_ = rec.RollbackFail(outcome.Step{
+					if recErr := rec.RollbackFail(outcome.Step{
 						Kind:   outcome.StepKindKernelUnload,
 						Target: progName,
 						Details: outcome.ProgramDetails{
@@ -490,19 +411,23 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 							PinPath:  pinPath,
 						},
 						Error: err.Error(),
-					})
+					}); recErr != nil {
+						m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+					}
 				} else {
 					m.logger.DebugContext(ctx, "rollback: unloaded program",
 						"kernel_id", kernelID,
 						"name", progName)
-					_ = rec.RollbackComplete(outcome.Step{
+					if recErr := rec.RollbackComplete(outcome.Step{
 						Kind:   outcome.StepKindKernelUnload,
 						Target: progName,
 						Details: outcome.ProgramDetails{
 							KernelID: kernelID,
 							PinPath:  pinPath,
 						},
-					})
+					}); recErr != nil {
+						m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+					}
 				}
 			}
 		}
@@ -523,12 +448,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	var pulled *platform.PulledImage
 
 	if source.FilePath != "" && source.Image != nil {
-		retErr = fmt.Errorf("exactly one of FilePath or Image must be set")
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: "validation",
-			Error:  retErr.Error(),
-		})
+		retErr = rec.FailStep(outcome.StepKindPreflight, "validation", fmt.Errorf("exactly one of FilePath or Image must be set"))
 		o.PrimaryError = retErr.Error()
 		return nil, retErr
 	}
@@ -536,24 +456,14 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	if source.FilePath != "" {
 		// Validate file existence
 		if _, err := os.Stat(source.FilePath); err != nil {
-			retErr = fmt.Errorf("object file %s: %w", source.FilePath, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPreflight,
-				Target: "validation",
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindPreflight, "validation", fmt.Errorf("object file %s: %w", source.FilePath, err))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
 		objectPath = source.FilePath
 	} else if source.Image != nil {
 		if m.imagePuller == nil {
-			retErr = fmt.Errorf("image puller is required")
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPreflight,
-				Target: "validation",
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindPreflight, "validation", fmt.Errorf("image puller is required"))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
@@ -564,24 +474,15 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 
 		p, err := m.imagePuller.Pull(ctx, *source.Image)
 		if err != nil {
-			retErr = fmt.Errorf("pull image %s: %w", source.Image.URL, err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPullImage,
-				Target: source.Image.URL,
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindPullImage, source.Image.URL, fmt.Errorf("pull image %s: %w", source.Image.URL, err))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
 
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindPullImage,
-			Target: source.Image.URL,
-			Details: outcome.ImageDetails{
-				URL:        source.Image.URL,
-				Digest:     p.Digest,
-				ObjectPath: p.ObjectPath,
-			},
+		rec.CompleteStep(outcome.StepKindPullImage, source.Image.URL, outcome.ImageDetails{
+			URL:        source.Image.URL,
+			Digest:     p.Digest,
+			ObjectPath: p.ObjectPath,
 		})
 
 		m.logger.InfoContext(ctx, "pulled OCI image",
@@ -591,12 +492,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		objectPath = p.ObjectPath
 		pulled = &p
 	} else {
-		retErr = fmt.Errorf("exactly one of FilePath or Image must be set")
-		_ = rec.Fail(outcome.Step{
-			Kind:   outcome.StepKindPreflight,
-			Target: "validation",
-			Error:  retErr.Error(),
-		})
+		retErr = rec.FailStep(outcome.StepKindPreflight, "validation", fmt.Errorf("exactly one of FilePath or Image must be set"))
 		o.PrimaryError = retErr.Error()
 		return nil, retErr
 	}
@@ -605,22 +501,13 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	if len(programs) == 0 {
 		discovered, err := m.programDiscoverer.DiscoverPrograms(objectPath)
 		if err != nil {
-			retErr = fmt.Errorf("discover programs: %w", err)
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindDiscoverPrograms,
-				Target: objectPath,
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindDiscoverPrograms, objectPath, fmt.Errorf("discover programs: %w", err))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
 
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindDiscoverPrograms,
-			Target: objectPath,
-			Details: outcome.ImageDetails{
-				ObjectPath: objectPath,
-			},
+		rec.CompleteStep(outcome.StepKindDiscoverPrograms, objectPath, outcome.ImageDetails{
+			ObjectPath: objectPath,
 		})
 
 		programs = make([]ProgramSpec, 0, len(discovered))
@@ -641,12 +528,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 			programNames[i] = p.Name
 		}
 		if err := m.programDiscoverer.ValidatePrograms(objectPath, programNames); err != nil {
-			retErr = err
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindPreflight,
-				Target: "validate_programs",
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindPreflight, "validate_programs", err)
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
@@ -664,18 +546,16 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 			spec, specErr = bpfman.NewLoadSpec(objectPath, prog.Name, prog.Type)
 		}
 		if specErr != nil {
-			retErr = fmt.Errorf("invalid load spec for %q: %w", prog.Name, specErr)
 			for j := i + 1; j < len(programs); j++ {
-				_ = rec.Skip(outcome.Step{
+				if recErr := rec.Skip(outcome.Step{
 					Kind:   outcome.StepKindKernelLoad,
 					Target: programs[j].Name,
-				})
+				}); recErr != nil {
+					m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+				}
 			}
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindKernelLoad,
-				Target: prog.Name,
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindKernelLoad, prog.Name,
+				fmt.Errorf("invalid load spec for %q: %w", prog.Name, specErr))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
@@ -708,44 +588,30 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 
 		loadedProg, loadErr := m.load(ctx, spec, singleOpts)
 		if loadErr != nil {
-			retErr = fmt.Errorf("load program %q: %w", spec.ProgramName(), loadErr)
 			for j := i + 1; j < len(programs); j++ {
-				_ = rec.Skip(outcome.Step{
+				if recErr := rec.Skip(outcome.Step{
 					Kind:   outcome.StepKindKernelLoad,
 					Target: programs[j].Name,
-				})
+				}); recErr != nil {
+					m.logger.Error("outcome recorder: invariant violation", "error", recErr)
+				}
 			}
-			_ = rec.Fail(outcome.Step{
-				Kind:   outcome.StepKindKernelLoad,
-				Target: spec.ProgramName(),
-				Error:  retErr.Error(),
-			})
+			retErr = rec.FailStep(outcome.StepKindKernelLoad, spec.ProgramName(),
+				fmt.Errorf("load program %q: %w", spec.ProgramName(), loadErr))
 			o.PrimaryError = retErr.Error()
 			return nil, retErr
 		}
 
 		// Record completion steps
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindKernelLoad,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Record.KernelID,
-				PinPath:  loadedProg.Record.Handles.PinPath,
-			},
+		rec.CompleteStep(outcome.StepKindKernelLoad, spec.ProgramName(), outcome.ProgramDetails{
+			KernelID: loadedProg.Record.KernelID,
+			PinPath:  loadedProg.Record.Handles.PinPath,
 		})
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindFSPublish,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Record.KernelID,
-			},
+		rec.CompleteStep(outcome.StepKindFSPublish, spec.ProgramName(), outcome.ProgramDetails{
+			KernelID: loadedProg.Record.KernelID,
 		})
-		_ = rec.Complete(outcome.Step{
-			Kind:   outcome.StepKindStoreSaveProgram,
-			Target: spec.ProgramName(),
-			Details: outcome.ProgramDetails{
-				KernelID: loadedProg.Record.KernelID,
-			},
+		rec.CompleteStep(outcome.StepKindStoreSaveProgram, spec.ProgramName(), outcome.ProgramDetails{
+			KernelID: loadedProg.Record.KernelID,
 		})
 
 		m.logger.InfoContext(ctx, "loaded program",

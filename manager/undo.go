@@ -1,6 +1,10 @@
 package manager
 
-import "github.com/frobware/go-bpfman/outcome"
+import (
+	"log/slog"
+
+	"github.com/frobware/go-bpfman/outcome"
+)
 
 // undoStack accumulates rollback closures that are executed in reverse
 // order when a multi-step operation fails partway through. Each
@@ -41,4 +45,27 @@ func (u undoStack) rollback() []RollbackError {
 		}
 	}
 	return errs
+}
+
+// recordRollback executes the undo stack and records the rollback
+// outcome. The step describes the rollback operation for the
+// timeline. Returns true if any rollback step failed.
+func recordRollback(rec *outcome.ManagerOperationRecorder, undo undoStack, step outcome.Step, logger *slog.Logger) bool {
+	rec.BeginRollback()
+	rbErrs := undo.rollback()
+	if len(rbErrs) > 0 {
+		for _, f := range rbErrs {
+			logger.Error("rollback step failed", "step", f.Step, "error", f.Err)
+		}
+		rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
+		step.Error = rbErrs[0].Err.Error()
+		if recErr := rec.RollbackFail(step); recErr != nil {
+			logger.Error("outcome recorder: invariant violation", "error", recErr)
+		}
+		return true
+	}
+	if recErr := rec.RollbackComplete(step); recErr != nil {
+		logger.Error("outcome recorder: invariant violation", "error", recErr)
+	}
+	return false
 }
