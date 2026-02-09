@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -323,28 +322,28 @@ func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex u
 		return dispatcher.State{}, err
 	}
 
-	// ROLLBACK: If the store write fails, undo kernel state.
-	// Order: remove prog pin first, then detach the TC filter.
-	var undo undoStack
-	undo.push(func() error {
-		return m.kernel.RemovePin(ctx, progPinPath)
-	})
-	undo.push(func() error {
-		return m.kernel.DetachTCFilter(ctx, int(ifindex), ifname, tcParentHandle(dispType), result.Priority, result.Handle)
-	})
-
 	// COMPUTE: Build save action from kernel result
 	state := computeTCDispatcherState(dispType, nsid, ifindex, revision, result)
 	saveAction := action.SaveDispatcher{State: state}
 
 	// EXECUTE: Save through executor
 	if err := m.executor.Execute(ctx, saveAction); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher", "ifname", ifname, "error", err)
-		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
-			for _, f := range rbErrs {
-				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
-			}
-			return dispatcher.State{}, errors.Join(fmt.Errorf("save TC dispatcher: %w", err), errors.New("rollback failed"))
+		m.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
+			"ifname", ifname, "error", err)
+		// Rollback: detach TC filter first, then remove prog pin.
+		if rbErr := m.executor.Execute(ctx, action.DetachTCFilter{
+			Ifindex:  int(ifindex),
+			Ifname:   ifname,
+			Parent:   tcParentHandle(dispType),
+			Priority: result.Priority,
+			Handle:   result.Handle,
+		}); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback: detach TC filter failed",
+				"ifname", ifname, "error", rbErr)
+		}
+		if rbErr := m.executor.Execute(ctx, action.RemovePin{Path: progPinPath}); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
+				"path", progPinPath, "error", rbErr)
 		}
 		return dispatcher.State{}, fmt.Errorf("save TC dispatcher: %w", err)
 	}

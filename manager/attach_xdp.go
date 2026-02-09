@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
@@ -106,28 +105,22 @@ func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex 
 		return dispatcher.State{}, err
 	}
 
-	// ROLLBACK: If the store write fails, undo kernel state.
-	// Order: remove prog pin first, then detach the dispatcher link.
-	var undo undoStack
-	undo.push(func() error {
-		return m.kernel.RemovePin(ctx, progPinPath)
-	})
-	undo.push(func() error {
-		return m.kernel.DetachLink(ctx, linkPinPath)
-	})
-
 	// COMPUTE: Build save action from kernel result
 	state := computeXDPDispatcherState(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision, result)
 	saveAction := action.SaveDispatcher{State: state}
 
 	// EXECUTE: Save through executor
 	if err := m.executor.Execute(ctx, saveAction); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher", "ifindex", ifindex, "error", err)
-		if rbErrs := undo.rollback(); len(rbErrs) > 0 {
-			for _, f := range rbErrs {
-				m.logger.ErrorContext(ctx, "rollback step failed", "step", f.Step, "error", f.Err)
-			}
-			return dispatcher.State{}, errors.Join(fmt.Errorf("save dispatcher: %w", err), errors.New("rollback failed"))
+		m.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
+			"ifindex", ifindex, "error", err)
+		// Rollback: detach link first, then remove prog pin.
+		if rbErr := m.executor.Execute(ctx, action.DetachLink{PinPath: linkPinPath}); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
+				"path", linkPinPath, "error", rbErr)
+		}
+		if rbErr := m.executor.Execute(ctx, action.RemovePin{Path: progPinPath}); rbErr != nil {
+			m.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
+				"path", progPinPath, "error", rbErr)
 		}
 		return dispatcher.State{}, fmt.Errorf("save dispatcher: %w", err)
 	}
