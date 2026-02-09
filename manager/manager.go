@@ -351,6 +351,34 @@ func (m *Manager) beginOp(ctx context.Context) *operation.RunState {
 	}
 }
 
+// ManagerError is returned when a manager operation fails.
+// It implements error and contains the full operation outcome,
+// including timeline, rollback errors, and residual artefacts.
+//
+// Callers can use errors.As() to extract structured details:
+//
+//	prog, err := mgr.Load(ctx, spec, opts)
+//	if err != nil {
+//	    var me *ManagerError
+//	    if errors.As(err, &me) {
+//	        // Access me.Outcome.RollbackErrors, me.Outcome.Timeline, etc.
+//	    }
+//	}
+type ManagerError struct {
+	Outcome outcome.OperationOutcome
+	Cause   error // Underlying error, accessible via errors.As/errors.Is
+}
+
+// Error returns the primary error message.
+func (e *ManagerError) Error() string {
+	return e.Outcome.PrimaryError
+}
+
+// Unwrap returns the underlying error for use with errors.Is/errors.As.
+func (e *ManagerError) Unwrap() error {
+	return e.Cause
+}
+
 // wrapOpErr converts an *operation.OperationError to a *ManagerError
 // at the boundary so existing errors.As(err, &me) call sites keep
 // working. Non-OperationError values pass through unchanged.

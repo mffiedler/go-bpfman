@@ -229,9 +229,10 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	assert.NotEmpty(t, failed.Error)
 
 	// Should have completed: image.pull, image.discover, kernel.load(prog_a),
-	// fs.publish(prog_a), store.save(prog_a)
+	// fs.publish(prog_a). The store.save is absent because the batch fails
+	// before reaching the DB transaction.
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 5)
+	assert.Len(t, completed, 4)
 
 	// No programs skipped (only 2 programs, first succeeded, second failed)
 	assert.Empty(t, timelineSkipped(o.Timeline))
@@ -301,10 +302,12 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	assert.Equal(t, "prog_c", failed.Target)
 
 	// Should have completed: image.pull, image.discover,
-	// kernel.load(prog_a), fs.publish(prog_a), store.save(prog_a),
-	// kernel.load(prog_b), fs.publish(prog_b), store.save(prog_b)
+	// kernel.load(prog_a), fs.publish(prog_a),
+	// kernel.load(prog_b), fs.publish(prog_b).
+	// The store.save steps are absent because the batch fails
+	// before reaching the DB transaction.
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 8)
+	assert.Len(t, completed, 6)
 
 	// Verify cleanup was recorded - prog_a and prog_b should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
@@ -420,9 +423,10 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	assert.Equal(t, "trace_vfs_write", failed.Target)
 
 	// Should have completed: image.pull, image.discover, kernel.load(fentry),
-	// fs.publish(fentry), store.save(fentry)
+	// fs.publish(fentry). The store.save is absent because the batch fails
+	// before reaching the DB transaction.
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 5)
+	assert.Len(t, completed, 4)
 
 	// Verify cleanup was recorded - fentry should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)
@@ -550,10 +554,12 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	assert.Equal(t, "trace_vfs_write", failed.Target)
 
 	// Should have completed: image.pull, image.discover,
-	// kernel.load(xdp), fs.publish(xdp), store.save(xdp),
-	// kernel.load(fentry), fs.publish(fentry), store.save(fentry)
+	// kernel.load(xdp), fs.publish(xdp),
+	// kernel.load(fentry), fs.publish(fentry).
+	// The store.save steps are absent because the batch fails
+	// before reaching the DB transaction.
 	completed := timelineCompletedPrimary(o.Timeline)
-	assert.Len(t, completed, 8)
+	assert.Len(t, completed, 6)
 
 	// Verify cleanup was recorded - xdp and fentry should be rolled back
 	rollbackCompleted := timelineRollbackCompleted(o.Timeline)

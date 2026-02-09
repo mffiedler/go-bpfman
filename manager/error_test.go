@@ -79,7 +79,11 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 //
 //	Given an empty manager with no programs,
 //	When I attempt to unload a non-existent program ID,
-//	Then the manager returns ErrProgramNotFound with failure outcome.
+//	Then the manager returns ErrProgramNotFound.
+//
+// Preflight failures from Unload return plain errors (not
+// *ManagerError) because no operation state is created until
+// the plan executes.
 func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -91,24 +95,20 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T", err)
 	assert.Equal(t, uint32(999), notFound.ID)
 
-	// Verify outcome records the preflight failure
+	// Preflight errors are plain errors, not *ManagerError.
 	var me *manager.ManagerError
-	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_KernelOnlyProgram_ReturnsNotManaged verifies that:
 //
 //	Given a program that exists in the kernel but is not managed by bpfman,
 //	When I attempt to unload it,
-//	Then the manager returns ErrProgramNotManaged with failure outcome.
+//	Then the manager returns ErrProgramNotManaged.
+//
+// Preflight failures from Unload return plain errors (not
+// *ManagerError) because no operation state is created until
+// the plan executes.
 func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -124,15 +124,7 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	assert.True(t, errors.As(err, &notManaged), "expected ErrProgramNotManaged, got %T", err)
 	assert.Equal(t, uint32(kernelOnlyProgID), notManaged.ID)
 
-	// Verify outcome records the preflight failure
+	// Preflight errors are plain errors, not *ManagerError.
 	var me *manager.ManagerError
-	require.True(t, errors.As(err, &me), "expected *manager.ManagerError, got %T", err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }

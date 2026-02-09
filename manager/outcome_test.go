@@ -118,30 +118,21 @@ func TestDetach_NotFound_OutcomeRecordsFailure(t *testing.T) {
 	assert.Equal(t, "clean", o.SystemState)
 }
 
-// TestUnload_NotFound_OutcomeRecordsFailure verifies that an unload
-// operation for a non-existent program records the failure in the outcome.
-func TestUnload_NotFound_OutcomeRecordsFailure(t *testing.T) {
+// TestUnload_NotFound_ReturnsPlainError verifies that an unload
+// operation for a non-existent program returns a plain error (not
+// *ManagerError) because preflight failures bypass plan execution.
+func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
 	err := fix.Manager.Unload(ctx, 999)
 	require.Error(t, err)
 
-	// Extract outcome from error
-	me := extractManagerError(t, err)
-	o := me.Outcome
+	var notFound bpfman.ErrProgramNotFound
+	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T", err)
 
-	// Verify outcome indicates failure
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-
-	// Verify failed step is recorded
-	failed := outcomeTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-
-	// System state should be clean (no residue on preflight failure)
-	assert.Equal(t, "clean", o.SystemState)
+	var me *manager.ManagerError
+	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestAttachTracepoint_Success verifies that a successful attach operation
