@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // msec formats a duration as milliseconds with 3 decimal places.
@@ -29,7 +29,7 @@ type dbConn interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// sqliteStore implements interpreter.Store using SQLite.
+// sqliteStore implements platform.Store using SQLite.
 type sqliteStore struct {
 	db     *sql.DB // original connection, used for BeginTx
 	conn   dbConn  // active connection (db or tx)
@@ -94,7 +94,7 @@ type sqliteStore struct {
 
 // New creates a new SQLite store at the given path.
 // If the schema version doesn't match, the database is deleted and recreated.
-func New(ctx context.Context, dbPath string, logger *slog.Logger) (interpreter.Store, error) {
+func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Store, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -150,7 +150,7 @@ func deleteDatabase(dbPath string) error {
 }
 
 // NewInMemory creates an in-memory SQLite store for testing.
-func NewInMemory(ctx context.Context, logger *slog.Logger) (interpreter.Store, error) {
+func NewInMemory(ctx context.Context, logger *slog.Logger) (platform.Store, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -357,7 +357,7 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // txStore goes out of scope and subsequent RunInTransaction calls create fresh
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
-func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(interpreter.Store) error) error {
+func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

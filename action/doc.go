@@ -8,9 +8,9 @@
 //
 // Actions are pure data structures that describe what should happen
 // without performing any I/O. The manager computes a list of actions
-// from observed state, then hands them to the interpreter's executor
-// for interpretation. This separation keeps domain logic testable
-// without a real kernel or database.
+// from observed state, then hands them to the manager's executor for
+// interpretation. This separation keeps domain logic testable without
+// a real kernel or database.
 //
 // # Design
 //
@@ -59,6 +59,6 @@
 // # Interpretation
 //
 // The single consumer of action types is the executor in
-// interpreter/executor.go, which provides the central type-switch.
+// manager/executor.go, which provides the central type-switch.
 // No other code should switch on action types.
 package action

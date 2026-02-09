@@ -10,8 +10,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/inspect"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // ErrMultipleProgramsFound is returned when multiple programs match the

@@ -15,8 +15,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/netns"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // tcDispatcherPriority is the default TC priority for the dispatcher
@@ -28,7 +28,7 @@ const tcDispatcherPriority = 50
 // the upstream Rust bpfman approach: the dispatcher program is attached
 // as a cls_bpf filter on the clsact qdisc, visible to tc(8) tooling,
 // and works on kernels older than 6.6.
-func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*interpreter.TCDispatcherResult, error) {
+func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
 	// Configure the TC dispatcher
 	// TC_DISPATCHER_RETVAL (30) is returned by empty slots - we must include
 	// this bit so the dispatcher continues past empty slots to the final TC_ACT_OK.
@@ -74,7 +74,7 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 			"direction", spec.Direction)
 	}
 
-	var result *interpreter.TCDispatcherResult
+	var result *platform.TCDispatcherResult
 	err = netns.Run(spec.Target.NetNS, func() error {
 		// Step 1: Ensure clsact qdisc exists (matching Rust bpfman behaviour).
 		qdisc := &netlink.Clsact{
@@ -145,7 +145,7 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 			}
 		}()
 
-		result = &interpreter.TCDispatcherResult{
+		result = &platform.TCDispatcherResult{
 			Handle:   handle,
 			Priority: tcDispatcherPriority,
 		}

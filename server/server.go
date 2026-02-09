@@ -20,13 +20,13 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/ebpf"
-	"github.com/frobware/go-bpfman/interpreter/image/oci"
-	"github.com/frobware/go-bpfman/interpreter/image/verify"
-	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/ebpf"
+	"github.com/frobware/go-bpfman/platform/image/oci"
+	"github.com/frobware/go-bpfman/platform/image/verify"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -92,7 +92,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	// Build signature verifier based on config
-	var verifier interpreter.SignatureVerifier
+	var verifier platform.SignatureVerifier
 	if cfg.Config.Signing.ShouldVerify() {
 		logger.Info("signature verification enabled")
 		verifier = verify.Cosign(

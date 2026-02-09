@@ -14,15 +14,15 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/platform"
 )
 
-// fakeDiscoverer implements interpreter.ProgramDiscoverer for testing.
+// fakeDiscoverer implements platform.ProgramDiscoverer for testing.
 type fakeDiscoverer struct {
 	// Programs maps object path to discovered programs
-	programs map[string][]interpreter.DiscoveredProgram
+	programs map[string][]platform.DiscoveredProgram
 	// DiscoverErr if set, DiscoverPrograms returns this error
 	discoverErr error
 	// ValidateErr if set, ValidatePrograms returns this error
@@ -31,17 +31,17 @@ type fakeDiscoverer struct {
 
 func newFakeDiscoverer() *fakeDiscoverer {
 	return &fakeDiscoverer{
-		programs: make(map[string][]interpreter.DiscoveredProgram),
+		programs: make(map[string][]platform.DiscoveredProgram),
 	}
 }
 
 // SetPrograms configures the programs to return for a given object path.
-func (d *fakeDiscoverer) SetPrograms(objectPath string, programs []interpreter.DiscoveredProgram) {
+func (d *fakeDiscoverer) SetPrograms(objectPath string, programs []platform.DiscoveredProgram) {
 	d.programs[objectPath] = programs
 }
 
 // AddPrograms appends programs to the list for the given object path.
-func (d *fakeDiscoverer) AddPrograms(objectPath string, programs ...interpreter.DiscoveredProgram) {
+func (d *fakeDiscoverer) AddPrograms(objectPath string, programs ...platform.DiscoveredProgram) {
 	d.programs[objectPath] = append(d.programs[objectPath], programs...)
 }
 
@@ -55,7 +55,7 @@ func (d *fakeDiscoverer) SetValidateError(err error) {
 	d.validateErr = err
 }
 
-func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error) {
+func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
 	if d.discoverErr != nil {
 		return nil, d.discoverErr
 	}
@@ -64,7 +64,7 @@ func (d *fakeDiscoverer) DiscoverPrograms(objectPath string) ([]interpreter.Disc
 		return nil, fmt.Errorf("no programs found in object file")
 	}
 	// Return sorted copy for determinism
-	result := make([]interpreter.DiscoveredProgram, len(programs))
+	result := make([]platform.DiscoveredProgram, len(programs))
 	copy(result, programs)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
@@ -105,9 +105,9 @@ func (d *fakeDiscoverer) ValidatePrograms(objectPath string, programNames []stri
 }
 
 // Ensure fakeDiscoverer implements the interface.
-var _ interpreter.ProgramDiscoverer = (*fakeDiscoverer)(nil)
+var _ platform.ProgramDiscoverer = (*fakeDiscoverer)(nil)
 
-// fakeImagePuller implements interpreter.ImagePuller for testing.
+// fakeImagePuller implements platform.ImagePuller for testing.
 type fakeImagePuller struct {
 	objectPath string
 	digest     string
@@ -128,18 +128,18 @@ func (p *fakeImagePuller) SetPullError(err error) {
 	p.pullErr = err
 }
 
-func (p *fakeImagePuller) Pull(_ context.Context, ref interpreter.ImageRef) (interpreter.PulledImage, error) {
+func (p *fakeImagePuller) Pull(_ context.Context, ref platform.ImageRef) (platform.PulledImage, error) {
 	if p.pullErr != nil {
-		return interpreter.PulledImage{}, p.pullErr
+		return platform.PulledImage{}, p.pullErr
 	}
-	return interpreter.PulledImage{
+	return platform.PulledImage{
 		ObjectPath: p.objectPath,
 		Digest:     p.digest,
 	}, nil
 }
 
 // Ensure fakeImagePuller implements the interface.
-var _ interpreter.ImagePuller = (*fakeImagePuller)(nil)
+var _ platform.ImagePuller = (*fakeImagePuller)(nil)
 
 // kernelOp records an operation performed on the fake kernel.
 type kernelOp struct {
@@ -157,7 +157,7 @@ type tcFilterKey struct {
 	priority uint16
 }
 
-// fakeKernel implements interpreter.KernelOperations for testing.
+// fakeKernel implements platform.KernelOperations for testing.
 // It simulates kernel BPF operations without actual syscalls.
 type fakeKernel struct {
 	nextID   atomic.Uint32
@@ -777,7 +777,7 @@ func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath string) error {
 	return nil
 }
 
-func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*interpreter.XDPDispatcherResult, error) {
+func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfindex[spec.Target.IfIndex]; ok {
@@ -795,7 +795,7 @@ func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPD
 		programType: bpfman.ProgramTypeXDP,
 		pinPath:     spec.ProgPinPath,
 	}
-	return &interpreter.XDPDispatcherResult{
+	return &platform.XDPDispatcherResult{
 		DispatcherID:  dispatcherID,
 		LinkID:        linkID,
 		DispatcherPin: spec.ProgPinPath,
@@ -831,7 +831,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 	}, nil
 }
 
-func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDispatcherAttachSpec) (*interpreter.TCDispatcherResult, error) {
+func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfname[spec.IfName]; ok {
@@ -864,7 +864,7 @@ func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDis
 	f.tcFilters[tcFilterKey{ifindex: spec.Target.IfIndex, parent: parent, priority: 50}] = handle
 	f.mu.Unlock()
 
-	return &interpreter.TCDispatcherResult{
+	return &platform.TCDispatcherResult{
 		DispatcherID:  dispatcherID,
 		DispatcherPin: spec.ProgPinPath,
 		Handle:        handle,

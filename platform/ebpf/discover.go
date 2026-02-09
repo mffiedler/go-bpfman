@@ -8,10 +8,10 @@ import (
 	"github.com/cilium/ebpf"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 )
 
-// ProgramDiscoverer implements interpreter.ProgramDiscoverer using cilium/ebpf.
+// ProgramDiscoverer implements platform.ProgramDiscoverer using cilium/ebpf.
 type ProgramDiscoverer struct{}
 
 // NewProgramDiscoverer creates a new program discoverer.
@@ -19,31 +19,31 @@ func NewProgramDiscoverer() *ProgramDiscoverer {
 	return &ProgramDiscoverer{}
 }
 
-// DiscoverPrograms implements interpreter.ProgramDiscoverer.
-func (d *ProgramDiscoverer) DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error) {
+// DiscoverPrograms implements platform.ProgramDiscoverer.
+func (d *ProgramDiscoverer) DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
 	return DiscoverPrograms(objectPath)
 }
 
-// ValidatePrograms implements interpreter.ProgramDiscoverer.
+// ValidatePrograms implements platform.ProgramDiscoverer.
 func (d *ProgramDiscoverer) ValidatePrograms(objectPath string, programNames []string) error {
 	return ValidatePrograms(objectPath, programNames)
 }
 
 // Ensure ProgramDiscoverer implements the interface.
-var _ interpreter.ProgramDiscoverer = (*ProgramDiscoverer)(nil)
+var _ platform.ProgramDiscoverer = (*ProgramDiscoverer)(nil)
 
 // DiscoverPrograms scans a BPF object file and returns all programs found
 // within it. Programs are returned sorted by name for deterministic ordering.
 //
 // For fentry/fexit programs, the attach function is extracted from the ELF
 // section name (e.g., "fentry/vfs_read" -> AttachFunc="vfs_read").
-func DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error) {
+func DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
 	collSpec, err := ebpf.LoadCollectionSpec(objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("load collection spec: %w", err)
 	}
 
-	var programs []interpreter.DiscoveredProgram
+	var programs []platform.DiscoveredProgram
 
 	for name, progSpec := range collSpec.Programs {
 		progType := InferProgramType(progSpec.SectionName)
@@ -53,7 +53,7 @@ func DiscoverPrograms(objectPath string) ([]interpreter.DiscoveredProgram, error
 			continue
 		}
 
-		prog := interpreter.DiscoveredProgram{
+		prog := platform.DiscoveredProgram{
 			Name:        name,
 			SectionName: progSpec.SectionName,
 			Type:        progType,

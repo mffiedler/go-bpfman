@@ -12,8 +12,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/netns"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // AttachXDP attaches a pinned XDP program to a network interface.
@@ -70,7 +70,7 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 
 // AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 // The dispatcher allows multiple XDP programs to be chained together.
-func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*interpreter.XDPDispatcherResult, error) {
+func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
 	// Configure the dispatcher
 	// XDP_DISPATCHER_RETVAL (31) is returned by empty slots - we must include
 	// this bit so the dispatcher continues past empty slots to the final XDP_PASS.
@@ -104,7 +104,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 			"netns", spec.Target.NetNS, "ifindex", spec.Target.IfIndex)
 	}
 
-	var result *interpreter.XDPDispatcherResult
+	var result *platform.XDPDispatcherResult
 	err = netns.Run(spec.Target.NetNS, func() error {
 		lnk, err := link.AttachXDP(link.XDPOptions{
 			Program:   dispatcherProg,
@@ -114,7 +114,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 			return fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", spec.Target.IfIndex, err)
 		}
 
-		result = &interpreter.XDPDispatcherResult{}
+		result = &platform.XDPDispatcherResult{}
 
 		progInfo, err := dispatcherProg.Info()
 		if err != nil {

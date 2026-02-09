@@ -21,7 +21,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 const (
@@ -44,7 +44,7 @@ type cachedMetadata struct {
 type puller struct {
 	cache    bpfmanfs.EnsuredImageCache
 	logger   *slog.Logger
-	verifier interpreter.SignatureVerifier
+	verifier platform.SignatureVerifier
 }
 
 // Option configures a puller.
@@ -60,7 +60,7 @@ func WithLogger(logger *slog.Logger) Option {
 
 // WithVerifier sets the signature verifier.
 // If not set, no signature verification is performed.
-func WithVerifier(v interpreter.SignatureVerifier) Option {
+func WithVerifier(v platform.SignatureVerifier) Option {
 	return func(p *puller) error {
 		p.verifier = v
 		return nil
@@ -70,7 +70,7 @@ func WithVerifier(v interpreter.SignatureVerifier) Option {
 // NewPuller creates a new OCI image puller.
 // The cache parameter must be an EnsuredImageCache obtained via EnsureCache(),
 // which proves the cache directory exists.
-func NewPuller(cache bpfmanfs.EnsuredImageCache, opts ...Option) (interpreter.ImagePuller, error) {
+func NewPuller(cache bpfmanfs.EnsuredImageCache, opts ...Option) (platform.ImagePuller, error) {
 	if !cache.Valid() {
 		return nil, fmt.Errorf("invalid image cache")
 	}
@@ -92,7 +92,7 @@ func NewPuller(cache bpfmanfs.EnsuredImageCache, opts ...Option) (interpreter.Im
 }
 
 // Pull downloads an image and returns the extracted bytecode.
-func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interpreter.PulledImage, error) {
+func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.PulledImage, error) {
 	logger := p.logger.With("url", ref.URL, "policy", ref.PullPolicy.String())
 	logger.Info("pulling OCI image")
 
@@ -109,7 +109,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 
 		if ref.PullPolicy == bpfman.PullNever {
 			logger.Error("image not in cache and pull policy is Never")
-			return interpreter.PulledImage{}, fmt.Errorf("image %s not in cache and pull policy is Never", ref.URL)
+			return platform.PulledImage{}, fmt.Errorf("image %s not in cache and pull policy is Never", ref.URL)
 		}
 	}
 
@@ -119,12 +119,12 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	repo, err := remote.NewRepository(ref.URL)
 	if err != nil {
 		logger.Error("failed to parse image reference", "error", err)
-		return interpreter.PulledImage{}, fmt.Errorf("failed to parse image reference: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	// Set up authentication
 	if err := p.configureAuth(repo, ref.Auth, logger); err != nil {
-		return interpreter.PulledImage{}, err
+		return platform.PulledImage{}, err
 	}
 
 	logger.Debug("resolving image manifest")
@@ -133,7 +133,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	desc, err := repo.Resolve(ctx, repo.Reference.Reference)
 	if err != nil {
 		logger.Error("failed to resolve image", "error", err)
-		return interpreter.PulledImage{}, fmt.Errorf("failed to resolve image: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to resolve image: %w", err)
 	}
 
 	logger.Info("image resolved", "digest", desc.Digest.String(), "media_type", desc.MediaType)
@@ -148,7 +148,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		}
 		if err := p.verifier.Verify(ctx, verifyRef); err != nil {
 			logger.Error("image signature verification failed", "error", err)
-			return interpreter.PulledImage{}, fmt.Errorf("signature verification failed: %w", err)
+			return platform.PulledImage{}, fmt.Errorf("signature verification failed: %w", err)
 		}
 		logger.Info("image signature verified")
 	}
@@ -160,7 +160,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		logger.Debug("image is a manifest list, selecting platform")
 		platformDesc, err := p.selectPlatform(ctx, repo, desc, logger)
 		if err != nil {
-			return interpreter.PulledImage{}, err
+			return platform.PulledImage{}, err
 		}
 		manifestDesc = platformDesc
 		logger.Info("selected platform manifest", "digest", manifestDesc.Digest.String())
@@ -170,12 +170,12 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	rc, err := repo.Manifests().Fetch(ctx, manifestDesc)
 	if err != nil {
 		logger.Error("failed to fetch manifest", "error", err)
-		return interpreter.PulledImage{}, fmt.Errorf("failed to fetch manifest: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to fetch manifest: %w", err)
 	}
 	manifestContent, err := io.ReadAll(rc)
 	rc.Close()
 	if err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to read manifest: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to read manifest: %w", err)
 	}
 
 	// Parse manifest to find layers and config
@@ -190,13 +190,13 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		} `json:"layers"`
 	}
 	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to parse manifest: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to parse manifest: %w", err)
 	}
 
 	logger.Info("manifest parsed", "layers", len(manifest.Layers))
 
 	if len(manifest.Layers) == 0 {
-		return interpreter.PulledImage{}, fmt.Errorf("image has no layers")
+		return platform.PulledImage{}, fmt.Errorf("image has no layers")
 	}
 
 	// Extract labels from config
@@ -219,12 +219,12 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	layerRC, err := repo.Blobs().Fetch(ctx, layerDesc)
 	if err != nil {
 		logger.Error("failed to fetch layer", "error", err)
-		return interpreter.PulledImage{}, fmt.Errorf("failed to fetch layer: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to fetch layer: %w", err)
 	}
 	layerContent, err := io.ReadAll(layerRC)
 	layerRC.Close()
 	if err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to read layer: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to read layer: %w", err)
 	}
 
 	logger.Info("layer fetched", "size", len(layerContent))
@@ -232,30 +232,30 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 	// Create temp directory for extraction
 	tempDir, cleanup, err := p.cache.CreateTempDir()
 	if err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to create temp directory: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer cleanup()
 
 	// Write layer content to temp file
 	layerFile := filepath.Join(tempDir, "layer.blob")
 	if err := p.cache.WriteTempFile(tempDir, "layer.blob", layerContent); err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to write layer: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to write layer: %w", err)
 	}
 	_ = layerFile // used by extractBytecode via the tempDir
 
 	// Extract bytecode from the layer
 	bytecodeFile, err := extractBytecode(tempDir, logger)
 	if err != nil {
-		return interpreter.PulledImage{}, err
+		return platform.PulledImage{}, err
 	}
 
 	// Create cache directory and move bytecode
 	if err := p.cache.EnsureCacheDir(cacheKey); err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to create cache directory: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	if err := p.cache.CacheBytecode(cacheKey, bytecodeFile); err != nil {
-		return interpreter.PulledImage{}, fmt.Errorf("failed to cache bytecode: %w", err)
+		return platform.PulledImage{}, fmt.Errorf("failed to cache bytecode: %w", err)
 	}
 
 	destPath := p.cache.BytecodePath(cacheKey)
@@ -267,7 +267,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 		if rmErr := p.cache.RemoveCacheEntry(cacheKey); rmErr != nil {
 			logger.Warn("failed to remove cache directory during cleanup", "cache_key", cacheKey, "error", rmErr)
 		}
-		return interpreter.PulledImage{}, err
+		return platform.PulledImage{}, err
 	}
 
 	resolvedDigest := manifestDesc.Digest.String()
@@ -287,7 +287,7 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 
 	logger.Info("image cached successfully", "path", destPath)
 
-	return interpreter.PulledImage{
+	return platform.PulledImage{
 		ObjectPath: destPath,
 		Programs:   programs,
 		Maps:       maps,
@@ -298,23 +298,23 @@ func (p *puller) Pull(ctx context.Context, ref interpreter.ImageRef) (interprete
 }
 
 // checkCache checks if a valid cached image exists.
-func (p *puller) checkCache(cacheKey string, ref interpreter.ImageRef, logger *slog.Logger) (interpreter.PulledImage, bool) {
+func (p *puller) checkCache(cacheKey string, ref platform.ImageRef, logger *slog.Logger) (platform.PulledImage, bool) {
 	// Check if bytecode exists
 	if !p.cache.BytecodeExists(cacheKey) {
 		logger.Debug("cache miss: bytecode not found")
-		return interpreter.PulledImage{}, false
+		return platform.PulledImage{}, false
 	}
 
 	// Try to load metadata
 	var meta cachedMetadata
 	if err := p.cache.LoadMetadata(cacheKey, &meta); err != nil {
 		logger.Debug("cache miss: metadata not found", "error", err)
-		return interpreter.PulledImage{}, false
+		return platform.PulledImage{}, false
 	}
 
 	logger.Debug("cache hit", "digest", meta.Digest, "pulled_at", meta.PulledAt)
 
-	return interpreter.PulledImage{
+	return platform.PulledImage{
 		ObjectPath: p.cache.BytecodePath(cacheKey),
 		Programs:   meta.Programs,
 		Maps:       meta.Maps,
@@ -325,7 +325,7 @@ func (p *puller) checkCache(cacheKey string, ref interpreter.ImageRef, logger *s
 }
 
 // configureAuth sets up authentication for the repository.
-func (p *puller) configureAuth(repo *remote.Repository, authConfig *interpreter.ImageAuth, logger *slog.Logger) error {
+func (p *puller) configureAuth(repo *remote.Repository, authConfig *platform.ImageAuth, logger *slog.Logger) error {
 	// If explicit credentials provided, use them
 	if authConfig != nil && authConfig.Username != "" {
 		logger.Debug("using explicit credentials", "username", authConfig.Username)

@@ -1,10 +1,11 @@
-package interpreter
+package manager
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/frobware/go-bpfman/action"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // ActionExecutor executes reified actions.
@@ -39,12 +40,12 @@ type ActionExecutionResult struct {
 
 // executor interprets and executes actions.
 type executor struct {
-	store  Store
-	kernel KernelOperations
+	store  platform.Store
+	kernel platform.KernelOperations
 }
 
-// NewExecutor creates a new action executor.
-func NewExecutor(store Store, kernel KernelOperations) ActionExecutor {
+// newExecutor creates a new action executor.
+func newExecutor(store platform.Store, kernel platform.KernelOperations) ActionExecutor {
 	return &executor{
 		store:  store,
 		kernel: kernel,

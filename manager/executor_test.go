@@ -1,4 +1,4 @@
-package interpreter_test
+package manager_test
 
 import (
 	"context"
@@ -10,9 +10,10 @@ import (
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // stubStore is a minimal Store implementation for executor tests.
@@ -115,12 +116,12 @@ func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID
 }
 
 // Transactional
-func (s *stubStore) RunInTransaction(ctx context.Context, fn func(interpreter.Store) error) error {
+func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
 	panic("stubStore.RunInTransaction not implemented")
 }
 
 // GarbageCollector
-func (s *stubStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (interpreter.GCResult, error) {
+func (s *stubStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (platform.GCResult, error) {
 	panic("stubStore.GC not implemented")
 }
 
@@ -212,7 +213,7 @@ func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath, fnName, linkP
 }
 
 // DispatcherAttacher
-func (k *stubKernel) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*interpreter.XDPDispatcherResult, error) {
+func (k *stubKernel) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
 	panic("stubKernel.AttachXDPDispatcher not implemented")
 }
 
@@ -220,7 +221,7 @@ func (k *stubKernel) AttachXDPExtension(ctx context.Context, spec dispatcher.XDP
 	panic("stubKernel.AttachXDPExtension not implemented")
 }
 
-func (k *stubKernel) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*interpreter.TCDispatcherResult, error) {
+func (k *stubKernel) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
 	panic("stubKernel.AttachTCDispatcher not implemented")
 }
 
@@ -262,9 +263,9 @@ func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent
 func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := interpreter.NewExecutor(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel)
 
-	execWithResult, ok := exec.(interpreter.ActionExecutorWithResult)
+	execWithResult, ok := exec.(manager.ActionExecutorWithResult)
 	if !ok {
 		t.Fatal("executor does not implement ActionExecutorWithResult")
 	}
@@ -298,8 +299,8 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), nil)
 
@@ -323,8 +324,8 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 		return expectedErr
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -361,8 +362,8 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 		return nil
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -399,8 +400,8 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 		return nil
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -438,8 +439,8 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 		return nil
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -467,8 +468,8 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 		return nil
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
-	execWithResult := exec.(interpreter.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel)
+	execWithResult := exec.(manager.ActionExecutorWithResult)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -512,7 +513,7 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 		return nil
 	}
 
-	exec := interpreter.NewExecutor(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -529,7 +530,7 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := interpreter.NewExecutor(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},

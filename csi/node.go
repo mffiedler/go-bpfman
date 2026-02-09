@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // mapsMode is the permission mode for CSI-exposed maps (owner+group read/write).

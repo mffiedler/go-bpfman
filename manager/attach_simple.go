@@ -8,8 +8,8 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // attachPlan captures the variable parts of a simple attach operation.

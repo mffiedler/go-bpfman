@@ -11,8 +11,8 @@ import (
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // Detach removes a link by link ID.

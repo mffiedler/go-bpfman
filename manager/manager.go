@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // opIDKey is the context key for operation IDs.
@@ -31,11 +31,11 @@ func OpIDFromContext(ctx context.Context) uint64 {
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
 	fsctx             bpfmanfs.FilesystemContext
-	store             interpreter.Store
-	kernel            interpreter.KernelOperations
-	executor          interpreter.ActionExecutorWithResult
-	programDiscoverer interpreter.ProgramDiscoverer
-	imagePuller       interpreter.ImagePuller // optional, nil if not configured
+	store             platform.Store
+	kernel            platform.KernelOperations
+	executor          ActionExecutorWithResult
+	programDiscoverer platform.ProgramDiscoverer
+	imagePuller       platform.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
 
 	// GC coordination - separate from request-level locking
@@ -62,10 +62,10 @@ type Manager struct {
 // (typically the server) to enable op_id extraction from context.
 func New(
 	fsctx bpfmanfs.FilesystemContext,
-	imagePuller interpreter.ImagePuller,
-	store interpreter.Store,
-	kernel interpreter.KernelOperations,
-	programDiscoverer interpreter.ProgramDiscoverer,
+	imagePuller platform.ImagePuller,
+	store platform.Store,
+	kernel platform.KernelOperations,
+	programDiscoverer platform.ProgramDiscoverer,
 	logger *slog.Logger,
 ) (*Manager, error) {
 	if logger == nil {
@@ -78,7 +78,7 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          interpreter.NewExecutor(store, kernel).(interpreter.ActionExecutorWithResult),
+		executor:          newExecutor(store, kernel).(ActionExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil
@@ -95,7 +95,7 @@ func (m *Manager) FilesystemContext() bpfmanfs.FilesystemContext {
 }
 
 // ImagePuller returns the image puller, or nil if not configured.
-func (m *Manager) ImagePuller() interpreter.ImagePuller {
+func (m *Manager) ImagePuller() platform.ImagePuller {
 	return m.imagePuller
 }
 

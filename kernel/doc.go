@@ -5,7 +5,7 @@
 //
 // These types model BPF programs, links, maps, and runtime statistics
 // as read-only snapshots of kernel state. They are populated by
-// querying the BPF subsystem (via interpreter/ebpf/) and carry no
+// querying the BPF subsystem (via platform/ebpf/) and carry no
 // behaviour beyond accessor methods. The package performs no I/O.
 //
 // The types wrap cilium/ebpf's info types to decouple the rest of the
@@ -40,6 +40,6 @@
 // # Dependency Flow
 //
 // kernel/ is a pure leaf package. It is imported by the root bpfman
-// package, interpreter/, interpreter/ebpf/, inspect/, and manager/.
+// package, platform/, platform/ebpf/, inspect/, and manager/.
 // It never imports from those packages.
 package kernel

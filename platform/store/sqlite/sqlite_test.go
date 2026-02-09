@@ -15,7 +15,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
 // testLogger returns a logger for tests. By default it discards all output.

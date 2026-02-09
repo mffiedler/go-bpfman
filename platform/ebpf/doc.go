@@ -1,10 +1,10 @@
-// Package ebpf implements [interpreter.KernelOperations] using the
+// Package ebpf implements [platform.KernelOperations] using the
 // cilium/ebpf library.
 //
 // # Overview
 //
 // This is the concrete I/O boundary for all BPF kernel interactions.
-// It translates the abstract interfaces defined in interpreter/ into
+// It translates the abstract interfaces defined in platform/ into
 // cilium/ebpf API calls: loading programs, attaching to hooks,
 // enumerating kernel objects, managing pins, and handling netlink
 // operations for TC.
@@ -47,7 +47,7 @@
 //
 // # Program Discovery
 //
-// [NewProgramDiscoverer] provides [interpreter.ProgramDiscoverer] for
+// [NewProgramDiscoverer] provides [platform.ProgramDiscoverer] for
 // scanning BPF object files. It opens ELF files using cilium/ebpf's
 // spec parser and returns all loadable program sections with their
 // types.

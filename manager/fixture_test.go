@@ -15,10 +15,10 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
 // testLogger returns a logger for tests. By default it discards all output.
@@ -35,7 +35,7 @@ type testFixture struct {
 	Manager       *manager.Manager
 	Kernel        *fakeKernel
 	Discoverer    *fakeDiscoverer
-	Store         interpreter.Store
+	Store         platform.Store
 	Layout        bpfmanfs.FSLayout
 	t             *testing.T
 	bytecodeDir   string            // temp dir for dummy bytecode files
@@ -53,7 +53,7 @@ func newTestFixtureWithDiscoverer(t *testing.T, discoverer *fakeDiscoverer) *tes
 }
 
 // newTestFixtureWithOptions creates a test fixture with optional overrides.
-func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller interpreter.ImagePuller) *testFixture {
+func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller platform.ImagePuller) *testFixture {
 	t.Helper()
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
@@ -162,7 +162,7 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 		programs[0].MapOwnerID = id
 	}
 	// Ensure the discoverer knows about the program so validation passes.
-	f.Discoverer.AddPrograms(spec.ObjectPath(), interpreter.DiscoveredProgram{
+	f.Discoverer.AddPrograms(spec.ObjectPath(), platform.DiscoveredProgram{
 		Name:       spec.ProgramName(),
 		Type:       spec.ProgramType(),
 		AttachFunc: spec.AttachFunc(),

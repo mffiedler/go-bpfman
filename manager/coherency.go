@@ -7,7 +7,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // --------------------------------------------------------------------
@@ -223,7 +223,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store interpreter.Store, kernel interpreter.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
+func GatherState(ctx context.Context, store platform.Store, kernel platform.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[uint32]bool),
 		kernelLinks:           make(map[uint32]bool),

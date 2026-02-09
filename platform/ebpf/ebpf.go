@@ -10,11 +10,11 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/platform"
 )
 
-// kernelAdapter implements interpreter.KernelOperations using cilium/ebpf.
+// kernelAdapter implements platform.KernelOperations using cilium/ebpf.
 type kernelAdapter struct {
 	logger *slog.Logger
 
@@ -35,7 +35,7 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // New creates a new kernel adapter.
-func New(opts ...Option) interpreter.KernelOperations {
+func New(opts ...Option) platform.KernelOperations {
 	k := &kernelAdapter{
 		logger: slog.Default(),
 	}

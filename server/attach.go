@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/platform/store"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 

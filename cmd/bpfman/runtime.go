@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/ebpf"
-	"github.com/frobware/go-bpfman/interpreter/image/oci"
-	"github.com/frobware/go-bpfman/interpreter/image/verify"
-	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/ebpf"
+	"github.com/frobware/go-bpfman/platform/image/oci"
+	"github.com/frobware/go-bpfman/platform/image/verify"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
 // NewManager creates a manager for CLI commands.
@@ -103,7 +103,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 }
 
 // buildImagePuller creates an image puller with signature verification settings from config.
-func (c *CLI) buildImagePuller(logger interface{ Debug(string, ...any) }) (interpreter.ImagePuller, error) {
+func (c *CLI) buildImagePuller(logger interface{ Debug(string, ...any) }) (platform.ImagePuller, error) {
 	cfg, err := c.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -115,7 +115,7 @@ func (c *CLI) buildImagePuller(logger interface{ Debug(string, ...any) }) (inter
 	}
 
 	// Build signature verifier based on config
-	var verifier interpreter.SignatureVerifier
+	var verifier platform.SignatureVerifier
 	slogLogger := c.Logger()
 	if cfg.Signing.ShouldVerify() {
 		slogLogger.Info("signature verification enabled")

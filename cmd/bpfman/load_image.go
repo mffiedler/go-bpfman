@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // LoadImageCmd loads BPF programs from an OCI container image.
@@ -60,14 +60,14 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		var res loadImageResult
 
 		// Parse auth config from base64-encoded registry-auth
-		var auth *interpreter.ImageAuth
+		var auth *platform.ImageAuth
 		if c.RegistryAuth != "" {
 			username, password, parseErr := parseRegistryAuth(c.RegistryAuth)
 			if parseErr != nil {
 				return res, fmt.Errorf("invalid registry-auth: %w", parseErr)
 			}
 			logger.Debug("using registry auth", "username", username)
-			auth = &interpreter.ImageAuth{
+			auth = &platform.ImageAuth{
 				Username: username,
 				Password: password,
 			}
@@ -89,7 +89,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		// Build image ref
-		ref := interpreter.ImageRef{
+		ref := platform.ImageRef{
 			URL:        c.ImageURL,
 			PullPolicy: pullPolicy,
 			Auth:       auth,

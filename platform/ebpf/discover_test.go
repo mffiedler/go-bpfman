@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter/ebpf"
+	"github.com/frobware/go-bpfman/platform/ebpf"
 )
 
 func TestDiscoverPrograms(t *testing.T) {

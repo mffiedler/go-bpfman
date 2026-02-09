@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -47,7 +47,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tracepoint-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -171,7 +171,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-kprobe-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -284,7 +284,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: load from OCI image via client
 	// Note: kretprobe uses the same image as kprobe but loads the kretprobe program
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-kprobe-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -401,7 +401,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-uprobe-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -519,7 +519,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-uprobe-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -857,7 +857,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tc-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -1004,7 +1004,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/go-tc-counter:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -1120,7 +1120,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/xdp_pass:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
@@ -1247,7 +1247,7 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	}
 
 	// When: load from OCI image with metadata and global data
-	imageRef := interpreter.ImageRef{
+	imageRef := platform.ImageRef{
 		URL: "quay.io/bpfman-bytecode/xdp_pass:latest",
 	}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{

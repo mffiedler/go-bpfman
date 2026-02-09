@@ -48,13 +48,13 @@ const (
 	StepKindPullImage        StepKind = "image.pull"
 	StepKindDiscoverPrograms StepKind = "image.discover"
 
-	// Kernel operations (maps to interpreter.KernelOperations)
+	// Kernel operations (maps to platform.KernelOperations)
 	StepKindKernelLoad       StepKind = "kernel.load_program"
 	StepKindKernelUnload     StepKind = "kernel.unload_program"
 	StepKindKernelDetachLink StepKind = "kernel.detach_link"
 	StepKindKernelRemovePin  StepKind = "kernel.remove_pin"
 
-	// Store operations (maps to interpreter.Store)
+	// Store operations (maps to platform.Store)
 	StepKindStoreSaveProgram      StepKind = "store.save_program"
 	StepKindStoreDeleteProgram    StepKind = "store.delete_program"
 	StepKindStoreSaveLink         StepKind = "store.save_link"

@@ -11,10 +11,10 @@ import (
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // TC proceed-on action bits (matches TC_ACT_* return codes).
@@ -451,7 +451,7 @@ func computeTCDispatcherState(
 	dispType dispatcher.DispatcherType,
 	nsid uint64,
 	ifindex, revision uint32,
-	result *interpreter.TCDispatcherResult,
+	result *platform.TCDispatcherResult,
 ) dispatcher.State {
 	return dispatcher.State{
 		Type:     dispType,

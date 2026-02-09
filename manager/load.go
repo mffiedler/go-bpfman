@@ -10,10 +10,10 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/bpfmanfs"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // loadOpts contains optional metadata for a single-program load operation.
@@ -247,7 +247,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		CreatedAt: now,
 	}
 
-	if err := m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
+	if err := m.store.RunInTransaction(ctx, func(txStore platform.Store) error {
 		return txStore.Save(ctx, loaded.Program.ID, record)
 	}); err != nil {
 		storeErr := fmt.Errorf("persist metadata: %w", err)
@@ -434,8 +434,8 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 // LoadSource describes where to load BPF programs from.
 // Exactly one of FilePath or Image must be set.
 type LoadSource struct {
-	FilePath string                // local ELF object file
-	Image    *interpreter.ImageRef // OCI image to pull
+	FilePath string             // local ELF object file
+	Image    *platform.ImageRef // OCI image to pull
 }
 
 // ProgramSpec describes a program to load from an ELF object file.
@@ -524,7 +524,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 
 	// Step 1: Resolve source to an object path
 	var objectPath string
-	var pulled *interpreter.PulledImage
+	var pulled *platform.PulledImage
 
 	if source.FilePath != "" && source.Image != nil {
 		retErr = fmt.Errorf("exactly one of FilePath or Image must be set")

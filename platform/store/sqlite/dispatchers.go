@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // ----------------------------------------------------------------------------

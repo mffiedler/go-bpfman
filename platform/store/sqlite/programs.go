@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // Get retrieves program metadata by kernel ID.
@@ -292,11 +292,11 @@ func (s *sqliteStore) Delete(ctx context.Context, kernelID uint32) error {
 //
 // All deletions run within a single transaction so the store is never
 // left in a partially collected state.
-func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (interpreter.GCResult, error) {
+func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (platform.GCResult, error) {
 	start := time.Now()
-	var result interpreter.GCResult
+	var result platform.GCResult
 
-	err := s.RunInTransaction(ctx, func(txStore interpreter.Store) error {
+	err := s.RunInTransaction(ctx, func(txStore platform.Store) error {
 		ts := txStore.(*sqliteStore)
 
 		// 1. GC programs (order: dependents before owners)

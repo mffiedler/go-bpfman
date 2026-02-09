@@ -40,7 +40,7 @@
 // The theme is separating state gathering from effect execution even
 // when phases interleave.
 //
-// The interpreter layer (interpreter/) provides the I/O abstractions for
+// The platform layer (platform/) provides the I/O abstractions for
 // BPF operations. Minor exceptions exist (e.g., GetHostInfo calls
 // unix.Uname directly).
 //
@@ -119,7 +119,7 @@
 // Create a Manager via New(), providing:
 //
 //   - FilesystemContext: capability token proving bpffs is mounted
-//   - Store: database interface (interpreter.Store)
+//   - Store: database interface (platform.Store)
 //   - KernelOperations: BPF syscall adapter
 //   - ProgramDiscoverer: kernel program enumeration
 //   - ImagePuller: optional OCI image puller for container images

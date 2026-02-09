@@ -11,42 +11,42 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // ErrNotFound is returned when a program is not found in any source.
 var ErrNotFound = errors.New("not found")
 
-// StoreLister is the subset of interpreter.Store needed by Snapshot.
+// StoreLister is the subset of platform.Store needed by Snapshot.
 type StoreLister interface {
 	List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error)
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
 	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
 }
 
-// StoreGetter is the subset of interpreter.Store needed by GetProgram.
+// StoreGetter is the subset of platform.Store needed by GetProgram.
 type StoreGetter interface {
 	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error)
 }
 
-// KernelLister is the subset of interpreter.KernelSource needed by Snapshot.
+// KernelLister is the subset of platform.KernelSource needed by Snapshot.
 type KernelLister interface {
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
 	Links(ctx context.Context) iter.Seq2[kernel.Link, error]
 }
 
-// KernelGetter is the subset of interpreter.KernelSource needed by GetProgram.
+// KernelGetter is the subset of platform.KernelSource needed by GetProgram.
 type KernelGetter interface {
 	GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error)
 }
 
-// LinkGetter is the subset of interpreter.Store needed by GetLink.
+// LinkGetter is the subset of platform.Store needed by GetLink.
 type LinkGetter interface {
 	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
 }
 
-// KernelLinkGetter is the subset of interpreter.KernelSource needed by GetLink.
+// KernelLinkGetter is the subset of platform.KernelSource needed by GetLink.
 type KernelLinkGetter interface {
 	GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error)
 }
@@ -58,7 +58,7 @@ type LinkInfo struct {
 	Presence Presence          `json:"presence"`
 }
 
-// DispatcherGetter is the subset of interpreter.Store needed by GetDispatcher.
+// DispatcherGetter is the subset of platform.Store needed by GetDispatcher.
 type DispatcherGetter interface {
 	GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error)
 }

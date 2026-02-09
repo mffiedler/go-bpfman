@@ -10,9 +10,9 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // dispatcherAttachParams describes a dispatcher-based attach operation

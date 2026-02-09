@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // extractLoadOutcome extracts the outcome from a Load error.
@@ -91,12 +91,12 @@ func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -111,14 +111,14 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 	// Don't set any programs - empty object file
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -154,14 +154,14 @@ func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
 	// Request only prog_b
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "prog_b", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
@@ -178,13 +178,13 @@ func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
 	// Request non-existent program
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "nonexistent", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
@@ -200,7 +200,7 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
@@ -209,7 +209,7 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	f.Kernel.FailOnProgram("prog_b", fmt.Errorf("injected load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -275,7 +275,7 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
@@ -285,7 +285,7 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	f.Kernel.FailOnProgram("prog_c", fmt.Errorf("injected load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -328,7 +328,7 @@ func TestLoad_PullError(t *testing.T) {
 	puller.SetObjectPath(objPath)
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -357,7 +357,7 @@ func TestLoad_DiscoverError(t *testing.T) {
 	puller.SetObjectPath(objPath)
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -371,13 +371,13 @@ func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -395,7 +395,7 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
@@ -404,7 +404,7 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -462,7 +462,7 @@ func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
@@ -471,7 +471,7 @@ func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_read", fmt.Errorf("injected fentry load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -524,7 +524,7 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "my_xdp", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 		{Name: "trace_vfs_read", SectionName: "fentry/vfs_read", Type: bpfman.ProgramTypeFentry, AttachFunc: "vfs_read"},
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
@@ -534,7 +534,7 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -600,14 +600,14 @@ func TestLoad_ValidationError(t *testing.T) {
 	f := newTestFixtureWithOptions(t, discoverer, puller)
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 	discoverer.SetValidateError(fmt.Errorf("custom validation error"))
 
 	// Request explicit programs to trigger validation
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &interpreter.ImageRef{URL: "test.io/image:latest"},
+		Image: &platform.ImageRef{URL: "test.io/image:latest"},
 	}, []manager.ProgramSpec{
 		{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
@@ -621,7 +621,7 @@ func TestLoad_FileSource(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	f := newTestFixtureWithDiscoverer(t, discoverer)
 	objPath := f.BytecodeFile("object.o")
-	discoverer.SetPrograms(objPath, []interpreter.DiscoveredProgram{
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 

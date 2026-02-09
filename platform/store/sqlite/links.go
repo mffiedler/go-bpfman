@@ -9,7 +9,7 @@ import (
 
 	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
-	"github.com/frobware/go-bpfman/interpreter/store"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // ----------------------------------------------------------------------------

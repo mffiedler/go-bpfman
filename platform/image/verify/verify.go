@@ -13,12 +13,12 @@ import (
 	"github.com/sigstore/cosign/v2/cmd/cosign/cli/rekor"
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // NoSign returns a verifier that always succeeds without checking signatures.
 // Use this when signature verification is disabled.
-func NoSign() interpreter.SignatureVerifier {
+func NoSign() platform.SignatureVerifier {
 	return noSignVerifier{}
 }
 
@@ -55,7 +55,7 @@ func WithIdentity(issuerRegexp, subjectRegexp string) CosignOption {
 }
 
 // Cosign returns a verifier that uses sigstore/cosign for signature verification.
-func Cosign(opts ...CosignOption) interpreter.SignatureVerifier {
+func Cosign(opts ...CosignOption) platform.SignatureVerifier {
 	v := &cosignVerifier{
 		logger:        slog.Default(),
 		allowUnsigned: true, // Permissive default

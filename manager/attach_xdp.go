@@ -8,8 +8,8 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/action"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/interpreter"
 	"github.com/frobware/go-bpfman/outcome"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // XDP proceed-on action bits (matches XDP return codes).
@@ -149,7 +149,7 @@ func computeXDPDispatcherState(
 	dispType dispatcher.DispatcherType,
 	nsid uint64,
 	ifindex, revision uint32,
-	result *interpreter.XDPDispatcherResult,
+	result *platform.XDPDispatcherResult,
 ) dispatcher.State {
 	return dispatcher.State{
 		Type:     dispType,

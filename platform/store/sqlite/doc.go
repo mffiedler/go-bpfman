@@ -1,10 +1,10 @@
-// Package sqlite implements [interpreter.Store] using SQLite.
+// Package sqlite implements [platform.Store] using SQLite.
 //
 // # Overview
 //
 // This package provides the concrete database layer for bpfman's
 // program, link, and dispatcher metadata. It implements all the
-// narrow store interfaces defined in interpreter/ (ProgramReader,
+// narrow store interfaces defined in platform/ (ProgramReader,
 // ProgramWriter, LinkWriter, DispatcherStore, GarbageCollector, etc.)
 // against a single SQLite database.
 //
@@ -37,7 +37,7 @@
 // For operations that require atomicity across multiple calls, use
 // RunInTransaction:
 //
-//	err := store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
+//	err := store.RunInTransaction(ctx, func(txStore platform.Store) error {
 //	    if err := txStore.Save(ctx, id, prog); err != nil {
 //	        return err // triggers rollback
 //	    }

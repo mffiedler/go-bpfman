@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/config"
-	"github.com/frobware/go-bpfman/interpreter/image/verify"
+	"github.com/frobware/go-bpfman/platform/image/verify"
 )
 
 // ImageCmd groups image-related subcommands.

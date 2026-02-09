@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/interpreter"
+	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -22,14 +22,14 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 		return nil, status.Error(codes.InvalidArgument, "image is required")
 	}
 
-	// Convert proto to interpreter types
+	// Convert proto to platform types
 	pullPolicy := protoToPullPolicy(req.Image.ImagePullPolicy)
-	ref := interpreter.ImageRef{
+	ref := platform.ImageRef{
 		URL:        req.Image.Url,
 		PullPolicy: pullPolicy,
 	}
 	if req.Image.Username != nil && *req.Image.Username != "" {
-		ref.Auth = &interpreter.ImageAuth{
+		ref.Auth = &platform.ImageAuth{
 			Username: *req.Image.Username,
 		}
 		if req.Image.Password != nil {

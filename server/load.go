@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/store"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -34,12 +34,12 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if s.mgr.ImagePuller() == nil {
 			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
 		}
-		ref := &interpreter.ImageRef{
+		ref := &platform.ImageRef{
 			URL:        loc.Image.Url,
 			PullPolicy: protoToPullPolicy(loc.Image.ImagePullPolicy),
 		}
 		if loc.Image.Username != nil && *loc.Image.Username != "" {
-			ref.Auth = &interpreter.ImageAuth{
+			ref.Auth = &platform.ImageAuth{
 				Username: *loc.Image.Username,
 			}
 			if loc.Image.Password != nil {

@@ -22,11 +22,11 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
-	"github.com/frobware/go-bpfman/interpreter"
-	"github.com/frobware/go-bpfman/interpreter/ebpf"
-	"github.com/frobware/go-bpfman/interpreter/image/oci"
-	"github.com/frobware/go-bpfman/interpreter/image/verify"
-	"github.com/frobware/go-bpfman/interpreter/store/sqlite"
+	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/ebpf"
+	"github.com/frobware/go-bpfman/platform/image/oci"
+	"github.com/frobware/go-bpfman/platform/image/verify"
+	"github.com/frobware/go-bpfman/platform/store/sqlite"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/manager"
@@ -39,7 +39,7 @@ type TestEnv struct {
 	T           *testing.T
 	Layout      bpfmanfs.FSLayout
 	Manager     *manager.Manager
-	ImagePuller interpreter.ImagePuller
+	ImagePuller platform.ImagePuller
 	logger      *slog.Logger
 	baseDir     string // parent directory containing layout and cache
 	closeEnv    func() error
@@ -183,7 +183,7 @@ func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Conte
 }
 
 // LoadImage loads BPF programs from an OCI image.
-func (e *TestEnv) LoadImage(ctx context.Context, ref interpreter.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
+func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context) error {
 		var loadErr error
