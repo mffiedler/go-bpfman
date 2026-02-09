@@ -104,20 +104,24 @@ It owns:
 * the operation outcome + recorder
 * the first failure (`op.err`)
 * the rollback plan, expressed as `[]rollbackEntry` -- Action values
-  paired with rollback step metadata and a per-entry policy
-  (strict or best-effort)
+  paired with rollback step metadata and a per-entry severity
+  classification (error or warning)
 * phase transitions (primary -> rollback -> done)
 * standard finalisation + `*ManagerError` wrapping
 
 Callers declare steps. `Step` and `Fetch` return an opaque `StepHandle`
-that identifies the recorded timeline entry. Details are attached by
-handle (`op.Details(h, ...)`), not by `(kind, target)` search --
-eliminating ambiguity when multiple steps share the same kind and target.
+(issued by the recorder) that identifies the recorded timeline entry.
+Details are attached by handle (`op.Details(h, ...)`), not by
+`(kind, target)` search -- eliminating ambiguity when multiple steps
+share the same kind and target. OpContext never indexes into the
+timeline directly.
 
 Steps may declare undo as Action values. On failure, remaining steps
-auto-skip and rollback runs via the existing executor, keeping one
-interpreter for all side effects. Strict undo entries stop rollback on
-failure; best-effort entries continue regardless.
+auto-record Skip entries on the timeline (preserving the full pipeline
+shape) and rollback runs all accumulated entries via the existing
+executor, keeping one interpreter for all side effects. Severity
+controls reporting, not execution: all rollback entries are always
+attempted.
 
 Two entrypoints wrap the lifecycle: `WithOp[T]` (returns a value) and
 `WithOp0` (void). These closures manage begin, rollback-on-failure,
@@ -140,37 +144,41 @@ type OpContext struct {
 }
 
 // StepHandle is an opaque reference to a recorded timeline entry.
-// Internally it is the index into outcome.Timeline; externally it
-// is only used with op.Details(h, ...) to attach details to the
-// exact entry that was recorded.
+// Issued by the recorder on CompleteStep, FailStep, and SkipStep.
+// Externally it is only used with op.Details(h, ...) to attach
+// details to the exact entry that was recorded. OpContext never
+// indexes into outcome.Timeline directly.
 type StepHandle struct {
     ix int
 }
 
-// RollbackPolicy controls what happens when a rollback entry fails.
-type RollbackPolicy uint8
+// RollbackSeverity classifies how a rollback entry failure is reported.
+// All entries are always attempted regardless of prior failures.
+type RollbackSeverity uint8
 
 const (
-    // RollbackStrict stops rollback on failure. Use for kernel
-    // operations where partial undo may leave inconsistent state.
-    RollbackStrict RollbackPolicy = iota
+    // SeverityError marks the entry as severe: failure is logged at
+    // error level and ensures the residual probe runs. Use for kernel
+    // operations where failure indicates real inconsistency.
+    SeverityError RollbackSeverity = iota
 
-    // RollbackBestEffort continues rollback even if this entry
-    // fails. Use for secondary cleanup (filesystem, caches).
-    RollbackBestEffort
+    // SeverityWarning marks the entry as advisory: failure is logged
+    // at warning level. Use for secondary cleanup (filesystem, caches)
+    // where failure does not affect coherency.
+    SeverityWarning
 )
 
-// rollbackEntry pairs an Action with rollback metadata and policy.
+// rollbackEntry pairs an Action with rollback metadata and severity.
 type rollbackEntry struct {
-    action action.Action
-    step   outcome.Step
-    policy RollbackPolicy
+    action   action.Action
+    step     outcome.Step
+    severity RollbackSeverity
 }
 
 // PlanEntry pairs an Action with the outcome.Step metadata for recording.
 // Used by forward plan execution (Unload's pre-computed plan).
 type PlanEntry struct {
-    Action Action
+    Action action.Action
     Step   outcome.Step
 }
 
@@ -304,18 +312,18 @@ type StepOpt interface{ apply(*stepCfg) }
 
 func WithDetails(d any) StepOpt { ... }
 
-// WithUndo declares a strict rollback entry (Action + outcome.Step).
+// WithUndo declares a rollback entry with error severity (Action + outcome.Step).
 func WithUndo(a action.Action, rbStep outcome.Step) StepOpt {
     return stepOptFunc(func(cfg *stepCfg) {
-        cfg.rb = &rollbackEntry{action: a, step: rbStep, policy: RollbackStrict}
+        cfg.rb = &rollbackEntry{action: a, step: rbStep, severity: SeverityError}
     })
 }
 
-// WithBestEffortUndo declares a best-effort rollback entry.
-// Use for secondary cleanup that should not stop rollback on failure.
+// WithBestEffortUndo declares a rollback entry with warning severity.
+// Use for secondary cleanup where failure does not affect coherency.
 func WithBestEffortUndo(a action.Action, rbStep outcome.Step) StepOpt {
     return stepOptFunc(func(cfg *stepCfg) {
-        cfg.rb = &rollbackEntry{action: a, step: rbStep, policy: RollbackBestEffort}
+        cfg.rb = &rollbackEntry{action: a, step: rbStep, severity: SeverityWarning}
     })
 }
 ```
@@ -334,22 +342,28 @@ This is cosmetic but materially improves readability.
 #### Step (required)
 
 Returns a `StepHandle` identifying the recorded timeline entry. On
-auto-skip (prior failure or wrong phase), returns an invalid handle
-(`ix: -1`).
+auto-skip (prior failure), records a `Skip` entry on the timeline so the
+full pipeline shape is always visible.  Outside `phasePrimary` (i.e.
+after rollback/done), returns an invalid handle (`ix: -1`) -- this
+should never happen in well-structured code.
 
 ```go
 func (op *OpContext) Step(kind outcome.StepKind, target string, fn func() error, opts ...StepOpt) StepHandle {
-    if op.phase != phasePrimary || op.err != nil {
+    if op.phase != phasePrimary {
         return StepHandle{ix: -1}
     }
     cfg := applyOpts(opts)
 
-    if err := fn(); err != nil {
-        op.err = err
-        return op.recordFail(kind, target, err, cfg.details...)
+    if op.err != nil {
+        return op.rec.SkipStep(kind, target, "prior failure")
     }
 
-    h := op.recordComplete(kind, target, cfg.details...)
+    if err := fn(); err != nil {
+        op.err = err
+        return op.rec.FailStep(kind, target, err, cfg.details...)
+    }
+
+    h := op.rec.CompleteStep(kind, target, cfg.details...)
 
     if cfg.rb != nil {
         op.rollback = append(op.rollback, *cfg.rb)
@@ -359,37 +373,45 @@ func (op *OpContext) Step(kind outcome.StepKind, target string, fn func() error,
 }
 ```
 
+Because every declared step records something (complete, fail, or skip),
+callers can declare the entire pipeline unconditionally.  The only guard
+still needed is after `Fetch`, when the returned value would be
+dereferenced -- that is inherent to Go, not to OpContext.
+
 #### TryStep (best-effort)
 
 TryStep is for non-fatal steps (currently needed for bytecode removal in
-Unload). It records success but does not fail the operation on error.
-Returns a `StepHandle` on success, invalid handle on failure or skip.
+Unload).  It always records a timeline entry: `CompleteStep` on success,
+`WarnStep` on failure.  It never sets `op.err`, so the operation
+continues regardless.  When `op.err` is already set, TryStep records a
+skip (same as `Step`).
 
 ```go
 func (op *OpContext) TryStep(kind outcome.StepKind, target string, fn func() error, opts ...StepOpt) StepHandle {
-    if op.phase != phasePrimary || op.err != nil {
+    if op.phase != phasePrimary {
         return StepHandle{ix: -1}
     }
     cfg := applyOpts(opts)
 
-    if err := fn(); err != nil {
-        op.logger.Warn("best-effort step failed",
-            "kind", kind, "target", target, "error", err)
-        return StepHandle{ix: -1}
+    if op.err != nil {
+        return op.rec.SkipStep(kind, target, "prior failure")
     }
 
-    return op.recordComplete(kind, target, cfg.details...)
+    if err := fn(); err != nil {
+        return op.rec.WarnStep(kind, target, err, cfg.details...)
+    }
+
+    return op.rec.CompleteStep(kind, target, cfg.details...)
 }
 ```
 
-TryStep intentionally does not create a failed timeline entry, because a
-failed primary step means "the operation failed".
+`WarnStep` records a timeline entry with a non-fatal error.  This is
+distinct from `FailStep` (which means "the operation failed").  The
+outcome is self-contained: operators can see what was attempted, what
+succeeded, and what failed non-fatally, without consulting logs.
 
-**Information gap.** TryStep failures are only visible in logs. If the
-whole point of the outcome is a rich structured record, this is a gap:
-operators may not understand why residuals exist. Phase 2 should add a
-structured way to surface "non-fatal failure" on the timeline (distinct
-from primary failure) so the outcome is self-contained.
+This requires one addition to the recorder: `WarnStep` alongside
+`CompleteStep`, `FailStep`, and `SkipStep`.
 
 #### Fetch (value-producing step)
 
@@ -415,18 +437,22 @@ func Fetch[T any](
 ) (StepHandle, T) {
 
     var zero T
-    if op.phase != phasePrimary || op.err != nil {
+    if op.phase != phasePrimary {
         return StepHandle{ix: -1}, zero
     }
     cfg := applyOpts(opts)
 
+    if op.err != nil {
+        return op.rec.SkipStep(kind, target, "prior failure"), zero
+    }
+
     val, err := fn()
     if err != nil {
         op.err = err
-        return op.recordFail(kind, target, err, cfg.details...), zero
+        return op.rec.FailStep(kind, target, err, cfg.details...), zero
     }
 
-    h := op.recordComplete(kind, target, cfg.details...)
+    h := op.rec.CompleteStep(kind, target, cfg.details...)
 
     if cfg.rb != nil {
         op.rollback = append(op.rollback, *cfg.rb)
@@ -439,7 +465,7 @@ func Fetch[T any](
 #### OnUndo (late-bind undo registration)
 
 Fetch frequently returns values needed to construct the undo action (pin
-paths, IDs). Use `OnUndo` after Fetch returns. Default policy is strict.
+paths, IDs). Use `OnUndo` after Fetch returns. Default severity is error.
 
 ```go
 func (op *OpContext) OnUndo(a action.Action, rbStep outcome.Step) {
@@ -447,9 +473,9 @@ func (op *OpContext) OnUndo(a action.Action, rbStep outcome.Step) {
         return
     }
     op.rollback = append(op.rollback, rollbackEntry{
-        action: a,
-        step:   rbStep,
-        policy: RollbackStrict,
+        action:   a,
+        step:     rbStep,
+        severity: SeverityError,
     })
 }
 
@@ -458,9 +484,9 @@ func (op *OpContext) OnBestEffortUndo(a action.Action, rbStep outcome.Step) {
         return
     }
     op.rollback = append(op.rollback, rollbackEntry{
-        action: a,
-        step:   rbStep,
-        policy: RollbackBestEffort,
+        action:   a,
+        step:     rbStep,
+        severity: SeverityWarning,
     })
 }
 ```
@@ -484,42 +510,62 @@ primary-step details by searching for the most recent matching
 same kind and target (e.g. repeated `Preflight` validations).
 
 StepHandle fixes this at the root: `Step` and `Fetch` return an opaque
-handle to the exact timeline entry they recorded. `Details(handle, ...)`
-mutates that exact entry -- no search, no ambiguity.
+handle (issued by the recorder) to the exact timeline entry they
+recorded. `Details(handle, ...)` delegates to the recorder's
+`SetDetails` -- no search, no ambiguity, no direct timeline access.
 
-#### Recording helpers
+#### Recorder interface: handle-returning
 
-Internally, `recordComplete` and `recordFail` append to the timeline and
-return a handle. This assumes the recorder appends on both `Complete` and
-`Fail` calls (which it does).
+The recorder API returns `StepHandle` from every recording method.
+OpContext never indexes into `outcome.Timeline` directly -- the handle
+is entirely owned by the recorder.
 
 ```go
-func (op *OpContext) recordComplete(kind outcome.StepKind, target string, details ...any) StepHandle {
-    op.rec.CompleteStep(kind, target, details...)
-    return StepHandle{ix: len(op.outcome.Timeline) - 1}
-}
-
-func (op *OpContext) recordFail(kind outcome.StepKind, target string, err error, details ...any) StepHandle {
-    op.rec.FailStep(kind, target, err, details...)
-    return StepHandle{ix: len(op.outcome.Timeline) - 1}
+type ManagerOperationRecorder interface {
+    CompleteStep(kind StepKind, target string, details ...any) StepHandle
+    FailStep(kind StepKind, target string, err error, details ...any) StepHandle
+    SkipStep(kind StepKind, target, reason string) StepHandle
+    WarnStep(kind StepKind, target string, err error, details ...any) StepHandle
+    SetDetails(h StepHandle, details any)
+    BeginRollback()
+    RollbackComplete(step Step)
+    RollbackFail(step Step)
+    SetResidual(arts []Artefact, probeErr error)
+    Finalise()
 }
 ```
+
+This is a deliberate inversion: the earlier design had OpContext reach
+into the timeline by index (`len(op.outcome.Timeline) - 1`), coupling
+it to recorder behaviour rather than recorder API.  Now the recorder
+owns the mapping from handle to timeline entry, and OpContext delegates
+via `rec.SetDetails(h, ...)`.
+
+If an existing recorder implementation cannot return handles immediately,
+a thin adapter that captures the index internally and returns it as a
+`StepHandle` is sufficient.  The key constraint is: OpContext must not
+know how indices work.
 
 #### Details
 
 ```go
 func (op *OpContext) Details(h StepHandle, details any) {
-    if h.ix < 0 || h.ix >= len(op.outcome.Timeline) {
-        op.logger.Error("opcontext: invalid step handle", "ix", h.ix)
+    if op.phase == phaseDone {
+        op.logger.Error("opcontext: Details called after finalisation")
         return
     }
-    op.outcome.Timeline[h.ix].Details = details
+    if h.ix < 0 {
+        return // skip/invalid handle -- silently ignored
+    }
+    op.rec.SetDetails(h, details)
 }
 ```
 
 `Details` is not gated on `op.err != nil` -- attaching details after a
 failure is still useful (e.g. recording what was loaded before a later
-step failed).
+step failed).  It is gated on phase: calls after `phaseDone` are
+rejected because the outcome has been finalised and should not be
+mutated.
 
 #### When to use Details vs WithDetails
 
@@ -539,23 +585,25 @@ for these.
 
 ## Execution: rollback and forward plans
 
-### Rollback: per-entry policy
+### Rollback: always attempt all entries
 
-Each rollback entry carries a `RollbackPolicy`:
+Rollback always attempts every accumulated entry in reverse order.  It
+never stops early.  Each entry carries a `RollbackSeverity` that
+controls **reporting**, not control flow:
 
-* **Strict** (`RollbackStrict`): if this entry fails, stop rollback
-  immediately. The remaining entries are not attempted. Use for kernel
-  operations where partial undo may leave the system in an inconsistent
-  state that further undo would worsen.
+* **`SeverityError`**: failure is logged at error level.
+* **`SeverityWarning`**: failure is logged at warning level.
 
-* **Best-effort** (`RollbackBestEffort`): if this entry fails, log the
-  error and continue with the next entry. Use for secondary cleanup
-  (filesystem caches, bytecode directories) where failure is
-  disappointing but does not affect coherency.
+Both severities record the failure on the rollback timeline.  If any
+entry fails (at either severity level), the residual probe runs to
+surface what physically remains.
 
-Rollback runs accumulated entries in reverse order. Phase 1 calls the
-executor once per entry (one action per call), giving per-entry recording
-without extending the executor.
+The rationale for always continuing: stopping rollback early can
+*increase* residuals.  A kernel undo failure does not mean DB/filesystem
+cleanup should be skipped -- the coherency check (doctor/GC) can
+discover and reconcile kernel-side orphans, but only if the rest of the
+undo was at least attempted.  Deterministic "always try everything"
+rollback is easier to reason about than conditional early-exit.
 
 ```go
 func (op *OpContext) rollbackOnFailure(ctx context.Context, exec action.ExecutorWithResult) {
@@ -585,13 +633,13 @@ func (op *OpContext) rollbackOnFailure(ctx context.Context, exec action.Executor
         op.rec.RollbackFail(failed)
         anyFailed = true
 
-        op.logger.WarnContext(ctx, "rollback step failed",
+        level := slog.LevelError
+        if e.severity == SeverityWarning {
+            level = slog.LevelWarn
+        }
+        op.logger.Log(ctx, level, "rollback step failed",
             "kind", e.step.Kind, "target", e.step.Target,
             "error", r.Error)
-
-        if e.policy == RollbackStrict {
-            break
-        }
     }
 
     if anyFailed && op.probe != nil {
@@ -607,38 +655,39 @@ without touching the phase.
 
 ### Recording semantics
 
-Every attempted rollback entry is recorded:
+Every rollback entry is always attempted and recorded:
 
 * **`RollbackComplete`**: the undo action succeeded.
 * **`RollbackFail`**: the undo action was attempted and failed.
 
-Entries after a strict failure are not attempted and not recorded.
 Residual probing surfaces what physically remains after any rollback
 failures.
 
 "Skip" is reserved for the primary timeline (where it means
-"auto-skipped due to prior failure").
+"auto-skipped due to prior failure").  "Warn" is reserved for the
+primary timeline (where it means "attempted but failed non-fatally",
+i.e. `TryStep`).
 
-### Rollback policy classification
+### Rollback severity classification
 
-The default is strict. Best-effort is the explicit opt-in for entries
-where failure does not affect system coherency.
+The default severity is error. Warning severity is the explicit opt-in
+for entries where failure does not affect system coherency.
 
 In `load` rollback:
 
-* `UnloadProgram` (kernel pin removal) -- **strict**. If we cannot
-  remove the kernel program, continuing to delete the DB row would leave
-  a kernel-side orphan with no tracking.
-* `RemoveProgramDir` (filesystem cleanup) -- **best-effort**. The
-  bytecode directory is a cache; failure is logged but does not affect
-  kernel/DB coherency.
-* `DeleteProgram` (DB removal) -- **strict**. If the DB delete fails,
-  stopping prevents leaving the system in a state where the kernel
-  program is unloaded but the DB still references it.
+* `UnloadProgram` (kernel pin removal) -- **error**. Failure to remove
+  the kernel program is a real inconsistency that the residual probe
+  should surface.
+* `RemoveProgramDir` (filesystem cleanup) -- **warning**. The bytecode
+  directory is a cache; failure is logged but does not affect kernel/DB
+  coherency.
+* `DeleteProgram` (DB removal) -- **error**. A failed DB delete is a
+  real inconsistency.
 
-If the strict/best-effort distinction later proves too coarse, a third
-policy ("continue but mark severe") can be added without changing the
-handle/details design.
+All three are always attempted.  The severity classification controls
+log level and guides operator triage, not execution order.  The
+coherency engine (doctor/GC) provides the recovery path for any
+residuals regardless of severity.
 
 ### Forward plan execution (ExecutePlan)
 
@@ -669,11 +718,15 @@ replaced by `operation.PlanEntry`.
 
 ## Error returns and lifecycle wrappers
 
-### Failed and finish
+### Failed, Err, and finish
 
 ```go
 func (op *OpContext) Failed() bool {
     return op.err != nil
+}
+
+func (op *OpContext) Err() error {
+    return op.err
 }
 
 func (op *OpContext) finish() error {
@@ -745,10 +798,28 @@ func WithOp[T any](
 The `begin` parameter is typically `m.beginOp`, so `Manager` owns how
 the recorder, logger, and residual probe are wired.
 
-Inside the closure, callers can `return ..., nil` after `op.Failed()`
-checks -- the wrapper captures the first failure from `op.err` and
-handles rollback + finalisation. The `nil` error return does not mask
-the failure; `WithOp` checks `op.err` independently.
+Inside the closure, callers return `op.Err()` after `op.Failed()` checks
+-- the error propagation is explicit.  `WithOp` also checks `op.err`
+independently (in case the closure returns a different error), but the
+primary pattern is: `op.Err()` makes early returns unsurprising.
+
+### Convenience wrapper on Manager
+
+Passing `begin` and `exec` at every call site is repetitive.  Manager
+methods should use a convenience wrapper that supplies both implicitly:
+
+```go
+func withOp[T any](m *Manager, ctx context.Context, fn func(*operation.OpContext) (T, error)) (T, error) {
+    return operation.WithOp(ctx, m.beginOp, m.executor, fn)
+}
+
+func withOp0(m *Manager, ctx context.Context, fn func(*operation.OpContext) error) error {
+    return operation.WithOp0(ctx, m.beginOp, m.executor, fn)
+}
+```
+
+These are package-level functions (not methods) because Go methods
+cannot have independent type parameters.
 
 ### Non-closure usage
 
@@ -824,7 +895,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
             return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
         })
         if op.Failed() {
-            return bpfman.Program{}, nil
+            return bpfman.Program{}, op.Err()
         }
 
         // Forward-path details: attached by handle, no search.
@@ -890,7 +961,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
         )
 
         if op.Failed() {
-            return bpfman.Program{}, nil
+            return bpfman.Program{}, op.Err()
         }
         return constructProgram(loaded, record), nil
     })
@@ -900,8 +971,8 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 Key properties:
 
 * `WithOp` manages the full lifecycle: begin, rollback-on-failure,
-  finalise. The closure returns `(bpfman.Program, nil)` on failure
-  (not an error) because `WithOp` checks `op.err` independently.
+  finalise. Early returns use `op.Err()` so the error propagation is
+  explicit and unsurprising -- no "nil means fail" trick.
 * `StepHandle` makes details precise: `op.Details(hLoad, ...)` mutates
   the exact timeline entry for `KernelLoad`. No `(kind, target)` search,
   no ambiguity with repeated `Preflight` steps.
@@ -909,8 +980,9 @@ Key properties:
   guard after Fetch, one `Details` call, two late-bind undos.
 * All rollback effects are Actions (`UnloadProgram`, `RemoveProgramDir`,
   `DeleteProgram`). No closure-based undo, no rollback special-cases.
-* Rollback policy matches the semantics: kernel undos are strict (default),
-  `RemoveProgramDir` is best-effort (filesystem cache).
+* Rollback severity matches the semantics: kernel undos are error-level
+  (default), `RemoveProgramDir` is warning-level (filesystem cache).
+  All entries are always attempted regardless of prior failures.
 * The rollback plan is entirely Action-based. `RemoveProgramDir` exists
   specifically to avoid a filesystem special-case and to keep Unload and
   load rollback speaking the same language.
@@ -966,26 +1038,32 @@ is:
 
 * direction: Unload runs in order (forward), load rollback runs in
   reverse
-* policy: rollback entries carry `RollbackPolicy` (strict/best-effort);
-  forward plan entries stop on any failure
+* severity: rollback entries carry `RollbackSeverity` (error/warning)
+  for reporting; forward plan entries stop on any failure
 
 ## Cascade semantics
 
 * **OpContext**: transaction
-* **Step/Fetch**: operations returning StepHandle for details
+* **Step/Fetch**: operations returning StepHandle for details; auto-record
+  Skip on prior failure so the full pipeline shape is always visible
+* **TryStep**: best-effort work on the forward path; records WarnStep on
+  non-fatal failure (never sets `op.err`)
 * **Details(h, ...)**: attach details to exact timeline entry by handle
-* **WithUndo/OnUndo**: strict rollback cascades as Action values
-* **WithBestEffortUndo/OnBestEffortUndo**: best-effort rollback cascades
-* **Auto-skip**: abort remaining work after first failure (forward path)
-* **rollbackOnFailure**: execute cascades in reverse with per-entry policy
+  (delegated to recorder via `SetDetails`)
+* **WithUndo/OnUndo**: error-severity rollback entries as Action values
+* **WithBestEffortUndo/OnBestEffortUndo**: warning-severity rollback entries
+* **Auto-skip**: remaining steps record Skip after first failure (forward path)
+* **rollbackOnFailure**: always attempt all entries in reverse; severity
+  controls reporting, not execution
 * **WithOp/WithOp0**: lifecycle wrappers (begin, run, rollback, finalise)
 * **ExecutePlan**: execute a pre-computed plan as primary steps (forward)
-* **TryStep**: best-effort work on the forward path (non-fatal)
-* **Residual probe**: observe remaining artefacts after rollback failure
+* **Err()**: expose the first failure for explicit early returns
+* **Residual probe**: observe remaining artefacts after any rollback failure
 
 Forward execution stops on failure (later steps may depend on earlier
-ones). Rollback respects per-entry policy: strict entries stop on
-failure, best-effort entries continue. Both record every attempted entry.
+ones) but records a Skip entry for each skipped step.  Rollback always
+attempts every entry; severity classification controls log level and
+guides operator triage.
 
 ## Package structure
 
@@ -1011,7 +1089,7 @@ subpackages that are tested independently.
    finalisation, residual artefacts.
 
 2. **Rollback planning + execution** -- collect undo entries, reverse,
-   strict vs best-effort policy, execute via executor, record results.
+   severity classification, execute via executor, record results.
 
 3. **Operation-specific planning** -- `computeUnloadPlan`, dispatcher
    retry logic, map sharing rules.
@@ -1052,7 +1130,7 @@ manager/operation/
                     rollbackOnFailure, finish,
                     ExecutePlan, WithOp, WithOp0
     types.go        StepHandle, PlanEntry, rollbackEntry,
-                    RollbackPolicy, StepOpt family,
+                    RollbackSeverity, StepOpt family,
                     ResidualProbe
 
     Imports: manager/action (Action + executor interfaces)
@@ -1106,7 +1184,7 @@ No cycles. Each layer depends only on layers below.
 **To `manager/operation`:**
 
 * `OpContext` and all supporting types (`StepHandle`, `PlanEntry`,
-  `rollbackEntry`, `RollbackPolicy`, `StepOpt`, `ResidualProbe`).
+  `rollbackEntry`, `RollbackSeverity`, `StepOpt`, `ResidualProbe`).
 * The `Step`, `TryStep`, `Fetch`, `OnUndo`, `OnBestEffortUndo`,
   `WithUndo`, `WithBestEffortUndo`, `Details`, `Failed`, `finish`,
   `rollbackOnFailure`, `ExecutePlan`, `WithOp`, `WithOp0`.
@@ -1128,10 +1206,10 @@ Two entry types serve the two directions:
 * **`PlanEntry{Action, Step}`**: for forward execution (Unload).
   `computeUnloadPlan` builds `[]PlanEntry` from stored state;
   `ExecutePlan` runs them as primary steps in order.
-* **`rollbackEntry{action, step, policy}`**: for rollback (load).
+* **`rollbackEntry{action, step, severity}`**: for rollback (load).
   `WithUndo`/`OnUndo`/`WithBestEffortUndo`/`OnBestEffortUndo` accumulate
-  `[]rollbackEntry`; `rollbackOnFailure` runs them in reverse with
-  per-entry policy.
+  `[]rollbackEntry`; `rollbackOnFailure` runs them all in reverse,
+  using severity for reporting.
 
 The existing `unloadEntry` in `manager` becomes
 `operation.PlanEntry` directly. `rollbackEntry` is unexported within
@@ -1156,7 +1234,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
             return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
         })
         if op.Failed() {
-            return bpfman.Program{}, nil
+            return bpfman.Program{}, op.Err()
         }
 
         op.Details(hLoad, outcome.ProgramDetails{...})
@@ -1185,7 +1263,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
         )
 
         if op.Failed() {
-            return bpfman.Program{}, nil
+            return bpfman.Program{}, op.Err()
         }
         return constructProgram(loaded, record), nil
     })
@@ -1193,8 +1271,8 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 ```
 
 The method reads as a specification. The transaction engine, recording
-state machine, and rollback policy are all behind the `operation` package
-boundary.
+state machine, and rollback severity are all behind the `operation`
+package boundary.
 
 ### Why not a two-stage rollout?
 
@@ -1228,31 +1306,41 @@ operation method:
 
 Test matrix:
 
-* Step success/failure/auto-skip, returns valid/invalid StepHandle
+* Step success/failure records Complete/Fail via recorder
+* Step after prior failure records Skip (auto-skip)
 * Fetch success/failure/zero return, returns (StepHandle, T)
-* Details(h, ...) attaches to exact timeline entry by handle
-* Details with invalid handle is a no-op (logged as error)
+* Fetch after prior failure records Skip and returns zero
+* TryStep success records CompleteStep
+* TryStep failure records WarnStep (non-fatal, op continues)
+* TryStep after prior failure records Skip
+* Details(h, ...) delegates to recorder via SetDetails
+* Details with invalid handle (ix < 0) is a silent no-op
+* Details after phaseDone is rejected with error log
 * OnUndo/WithUndo registration only on success
-* OnBestEffortUndo/WithBestEffortUndo set correct policy
+* OnBestEffortUndo/WithBestEffortUndo set correct severity
 * Rollback reversal order
-* Strict rollback entry failure stops rollback
-* Best-effort rollback entry failure continues rollback
+* All rollback entries always attempted (no early stop)
+* Error-severity failure logged at error level
+* Warning-severity failure logged at warning level
 * Rollback records Complete/Fail per attempted entry
 * rollbackOnFailure is no-op on success
+* Residual probe called when any rollback entry fails
 * WithOp/WithOp0 manage full lifecycle (begin, rollback, finalise)
 * WithOp returns zero value on failure, value on success
-* ExecutePlan runs entries in order, stops on failure
+* Closure returning op.Err() propagates correctly through WithOp
+* ExecutePlan runs entries in order, stops on failure, skips rest
 * finish() finalises exactly once
 * Phase transitions prevent out-of-order recording
-* Residual probe called only when rollback has failures
 
 This locks down semantics before any migration.
 
 ## Limitations
 
 * **Go lacks monadic composition**: Fetch still needs a guard after it
-  returns if subsequent code would dereference a zero value. This is one
-  guard per Fetch, not per Step.
+  returns if subsequent code would dereference the returned value. This
+  is one guard per Fetch, not per Step.  Non-value steps (`Step`,
+  `TryStep`) need no guard at all: they auto-record Skip on prior
+  failure and the pipeline continues.
 
 * **Fetch undo requires late bind**: undo actions frequently depend on
   returned values. Start with the explicit `OnUndo` call; introduce an
@@ -1275,8 +1363,11 @@ This locks down semantics before any migration.
 * Thread bytecode FS handle into the concrete executor so it can
   interpret `RemoveProgramDir` via `rt.RemoveProgram(kernelID)`.
 * Create `manager/operation`: implement OpContext with StepHandle,
-  rollback policy, WithOp/WithOp0, and full unit test coverage
+  rollback severity, WithOp/WithOp0, and full unit test coverage
   (fake recorder, fake executor).
+* Extend recorder API to return `StepHandle` from recording methods
+  and accept `StepHandle` in `SetDetails`. Add `SkipStep` and
+  `WarnStep` methods.
 * Migrate operations incrementally: start with `Unload` (already
   FETCH -> COMPUTE -> EXECUTE and uses `ExecutePlan`), then `load`,
   then attach/detach.
@@ -1288,11 +1379,148 @@ This locks down semantics before any migration.
 
 * Introduce `OpResult` to surface outcomes on success without
   `errors.As`.
-* Add structured "non-fatal failure" recording for TryStep, so the
-  outcome is self-contained (operators should not need logs to
-  understand residuals).
 * If one-at-a-time rollback execution proves too chatty, extend the
   executor with a batch-with-continue mode.
-* If strict/best-effort proves too coarse, add a third rollback policy
-  ("continue but mark severe") without changing the handle/details
-  design.
+* If error/warning severity proves too coarse, add a third level
+  without changing the handle/details design.
+
+## Addendum: OpContext as transaction manager vs plan interpreter
+
+### What OpContext is
+
+OpContext is a transaction manager with declarative undo.  It removes
+recording, rollback, finalisation, and phase-transition boilerplate.
+But the forward path is still imperative Go with closures:
+
+```go
+op.Step(outcome.StepKindPreflight, "validation", func() error {
+    // arbitrary Go code
+})
+
+hLoad, loaded := operation.Fetch(op, outcome.StepKindKernelLoad, name, func() (*KernelLoaded, error) {
+    // arbitrary Go code
+})
+if op.Failed() { return ..., op.Err() }
+
+op.Details(hLoad, ...)
+op.OnUndo(...)
+
+op.Step(outcome.StepKindFSPublish, name, func() error {
+    // arbitrary Go code that captures `loaded`
+})
+```
+
+The closures are opaque to OpContext.  It cannot inspect them, reorder
+them, serialise them, or reason about their dependencies.  The
+"program" only exists at runtime as a chain of function calls.
+
+### Unload already has the right shape
+
+Unload is the exception: `computeUnloadPlan` builds a `[]PlanEntry`
+(data) and `ExecutePlan` interprets it.  That is a mini-VM: the plan
+is a value, the executor is an interpreter, and business logic is the
+pure function that produces the plan.
+
+### Load does not
+
+Load cannot be expressed as a plan today because of value dependencies
+between steps:
+
+1. `KernelLoad` produces `loaded` (pin paths, kernel ID).
+2. Undo entries, details, publish, and store save all depend on
+   `loaded`.
+3. The DB check depends on `loaded.Program.ID`.
+
+OpContext hides the transaction mechanics but does not change this
+shape.  The forward path remains an imperative pipeline with mid-stream
+bindings.
+
+### What a plan interpreter would need
+
+To make Load (and attach/detach) look like Unload, you would need a
+binding mechanism: steps produce named values, later steps and undo
+declarations reference those names, and the interpreter resolves
+bindings at execution time.
+
+Sketch of what Load would look like:
+
+```go
+func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts) operation.Plan {
+    name := spec.ProgramName()
+
+    return operation.Build(
+        operation.Validate("preflight", func() error {
+            if spec.HasImageSource() && spec.ObjectPath() == "" {
+                return fmt.Errorf("...")
+            }
+            return nil
+        }),
+
+        operation.Produce("kernel-load", outcome.StepKindKernelLoad, name,
+            func(ctx context.Context) (*KernelLoaded, error) {
+                return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+            },
+            operation.UndoFrom(func(loaded *KernelLoaded) []operation.UndoEntry {
+                return []operation.UndoEntry{
+                    {Action: action.UnloadProgram{PinPath: loaded.PinPath}, ...},
+                    {Action: action.UnloadProgram{PinPath: loaded.MapsDir}, ...},
+                }
+            }),
+        ),
+
+        operation.Do("fs-publish", outcome.StepKindFSPublish, name,
+            operation.DependsOn("kernel-load"),
+            func(ctx context.Context, loaded *KernelLoaded) error {
+                prov := buildProvenance(spec, loaded, time.Now())
+                return m.fsctx.BytecodeFS().PublishBytecode(loaded.Program.ID, ...)
+            },
+            operation.BestEffortUndo(func(loaded *KernelLoaded) operation.UndoEntry {
+                return operation.UndoEntry{
+                    Action: action.RemoveProgramDir{KernelID: loaded.Program.ID}, ...}
+            }),
+        ),
+
+        // ...
+    )
+}
+```
+
+Execution becomes:
+
+```go
+result, err := m.executor.RunPlan(ctx, m.loadPlan(spec, opts))
+```
+
+The plan is a value.  The interpreter owns step execution, binding
+resolution, auto-skip, recording, rollback, and finalisation.  Business
+logic is the pure function that produces the plan.
+
+### Cost
+
+This requires:
+
+* A `Plan` type (ordered list of plan nodes).
+* A binding/dependency mechanism (typed keys or generics).
+* A plan interpreter that resolves bindings and drives execution.
+* Type safety for produced values (Go generics make this awkward but
+  possible).
+
+### What a plan-as-value gives you
+
+Two things that imperative-with-OpContext does not:
+
+1. **Inspectability.**  You can log, diff, or dry-run a plan before
+   executing it.  Useful for debugging and for `doctor`-style tooling.
+2. **Uniform shape.**  Load, Unload, attach, and detach all become
+   "compute plan, execute plan".  One interpreter, one test strategy,
+   one mental model.
+
+### Recommendation
+
+OpContext as designed is the right first step.  It extracts the
+transaction mechanics and gets operations to clean imperative pipelines.
+If, after migrating all five operations, the remaining closure
+boilerplate still feels like the wrong shape, the path from OpContext to
+a plan interpreter is incremental -- `ExecutePlan` is already the seed.
+Building the full binding/dependency mechanism now, before validating
+OpContext itself, is premature.
