@@ -1828,7 +1828,10 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 //
 //	Given an empty manager with no programs,
 //	When I attempt to attach a non-existent program,
-//	Then the manager returns ErrProgramNotFound with failure outcome.
+//	Then the manager returns ErrProgramNotFound as a plain error.
+//
+// Preflight failures (getProgram, prepare) return plain errors,
+// consistent with Load and Unload preflight behaviour.
 func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -1843,16 +1846,9 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T: %v", err, err)
 	assert.Equal(t, uint32(99999), notFound.ID)
 
-	// Verify outcome records the preflight failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindPreflight, failed.Kind)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline), "no steps should complete on preflight failure")
-	assert.Equal(t, "clean", o.SystemState)
+	// Preflight returns a plain error, not a ManagerError.
+	var me *manager.ManagerError
+	assert.False(t, errors.As(err, &me), "preflight should not produce ManagerError, got %T: %v", err, err)
 }
 
 // TestGetLink_NonExistentLink_ReturnsNotFound verifies that:
