@@ -223,7 +223,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		mapOwnerID = &ownerID
 	}
 
-	metadata := bpfman.ProgramRecord{
+	record := bpfman.ProgramRecord{
 		KernelID: loaded.Program.ID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
@@ -247,10 +247,9 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		CreatedAt: now,
 	}
 
-	err = m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
-		return txStore.Save(ctx, loaded.Program.ID, metadata)
-	})
-	if err != nil {
+	if err := m.store.RunInTransaction(ctx, func(txStore interpreter.Store) error {
+		return txStore.Save(ctx, loaded.Program.ID, record)
+	}); err != nil {
 		storeErr := fmt.Errorf("persist metadata: %w", err)
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindStoreSaveProgram,
@@ -272,7 +271,6 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		},
 	})
 
-	// Fetch kernel maps for status
 	var kernelMaps []kernel.Map
 	for _, mapID := range loaded.Program.MapIDs {
 		km, err := m.kernel.GetMapByID(ctx, mapID)
@@ -281,14 +279,11 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 		}
 	}
 
-	// Fetch stats (nil if collection not enabled)
-	stats, _ := m.kernel.GetProgramStatsByID(ctx, loaded.Program.ID)
-
 	return bpfman.Program{
-		Record: metadata,
+		Record: record,
 		Status: bpfman.ProgramStatus{
 			Kernel:      loaded.Program,
-			Stats:       stats,
+			Stats:       nil, // no stats yet, just loaded
 			PinPresent:  true,
 			MapsPresent: len(kernelMaps) > 0,
 			Links:       nil, // No links yet, just loaded
