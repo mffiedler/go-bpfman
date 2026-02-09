@@ -29,7 +29,7 @@ const (
 //   - Extension links: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{

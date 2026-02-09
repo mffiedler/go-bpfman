@@ -183,7 +183,7 @@ func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager, 
 		return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -208,7 +208,7 @@ func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager, scope l
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -251,7 +251,7 @@ func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager, scope lo
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -288,7 +288,7 @@ func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager, scope l
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -308,7 +308,7 @@ func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager, scop
 		spec = spec.WithOffset(c.Offset)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -334,7 +334,7 @@ func (c *AttachCmd) attachUprobe(ctx context.Context, mgr *manager.Manager, scop
 		spec = spec.WithContainerPid(c.ContainerPid)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -347,7 +347,7 @@ func (c *AttachCmd) attachFentry(ctx context.Context, mgr *manager.Manager, scop
 		return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -360,7 +360,7 @@ func (c *AttachCmd) attachFexit(ctx context.Context, mgr *manager.Manager, scope
 		return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 	}
 
-	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}

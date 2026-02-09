@@ -16,24 +16,24 @@ import (
 //
 // On failure, returns a *ManagerError containing the full operation
 // outcome.
-func (m *Manager) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
 	switch s := spec.(type) {
 	case bpfman.TracepointAttachSpec:
-		return m.attachTracepoint(ctx, s, opts)
+		return m.attachTracepoint(ctx, s)
 	case bpfman.KprobeAttachSpec:
-		return m.attachKprobe(ctx, s, opts)
+		return m.attachKprobe(ctx, s)
 	case bpfman.UprobeAttachSpec:
-		return m.attachUprobe(ctx, scope, s, opts)
+		return m.attachUprobe(ctx, scope, s)
 	case bpfman.FentryAttachSpec:
-		return m.attachFentry(ctx, s, opts)
+		return m.attachFentry(ctx, s)
 	case bpfman.FexitAttachSpec:
-		return m.attachFexit(ctx, s, opts)
+		return m.attachFexit(ctx, s)
 	case bpfman.XDPAttachSpec:
-		return m.attachXDP(ctx, s, opts)
+		return m.attachXDP(ctx, s)
 	case bpfman.TCAttachSpec:
-		return m.attachTC(ctx, s, opts)
+		return m.attachTC(ctx, s)
 	case bpfman.TCXAttachSpec:
-		return m.attachTCX(ctx, s, opts)
+		return m.attachTCX(ctx, s)
 	default:
 		return bpfman.Link{}, fmt.Errorf("unsupported attach spec type %T", spec)
 	}

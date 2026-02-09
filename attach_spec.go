@@ -10,11 +10,6 @@ type AttachSpec interface {
 	ProgramID() uint32
 }
 
-// AttachOpts contains optional parameters for attach operations.
-// Currently empty; link pin paths are always computed from conventions.
-type AttachOpts struct {
-}
-
 // TracepointAttachSpec specifies how to attach a tracepoint.
 type TracepointAttachSpec struct {
 	programID uint32

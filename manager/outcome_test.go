@@ -161,7 +161,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, "sched", "sched_switch")
 	require.NoError(t, err)
 
-	link, err := fix.Manager.Attach(ctx, nil, attachSpec, bpfman.AttachOpts{})
+	link, err := fix.Manager.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err)
 
 	// Verify link was created

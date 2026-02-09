@@ -231,10 +231,10 @@ func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 
 // Attach attaches a program using the given spec.  The lock scope is
 // acquired automatically and passed to the manager.
-func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
+func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.LinkRecord, error) {
 	var result bpfman.Link
 	err := e.runWithLockAndScope(ctx, func(ctx context.Context, scope lock.WriterScope) error {
-		link, attachErr := e.Manager.Attach(ctx, scope, spec, opts)
+		link, attachErr := e.Manager.Attach(ctx, scope, spec)
 		result = link
 		return attachErr
 	})

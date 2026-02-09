@@ -39,7 +39,7 @@ var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcher
 //   - Extension links: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
 	direction := spec.Direction()
@@ -100,7 +100,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 

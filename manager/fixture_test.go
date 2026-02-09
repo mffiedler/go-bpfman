@@ -181,8 +181,8 @@ func (f *testFixture) Unload(ctx context.Context, kernelID uint32) error {
 
 // Attach is a convenience wrapper that calls Manager.Attach directly.
 // For non-uprobe types, scope may be nil.
-func (f *testFixture) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.Attach(ctx, scope, spec, opts)
+func (f *testFixture) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
+	return f.Manager.Attach(ctx, scope, spec)
 }
 
 // Detach is a convenience wrapper that calls Manager.Detach directly.

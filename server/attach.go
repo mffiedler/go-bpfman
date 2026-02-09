@@ -82,7 +82,7 @@ func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, p
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) || errors.Is(err, store.ErrNotFound) {
@@ -116,7 +116,7 @@ func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programI
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -171,7 +171,7 @@ func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -218,7 +218,7 @@ func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programI
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -248,7 +248,7 @@ func (s *Server) attachKprobe(ctx context.Context, scope lock.WriterScope, progr
 	}
 
 	// Call manager - it will determine retprobe from program type
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -294,7 +294,7 @@ func (s *Server) attachUprobe(ctx context.Context, scope lock.WriterScope, progr
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -318,7 +318,7 @@ func (s *Server) attachFentry(ctx context.Context, scope lock.WriterScope, progr
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -342,7 +342,7 @@ func (s *Server) attachFexit(ctx context.Context, scope lock.WriterScope, progra
 	}
 
 	// Call manager
-	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {

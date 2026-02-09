@@ -12,7 +12,7 @@ import (
 // attachTracepoint attaches a pinned program to a tracepoint.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec) (bpfman.Link, error) {
 	group, name := spec.Group(), spec.Name()
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
@@ -36,7 +36,7 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 // retprobe is derived from the program type stored in the database.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec) (bpfman.Link, error) {
 	fnName, offset := spec.FnName(), spec.Offset()
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
@@ -69,7 +69,7 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 // is not used but accepted for API uniformity.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec) (bpfman.Link, error) {
 	binaryTarget := spec.Target()
 	fnName := spec.FnName()
 	offset := spec.Offset()
@@ -107,7 +107,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
 		stepKind:        outcome.StepKindAttachFentry,
@@ -133,7 +133,7 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
 		stepKind:        outcome.StepKindAttachFexit,

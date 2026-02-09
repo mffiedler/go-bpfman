@@ -108,7 +108,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client
 	tpSpec, err := bpfman.NewTracepointAttachSpec(prog.Status.Kernel.ID, "syscalls", "sys_enter_kill")
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, tpSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, tpSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -222,7 +222,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client
 	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "try_to_wake_up")
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, kpSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, kpSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -335,7 +335,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client (kretprobe uses AttachKprobe API)
 	kpSpec, err := bpfman.NewKprobeAttachSpec(prog.Status.Kernel.ID, "try_to_wake_up")
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, kpSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, kpSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -453,7 +453,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
-	link, err := env.Attach(ctx, upSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, upSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -571,7 +571,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
-	link, err := env.Attach(ctx, upSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, upSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -686,7 +686,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client (fentry doesn't need additional params - target is in program)
 	feSpec, err := bpfman.NewFentryAttachSpec(prog.Status.Kernel.ID)
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, feSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, feSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -796,7 +796,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client
 	fxSpec, err := bpfman.NewFexitAttachSpec(prog.Status.Kernel.ID)
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, fxSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, fxSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -910,7 +910,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
 	require.NoError(t, err)
 	tcSpec = tcSpec.WithPriority(50)
-	link, err := env.Attach(ctx, tcSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, tcSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -1056,7 +1056,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
 	require.NoError(t, err)
 	tcxSpec = tcxSpec.WithPriority(50)
-	link, err := env.Attach(ctx, tcxSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, tcxSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
@@ -1171,7 +1171,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	// When: attach via client to test interface
 	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex)
 	require.NoError(t, err)
-	link, err := env.Attach(ctx, xdpSpec, bpfman.AttachOpts{})
+	link, err := env.Attach(ctx, xdpSpec)
 	require.NoError(t, err)
 
 	// Then: link has expected properties
