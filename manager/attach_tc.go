@@ -11,6 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
@@ -97,21 +98,11 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 // Pin paths follow the convention:
 //   - Link: /sys/fs/bpf/bpfman/tcx-{direction}/link_{nsid}_{ifindex}_{linkid}
 //
-// Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
+// Preflight failures (getProgram, type check, GetNsid, stale pin
+// removal, link listing) return plain errors. Execution failures
+// return *ManagerError with the full operation outcome.
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
-	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o, func(err error) {
-		m.logger.Error("outcome recorder: invariant violation", "error", err)
-	})
-
-	fail := func(primaryErr error) (bpfman.Link, error) {
-		o.PrimaryError = primaryErr.Error()
-		rec.Finalise()
-		return bpfman.Link{}, &ManagerError{Outcome: o, Cause: primaryErr}
-	}
-
+	// --- Preflight (outside plan, plain errors) ---
 	programKernelID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
@@ -120,58 +111,33 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	netnsPath := spec.Netns()
 	target := ifname + ":" + string(direction)
 
-	// FETCH: Get program metadata to find pin path
 	prog, err := m.getProgram(ctx, programKernelID)
 	if err != nil {
-		rec.FailStep(outcome.StepKindPreflight, target, err)
-		return fail(err)
+		return bpfman.Link{}, err
 	}
-
-	// Verify program type is TCX
 	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
-		primaryErr := fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType())
-		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
-		return fail(primaryErr)
+		return bpfman.Link{}, fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType())
 	}
-
-	// FETCH: Get network namespace ID (from target namespace if specified)
 	nsid, err := netns.GetNsid(netnsPath)
 	if err != nil {
-		primaryErr := fmt.Errorf("get nsid: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
-		return fail(primaryErr)
+		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	// COMPUTE: Calculate link pin path from conventions.
-	// The path must be unique per program to support multiple TCX programs
-	// on the same interface -- each needs its own pinned link to keep the
-	// kernel attachment alive.
 	linkPinPath := m.fsctx.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
 
-	// KERNEL I/O: Remove stale pin if it exists from a previous daemon run.
+	// Stale pin removal (preflight I/O).
 	if _, statErr := os.Stat(linkPinPath); statErr == nil {
 		m.logger.WarnContext(ctx, "removing stale TCX link pin", "path", linkPinPath)
 		if removeErr := os.Remove(linkPinPath); removeErr != nil {
-			primaryErr := fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, removeErr)
-			rec.FailStep(outcome.StepKindKernelRemovePin, linkPinPath, primaryErr)
-			return fail(primaryErr)
+			return bpfman.Link{}, fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, removeErr)
 		}
 	}
 
-	// COMPUTE: Use the stored program pin path directly
 	progPinPath := prog.Handles.PinPath
-
-	// FETCH: Get existing TCX links for this interface/direction to compute order
 	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), string(direction))
 	if err != nil {
-		primaryErr := fmt.Errorf("list existing TCX links: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
-		return fail(primaryErr)
+		return bpfman.Link{}, fmt.Errorf("list existing TCX links: %w", err)
 	}
-
-	// COMPUTE: Determine attach order based on priority
-	// Lower priority values should run first (earlier in chain).
-	// We need to find where to insert this program in the priority-sorted chain.
 	order := computeTCXAttachOrder(existingLinks, int32(priority))
 
 	m.logger.DebugContext(ctx, "computed TCX attach order",
@@ -180,88 +146,17 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		"existing_links", len(existingLinks),
 		"order", order)
 
-	// KERNEL I/O: Attach program using TCX link with computed order
-	attachOut, err := m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
+	// --- Build and execute plan ---
+	plan := m.attachTCXPlan(programKernelID, ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
+	begin := func(_ context.Context) *operation.RunState {
+		return m.beginOp(ctx)
+	}
+	b, err := operation.Run(ctx, begin, m.executor, plan)
 	if err != nil {
-		primaryErr := fmt.Errorf("attach TCX to %s %s: %w", ifname, direction, err)
-		rec.FailStep(outcome.StepKindAttachTCX, target, primaryErr, outcome.LinkDetails{
-			ProgramID: programKernelID,
-			Interface: ifname,
-			PinPath:   linkPinPath,
-		})
-		return fail(primaryErr)
+		return bpfman.Link{}, wrapOpErr(err)
 	}
 
-	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
-	linkRecord := bpfman.NewPinnedLinkRecord(
-		bpfman.LinkID(attachOut.LinkID),
-		programKernelID,
-		bpfman.TCXDetails{
-			Interface: ifname,
-			Ifindex:   uint32(ifindex),
-			Direction: direction,
-			Priority:  int32(priority),
-			Nsid:      nsid,
-		},
-		*bpffs.NewLinkPath(linkPinPath),
-		time.Now(),
-	)
-
-	// Construct Link with Status from AttachOutput
-	link := bpfman.Link{
-		Record: linkRecord,
-		Status: bpfman.LinkStatus{
-			Kernel:     attachOut.KernelLink,
-			KernelSeen: attachOut.KernelLink != nil,
-			PinPresent: attachOut.PinPath != "",
-		},
-	}
-
-	// Record successful TCX attach
-	rec.CompleteStep(outcome.StepKindAttachTCX, target, outcome.LinkDetails{
-		LinkID:    attachOut.LinkID,
-		ProgramID: programKernelID,
-		Interface: ifname,
-		PinPath:   linkPinPath,
-	})
-
-	// ROLLBACK: If the store write fails, detach the link we just created.
-	var undo undoStack
-	undo.push(func() error {
-		return m.kernel.DetachLink(ctx, linkPinPath)
-	})
-
-	// EXECUTE: Save link metadata directly to store
-	if err := m.store.SaveLink(ctx, link.Record); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
-
-		storeErr := fmt.Errorf("save TCX link metadata: %w", err)
-		rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
-			storeErr, outcome.LinkDetails{
-				LinkID:    uint32(link.Record.ID),
-				ProgramID: programKernelID,
-				Interface: ifname,
-				PinPath:   linkPinPath,
-			})
-		recordRollback(&rec, undo, outcome.Step{
-			Kind:   outcome.StepKindKernelDetachLink,
-			Target: fmt.Sprintf("%d", link.Record.ID),
-			Details: outcome.LinkDetails{
-				LinkID:  uint32(link.Record.ID),
-				PinPath: linkPinPath,
-			},
-		}, m.logger)
-		return fail(storeErr)
-	}
-
-	// Record successful store save
-	rec.CompleteStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID), outcome.LinkDetails{
-		LinkID:    uint32(link.Record.ID),
-		ProgramID: programKernelID,
-		Interface: ifname,
-		PinPath:   linkPinPath,
-	})
-
+	link := operation.Get(b, linkKey)
 	m.logger.InfoContext(ctx, "attached TCX program",
 		"link_id", link.Record.ID,
 		"program_id", programKernelID,
@@ -273,6 +168,88 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		"pin_path", linkPinPath)
 
 	return link, nil
+}
+
+// attachTCXPlan builds the operation plan for a TCX attach.
+//
+// Nodes:
+//  1. Produce attachOutKey -- kernel attach via AttachTCX, with undo
+//     that detaches the link on failure.
+//  2. Produce linkKey -- construct link record, save to store.
+func (m *Manager) attachTCXPlan(
+	programKernelID uint32, ifindex int, ifname string,
+	direction bpfman.TCDirection, priority int, nsid uint64,
+	netnsPath, linkPinPath, progPinPath, target string,
+	order bpfman.TCXAttachOrder,
+) operation.Plan {
+	return operation.Build(
+		operation.Produce(attachOutKey, outcome.StepKindAttachTCX, target,
+			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
+				return m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
+			},
+			operation.DetailsFn(func(b *operation.Bindings) any {
+				out := operation.Get(b, attachOutKey)
+				return outcome.LinkDetails{
+					LinkID:    out.LinkID,
+					ProgramID: programKernelID,
+					Interface: ifname,
+					PinPath:   linkPinPath,
+				}
+			}),
+			operation.UndoFrom(func(_ *operation.Bindings) []operation.UndoEntry {
+				return []operation.UndoEntry{{
+					Action: action.DetachLink{PinPath: linkPinPath},
+					Step: outcome.Step{
+						Kind:   outcome.StepKindKernelDetachLink,
+						Target: target,
+						Details: outcome.LinkDetails{
+							PinPath: linkPinPath,
+						},
+					},
+				}}
+			}),
+		),
+
+		operation.Produce(linkKey, outcome.StepKindStoreSaveLink, target,
+			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+				out := operation.Get(b, attachOutKey)
+				record := bpfman.NewPinnedLinkRecord(
+					bpfman.LinkID(out.LinkID),
+					programKernelID,
+					bpfman.TCXDetails{
+						Interface: ifname,
+						Ifindex:   uint32(ifindex),
+						Direction: direction,
+						Priority:  int32(priority),
+						Nsid:      nsid,
+					},
+					*bpffs.NewLinkPath(linkPinPath),
+					time.Now(),
+				)
+				link := bpfman.Link{
+					Record: record,
+					Status: bpfman.LinkStatus{
+						Kernel:     out.KernelLink,
+						KernelSeen: out.KernelLink != nil,
+						PinPresent: out.PinPath != "",
+					},
+				}
+				if err := m.executor.Execute(ctx, action.SaveLink{Record: record}); err != nil {
+					return bpfman.Link{}, fmt.Errorf("save TCX link metadata: %w", err)
+				}
+				return link, nil
+			},
+			operation.DetailsFn(func(b *operation.Bindings) any {
+				link := operation.Get(b, linkKey)
+				return outcome.LinkDetails{
+					LinkID:    uint32(link.Record.ID),
+					ProgramID: programKernelID,
+					Interface: ifname,
+					PinPath:   linkPinPath,
+				}
+			}),
+		),
+	)
 }
 
 // computeTCXAttachOrder determines where to insert a new TCX program in the chain

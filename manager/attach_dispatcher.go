@@ -9,7 +9,10 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform/store"
@@ -42,10 +45,25 @@ type dispatcherAttachParams struct {
 	buildLinkDetails func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails
 }
 
+// extensionResult bundles the kernel attach output with the
+// dispatcher state and position that were current at attach time.
+// The dispatcher state may differ from the originally looked-up
+// state if stale-dispatcher recovery ran.
+type extensionResult struct {
+	out      bpfman.AttachOutput
+	disp     dispatcher.State
+	position int
+	pinPath  string
+}
+
+// Binding keys for dispatcherAttach plan nodes.
+var (
+	dispStateKey = operation.NewKey[dispatcher.State]("dispatcher-state")
+	extResultKey = operation.NewKey[extensionResult]("extension-result")
+)
+
 // dispatcherAttach implements the common skeleton for dispatcher-based
 // attach types (XDP, TC).
-//
-// Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 //
 // The operation creates a dispatcher if none exists, attaches the user
 // program as an extension to a dispatcher slot, and persists the link
@@ -53,204 +71,32 @@ type dispatcherAttachParams struct {
 // pin (stale record after a fresh bpffs mount), the dispatcher is
 // recreated and the attach retried once.
 //
-// On failure, returns a *ManagerError containing the full operation outcome.
+// Preflight failures (getProgram, GetNsid) return plain errors.
+// Execution failures return *ManagerError with the full operation
+// outcome.
 func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams) (bpfman.Link, error) {
-	var o outcome.OperationOutcome
-	rec := outcome.NewRecorder(&o, func(err error) {
-		m.logger.Error("outcome recorder: invariant violation", "error", err)
-	})
-
-	fail := func(primaryErr error) (bpfman.Link, error) {
-		o.PrimaryError = primaryErr.Error()
-		rec.Finalise()
-		return bpfman.Link{}, &ManagerError{Outcome: o, Cause: primaryErr}
-	}
-
-	// FETCH: Get program metadata to access ObjectPath and ProgramName
+	// --- Preflight (outside plan, plain errors) ---
 	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		rec.FailStep(outcome.StepKindPreflight, p.target, err)
-		return fail(err)
+		return bpfman.Link{}, err
 	}
-
-	// FETCH: Get network namespace ID (from target namespace if specified)
 	nsid, err := netns.GetNsid(p.netnsPath)
 	if err != nil {
-		primaryErr := fmt.Errorf("get nsid: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr)
-		return fail(primaryErr)
+		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	ifindex := uint32(p.ifindex)
-
-	// FETCH: Look up existing dispatcher or create new one.
-	dispState, err := m.store.GetDispatcher(ctx, string(p.dispType), nsid, ifindex)
-	if errors.Is(err, store.ErrNotFound) {
-		// KERNEL I/O + EXECUTE: Create new dispatcher
-		dispState, err = p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
-		if err != nil {
-			primaryErr := fmt.Errorf("create %s dispatcher for %s: %w", p.dispType, p.target, err)
-			rec.FailStep(p.dispStepKind, p.target, primaryErr, outcome.DispatcherDetails{
-				Interface: p.ifname,
-				Direction: p.direction,
-			})
-			return fail(primaryErr)
-		}
-		// Record dispatcher creation
-		rec.CompleteStep(p.dispStepKind, p.target, outcome.DispatcherDetails{
-			DispatcherID: dispState.KernelID,
-			Interface:    p.ifname,
-			Direction:    p.direction,
-		})
-	} else if err != nil {
-		primaryErr := fmt.Errorf("get dispatcher: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr)
-		return fail(primaryErr)
+	// --- Build and execute plan ---
+	plan := m.dispatcherAttachPlan(p, prog, nsid)
+	begin := func(_ context.Context) *operation.RunState {
+		return m.beginOp(ctx)
 	}
-
-	m.logger.DebugContext(ctx, "using dispatcher",
-		"type", p.dispType,
-		"interface", p.ifname,
-		"nsid", nsid,
-		"ifindex", p.ifindex,
-		"revision", dispState.Revision,
-		"dispatcher_id", dispState.KernelID)
-
-	// COMPUTE: Calculate extension link path from conventions
-	fs := m.fsctx.BPFFS()
-	position, err := m.store.CountDispatcherLinks(ctx, dispState.KernelID)
+	b, err := operation.Run(ctx, begin, m.executor, plan)
 	if err != nil {
-		primaryErr := fmt.Errorf("count dispatcher links: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr)
-		return fail(primaryErr)
-	}
-	linkPinPath := fs.ExtensionLinkPath(p.dispType, nsid, ifindex, dispState.Revision, position)
-
-	// COMPUTE: Use the program's MapPinPath which points to the correct maps
-	// directory (either the program's own or the map owner's if sharing).
-	mapPinDir := prog.Handles.MapPinPath
-
-	// KERNEL I/O: Attach user program as extension
-	progPinPath := fs.DispatcherProgPath(p.dispType, nsid, ifindex, dispState.Revision)
-	attachOut, err := p.attachExtension(ctx, progPinPath, prog.Load.ObjectPath(), prog.Meta.Name, position, linkPinPath, mapPinDir)
-	if err != nil {
-		// Stale dispatcher recovery: the DB record exists but the
-		// bpffs pin is gone (e.g., fresh mount after pod restart while
-		// the kernel program survives). Delete the stale record and
-		// retry with a fresh dispatcher.
-		if !errors.Is(err, os.ErrNotExist) {
-			primaryErr := fmt.Errorf("attach extension to %s slot %d: %w", p.target, position, err)
-			rec.FailStep(outcome.StepKindAttachExtension, p.target, primaryErr, outcome.LinkDetails{
-				ProgramID:    p.programKernelID,
-				Interface:    p.ifname,
-				PinPath:      linkPinPath,
-				DispatcherID: dispState.KernelID,
-			})
-			return fail(primaryErr)
-		}
-		m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
-			"prog_pin_path", progPinPath,
-			"dispatcher_id", dispState.KernelID,
-			"error", err)
-		if delErr := m.store.DeleteDispatcher(ctx, string(p.dispType), nsid, ifindex); delErr != nil {
-			primaryErr := fmt.Errorf("delete stale %s dispatcher: %w", p.dispType, delErr)
-			rec.FailStep(outcome.StepKindStoreDeleteDispatcher, p.target, primaryErr)
-			return fail(primaryErr)
-		}
-		dispState, err = p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
-		if err != nil {
-			primaryErr := fmt.Errorf("recreate %s dispatcher for %s: %w", p.dispType, p.target, err)
-			rec.FailStep(p.dispStepKind, p.target, primaryErr, outcome.DispatcherDetails{
-				Interface: p.ifname,
-				Direction: p.direction,
-			})
-			return fail(primaryErr)
-		}
-		position, err = m.store.CountDispatcherLinks(ctx, dispState.KernelID)
-		if err != nil {
-			primaryErr := fmt.Errorf("count dispatcher links after recreate: %w", err)
-			rec.FailStep(outcome.StepKindPreflight, p.target, primaryErr)
-			return fail(primaryErr)
-		}
-		linkPinPath = fs.ExtensionLinkPath(p.dispType, nsid, ifindex, dispState.Revision, position)
-		progPinPath = fs.DispatcherProgPath(p.dispType, nsid, ifindex, dispState.Revision)
-		attachOut, err = p.attachExtension(ctx, progPinPath, prog.Load.ObjectPath(), prog.Meta.Name, position, linkPinPath, mapPinDir)
-		if err != nil {
-			primaryErr := fmt.Errorf("attach extension to %s slot %d (after recreate): %w", p.target, position, err)
-			rec.FailStep(outcome.StepKindAttachExtension, p.target, primaryErr, outcome.LinkDetails{
-				ProgramID:    p.programKernelID,
-				Interface:    p.ifname,
-				PinPath:      linkPinPath,
-				DispatcherID: dispState.KernelID,
-			})
-			return fail(primaryErr)
-		}
+		return bpfman.Link{}, wrapOpErr(err)
 	}
 
-	// COMPUTE: Construct LinkRecord from attach output
-	linkRecord := bpfman.NewPinnedLinkRecord(
-		bpfman.LinkID(attachOut.LinkID),
-		p.programKernelID,
-		p.buildLinkDetails(nsid, position, dispState),
-		*bpffs.NewLinkPath(linkPinPath),
-		time.Now(),
-	)
-
-	link := bpfman.Link{
-		Record: linkRecord,
-		Status: bpfman.LinkStatus{
-			Kernel:     attachOut.KernelLink,
-			KernelSeen: attachOut.KernelLink != nil,
-			PinPresent: attachOut.PinPath != "",
-		},
-	}
-
-	// Record successful extension attach
-	rec.CompleteStep(outcome.StepKindAttachExtension, p.target, outcome.LinkDetails{
-		LinkID:       attachOut.LinkID,
-		ProgramID:    p.programKernelID,
-		Interface:    p.ifname,
-		PinPath:      linkPinPath,
-		DispatcherID: dispState.KernelID,
-	})
-
-	// PERSIST with rollback.
-	var undo undoStack
-	undo.push(func() error {
-		return m.kernel.DetachLink(ctx, linkPinPath)
-	})
-
-	if err := m.store.SaveLink(ctx, link.Record); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back",
-			"program_id", p.programKernelID, "error", err)
-
-		storeErr := fmt.Errorf("save link metadata: %w", err)
-		rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
-			storeErr, outcome.LinkDetails{
-				LinkID:    uint32(link.Record.ID),
-				ProgramID: p.programKernelID,
-				Interface: p.ifname,
-				PinPath:   linkPinPath,
-			})
-		recordRollback(&rec, undo, outcome.Step{
-			Kind:   outcome.StepKindKernelDetachLink,
-			Target: fmt.Sprintf("%d", link.Record.ID),
-			Details: outcome.LinkDetails{
-				LinkID:  uint32(link.Record.ID),
-				PinPath: linkPinPath,
-			},
-		}, m.logger)
-		return fail(storeErr)
-	}
-
-	// Record successful store save
-	rec.CompleteStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID), outcome.LinkDetails{
-		LinkID:    uint32(link.Record.ID),
-		ProgramID: p.programKernelID,
-		Interface: p.ifname,
-		PinPath:   linkPinPath,
-	})
-
+	link := operation.Get(b, linkKey)
+	r := operation.Get(b, extResultKey)
 	m.logger.InfoContext(ctx, "attached via dispatcher",
 		"type", p.dispType,
 		"link_id", link.Record.ID,
@@ -258,9 +104,176 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 		"interface", p.ifname,
 		"ifindex", p.ifindex,
 		"nsid", nsid,
-		"position", position,
-		"revision", dispState.Revision,
-		"pin_path", linkPinPath)
+		"position", r.position,
+		"revision", r.disp.Revision,
+		"pin_path", r.pinPath)
 
 	return link, nil
+}
+
+// dispatcherAttachPlan builds the operation plan for a
+// dispatcher-based attach.
+//
+// Nodes:
+//  1. Produce dispStateKey -- dispatcher lookup or creation.
+//  2. Produce extResultKey -- attach extension with internal retry on
+//     stale dispatcher, with undo that detaches the link on failure.
+//  3. Produce linkKey -- construct link record, save to store.
+func (m *Manager) dispatcherAttachPlan(
+	p dispatcherAttachParams,
+	prog bpfman.ProgramRecord,
+	nsid uint64,
+) operation.Plan {
+	ifindex := uint32(p.ifindex)
+	fs := m.fsctx.BPFFS()
+	mapPinDir := prog.Handles.MapPinPath
+
+	return operation.Build(
+		// Node 1: Dispatcher lookup or creation.
+		operation.Produce(dispStateKey, p.dispStepKind, p.target,
+			func(ctx context.Context, _ *operation.Bindings) (dispatcher.State, error) {
+				state, err := m.store.GetDispatcher(ctx, string(p.dispType), nsid, ifindex)
+				if errors.Is(err, store.ErrNotFound) {
+					return p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
+				}
+				if err != nil {
+					return dispatcher.State{}, fmt.Errorf("get dispatcher: %w", err)
+				}
+				return state, nil
+			},
+			operation.DetailsFn(func(b *operation.Bindings) any {
+				ds := operation.Get(b, dispStateKey)
+				return outcome.DispatcherDetails{
+					DispatcherID: ds.KernelID,
+					Interface:    p.ifname,
+					Direction:    p.direction,
+				}
+			}),
+		),
+
+		// Node 2: Attach extension (with stale-dispatcher retry).
+		operation.Produce(extResultKey, outcome.StepKindAttachExtension, p.target,
+			func(ctx context.Context, b *operation.Bindings) (extensionResult, error) {
+				ds := operation.Get(b, dispStateKey)
+				return m.attachExtensionWithRetry(ctx, p, ds, nsid, ifindex, fs, mapPinDir, prog)
+			},
+			operation.DetailsFn(func(b *operation.Bindings) any {
+				r := operation.Get(b, extResultKey)
+				return outcome.LinkDetails{
+					LinkID:       r.out.LinkID,
+					ProgramID:    p.programKernelID,
+					Interface:    p.ifname,
+					PinPath:      r.pinPath,
+					DispatcherID: r.disp.KernelID,
+				}
+			}),
+			operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
+				r := operation.Get(b, extResultKey)
+				return []operation.UndoEntry{{
+					Action: action.DetachLink{PinPath: r.pinPath},
+					Step: outcome.Step{
+						Kind:   outcome.StepKindKernelDetachLink,
+						Target: p.target,
+						Details: outcome.LinkDetails{
+							PinPath: r.pinPath,
+						},
+					},
+				}}
+			}),
+		),
+
+		// Node 3: Construct link record + save to store.
+		operation.Produce(linkKey, outcome.StepKindStoreSaveLink, p.target,
+			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+				r := operation.Get(b, extResultKey)
+				record := bpfman.NewPinnedLinkRecord(
+					bpfman.LinkID(r.out.LinkID),
+					p.programKernelID,
+					p.buildLinkDetails(nsid, r.position, r.disp),
+					*bpffs.NewLinkPath(r.pinPath),
+					time.Now(),
+				)
+				link := bpfman.Link{
+					Record: record,
+					Status: bpfman.LinkStatus{
+						Kernel:     r.out.KernelLink,
+						KernelSeen: r.out.KernelLink != nil,
+						PinPresent: r.out.PinPath != "",
+					},
+				}
+				if err := m.executor.Execute(ctx, action.SaveLink{Record: record}); err != nil {
+					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
+				}
+				return link, nil
+			},
+			operation.DetailsFn(func(b *operation.Bindings) any {
+				link := operation.Get(b, linkKey)
+				r := operation.Get(b, extResultKey)
+				return outcome.LinkDetails{
+					LinkID:       uint32(link.Record.ID),
+					ProgramID:    p.programKernelID,
+					Interface:    p.ifname,
+					PinPath:      r.pinPath,
+					DispatcherID: r.disp.KernelID,
+				}
+			}),
+		),
+	)
+}
+
+// attachExtensionWithRetry attaches the user program as an extension
+// to a dispatcher slot. If the first attempt fails with
+// os.ErrNotExist (stale dispatcher pin after bpffs remount), it
+// deletes the stale dispatcher record, recreates the dispatcher, and
+// retries once.
+func (m *Manager) attachExtensionWithRetry(
+	ctx context.Context,
+	p dispatcherAttachParams,
+	ds dispatcher.State,
+	nsid uint64, ifindex uint32,
+	fs bpfmanfs.BPFFS,
+	mapPinDir string,
+	prog bpfman.ProgramRecord,
+) (extensionResult, error) {
+	position, err := m.store.CountDispatcherLinks(ctx, ds.KernelID)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("count dispatcher links: %w", err)
+	}
+	linkPinPath := fs.ExtensionLinkPath(p.dispType, nsid, ifindex, ds.Revision, position)
+	progPinPath := fs.DispatcherProgPath(p.dispType, nsid, ifindex, ds.Revision)
+
+	out, err := p.attachExtension(ctx, progPinPath, prog.Load.ObjectPath(), prog.Meta.Name, position, linkPinPath, mapPinDir)
+	if err == nil {
+		return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
+	}
+
+	// Stale dispatcher recovery: pin missing after bpffs remount.
+	if !errors.Is(err, os.ErrNotExist) {
+		return extensionResult{}, fmt.Errorf("attach extension to %s slot %d: %w", p.target, position, err)
+	}
+
+	m.logger.WarnContext(ctx, "dispatcher pin missing, recreating",
+		"prog_pin_path", progPinPath,
+		"dispatcher_id", ds.KernelID,
+		"error", err)
+
+	if delErr := m.store.DeleteDispatcher(ctx, string(p.dispType), nsid, ifindex); delErr != nil {
+		return extensionResult{}, fmt.Errorf("delete stale %s dispatcher: %w", p.dispType, delErr)
+	}
+	ds, err = p.createDispatcher(ctx, nsid, ifindex, p.netnsPath)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("recreate %s dispatcher for %s: %w", p.dispType, p.target, err)
+	}
+	position, err = m.store.CountDispatcherLinks(ctx, ds.KernelID)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("count dispatcher links after recreate: %w", err)
+	}
+	linkPinPath = fs.ExtensionLinkPath(p.dispType, nsid, ifindex, ds.Revision, position)
+	progPinPath = fs.DispatcherProgPath(p.dispType, nsid, ifindex, ds.Revision)
+
+	out, err = p.attachExtension(ctx, progPinPath, prog.Load.ObjectPath(), prog.Meta.Name, position, linkPinPath, mapPinDir)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("attach extension to %s slot %d (after recreate): %w", p.target, position, err)
+	}
+	return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
 }
