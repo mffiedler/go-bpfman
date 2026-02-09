@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
 // DoctorCmd checks coherency of database, kernel, and filesystem state.
@@ -91,9 +91,9 @@ func (c *DoctorCheckupCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 		fmt.Fprintf(w, "    %s\t%s\n", f.Severity, f.Description)
 		switch f.Severity {
-		case manager.SeverityError:
+		case coherency.SeverityError:
 			errorCount++
-		case manager.SeverityWarning:
+		case coherency.SeverityWarning:
 			warningCount++
 		}
 	}
@@ -144,7 +144,7 @@ func (c *DoctorExplainCmd) listRules(cli *CLI) error {
 	var out strings.Builder
 	out.WriteString("Available coherency rules:\n\n")
 
-	names := manager.RuleNames()
+	names := coherency.RuleNames()
 	sort.Strings(names)
 
 	for _, name := range names {
@@ -158,7 +158,7 @@ func (c *DoctorExplainCmd) listRules(cli *CLI) error {
 }
 
 func (c *DoctorExplainCmd) explainRule(cli *CLI, name string) error {
-	rule := manager.FindRule(name)
+	rule := coherency.FindRule(name)
 	if rule == nil {
 		return fmt.Errorf("unknown rule: %s\n\nUse 'bpfman doctor explain' to list all rules", name)
 	}

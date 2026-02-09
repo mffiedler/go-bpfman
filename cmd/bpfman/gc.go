@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
 // GCCmd garbage collects stale database entries.
@@ -38,7 +39,7 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 	// Validate rule names if provided.
 	if len(c.Rules) > 0 {
 		gcRuleNames := make(map[string]bool)
-		for _, r := range manager.GCRules() {
+		for _, r := range coherency.GCRules() {
 			gcRuleNames[r.Name] = true
 		}
 		for _, name := range c.Rules {
@@ -96,7 +97,7 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 
 func formatGCRuleNames() string {
 	var out string
-	for _, r := range manager.GCRules() {
+	for _, r := range coherency.GCRules() {
 		out += "  " + r.Name + "\n"
 	}
 	return out

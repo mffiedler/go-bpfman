@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -245,14 +246,14 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
-	state, err := GatherState(ctx, m.store, m.kernel, m.Layout())
+	state, err := coherency.GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {
 		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
 	} else {
 		// Build rule set: standard GC rules, plus prune rule if requested.
-		gcRules := GCRules()
+		gcRules := coherency.GCRules()
 		if opts.Prune {
-			gcRules = append(gcRules, PruneRule())
+			gcRules = append(gcRules, coherency.PruneRule())
 		}
 		if len(opts.Rules) > 0 {
 			ruleSet := make(map[string]bool)
@@ -268,7 +269,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 			gcRules = filtered
 		}
 
-		violations := Evaluate(state, gcRules)
+		violations := coherency.Evaluate(state, gcRules)
 		for _, v := range violations {
 			if v.Op == nil {
 				continue

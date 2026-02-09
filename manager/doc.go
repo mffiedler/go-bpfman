@@ -86,7 +86,7 @@
 //   - Orphan dispatcher directories and pins
 //   - Stale staging directories from interrupted operations
 //
-// The coherency engine (coherency.go) evaluates rules to detect
+// The coherency engine (manager/coherency/) evaluates rules to detect
 // violations and produces executable remediation operations.
 //
 // # Attachment Types
