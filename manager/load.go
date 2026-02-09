@@ -10,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store"
@@ -310,9 +311,9 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	m.logger.InfoContext(ctx, "unloading program", "kernel_id", kernelID, "links", len(links))
 
 	// EXECUTE: Extract actions for the executor and record outcomes.
-	actions := make([]Action, len(plan))
+	actions := make([]action.Action, len(plan))
 	for i, p := range plan {
-		actions[i] = p.action
+		actions[i] = p.effect
 	}
 	execResult := m.executor.ExecuteAllWithResult(ctx, actions)
 
@@ -337,8 +338,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	// it fails, log and record the residual artefact but do not fail
 	// the unload. The DB row is about to be deleted (as part of the
 	// actions above), so GC will clean it on the next pass.
-	rt := m.fsctx.BytecodeFS()
-	if err := rt.RemoveProgram(kernelID); err != nil {
+	if err := m.executor.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID}); err != nil {
 		m.logger.WarnContext(ctx, "failed to remove program dir", "kernel_id", kernelID, "error", err)
 	} else {
 		rec.CompleteStep(outcome.StepKindFSRemoveProgram, programName, outcome.ProgramDetails{
@@ -648,7 +648,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 // This eliminates the parallel-array coupling between the former
 // computeUnloadActions and computeUnloadSteps functions.
 type unloadEntry struct {
-	action Action
+	effect action.Action
 	step   outcome.Step
 }
 
@@ -663,7 +663,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	for _, link := range links {
 		if link.PinPath != nil {
 			plan = append(plan, unloadEntry{
-				action: DetachLink{PinPath: link.PinPath.String()},
+				effect: action.DetachLink{PinPath: link.PinPath.String()},
 				step: outcome.Step{
 					Kind:   outcome.StepKindKernelDetachLink,
 					Target: fmt.Sprintf("%d", link.ID),
@@ -677,7 +677,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	}
 
 	plan = append(plan, unloadEntry{
-		action: RemovePin{Path: linksDir},
+		effect: action.RemovePin{Path: linksDir},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelRemovePin,
 			Target: linksDir,
@@ -685,7 +685,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: UnloadProgram{PinPath: progPinPath},
+		effect: action.UnloadProgram{PinPath: progPinPath},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelUnload,
 			Target: programName,
@@ -697,7 +697,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: UnloadProgram{PinPath: mapsDir},
+		effect: action.UnloadProgram{PinPath: mapsDir},
 		step: outcome.Step{
 			Kind:   outcome.StepKindKernelUnload,
 			Target: programName,
@@ -709,7 +709,7 @@ func computeUnloadPlan(kernelID uint32, programName, progPinPath, mapsDir, links
 	})
 
 	plan = append(plan, unloadEntry{
-		action: DeleteProgram{KernelID: kernelID},
+		effect: action.DeleteProgram{KernelID: kernelID},
 		step: outcome.Step{
 			Kind:   outcome.StepKindStoreDeleteProgram,
 			Target: programName,

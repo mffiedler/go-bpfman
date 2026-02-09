@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
@@ -34,7 +35,7 @@ type Manager struct {
 	fsctx             bpfmanfs.FilesystemContext
 	store             platform.Store
 	kernel            platform.KernelOperations
-	executor          ActionExecutorWithResult
+	executor          action.ExecutorWithResult
 	programDiscoverer platform.ProgramDiscoverer
 	imagePuller       platform.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
@@ -79,7 +80,7 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          newExecutor(store, kernel).(ActionExecutorWithResult),
+		executor:          newExecutor(store, kernel, fsctx.BytecodeFS()).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil

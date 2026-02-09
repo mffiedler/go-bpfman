@@ -1,4 +1,4 @@
-package manager
+package action
 
 import (
 	"github.com/frobware/go-bpfman"
@@ -126,3 +126,10 @@ type DetachTCFilter struct {
 }
 
 func (DetachTCFilter) isAction() {}
+
+// RemoveProgramDir removes the persisted bytecode directory for a program.
+type RemoveProgramDir struct {
+	KernelID uint32
+}
+
+func (RemoveProgramDir) isAction() {}

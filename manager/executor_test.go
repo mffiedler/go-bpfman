@@ -12,6 +12,7 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -262,17 +263,17 @@ func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent
 func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
 
-	execWithResult, ok := exec.(manager.ActionExecutorWithResult)
+	execWithResult, ok := exec.(action.ExecutorWithResult)
 	if !ok {
 		t.Fatal("executor does not implement ActionExecutorWithResult")
 	}
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -298,8 +299,8 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), nil)
 
@@ -323,13 +324,13 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 		return expectedErr
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -361,13 +362,13 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -399,13 +400,13 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -438,14 +439,14 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
-		manager.SaveProgram{KernelID: 4},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{KernelID: 4},
 	}
 
 	_ = execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -467,13 +468,13 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
-	execWithResult := exec.(manager.ActionExecutorWithResult)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
+	execWithResult := exec.(action.ExecutorWithResult)
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
-		manager.SaveProgram{KernelID: 3},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{KernelID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -490,7 +491,7 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	}
 
 	failed := result.Actions[result.FailedIndex]
-	if sp, ok := failed.(manager.SaveProgram); !ok || sp.KernelID != 2 {
+	if sp, ok := failed.(action.SaveProgram); !ok || sp.KernelID != 2 {
 		t.Errorf("failed action = %v, want SaveProgram{KernelID: 2}", failed)
 	}
 
@@ -512,11 +513,11 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)
@@ -529,11 +530,11 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
 	store := newStubStore()
 	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel)
+	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{})
 
-	actions := []manager.Action{
-		manager.SaveProgram{KernelID: 1},
-		manager.SaveProgram{KernelID: 2},
+	actions := []action.Action{
+		action.SaveProgram{KernelID: 1},
+		action.SaveProgram{KernelID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)
