@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
+	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -332,4 +334,30 @@ func (m *Manager) MarkMutated() {
 	m.gcMu.Lock()
 	m.mutatedSinceGC = true
 	m.gcMu.Unlock()
+}
+
+// beginOp creates the RunState that the operation interpreter needs.
+// It bridges the manager's owned state (logger, OpID) to the
+// operation package.
+func (m *Manager) beginOp(ctx context.Context) *operation.RunState {
+	o := &outcome.OperationOutcome{OpID: OpIDFromContext(ctx)}
+	rec := outcome.NewRecorder(o, func(err error) {
+		m.logger.Error("outcome recorder: invariant violation", "error", err)
+	})
+	return &operation.RunState{
+		Outcome: o,
+		Rec:     rec,
+		Logger:  m.logger,
+	}
+}
+
+// wrapOpErr converts an *operation.OperationError to a *ManagerError
+// at the boundary so existing errors.As(err, &me) call sites keep
+// working. Non-OperationError values pass through unchanged.
+func wrapOpErr(err error) error {
+	var opErr *operation.OperationError
+	if errors.As(err, &opErr) {
+		return &ManagerError{Outcome: opErr.Outcome, Cause: opErr.Cause}
+	}
+	return err
 }
