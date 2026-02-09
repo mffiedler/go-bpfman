@@ -229,102 +229,12 @@ func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 	return e.Manager.Get(ctx, kernelID)
 }
 
-// AttachTracepoint attaches a tracepoint program.
-func (e *TestEnv) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachTracepoint(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	// Fetch full link record for consistent return value
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindTracepoint}, nil
-	}
-	return record, nil
-}
-
-// AttachXDP attaches an XDP program.
-func (e *TestEnv) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachXDP(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindXDP}, nil
-	}
-	return record, nil
-}
-
-// AttachTC attaches a TC program.
-func (e *TestEnv) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachTC(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindTC}, nil
-	}
-	return record, nil
-}
-
-// AttachTCX attaches a TCX program.
-func (e *TestEnv) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachTCX(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindTCX}, nil
-	}
-	return record, nil
-}
-
-// AttachKprobe attaches a kprobe/kretprobe program.
-func (e *TestEnv) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachKprobe(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindKprobe}, nil
-	}
-	return record, nil
-}
-
-// AttachUprobe attaches a uprobe/uretprobe program.
-func (e *TestEnv) AttachUprobe(ctx context.Context, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
+// Attach attaches a program using the given spec.  The lock scope is
+// acquired automatically and passed to the manager.
+func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
 	var result bpfman.Link
 	err := e.runWithLockAndScope(ctx, func(ctx context.Context, scope lock.WriterScope) error {
-		link, attachErr := e.Manager.AttachUprobe(ctx, scope, spec, opts)
+		link, attachErr := e.Manager.Attach(ctx, scope, spec, opts)
 		result = link
 		return attachErr
 	})
@@ -333,43 +243,7 @@ func (e *TestEnv) AttachUprobe(ctx context.Context, spec bpfman.UprobeAttachSpec
 	}
 	record, err := e.Manager.GetLink(ctx, result.Record.ID)
 	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindUprobe}, nil
-	}
-	return record, nil
-}
-
-// AttachFentry attaches a fentry program.
-func (e *TestEnv) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachFentry(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindFentry}, nil
-	}
-	return record, nil
-}
-
-// AttachFexit attaches a fexit program.
-func (e *TestEnv) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.LinkRecord, error) {
-	var result bpfman.Link
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
-		link, attachErr := e.Manager.AttachFexit(ctx, spec, opts)
-		result = link
-		return attachErr
-	})
-	if err != nil {
-		return bpfman.LinkRecord{}, err
-	}
-	record, err := e.Manager.GetLink(ctx, result.Record.ID)
-	if err != nil {
-		return bpfman.LinkRecord{ID: result.Record.ID, Kind: bpfman.LinkKindFexit}, nil
+		return bpfman.LinkRecord{ID: result.Record.ID}, nil
 	}
 	return record, nil
 }

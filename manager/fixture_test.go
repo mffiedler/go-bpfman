@@ -179,44 +179,10 @@ func (f *testFixture) Unload(ctx context.Context, kernelID uint32) error {
 	return f.Manager.Unload(ctx, kernelID)
 }
 
-// AttachTracepoint is a convenience wrapper that calls Manager.AttachTracepoint directly.
-func (f *testFixture) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachTracepoint(ctx, spec, opts)
-}
-
-// AttachKprobe is a convenience wrapper that calls Manager.AttachKprobe directly.
-func (f *testFixture) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachKprobe(ctx, spec, opts)
-}
-
-// AttachUprobe is a convenience wrapper that calls Manager.AttachUprobe directly.
-func (f *testFixture) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachUprobe(ctx, scope, spec, opts)
-}
-
-// AttachFentry is a convenience wrapper that calls Manager.AttachFentry directly.
-func (f *testFixture) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachFentry(ctx, spec, opts)
-}
-
-// AttachFexit is a convenience wrapper that calls Manager.AttachFexit directly.
-func (f *testFixture) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachFexit(ctx, spec, opts)
-}
-
-// AttachXDP is a convenience wrapper that calls Manager.AttachXDP directly.
-func (f *testFixture) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachXDP(ctx, spec, opts)
-}
-
-// AttachTC is a convenience wrapper that calls Manager.AttachTC directly.
-func (f *testFixture) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachTC(ctx, spec, opts)
-}
-
-// AttachTCX is a convenience wrapper that calls Manager.AttachTCX directly.
-func (f *testFixture) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
-	return f.Manager.AttachTCX(ctx, spec, opts)
+// Attach is a convenience wrapper that calls Manager.Attach directly.
+// For non-uprobe types, scope may be nil.
+func (f *testFixture) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+	return f.Manager.Attach(ctx, scope, spec, opts)
 }
 
 // Detach is a convenience wrapper that calls Manager.Detach directly.

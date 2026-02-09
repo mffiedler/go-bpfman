@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform/store"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
@@ -19,6 +20,11 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 		return nil, status.Error(codes.InvalidArgument, "attach info is required")
 	}
 
+	// Extract lock scope once from context (set by rpcInterceptor for
+	// all mutating RPCs).  Required for container uprobes; harmlessly
+	// ignored by all other attach types.
+	scope := ScopeFromContext(ctx)
+
 	var attachType string
 	var resp *pb.AttachResponse
 	var err error
@@ -26,28 +32,28 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 	switch info := req.Attach.Info.(type) {
 	case *pb.AttachInfo_TracepointAttachInfo:
 		attachType = "tracepoint"
-		resp, err = s.attachTracepoint(ctx, req.Id, info.TracepointAttachInfo)
+		resp, err = s.attachTracepoint(ctx, scope, req.Id, info.TracepointAttachInfo)
 	case *pb.AttachInfo_XdpAttachInfo:
 		attachType = "xdp"
-		resp, err = s.attachXDP(ctx, req.Id, info.XdpAttachInfo)
+		resp, err = s.attachXDP(ctx, scope, req.Id, info.XdpAttachInfo)
 	case *pb.AttachInfo_TcAttachInfo:
 		attachType = "tc"
-		resp, err = s.attachTC(ctx, req.Id, info.TcAttachInfo)
+		resp, err = s.attachTC(ctx, scope, req.Id, info.TcAttachInfo)
 	case *pb.AttachInfo_TcxAttachInfo:
 		attachType = "tcx"
-		resp, err = s.attachTCX(ctx, req.Id, info.TcxAttachInfo)
+		resp, err = s.attachTCX(ctx, scope, req.Id, info.TcxAttachInfo)
 	case *pb.AttachInfo_KprobeAttachInfo:
 		attachType = "kprobe"
-		resp, err = s.attachKprobe(ctx, req.Id, info.KprobeAttachInfo)
+		resp, err = s.attachKprobe(ctx, scope, req.Id, info.KprobeAttachInfo)
 	case *pb.AttachInfo_UprobeAttachInfo:
 		attachType = "uprobe"
-		resp, err = s.attachUprobe(ctx, req.Id, info.UprobeAttachInfo)
+		resp, err = s.attachUprobe(ctx, scope, req.Id, info.UprobeAttachInfo)
 	case *pb.AttachInfo_FentryAttachInfo:
 		attachType = "fentry"
-		resp, err = s.attachFentry(ctx, req.Id, info.FentryAttachInfo)
+		resp, err = s.attachFentry(ctx, scope, req.Id, info.FentryAttachInfo)
 	case *pb.AttachInfo_FexitAttachInfo:
 		attachType = "fexit"
-		resp, err = s.attachFexit(ctx, req.Id, info.FexitAttachInfo)
+		resp, err = s.attachFexit(ctx, scope, req.Id, info.FexitAttachInfo)
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "attach type %T not yet implemented", req.Attach.Info)
 	}
@@ -61,7 +67,7 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 }
 
 // attachTracepoint handles tracepoint attachment via the manager.
-func (s *Server) attachTracepoint(ctx context.Context, programID uint32, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
 	// Parse "group/name" format from tracepoint field
 	parts := strings.SplitN(info.Tracepoint, "/", 2)
 	if len(parts) != 2 {
@@ -75,8 +81,8 @@ func (s *Server) attachTracepoint(ctx context.Context, programID uint32, info *p
 		return nil, status.Errorf(codes.InvalidArgument, "invalid tracepoint attach spec: %v", err)
 	}
 
-	// Call manager with empty LinkPinPath to auto-generate
-	link, err := s.mgr.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) || errors.Is(err, store.ErrNotFound) {
@@ -91,7 +97,7 @@ func (s *Server) attachTracepoint(ctx context.Context, programID uint32, info *p
 }
 
 // attachXDP handles XDP attachment via the manager.
-func (s *Server) attachXDP(ctx context.Context, programID uint32, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
 	// Get interface index from name
 	iface, err := s.netIface.InterfaceByName(info.Iface)
 	if err != nil {
@@ -109,8 +115,8 @@ func (s *Server) attachXDP(ctx context.Context, programID uint32, info *pb.XDPAt
 		spec = spec.WithNetns(info.GetNetns())
 	}
 
-	// Call manager with empty LinkPinPath to auto-generate
-	link, err := s.mgr.AttachXDP(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -125,7 +131,7 @@ func (s *Server) attachXDP(ctx context.Context, programID uint32, info *pb.XDPAt
 }
 
 // attachTC handles TC attachment via the manager.
-func (s *Server) attachTC(ctx context.Context, programID uint32, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
 	// Parse direction at the boundary
 	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
 	if err != nil {
@@ -164,8 +170,8 @@ func (s *Server) attachTC(ctx context.Context, programID uint32, info *pb.TCAtta
 		spec = spec.WithNetns(info.GetNetns())
 	}
 
-	// Call manager with empty LinkPinPath to auto-generate
-	link, err := s.mgr.AttachTC(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -180,7 +186,7 @@ func (s *Server) attachTC(ctx context.Context, programID uint32, info *pb.TCAtta
 }
 
 // attachTCX handles TCX attachment via the manager.
-func (s *Server) attachTCX(ctx context.Context, programID uint32, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
 	// Parse direction at the boundary
 	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
 	if err != nil {
@@ -211,8 +217,8 @@ func (s *Server) attachTCX(ctx context.Context, programID uint32, info *pb.TCXAt
 		spec = spec.WithNetns(info.GetNetns())
 	}
 
-	// Call manager with empty LinkPinPath to auto-generate
-	link, err := s.mgr.AttachTCX(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -227,7 +233,7 @@ func (s *Server) attachTCX(ctx context.Context, programID uint32, info *pb.TCXAt
 }
 
 // attachKprobe handles kprobe/kretprobe attachment via the manager.
-func (s *Server) attachKprobe(ctx context.Context, programID uint32, info *pb.KprobeAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachKprobe(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.KprobeAttachInfo) (*pb.AttachResponse, error) {
 	if info.FnName == "" {
 		return nil, status.Error(codes.InvalidArgument, "fn_name is required for kprobe attachment")
 	}
@@ -242,7 +248,7 @@ func (s *Server) attachKprobe(ctx context.Context, programID uint32, info *pb.Kp
 	}
 
 	// Call manager - it will determine retprobe from program type
-	link, err := s.mgr.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -257,7 +263,7 @@ func (s *Server) attachKprobe(ctx context.Context, programID uint32, info *pb.Kp
 }
 
 // attachUprobe handles uprobe/uretprobe attachment via the manager.
-func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.UprobeAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachUprobe(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.UprobeAttachInfo) (*pb.AttachResponse, error) {
 	s.logger.DebugContext(ctx, "attachUprobe request",
 		"program_id", programID,
 		"target", info.Target,
@@ -287,12 +293,8 @@ func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.Up
 		spec = spec.WithContainerPid(*info.ContainerPid)
 	}
 
-	// Retrieve lock scope from context (set by rpcInterceptor).
-	// Required for container uprobes to pass lock fd to helper.
-	scope := ScopeFromContext(ctx)
-
-	// Call manager with empty linkPinPath to auto-generate
-	link, err := s.mgr.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -308,16 +310,15 @@ func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.Up
 
 // attachFentry handles fentry attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFentry(ctx context.Context, programID uint32, _ *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFentry(ctx context.Context, scope lock.WriterScope, programID uint32, _ *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FentryAttachSpec with validated input
 	spec, err := bpfman.NewFentryAttachSpec(programID)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid fentry attach spec: %v", err)
 	}
 
-	// Call manager with empty linkPinPath to auto-generate.
-	// The manager will retrieve the attach function from the stored program metadata.
-	link, err := s.mgr.AttachFentry(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
@@ -333,16 +334,15 @@ func (s *Server) attachFentry(ctx context.Context, programID uint32, _ *pb.Fentr
 
 // attachFexit handles fexit attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFexit(ctx context.Context, programID uint32, _ *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFexit(ctx context.Context, scope lock.WriterScope, programID uint32, _ *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FexitAttachSpec with validated input
 	spec, err := bpfman.NewFexitAttachSpec(programID)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid fexit attach spec: %v", err)
 	}
 
-	// Call manager with empty linkPinPath to auto-generate.
-	// The manager will retrieve the attach function from the stored program metadata.
-	link, err := s.mgr.AttachFexit(ctx, spec, bpfman.AttachOpts{})
+	// Call manager
+	link, err := s.mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {

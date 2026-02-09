@@ -2,6 +2,14 @@ package bpfman
 
 import "errors"
 
+// AttachSpec is a sealed interface satisfied by all concrete attach
+// spec types.  The unexported marker method prevents external packages
+// from implementing it, so the set of valid types is closed.
+type AttachSpec interface {
+	attachSpec() // sealed marker
+	ProgramID() uint32
+}
+
 // AttachOpts contains optional parameters for attach operations.
 // Currently empty; link pin paths are always computed from conventions.
 type AttachOpts struct {
@@ -28,6 +36,7 @@ func NewTracepointAttachSpec(programID uint32, group, name string) (TracepointAt
 	return TracepointAttachSpec{programID: programID, group: group, name: name}, nil
 }
 
+func (TracepointAttachSpec) attachSpec()         {}
 func (s TracepointAttachSpec) ProgramID() uint32 { return s.programID }
 func (s TracepointAttachSpec) Group() string     { return s.group }
 func (s TracepointAttachSpec) Name() string      { return s.name }
@@ -51,6 +60,7 @@ func NewKprobeAttachSpec(programID uint32, fnName string) (KprobeAttachSpec, err
 	return KprobeAttachSpec{programID: programID, fnName: fnName}, nil
 }
 
+func (KprobeAttachSpec) attachSpec()         {}
 func (s KprobeAttachSpec) ProgramID() uint32 { return s.programID }
 func (s KprobeAttachSpec) FnName() string    { return s.fnName }
 func (s KprobeAttachSpec) Offset() uint64    { return s.offset }
@@ -82,6 +92,7 @@ func NewUprobeAttachSpec(programID uint32, target string) (UprobeAttachSpec, err
 	return UprobeAttachSpec{programID: programID, target: target}, nil
 }
 
+func (UprobeAttachSpec) attachSpec()           {}
 func (s UprobeAttachSpec) ProgramID() uint32   { return s.programID }
 func (s UprobeAttachSpec) Target() string      { return s.target }
 func (s UprobeAttachSpec) FnName() string      { return s.fnName }
@@ -122,6 +133,7 @@ func NewFentryAttachSpec(programID uint32) (FentryAttachSpec, error) {
 	return FentryAttachSpec{programID: programID}, nil
 }
 
+func (FentryAttachSpec) attachSpec()         {}
 func (s FentryAttachSpec) ProgramID() uint32 { return s.programID }
 
 // FexitAttachSpec specifies how to attach fexit.
@@ -138,6 +150,7 @@ func NewFexitAttachSpec(programID uint32) (FexitAttachSpec, error) {
 	return FexitAttachSpec{programID: programID}, nil
 }
 
+func (FexitAttachSpec) attachSpec()         {}
 func (s FexitAttachSpec) ProgramID() uint32 { return s.programID }
 
 // XDPAttachSpec specifies how to attach XDP.
@@ -162,6 +175,7 @@ func NewXDPAttachSpec(programID uint32, ifname string, ifindex int) (XDPAttachSp
 	return XDPAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex}, nil
 }
 
+func (XDPAttachSpec) attachSpec()         {}
 func (s XDPAttachSpec) ProgramID() uint32 { return s.programID }
 func (s XDPAttachSpec) Ifname() string    { return s.ifname }
 func (s XDPAttachSpec) Ifindex() int      { return s.ifindex }
@@ -203,6 +217,7 @@ func NewTCAttachSpec(programID uint32, ifname string, ifindex int, direction TCD
 	return TCAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
 }
 
+func (TCAttachSpec) attachSpec()              {}
 func (s TCAttachSpec) ProgramID() uint32      { return s.programID }
 func (s TCAttachSpec) Ifname() string         { return s.ifname }
 func (s TCAttachSpec) Ifindex() int           { return s.ifindex }
@@ -258,6 +273,7 @@ func NewTCXAttachSpec(programID uint32, ifname string, ifindex int, direction TC
 	return TCXAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
 }
 
+func (TCXAttachSpec) attachSpec()              {}
 func (s TCXAttachSpec) ProgramID() uint32      { return s.programID }
 func (s TCXAttachSpec) Ifname() string         { return s.ifname }
 func (s TCXAttachSpec) Ifindex() int           { return s.ifindex }

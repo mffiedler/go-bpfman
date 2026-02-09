@@ -26,7 +26,7 @@ const (
 // DefaultTCProceedOn is the default bitmask for TC proceed-on actions.
 var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcherReturn
 
-// AttachTC attaches a TC program to a network interface using the
+// attachTC attaches a TC program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
 // The dispatcher is created automatically if it doesn't exist for the interface
@@ -39,7 +39,7 @@ var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcher
 //   - Extension links: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
 	direction := spec.Direction()
@@ -91,7 +91,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 	})
 }
 
-// AttachTCX attaches a TCX program to a network interface using native
+// attachTCX attaches a TCX program to a network interface using native
 // kernel multi-program support. Unlike TC, TCX doesn't use dispatchers.
 //
 // Pin paths follow the convention:
@@ -100,7 +100,7 @@ func (m *Manager) AttachTC(ctx context.Context, spec bpfman.TCAttachSpec, opts b
 // Pattern: FETCH -> KERNEL I/O -> COMPUTE -> EXECUTE
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	var o outcome.OperationOutcome
 	rec := outcome.NewRecorder(&o)
 

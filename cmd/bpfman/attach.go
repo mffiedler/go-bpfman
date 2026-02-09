@@ -134,30 +134,24 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 
 // execute performs the attach operation under the global writer lock.
 func (c *AttachCmd) execute(ctx context.Context, cli *CLI, mgr *manager.Manager) (attachResult, error) {
-	// Uprobe needs scope for container attachment
-	if c.Type == "uprobe" {
-		return RunWithLockValueAndScope(ctx, cli, func(ctx context.Context, scope lock.WriterScope) (attachResult, error) {
-			return c.attachUprobe(ctx, mgr, scope)
-		})
-	}
-
-	// All other types don't need scope
-	return RunWithLockValue(ctx, cli, func(ctx context.Context) (attachResult, error) {
+	return RunWithLockValueAndScope(ctx, cli, func(ctx context.Context, scope lock.WriterScope) (attachResult, error) {
 		switch c.Type {
 		case "tracepoint":
-			return c.attachTracepoint(ctx, mgr)
+			return c.attachTracepoint(ctx, mgr, scope)
 		case "xdp":
-			return c.attachXDP(ctx, mgr)
+			return c.attachXDP(ctx, mgr, scope)
 		case "tc":
-			return c.attachTC(ctx, mgr)
+			return c.attachTC(ctx, mgr, scope)
 		case "tcx":
-			return c.attachTCX(ctx, mgr)
+			return c.attachTCX(ctx, mgr, scope)
 		case "kprobe":
-			return c.attachKprobe(ctx, mgr)
+			return c.attachKprobe(ctx, mgr, scope)
+		case "uprobe":
+			return c.attachUprobe(ctx, mgr, scope)
 		case "fentry":
-			return c.attachFentry(ctx, mgr)
+			return c.attachFentry(ctx, mgr, scope)
 		case "fexit":
-			return c.attachFexit(ctx, mgr)
+			return c.attachFexit(ctx, mgr, scope)
 		default:
 			return attachResult{}, fmt.Errorf("unknown attach type: %s", c.Type)
 		}
@@ -173,7 +167,7 @@ func (c *AttachCmd) output(cli *CLI, result attachResult) error {
 	return cli.PrintOut(output)
 }
 
-func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.Tracepoint == "" {
 		return attachResult{}, fmt.Errorf("--tracepoint is required for tracepoint attachment")
 	}
@@ -189,14 +183,14 @@ func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager) 
 		return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 	}
 
-	link, err := mgr.AttachTracepoint(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for XDP attachment")
 	}
@@ -214,14 +208,14 @@ func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager) (attach
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.AttachXDP(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for TC attachment")
 	}
@@ -257,14 +251,14 @@ func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager) (attachR
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.AttachTC(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.Iface == "" {
 		return attachResult{}, fmt.Errorf("--iface is required for TCX attachment")
 	}
@@ -294,14 +288,14 @@ func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager) (attach
 		spec = spec.WithNetns(c.Netns)
 	}
 
-	link, err := mgr.AttachTCX(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	if c.FnName == "" {
 		return attachResult{}, fmt.Errorf("--fn-name is required for kprobe attachment")
 	}
@@ -314,7 +308,7 @@ func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager) (att
 		spec = spec.WithOffset(c.Offset)
 	}
 
-	link, err := mgr.AttachKprobe(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
@@ -340,33 +334,33 @@ func (c *AttachCmd) attachUprobe(ctx context.Context, mgr *manager.Manager, scop
 		spec = spec.WithContainerPid(c.ContainerPid)
 	}
 
-	link, err := mgr.AttachUprobe(ctx, scope, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachFentry(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachFentry(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 	if err != nil {
 		return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 	}
 
-	link, err := mgr.AttachFentry(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}
 	return attachResult{Link: link}, nil
 }
 
-func (c *AttachCmd) attachFexit(ctx context.Context, mgr *manager.Manager) (attachResult, error) {
+func (c *AttachCmd) attachFexit(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
 	spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 	if err != nil {
 		return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 	}
 
-	link, err := mgr.AttachFexit(ctx, spec, bpfman.AttachOpts{})
+	link, err := mgr.Attach(ctx, scope, spec, bpfman.AttachOpts{})
 	if err != nil {
 		return attachResult{FailedOutcome: extractOutcome(err)}, err
 	}

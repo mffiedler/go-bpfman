@@ -16,7 +16,7 @@ const (
 	xdpProceedOnPass = 1 << 2 // Continue to next program on XDP_PASS
 )
 
-// AttachXDP attaches an XDP program to a network interface using the
+// attachXDP attaches an XDP program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
 // The dispatcher is created automatically if it doesn't exist for the interface.
@@ -29,7 +29,7 @@ const (
 //   - Extension links: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{

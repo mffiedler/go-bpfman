@@ -9,10 +9,10 @@ import (
 	"github.com/frobware/go-bpfman/outcome"
 )
 
-// AttachTracepoint attaches a pinned program to a tracepoint.
+// attachTracepoint attaches a pinned program to a tracepoint.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	group, name := spec.Group(), spec.Name()
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
@@ -32,11 +32,11 @@ func (m *Manager) AttachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	})
 }
 
-// AttachKprobe attaches a pinned program to a kernel function.
+// attachKprobe attaches a pinned program to a kernel function.
 // retprobe is derived from the program type stored in the database.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	fnName, offset := spec.FnName(), spec.Offset()
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
@@ -61,7 +61,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 	})
 }
 
-// AttachUprobe attaches a pinned program to a user-space function.
+// attachUprobe attaches a pinned program to a user-space function.
 // retprobe is derived from the program type stored in the database.
 //
 // The scope parameter is required for container uprobes (containerPid > 0)
@@ -69,7 +69,7 @@ func (m *Manager) AttachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 // is not used but accepted for API uniformity.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	binaryTarget := spec.Target()
 	fnName := spec.FnName()
 	offset := spec.Offset()
@@ -103,11 +103,11 @@ func (m *Manager) AttachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	})
 }
 
-// AttachFentry attaches a pinned fentry program to its target kernel function.
+// attachFentry attaches a pinned fentry program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
 		stepKind:        outcome.StepKindAttachFentry,
@@ -129,11 +129,11 @@ func (m *Manager) AttachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 	})
 }
 
-// AttachFexit attaches a pinned fexit program to its target kernel function.
+// attachFexit attaches a pinned fexit program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
 //
 // On failure, returns a *ManagerError containing the full operation outcome.
-func (m *Manager) AttachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
+func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec, opts bpfman.AttachOpts) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
 		stepKind:        outcome.StepKindAttachFexit,
