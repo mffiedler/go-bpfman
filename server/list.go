@@ -17,66 +17,44 @@ import (
 
 // List implements the List RPC method.
 func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-	if err := s.mgr.GCIfNeeded(ctx, false); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
+	var opts []bpfman.ListOption
+	if req.ProgramType != nil {
+		opts = append(opts, bpfman.WithTypes(bpfman.ProgramType(*req.ProgramType)))
+	}
+	if len(req.MatchMetadata) > 0 {
+		opts = append(opts, bpfman.MatchingLabels(req.MatchMetadata))
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	scanner := s.layout.BPFFS().Scanner()
-	world, err := inspect.Snapshot(ctx, s.store, s.kernel, scanner)
+	result, err := s.mgr.ListPrograms(ctx, opts...)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to snapshot: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list programs: %v", err)
 	}
 
 	var results []*pb.ListResponse_ListResult
-
-	for _, row := range world.ManagedPrograms() {
+	for _, prog := range result.Programs {
 		// Only include programs that are also in kernel
-		if !row.Presence.InKernel {
+		if prog.Status.Kernel == nil {
 			continue
 		}
-
-		prog := row.Managed
-		kp := row.Kernel
-
-		// Filter by program type if specified
-		if req.ProgramType != nil && *req.ProgramType != uint32(prog.Load.ProgramType()) {
-			continue
-		}
-
-		// Filter by metadata if specified
-		if len(req.MatchMetadata) > 0 {
-			match := true
-			for k, v := range req.MatchMetadata {
-				if prog.Meta.Metadata[k] != v {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
+		kp := prog.Status.Kernel
 
 		info := &pb.ProgramInfo{
-			Name:       prog.Meta.Name,
-			Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath()}},
-			Metadata:   prog.Meta.Metadata,
-			GlobalData: prog.Load.GlobalData(),
-			MapPinPath: prog.Handles.MapPinPath,
+			Name:       prog.Record.Meta.Name,
+			Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
+			Metadata:   prog.Record.Meta.Metadata,
+			GlobalData: prog.Record.Load.GlobalData(),
+			MapPinPath: prog.Record.Handles.MapPinPath,
 		}
-		if prog.Handles.MapOwnerID != nil {
-			info.MapOwnerId = prog.Handles.MapOwnerID
+		if prog.Record.Handles.MapOwnerID != nil {
+			info.MapOwnerId = prog.Record.Handles.MapOwnerID
 		}
 
 		results = append(results, &pb.ListResponse_ListResult{
 			Info: info,
 			KernelInfo: &pb.KernelProgramInfo{
-				Id:          row.KernelID,
+				Id:          prog.Record.KernelID,
 				Name:        kp.Name,
-				ProgramType: uint32(prog.Load.ProgramType()),
+				ProgramType: uint32(prog.Record.Load.ProgramType()),
 				Tag:         kp.Tag,
 				LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
 				MapIds:      kp.MapIDs,
@@ -88,24 +66,12 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 	}
 
 	s.logger.InfoContext(ctx, "List", "programs", len(results))
-
 	return &pb.ListResponse{Results: results}, nil
 }
 
 // Get implements the Get RPC method.
 func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	if err := s.mgr.GCIfNeeded(ctx, false); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	scanner := s.layout.BPFFS().Scanner()
-	row, err := inspect.GetProgram(ctx, s.store, s.kernel, scanner, req.Id)
-	if errors.Is(err, inspect.ErrNotFound) {
-		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
-	}
+	prog, err := s.mgr.Get(ctx, req.Id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
 	}
@@ -113,57 +79,40 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		return nil, status.Errorf(codes.Internal, "failed to get program: %v", err)
 	}
 
-	// Require program to be managed (in store)
-	if !row.Presence.InStore {
-		return nil, status.Errorf(codes.NotFound, "program %d not managed by bpfman", req.Id)
-	}
-
-	// Require program to be alive in kernel
-	if !row.Presence.InKernel {
+	kp := prog.Status.Kernel
+	if kp == nil {
 		return nil, status.Errorf(codes.Internal, "program %d exists in store but not in kernel (requires reconciliation)", req.Id)
 	}
 
-	prog := row.Managed
-	kp := row.Kernel
-
-	// Query store for links associated with this program
-	links, err := s.store.ListLinksByProgram(ctx, req.Id)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list links for program %d: %v", req.Id, err)
-	}
-	linkIDs := make([]uint32, 0, len(links))
-	for _, link := range links {
-		linkIDs = append(linkIDs, uint32(link.ID))
+	// Link IDs from the program's status
+	linkIDs := make([]uint32, 0, len(prog.Status.Links))
+	for _, link := range prog.Status.Links {
+		linkIDs = append(linkIDs, uint32(link.Record.ID))
 	}
 
-	s.logger.InfoContext(ctx, "Get", "program_id", req.Id, "program_name", prog.Meta.Name, "links", len(linkIDs))
+	s.logger.InfoContext(ctx, "Get", "program_id", req.Id, "program_name", prog.Record.Meta.Name, "links", len(linkIDs))
 
 	info := &pb.ProgramInfo{
-		Name:       prog.Meta.Name,
-		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Load.ObjectPath()}},
-		Metadata:   prog.Meta.Metadata,
-		GlobalData: prog.Load.GlobalData(),
-		MapPinPath: prog.Handles.MapPinPath,
+		Name:       prog.Record.Meta.Name,
+		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
+		Metadata:   prog.Record.Meta.Metadata,
+		GlobalData: prog.Record.Load.GlobalData(),
+		MapPinPath: prog.Record.Handles.MapPinPath,
 		Links:      linkIDs,
 	}
-	if prog.Handles.MapOwnerID != nil {
-		info.MapOwnerId = prog.Handles.MapOwnerID
+	if prog.Record.Handles.MapOwnerID != nil {
+		info.MapOwnerId = prog.Record.Handles.MapOwnerID
 	}
 
-	// Note: GplCompatible is stored in the database at load time (from the
-	// ELF license section) and retrieved here from metadata, not from the
-	// kernel. The kernel doesn't expose GPL compatibility after load. The
-	// field is in KernelProgramInfo because the protobuf schema is a stable
-	// API that we cannot modify.
 	return &pb.GetResponse{
 		Info: info,
 		KernelInfo: &pb.KernelProgramInfo{
 			Id:            req.Id,
 			Name:          kp.Name,
-			ProgramType:   uint32(prog.Load.ProgramType()),
+			ProgramType:   uint32(prog.Record.Load.ProgramType()),
 			Tag:           kp.Tag,
 			LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
-			GplCompatible: prog.GPLCompatible,
+			GplCompatible: prog.Record.GPLCompatible,
 			MapIds:        kp.MapIDs,
 			BtfId:         kp.BTFId,
 			BytesXlated:   kp.XlatedSize,
@@ -174,68 +123,43 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 
 // ListLinks implements the ListLinks RPC method.
 func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.ListLinksResponse, error) {
-	if err := s.mgr.GCIfNeeded(ctx, false); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
+	var opts []bpfman.LinkListOption
+	if req.ProgramId != nil {
+		opts = append(opts, bpfman.WithProgramID(*req.ProgramId))
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	scanner := s.layout.BPFFS().Scanner()
-	world, err := inspect.Snapshot(ctx, s.store, s.kernel, scanner)
+	records, err := s.mgr.ListLinks(ctx, opts...)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to snapshot: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list links: %v", err)
 	}
 
 	resp := &pb.ListLinksResponse{
-		Links: make([]*pb.LinkInfo, 0),
+		Links: make([]*pb.LinkInfo, 0, len(records)),
 	}
 
-	for _, row := range world.ManagedLinks() {
-		// Get kernel program ID if available
-		var kernelProgramID uint32
-		if row.Kernel != nil {
-			kernelProgramID = row.Kernel.ProgramID
-		}
-
-		// Filter by program ID if specified
-		if req.ProgramId != nil && kernelProgramID != *req.ProgramId {
-			continue
-		}
-
-		// Get kernel link ID if available
+	for _, record := range records {
 		var kernelLinkID uint32
-		if klid := row.KernelLinkID(); klid != nil {
-			kernelLinkID = *klid
+		if !record.IsSynthetic() {
+			kernelLinkID = uint32(record.ID)
 		}
 
 		resp.Links = append(resp.Links, &pb.LinkInfo{
 			Summary: &pb.LinkSummary{
 				KernelLinkId:    kernelLinkID,
-				LinkType:        linkKindStringToProto(string(row.Kind())),
-				KernelProgramId: kernelProgramID,
-				PinPath:         row.PinPath(),
+				LinkType:        linkKindToProto(record.Kind),
+				KernelProgramId: record.ProgramID,
 			},
 		})
 	}
 
 	s.logger.InfoContext(ctx, "ListLinks", "links", len(resp.Links))
-
 	return resp, nil
 }
 
 // GetLink implements the GetLink RPC method.
 func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLinkResponse, error) {
-	if err := s.mgr.GCIfNeeded(ctx, false); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	scanner := s.layout.BPFFS().Scanner()
 	linkID := bpfman.LinkID(req.KernelLinkId)
-	info, err := inspect.GetLink(ctx, s.store, s.kernel, scanner, linkID)
+	info, err := s.mgr.GetLinkInfo(ctx, linkID)
 	if errors.Is(err, inspect.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
 	}
@@ -318,12 +242,6 @@ func linkKindToProto(k bpfman.LinkKind) pb.BpfmanLinkType {
 	default:
 		return pb.BpfmanLinkType_LINK_TYPE_UNSPECIFIED
 	}
-}
-
-// linkKindStringToProto converts a link kind string to protobuf.
-// Used when working with inspect.LinkRow which stores kind as string.
-func linkKindStringToProto(k string) pb.BpfmanLinkType {
-	return linkKindToProto(bpfman.LinkKind(k))
 }
 
 // linkDetailsToProto converts bpfman.LinkDetails to protobuf.

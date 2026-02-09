@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
@@ -68,9 +70,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	layout := cfg.Layout
 
 	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	}
 	// Wrap with context-aware handler to extract op_id from context.
 	// This must happen at the server level since op_id is generated here.
 	logger = manager.WithOpIDHandler(logger)
@@ -191,7 +190,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	// Start bpfman gRPC server
-	srv := newWithStore(layout, st, mgr, logger)
+	srv := &Server{
+		layout:   layout,
+		netIface: DefaultNetIfaceResolver{},
+		mgr:      mgr,
+		logger:   logger.With("component", "server"),
+	}
 
 	// Use override socket path if provided, otherwise use default from layout
 	socketPath := cfg.SocketPath
@@ -203,49 +207,32 @@ func Run(ctx context.Context, cfg RunConfig) error {
 }
 
 // Server implements the bpfman gRPC service.
+//
+// The server uses a single-writer/multi-reader model. Mutating RPCs
+// acquire the cross-process flock and the in-process write mutex;
+// read RPCs acquire the in-process read mutex. The flock scope is
+// stored in context so that handlers needing it (container uprobes)
+// can retrieve it via ScopeFromContext.
 type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	mu        sync.RWMutex
 	layout    bpfmanfs.FSLayout
-	kernel    interpreter.KernelOperations
-	store     interpreter.Store
 	netIface  NetIfaceResolver
 	mgr       *manager.Manager
 	logger    *slog.Logger
 	opCounter atomic.Uint64
 }
 
-// newWithStore creates a new bpfman gRPC server with a pre-configured store and manager.
-// The logger should already be wrapped with WithOpIDHandler by the caller.
-func newWithStore(layout bpfmanfs.FSLayout, store interpreter.Store, mgr *manager.Manager, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Server{
-		layout:   layout,
-		kernel:   ebpf.New(ebpf.WithLogger(logger)),
-		store:    store,
-		netIface: DefaultNetIfaceResolver{},
-		mgr:      mgr,
-		logger:   logger.With("component", "server"),
-	}
-}
-
 // New creates a server with the provided dependencies.
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
 // The manager should include an ImagePuller if OCI image loading is needed.
-func New(layout bpfmanfs.FSLayout, store interpreter.Store, kernel interpreter.KernelOperations, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func New(layout bpfmanfs.FSLayout, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{
 		layout:   layout,
-		kernel:   kernel,
-		store:    store,
 		netIface: netIface,
 		mgr:      mgr,
 		logger:   logger.With("component", "server"),
@@ -286,13 +273,8 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 		return fmt.Errorf("failed to set socket permissions: %w", err)
 	}
 
-	// Create gRPC server with logging and lock interceptors.
-	// Order: logging first (for op_id), then lock (for mutating operations).
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(
-			s.loggingInterceptor(),
-			s.lockInterceptor(),
-		),
+		grpc.UnaryInterceptor(s.rpcInterceptor()),
 	)
 	pb.RegisterBpfmanServer(grpcServer, s)
 
@@ -339,29 +321,16 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 	}
 }
 
-// loggingInterceptor returns a gRPC unary interceptor that assigns a
-// monotonic operation ID to each request and logs errors.
-func (s *Server) loggingInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		opID := s.opCounter.Add(1)
-		ctx = manager.ContextWithOpID(ctx, opID)
-		resp, err := handler(ctx, req)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "grpc error", "op_id", opID, "method", info.FullMethod, "error", err)
-		}
-		return resp, err
-	}
-}
-
-// lockInterceptor returns a gRPC unary interceptor that acquires the
-// global writer lock for mutating operations. The lock scope is stored
-// in context for handlers to retrieve via ScopeFromContext.
+// rpcInterceptor returns a gRPC unary interceptor that handles all
+// per-request coordination: operation ID assignment, error logging,
+// GC, locking, and mutation tracking.
 //
-// This is a server-only exception to the "no context for capabilities" rule.
-// The interceptor acquires the lock at the correct boundary (before handlers),
-// and the exception is local to the server package. This will be removed
-// when the server is removed.
-func (s *Server) lockInterceptor() grpc.UnaryServerInterceptor {
+// Every request runs GC before dispatch. Mutating RPCs (Load, Unload,
+// Attach, Detach) then acquire the cross-process flock and the
+// in-process write mutex, and mark state as mutated on return. All
+// other RPCs acquire the in-process read mutex. The flock scope is
+// stored in context for handlers that need it (container uprobes).
+func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	mutatingMethods := map[string]bool{
 		"/bpfman.v1.Bpfman/Load":   true,
 		"/bpfman.v1.Bpfman/Unload": true,
@@ -371,42 +340,67 @@ func (s *Server) lockInterceptor() grpc.UnaryServerInterceptor {
 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (any, error) {
-		if !mutatingMethods[info.FullMethod] {
-			return handler(ctx, req)
+		opID := s.opCounter.Add(1)
+		ctx = manager.ContextWithOpID(ctx, opID)
+
+		mutating := mutatingMethods[info.FullMethod]
+		if err := s.mgr.GCIfNeeded(ctx, mutating); err != nil {
+			return nil, status.Errorf(codes.Internal, "gc: %v", err)
 		}
 
 		var resp any
-		var handlerErr error
+		var err error
 
-		runErr := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger,
-			func(ctx context.Context, scope lock.WriterScope) error {
-				// Stash scope in ctx so handlers can pass it to manager
-				// methods that need it (e.g., container uprobe).
-				ctx = contextWithScope(ctx, scope)
-				resp, handlerErr = handler(ctx, req)
-				return handlerErr
-			})
-
-		if runErr != nil {
-			return nil, runErr
+		if mutating {
+			resp, err = s.handleMutating(ctx, req, handler)
+		} else {
+			resp, err = s.handleRead(ctx, req, handler)
 		}
-		return resp, handlerErr
+
+		if err != nil {
+			s.logger.ErrorContext(ctx, "grpc error", "op_id", opID, "method", info.FullMethod, "error", err)
+		}
+
+		return resp, err
 	}
 }
 
-// Server-only context helpers for passing lock scope to handlers.
-// Not for general use - the scope flows explicitly through manager APIs.
+// handleMutating runs a mutating RPC under the cross-process flock
+// and in-process write mutex, marking state as mutated on return.
+// The flock scope is stored in context for handlers that need it
+// (container uprobes pass the lock fd to the bpfman-ns helper).
+func (s *Server) handleMutating(ctx context.Context, req any, handler grpc.UnaryHandler) (any, error) {
+	var resp any
+	err := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger, func(ctx context.Context, scope lock.WriterScope) error {
+		ctx = contextWithScope(ctx, scope)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer s.mgr.MarkMutated()
+		var handlerErr error
+		resp, handlerErr = handler(ctx, req)
+		return handlerErr
+	})
+	return resp, err
+}
+
+// handleRead runs a non-mutating RPC under the read mutex.
+func (s *Server) handleRead(ctx context.Context, req any, handler grpc.UnaryHandler) (any, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return handler(ctx, req)
+}
+
+// scopeKey is the context key for the cross-process flock scope.
 type scopeKey struct{}
 
-func contextWithScope(ctx context.Context, s lock.WriterScope) context.Context {
-	return context.WithValue(ctx, scopeKey{}, s)
+// contextWithScope stores the lock scope in context for handlers.
+func contextWithScope(ctx context.Context, scope lock.WriterScope) context.Context {
+	return context.WithValue(ctx, scopeKey{}, scope)
 }
 
 // ScopeFromContext retrieves the lock scope from context.
-// Returns nil if no scope is stored (e.g., read-only operations).
+// Returns nil if no scope is present (non-mutating RPCs).
 func ScopeFromContext(ctx context.Context) lock.WriterScope {
-	if v := ctx.Value(scopeKey{}); v != nil {
-		return v.(lock.WriterScope)
-	}
-	return nil
+	scope, _ := ctx.Value(scopeKey{}).(lock.WriterScope)
+	return scope
 }

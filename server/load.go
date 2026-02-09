@@ -17,14 +17,6 @@ import (
 
 // Load implements the Load RPC method.
 func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.mgr.GCIfNeeded(ctx, true); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-	defer s.mgr.MarkMutated()
-
 	if req.Bytecode == nil {
 		return nil, status.Error(codes.InvalidArgument, "bytecode location is required")
 	}
@@ -177,14 +169,6 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 
 // Unload implements the Unload RPC method.
 func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.mgr.GCIfNeeded(ctx, true); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-	defer s.mgr.MarkMutated()
-
 	if err := s.mgr.Unload(ctx, req.Id); err != nil {
 		var notManaged bpfman.ErrProgramNotManaged
 		var notFound bpfman.ErrProgramNotFound
@@ -199,6 +183,5 @@ func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadR
 	}
 
 	s.logger.InfoContext(ctx, "Unload", "program_id", req.Id)
-
 	return &pb.UnloadResponse{}, nil
 }

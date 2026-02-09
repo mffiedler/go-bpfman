@@ -15,14 +15,6 @@ import (
 
 // Attach implements the Attach RPC method.
 func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.mgr.GCIfNeeded(ctx, true); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-	defer s.mgr.MarkMutated()
-
 	if req.Attach == nil {
 		return nil, status.Error(codes.InvalidArgument, "attach info is required")
 	}
@@ -65,7 +57,6 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 	}
 
 	s.logger.InfoContext(ctx, "Attach", "type", attachType, "program_id", req.Id, "link_id", resp.LinkId)
-
 	return resp, nil
 }
 
@@ -296,7 +287,7 @@ func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.Up
 		spec = spec.WithContainerPid(*info.ContainerPid)
 	}
 
-	// Retrieve lock scope from context (set by lockInterceptor).
+	// Retrieve lock scope from context (set by rpcInterceptor).
 	// Required for container uprobes to pass lock fd to helper.
 	scope := ScopeFromContext(ctx)
 
@@ -317,7 +308,7 @@ func (s *Server) attachUprobe(ctx context.Context, programID uint32, info *pb.Up
 
 // attachFentry handles fentry attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFentry(ctx context.Context, programID uint32, info *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFentry(ctx context.Context, programID uint32, _ *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FentryAttachSpec with validated input
 	spec, err := bpfman.NewFentryAttachSpec(programID)
 	if err != nil {
@@ -342,7 +333,7 @@ func (s *Server) attachFentry(ctx context.Context, programID uint32, info *pb.Fe
 
 // attachFexit handles fexit attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFexit(ctx context.Context, programID uint32, info *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFexit(ctx context.Context, programID uint32, _ *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FexitAttachSpec with validated input
 	spec, err := bpfman.NewFexitAttachSpec(programID)
 	if err != nil {
@@ -367,14 +358,6 @@ func (s *Server) attachFexit(ctx context.Context, programID uint32, info *pb.Fex
 
 // Detach implements the Detach RPC method.
 func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := s.mgr.GCIfNeeded(ctx, true); err != nil {
-		return nil, status.Errorf(codes.Internal, "gc: %v", err)
-	}
-	defer s.mgr.MarkMutated()
-
 	if err := s.mgr.Detach(ctx, bpfman.LinkID(req.LinkId)); err != nil {
 		var notManaged bpfman.ErrLinkNotManaged
 		var notFound bpfman.ErrLinkNotFound
@@ -389,6 +372,5 @@ func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachR
 	}
 
 	s.logger.InfoContext(ctx, "Detach", "link_id", req.LinkId)
-
 	return &pb.DetachResponse{}, nil
 }
