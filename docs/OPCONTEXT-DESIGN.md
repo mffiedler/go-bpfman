@@ -1517,10 +1517,392 @@ Two things that imperative-with-OpContext does not:
 
 ### Recommendation
 
-OpContext as designed is the right first step.  It extracts the
-transaction mechanics and gets operations to clean imperative pipelines.
-If, after migrating all five operations, the remaining closure
-boilerplate still feels like the wrong shape, the path from OpContext to
-a plan interpreter is incremental -- `ExecutePlan` is already the seed.
-Building the full binding/dependency mechanism now, before validating
-OpContext itself, is premature.
+~~OpContext as designed is the right first step.~~  Superseded by the
+implementation approach below.
+
+## Addendum: implementation approach — machinery, plans, load
+
+This supersedes the Phase 1 / Phase 2 rollout sections.  The shared
+infrastructure (recorder API, action package, severity model) is the
+same; the change is going directly to plans rather than building
+OpContext as an intermediate user-facing API.
+
+### Strategy
+
+Build the machinery that plans need first.  Then build the plan
+infrastructure.  Then migrate Load as the first real validation.
+
+The plan interpreter implements OpContext's semantics internally —
+auto-skip, recording, rollback, severity, residual probing — but
+operations never see a transaction object.  They produce plans; the
+interpreter runs them.
+
+~80% of the work is shared with the earlier OpContext design.  The
+incremental cost is the binding mechanism (~100–150 lines) and the node
+constructors.  The payoff is that all operations — Load, Unload, attach,
+detach — have the same shape: compute a plan, run it.
+
+### Phase 1: operation machinery
+
+Each deliverable is independently testable.
+
+**1. Recorder API.**  Extend `ManagerOperationRecorder` to return
+`StepHandle` from `CompleteStep` and `FailStep`.  Add `SkipStep`,
+`WarnStep`, and `SetDetails(StepHandle, any)`.  Update existing tests.
+
+**2. `manager/action` package.**  Move the `Action` interface, all
+concrete types, `Executor` / `ExecutorWithResult` interfaces, and
+`ExecutionResult`.  Add `RemoveProgramDir{KernelID uint32}`.  Thread
+bytecode FS into the concrete executor so it can interpret the new
+action.
+
+**3. Core types in `manager/operation`.**
+
+```go
+// Key[T] is a typed reference to a plan binding.
+type Key[T any] struct{ name string }
+
+func NewKey[T any](name string) Key[T] { return Key[T]{name: name} }
+
+// Bindings stores values produced by Produce nodes during execution.
+// The interpreter creates and owns the Bindings; plan nodes read via
+// Get.  After Run returns, callers use the same Get to extract results.
+type Bindings struct{ store map[string]any }
+
+func Get[T any](b *Bindings, key Key[T]) T {
+    return b.store[key.name].(T)
+}
+
+// UndoEntry declares a rollback action with recording metadata and
+// severity.  Used by both UndoFrom (late-bind) and WithUndo (static).
+type UndoEntry struct {
+    Action   action.Action
+    Step     outcome.Step
+    Severity RollbackSeverity
+}
+
+// RollbackSeverity, StepHandle — as defined earlier in this document.
+```
+
+### Phase 2: plan infrastructure
+
+#### Plan and node types
+
+A `Plan` is an ordered list of nodes.  Four constructors cover all
+operation shapes:
+
+```go
+type Plan struct{ nodes []node }
+
+func Build(nodes ...Node) Plan
+
+// Validate: pure check, no side effect, no undo.
+// Sets the operation error on failure.
+func Validate(label string, kind outcome.StepKind, target string,
+    fn func(context.Context, *Bindings) error,
+) Node
+
+// Produce: value-producing step.  Stores result as a binding under
+// key.  Sets the operation error on failure.
+func Produce[T any](key Key[T], kind outcome.StepKind, target string,
+    fn func(context.Context, *Bindings) (T, error),
+    opts ...NodeOpt,
+) Node
+
+// Do: side-effecting step.  Sets the operation error on failure.
+func Do(label string, kind outcome.StepKind, target string,
+    fn func(context.Context, *Bindings) error,
+    opts ...NodeOpt,
+) Node
+
+// Try: best-effort step.  Records WarnStep on failure but does not
+// set the operation error.  The plan continues regardless.
+func Try(label string, kind outcome.StepKind, target string,
+    fn func(context.Context, *Bindings) error,
+) Node
+```
+
+`Validate` is syntactic sugar for `Do` without undo — kept for
+readability at call sites.
+
+Internally, `Produce` erases the return type at construction time
+(storing the function as `func(context.Context, *Bindings) (any,
+error)`).  The typed `Key[T]` at the `Get` call site recovers the type
+via assertion.  The types match because the same key is used for both
+`Produce` and `Get`.
+
+#### Node options
+
+```go
+// DetailsFn attaches details to the recorded step after execution.
+// Called only on success, after the binding (if any) is stored.
+func DetailsFn(fn func(*Bindings) any) NodeOpt
+
+// UndoFrom declares late-bind undo: the closure is called after
+// successful execution to compute undo entries from bindings.
+func UndoFrom(fn func(*Bindings) []UndoEntry) NodeOpt
+
+// WithUndo declares a static undo entry known at plan construction
+// time.  Shorthand for UndoFrom returning a single fixed entry.
+func WithUndo(entry UndoEntry) NodeOpt
+```
+
+There is no `DependsOn` option.  Plans execute sequentially; a node
+that calls `Get(b, key)` for a key not yet produced is a programming
+error caught immediately in testing.  Static dependency declarations
+would be redundant with execution order.
+
+#### Interpreter
+
+```go
+// Run executes a plan and returns the bindings on success.
+func Run(
+    ctx context.Context,
+    begin BeginFunc,
+    exec action.ExecutorWithResult,
+    plan Plan,
+) (*Bindings, error)
+
+// Run0 executes a plan that produces no result.
+func Run0(
+    ctx context.Context,
+    begin BeginFunc,
+    exec action.ExecutorWithResult,
+    plan Plan,
+) error
+```
+
+`Run` owns the full lifecycle:
+
+1. Call `begin(ctx)` to create the recorder, logger, and residual probe.
+2. Walk nodes in order:
+   * If a prior failure exists: record `SkipStep`, continue to next
+     node.
+   * Execute the node's function.
+   * On success: record `CompleteStep`, store binding (`Produce`), call
+     `DetailsFn`, evaluate `UndoFrom` / `WithUndo` into the rollback
+     plan.
+   * On failure: record `FailStep`, set the operation error.
+   * `Try` nodes: on failure record `WarnStep`, do not set the
+     operation error.
+3. If the operation error is set and rollback entries exist: run all
+   entries in reverse, record each, log at severity level, probe
+   residuals on any failure.
+4. Finalise the recorder.
+5. Return `(*Bindings, error)`.  On failure, the error is
+   `*ManagerError` wrapping the outcome.
+
+The interpreter is the only code that touches the recorder, manages
+rollback, or knows about phases.  No operation method sees any of this.
+
+#### Test strategy
+
+Same matrix as defined earlier, exercised against the interpreter with
+a fake recorder and a fake executor.  Additionally:
+
+* `Produce` stores binding; `Get` retrieves with correct type.
+* Binding lookup for missing key panics (programming error).
+* `DetailsFn` called only on success, after binding stored.
+* `UndoFrom` called only on success, after binding stored.
+* `WithUndo` entry added to rollback plan on success.
+* `Try` node failure records `WarnStep`, does not prevent later nodes.
+* `Run` returns `*Bindings` on success; callers can `Get` results.
+* `Run0` discards bindings, returns only error.
+
+### Phase 3: migrate operations
+
+#### Unload first (validates basic plan execution)
+
+Unload already follows FETCH → COMPUTE → EXECUTE.  Its plan has no
+value dependencies — all values come from stored state.  This makes it
+the simplest first validation of the interpreter.
+
+```go
+func (m *Manager) unloadPlan(kernelID uint32, name string, ...) operation.Plan {
+    entries := computeUnloadPlan(kernelID, name, progPinPath, mapsDir, linksDir, links)
+
+    nodes := make([]operation.Node, 0, len(entries)+1)
+    for _, e := range entries {
+        nodes = append(nodes, operation.Do(
+            string(e.Step.Kind), e.Step.Kind, e.Step.Target,
+            func(ctx context.Context, b *operation.Bindings) error {
+                return m.executor.Execute(ctx, e.Action)
+            },
+        ))
+    }
+
+    // Best-effort bytecode removal.
+    nodes = append(nodes, operation.Try(
+        "fs-remove-program", outcome.StepKindFSRemoveProgram, name,
+        func(ctx context.Context, b *operation.Bindings) error {
+            return m.executor.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID})
+        },
+    ))
+
+    return operation.Build(nodes...)
+}
+
+func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
+    // ... fetch stored state ...
+    return operation.Run0(ctx, m.beginOp, m.executor, m.unloadPlan(kernelID, name, ...))
+}
+```
+
+This validates the interpreter, recording, auto-skip, and `Try`
+semantics without touching bindings.
+
+#### Load second (validates bindings and undo)
+
+```go
+var loadedKey = operation.NewKey[*platform.KernelLoaded]("loaded")
+
+func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
+    name := spec.ProgramName()
+    rt := m.fsctx.BytecodeFS()
+
+    return operation.Build(
+        operation.Validate("preflight", outcome.StepKindPreflight, "validation",
+            func(ctx context.Context, b *operation.Bindings) error {
+                if spec.HasImageSource() && spec.ObjectPath() == "" {
+                    return fmt.Errorf("load requires objectPath; image pulling is handled by Load")
+                }
+                return nil
+            },
+        ),
+
+        operation.Produce(loadedKey, outcome.StepKindKernelLoad, name,
+            func(ctx context.Context, b *operation.Bindings) (*platform.KernelLoaded, error) {
+                return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+            },
+            operation.DetailsFn(func(b *operation.Bindings) any {
+                loaded := operation.Get(b, loadedKey)
+                return outcome.ProgramDetails{
+                    KernelID: loaded.Program.ID,
+                    PinPath:  loaded.PinPath,
+                }
+            }),
+            operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
+                loaded := operation.Get(b, loadedKey)
+                return []operation.UndoEntry{
+                    {
+                        Action:   action.UnloadProgram{PinPath: loaded.PinPath},
+                        Step:     outcome.NewStep(outcome.StepKindKernelUnload, name, outcome.ProgramDetails{KernelID: loaded.Program.ID, PinPath: loaded.PinPath}),
+                        Severity: operation.SeverityError,
+                    },
+                    {
+                        Action:   action.UnloadProgram{PinPath: loaded.MapsDir},
+                        Step:     outcome.NewStep(outcome.StepKindKernelUnload, name, outcome.ProgramDetails{KernelID: loaded.Program.ID, MapsDirPath: loaded.MapsDir}),
+                        Severity: operation.SeverityError,
+                    },
+                }
+            }),
+        ),
+
+        operation.Do("db-check", outcome.StepKindPreflight, name,
+            func(ctx context.Context, b *operation.Bindings) error {
+                loaded := operation.Get(b, loadedKey)
+                if _, err := m.store.Get(ctx, loaded.Program.ID); err == nil {
+                    return fmt.Errorf("program %d already exists in database", loaded.Program.ID)
+                } else if !errors.Is(err, store.ErrNotFound) {
+                    return fmt.Errorf("check existing program %d: %w", loaded.Program.ID, err)
+                }
+                return nil
+            },
+        ),
+
+        operation.Do("fs-publish", outcome.StepKindFSPublish, name,
+            func(ctx context.Context, b *operation.Bindings) error {
+                loaded := operation.Get(b, loadedKey)
+                prov := buildProvenance(spec, loaded, now)
+                return rt.PublishBytecode(loaded.Program.ID, spec.ObjectPath(), prov)
+            },
+            operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
+                loaded := operation.Get(b, loadedKey)
+                return []operation.UndoEntry{{
+                    Action:   action.RemoveProgramDir{KernelID: loaded.Program.ID},
+                    Step:     outcome.NewStep(outcome.StepKindFSRemoveProgram, name, outcome.ProgramDetails{KernelID: loaded.Program.ID}),
+                    Severity: operation.SeverityWarning,
+                }}
+            }),
+        ),
+
+        operation.Do("store-save", outcome.StepKindStoreSaveProgram, name,
+            func(ctx context.Context, b *operation.Bindings) error {
+                loaded := operation.Get(b, loadedKey)
+                record := buildProgramRecord(spec, loaded, opts, rt, now)
+                return m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+                    return tx.Save(ctx, loaded.Program.ID, record)
+                })
+            },
+            operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
+                loaded := operation.Get(b, loadedKey)
+                return []operation.UndoEntry{{
+                    Action:   action.DeleteProgram{KernelID: loaded.Program.ID},
+                    Step:     outcome.NewStep(outcome.StepKindStoreDeleteProgram, name, outcome.ProgramDetails{KernelID: loaded.Program.ID}),
+                    Severity: operation.SeverityError,
+                }}
+            }),
+        ),
+    )
+}
+```
+
+The `load` wrapper:
+
+```go
+func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
+    now := time.Now()
+    b, err := operation.Run(ctx, m.beginOp, m.executor, m.loadPlan(spec, opts, now))
+    if err != nil {
+        return bpfman.Program{}, err
+    }
+    loaded := operation.Get(b, loadedKey)
+    record := buildProgramRecord(spec, loaded, opts, m.fsctx.BytecodeFS(), now)
+    return constructProgram(loaded, record), nil
+}
+```
+
+`now` is captured once by the caller and threaded into the plan, so the
+`buildProgramRecord` call in the wrapper and in `store-save` use the
+same timestamp.  `buildProgramRecord` is pure and cheap; computing it
+twice (once inside the plan for the DB, once outside for the return
+value) is harmless.  If that duplication bothers us later, a `Bind` node
+type (pure computation, no recording) can hoist it into the plan as a
+binding.
+
+#### What gets deleted
+
+Once all operations are migrated:
+
+* `undoStack` and `recordRollback`
+* The `fail` closure pattern
+* Manual recorder driving (`CompleteStep`, `FailStep` calls in manager)
+* The bespoke `rollbackLoad` closure
+* `unloadEntry` (replaced by `PlanEntry` or direct `Do` nodes)
+
+### Non-plan operations
+
+Dispatcher attach has retry logic that does not fit a linear plan.  For
+now, these operations use the interpreter's internal machinery via a
+thin escape hatch (direct `beginOp` + step-by-step recording + manual
+rollback + `finish`).  This is the same non-closure path described
+earlier in the document.  Plan coverage can be extended to these
+operations later if a `Retry` node type proves worthwhile.
+
+### Risk
+
+The only genuinely new piece relative to the earlier OpContext design is
+the binding mechanism (`Key[T]`, `Bindings`, `Get`).  It is ~50 lines
+of code plus the type-erasure wrapper in `Produce`.  Everything else —
+recorder API, action extraction, severity model, interpreter loop,
+rollback semantics, residual probing — is shared infrastructure that any
+approach needs.
+
+The main risk is Go's lack of sum types making the internal node
+representation slightly awkward (a `node` struct with a `flavor` tag
+and an `any`-typed function field, or an interface with a private
+marker).  This is contained inside `manager/operation` and invisible to
+callers.  If it proves unacceptable, falling back to the imperative
+OpContext API is straightforward: the shared machinery is identical, and
+the plan constructors become `OpContext.Step` / `Fetch` / `TryStep`
+calls.
