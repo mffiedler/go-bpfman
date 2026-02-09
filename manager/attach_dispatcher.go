@@ -65,20 +65,14 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	}
 
 	// FETCH: Get program metadata to access ObjectPath and ProgramName
-	prog, err := m.store.Get(ctx, p.programKernelID)
+	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		var primaryErr error
-		if errors.Is(err, store.ErrNotFound) {
-			primaryErr = bpfman.ErrProgramNotFound{ID: p.programKernelID}
-		} else {
-			primaryErr = fmt.Errorf("get program %d: %w", p.programKernelID, err)
-		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: p.target,
-			Error:  primaryErr.Error(),
+			Error:  err.Error(),
 		})
-		return fail(primaryErr)
+		return fail(err)
 	}
 
 	// FETCH: Get network namespace ID (from target namespace if specified)

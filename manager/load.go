@@ -307,18 +307,15 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	}
 
 	// FETCH: Get metadata and links (for link cleanup)
-	progSpec, err := m.store.Get(ctx, kernelID)
+	progSpec, err := m.getProgram(ctx, kernelID)
 	if err != nil {
-		var primaryErr error
-		if errors.Is(err, store.ErrNotFound) {
-			// Check if program exists in kernel but isn't managed by bpfman
+		primaryErr := err
+		// Distinguish "not found" from "not managed" by checking kernel.
+		var notFound bpfman.ErrProgramNotFound
+		if errors.As(err, &notFound) {
 			if _, kerr := m.kernel.GetProgramByID(ctx, kernelID); kerr == nil {
 				primaryErr = bpfman.ErrProgramNotManaged{ID: kernelID}
-			} else {
-				primaryErr = bpfman.ErrProgramNotFound{ID: kernelID}
 			}
-		} else {
-			primaryErr = fmt.Errorf("get program %d: %w", kernelID, err)
 		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,

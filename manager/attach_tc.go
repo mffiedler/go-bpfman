@@ -13,7 +13,6 @@ import (
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // TC proceed-on action bits (matches TC_ACT_* return codes).
@@ -119,20 +118,14 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	target := ifname + ":" + string(direction)
 
 	// FETCH: Get program metadata to find pin path
-	prog, err := m.store.Get(ctx, programKernelID)
+	prog, err := m.getProgram(ctx, programKernelID)
 	if err != nil {
-		var primaryErr error
-		if errors.Is(err, store.ErrNotFound) {
-			primaryErr = bpfman.ErrProgramNotFound{ID: programKernelID}
-		} else {
-			primaryErr = fmt.Errorf("get program %d: %w", programKernelID, err)
-		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: target,
-			Error:  primaryErr.Error(),
+			Error:  err.Error(),
 		})
-		return fail(primaryErr)
+		return fail(err)
 	}
 
 	// Verify program type is TCX

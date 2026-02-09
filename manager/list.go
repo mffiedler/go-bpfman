@@ -146,12 +146,9 @@ func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID uint32
 
 // GetLink retrieves a link by link ID, returning the full record with details.
 func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
-	record, err := m.store.GetLink(ctx, linkID)
+	record, err := m.getLink(ctx, linkID)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return bpfman.LinkRecord{}, bpfman.ErrLinkNotFound{LinkID: linkID}
-		}
-		return bpfman.LinkRecord{}, fmt.Errorf("get link %d: %w", linkID, err)
+		return bpfman.LinkRecord{}, err
 	}
 	return record, nil
 }

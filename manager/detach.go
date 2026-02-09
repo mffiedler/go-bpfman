@@ -11,7 +11,6 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/outcome"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // Detach removes a link by link ID.
@@ -39,18 +38,15 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	target := fmt.Sprintf("%d", linkID)
 
 	// FETCH: Get link record (includes details)
-	record, err := m.store.GetLink(ctx, linkID)
+	record, err := m.getLink(ctx, linkID)
 	if err != nil {
-		var primaryErr error
-		if errors.Is(err, store.ErrNotFound) {
-			// Check if link exists in kernel but isn't managed by bpfman
+		primaryErr := err
+		// Distinguish "not found" from "not managed" by checking kernel.
+		var notFound bpfman.ErrLinkNotFound
+		if errors.As(err, &notFound) {
 			if _, kerr := m.kernel.GetLinkByID(ctx, uint32(linkID)); kerr == nil {
 				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
-			} else {
-				primaryErr = bpfman.ErrLinkNotFound{LinkID: linkID}
 			}
-		} else {
-			primaryErr = fmt.Errorf("get link %d: %w", linkID, err)
 		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,

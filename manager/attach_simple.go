@@ -2,14 +2,12 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/outcome"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // attachPlan captures the variable parts of a simple attach operation.
@@ -68,20 +66,14 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	}
 
 	// FETCH: Verify program exists in store.
-	prog, err := m.store.Get(ctx, p.programKernelID)
+	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		var primaryErr error
-		if errors.Is(err, store.ErrNotFound) {
-			primaryErr = bpfman.ErrProgramNotFound{ID: p.programKernelID}
-		} else {
-			primaryErr = fmt.Errorf("get program %d: %w", p.programKernelID, err)
-		}
 		_ = rec.Fail(outcome.Step{
 			Kind:   outcome.StepKindPreflight,
 			Target: preTarget,
-			Error:  primaryErr.Error(),
+			Error:  err.Error(),
 		})
-		return fail(primaryErr)
+		return fail(err)
 	}
 
 	progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
