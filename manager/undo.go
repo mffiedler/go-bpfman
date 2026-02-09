@@ -59,12 +59,12 @@ func recordRollback(rec *outcome.ManagerOperationRecorder, undo undoStack, step 
 		}
 		rec.SetRollbackErrors(toOutcomeErrors(rbErrs))
 		step.Error = rbErrs[0].Err.Error()
-		if recErr := rec.RollbackFail(step); recErr != nil {
+		if _, recErr := rec.RollbackFail(step); recErr != nil {
 			logger.Error("outcome recorder: invariant violation", "error", recErr)
 		}
 		return true
 	}
-	if recErr := rec.RollbackComplete(step); recErr != nil {
+	if _, recErr := rec.RollbackComplete(step); recErr != nil {
 		logger.Error("outcome recorder: invariant violation", "error", recErr)
 	}
 	return false

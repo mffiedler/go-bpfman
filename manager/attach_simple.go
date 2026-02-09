@@ -70,7 +70,8 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	// FETCH: Verify program exists in store.
 	prog, err := m.getProgram(ctx, p.programKernelID)
 	if err != nil {
-		return fail(rec.FailStep(outcome.StepKindPreflight, preTarget, err))
+		rec.FailStep(outcome.StepKindPreflight, preTarget, err)
+		return fail(err)
 	}
 
 	progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
@@ -82,7 +83,8 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 		if target == "" {
 			target = preTarget
 		}
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, err))
+		rec.FailStep(outcome.StepKindPreflight, target, err)
+		return fail(err)
 	}
 
 	linkPinPath := m.fsctx.BPFFS().LinkPinPath(p.programKernelID, plan.linkName)
@@ -91,11 +93,12 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	attachOut, err := plan.attach(linkPinPath)
 	if err != nil {
 		primaryErr := fmt.Errorf("attach %s: %w", plan.target, err)
-		return fail(rec.FailStep(p.stepKind, plan.target, primaryErr, outcome.LinkDetails{
+		rec.FailStep(p.stepKind, plan.target, primaryErr, outcome.LinkDetails{
 			ProgramID: p.programKernelID,
 			PinPath:   linkPinPath,
 			Function:  plan.function,
-		}))
+		})
+		return fail(primaryErr)
 	}
 
 	// CONSTRUCT
@@ -133,8 +136,9 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 		m.logger.ErrorContext(ctx, "persist failed, rolling back",
 			"program_id", p.programKernelID, "error", err)
 
-		storeErr := rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
-			fmt.Errorf("save link metadata: %w", err), outcome.LinkDetails{
+		storeErr := fmt.Errorf("save link metadata: %w", err)
+		rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
+			storeErr, outcome.LinkDetails{
 				LinkID:    uint32(link.Record.ID),
 				ProgramID: p.programKernelID,
 				PinPath:   linkPinPath,

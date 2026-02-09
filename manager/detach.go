@@ -50,7 +50,8 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 				primaryErr = bpfman.ErrLinkNotManaged{LinkID: linkID}
 			}
 		}
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
+		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
+		return fail(primaryErr)
 	}
 
 	// FETCH: Get dispatcher state if this is a dispatcher-based link
@@ -59,7 +60,8 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
 			primaryErr := fmt.Errorf("extract dispatcher key: %w", err)
-			return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
+			rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
+			return fail(primaryErr)
 		}
 		if dispType != "" {
 			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
@@ -86,11 +88,11 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		if len(linkSteps) > 0 {
 			failedStep := linkSteps[0]
 			failedStep.Error = primaryErr.Error()
-			if recErr := rec.Fail(failedStep); recErr != nil {
+			if _, recErr := rec.Fail(failedStep); recErr != nil {
 				m.logger.Error("outcome recorder: invariant violation", "error", recErr)
 			}
 		} else {
-			if recErr := rec.Fail(outcome.Step{
+			if _, recErr := rec.Fail(outcome.Step{
 				Kind:   outcome.StepKindKernelDetachLink,
 				Target: target,
 				Error:  primaryErr.Error(),
@@ -103,7 +105,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 
 	// Record successful detach steps
 	for _, step := range linkSteps {
-		if recErr := rec.Complete(step); recErr != nil {
+		if _, recErr := rec.Complete(step); recErr != nil {
 			m.logger.Error("outcome recorder: invariant violation", "error", recErr)
 		}
 	}
@@ -112,9 +114,10 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	// dispatcher has any remaining extensions. Clean up if empty.
 	if dispState != nil {
 		if err := m.cleanupEmptyDispatcher(ctx, *dispState); err != nil {
-			return fail(rec.FailStep(outcome.StepKindStoreDeleteDispatcher,
+			rec.FailStep(outcome.StepKindStoreDeleteDispatcher,
 				fmt.Sprintf("%s:%d:%d", dispState.Type, dispState.Nsid, dispState.Ifindex),
-				err, outcome.DispatcherDetails{DispatcherID: dispState.KernelID}))
+				err, outcome.DispatcherDetails{DispatcherID: dispState.KernelID})
+			return fail(err)
 		}
 	}
 

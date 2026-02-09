@@ -175,8 +175,8 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// remove it from the live set so the store GC reaps the row.
 	dbPrograms, err := m.store.List(ctx)
 	if err != nil {
-		retErr = rec.FailStep(outcome.StepKindPreflight, "store",
-			fmt.Errorf("list programs: %w", err))
+		retErr = fmt.Errorf("list programs: %w", err)
+		rec.FailStep(outcome.StepKindPreflight, "store", retErr)
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
@@ -205,8 +205,8 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// Phase 1: Delegate to store - it handles ordering constraints internally
 	storeResult, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
 	if err != nil {
-		retErr = rec.FailStep(outcome.StepKindStoreGCPrograms, "store",
-			fmt.Errorf("store gc: %w", err))
+		retErr = fmt.Errorf("store gc: %w", err)
+		rec.FailStep(outcome.StepKindStoreGCPrograms, "store", retErr)
 		result.Outcome.PrimaryError = retErr.Error()
 		return
 	}
@@ -258,8 +258,9 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 			}
 			if err := v.Op.Execute(); err != nil {
 				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
-				retErr = rec.FailStep(outcome.StepKindGCRemoveOrphan, v.Op.Description,
-					fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err), outcome.OrphanDetails{
+				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
+				rec.FailStep(outcome.StepKindGCRemoveOrphan, v.Op.Description,
+					retErr, outcome.OrphanDetails{
 						Category: v.Category,
 					})
 				result.Outcome.PrimaryError = retErr.Error()

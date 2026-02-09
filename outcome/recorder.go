@@ -68,10 +68,11 @@ func stepTimestamp(step Step) time.Time {
 }
 
 // Complete appends a completed step to the timeline. Returns error if already failed.
-func (r *ManagerOperationRecorder) Complete(step Step) error {
+func (r *ManagerOperationRecorder) Complete(step Step) (StepHandle, error) {
 	if r.o.Status == StatusFailure && !r.inRollback {
-		return ErrAlreadyFailed
+		return InvalidStepHandle(), ErrAlreadyFailed
 	}
+	ix := len(r.o.Timeline)
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
 		Timestamp: stepTimestamp(step),
@@ -81,14 +82,15 @@ func (r *ManagerOperationRecorder) Complete(step Step) error {
 		Target:    step.Target,
 		Details:   step.Details,
 	})
-	return nil
+	return StepHandle{ix: ix}, nil
 }
 
-// Skip appends a skipped step to the timeline. Returns error if already failed.
-func (r *ManagerOperationRecorder) Skip(step Step) error {
-	if r.o.Status == StatusFailure && !r.inRollback {
-		return ErrAlreadyFailed
-	}
+// Skip appends a skipped step to the timeline. Unlike Complete and
+// Fail, Skip always succeeds regardless of prior failure status. This
+// supports the auto-skip pattern where every node after the first
+// failure is recorded as skipped.
+func (r *ManagerOperationRecorder) Skip(step Step) (StepHandle, error) {
+	ix := len(r.o.Timeline)
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
 		Timestamp: stepTimestamp(step),
@@ -98,16 +100,17 @@ func (r *ManagerOperationRecorder) Skip(step Step) error {
 		Target:    step.Target,
 		Error:     step.Error,
 	})
-	return nil
+	return StepHandle{ix: ix}, nil
 }
 
 // Fail sets the failed step and flips status to failure.
 // Does NOT set OperationOutcome.PrimaryError - that's the manager boundary's job.
-func (r *ManagerOperationRecorder) Fail(step Step) error {
+func (r *ManagerOperationRecorder) Fail(step Step) (StepHandle, error) {
 	if r.o.Status == StatusFailure && !r.inRollback {
-		return ErrAlreadyFailed
+		return InvalidStepHandle(), ErrAlreadyFailed
 	}
 	r.o.Status = StatusFailure
+	ix := len(r.o.Timeline)
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
 		Timestamp: stepTimestamp(step),
@@ -118,7 +121,7 @@ func (r *ManagerOperationRecorder) Fail(step Step) error {
 		Error:     step.Error,
 		Details:   step.Details,
 	})
-	return nil
+	return StepHandle{ix: ix}, nil
 }
 
 // currentPhase returns the current phase (primary or rollback).
@@ -135,10 +138,11 @@ func (r *ManagerOperationRecorder) BeginRollback() {
 }
 
 // RollbackComplete records a successful rollback step.
-func (r *ManagerOperationRecorder) RollbackComplete(step Step) error {
+func (r *ManagerOperationRecorder) RollbackComplete(step Step) (StepHandle, error) {
 	if !r.inRollback {
-		return ErrRollbackNotActive
+		return InvalidStepHandle(), ErrRollbackNotActive
 	}
+	ix := len(r.o.Timeline)
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
 		Timestamp: stepTimestamp(step),
@@ -148,15 +152,16 @@ func (r *ManagerOperationRecorder) RollbackComplete(step Step) error {
 		Target:    step.Target,
 		Details:   step.Details,
 	})
-	return nil
+	return StepHandle{ix: ix}, nil
 }
 
 // RollbackFail records a failed rollback step and marks rollback as failed.
-func (r *ManagerOperationRecorder) RollbackFail(step Step) error {
+func (r *ManagerOperationRecorder) RollbackFail(step Step) (StepHandle, error) {
 	if !r.inRollback {
-		return ErrRollbackNotActive
+		return InvalidStepHandle(), ErrRollbackNotActive
 	}
 	r.rollbackFailed = true
+	ix := len(r.o.Timeline)
 	r.o.Timeline = append(r.o.Timeline, TimelineEntry{
 		Seq:       r.nextSeq(),
 		Timestamp: stepTimestamp(step),
@@ -167,7 +172,7 @@ func (r *ManagerOperationRecorder) RollbackFail(step Step) error {
 		Error:     step.Error,
 		Details:   step.Details,
 	})
-	return nil
+	return StepHandle{ix: ix}, nil
 }
 
 // RollbackFailed returns true if any rollback step has failed.
@@ -295,37 +300,40 @@ func (r *ManagerOperationRecorder) SetDetails(h StepHandle, details any) {
 	r.o.Timeline[h.ix].Details = details
 }
 
-// FailStep records a failed step and returns err for convenient chaining.
+// FailStep records a failed step and returns its handle.
 //
 // An optional single Details value may be provided.
 //
-//	return fail(rec.FailStep(kind, target, err))
-//	return fail(rec.FailStep(kind, target, err, outcome.LinkDetails{...}))
-func (r *ManagerOperationRecorder) FailStep(kind StepKind, target string, err error, details ...any) error {
+//	rec.FailStep(kind, target, err)
+//	return fail(err)
+func (r *ManagerOperationRecorder) FailStep(kind StepKind, target string, err error, details ...any) StepHandle {
 	step := Step{Kind: kind, Target: target, Error: err.Error()}
 	if len(details) > 0 {
 		step.Details = details[0]
 	}
-	if recErr := r.Fail(step); recErr != nil {
+	h, recErr := r.Fail(step)
+	if recErr != nil {
 		r.onErr(recErr)
 	}
-	return err
+	return h
 }
 
-// CompleteStep records a completed step.
+// CompleteStep records a completed step and returns its handle.
 //
 // An optional single Details value may be provided.
 //
 //	rec.CompleteStep(kind, target)
 //	rec.CompleteStep(kind, target, outcome.ProgramDetails{...})
-func (r *ManagerOperationRecorder) CompleteStep(kind StepKind, target string, details ...any) {
+func (r *ManagerOperationRecorder) CompleteStep(kind StepKind, target string, details ...any) StepHandle {
 	step := Step{Kind: kind, Target: target}
 	if len(details) > 0 {
 		step.Details = details[0]
 	}
-	if recErr := r.Complete(step); recErr != nil {
+	h, recErr := r.Complete(step)
+	if recErr != nil {
 		r.onErr(recErr)
 	}
+	return h
 }
 
 // FailFromErr is a helper to create a failed step from an error.

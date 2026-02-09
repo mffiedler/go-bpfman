@@ -122,20 +122,23 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	// FETCH: Get program metadata to find pin path
 	prog, err := m.getProgram(ctx, programKernelID)
 	if err != nil {
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, err))
+		rec.FailStep(outcome.StepKindPreflight, target, err)
+		return fail(err)
 	}
 
 	// Verify program type is TCX
 	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
 		primaryErr := fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType())
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
+		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
+		return fail(primaryErr)
 	}
 
 	// FETCH: Get network namespace ID (from target namespace if specified)
 	nsid, err := netns.GetNsid(netnsPath)
 	if err != nil {
 		primaryErr := fmt.Errorf("get nsid: %w", err)
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
+		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
+		return fail(primaryErr)
 	}
 
 	// COMPUTE: Calculate link pin path from conventions.
@@ -149,7 +152,8 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		m.logger.WarnContext(ctx, "removing stale TCX link pin", "path", linkPinPath)
 		if removeErr := os.Remove(linkPinPath); removeErr != nil {
 			primaryErr := fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, removeErr)
-			return fail(rec.FailStep(outcome.StepKindKernelRemovePin, linkPinPath, primaryErr))
+			rec.FailStep(outcome.StepKindKernelRemovePin, linkPinPath, primaryErr)
+			return fail(primaryErr)
 		}
 	}
 
@@ -160,7 +164,8 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), string(direction))
 	if err != nil {
 		primaryErr := fmt.Errorf("list existing TCX links: %w", err)
-		return fail(rec.FailStep(outcome.StepKindPreflight, target, primaryErr))
+		rec.FailStep(outcome.StepKindPreflight, target, primaryErr)
+		return fail(primaryErr)
 	}
 
 	// COMPUTE: Determine attach order based on priority
@@ -178,11 +183,12 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	attachOut, err := m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
 	if err != nil {
 		primaryErr := fmt.Errorf("attach TCX to %s %s: %w", ifname, direction, err)
-		return fail(rec.FailStep(outcome.StepKindAttachTCX, target, primaryErr, outcome.LinkDetails{
+		rec.FailStep(outcome.StepKindAttachTCX, target, primaryErr, outcome.LinkDetails{
 			ProgramID: programKernelID,
 			Interface: ifname,
 			PinPath:   linkPinPath,
-		}))
+		})
+		return fail(primaryErr)
 	}
 
 	// COMPUTE: Construct LinkSpec from AttachSpec + AttachOutput
@@ -228,8 +234,9 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	if err := m.store.SaveLink(ctx, link.Record); err != nil {
 		m.logger.ErrorContext(ctx, "persist failed, rolling back", "program_id", programKernelID, "error", err)
 
-		storeErr := rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
-			fmt.Errorf("save TCX link metadata: %w", err), outcome.LinkDetails{
+		storeErr := fmt.Errorf("save TCX link metadata: %w", err)
+		rec.FailStep(outcome.StepKindStoreSaveLink, fmt.Sprintf("%d", link.Record.ID),
+			storeErr, outcome.LinkDetails{
 				LinkID:    uint32(link.Record.ID),
 				ProgramID: programKernelID,
 				Interface: ifname,

@@ -283,7 +283,7 @@ func TestRecorder_Complete(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog"}
-	if err := rec.Complete(step); err != nil {
+	if _, err := rec.Complete(step); err != nil {
 		t.Fatalf("Complete() failed: %v", err)
 	}
 
@@ -309,12 +309,12 @@ func TestRecorder_CompleteAfterFailReturnsError(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	failStep := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "failing", Error: "boom"}
-	if err := rec.Fail(failStep); err != nil {
+	if _, err := rec.Fail(failStep); err != nil {
 		t.Fatalf("Fail() failed: %v", err)
 	}
 
 	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "another"}
-	err := rec.Complete(step)
+	_, err := rec.Complete(step)
 	if !errors.Is(err, outcome.ErrAlreadyFailed) {
 		t.Errorf("Complete() after Fail() returned %v, want ErrAlreadyFailed", err)
 	}
@@ -325,7 +325,7 @@ func TestRecorder_Fail(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	step := outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog", Error: "load failed"}
-	if err := rec.Fail(step); err != nil {
+	if _, err := rec.Fail(step); err != nil {
 		t.Fatalf("Fail() failed: %v", err)
 	}
 
@@ -351,12 +351,12 @@ func TestRecorder_DoubleFailReturnsError(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	step1 := outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "first"}
-	if err := rec.Fail(step1); err != nil {
+	if _, err := rec.Fail(step1); err != nil {
 		t.Fatalf("first Fail() failed: %v", err)
 	}
 
 	step2 := outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "second"}
-	err := rec.Fail(step2)
+	_, err := rec.Fail(step2)
 	if !errors.Is(err, outcome.ErrAlreadyFailed) {
 		t.Errorf("second Fail() returned %v, want ErrAlreadyFailed", err)
 	}
@@ -367,18 +367,18 @@ func TestRecorder_Rollback(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	// Complete a step first
-	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog"})
+	_, _ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "test_prog"})
 
 	// Fail
 	failStep := outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Error: "db failed"}
-	_ = rec.Fail(failStep)
+	_, _ = rec.Fail(failStep)
 
 	// Begin rollback
 	rec.BeginRollback()
 
 	// Record rollback step
 	rollbackStep := outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "test_prog"}
-	if err := rec.RollbackComplete(rollbackStep); err != nil {
+	if _, err := rec.RollbackComplete(rollbackStep); err != nil {
 		t.Fatalf("RollbackComplete() failed: %v", err)
 	}
 
@@ -403,11 +403,11 @@ func TestRecorder_RollbackFailFlipsStatus(t *testing.T) {
 	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "load failed"})
 	rec.BeginRollback()
 
 	failedRollback := outcome.Step{Kind: outcome.StepKindKernelUnload, Error: "permission denied"}
-	if err := rec.RollbackFail(failedRollback); err != nil {
+	if _, err := rec.RollbackFail(failedRollback); err != nil {
 		t.Fatalf("RollbackFail() failed: %v", err)
 	}
 
@@ -433,12 +433,12 @@ func TestRecorder_RollbackWithoutBeginReturnsError(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	step := outcome.Step{Kind: outcome.StepKindKernelUnload}
-	err := rec.RollbackComplete(step)
+	_, err := rec.RollbackComplete(step)
 	if !errors.Is(err, outcome.ErrRollbackNotActive) {
 		t.Errorf("RollbackComplete() without BeginRollback() returned %v, want ErrRollbackNotActive", err)
 	}
 
-	err = rec.RollbackFail(step)
+	_, err = rec.RollbackFail(step)
 	if !errors.Is(err, outcome.ErrRollbackNotActive) {
 		t.Errorf("RollbackFail() without BeginRollback() returned %v, want ErrRollbackNotActive", err)
 	}
@@ -478,7 +478,7 @@ func TestRecorder_Finalise(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	// Simulate a failed operation with residue
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
 	rec.SetResidual([]outcome.Artefact{
 		{Kind: outcome.ArtefactProgramPin, KernelID: 123},
 	}, nil)
@@ -501,9 +501,9 @@ func TestRecorder_FinaliseCleanState(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	// Simulate a failed operation with successful rollback (no residue)
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Error: "db error"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Error: "db error"})
 	rec.BeginRollback()
-	_ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload})
+	_, _ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload})
 	rec.SetResidual(nil, nil)
 
 	rec.Finalise()
@@ -523,7 +523,7 @@ func TestRecorder_Validate_Success(t *testing.T) {
 	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
-	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "prog"})
+	_, _ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "prog"})
 
 	if err := rec.Validate(); err != nil {
 		t.Errorf("Validate() failed: %v", err)
@@ -534,7 +534,7 @@ func TestRecorder_Validate_FailureWithFailedStep(t *testing.T) {
 	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
 	out.PrimaryError = "load failed: boom"
 
 	if err := rec.Validate(); err != nil {
@@ -643,11 +643,11 @@ func TestRecorder_FailStep(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	origErr := errors.New("load failed")
-	returned := rec.FailStep(outcome.StepKindKernelLoad, "test_prog", origErr)
+	h := rec.FailStep(outcome.StepKindKernelLoad, "test_prog", origErr)
 
-	// FailStep returns the original error for chaining.
-	if returned != origErr {
-		t.Errorf("FailStep() returned %v, want %v", returned, origErr)
+	// FailStep returns a valid handle.
+	if !h.Valid() {
+		t.Error("FailStep() returned invalid handle")
 	}
 	if out.Status != outcome.StatusFailure {
 		t.Errorf("Status = %q, want %q", out.Status, outcome.StatusFailure)
@@ -846,11 +846,11 @@ func TestTimelineSequencing(t *testing.T) {
 	var out outcome.OperationOutcome
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
-	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step1"})
-	_ = rec.Complete(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Target: "step2"})
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step3", Error: "failed"})
+	_, _ = rec.Complete(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step1"})
+	_, _ = rec.Complete(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Target: "step2"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Target: "step3", Error: "failed"})
 	rec.BeginRollback()
-	_ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "step4"})
+	_, _ = rec.RollbackComplete(outcome.Step{Kind: outcome.StepKindKernelUnload, Target: "step4"})
 
 	if len(out.Timeline) != 4 {
 		t.Fatalf("Timeline has %d entries, want 4", len(out.Timeline))
@@ -898,7 +898,7 @@ func TestRecorder_CompleteStep_OnErrCalledOnInvariantViolation(t *testing.T) {
 	rec := outcome.NewRecorder(&out, func(err error) { gotErr = err })
 
 	// Fail first, then CompleteStep should trigger onErr.
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
 
 	rec.CompleteStep(outcome.StepKindStoreSaveProgram, "prog")
 	if !errors.Is(gotErr, outcome.ErrAlreadyFailed) {
@@ -970,7 +970,7 @@ func TestRecorder_SkipStep_AfterFailure(t *testing.T) {
 	rec := outcome.NewRecorder(&out, fatalOnErr(t))
 
 	// Fail a step first.
-	_ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
 
 	// SkipStep must succeed even after failure (auto-skip pattern).
 	h := rec.SkipStep(outcome.StepKindStoreSaveProgram, "prog", "skipped due to prior failure")
@@ -1118,5 +1118,47 @@ func TestRecorder_Validate_WarnedNotCountedAsFailure(t *testing.T) {
 	// "success outcome has failed primary step" validation error.
 	if err := rec.Validate(); err != nil {
 		t.Errorf("Validate() failed: %v", err)
+	}
+}
+
+func TestRecorder_CompleteStep_ReturnsValidHandle(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.CompleteStep(outcome.StepKindKernelLoad, "prog")
+	if !h.Valid() {
+		t.Error("CompleteStep() returned invalid handle")
+	}
+}
+
+func TestRecorder_FailStep_ReturnsValidHandle(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	h := rec.FailStep(outcome.StepKindKernelLoad, "prog", errors.New("boom"))
+	if !h.Valid() {
+		t.Error("FailStep() returned invalid handle")
+	}
+}
+
+func TestRecorder_Skip_AfterFail_LowLevel(t *testing.T) {
+	var out outcome.OperationOutcome
+	rec := outcome.NewRecorder(&out, fatalOnErr(t))
+
+	_, _ = rec.Fail(outcome.Step{Kind: outcome.StepKindKernelLoad, Error: "boom"})
+
+	// Skip must succeed after failure (no ErrAlreadyFailed).
+	h, err := rec.Skip(outcome.Step{Kind: outcome.StepKindStoreSaveProgram, Target: "prog"})
+	if err != nil {
+		t.Fatalf("Skip() after Fail() returned error: %v", err)
+	}
+	if !h.Valid() {
+		t.Error("Skip() after Fail() returned invalid handle")
+	}
+	if len(out.Timeline) != 2 {
+		t.Fatalf("Timeline has %d entries, want 2", len(out.Timeline))
+	}
+	if out.Timeline[1].Status != outcome.StepStatusSkipped {
+		t.Errorf("Timeline[1].Status = %q, want %q", out.Timeline[1].Status, outcome.StepStatusSkipped)
 	}
 }
