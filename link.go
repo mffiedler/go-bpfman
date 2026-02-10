@@ -2,7 +2,6 @@ package bpfman
 
 import (
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/frobware/go-bpfman/bpffs"
@@ -281,20 +280,15 @@ func ParseLinkKind(s string) (LinkKind, bool) {
 
 // LinkID is bpfman's identifier for a link.
 // Opaque to callers; currently backed by kernel/synthetic link ID.
-// uint64 to accommodate a future independent autoincrement id.
 //
 // Implementation note: The current schema uses kernel_link_id as the primary
 // key. During this refactor, LinkID is populated from kernel_link_id for
 // compatibility. Callers must treat LinkID as opaque; it must not be used
 // as a kernel correlation key outside inspect/store internals.
-type LinkID uint64
+type LinkID uint32
 
 // IsSynthetic returns true if this ID was minted by bpfman (not a kernel-assigned link ID).
-// Future-safe: returns false for ids > MaxUint32 (future autoincrement range).
 func (id LinkID) IsSynthetic() bool {
-	if id > math.MaxUint32 {
-		return false // future autoincrement ids are not synthetic
-	}
 	return IsSyntheticLinkID(kernel.LinkID(id))
 }
 

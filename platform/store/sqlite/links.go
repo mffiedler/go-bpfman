@@ -21,7 +21,7 @@ import (
 // Due to CASCADE, this also removes the corresponding detail table entry.
 func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error {
 	start := time.Now()
-	result, err := s.stmtDeleteLink.ExecContext(ctx, uint32(linkID))
+	result, err := s.stmtDeleteLink.ExecContext(ctx, linkID)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "DeleteLink", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to delete link: %w", err)
@@ -43,7 +43,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
 	// Phase 1: Get summary from registry
 	start := time.Now()
-	row := s.stmtGetLinkRegistry.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetLinkRegistry.QueryRowContext(ctx, linkID)
 
 	record, err := s.scanLinkRecord(row)
 	if err != nil {
@@ -430,7 +430,7 @@ func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkRecord) erro
 func (s *sqliteStore) saveTracepointDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.TracepointDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveTracepointDetails.ExecContext(ctx,
-		uint32(linkID), details.Group, details.Name)
+		linkID, details.Group, details.Name)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveTracepointDetails", "args", []any{linkID, details.Group, details.Name}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert tracepoint details: %w", err)
@@ -447,7 +447,7 @@ func (s *sqliteStore) saveKprobeDetails(ctx context.Context, linkID bpfman.LinkI
 
 	start := time.Now()
 	_, err := s.stmtSaveKprobeDetails.ExecContext(ctx,
-		uint32(linkID), details.FnName, details.Offset, retprobe)
+		linkID, details.FnName, details.Offset, retprobe)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveKprobeDetails", "args", []any{linkID, details.FnName, details.Offset, retprobe}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert kprobe details: %w", err)
@@ -464,7 +464,7 @@ func (s *sqliteStore) saveUprobeDetails(ctx context.Context, linkID bpfman.LinkI
 
 	start := time.Now()
 	_, err := s.stmtSaveUprobeDetails.ExecContext(ctx,
-		uint32(linkID), details.Target, details.FnName, details.Offset, details.PID, retprobe)
+		linkID, details.Target, details.FnName, details.Offset, details.PID, retprobe)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveUprobeDetails", "args", []any{linkID, details.Target, details.FnName, details.Offset, details.PID, retprobe}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert uprobe details: %w", err)
@@ -475,7 +475,7 @@ func (s *sqliteStore) saveUprobeDetails(ctx context.Context, linkID bpfman.LinkI
 
 func (s *sqliteStore) saveFentryDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.FentryDetails) error {
 	start := time.Now()
-	_, err := s.stmtSaveFentryDetails.ExecContext(ctx, uint32(linkID), details.FnName)
+	_, err := s.stmtSaveFentryDetails.ExecContext(ctx, linkID, details.FnName)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveFentryDetails", "args", []any{linkID, details.FnName}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert fentry details: %w", err)
@@ -486,7 +486,7 @@ func (s *sqliteStore) saveFentryDetails(ctx context.Context, linkID bpfman.LinkI
 
 func (s *sqliteStore) saveFexitDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.FexitDetails) error {
 	start := time.Now()
-	_, err := s.stmtSaveFexitDetails.ExecContext(ctx, uint32(linkID), details.FnName)
+	_, err := s.stmtSaveFexitDetails.ExecContext(ctx, linkID, details.FnName)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveFexitDetails", "args", []any{linkID, details.FnName}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert fexit details: %w", err)
@@ -503,7 +503,7 @@ func (s *sqliteStore) saveXDPDetails(ctx context.Context, linkID bpfman.LinkID, 
 
 	start := time.Now()
 	_, err = s.stmtSaveXDPDetails.ExecContext(ctx,
-		uint32(linkID), details.Interface, details.Ifindex, details.Priority, details.Position,
+		linkID, details.Interface, details.Ifindex, details.Priority, details.Position,
 		string(proceedOnJSON), details.Netns, details.Nsid, details.DispatcherID, details.Revision)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveXDPDetails", "args", []any{linkID, details.Interface, details.Ifindex, details.Priority, details.Position, "(proceed_on)", details.Netns, details.Nsid, details.DispatcherID, details.Revision}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -521,7 +521,7 @@ func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID bpfman.LinkID, d
 
 	start := time.Now()
 	_, err = s.stmtSaveTCDetails.ExecContext(ctx,
-		uint32(linkID), details.Interface, details.Ifindex, details.Direction, details.Priority, details.Position,
+		linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Position,
 		string(proceedOnJSON), details.Netns, details.Nsid, details.DispatcherID, details.Revision)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveTCDetails", "args", []any{linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Position, "(proceed_on)", details.Netns, details.Nsid, details.DispatcherID, details.Revision}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -534,7 +534,7 @@ func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID bpfman.LinkID, d
 func (s *sqliteStore) saveTCXDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.TCXDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveTCXDetails.ExecContext(ctx,
-		uint32(linkID), details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid)
+		linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveTCXDetails", "args", []any{linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert tcx details: %w", err)
@@ -564,7 +564,7 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkRe
 	}
 
 	_, err := s.stmtInsertLinkRegistry.ExecContext(ctx,
-		uint32(spec.ID), string(spec.Kind), spec.ProgramID,
+		spec.ID, string(spec.Kind), spec.ProgramID,
 		pinPath, isSynthetic, spec.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "InsertLinkRegistry", "args", []any{spec.ID, spec.Kind, spec.ProgramID, pinPath, isSynthetic, "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -675,7 +675,7 @@ func (s *sqliteStore) getLinkDetails(ctx context.Context, kind bpfman.LinkKind, 
 
 func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TracepointDetails, error) {
 	start := time.Now()
-	row := s.stmtGetTracepointDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetTracepointDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.TracepointDetails
 	err := row.Scan(&details.Group, &details.Name)
@@ -693,7 +693,7 @@ func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID bpfman.Li
 
 func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.KprobeDetails, error) {
 	start := time.Now()
-	row := s.stmtGetKprobeDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetKprobeDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.KprobeDetails
 	var retprobe int
@@ -713,7 +713,7 @@ func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID bpfman.LinkID
 
 func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.UprobeDetails, error) {
 	start := time.Now()
-	row := s.stmtGetUprobeDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetUprobeDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.UprobeDetails
 	var fnName sql.NullString
@@ -741,7 +741,7 @@ func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID bpfman.LinkID
 
 func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.FentryDetails, error) {
 	start := time.Now()
-	row := s.stmtGetFentryDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetFentryDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.FentryDetails
 	err := row.Scan(&details.FnName)
@@ -759,7 +759,7 @@ func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID bpfman.LinkID
 
 func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.FexitDetails, error) {
 	start := time.Now()
-	row := s.stmtGetFexitDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetFexitDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.FexitDetails
 	err := row.Scan(&details.FnName)
@@ -777,7 +777,7 @@ func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID bpfman.LinkID)
 
 func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.XDPDetails, error) {
 	start := time.Now()
-	row := s.stmtGetXDPDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetXDPDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.XDPDetails
 	var proceedOnJSON string
@@ -805,7 +805,7 @@ func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID bpfman.LinkID) (
 
 func (s *sqliteStore) getTCDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TCDetails, error) {
 	start := time.Now()
-	row := s.stmtGetTCDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetTCDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.TCDetails
 	var proceedOnJSON string
@@ -833,7 +833,7 @@ func (s *sqliteStore) getTCDetails(ctx context.Context, linkID bpfman.LinkID) (b
 
 func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TCXDetails, error) {
 	start := time.Now()
-	row := s.stmtGetTCXDetails.QueryRowContext(ctx, int64(linkID))
+	row := s.stmtGetTCXDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.TCXDetails
 	var netns sql.NullString
