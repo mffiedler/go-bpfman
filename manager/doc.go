@@ -14,31 +14,46 @@
 // (cmd/bpfman/) for direct invocation. Both delegate to Manager methods
 // after acquiring the appropriate locks.
 //
+// # Actions and the executor
+//
+// The action package (manager/action/) defines a small instruction set
+// for BPF lifecycle operations. Each action type is an opcode — pure
+// data describing what to do with typed operands. The executor
+// (manager/executor.go) is the single interpreter: one type switch
+// dispatches each opcode to the store, kernel, or filesystem. Plan
+// builders never perform I/O directly; they construct actions and
+// delegate to the executor.
+//
+// Execute runs an instruction for its side effect. ExecuteResult runs
+// it and returns a value (e.g., LoadProgram produces LoadOutput). The
+// generic action.Produce[T] wrapper provides compile-time type safety
+// over the raw any return.
+//
 // # Fetch/Compute/Execute
 //
-// Mutating operations generally follow a phased pattern:
+// Mutating operations follow a phased pattern:
 //
 //  1. FETCH: gather state from store, kernel, and filesystem
-//  2. COMPUTE: determine actions as reified effect values
-//  3. EXECUTE: interpret actions via ActionExecutor
+//  2. COMPUTE: build a plan — a sequence of nodes that emit actions
+//  3. EXECUTE: the plan interpreter runs each node's action through
+//     the executor, accumulates undo actions, and on failure rolls
+//     back in reverse order
 //
-// Variations exist: Unload() is a straight FETCH -> COMPUTE -> EXECUTE
-// pipeline; AttachXDP() and AttachTC() interleave kernel I/O between fetch
-// and compute because dispatcher creation/reuse must be observed before
-// slot selection can be computed; AttachTCX() computes ordering before
-// kernel attach because it depends on existing link state; Detach() queries
-// after execution to determine dispatcher cleanup needs.
-// These deviations are driven by kernel observability: some decisions can
-// only be made after observing post-operation kernel or netlink state.
+// The fetch phase runs before the plan is constructed. It gathers the
+// inputs needed to determine which actions to emit. This phase may
+// involve I/O (store queries, image pulls, program discovery) but
+// produces no side effects that require rollback.
 //
-// Load() is intentionally staged rather than action-driven: it
-// must sequence kernel load, filesystem publish, and store transactions
-// to preserve atomicity and rollback semantics. Read-only methods (Get,
-// ListPrograms, GetLink, etc.) are fetch-only and do not build action
-// lists, since they are purely observational.
+// Variations exist: AttachXDP() and AttachTC() interleave kernel I/O
+// between fetch and compute because dispatcher creation/reuse must be
+// observed before slot selection can be computed; AttachTCX() computes
+// ordering before kernel attach because it depends on existing link
+// state; Detach() queries after execution to determine dispatcher
+// cleanup needs. These deviations are driven by kernel observability:
+// some decisions can only be made after observing post-operation state.
 //
-// The theme is separating state gathering from effect execution even
-// when phases interleave.
+// Read-only methods (Get, ListPrograms, GetLink, etc.) are fetch-only
+// and do not build plans, since they are purely observational.
 //
 // The platform layer (platform/) provides the I/O abstractions for
 // BPF operations. Minor exceptions exist (e.g., GetHostInfo calls
@@ -47,15 +62,18 @@
 // # Atomic Load Model
 //
 // Load operations provide atomic semantics: either a program is fully
-// loaded with metadata persisted, or nothing is left behind.
+// loaded with metadata persisted, or nothing is left behind. The load
+// plan emits four actions through the executor:
 //
-//  1. Load program into kernel and pin to bpffs
-//  2. On success: persist metadata to store in a single transaction
-//  3. On failure: cleanup kernel state; nothing written to store
-//  4. GC handles orphans from crashes
+//  1. LoadProgram — load into kernel and pin to bpffs
+//  2. CheckProgramNotInStore — verify no stale entry exists
+//  3. PublishBytecode — copy object file to per-program directory
+//  4. SaveProgram — persist metadata to store
 //
-// This avoids intermediate states like "loading" or "error" in the
-// database. Programs only appear in the store after successful load.
+// On failure the plan interpreter rolls back completed actions in
+// reverse order (UnloadProgram, RemoveProgramDir). On success,
+// programs only appear in the store after the full sequence completes.
+// GC handles orphans from crashes.
 //
 // # Rollback and Error Reporting
 //

@@ -5,7 +5,9 @@ import (
 	"fmt"
 )
 
-// Executor executes reified actions.
+// Executor is the interpreter for the action instruction set.
+// A single implementation (manager/executor.go) dispatches each
+// action to the appropriate I/O subsystem via one type switch.
 type Executor interface {
 	// Execute runs a single action, discarding any result.
 	Execute(ctx context.Context, a Action) error
