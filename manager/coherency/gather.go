@@ -43,10 +43,6 @@ type ObservedState struct {
 	// Runtime context (immutable after gather).
 	layout fs.Layout
 
-	// Mutation capability for GC operations only.
-	// Not used during rule evaluation.
-	deleteDispatcher func(dispType string, nsid uint64, ifindex uint32) error
-
 	// Cached views (built lazily on first access, pure joins).
 	programs    []ProgramState
 	links       []LinkState
@@ -249,14 +245,6 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 		})
 	}
 
-	// ----------------------------------------------------------------
-	// Wire up mutation capability for GC operations only.
-	// ----------------------------------------------------------------
-
-	s.deleteDispatcher = func(dispType string, nsid uint64, ifindex uint32) error {
-		return store.DeleteDispatcher(ctx, dispType, nsid, ifindex)
-	}
-
 	return s, nil
 }
 
@@ -345,6 +333,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
 			ds.LinkPinExist = &linkExists
+			ds.LinkPin = bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
 		}
 
 		// TC filter check from gathered facts.
@@ -406,11 +395,6 @@ func (s *ObservedState) LiveOrphans() int {
 		}
 	}
 	return count
-}
-
-// DeleteDispatcher delegates to the store to remove a dispatcher.
-func (s *ObservedState) DeleteDispatcher(dispType string, nsid uint64, ifindex uint32) error {
-	return s.deleteDispatcher(dispType, nsid, ifindex)
 }
 
 func dispatcherKey(dt dispatcher.DispatcherType, nsid uint64, ifindex uint32) string {

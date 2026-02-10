@@ -220,6 +220,70 @@ type RemoveProgramDir struct {
 
 func (RemoveProgramDir) isAction() {}
 
+// GC cleanup actions -- validated filesystem removal operations
+// routed through fs.BPFFS and fs.Bytecode typed deletion methods.
+
+// RemoveProgPin removes a program pin via BPFFS.RemoveProgPin.
+type RemoveProgPin struct {
+	Path string
+}
+
+func (RemoveProgPin) isAction() {}
+
+// RemoveLinkDir removes a link directory via BPFFS.RemoveLinkDir.
+type RemoveLinkDir struct {
+	Path string
+}
+
+func (RemoveLinkDir) isAction() {}
+
+// RemoveMapDir removes a map directory via BPFFS.RemoveMapDir.
+type RemoveMapDir struct {
+	Path string
+}
+
+func (RemoveMapDir) isAction() {}
+
+// RemoveDispatcherProgPin removes a dispatcher program pin via
+// BPFFS.RemoveDispatcherProgPin.
+type RemoveDispatcherProgPin struct {
+	Path string
+}
+
+func (RemoveDispatcherProgPin) isAction() {}
+
+// RemoveDispatcherRevDir removes a dispatcher revision directory via
+// BPFFS.RemoveDispatcherRevDir.
+type RemoveDispatcherRevDir struct {
+	Path string
+}
+
+func (RemoveDispatcherRevDir) isAction() {}
+
+// RemoveDispatcherLinkPin removes a dispatcher link pin via
+// BPFFS.RemoveDispatcherLinkPin.
+type RemoveDispatcherLinkPin struct {
+	Path string
+}
+
+func (RemoveDispatcherLinkPin) isAction() {}
+
+// RemoveProgramDirByPath removes a program bytecode directory by path
+// via Bytecode.RemoveProgramDir.
+type RemoveProgramDirByPath struct {
+	Path string
+}
+
+func (RemoveProgramDirByPath) isAction() {}
+
+// RemoveStagingDir removes a staging directory via
+// Bytecode.RemoveStagingDir.
+type RemoveStagingDir struct {
+	Path string
+}
+
+func (RemoveStagingDir) isAction() {}
+
 // Deep dispatcher actions - cross-subsystem operations that the
 // executor handles internally (kernel + store transactions with
 // rollback). These replace direct manager method calls for dispatcher

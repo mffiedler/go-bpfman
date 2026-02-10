@@ -231,7 +231,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 			if v.Op == nil {
 				continue
 			}
-			if err := v.Op.Execute(); err != nil {
+			if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {
 				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
 				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
 				continue

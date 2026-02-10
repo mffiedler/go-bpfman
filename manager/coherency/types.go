@@ -4,6 +4,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/manager/action"
 )
 
 // Severity indicates the severity of a coherency finding.
@@ -93,6 +94,7 @@ type DispatcherState struct {
 	LinkCount    int               // number of extension links (-1 = unknown)
 	RevDir       string            // computed revision directory path
 	ProgPin      string            // computed prog pin path
+	LinkPin      string            // computed link pin path (XDP only; empty for TC)
 }
 
 // OrphanKind identifies the type of orphaned filesystem artefact.
@@ -120,7 +122,7 @@ type FsOrphan struct {
 // executor applies them. This separates planning from doing.
 type Operation struct {
 	Description string
-	Execute     func() error
+	Actions     []action.Action
 }
 
 // Violation is a coherency rule violation with an optional planned

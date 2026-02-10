@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/manager/action"
 )
 
 // Evaluate runs all rules against the observed state and returns
@@ -506,38 +507,23 @@ Category: gc-dispatcher`,
 					if !stale {
 						continue
 					}
-					dd := d // capture
+					actions := []action.Action{
+						action.RemoveDispatcherProgPin{Path: d.ProgPin},
+						action.RemoveDispatcherRevDir{Path: d.RevDir},
+					}
+					if d.DB.Type == dispatcher.DispatcherTypeXDP {
+						actions = append(actions, action.RemoveDispatcherLinkPin{Path: d.LinkPin})
+					}
+					actions = append(actions, action.DeleteDispatcher{
+						Type: string(d.DB.Type), Nsid: d.DB.Nsid, Ifindex: d.DB.Ifindex,
+					})
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-dispatcher",
 						Description: fmt.Sprintf("Stale dispatcher %s nsid=%d ifindex=%d: no extensions, functionally dead", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
 						Op: &Operation{
 							Description: fmt.Sprintf("delete dispatcher %s/%d/%d and filesystem artefacts", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
-							Execute: func() error {
-								b := s.layout.BPFFS()
-
-								// Explicitly remove the dispatcher program
-								// pin (typed + validated).
-								if err := b.RemoveDispatcherProgPin(dd.ProgPin); err != nil {
-									return err
-								}
-
-								// Remove revision dir (includes link_*
-								// pins and the dispatcher program pin).
-								if err := b.RemoveDispatcherRevDir(dd.RevDir); err != nil {
-									return err
-								}
-
-								// XDP has a separate link pin.
-								if dd.DB.Type == dispatcher.DispatcherTypeXDP {
-									linkPin := b.DispatcherLinkPath(dd.DB.Type, dd.DB.Nsid, dd.DB.Ifindex)
-									if err := b.RemoveDispatcherLinkPin(linkPin); err != nil {
-										return err
-									}
-								}
-
-								return s.DeleteDispatcher(string(dd.DB.Type), dd.DB.Nsid, dd.DB.Ifindex)
-							},
+							Actions:     actions,
 						},
 					})
 				}
@@ -571,26 +557,13 @@ Category: gc-orphan-pin`,
 					if o.KernelID != 0 && s.KernelAlive(o.KernelID) {
 						continue // kernel object alive; leave it
 					}
-					oo := o // capture
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
 						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
-							Execute: func() error {
-								b := s.layout.BPFFS()
-								switch oo.Kind {
-								case OrphanLinkDir:
-									return b.RemoveLinkDir(oo.Path)
-								case OrphanMapDir:
-									return b.RemoveMapDir(oo.Path)
-								case OrphanProgPin:
-									return b.RemoveProgPin(oo.Path)
-								default:
-									return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
-								}
-							},
+							Actions:     []action.Action{orphanPinAction(o)},
 						},
 					})
 				}
@@ -618,24 +591,20 @@ Category: gc-orphan-pin`,
 					if o.Kind != OrphanDispatcherDir && o.Kind != OrphanDispatcherLink {
 						continue
 					}
-					oo := o
+					var a action.Action
+					switch o.Kind { //nolint:exhaustive // pre-filtered above
+					case OrphanDispatcherDir:
+						a = action.RemoveDispatcherRevDir{Path: o.Path}
+					case OrphanDispatcherLink:
+						a = action.RemoveDispatcherLinkPin{Path: o.Path}
+					}
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
 						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
 						Op: &Operation{
 							Description: fmt.Sprintf("remove %s", o.Path),
-							Execute: func() error {
-								b := s.layout.BPFFS()
-								switch oo.Kind {
-								case OrphanDispatcherDir:
-									return b.RemoveDispatcherRevDir(oo.Path)
-								case OrphanDispatcherLink:
-									return b.RemoveDispatcherLinkPin(oo.Path)
-								default:
-									return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
-								}
-							},
+							Actions:     []action.Action{a},
 						},
 					})
 				}
@@ -663,16 +632,13 @@ Category: gc-orphan-pin`,
 					if o.Kind != OrphanProgramDir && o.Kind != OrphanProgramDirUnk {
 						continue
 					}
-					oo := o
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
 						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
 						Op: &Operation{
 							Description: fmt.Sprintf("remove program dir %s", o.Path),
-							Execute: func() error {
-								return s.layout.Bytecode().RemoveProgramDir(oo.Path)
-							},
+							Actions:     []action.Action{action.RemoveProgramDirByPath{Path: o.Path}},
 						},
 					})
 				}
@@ -695,16 +661,13 @@ Category: gc-orphan-pin`,
 					if o.Kind != OrphanStagingDir {
 						continue
 					}
-					oo := o
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-orphan-pin",
 						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
 						Op: &Operation{
 							Description: fmt.Sprintf("remove staging dir %s", o.Path),
-							Execute: func() error {
-								return s.layout.Bytecode().RemoveStagingDir(oo.Path)
-							},
+							Actions:     []action.Action{action.RemoveStagingDir{Path: o.Path}},
 						},
 					})
 				}
@@ -751,30 +714,31 @@ Category: gc-orphan-pin`,
 				if o.KernelID == 0 || !s.KernelAlive(o.KernelID) {
 					continue // dead orphans handled by orphan-program-artefacts
 				}
-				oo := o // capture
 				out = append(out, Violation{
 					Severity:    SeverityWarning,
 					Category:    "gc-orphan-pin",
 					Description: fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.KernelID),
 					Op: &Operation{
 						Description: fmt.Sprintf("remove %s", o.Path),
-						Execute: func() error {
-							b := s.layout.BPFFS()
-							switch oo.Kind {
-							case OrphanLinkDir:
-								return b.RemoveLinkDir(oo.Path)
-							case OrphanMapDir:
-								return b.RemoveMapDir(oo.Path)
-							case OrphanProgPin:
-								return b.RemoveProgPin(oo.Path)
-							default:
-								return fmt.Errorf("unknown bpffs artefact kind: %s", oo.Kind)
-							}
-						},
+						Actions:     []action.Action{orphanPinAction(o)},
 					},
 				})
 			}
 			return out
 		},
+	}
+}
+
+// orphanPinAction maps an orphan's kind to the appropriate removal action.
+func orphanPinAction(o FsOrphan) action.Action {
+	switch o.Kind {
+	case OrphanProgPin:
+		return action.RemoveProgPin{Path: o.Path}
+	case OrphanLinkDir:
+		return action.RemoveLinkDir{Path: o.Path}
+	case OrphanMapDir:
+		return action.RemoveMapDir{Path: o.Path}
+	default:
+		panic(fmt.Sprintf("orphanPinAction: unexpected kind %s", o.Kind))
 	}
 }

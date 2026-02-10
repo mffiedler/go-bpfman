@@ -121,6 +121,30 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RemoveProgramDir:
 		return nil, e.bcfs.RemoveProgram(a.KernelID)
 
+	case action.RemoveProgPin:
+		return nil, e.bpffs.RemoveProgPin(a.Path)
+
+	case action.RemoveLinkDir:
+		return nil, e.bpffs.RemoveLinkDir(a.Path)
+
+	case action.RemoveMapDir:
+		return nil, e.bpffs.RemoveMapDir(a.Path)
+
+	case action.RemoveDispatcherProgPin:
+		return nil, e.bpffs.RemoveDispatcherProgPin(a.Path)
+
+	case action.RemoveDispatcherRevDir:
+		return nil, e.bpffs.RemoveDispatcherRevDir(a.Path)
+
+	case action.RemoveDispatcherLinkPin:
+		return nil, e.bpffs.RemoveDispatcherLinkPin(a.Path)
+
+	case action.RemoveProgramDirByPath:
+		return nil, e.bcfs.RemoveProgramDir(a.Path)
+
+	case action.RemoveStagingDir:
+		return nil, e.bcfs.RemoveStagingDir(a.Path)
+
 	case action.EnsureXDPDispatcher:
 		nsid, err := netns.GetNsid(a.NetnsPath)
 		if err != nil {

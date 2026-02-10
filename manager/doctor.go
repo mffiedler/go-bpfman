@@ -41,7 +41,7 @@ func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
 		if v.Op == nil {
 			continue
 		}
-		if err := v.Op.Execute(); err != nil {
+		if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {
 			m.logger.WarnContext(ctx, "gc operation failed",
 				"op", v.Op.Description,
 				"error", err)
