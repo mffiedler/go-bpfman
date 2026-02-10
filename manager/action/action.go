@@ -49,10 +49,11 @@ func (DeleteLink) isAction() {}
 
 // Kernel actions - operations on the BPF subsystem
 
-// LoadProgram loads a BPF program into the kernel.
+// LoadProgram loads a BPF program into the kernel and returns
+// the LoadOutput via ExecuteResult.
 type LoadProgram struct {
 	Spec  bpfman.LoadSpec
-	BPFFS bpfmanfs.BPFFS // Required: bpffs paths for pinning
+	BPFFS bpfmanfs.BPFFS
 }
 
 func (LoadProgram) isAction() {}

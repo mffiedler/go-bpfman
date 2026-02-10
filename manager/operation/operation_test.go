@@ -42,6 +42,10 @@ func (f *fakeExecutor) Execute(_ context.Context, a action.Action) error {
 	return nil
 }
 
+func (f *fakeExecutor) ExecuteResult(ctx context.Context, a action.Action) (any, error) {
+	return nil, f.Execute(ctx, a)
+}
+
 func (f *fakeExecutor) ExecuteAll(ctx context.Context, actions []action.Action) error {
 	return f.ExecuteAllWithResult(ctx, actions).Error
 }

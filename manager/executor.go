@@ -25,59 +25,65 @@ func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs bp
 	}
 }
 
-// Execute runs a single action.
+// Execute runs a single action, discarding any result.
 func (e *executor) Execute(ctx context.Context, a action.Action) error {
+	_, err := e.ExecuteResult(ctx, a)
+	return err
+}
+
+// ExecuteResult runs a single action and returns its result.
+// Actions that produce no value return (nil, error).
+func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, error) {
 	switch a := a.(type) {
+	case action.LoadProgram:
+		return e.kernel.Load(ctx, a.Spec, a.BPFFS)
+
 	case action.SaveProgram:
-		return e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		return nil, e.store.RunInTransaction(ctx, func(tx platform.Store) error {
 			return tx.Save(ctx, a.KernelID, a.Metadata)
 		})
 
 	case action.DeleteProgram:
-		return e.store.Delete(ctx, a.KernelID)
+		return nil, e.store.Delete(ctx, a.KernelID)
 
 	case action.SaveLink:
-		return e.store.SaveLink(ctx, a.Record)
+		return nil, e.store.SaveLink(ctx, a.Record)
 
 	case action.DeleteLink:
-		return e.store.DeleteLink(ctx, a.LinkID)
-
-	case action.LoadProgram:
-		_, err := e.kernel.Load(ctx, a.Spec, a.BPFFS)
-		return err
+		return nil, e.store.DeleteLink(ctx, a.LinkID)
 
 	case action.UnloadProgram:
-		return e.kernel.Unload(ctx, a.PinPath)
+		return nil, e.kernel.Unload(ctx, a.PinPath)
 
 	case action.Batch:
-		return e.ExecuteAll(ctx, a.Actions)
+		return nil, e.ExecuteAll(ctx, a.Actions)
 
 	case action.Sequence:
-		return e.ExecuteAll(ctx, a.Actions)
+		return nil, e.ExecuteAll(ctx, a.Actions)
 
 	case action.SaveDispatcher:
-		return e.store.SaveDispatcher(ctx, a.State)
+		return nil, e.store.SaveDispatcher(ctx, a.State)
 
 	case action.DeleteDispatcher:
-		return e.store.DeleteDispatcher(ctx, a.Type, a.Nsid, a.Ifindex)
+		return nil, e.store.DeleteDispatcher(ctx, a.Type, a.Nsid, a.Ifindex)
 
 	case action.DetachLink:
-		return e.kernel.DetachLink(ctx, a.PinPath)
+		return nil, e.kernel.DetachLink(ctx, a.PinPath)
 
 	case action.RemovePin:
-		return e.kernel.RemovePin(ctx, a.Path)
+		return nil, e.kernel.RemovePin(ctx, a.Path)
 
 	case action.DetachTCFilter:
-		return e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
+		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
 
 	case action.PublishBytecode:
-		return e.bcfs.PublishBytecode(a.KernelID, a.SourcePath, a.Provenance)
+		return nil, e.bcfs.PublishBytecode(a.KernelID, a.SourcePath, a.Provenance)
 
 	case action.RemoveProgramDir:
-		return e.bcfs.RemoveProgram(a.KernelID)
+		return nil, e.bcfs.RemoveProgram(a.KernelID)
 
 	default:
-		return fmt.Errorf("unknown action type: %T", a)
+		return nil, fmt.Errorf("unknown action type: %T", a)
 	}
 }
 

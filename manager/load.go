@@ -177,7 +177,10 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 	return operation.Build(
 		operation.Produce(loadedKey, programName,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
-				loaded, err := m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+				loaded, err := action.Produce[bpfman.LoadOutput](ctx, m.executor, action.LoadProgram{
+					Spec:  spec,
+					BPFFS: m.fsctx.BPFFS(),
+				})
 				if err != nil {
 					return bpfman.LoadOutput{}, fmt.Errorf("load program %s: %w", programName, err)
 				}
