@@ -14,7 +14,7 @@ import (
 	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/nsenter"
+	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // NSCmd handles the bpfman-ns subcommand for attaching uprobes in other

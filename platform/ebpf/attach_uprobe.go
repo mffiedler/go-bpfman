@@ -15,7 +15,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/nsenter"
+	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // AttachUprobeLocal attaches a pinned program to a user-space function

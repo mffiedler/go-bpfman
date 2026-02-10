@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/netns"
+	"github.com/frobware/go-bpfman/ns/netns"
 )
 
 // TC proceed-on action bits (matches TC_ACT_* return codes).

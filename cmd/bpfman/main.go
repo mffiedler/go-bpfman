@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/frobware/go-bpfman/nsenter"
+	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // NamespaceSwitcherResult represents the outcome of attempting to run

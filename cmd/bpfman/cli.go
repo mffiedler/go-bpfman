@@ -19,7 +19,7 @@ import (
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
-	"github.com/frobware/go-bpfman/nsenter"
+	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // CLI is the root command structure for bpfman.
