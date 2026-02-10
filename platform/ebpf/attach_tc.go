@@ -160,15 +160,10 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 		}
 		result.DispatcherID = uint32(progID)
 
-		if spec.ProgPinPath != "" {
-			if err := os.MkdirAll(filepath.Dir(spec.ProgPinPath), 0755); err != nil {
-				return fmt.Errorf("create TC dispatcher program directory: %w", err)
-			}
-			if err := dispatcherProg.Pin(spec.ProgPinPath); err != nil {
-				return fmt.Errorf("pin TC dispatcher program to %s: %w", spec.ProgPinPath, err)
-			}
-			result.DispatcherPin = spec.ProgPinPath
+		if err := pinWithRetry(dispatcherProg, spec.ProgPinPath); err != nil {
+			return fmt.Errorf("pin TC dispatcher program to %s: %w", spec.ProgPinPath, err)
 		}
+		result.DispatcherPin = spec.ProgPinPath
 
 		success = true
 		return nil
