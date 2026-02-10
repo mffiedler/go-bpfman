@@ -168,7 +168,7 @@ func (c ImageCache) CacheBytecode(cacheKey, srcPath string) error {
 	}
 
 	// Fall back to copy
-	if err := (copyFileOp{src: srcPath, dst: destPath, perm: fileMode}).exec(); err != nil {
+	if err := copyFile(srcPath, destPath, fileMode); err != nil {
 		return &PathError{Op: "cache_bytecode", Path: destPath, Err: err}
 	}
 	return nil
@@ -178,7 +178,7 @@ func (c ImageCache) CacheBytecode(cacheKey, srcPath string) error {
 func (c ImageCache) SaveMetadata(cacheKey string, meta any) error {
 	c.mustValid()
 	path := c.MetadataPath(cacheKey)
-	if err := (writeJSONOp{path: path, perm: fileMode, v: meta}).exec(); err != nil {
+	if err := writeJSON(path, fileMode, meta); err != nil {
 		return &PathError{Op: "save_metadata", Path: path, Err: err}
 	}
 	return nil

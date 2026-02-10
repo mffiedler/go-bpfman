@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -202,7 +201,7 @@ func (m *Manager) attachTCXPlan(
 						Priority:  int32(priority),
 						Nsid:      nsid,
 					},
-					*bpffs.NewLinkPath(linkPinPath),
+					*bpfman.NewLinkPath(linkPinPath),
 					time.Now(),
 				)
 				link := bpfman.Link{

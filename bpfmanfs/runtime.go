@@ -134,25 +134,25 @@ func (rt BytecodeFS) PublishBytecode(id kernel.ProgramID, srcPath string, prov P
 	staging := rt.stagingPath()
 
 	// Check final directory does not exist.
-	var exists bool
-	if err := (statExistsOp{path: finalDir, exists: &exists}).exec(); err != nil {
-		return &PathError{Op: "publish", Path: finalDir, Err: err}
-	}
-	if exists {
+	_, err := os.Stat(finalDir)
+	if err == nil {
 		return fmt.Errorf("%w: %s", ErrFinalExists, finalDir)
+	}
+	if !os.IsNotExist(err) {
+		return &PathError{Op: "publish", Path: finalDir, Err: err}
 	}
 
 	// Ensure parent directories exist.
-	if err := osInterp([]op{
-		mkdirAllOp{path: programs, perm: dirMode},
-		mkdirAllOp{path: staging, perm: dirMode},
-	}); err != nil {
+	if err := os.MkdirAll(programs, dirMode); err != nil {
 		return &PathError{Op: "publish", Path: programs, Err: err}
+	}
+	if err := os.MkdirAll(staging, dirMode); err != nil {
+		return &PathError{Op: "publish", Path: staging, Err: err}
 	}
 
 	// Create temp dir under staging for atomic publish.
-	var tmpDir string
-	if err := (mkdirTempOp{dir: staging, pattern: "pub-*", result: &tmpDir}).exec(); err != nil {
+	tmpDir, err := os.MkdirTemp(staging, "pub-*")
+	if err != nil {
 		return &PathError{Op: "publish", Path: staging, Err: err}
 	}
 
@@ -168,15 +168,15 @@ func (rt BytecodeFS) PublishBytecode(id kernel.ProgramID, srcPath string, prov P
 	bytecodeDst := filepath.Join(tmpDir, bytecodeName)
 	provDst := filepath.Join(tmpDir, provName)
 
-	if err := osInterp([]op{
-		copyFileOp{src: srcPath, dst: bytecodeDst, perm: fileMode},
-		writeJSONOp{path: provDst, perm: fileMode, v: prov},
-	}); err != nil {
+	if err := copyFile(srcPath, bytecodeDst, fileMode); err != nil {
+		return &PathError{Op: "publish", Path: tmpDir, Err: err}
+	}
+	if err := writeJSON(provDst, fileMode, prov); err != nil {
 		return &PathError{Op: "publish", Path: tmpDir, Err: err}
 	}
 
 	// Atomic rename from staging to final location.
-	if err := (renameOp{oldpath: tmpDir, newpath: finalDir}).exec(); err != nil {
+	if err := os.Rename(tmpDir, finalDir); err != nil {
 		return &PathError{Op: "publish", Path: finalDir, Err: err}
 	}
 
@@ -204,9 +204,8 @@ func (rt BytecodeFS) RemoveProgramDir(path string) error {
 // ProgramExists reports whether <base>/programs/{id}/ exists.
 func (rt BytecodeFS) ProgramExists(id kernel.ProgramID) bool {
 	rt.mustValid()
-	var exists bool
-	_ = (statExistsOp{path: rt.programDir(id), exists: &exists}).exec()
-	return exists
+	_, err := os.Stat(rt.programDir(id))
+	return err == nil
 }
 
 // ProgramBytecodePath returns the published bytecode path for DB

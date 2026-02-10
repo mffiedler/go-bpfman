@@ -1,4 +1,4 @@
-package bpffs_test
+package runtime_test
 
 import (
 	"fmt"
@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 )
 
-func TestBPFFSIsMounted(t *testing.T) {
+func TestIsMounted(t *testing.T) {
 	tests := []struct {
 		name       string
 		mountinfo  string
@@ -120,7 +120,7 @@ func TestBPFFSIsMounted(t *testing.T) {
 				t.Fatalf("failed to write test file: %v", err)
 			}
 
-			got, err := bpffs.IsMounted(mountInfoPath, tt.mountPoint)
+			got, err := runtime.IsMounted(mountInfoPath, tt.mountPoint)
 			if err != nil {
 				t.Fatalf("IsMounted() error = %v", err)
 			}
@@ -131,14 +131,14 @@ func TestBPFFSIsMounted(t *testing.T) {
 	}
 }
 
-func TestBPFFSIsMounted_FileNotFound(t *testing.T) {
-	_, err := bpffs.IsMounted("/nonexistent/path/mountinfo", "/sys/fs/bpf")
+func TestIsMounted_FileNotFound(t *testing.T) {
+	_, err := runtime.IsMounted("/nonexistent/path/mountinfo", "/sys/fs/bpf")
 	if err == nil {
 		t.Error("IsMounted() expected error for nonexistent file, got nil")
 	}
 }
 
-func TestBPFFSIsMounted_LongLine(t *testing.T) {
+func TestIsMounted_LongLine(t *testing.T) {
 	// Generate a mountinfo line > 64 KiB (default scanner limit).
 	// This tests the scanner buffer increase (prevents ErrTooLong).
 	// Target ~70 KiB to ensure it fails without the buffer bump.
@@ -157,7 +157,7 @@ func TestBPFFSIsMounted_LongLine(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	got, err := bpffs.IsMounted(mountInfoPath, "/sys/fs/bpf")
+	got, err := runtime.IsMounted(mountInfoPath, "/sys/fs/bpf")
 	if err != nil {
 		t.Fatalf("IsMounted() error = %v (scanner buffer may be too small)", err)
 	}
@@ -166,7 +166,7 @@ func TestBPFFSIsMounted_LongLine(t *testing.T) {
 	}
 }
 
-func TestBPFFSIsMounted_EscapedMountPoint(t *testing.T) {
+func TestIsMounted_EscapedMountPoint(t *testing.T) {
 	mountinfo := "30 22 0:27 / /sys/fs/bpf\\040extra rw,nosuid shared:9 - bpf bpf rw,mode=700\n"
 
 	tmpDir := t.TempDir()
@@ -175,7 +175,7 @@ func TestBPFFSIsMounted_EscapedMountPoint(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	got, err := bpffs.IsMounted(mountInfoPath, "/sys/fs/bpf extra")
+	got, err := runtime.IsMounted(mountInfoPath, "/sys/fs/bpf extra")
 	if err != nil {
 		t.Fatalf("IsMounted() error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestEnsureMounted_EbusyRecheck(t *testing.T) {
 		return fmt.Errorf("mount syscall: %w", syscall.EBUSY)
 	}
 
-	if err := bpffs.EnsureMountedWith(mountInfoPath, mountPoint, mountFn); err != nil {
+	if err := runtime.EnsureMountedWith(mountInfoPath, mountPoint, mountFn); err != nil {
 		t.Fatalf("EnsureMounted() error = %v", err)
 	}
 }

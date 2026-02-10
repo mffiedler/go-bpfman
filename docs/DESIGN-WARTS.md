@@ -175,23 +175,14 @@ hierarchy could be tightened.
 
 ## 7. `bpffs/` and `bpfmanfs/` are confusingly named siblings
 
-`bpffs/` is a single file containing mount detection, mount/unmount,
-and two newtype wrappers (`MountPoint`, `LinkPath`). `bpfmanfs/` is
-the filesystem layout package -- path computation, bytecode
-persistence, scanning, and safe removal methods. The two names differ
-by three letters in the middle. A newcomer scanning the top-level
-directory will not know which is which.
-
-The dependency is one-directional: `bpfmanfs/runtime/` imports
-`bpffs/`, but `bpffs/` does not import `bpfmanfs/`. The newtypes
-`MountPoint` and `LinkPath` live in `bpffs/` and are used by the root
-`bpfman` package and `bpfmanfs/runtime/`.
-
-**Possible resolution:** fold `bpffs/` into `bpfmanfs/mount` or
-absorb it into `bpfmanfs` directly. The mount detection logic is
-small enough not to warrant its own top-level package, and the
-newtypes belong to the same filesystem domain. This removes the
-naming ambiguity without changing any dependency arrows.
+**Resolved.** Dissolved the `bpffs/` package entirely. `LinkPath` and
+`NewLinkPath` moved to the root `bpfman` package alongside
+`LinkRecord` (where they belong as domain types). Mount functions
+(`IsMounted`, `Mount`, `Unmount`, `EnsureMounted`, `EnsureMountedWith`)
+moved to `bpfmanfs/runtime/`, which already owned the mounting
+responsibility. The dead `MountPoint` type was dropped. The
+`intent.go` op-type abstraction (six wrapper types around trivial
+`os.*` calls) was replaced with plain helper functions.
 
 ---
 

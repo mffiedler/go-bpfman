@@ -1,6 +1,4 @@
-// Package bpffs provides functions to check and mount the BPF
-// filesystem.
-package bpffs
+package runtime
 
 import (
 	"bufio"
@@ -21,32 +19,6 @@ const (
 	// lines; this prevents ErrTooLong.
 	defaultScanMaxLineLen = 1024 * 1024
 )
-
-// MountPoint represents a bpffs mount point path.
-// This is a newtype to prevent accidentally passing arbitrary strings
-// where a bpffs mount point is expected.
-type MountPoint string
-
-// String returns the path as a string.
-func (m MountPoint) String() string { return string(m) }
-
-// LinkPath represents a pinned link path within a bpffs.
-// This is a newtype to prevent accidentally passing arbitrary strings
-// where a validated link pin path is expected.
-type LinkPath string
-
-// String returns the path as a string.
-func (p LinkPath) String() string { return string(p) }
-
-// NewLinkPath creates a *LinkPath from a string, returning nil if empty.
-// This is a convenience function for converting optional string pin paths.
-func NewLinkPath(s string) *LinkPath {
-	if s == "" {
-		return nil
-	}
-	p := LinkPath(s)
-	return &p
-}
 
 // IsMounted reports whether a bpffs is mounted at mountPoint by
 // parsing mountInfoPath (e.g. /proc/self/mountinfo).

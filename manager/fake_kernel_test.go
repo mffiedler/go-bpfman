@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
@@ -560,7 +559,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindTracepoint,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.TracepointDetails{Group: group, Name: name},
 		},
@@ -587,7 +586,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindXDP,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.XDPDetails{Ifindex: uint32(ifindex)},
 		},
@@ -619,7 +618,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      linkKind,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
 		},
@@ -651,7 +650,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, f
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      linkKind,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: 0},
 		},
@@ -681,7 +680,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      linkKind,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.UprobeDetails{Target: target, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
 		},
@@ -708,7 +707,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName, linkPi
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindFentry,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.FentryDetails{FnName: fnName},
 		},
@@ -734,7 +733,7 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName, linkPin
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindFexit,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.FexitDetails{FnName: fnName},
 		},
@@ -811,7 +810,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindXDP,
-			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
+			PinPath:   bpfman.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.XDPDetails{Position: int32(spec.Position)},
 		},
@@ -900,7 +899,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindTC,
-			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
+			PinPath:   bpfman.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
 			Details:   bpfman.TCDetails{Position: int32(spec.Position)},
 		},
@@ -936,7 +935,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 		Record: bpfman.LinkRecord{
 			ID:        linkID,
 			Kind:      bpfman.LinkKindTCX,
-			PinPath:   bpffs.NewLinkPath(linkPinPath),
+			PinPath:   bpfman.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
 		},
 		Status: bpfman.LinkStatus{

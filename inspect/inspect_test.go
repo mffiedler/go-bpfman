@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/inspect"
@@ -487,7 +486,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 			{
 				ID:      kernel.LinkID(10), // kernel link ID
 				Kind:    bpfman.LinkKindKprobe,
-				PinPath: bpffs.NewLinkPath(pinPath),
+				PinPath: bpfman.NewLinkPath(pinPath),
 				Details: bpfman.KprobeDetails{FnName: "do_sys_open"},
 			},
 		},

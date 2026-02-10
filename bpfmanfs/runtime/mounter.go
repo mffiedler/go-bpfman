@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"os"
-
-	"github.com/frobware/go-bpfman/bpffs"
 )
 
 // Mounter handles bpffs mounting during initialisation.
@@ -15,7 +13,7 @@ type Mounter interface {
 type RealMounter struct{}
 
 func (RealMounter) EnsureMounted(mountPoint string) error {
-	return bpffs.EnsureMounted(bpffs.DefaultMountInfoPath, mountPoint)
+	return EnsureMounted(DefaultMountInfoPath, mountPoint)
 }
 
 // NoOpMounter creates the mount point directory without mounting.

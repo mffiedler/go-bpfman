@@ -218,7 +218,7 @@ common patterns:
 Use when callers should not mix variants.
 
 ```go
-type PinnedLinkSpec struct { PinPath bpffs.LinkPath /* ... */ }
+type PinnedLinkSpec struct { PinPath bpfman.LinkPath /* ... */ }
 type EphemeralLinkSpec struct { /* ... */ }
 ```
 
@@ -231,7 +231,7 @@ type LinkSpec struct {
     Common LinkSpecCommon
     Pinned *PinnedLink // nil means ephemeral by construction
 }
-type PinnedLink struct { PinPath bpffs.LinkPath }
+type PinnedLink struct { PinPath bpfman.LinkPath }
 ```
 
 **Pattern 3: Sealed interface**

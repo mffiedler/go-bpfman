@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
@@ -232,7 +231,7 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
 	}
-	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), details, bpffs.LinkPath("/sys/fs/bpf/bpfman/test/link"), time.Now())
+	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), details, bpfman.LinkPath("/sys/fs/bpf/bpfman/test/link"), time.Now())
 
 	err = store.SaveLink(ctx, spec)
 	require.NoError(t, err, "SaveLink failed")
@@ -729,7 +728,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 			Nsid:      nsid,
 		}
 		linkID := kernel.LinkID(link.linkID)
-		spec := bpfman.NewPinnedLinkRecord(linkID, progID, details, bpffs.LinkPath("/sys/fs/bpf/link_"+string(rune(link.linkID))), time.Now())
+		spec := bpfman.NewPinnedLinkRecord(linkID, progID, details, bpfman.LinkPath("/sys/fs/bpf/link_"+string(rune(link.linkID))), time.Now())
 		err := store.SaveLink(ctx, spec)
 		require.NoError(t, err, "SaveLink failed for link %d", link.linkID)
 	}

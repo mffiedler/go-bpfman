@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -146,7 +145,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 					r.out.LinkID,
 					p.programKernelID,
 					p.buildLinkDetails(r.disp.Nsid, r.position, r.disp),
-					*bpffs.NewLinkPath(r.pinPath),
+					*bpfman.NewLinkPath(r.pinPath),
 					time.Now(),
 				)
 				link := bpfman.Link{

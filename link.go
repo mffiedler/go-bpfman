@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
@@ -57,6 +56,24 @@ func TCXAttachBefore(progID kernel.ProgramID) TCXAttachOrder {
 // TCXAttachAfter returns an order that attaches after the given program.
 func TCXAttachAfter(progID kernel.ProgramID) TCXAttachOrder {
 	return TCXAttachOrder{AfterProgID: progID}
+}
+
+// LinkPath represents a pinned link path within a bpffs.
+// This is a newtype to prevent accidentally passing arbitrary strings
+// where a validated link pin path is expected.
+type LinkPath string
+
+// String returns the path as a string.
+func (p LinkPath) String() string { return string(p) }
+
+// NewLinkPath creates a *LinkPath from a string, returning nil if empty.
+// This is a convenience function for converting optional string pin paths.
+func NewLinkPath(s string) *LinkPath {
+	if s == "" {
+		return nil
+	}
+	p := LinkPath(s)
+	return &p
 }
 
 // LinkDetails is a sealed interface for type-specific link details.
@@ -285,7 +302,7 @@ type LinkRecord struct {
 	ID        kernel.LinkID    `json:"id"`
 	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
 	Kind      LinkKind         `json:"kind"`
-	PinPath   *bpffs.LinkPath  `json:"pin_path,omitempty"` // nil == ephemeral
+	PinPath   *LinkPath        `json:"pin_path,omitempty"` // nil == ephemeral
 	Details   LinkDetails      `json:"details,omitempty"`
 	CreatedAt time.Time        `json:"created_at"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
@@ -391,7 +408,7 @@ type AttachOutput struct {
 
 // NewPinnedLinkRecord creates a fully-detailed record for a pinned link.
 // Kind is derived from details to enforce the invariant.
-func NewPinnedLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
+func NewPinnedLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, pin LinkPath, createdAt time.Time) LinkRecord {
 	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,

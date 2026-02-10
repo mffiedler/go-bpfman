@@ -8,7 +8,6 @@ import (
 	"time"
 
 	bpfman "github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -598,7 +597,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	record.Kind = bpfman.LinkKind(kindStr)
 	record.ProgramID = programID
 	if pinPath.Valid {
-		pin := bpffs.LinkPath(pinPath.String)
+		pin := bpfman.LinkPath(pinPath.String)
 		record.PinPath = &pin
 	}
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
@@ -634,7 +633,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 			ProgramID: programID,
 		}
 		if pinPath.Valid {
-			pin := bpffs.LinkPath(pinPath.String)
+			pin := bpfman.LinkPath(pinPath.String)
 			record.PinPath = &pin
 		}
 		createdAt, err := time.Parse(time.RFC3339, createdAtStr)
