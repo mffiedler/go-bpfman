@@ -8,10 +8,8 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 )
 
-// XDP proceed-on action bits (matches XDP return codes).
-const (
-	xdpProceedOnPass = 1 << 2 // Continue to next program on XDP_PASS
-)
+// xdpProceedOnPass is the proceed-on bitmask for XDP_PASS.
+var xdpProceedOnPass = dispatcher.ProceedOnMask(dispatcher.XDPPass)
 
 // attachXDP attaches an XDP program to a network interface using the
 // dispatcher model for multi-program chaining.
@@ -55,9 +53,9 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 			return bpfman.XDPDetails{
 				Interface:    ifname,
 				Ifindex:      uint32(ifindex),
-				Priority:     50, // Default priority
+				Priority:     dispatcher.DefaultPriority,
 				Position:     int32(position),
-				ProceedOn:    []int32{2}, // XDP_PASS
+				ProceedOn:    []int32{int32(dispatcher.XDPPass)},
 				Nsid:         nsid,
 				DispatcherID: dispState.KernelID,
 				Revision:     dispState.Revision,

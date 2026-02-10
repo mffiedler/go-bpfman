@@ -138,7 +138,7 @@
 //  3. Attach the dispatcher to an interface via link.AttachXDP
 //  4. Pin the dispatcher program and link to bpffs
 //  5. Load user program as extension type
-//  6. Call [AttachExtension] to attach user program to a slot
+//  6. Attach user program to a slot via link.AttachFreplace
 //  7. Pin the extension link to bpffs
 //
 // The manager (manager/) orchestrates these steps and handles the

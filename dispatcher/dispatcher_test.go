@@ -17,7 +17,7 @@ func TestLoadXDPDispatcher(t *testing.T) {
 
 	// Create config for 1 program
 	cfg := dispatcher.NewXDPConfig(1)
-	cfg.ChainCallActions[0] = dispatcher.ProceedOnMask(dispatcher.XDPPass) // Continue on XDP_PASS
+	cfg.ChainCallActions[0] = dispatcher.ProceedOnMask(dispatcher.XDPPass)
 
 	// Load the dispatcher spec
 	spec, err := dispatcher.LoadXDPDispatcher(cfg)

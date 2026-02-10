@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 )
 
 // MaxPrograms is the maximum number of programs that can be chained.
@@ -48,7 +47,9 @@ const (
 	// XDP dispatcher constants from xdp_dispatcher_v2.bpf.c
 	xdpDispatcherMagic   = 236
 	xdpDispatcherVersion = 2
-	defaultPriority      = 50
+
+	// DefaultPriority is the default run priority for dispatcher slots.
+	DefaultPriority = 50
 )
 
 // XDPAction represents XDP return codes for proceed-on configuration.
@@ -81,7 +82,7 @@ func NewXDPConfig(numProgs int) XDPConfig {
 		NumProgsEnabled:   uint8(numProgs),
 	}
 	for i := 0; i < MaxPrograms; i++ {
-		cfg.RunPrios[i] = defaultPriority
+		cfg.RunPrios[i] = DefaultPriority
 	}
 	return cfg
 }
@@ -92,7 +93,7 @@ func NewTCConfig(numProgs int) TCConfig {
 		NumProgsEnabled: uint8(numProgs),
 	}
 	for i := 0; i < MaxPrograms; i++ {
-		cfg.RunPrios[i] = defaultPriority
+		cfg.RunPrios[i] = DefaultPriority
 	}
 	return cfg
 }
@@ -157,27 +158,4 @@ func LoadTCDispatcher(cfg TCConfig) (*ebpf.CollectionSpec, error) {
 // This is the target function name used for BPF extension attachment.
 func SlotName(position int) string {
 	return fmt.Sprintf("prog%d", position)
-}
-
-// AttachExtension attaches a BPF extension program to a dispatcher slot.
-// The extension program replaces the stub function at the given position.
-//
-// Parameters:
-//   - dispatcher: The loaded dispatcher program (XDP or TC)
-//   - position: The slot position (0-9)
-//   - extension: The extension program to attach (must be type Extension)
-//
-// Returns a link that must be pinned to persist beyond the process lifetime.
-func AttachExtension(dispatcher *ebpf.Program, position int, extension *ebpf.Program) (link.Link, error) {
-	if position < 0 || position >= MaxPrograms {
-		return nil, fmt.Errorf("position %d out of range [0, %d)", position, MaxPrograms)
-	}
-
-	targetFn := SlotName(position)
-	lnk, err := link.AttachFreplace(dispatcher, targetFn, extension)
-	if err != nil {
-		return nil, fmt.Errorf("attach extension to %s: %w", targetFn, err)
-	}
-
-	return lnk, nil
 }
