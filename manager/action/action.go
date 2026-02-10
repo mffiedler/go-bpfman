@@ -127,6 +127,16 @@ type DetachTCFilter struct {
 
 func (DetachTCFilter) isAction() {}
 
+// PublishBytecode copies a BPF object file to the per-program
+// bytecode directory and writes provenance metadata alongside it.
+type PublishBytecode struct {
+	KernelID   uint32
+	SourcePath string
+	Provenance bpfmanfs.Provenance
+}
+
+func (PublishBytecode) isAction() {}
+
 // RemoveProgramDir removes the persisted bytecode directory for a program.
 type RemoveProgramDir struct {
 	KernelID uint32

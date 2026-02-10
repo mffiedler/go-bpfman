@@ -117,7 +117,7 @@ func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID
 
 // Transactional
 func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
-	panic("stubStore.RunInTransaction not implemented")
+	return fn(s)
 }
 
 // GarbageCollector

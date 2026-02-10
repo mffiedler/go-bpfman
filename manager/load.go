@@ -116,20 +116,54 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
+	rt := m.fsctx.BytecodeFS()
+	perProgOpts := loadOpts{
+		UserMetadata: opts.UserMetadata,
+		Owner:        opts.Owner,
+	}
+
 	var loaded []bpfman.Program
+	cleanupLoaded := func() {
+		for j := len(loaded) - 1; j >= 0; j-- {
+			if uerr := m.Unload(ctx, loaded[j].Record.KernelID); uerr != nil {
+				m.logger.Error("failed to unload during batch rollback",
+					"kernel_id", loaded[j].Record.KernelID, "error", uerr)
+			}
+		}
+	}
+
 	for i, spec := range specs {
 		if opts.ShareMaps && i > 0 && spec.MapOwnerID() == 0 {
 			spec = spec.WithMapOwnerID(loaded[0].Record.KernelID)
 		}
-		prog, err := m.load(ctx, spec, loadOpts{
-			UserMetadata: opts.UserMetadata,
-			Owner:        opts.Owner,
-		})
+
+		now := time.Now()
+		b, err := operation.Run(ctx, m.logger, m.executor, m.loadPlan(spec, perProgOpts, now))
 		if err != nil {
-			m.cleanupLoaded(ctx, loaded)
+			cleanupLoaded()
 			return nil, err
 		}
-		loaded = append(loaded, prog)
+
+		lo := operation.Get(b, loadedKey)
+		record := buildProgramRecord(spec, lo, perProgOpts, rt, now)
+
+		var kernelMaps []kernel.Map
+		for _, mapID := range lo.Program.MapIDs {
+			km, err := m.kernel.GetMapByID(ctx, mapID)
+			if err == nil {
+				kernelMaps = append(kernelMaps, km)
+			}
+		}
+
+		loaded = append(loaded, bpfman.Program{
+			Record: record,
+			Status: bpfman.ProgramStatus{
+				Kernel:      lo.Program,
+				PinPresent:  true,
+				MapsPresent: len(kernelMaps) > 0,
+				Maps:        kernelMaps,
+			},
+		})
 	}
 	return loaded, nil
 }
@@ -177,15 +211,18 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 		operation.Do("fs-publish", programName,
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
-				prov := bpfmanfs.Provenance{
-					Version:     1,
-					KernelID:    l.Program.ID,
-					ProgramName: programName,
-					Source:      spec.ObjectPath(),
-					SourceKind:  sourceKindFromSpec(spec),
-					LoadedAt:    now,
-				}
-				return rt.PublishBytecode(l.Program.ID, spec.ObjectPath(), prov)
+				return m.executor.Execute(ctx, action.PublishBytecode{
+					KernelID:   l.Program.ID,
+					SourcePath: spec.ObjectPath(),
+					Provenance: bpfmanfs.Provenance{
+						Version:     1,
+						KernelID:    l.Program.ID,
+						ProgramName: programName,
+						Source:      spec.ObjectPath(),
+						SourceKind:  sourceKindFromSpec(spec),
+						LoadedAt:    now,
+					},
+				})
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				l := operation.Get(b, loadedKey)
@@ -199,56 +236,13 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				record := buildProgramRecord(spec, l, opts, rt, now)
-				return m.store.RunInTransaction(ctx, func(tx platform.Store) error {
-					return tx.Save(ctx, l.Program.ID, record)
+				return m.executor.Execute(ctx, action.SaveProgram{
+					KernelID: l.Program.ID,
+					Metadata: record,
 				})
 			},
 		),
 	)
-}
-
-// load executes a single-program load plan and returns the result.
-func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
-	now := time.Now()
-	rt := m.fsctx.BytecodeFS()
-
-	b, err := operation.Run(ctx, m.logger, m.executor, m.loadPlan(spec, opts, now))
-	if err != nil {
-		return bpfman.Program{}, err
-	}
-
-	loaded := operation.Get(b, loadedKey)
-	record := buildProgramRecord(spec, loaded, opts, rt, now)
-
-	var kernelMaps []kernel.Map
-	for _, mapID := range loaded.Program.MapIDs {
-		km, err := m.kernel.GetMapByID(ctx, mapID)
-		if err == nil {
-			kernelMaps = append(kernelMaps, km)
-		}
-	}
-
-	return bpfman.Program{
-		Record: record,
-		Status: bpfman.ProgramStatus{
-			Kernel:      loaded.Program,
-			PinPresent:  true,
-			MapsPresent: len(kernelMaps) > 0,
-			Maps:        kernelMaps,
-		},
-	}, nil
-}
-
-// cleanupLoaded unloads previously loaded programs in reverse order.
-// Each program has a completed store-save, so Unload can find and
-// fully clean it. Errors are logged but not returned.
-func (m *Manager) cleanupLoaded(ctx context.Context, programs []bpfman.Program) {
-	for i := len(programs) - 1; i >= 0; i-- {
-		if err := m.Unload(ctx, programs[i].Record.KernelID); err != nil {
-			m.logger.Error("failed to unload during batch rollback",
-				"kernel_id", programs[i].Record.KernelID, "error", err)
-		}
-	}
 }
 
 // resolveBatchSource resolves the LoadSource to an object path and

@@ -29,7 +29,9 @@ func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs bp
 func (e *executor) Execute(ctx context.Context, a action.Action) error {
 	switch a := a.(type) {
 	case action.SaveProgram:
-		return e.store.Save(ctx, a.KernelID, a.Metadata)
+		return e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+			return tx.Save(ctx, a.KernelID, a.Metadata)
+		})
 
 	case action.DeleteProgram:
 		return e.store.Delete(ctx, a.KernelID)
@@ -67,6 +69,9 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 
 	case action.DetachTCFilter:
 		return e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
+
+	case action.PublishBytecode:
+		return e.bcfs.PublishBytecode(a.KernelID, a.SourcePath, a.Provenance)
 
 	case action.RemoveProgramDir:
 		return e.bcfs.RemoveProgram(a.KernelID)
