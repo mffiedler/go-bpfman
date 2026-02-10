@@ -5,7 +5,7 @@
 // This package provides the concrete database layer for bpfman's
 // program, link, and dispatcher metadata. It implements all the
 // narrow store interfaces defined in platform/ (ProgramReader,
-// ProgramWriter, LinkWriter, DispatcherStore, GarbageCollector, etc.)
+// ProgramWriter, LinkWriter, DispatcherStore, etc.)
 // against a single SQLite database.
 //
 // # Schema
@@ -146,12 +146,4 @@
 // lifecycles, particularly for transactions where tx.StmtContext must
 // create transaction-bound handles from the master statements. See
 // RunInTransaction for details.
-//
-// # Garbage Collection
-//
-// The GC method removes all stored entries (programs, dispatchers,
-// links) whose kernel IDs are absent from the provided live sets. It
-// handles ordering constraints: extension links are removed before
-// their dispatcher programs, and dependent programs are removed
-// before map owners.
 package sqlite

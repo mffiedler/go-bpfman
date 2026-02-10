@@ -72,30 +72,14 @@ alongside their producer continue to prevent this in practice.
 
 ## 3. Coherency operations are opaque closures, not actions
 
-The coherency system separates diagnosis (declarative rules over an
-`ObservedState` snapshot) from remediation (`Operation` with an
-`Execute` function). But `Operation.Execute` is `func() error`, not
-`[]action.Action`:
-
-    // manager/coherency/types.go:119-124
-    type Operation struct {
-        Description string
-        Execute     func() error
-    }
-
-These closures close over the observed state and mutate the store
-through it. The `Violation` value is inspectable data; the `Operation`
-inside it is not -- you cannot see what it will do without running it.
-
-If the action pattern were applied consistently, `Operation` would
-contain `[]action.Action` and the GC executor would interpret those
-actions through the same executor used by plans. The coherency system
-predates the plan/action infrastructure, so this is likely historical
-rather than deliberate.
-
-**Possible resolution:** when touching GC rules, migrate `Operation`
-to carry actions rather than closures. This would unify the two
-execution paths and make GC operations testable via a fake executor.
+**Resolved.** `Operation` now carries `[]action.Action` instead of a
+closure. Coherency rules produce reified action values that flow
+through the same executor as plan-based operations. This enabled
+`action.Describe` (human-readable descriptions for every GC-relevant
+action), `bpfman gc --dry-run` (full preview of what GC would do
+without executing), and the transaction-rollback technique that lets
+dry-run show coherency violations that depend on store deletions
+completing first.
 
 ---
 

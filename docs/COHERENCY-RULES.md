@@ -111,11 +111,12 @@ details.
 
 ## GC Rules (store layer)
 
-These rules are enforced by `store.GC()` which receives the set of
-kernel program IDs and kernel link IDs gathered by the manager.
-They are not part of the rule engine; they run as imperative code
-in the store layer because they require transactional ordering
-constraints (delete dependents before owners).
+These rules are enforced by `computeStoreGC()` in the manager
+package, which receives snapshots of the database state and the set
+of kernel-alive IDs. The pure function returns `[]action.Action`
+that the manager executes individually with best-effort semantics.
+Ordering constraints (delete dependents before owners) are encoded
+in the action sequence.
 
 | Rule | Scope | Condition | Action |
 |------|-------|-----------|--------|

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -147,11 +148,35 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 	return m.GCWithOptions(ctx, GCOptions{Rules: rules})
 }
 
-// GCWithOptions runs garbage collection with the given options.
-func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCResult, retErr error) {
-	start := time.Now()
+// GCPlan holds the computed GC actions before execution. In dry-run
+// mode the plan is returned without executing.
+type GCPlan struct {
+	// StoreActions are deletions computed by computeStoreGC.
+	StoreActions []action.Action
+	// Violations are coherency-level GC violations with
+	// remediation operations (only those with Op != nil).
+	Violations []coherency.Violation
+	// LiveOrphans counts programs pinned under bpfman's bpffs root
+	// that are alive in the kernel but have no DB record.
+	LiveOrphans int
+}
 
-	// Gather kernel state
+// errRollback is a sentinel used to force a transaction rollback
+// without indicating a real failure.
+var errRollback = errors.New("rollback")
+
+// ComputeGC gathers state and computes what GC would do, without
+// executing any actions. The returned GCPlan can be inspected for
+// dry-run reporting or passed to ExecuteGC for execution.
+//
+// When there are store actions, they are applied inside a transaction
+// that is then rolled back, so that coherency rules evaluate against
+// the post-deletion state and the plan reflects the full set of
+// operations that ExecuteGC would perform.
+func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error) {
+	var plan GCPlan
+
+	// Gather kernel state.
 	kernelProgramIDs := make(map[kernel.ProgramID]bool)
 	for kp, err := range m.kernel.Programs(ctx) {
 		if err != nil {
@@ -167,7 +192,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// remove it from the live set so the store GC reaps the row.
 	dbPrograms, err := m.store.List(ctx)
 	if err != nil {
-		return result, fmt.Errorf("list programs: %w", err)
+		return plan, fmt.Errorf("list programs: %w", err)
 	}
 	scanner := m.rt.BPFFS().Scanner()
 	for id := range dbPrograms {
@@ -191,64 +216,141 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		kernelLinkIDs[kl.ID] = true
 	}
 
-	// Phase 1: Delegate to store - it handles ordering constraints internally
-	storeResult, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
+	// Phase 1: compute which store entries are stale.
+	dispatchers, err := m.store.ListDispatchers(ctx)
 	if err != nil {
-		return result, fmt.Errorf("store gc: %w", err)
+		return plan, fmt.Errorf("list dispatchers: %w", err)
+	}
+	links, err := m.store.ListLinks(ctx)
+	if err != nil {
+		return plan, fmt.Errorf("list links: %w", err)
 	}
 
-	result.ProgramsRemoved = storeResult.ProgramsRemoved
-	result.LinksRemoved = storeResult.LinksRemoved
-	result.DispatchersRemoved = storeResult.DispatchersRemoved
+	plan.StoreActions = computeStoreGC(dbPrograms, dispatchers, links, kernelProgramIDs, kernelLinkIDs)
 
-	// Phase 2: Post-store GC using the coherency rule engine to detect and
-	// remove stale dispatchers and orphan filesystem artefacts.
-	state, err := coherency.GatherState(ctx, m.store, m.kernel, m.Layout())
-	if err != nil {
-		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
-	} else {
-		// Build rule set: standard GC rules, plus prune rule if requested.
-		gcRules := coherency.GCRules()
-		if opts.Prune {
-			gcRules = append(gcRules, coherency.PruneRule())
-		}
-		if len(opts.Rules) > 0 {
-			ruleSet := make(map[string]bool)
-			for _, r := range opts.Rules {
-				ruleSet[r] = true
-			}
-			filtered := gcRules[:0]
-			for _, r := range gcRules {
-				if ruleSet[r.Name] {
-					filtered = append(filtered, r)
+	// Phase 2: coherency rule engine. When there are store
+	// actions, apply them inside a transaction and gather
+	// coherency state against the tx store so the rules see the
+	// post-deletion world. The transaction is rolled back so
+	// nothing is persisted.
+	coherencyStore := m.store
+	if len(plan.StoreActions) > 0 {
+		txErr := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+			txExec := newExecutor(tx, m.kernel, m.rt.Bytecode(), m.rt.BPFFS(), m.logger)
+			for _, a := range plan.StoreActions {
+				if err := txExec.Execute(ctx, a); err != nil {
+					m.logger.WarnContext(ctx, "dry-run store action failed", "action", fmt.Sprintf("%T", a), "error", err)
+					continue
 				}
 			}
-			gcRules = filtered
+			plan.Violations, plan.LiveOrphans = m.evaluateCoherency(ctx, tx, opts)
+			return errRollback
+		})
+		if txErr != nil && !errors.Is(txErr, errRollback) {
+			return plan, fmt.Errorf("dry-run store gc: %w", txErr)
 		}
+	} else {
+		plan.Violations, plan.LiveOrphans = m.evaluateCoherency(ctx, coherencyStore, opts)
+	}
 
-		violations := coherency.Evaluate(state, gcRules)
-		for _, v := range violations {
-			if v.Op == nil {
-				continue
-			}
-			if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {
-				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
-				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
-				continue
-			}
-			m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
-			switch v.Category {
-			case "gc-dispatcher":
-				result.DispatchersRemoved++
-			case "gc-orphan-pin":
-				result.OrphanPinsRemoved++
+	return plan, nil
+}
+
+// evaluateCoherency gathers state from the given store and evaluates
+// GC rules, returning actionable violations and the live orphan count.
+func (m *Manager) evaluateCoherency(ctx context.Context, store platform.Store, opts GCOptions) ([]coherency.Violation, int) {
+	state, err := coherency.GatherState(ctx, store, m.kernel, m.Layout())
+	if err != nil {
+		m.logger.WarnContext(ctx, "failed to gather state for post-store GC", "error", err)
+		return nil, 0
+	}
+
+	gcRules := buildGCRules(opts)
+	var violations []coherency.Violation
+	for _, v := range coherency.Evaluate(state, gcRules) {
+		if v.Op != nil {
+			violations = append(violations, v)
+		}
+	}
+
+	var liveOrphans int
+	if !opts.Prune {
+		liveOrphans = state.LiveOrphans()
+	}
+
+	return violations, liveOrphans
+}
+
+// buildGCRules constructs the rule set from options.
+func buildGCRules(opts GCOptions) []coherency.Rule {
+	gcRules := coherency.GCRules()
+	if opts.Prune {
+		gcRules = append(gcRules, coherency.PruneRule())
+	}
+	if len(opts.Rules) > 0 {
+		ruleSet := make(map[string]bool)
+		for _, r := range opts.Rules {
+			ruleSet[r] = true
+		}
+		filtered := gcRules[:0]
+		for _, r := range gcRules {
+			if ruleSet[r.Name] {
+				filtered = append(filtered, r)
 			}
 		}
+		gcRules = filtered
+	}
+	return gcRules
+}
 
-		// Count live orphans: orphan pins where kernel is alive.
-		// When prune is set, these were already handled above.
-		if !opts.Prune {
-			result.LiveOrphans = state.LiveOrphans()
+// ExecuteGC executes a previously computed GCPlan and returns
+// statistics about what was removed. Coherency violations are
+// re-gathered after store actions execute so that the coherency
+// rules see the post-deletion state (e.g. orphan filesystem
+// artefacts left behind by deleted DB rows).
+func (m *Manager) ExecuteGC(ctx context.Context, plan GCPlan, opts GCOptions) (result GCResult, retErr error) {
+	start := time.Now()
+
+	// Phase 1: execute store-level actions within a single
+	// transaction.
+	if len(plan.StoreActions) > 0 {
+		var executed []action.Action
+		if err := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+			txExec := newExecutor(tx, m.kernel, m.rt.Bytecode(), m.rt.BPFFS(), m.logger)
+			for _, a := range plan.StoreActions {
+				if err := txExec.Execute(ctx, a); err != nil {
+					m.logger.WarnContext(ctx, "store gc action failed", "action", fmt.Sprintf("%T", a), "error", err)
+					continue
+				}
+				executed = append(executed, a)
+			}
+			return nil
+		}); err != nil {
+			return result, fmt.Errorf("store gc: %w", err)
+		}
+		result.ProgramsRemoved = countByType[action.DeleteProgram](executed)
+		result.LinksRemoved = countByType[action.DeleteLink](executed)
+		result.DispatchersRemoved = countByType[action.DeleteDispatcher](executed)
+	}
+
+	// Phase 2: re-gather coherency state against the updated
+	// store and evaluate rules afresh. This ensures the coherency
+	// rules see artefacts orphaned by the store deletions above.
+	violations, liveOrphans := m.evaluateCoherency(ctx, m.store, opts)
+	result.LiveOrphans = liveOrphans
+
+	for _, v := range violations {
+		if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {
+			m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
+			retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
+			continue
+		}
+		m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
+		switch v.Category {
+		case "gc-dispatcher":
+			result.DispatchersRemoved++
+		case "gc-orphan-pin":
+			result.OrphanPinsRemoved++
 		}
 	}
 
@@ -269,7 +371,16 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		m.logger.DebugContext(ctx, "gc complete", "duration", elapsed)
 	}
 
-	return
+	return result, retErr
+}
+
+// GCWithOptions runs garbage collection with the given options.
+func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, error) {
+	plan, err := m.ComputeGC(ctx, opts)
+	if err != nil {
+		return GCResult{}, err
+	}
+	return m.ExecuteGC(ctx, plan, opts)
 }
 
 // GCIfNeeded runs GC if required, with its own mutex for coordination.

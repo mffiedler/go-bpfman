@@ -73,27 +73,6 @@ type DispatcherStore interface {
 	CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error)
 }
 
-// GCResult contains statistics from garbage collection.
-type GCResult struct {
-	ProgramsRemoved    int
-	DispatchersRemoved int
-	LinksRemoved       int
-	OrphanPinsRemoved  int
-	// LiveOrphans counts programs pinned under bpfman's bpffs root
-	// that are still alive in the kernel but have no DB record. GC
-	// leaves these untouched because removing the pin would unload
-	// a running program. Use 'bpfman doctor' for details.
-	LiveOrphans int
-}
-
-// GarbageCollector removes stale entries from the store.
-type GarbageCollector interface {
-	// GC removes all stored entries (programs, dispatchers, links)
-	// that don't exist in the provided kernel state. Handles internal
-	// ordering constraints (e.g., dependent programs before map owners).
-	GC(ctx context.Context, kernelProgramIDs map[kernel.ProgramID]bool, kernelLinkIDs map[kernel.LinkID]bool) (GCResult, error)
-}
-
 // Store combines program, link, and dispatcher store operations.
 type Store interface {
 	io.Closer
@@ -101,7 +80,6 @@ type Store interface {
 	LinkStore
 	DispatcherStore
 	Transactional
-	GarbageCollector
 }
 
 // Transactional provides atomic execution of store operations.

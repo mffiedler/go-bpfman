@@ -27,7 +27,7 @@ func (m *Manager) Doctor(ctx context.Context) (coherency.DoctorReport, error) {
 // planned operations. Returns the number of operations applied.
 // This handles stale dispatchers and orphan filesystem artefacts.
 // Store-level GC (structural cleanup) is handled separately by
-// store.GC() called from Manager.GC().
+// computeStoreGC called from Manager.GC().
 func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
 	state, err := coherency.GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {

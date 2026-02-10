@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
 // GCCmd garbage collects stale database entries.
 type GCCmd struct {
-	Prune bool     `help:"Also remove live orphans (programs pinned in bpffs but not tracked in DB)."`
-	Rules []string `arg:"" optional:"" help:"GC rule(s) to run. Omit to run all rules."`
+	DryRun bool     `help:"Show what would be cleaned up without executing."`
+	Prune  bool     `help:"Also remove live orphans (programs pinned in bpffs but not tracked in DB)."`
+	Rules  []string `arg:"" optional:"" help:"GC rule(s) to run. Omit to run all rules."`
 }
 
 // Help returns extended help for the gc command.
@@ -56,12 +59,75 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	// Mutation under lock
+	gcOpts := manager.GCOptions{
+		Rules: c.Rules,
+		Prune: c.Prune,
+	}
+
+	if c.DryRun {
+		return c.runDryRun(cli, ctx, mgr, gcOpts)
+	}
+	return c.runExecute(cli, ctx, mgr, gcOpts)
+}
+
+// runDryRun computes the GC plan under lock and displays what would
+// be executed without performing any mutations.
+func (c *GCCmd) runDryRun(cli *CLI, ctx context.Context, mgr *manager.Manager, opts manager.GCOptions) error {
+	plan, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCPlan, error) {
+		p, pErr := mgr.ComputeGC(ctx, opts)
+		if pErr != nil {
+			return p, fmt.Errorf("gc compute failed: %w", pErr)
+		}
+		return p, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(plan.StoreActions) == 0 && len(plan.Violations) == 0 {
+		if plan.LiveOrphans > 0 {
+			return cli.PrintOutf("Nothing to clean up. %d live orphan(s) skipped (run 'bpfman doctor' for details).\n",
+				plan.LiveOrphans)
+		}
+		return cli.PrintOut("Nothing to clean up.\n")
+	}
+
+	var b strings.Builder
+
+	if len(plan.StoreActions) > 0 {
+		fmt.Fprintln(&b, "Store-level GC:")
+		for _, a := range plan.StoreActions {
+			fmt.Fprintf(&b, "  %s\n", action.Describe(a))
+		}
+	}
+
+	if len(plan.Violations) > 0 {
+		if b.Len() > 0 {
+			fmt.Fprintln(&b)
+		}
+		fmt.Fprintln(&b, "Coherency GC:")
+		for _, v := range plan.Violations {
+			fmt.Fprintf(&b, "  [%s] %s\n", v.RuleName, v.Description)
+			for _, a := range v.Op.Actions {
+				fmt.Fprintf(&b, "    %s\n", action.Describe(a))
+			}
+		}
+	}
+
+	fmt.Fprintf(&b, "\n%d store action(s), %d coherency operation(s) would be executed.",
+		len(plan.StoreActions), len(plan.Violations))
+	if plan.LiveOrphans > 0 {
+		fmt.Fprintf(&b, " %d live orphan(s) skipped.", plan.LiveOrphans)
+	}
+	fmt.Fprintln(&b)
+
+	return cli.PrintOut(b.String())
+}
+
+// runExecute performs the full GC under lock and reports results.
+func (c *GCCmd) runExecute(cli *CLI, ctx context.Context, mgr *manager.Manager, opts manager.GCOptions) error {
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {
-		gcResult, gcErr := mgr.GCWithOptions(ctx, manager.GCOptions{
-			Rules: c.Rules,
-			Prune: c.Prune,
-		})
+		gcResult, gcErr := mgr.GCWithOptions(ctx, opts)
 		if gcErr != nil {
 			return gcResult, fmt.Errorf("gc failed: %w", gcErr)
 		}
@@ -71,7 +137,7 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	// Output outside lock
+	// Output outside lock.
 	cleaned := result.ProgramsRemoved + result.DispatchersRemoved + result.LinksRemoved + result.OrphanPinsRemoved
 
 	if cleaned == 0 && result.LiveOrphans == 0 {

@@ -15,6 +15,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
@@ -838,129 +839,85 @@ func TestListTCXLinksByInterface_EmptyResult(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// GC Tests
+// Store GC Schema Tests
+//
+// These tests exercise the store operations that garbage collection
+// relies on, verifying that FK constraints, deletion ordering, and
+// CountDispatcherLinks behave correctly against the real schema.
+// The GC decision logic itself is tested separately as a pure
+// function in manager/gc_test.go.
 // -----------------------------------------------------------------------------
 
-func TestGC_EmptyStore(t *testing.T) {
+func TestStoreGC_DependentBeforeOwnerDeletion(t *testing.T) {
+	// Deleting dependents before owners must succeed under FK constraints.
+	// Deleting an owner while dependents still reference it must fail.
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
 
 	ctx := context.Background()
 
-	// GC with empty kernel state on empty store
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{}, map[kernel.LinkID]bool{})
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.ProgramsRemoved)
-	assert.Equal(t, 0, result.DispatchersRemoved)
-	assert.Equal(t, 0, result.LinksRemoved)
-}
-
-func TestGC_AllProgramsInKernel(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err)
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Save a program
-	prog := testProgram()
-	err = store.Save(ctx, kernel.ProgramID(100), prog)
-	require.NoError(t, err)
-
-	// GC with program ID in kernel - nothing should be removed
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.ProgramsRemoved)
-
-	// Verify program still exists
-	_, err = store.Get(ctx, kernel.ProgramID(100))
-	require.NoError(t, err, "program should still exist")
-}
-
-func TestGC_StalePrograms(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err)
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Save multiple programs
-	prog := testProgram()
-	err = store.Save(ctx, kernel.ProgramID(100), prog)
-	require.NoError(t, err)
-	err = store.Save(ctx, kernel.ProgramID(101), prog)
-	require.NoError(t, err)
-	err = store.Save(ctx, kernel.ProgramID(102), prog)
-	require.NoError(t, err)
-
-	// GC with only program 100 in kernel - 101 and 102 should be removed
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
-	require.NoError(t, err)
-	assert.Equal(t, 2, result.ProgramsRemoved)
-
-	// Verify 100 still exists, 101 and 102 are gone
-	_, err = store.Get(ctx, kernel.ProgramID(100))
-	require.NoError(t, err, "program 100 should still exist")
-	_, err = store.Get(ctx, kernel.ProgramID(101))
-	require.Error(t, err, "program 101 should be deleted")
-	_, err = store.Get(ctx, kernel.ProgramID(102))
-	require.Error(t, err, "program 102 should be deleted")
-}
-
-func TestGC_MapOwnerOrdering(t *testing.T) {
-	// Test that GC correctly handles map_owner_id FK constraint.
-	// Programs with MapOwnerID (dependents) must be deleted before
-	// the programs they reference (owners).
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err)
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create owner first (must exist for FK)
 	owner := testProgram()
 	owner.Meta.Name = "owner"
-	err = store.Save(ctx, kernel.ProgramID(100), owner)
-	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), owner))
 
-	// Create dependents that reference the owner
 	ownerID := kernel.ProgramID(100)
 	dep1 := testProgram()
 	dep1.Meta.Name = "dep1"
 	dep1.Handles.MapOwnerID = &ownerID
-	err = store.Save(ctx, kernel.ProgramID(101), dep1)
-	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), dep1))
 
 	dep2 := testProgram()
 	dep2.Meta.Name = "dep2"
 	dep2.Handles.MapOwnerID = &ownerID
-	err = store.Save(ctx, kernel.ProgramID(102), dep2)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(102), dep2))
+
+	// Correct order: dependents first, then owner.
+	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
+			return err
+		}
+		if err := tx.Delete(ctx, kernel.ProgramID(102)); err != nil {
+			return err
+		}
+		return tx.Delete(ctx, kernel.ProgramID(100))
+	})
+	require.NoError(t, err, "deleting dependents then owner should succeed")
+
+	programs, err := store.List(ctx)
 	require.NoError(t, err)
-
-	// GC with empty kernel state - all should be removed
-	// If ordering is wrong, FK constraint will fail
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{}, map[kernel.LinkID]bool{})
-	require.NoError(t, err, "GC should handle FK ordering correctly")
-	assert.Equal(t, 3, result.ProgramsRemoved)
-
-	// Verify all are gone
-	_, err = store.Get(ctx, kernel.ProgramID(100))
-	require.Error(t, err)
-	_, err = store.Get(ctx, kernel.ProgramID(101))
-	require.Error(t, err)
-	_, err = store.Get(ctx, kernel.ProgramID(102))
-	require.Error(t, err)
+	assert.Empty(t, programs)
 }
 
-func TestGC_StaleDispatchers(t *testing.T) {
+func TestStoreGC_StaleProgramDeletion(t *testing.T) {
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), prog))
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(102), prog))
+
+	// Delete 101 and 102, keep 100.
+	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)))
+	require.NoError(t, store.Delete(ctx, kernel.ProgramID(102)))
+
+	programs, err := store.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, programs, 1)
+	_, exists := programs[100]
+	assert.True(t, exists, "program 100 should survive")
+}
+
+func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
 
 	ctx := context.Background()
 
-	// Create dispatchers referencing different program IDs
 	disp1 := dispatcher.State{
 		Type:     dispatcher.DispatcherTypeXDP,
 		Nsid:     4026531840,
@@ -969,10 +926,8 @@ func TestGC_StaleDispatchers(t *testing.T) {
 		KernelID: 100,
 		LinkID:   200,
 	}
-	err = store.SaveDispatcher(ctx, disp1)
-	require.NoError(t, err)
+	require.NoError(t, store.SaveDispatcher(ctx, disp1))
 
-	// TC dispatchers have LinkID=0 (they use netlink filters, not BPF links)
 	disp2 := dispatcher.State{
 		Type:     dispatcher.DispatcherTypeTCIngress,
 		Nsid:     4026531840,
@@ -981,86 +936,186 @@ func TestGC_StaleDispatchers(t *testing.T) {
 		KernelID: 101,
 		LinkID:   0,
 	}
-	err = store.SaveDispatcher(ctx, disp2)
-	require.NoError(t, err)
+	require.NoError(t, store.SaveDispatcher(ctx, disp2))
 
-	// GC with only program 100 in kernel - dispatcher for 101 should be removed
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
-	require.NoError(t, err)
-	assert.Equal(t, 1, result.DispatchersRemoved)
+	// Delete the TC dispatcher, keep the XDP one.
+	require.NoError(t, store.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3))
 
-	// Verify disp1 still exists, disp2 is gone
 	_, err = store.GetDispatcher(ctx, "xdp", 4026531840, 2)
-	require.NoError(t, err, "dispatcher for program 100 should exist")
+	require.NoError(t, err, "XDP dispatcher should survive")
+
 	_, err = store.GetDispatcher(ctx, "tc-ingress", 4026531840, 3)
-	require.Error(t, err, "dispatcher for program 101 should be deleted")
+	require.Error(t, err, "TC dispatcher should be deleted")
 }
 
-func TestGC_StaleLinks(t *testing.T) {
+func TestStoreGC_StaleLinkDeletion(t *testing.T) {
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
 
 	ctx := context.Background()
 
-	// Create a program first (FK requirement)
 	prog := testProgram()
-	err = store.Save(ctx, kernel.ProgramID(100), prog)
-	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 
-	// Create links
 	details1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	linkID1 := kernel.LinkID(200)
-	spec1 := bpfman.NewEphemeralLinkRecord(linkID1, kernel.ProgramID(100), details1, time.Now())
-	err = store.SaveLink(ctx, spec1)
-	require.NoError(t, err)
+	spec1 := bpfman.NewEphemeralLinkRecord(kernel.LinkID(200), kernel.ProgramID(100), details1, time.Now())
+	require.NoError(t, store.SaveLink(ctx, spec1))
 
 	details2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"}
-	linkID2 := kernel.LinkID(201)
-	spec2 := bpfman.NewEphemeralLinkRecord(linkID2, kernel.ProgramID(100), details2, time.Now())
-	err = store.SaveLink(ctx, spec2)
-	require.NoError(t, err)
+	spec2 := bpfman.NewEphemeralLinkRecord(kernel.LinkID(201), kernel.ProgramID(100), details2, time.Now())
+	require.NoError(t, store.SaveLink(ctx, spec2))
 
-	// GC with program in kernel but only link 200 in kernel
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{200: true})
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.ProgramsRemoved)
-	assert.Equal(t, 1, result.LinksRemoved)
+	// Delete link 201, keep 200.
+	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(201)))
 
-	// Verify link 200 exists, link 201 is gone
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	require.Len(t, links, 1)
 	assert.Equal(t, kernel.LinkID(200), links[0].ID)
 }
 
-func TestGC_Comprehensive(t *testing.T) {
-	// Test GC with mixed stale entries across all types
+func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
+	// After deleting extension links, CountDispatcherLinks should
+	// return zero, signalling the dispatcher is orphaned.
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
 
 	ctx := context.Background()
 
-	// Create programs: 100 (alive), 101 (stale owner), 102 (stale dependent)
 	prog := testProgram()
-	err = store.Save(ctx, kernel.ProgramID(100), prog)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
+
+	disp := dispatcher.State{
+		Type:     dispatcher.DispatcherTypeXDP,
+		Nsid:     4026531840,
+		Ifindex:  2,
+		Revision: 1,
+		KernelID: 500,
+		LinkID:   501,
+	}
+	require.NoError(t, store.SaveDispatcher(ctx, disp))
+
+	xdpLink := bpfman.NewEphemeralLinkRecord(
+		kernel.LinkID(300), kernel.ProgramID(100),
+		bpfman.XDPDetails{
+			Interface:    "eth0",
+			Ifindex:      2,
+			DispatcherID: 500,
+			Nsid:         4026531840,
+		},
+		time.Now(),
+	)
+	require.NoError(t, store.SaveLink(ctx, xdpLink))
+
+	// Before deletion, dispatcher has one extension link.
+	count, err := store.CountDispatcherLinks(ctx, kernel.ProgramID(500))
 	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Delete the extension link.
+	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(300)))
+
+	// After deletion, dispatcher has zero extension links.
+	count, err = store.CountDispatcherLinks(ctx, kernel.ProgramID(500))
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "dispatcher should have no remaining links")
+
+	// Deleting the now-orphaned dispatcher should succeed.
+	require.NoError(t, store.DeleteDispatcher(ctx, "xdp", 4026531840, 2))
+
+	dispatchers, err := store.ListDispatchers(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, dispatchers)
+}
+
+func TestStoreGC_TransactionalAtomicity(t *testing.T) {
+	// All GC deletions within a transaction commit together.
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), prog))
+
+	disp := dispatcher.State{
+		Type:     dispatcher.DispatcherTypeTCIngress,
+		Nsid:     4026531840,
+		Ifindex:  3,
+		Revision: 1,
+		KernelID: 101,
+	}
+	require.NoError(t, store.SaveDispatcher(ctx, disp))
+
+	details := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
+	spec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(400), kernel.ProgramID(100), details, time.Now())
+	require.NoError(t, store.SaveLink(ctx, spec))
+
+	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
+			return err
+		}
+		if err := tx.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3); err != nil {
+			return err
+		}
+		return tx.DeleteLink(ctx, kernel.LinkID(400))
+	})
+	require.NoError(t, err)
+
+	programs, err := store.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, programs, 1, "program 100 should survive")
+
+	dispatchers, err := store.ListDispatchers(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, dispatchers)
+
+	links, err := store.ListLinks(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, links)
+}
+
+func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
+	// Exercises all four GC phases within a single transaction,
+	// matching production behaviour. Tests the interaction between
+	// FK-ordered program deletion, stale dispatcher removal, link
+	// deletion, and orphaned dispatcher detection.
+	//
+	// Setup:
+	//   Programs: 100 (alive), 101 (stale owner), 102 (stale dependent of 101)
+	//   Dispatchers: XDP ifindex=2 (kernelID=100, alive), TC ifindex=3 (kernelID=101, stale)
+	//   Links: 400 (alive tracepoint), 401 (stale tracepoint)
+	//
+	// After GC:
+	//   Programs removed: 102 (dependent), 101 (owner)
+	//   Dispatchers removed: TC (stale), XDP (orphaned -- zero extension links)
+	//   Links removed: 401 (stale)
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Programs.
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "stale_owner"
-	err = store.Save(ctx, kernel.ProgramID(101), ownerProg)
-	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), ownerProg))
 
 	staleOwnerID := kernel.ProgramID(101)
 	depProg := testProgram()
 	depProg.Meta.Name = "stale_dep"
 	depProg.Handles.MapOwnerID = &staleOwnerID
-	err = store.Save(ctx, kernel.ProgramID(102), depProg)
-	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(102), depProg))
 
-	// Create dispatchers: one for alive program, one for stale
-	aliveDisp := dispatcher.State{
+	// Dispatchers.
+	xdpDisp := dispatcher.State{
 		Type:     dispatcher.DispatcherTypeXDP,
 		Nsid:     4026531840,
 		Ifindex:  2,
@@ -1068,11 +1123,9 @@ func TestGC_Comprehensive(t *testing.T) {
 		KernelID: 100,
 		LinkID:   300,
 	}
-	err = store.SaveDispatcher(ctx, aliveDisp)
-	require.NoError(t, err)
+	require.NoError(t, store.SaveDispatcher(ctx, xdpDisp))
 
-	// TC dispatchers have LinkID=0 (they use netlink filters, not BPF links)
-	staleDisp := dispatcher.State{
+	tcDisp := dispatcher.State{
 		Type:     dispatcher.DispatcherTypeTCIngress,
 		Nsid:     4026531840,
 		Ifindex:  3,
@@ -1080,35 +1133,60 @@ func TestGC_Comprehensive(t *testing.T) {
 		KernelID: 101,
 		LinkID:   0,
 	}
-	err = store.SaveDispatcher(ctx, staleDisp)
+	require.NoError(t, store.SaveDispatcher(ctx, tcDisp))
+
+	// Links (tracepoints, not XDP extensions -- so the XDP
+	// dispatcher has zero extension links from the start).
+	aliveLink := bpfman.NewEphemeralLinkRecord(
+		kernel.LinkID(400), kernel.ProgramID(100),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "test"},
+		time.Now(),
+	)
+	require.NoError(t, store.SaveLink(ctx, aliveLink))
+
+	staleLink := bpfman.NewEphemeralLinkRecord(
+		kernel.LinkID(401), kernel.ProgramID(100),
+		bpfman.TracepointDetails{Group: "syscalls", Name: "test2"},
+		time.Now(),
+	)
+	require.NoError(t, store.SaveLink(ctx, staleLink))
+
+	// Execute all four phases in a single transaction.
+	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+		// Phase 1: delete dependent then owner.
+		if err := tx.Delete(ctx, kernel.ProgramID(102)); err != nil {
+			return err
+		}
+		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
+			return err
+		}
+
+		// Phase 2: delete stale dispatcher.
+		if err := tx.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3); err != nil {
+			return err
+		}
+
+		// Phase 3: delete stale link.
+		if err := tx.DeleteLink(ctx, kernel.LinkID(401)); err != nil {
+			return err
+		}
+
+		// Phase 4: check for orphaned dispatchers.
+		count, err := tx.CountDispatcherLinks(ctx, kernel.ProgramID(100))
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			if err := tx.DeleteDispatcher(ctx, "xdp", 4026531840, 2); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 	require.NoError(t, err)
 
-	// Create links: one alive, one stale
-	aliveDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
-	aliveLinkID := kernel.LinkID(400)
-	aliveSpec := bpfman.NewEphemeralLinkRecord(aliveLinkID, kernel.ProgramID(100), aliveDetails, time.Now())
-	err = store.SaveLink(ctx, aliveSpec)
-	require.NoError(t, err)
-
-	staleDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test2"}
-	staleLinkID := kernel.LinkID(401)
-	staleSpec := bpfman.NewEphemeralLinkRecord(staleLinkID, kernel.ProgramID(100), staleDetails, time.Now())
-	err = store.SaveLink(ctx, staleSpec)
-	require.NoError(t, err)
-
-	// GC with only program 100 and link 400 in kernel
-	result, err := store.GC(ctx,
-		map[kernel.ProgramID]bool{100: true},
-		map[kernel.LinkID]bool{400: true})
-	require.NoError(t, err)
-
-	// Should remove: 2 programs (101, 102), 2 dispatchers (101 stale program,
-	// 100 has no extension links), 1 link
-	assert.Equal(t, 2, result.ProgramsRemoved, "should remove 2 stale programs")
-	assert.Equal(t, 2, result.DispatchersRemoved, "should remove 2 dispatchers")
-	assert.Equal(t, 1, result.LinksRemoved, "should remove 1 stale link")
-
-	// Verify remaining state
+	// Verify final state.
 	programs, err := store.List(ctx)
 	require.NoError(t, err)
 	assert.Len(t, programs, 1, "should have 1 program remaining")
@@ -1117,12 +1195,43 @@ func TestGC_Comprehensive(t *testing.T) {
 
 	dispatchers, err := store.ListDispatchers(ctx)
 	require.NoError(t, err)
-	assert.Len(t, dispatchers, 0, "should have 0 dispatchers remaining")
+	assert.Empty(t, dispatchers, "all dispatchers should be removed")
 
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	assert.Len(t, links, 1, "should have 1 link remaining")
 	assert.Equal(t, kernel.LinkID(400), links[0].ID)
+}
+
+func TestStoreGC_SyntheticLinkNotAffectedByDeletion(t *testing.T) {
+	// Synthetic links (perf_event-based) should be preserved when
+	// non-synthetic links are deleted. This verifies the store
+	// correctly handles both ID ranges.
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
+
+	realDetails := bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main"}
+	realSpec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(200), kernel.ProgramID(100), realDetails, time.Now())
+	require.NoError(t, store.SaveLink(ctx, realSpec))
+
+	syntheticDetails := bpfman.UprobeDetails{Target: "/app/binary", FnName: "handler", ContainerPid: 12345}
+	syntheticSpec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(0x80000001), kernel.ProgramID(100), syntheticDetails, time.Now())
+	require.NoError(t, store.SaveLink(ctx, syntheticSpec))
+
+	// Delete only the real link.
+	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(200)))
+
+	links, err := store.ListLinks(ctx)
+	require.NoError(t, err)
+	require.Len(t, links, 1)
+	assert.Equal(t, kernel.LinkID(0x80000001), links[0].ID)
+	assert.True(t, links[0].IsSynthetic())
 }
 
 func TestListLinks_ReturnsDetails(t *testing.T) {
@@ -1358,69 +1467,4 @@ func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
 		_, ok := link.Details.(bpfman.TracepointDetails)
 		require.True(t, ok, "expected TracepointDetails for link %d", link.ID)
 	}
-}
-
-func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
-	// Test that GC skips links with nil kernel_link_id.
-	// These are used for perf_event-based links (e.g., container uprobes)
-	// that cannot be enumerated via the kernel's link iterator.
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err)
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create a program first (FK requirement)
-	prog := testProgram()
-	err = store.Save(ctx, kernel.ProgramID(100), prog)
-	require.NoError(t, err)
-
-	// Create a real kernel link (kernel_link_id = 200)
-	realDetails := bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main"}
-	realLinkID := kernel.LinkID(200)
-	realSpec := bpfman.NewEphemeralLinkRecord(realLinkID, kernel.ProgramID(100), realDetails, time.Now())
-	err = store.SaveLink(ctx, realSpec)
-	require.NoError(t, err)
-
-	// Create a synthetic link (high-range ID = synthetic)
-	// This simulates a container uprobe with perf_event-based link
-	syntheticDetails := bpfman.UprobeDetails{Target: "/app/binary", FnName: "handler", ContainerPid: 12345}
-	syntheticLinkID := kernel.LinkID(0x80000001) // synthetic range
-	syntheticSpec := bpfman.NewEphemeralLinkRecord(syntheticLinkID, kernel.ProgramID(100), syntheticDetails, time.Now())
-	err = store.SaveLink(ctx, syntheticSpec)
-	require.NoError(t, err)
-
-	// Verify both links exist
-	links, err := store.ListLinks(ctx)
-	require.NoError(t, err)
-	require.Len(t, links, 2)
-
-	// GC with program in kernel but only real link 200 in kernel
-	// (synthetic link cannot be in kernelLinkIDs since it has no kernel ID)
-	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{200: true})
-	require.NoError(t, err)
-
-	// Should NOT remove synthetic link even though it's not in kernelLinkIDs
-	assert.Equal(t, 0, result.ProgramsRemoved, "should not remove any programs")
-	assert.Equal(t, 0, result.LinksRemoved, "should not remove any links (synthetic should be skipped)")
-
-	// Verify both links still exist
-	links, err = store.ListLinks(ctx)
-	require.NoError(t, err)
-	assert.Len(t, links, 2, "both links should remain")
-
-	// Find both links by ID and verify synthetic detection
-	var foundReal, foundSynthetic bool
-	for _, link := range links {
-		if link.ID == realLinkID {
-			assert.False(t, link.IsSynthetic(), "real link should not be synthetic")
-			foundReal = true
-		}
-		if link.ID == syntheticLinkID {
-			assert.True(t, link.IsSynthetic(), "synthetic link should be synthetic")
-			foundSynthetic = true
-		}
-	}
-	assert.True(t, foundReal, "real link should exist")
-	assert.True(t, foundSynthetic, "synthetic link should exist")
 }

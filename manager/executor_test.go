@@ -120,11 +120,6 @@ func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store
 	return fn(s)
 }
 
-// GarbageCollector
-func (s *stubStore) GC(ctx context.Context, kernelProgramIDs map[kernel.ProgramID]bool, kernelLinkIDs map[kernel.LinkID]bool) (platform.GCResult, error) {
-	panic("stubStore.GC not implemented")
-}
-
 // stubKernel is a minimal KernelOperations implementation for executor tests.
 // All methods panic - we only use store actions in these tests.
 type stubKernel struct{}

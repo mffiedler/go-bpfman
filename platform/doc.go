@@ -15,7 +15,6 @@
 //     with type-specific detail tables
 //   - [DispatcherStore]: XDP/TC dispatcher state management
 //   - [MapOwnershipReader]: map sharing dependency queries
-//   - [GarbageCollector]: bulk removal of stale entries
 //   - [Transactional]: atomic multi-operation commits
 //
 // This composition enables narrow dependency injection: a function
