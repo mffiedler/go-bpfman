@@ -42,7 +42,7 @@ func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) 
 	return s.links, nil
 }
 
-func (s *fakeStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
+func (s *fakeStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
 	for _, l := range s.links {
 		if l.ID == linkID {
 			return l, nil
@@ -221,8 +221,8 @@ func TestSnapshot_Links(t *testing.T) {
 	store := &fakeStore{
 		links: []bpfman.LinkRecord{
 			// ID is now the kernel link ID for non-synthetic links
-			{ID: bpfman.LinkID(10), Kind: bpfman.LinkKindXDP},
-			{ID: bpfman.LinkID(20), Kind: bpfman.LinkKindKprobe},
+			{ID: kernel.LinkID(10), Kind: bpfman.LinkKindXDP},
+			{ID: kernel.LinkID(20), Kind: bpfman.LinkKindKprobe},
 		},
 	}
 
@@ -485,7 +485,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 	store := &fakeStore{
 		links: []bpfman.LinkRecord{
 			{
-				ID:      bpfman.LinkID(10), // kernel link ID
+				ID:      kernel.LinkID(10), // kernel link ID
 				Kind:    bpfman.LinkKindKprobe,
 				PinPath: bpffs.NewLinkPath(pinPath),
 				Details: bpfman.KprobeDetails{FnName: "do_sys_open"},
@@ -500,7 +500,7 @@ func TestGetLink_FullyPresent(t *testing.T) {
 	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 10) // LinkID 10 (same as kernel link ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, bpfman.LinkID(10), info.Record.ID)
+	assert.Equal(t, kernel.LinkID(10), info.Record.ID)
 	assert.True(t, info.Presence.InStore)
 	assert.True(t, info.Presence.InKernel)
 	assert.True(t, info.Presence.InFS)
@@ -514,7 +514,7 @@ func TestGetLink_StoreOnly(t *testing.T) {
 	// ID is now the kernel link ID for non-synthetic links
 	store := &fakeStore{
 		links: []bpfman.LinkRecord{
-			{ID: bpfman.LinkID(20), Kind: bpfman.LinkKindTracepoint},
+			{ID: kernel.LinkID(20), Kind: bpfman.LinkKindTracepoint},
 		},
 	}
 
@@ -523,7 +523,7 @@ func TestGetLink_StoreOnly(t *testing.T) {
 	info, err := inspect.GetLink(context.Background(), store, kern, scanner, 20) // LinkID 20 (same as kernel link ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, bpfman.LinkID(20), info.Record.ID)
+	assert.Equal(t, kernel.LinkID(20), info.Record.ID)
 	assert.True(t, info.Presence.InStore)
 	assert.False(t, info.Presence.InKernel)
 	assert.False(t, info.Presence.InFS)
@@ -656,13 +656,13 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 		},
 		links: []bpfman.LinkRecord{
 			{
-				ID:        bpfman.LinkID(10),
+				ID:        kernel.LinkID(10),
 				Kind:      bpfman.LinkKindTracepoint,
 				ProgramID: 100,
 				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},
 			},
 			{
-				ID:        bpfman.LinkID(20),
+				ID:        kernel.LinkID(20),
 				Kind:      bpfman.LinkKindKprobe,
 				ProgramID: 100,
 				Details:   bpfman.KprobeDetails{FnName: "do_sys_open"},
@@ -691,18 +691,18 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	}
 
 	// Verify details are correct types
-	linksByID := make(map[bpfman.LinkID]inspect.LinkRow)
+	linksByID := make(map[kernel.LinkID]inspect.LinkRow)
 	for _, l := range managed {
 		linksByID[l.ID()] = l
 	}
 
-	tpLink := linksByID[bpfman.LinkID(10)]
+	tpLink := linksByID[kernel.LinkID(10)]
 	tpDetails, ok := tpLink.Managed.Details.(bpfman.TracepointDetails)
 	require.True(t, ok, "expected TracepointDetails")
 	assert.Equal(t, "sched", tpDetails.Group)
 	assert.Equal(t, "sched_switch", tpDetails.Name)
 
-	kpLink := linksByID[bpfman.LinkID(20)]
+	kpLink := linksByID[kernel.LinkID(20)]
 	kpDetails, ok := kpLink.Managed.Details.(bpfman.KprobeDetails)
 	require.True(t, ok, "expected KprobeDetails")
 	assert.Equal(t, "do_sys_open", kpDetails.FnName)
@@ -719,7 +719,7 @@ func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
 		},
 		links: []bpfman.LinkRecord{
 			{
-				ID:        bpfman.LinkID(10),
+				ID:        kernel.LinkID(10),
 				Kind:      bpfman.LinkKindTracepoint,
 				ProgramID: 100,
 				Details:   bpfman.TracepointDetails{Group: "sched", Name: "sched_switch"},

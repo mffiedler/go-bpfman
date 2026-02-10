@@ -19,7 +19,7 @@ import (
 
 // DeleteLink removes link metadata by link ID.
 // Due to CASCADE, this also removes the corresponding detail table entry.
-func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error {
+func (s *sqliteStore) DeleteLink(ctx context.Context, linkID kernel.LinkID) error {
 	start := time.Now()
 	result, err := s.stmtDeleteLink.ExecContext(ctx, linkID)
 	if err != nil {
@@ -40,7 +40,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) erro
 }
 
 // GetLink retrieves link metadata by link ID using two-phase lookup.
-func (s *sqliteStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
+func (s *sqliteStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
 	// Phase 1: Get summary from registry
 	start := time.Now()
 	row := s.stmtGetLinkRegistry.QueryRowContext(ctx, linkID)
@@ -152,7 +152,7 @@ func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.Li
 	}
 
 	// Build index from link_id to slice position
-	linkIndex := make(map[bpfman.LinkID]int, len(links))
+	linkIndex := make(map[kernel.LinkID]int, len(links))
 	for i := range links {
 		linkIndex[links[i].ID] = i
 	}
@@ -186,7 +186,7 @@ func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.Li
 	return nil
 }
 
-func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllTracepointDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tracepoint details: %w", err)
@@ -206,7 +206,7 @@ func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links 
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllKprobeDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch kprobe details: %w", err)
@@ -228,7 +228,7 @@ func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllUprobeDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch uprobe details: %w", err)
@@ -258,7 +258,7 @@ func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllFentryDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch fentry details: %w", err)
@@ -278,7 +278,7 @@ func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bp
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllFexitDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch fexit details: %w", err)
@@ -298,7 +298,7 @@ func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpf
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllXDPDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch xdp details: %w", err)
@@ -327,7 +327,7 @@ func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfma
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllTCDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tc details: %w", err)
@@ -356,7 +356,7 @@ func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman
 	return rows.Err()
 }
 
-func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[bpfman.LinkID]int) error {
+func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfman.LinkRecord, linkIndex map[kernel.LinkID]int) error {
 	rows, err := s.stmtListAllTCXDetails.QueryContext(ctx)
 	if err != nil {
 		return fmt.Errorf("batch fetch tcx details: %w", err)
@@ -427,7 +427,7 @@ func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkRecord) erro
 // Type-Specific Detail Save Methods (internal)
 // ----------------------------------------------------------------------------
 
-func (s *sqliteStore) saveTracepointDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.TracepointDetails) error {
+func (s *sqliteStore) saveTracepointDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.TracepointDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveTracepointDetails.ExecContext(ctx,
 		linkID, details.Group, details.Name)
@@ -439,7 +439,7 @@ func (s *sqliteStore) saveTracepointDetails(ctx context.Context, linkID bpfman.L
 	return nil
 }
 
-func (s *sqliteStore) saveKprobeDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.KprobeDetails) error {
+func (s *sqliteStore) saveKprobeDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.KprobeDetails) error {
 	retprobe := 0
 	if details.Retprobe {
 		retprobe = 1
@@ -456,7 +456,7 @@ func (s *sqliteStore) saveKprobeDetails(ctx context.Context, linkID bpfman.LinkI
 	return nil
 }
 
-func (s *sqliteStore) saveUprobeDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.UprobeDetails) error {
+func (s *sqliteStore) saveUprobeDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.UprobeDetails) error {
 	retprobe := 0
 	if details.Retprobe {
 		retprobe = 1
@@ -473,7 +473,7 @@ func (s *sqliteStore) saveUprobeDetails(ctx context.Context, linkID bpfman.LinkI
 	return nil
 }
 
-func (s *sqliteStore) saveFentryDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.FentryDetails) error {
+func (s *sqliteStore) saveFentryDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.FentryDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveFentryDetails.ExecContext(ctx, linkID, details.FnName)
 	if err != nil {
@@ -484,7 +484,7 @@ func (s *sqliteStore) saveFentryDetails(ctx context.Context, linkID bpfman.LinkI
 	return nil
 }
 
-func (s *sqliteStore) saveFexitDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.FexitDetails) error {
+func (s *sqliteStore) saveFexitDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.FexitDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveFexitDetails.ExecContext(ctx, linkID, details.FnName)
 	if err != nil {
@@ -495,7 +495,7 @@ func (s *sqliteStore) saveFexitDetails(ctx context.Context, linkID bpfman.LinkID
 	return nil
 }
 
-func (s *sqliteStore) saveXDPDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.XDPDetails) error {
+func (s *sqliteStore) saveXDPDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.XDPDetails) error {
 	proceedOnJSON, err := json.Marshal(details.ProceedOn)
 	if err != nil {
 		return fmt.Errorf("failed to marshal proceed_on: %w", err)
@@ -513,7 +513,7 @@ func (s *sqliteStore) saveXDPDetails(ctx context.Context, linkID bpfman.LinkID, 
 	return nil
 }
 
-func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.TCDetails) error {
+func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.TCDetails) error {
 	proceedOnJSON, err := json.Marshal(details.ProceedOn)
 	if err != nil {
 		return fmt.Errorf("failed to marshal proceed_on: %w", err)
@@ -531,7 +531,7 @@ func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID bpfman.LinkID, d
 	return nil
 }
 
-func (s *sqliteStore) saveTCXDetails(ctx context.Context, linkID bpfman.LinkID, details bpfman.TCXDetails) error {
+func (s *sqliteStore) saveTCXDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.TCXDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveTCXDetails.ExecContext(ctx,
 		linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid)
@@ -650,7 +650,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 }
 
 // getLinkDetails retrieves the type-specific details for a link.
-func (s *sqliteStore) getLinkDetails(ctx context.Context, kind bpfman.LinkKind, linkID bpfman.LinkID) (bpfman.LinkDetails, error) {
+func (s *sqliteStore) getLinkDetails(ctx context.Context, kind bpfman.LinkKind, linkID kernel.LinkID) (bpfman.LinkDetails, error) {
 	switch kind {
 	case bpfman.LinkKindTracepoint:
 		return s.getTracepointDetails(ctx, linkID)
@@ -673,7 +673,7 @@ func (s *sqliteStore) getLinkDetails(ctx context.Context, kind bpfman.LinkKind, 
 	}
 }
 
-func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TracepointDetails, error) {
+func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.TracepointDetails, error) {
 	start := time.Now()
 	row := s.stmtGetTracepointDetails.QueryRowContext(ctx, linkID)
 
@@ -691,7 +691,7 @@ func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID bpfman.Li
 	return details, nil
 }
 
-func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.KprobeDetails, error) {
+func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.KprobeDetails, error) {
 	start := time.Now()
 	row := s.stmtGetKprobeDetails.QueryRowContext(ctx, linkID)
 
@@ -711,7 +711,7 @@ func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID bpfman.LinkID
 	return details, nil
 }
 
-func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.UprobeDetails, error) {
+func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.UprobeDetails, error) {
 	start := time.Now()
 	row := s.stmtGetUprobeDetails.QueryRowContext(ctx, linkID)
 
@@ -739,7 +739,7 @@ func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID bpfman.LinkID
 	return details, nil
 }
 
-func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.FentryDetails, error) {
+func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.FentryDetails, error) {
 	start := time.Now()
 	row := s.stmtGetFentryDetails.QueryRowContext(ctx, linkID)
 
@@ -757,7 +757,7 @@ func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID bpfman.LinkID
 	return details, nil
 }
 
-func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.FexitDetails, error) {
+func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.FexitDetails, error) {
 	start := time.Now()
 	row := s.stmtGetFexitDetails.QueryRowContext(ctx, linkID)
 
@@ -775,7 +775,7 @@ func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID bpfman.LinkID)
 	return details, nil
 }
 
-func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.XDPDetails, error) {
+func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.XDPDetails, error) {
 	start := time.Now()
 	row := s.stmtGetXDPDetails.QueryRowContext(ctx, linkID)
 
@@ -803,7 +803,7 @@ func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID bpfman.LinkID) (
 	return details, nil
 }
 
-func (s *sqliteStore) getTCDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TCDetails, error) {
+func (s *sqliteStore) getTCDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.TCDetails, error) {
 	start := time.Now()
 	row := s.stmtGetTCDetails.QueryRowContext(ctx, linkID)
 
@@ -831,7 +831,7 @@ func (s *sqliteStore) getTCDetails(ctx context.Context, linkID bpfman.LinkID) (b
 	return details, nil
 }
 
-func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID bpfman.LinkID) (bpfman.TCXDetails, error) {
+func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID kernel.LinkID) (bpfman.TCXDetails, error) {
 	start := time.Now()
 	row := s.stmtGetTCXDetails.QueryRowContext(ctx, linkID)
 

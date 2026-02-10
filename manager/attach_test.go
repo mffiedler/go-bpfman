@@ -440,7 +440,7 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Attach multiple times
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < 3; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -467,7 +467,7 @@ func TestXDP_FullLifecycle(t *testing.T) {
 
 	// Step 2: Attach multiple times
 	numAttachments := 3
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < numAttachments; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -570,7 +570,7 @@ func TestTC_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach to ingress and egress on multiple interfaces
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	interfaces := []struct {
 		ifindex int
 		name    string
@@ -686,7 +686,7 @@ func TestTCX_FullLifecycle(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Step 2: Attach to ingress and egress on multiple interfaces
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	interfaces := []struct {
 		ifindex int
 		name    string
@@ -751,7 +751,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 		{"syscalls", "sys_enter_read"},
 	}
 
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for _, tp := range tracepoints {
 		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, tp.group, tp.name)
 		require.NoError(t, err)
@@ -1131,7 +1131,7 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach two extensions
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < 2; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -1221,7 +1221,7 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < 3; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -1252,7 +1252,7 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach three times to the same interface/direction
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < 3; i++ {
 		attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.KernelID, "eth0", 2, bpfman.TCDirectionIngress)
 		require.NoError(t, err)
@@ -1559,7 +1559,7 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < 3; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -1620,7 +1620,7 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 
 	// Step 2: Attach multiple times
 	numAttachments := 5
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for i := 0; i < numAttachments; i++ {
 		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.KernelID, "lo", 1)
 		require.NoError(t, err)
@@ -1773,12 +1773,12 @@ func TestGetLink_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to get a link that doesn't exist
-	_, err := fix.Manager.GetLink(ctx, bpfman.LinkID(99999))
+	_, err := fix.Manager.GetLink(ctx, kernel.LinkID(99999))
 	require.Error(t, err, "GetLink for non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T: %v", err, err)
-	assert.Equal(t, bpfman.LinkID(99999), notFound.LinkID)
+	assert.Equal(t, kernel.LinkID(99999), notFound.LinkID)
 }
 
 // TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching verifies that:

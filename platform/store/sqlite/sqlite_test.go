@@ -54,7 +54,7 @@ func TestForeignKey_LinkRequiresProgram(t *testing.T) {
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
 	}
-	linkID := bpfman.LinkID(1)
+	linkID := kernel.LinkID(1)
 	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(999), details, time.Now()) // program 999 does not exist
 
 	err = store.SaveLink(ctx, spec)
@@ -82,7 +82,7 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 			Offset:   0,
 			Retprobe: false,
 		}
-		linkID := bpfman.LinkID(100 + i)
+		linkID := kernel.LinkID(100 + i)
 		spec := bpfman.NewEphemeralLinkRecord(linkID, kernelID, details, time.Now())
 		err := store.SaveLink(ctx, spec)
 		require.NoError(t, err, "SaveLink failed")
@@ -227,7 +227,7 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
-	linkID := bpfman.LinkID(100)
+	linkID := kernel.LinkID(100)
 	details := bpfman.TracepointDetails{
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
@@ -264,7 +264,7 @@ func TestLinkRegistry_LinkIDUniqueness(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create first link
-	linkID := bpfman.LinkID(100)
+	linkID := kernel.LinkID(100)
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
 	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
 
@@ -293,7 +293,7 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
-	linkID := bpfman.LinkID(100)
+	linkID := kernel.LinkID(100)
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
 	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
 
@@ -728,7 +728,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 			Priority:  link.priority,
 			Nsid:      nsid,
 		}
-		linkID := bpfman.LinkID(link.linkID)
+		linkID := kernel.LinkID(link.linkID)
 		spec := bpfman.NewPinnedLinkRecord(linkID, progID, details, bpffs.LinkPath("/sys/fs/bpf/link_"+string(rune(link.linkID))), time.Now())
 		err := store.SaveLink(ctx, spec)
 		require.NoError(t, err, "SaveLink failed for link %d", link.linkID)
@@ -792,7 +792,7 @@ func TestListTCXLinksByInterface_FiltersByInterfaceAndDirection(t *testing.T) {
 			Priority:  link.priority,
 			Nsid:      nsid,
 		}
-		linkID := bpfman.LinkID(link.linkID)
+		linkID := kernel.LinkID(link.linkID)
 		spec := bpfman.NewEphemeralLinkRecord(linkID, progID, details, time.Now())
 		err := store.SaveLink(ctx, spec)
 		require.NoError(t, err, "SaveLink failed for link %d", link.linkID)
@@ -1011,13 +1011,13 @@ func TestGC_StaleLinks(t *testing.T) {
 
 	// Create links
 	details1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	linkID1 := bpfman.LinkID(200)
+	linkID1 := kernel.LinkID(200)
 	spec1 := bpfman.NewEphemeralLinkRecord(linkID1, kernel.ProgramID(100), details1, time.Now())
 	err = store.SaveLink(ctx, spec1)
 	require.NoError(t, err)
 
 	details2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"}
-	linkID2 := bpfman.LinkID(201)
+	linkID2 := kernel.LinkID(201)
 	spec2 := bpfman.NewEphemeralLinkRecord(linkID2, kernel.ProgramID(100), details2, time.Now())
 	err = store.SaveLink(ctx, spec2)
 	require.NoError(t, err)
@@ -1032,7 +1032,7 @@ func TestGC_StaleLinks(t *testing.T) {
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	require.Len(t, links, 1)
-	assert.Equal(t, bpfman.LinkID(200), links[0].ID)
+	assert.Equal(t, kernel.LinkID(200), links[0].ID)
 }
 
 func TestGC_Comprehensive(t *testing.T) {
@@ -1086,13 +1086,13 @@ func TestGC_Comprehensive(t *testing.T) {
 
 	// Create links: one alive, one stale
 	aliveDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
-	aliveLinkID := bpfman.LinkID(400)
+	aliveLinkID := kernel.LinkID(400)
 	aliveSpec := bpfman.NewEphemeralLinkRecord(aliveLinkID, kernel.ProgramID(100), aliveDetails, time.Now())
 	err = store.SaveLink(ctx, aliveSpec)
 	require.NoError(t, err)
 
 	staleDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test2"}
-	staleLinkID := bpfman.LinkID(401)
+	staleLinkID := kernel.LinkID(401)
 	staleSpec := bpfman.NewEphemeralLinkRecord(staleLinkID, kernel.ProgramID(100), staleDetails, time.Now())
 	err = store.SaveLink(ctx, staleSpec)
 	require.NoError(t, err)
@@ -1123,7 +1123,7 @@ func TestGC_Comprehensive(t *testing.T) {
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
 	assert.Len(t, links, 1, "should have 1 link remaining")
-	assert.Equal(t, bpfman.LinkID(400), links[0].ID)
+	assert.Equal(t, kernel.LinkID(400), links[0].ID)
 }
 
 func TestListLinks_ReturnsDetails(t *testing.T) {
@@ -1164,7 +1164,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Create links with ALL detail types
 	testCases := []struct {
-		linkID  bpfman.LinkID
+		linkID  kernel.LinkID
 		details bpfman.LinkDetails
 		check   func(t *testing.T, got bpfman.LinkDetails)
 	}{
@@ -1309,7 +1309,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 	require.Len(t, links, len(testCases), "expected %d links", len(testCases))
 
 	// Build a map for easier lookup
-	linksByID := make(map[bpfman.LinkID]bpfman.LinkRecord)
+	linksByID := make(map[kernel.LinkID]bpfman.LinkRecord)
 	for _, l := range links {
 		linksByID[l.ID] = l
 	}
@@ -1340,14 +1340,14 @@ func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
 
 	// Create links for program 100
 	tp1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(10), kernel.ProgramID(100), tp1, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(10), kernel.ProgramID(100), tp1, time.Now())))
 
 	tp2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(11), kernel.ProgramID(100), tp2, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(11), kernel.ProgramID(100), tp2, time.Now())))
 
 	// Create link for program 200
 	tp3 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_write"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(20), kernel.ProgramID(200), tp3, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(kernel.LinkID(20), kernel.ProgramID(200), tp3, time.Now())))
 
 	// ListLinksByProgram for program 100 should return 2 links with details
 	links, err := store.ListLinksByProgram(ctx, kernel.ProgramID(100))
@@ -1378,7 +1378,7 @@ func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 
 	// Create a real kernel link (kernel_link_id = 200)
 	realDetails := bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main"}
-	realLinkID := bpfman.LinkID(200)
+	realLinkID := kernel.LinkID(200)
 	realSpec := bpfman.NewEphemeralLinkRecord(realLinkID, kernel.ProgramID(100), realDetails, time.Now())
 	err = store.SaveLink(ctx, realSpec)
 	require.NoError(t, err)
@@ -1386,7 +1386,7 @@ func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 	// Create a synthetic link (high-range ID = synthetic)
 	// This simulates a container uprobe with perf_event-based link
 	syntheticDetails := bpfman.UprobeDetails{Target: "/app/binary", FnName: "handler", ContainerPid: 12345}
-	syntheticLinkID := bpfman.LinkID(0x80000001) // synthetic range
+	syntheticLinkID := kernel.LinkID(0x80000001) // synthetic range
 	syntheticSpec := bpfman.NewEphemeralLinkRecord(syntheticLinkID, kernel.ProgramID(100), syntheticDetails, time.Now())
 	err = store.SaveLink(ctx, syntheticSpec)
 	require.NoError(t, err)

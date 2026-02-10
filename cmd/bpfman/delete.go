@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -74,7 +73,7 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 }
 
 // deleteLink detaches the link, then deletes the program if it has no remaining links.
-func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID bpfman.LinkID) error {
+func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID) error {
 	// Get link to find its program
 	link, err := mgr.GetLink(ctx, linkID)
 	if err != nil {

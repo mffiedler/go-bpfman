@@ -9,7 +9,7 @@ import (
 // ErrLinkNotManaged is returned when attempting to operate on a link
 // that exists in the kernel but is not managed by bpfman.
 type ErrLinkNotManaged struct {
-	LinkID LinkID `json:"link_id"`
+	LinkID kernel.LinkID `json:"link_id"`
 }
 
 func (e ErrLinkNotManaged) Error() string {
@@ -19,7 +19,7 @@ func (e ErrLinkNotManaged) Error() string {
 // ErrLinkNotFound is returned when attempting to operate on a link
 // that does not exist in either the kernel or bpfman's store.
 type ErrLinkNotFound struct {
-	LinkID LinkID `json:"link_id"`
+	LinkID kernel.LinkID `json:"link_id"`
 }
 
 func (e ErrLinkNotFound) Error() string {

@@ -19,13 +19,13 @@ type LinkWriter interface {
 	// record.ID is the primary key (kernel-assigned for real BPF links,
 	// or bpfman-assigned synthetic ID for perf_event-based links).
 	SaveLink(ctx context.Context, record bpfman.LinkRecord) error
-	DeleteLink(ctx context.Context, linkID bpfman.LinkID) error
+	DeleteLink(ctx context.Context, linkID kernel.LinkID) error
 }
 
 // LinkReader reads link metadata from the store.
 // GetLink performs a two-phase lookup: registry then type-specific details.
 type LinkReader interface {
-	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
+	GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error)
 }
 
 // LinkLister lists links from the store.

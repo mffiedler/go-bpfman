@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -537,7 +538,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 		{"syscalls", "sys_enter_open"},
 	}
 
-	var linkIDs []bpfman.LinkID
+	var linkIDs []kernel.LinkID
 	for _, tp := range tracepoints {
 		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, tp.group, tp.name)
 		require.NoError(t, err, "failed to create attach spec")

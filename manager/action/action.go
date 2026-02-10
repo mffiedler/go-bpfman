@@ -44,7 +44,7 @@ func (SaveLink) isAction() {}
 
 // DeleteLink removes a link from the store by link ID.
 type DeleteLink struct {
-	LinkID bpfman.LinkID
+	LinkID kernel.LinkID
 }
 
 func (DeleteLink) isAction() {}

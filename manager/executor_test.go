@@ -68,12 +68,12 @@ func (s *stubStore) SaveLink(ctx context.Context, record bpfman.LinkRecord) erro
 	panic("stubStore.SaveLink not implemented")
 }
 
-func (s *stubStore) DeleteLink(ctx context.Context, linkID bpfman.LinkID) error {
+func (s *stubStore) DeleteLink(ctx context.Context, linkID kernel.LinkID) error {
 	panic("stubStore.DeleteLink not implemented")
 }
 
 // LinkReader
-func (s *stubStore) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
+func (s *stubStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
 	panic("stubStore.GetLink not implemented")
 }
 

@@ -250,7 +250,7 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 }
 
 // Detach detaches a link.
-func (e *TestEnv) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+func (e *TestEnv) Detach(ctx context.Context, linkID kernel.LinkID) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
 		return e.Manager.Detach(ctx, linkID)
 	})
@@ -262,7 +262,7 @@ func (e *TestEnv) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 }
 
 // GetLink returns detailed information about a link.
-func (e *TestEnv) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
+func (e *TestEnv) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
 	record, err := e.Manager.GetLink(ctx, linkID)
 	if err != nil {
 		return bpfman.LinkRecord{}, nil, err

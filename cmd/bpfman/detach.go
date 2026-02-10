@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // DetachCmd detaches links.
@@ -23,7 +23,7 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Collect results to print after releasing lock
 	type result struct {
-		id  bpfman.LinkID
+		id  kernel.LinkID
 		err error
 	}
 	results := make([]result, 0, len(c.LinkIDs))

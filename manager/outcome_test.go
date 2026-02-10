@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -58,7 +59,7 @@ func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
+	err := fix.Manager.Detach(ctx, kernel.LinkID(999))
 	require.Error(t, err)
 
 	var notFound bpfman.ErrLinkNotFound

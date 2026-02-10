@@ -24,12 +24,12 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Detach(ctx, bpfman.LinkID(999))
+	err := fix.Manager.Detach(ctx, kernel.LinkID(999))
 	require.Error(t, err, "Detach of non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
-	assert.Equal(t, bpfman.LinkID(999), notFound.LinkID)
+	assert.Equal(t, kernel.LinkID(999), notFound.LinkID)
 }
 
 // TestDetach_KernelOnlyLink_ReturnsNotManaged verifies that:
@@ -48,12 +48,12 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyLinkID = 42
 	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.LinkKindTracepoint)
 
-	err := fix.Manager.Detach(ctx, bpfman.LinkID(kernelOnlyLinkID))
+	err := fix.Manager.Detach(ctx, kernel.LinkID(kernelOnlyLinkID))
 	require.Error(t, err, "Detach of kernel-only link should fail")
 
 	var notManaged bpfman.ErrLinkNotManaged
 	assert.True(t, errors.As(err, &notManaged), "expected ErrLinkNotManaged, got %T", err)
-	assert.Equal(t, bpfman.LinkID(kernelOnlyLinkID), notManaged.LinkID)
+	assert.Equal(t, kernel.LinkID(kernelOnlyLinkID), notManaged.LinkID)
 }
 
 // TestUnload_NonExistentProgram_ReturnsNotFound verifies that:

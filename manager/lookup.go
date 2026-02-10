@@ -25,7 +25,7 @@ func (m *Manager) getProgram(ctx context.Context, id kernel.ProgramID) (bpfman.P
 
 // getLink fetches a link from the store, translating
 // store.ErrNotFound into the domain error ErrLinkNotFound.
-func (m *Manager) getLink(ctx context.Context, id bpfman.LinkID) (bpfman.LinkRecord, error) {
+func (m *Manager) getLink(ctx context.Context, id kernel.LinkID) (bpfman.LinkRecord, error) {
 	rec, err := m.store.GetLink(ctx, id)
 	if err == nil {
 		return rec, nil

@@ -145,7 +145,7 @@ func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID kernel
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.
-func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error) {
+func (m *Manager) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {
 		return bpfman.LinkRecord{}, err
@@ -154,7 +154,7 @@ func (m *Manager) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.Lin
 }
 
 // GetLinkInfo retrieves a link with presence information across store, kernel, and filesystem.
-func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspect.LinkInfo, error) {
+func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspect.LinkInfo, error) {
 	scanner := m.fsctx.BPFFS().Scanner()
 	return inspect.GetLink(ctx, m.store, m.kernel, scanner, linkID)
 }

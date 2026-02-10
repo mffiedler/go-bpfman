@@ -187,6 +187,6 @@ func (f *testFixture) Attach(ctx context.Context, scope lock.WriterScope, spec b
 }
 
 // Detach is a convenience wrapper that calls Manager.Detach directly.
-func (f *testFixture) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+func (f *testFixture) Detach(ctx context.Context, linkID kernel.LinkID) error {
 	return f.Manager.Detach(ctx, linkID)
 }

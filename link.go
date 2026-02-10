@@ -278,15 +278,11 @@ func ParseLinkKind(s string) (LinkKind, bool) {
 	}
 }
 
-// LinkID is an alias for kernel.LinkID. Kernel link IDs and
-// bpfman-managed link IDs share the same type and value space.
-type LinkID = kernel.LinkID
-
 // LinkRecord is the stored record of an attached link (DB-backed).
 // ID is the user-facing identity: kernel-assigned for real BPF links,
 // or bpfman-assigned (0x80000000+) for synthetic/perf_event links.
 type LinkRecord struct {
-	ID        LinkID           `json:"id"`
+	ID        kernel.LinkID    `json:"id"`
 	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
 	Kind      LinkKind         `json:"kind"`
 	PinPath   *bpffs.LinkPath  `json:"pin_path,omitempty"` // nil == ephemeral
@@ -395,7 +391,7 @@ type AttachOutput struct {
 
 // NewPinnedLinkRecord creates a fully-detailed record for a pinned link.
 // Kind is derived from details to enforce the invariant.
-func NewPinnedLinkRecord(id LinkID, programID kernel.ProgramID, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
+func NewPinnedLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
 	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,
@@ -408,7 +404,7 @@ func NewPinnedLinkRecord(id LinkID, programID kernel.ProgramID, details LinkDeta
 
 // NewEphemeralLinkRecord creates a fully-detailed record for an ephemeral (unpinned) link.
 // Kind is derived from details to enforce the invariant.
-func NewEphemeralLinkRecord(id LinkID, programID kernel.ProgramID, details LinkDetails, createdAt time.Time) LinkRecord {
+func NewEphemeralLinkRecord(id kernel.LinkID, programID kernel.ProgramID, details LinkDetails, createdAt time.Time) LinkRecord {
 	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,

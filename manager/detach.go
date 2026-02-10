@@ -10,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -26,7 +27,7 @@ import (
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
-func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
+func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {

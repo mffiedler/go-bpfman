@@ -43,7 +43,7 @@ type KernelGetter interface {
 
 // LinkGetter is the subset of platform.Store needed by GetLink.
 type LinkGetter interface {
-	GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, error)
+	GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error)
 }
 
 // KernelLinkGetter is the subset of platform.KernelSource needed by GetLink.
@@ -180,7 +180,7 @@ type LinkRow struct {
 }
 
 // ID returns the link's durable bpfman ID.
-func (r LinkRow) ID() bpfman.LinkID {
+func (r LinkRow) ID() kernel.LinkID {
 	if r.Managed != nil {
 		return r.Managed.ID
 	}
@@ -700,7 +700,7 @@ func GetLink(
 	linkGetter LinkGetter,
 	kern KernelLinkGetter,
 	scanner *bpfmanfs.Scanner,
-	linkID bpfman.LinkID,
+	linkID kernel.LinkID,
 ) (LinkInfo, error) {
 	info := LinkInfo{}
 
