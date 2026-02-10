@@ -2,6 +2,7 @@ package operation
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/frobware/go-bpfman/manager/action"
 )
@@ -136,5 +137,18 @@ func WithUndo(actions ...action.Action) NodeOpt {
 // Plan is an ordered list of nodes describing a complete operation.
 type Plan struct{ nodes []node }
 
-// Build constructs a Plan from the given nodes.
-func Build(nodes ...Node) Plan { return Plan{nodes: nodes} }
+// Build constructs a Plan from the given nodes. It panics if two
+// Produce nodes bind the same key, catching the error at plan
+// construction time rather than during execution.
+func Build(nodes ...Node) Plan {
+	seen := map[string]bool{}
+	for _, n := range nodes {
+		if n.flavour == flavourProduce {
+			if seen[n.bindKey] {
+				panic(fmt.Sprintf("operation.Build: duplicate Produce key %q", n.bindKey))
+			}
+			seen[n.bindKey] = true
+		}
+	}
+	return Plan{nodes: nodes}
+}

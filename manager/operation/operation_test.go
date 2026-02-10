@@ -127,7 +127,7 @@ func TestDoFailure(t *testing.T) {
 
 func TestProduceSuccess(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[int]("value")
+	key := NewKey[int]("produce-success-value")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
 			return 42, nil
@@ -145,7 +145,7 @@ func TestProduceSuccess(t *testing.T) {
 
 func TestProduceFailure(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[int]("value")
+	key := NewKey[int]("produce-failure-value")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
 			return 0, errTest
@@ -252,7 +252,7 @@ func TestAutoSkipValidateFailsSkipsDoAndTry(t *testing.T) {
 
 func TestAutoSkipProduceFailsSkipsDo(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[int]("val")
+	key := NewKey[int]("autoskip-val")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
 			return 0, errTest
@@ -273,7 +273,7 @@ func TestAutoSkipProduceFailsSkipsDo(t *testing.T) {
 
 func TestProduceStoresBindingForLaterDo(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[string]("msg")
+	key := NewKey[string]("binding-msg")
 	var captured string
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
@@ -296,7 +296,7 @@ func TestProduceStoresBindingForLaterDo(t *testing.T) {
 
 func TestGetMissingKeyPanics(t *testing.T) {
 	b := newBindings()
-	key := NewKey[int]("missing")
+	key := NewKey[int]("get-missing")
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -306,7 +306,7 @@ func TestGetMissingKeyPanics(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected string panic, got %T", r)
 		}
-		if msg != `operation.Get: key "missing" not bound` {
+		if msg != `operation.Get: key "get-missing" not bound` {
 			t.Fatalf("unexpected panic message: %s", msg)
 		}
 	}()
@@ -315,8 +315,8 @@ func TestGetMissingKeyPanics(t *testing.T) {
 
 func TestMultipleProduceBindings(t *testing.T) {
 	exec := newFakeExecutor()
-	keyA := NewKey[int]("a")
-	keyB := NewKey[string]("b")
+	keyA := NewKey[int]("multi-a")
+	keyB := NewKey[string]("multi-b")
 	plan := Build(
 		Produce(keyA, "t1", func(_ context.Context, _ *Bindings) (int, error) {
 			return 1, nil
@@ -382,7 +382,7 @@ func TestDoWithUndoOnFailure(t *testing.T) {
 
 func TestProduceWithUndoFromOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[string]("val")
+	key := NewKey[string]("undo-from-success-val")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
 			return "produced", nil
@@ -406,7 +406,7 @@ func TestProduceWithUndoFromOnSuccess(t *testing.T) {
 
 func TestProduceWithUndoFromOnFailure(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[string]("val")
+	key := NewKey[string]("undo-from-failure-val")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
 			return "", errTest
@@ -591,7 +591,7 @@ func TestNoRollbackEntriesNoUndoExecuted(t *testing.T) {
 
 func TestRunReturnsBindingsOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
-	key := NewKey[int]("val")
+	key := NewKey[int]("run-bindings-val")
 	plan := Build(
 		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
 			return 7, nil
@@ -665,6 +665,31 @@ func TestEmptyPlanSuccess(t *testing.T) {
 	if b == nil {
 		t.Fatal("expected non-nil bindings")
 	}
+}
+
+func TestBuildDuplicateProduceKeyPanics(t *testing.T) {
+	key := NewKey[int]("build-dup")
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T", r)
+		}
+		if msg != `operation.Build: duplicate Produce key "build-dup"` {
+			t.Fatalf("unexpected panic message: %s", msg)
+		}
+	}()
+	Build(
+		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+			return 1, nil
+		}),
+		Produce(key, "t2", func(_ context.Context, _ *Bindings) (int, error) {
+			return 2, nil
+		}),
+	)
 }
 
 func TestAllTryNodesFailIsSuccess(t *testing.T) {

@@ -53,35 +53,20 @@ path from closures to data. The cost is more boilerplate.
 
 ## 2. Bindings are stringly-typed with runtime panics
 
-`Key[T]` provides a type-safe wrapper, but the underlying store is
-`map[string]any`:
+**Partially resolved.** `NewKey` now registers each key name (with its
+`reflect.Type`) in a global registry and panics at process startup if
+a duplicate name is registered. `Build` additionally panics if two
+`Produce` nodes in the same plan bind the same key. Together these
+catch name collisions and silent-overwrite bugs before any real
+operation executes.
 
-    // manager/operation/types.go:16
-    type Bindings struct{ m map[string]any }
-
-    // manager/operation/types.go:23-32
-    func Get[T any](b *Bindings, key Key[T]) T {
-        v, ok := b.m[key.name]
-        if !ok {
-            panic(...)
-        }
-        ...
-    }
-
-If two keys share the same name but differ in type, or if `Get` is
-called before the producing node has run, the result is a runtime
-panic, not a compile error. The sequential structure of plans
-mitigates this in practice (node N only runs after node N-1), but
-nothing in the type system enforces that a `Get` for `loadedKey`
-appears only after the `Produce` that binds it.
-
-In Scala you would use an indexed state monad or HList to track what
-has been produced at the type level. Go cannot express this.
-
-**Risk level:** low -- the sequential execution order and the
-convention of declaring keys alongside the plan that produces them
-make misuse unlikely. But the invariant is maintained by convention,
-not by the compiler.
+The remaining gap is ordering: nothing verifies at build time that a
+`Get` for a key appears only in a node sequenced after the `Produce`
+that binds it. This cannot be checked statically because `Get` calls
+live inside opaque closures; it would require nodes to declare key
+dependencies as data, which pulls into wart 1 territory. The
+sequential plan interpreter and the convention of declaring keys
+alongside their producer continue to prevent this in practice.
 
 ---
 
