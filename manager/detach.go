@@ -8,8 +8,8 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
@@ -237,9 +237,9 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 // remove a dispatcher. It is only called when no extension links remain.
 // For TC dispatchers, tcHandle is the kernel-assigned filter handle
 // (queried at detach time); it is zero for XDP dispatchers.
-func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
-	progPinPath := fs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
-	revisionDir := fs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
+func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
+	progPinPath := bpffs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
+	revisionDir := bpffs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
 	var actions []action.Action
 
 	// TC dispatchers use legacy netlink and must be detached via
@@ -255,7 +255,7 @@ func computeDispatcherCleanupActions(fs bpfmanfs.BPFFS, state dispatcher.State, 
 			})
 		}
 	} else {
-		linkPinPath := fs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
+		linkPinPath := bpffs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
 		actions = append(actions, action.RemovePin{Path: linkPinPath})
 	}
 

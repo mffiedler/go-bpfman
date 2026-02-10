@@ -1,4 +1,4 @@
-package bpfmanfs_test
+package fs_test
 
 import (
 	"os"
@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 )
 
 func TestImageCache_RemoveCacheEntry_RemovesChild(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "cache")
-	cache, err := bpfmanfs.NewImageCache(root)
+	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)
 	require.NoError(t, cache.EnsureRoot())
 
@@ -27,19 +27,19 @@ func TestImageCache_RemoveCacheEntry_RemovesChild(t *testing.T) {
 
 func TestImageCache_RemoveCacheEntry_RejectsRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "cache")
-	cache, err := bpfmanfs.NewImageCache(root)
+	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)
 	require.NoError(t, cache.EnsureRoot())
 
 	err = cache.RemoveCacheEntry("")
 	assert.Error(t, err)
-	var errOutside bpfmanfs.ErrOutsideLayout
+	var errOutside fs.ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
 func TestImageCache_CreateTempDir_CleanupIdempotent(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "cache")
-	cache, err := bpfmanfs.NewImageCache(root)
+	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)
 
 	tmpDir, cleanup, err := cache.CreateTempDir()

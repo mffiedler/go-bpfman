@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
@@ -32,7 +32,7 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	fsctx             bpfmanfs.FilesystemContext
+	fsctx             fs.Context
 	store             platform.Store
 	kernel            platform.KernelOperations
 	executor          action.ExecutorWithResult
@@ -57,13 +57,13 @@ type Manager struct {
 // Optional parameters:
 //   - imagePuller: OCI image puller for loading programs from container images (nil to disable)
 //
-// The fsctx parameter is a capability token from bpfmanfs/runtime.New()
+// The fsctx parameter is a capability token from fs/runtime.New()
 // that proves the filesystem directories exist and bpffs is mounted.
 //
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
 func New(
-	fsctx bpfmanfs.FilesystemContext,
+	fsctx fs.Context,
 	imagePuller platform.ImagePuller,
 	store platform.Store,
 	kernel platform.KernelOperations,
@@ -80,19 +80,19 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          newExecutor(store, kernel, fsctx.BytecodeFS(), fsctx.BPFFS(), logger).(action.ExecutorWithResult),
+		executor:          newExecutor(store, kernel, fsctx.Bytecode(), fsctx.BPFFS(), logger).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil
 }
 
 // Layout returns the filesystem layout.
-func (m *Manager) Layout() bpfmanfs.FSLayout {
+func (m *Manager) Layout() fs.Layout {
 	return m.fsctx.Layout()
 }
 
 // FilesystemContext returns the filesystem context.
-func (m *Manager) FilesystemContext() bpfmanfs.FilesystemContext {
+func (m *Manager) FilesystemContext() fs.Context {
 	return m.fsctx
 }
 

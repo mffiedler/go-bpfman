@@ -1,4 +1,4 @@
-package bpfmanfs
+package fs
 
 import (
 	"fmt"
@@ -32,75 +32,75 @@ type Provenance struct {
 	LoadedAt    time.Time        `json:"loaded_at"`   // RFC 3339 UTC
 }
 
-// BytecodeFS provides regular-filesystem operations for bytecode
-// persistence. Fields are unexported; obtain via FSLayout.BytecodeFS().
-type BytecodeFS struct {
-	layout FSLayout
+// Bytecode provides regular-filesystem operations for bytecode
+// persistence. Fields are unexported; obtain via Layout.Bytecode().
+type Bytecode struct {
+	layout Layout
 }
 
-// Valid reports whether the BytecodeFS was obtained from a valid Layout.
-func (rt BytecodeFS) Valid() bool {
+// Valid reports whether the Bytecode was obtained from a valid Layout.
+func (rt Bytecode) Valid() bool {
 	return rt.layout.Valid()
 }
 
-// mustValid panics if rt was not obtained from FSLayout.BytecodeFS().
-func (rt BytecodeFS) mustValid() {
+// mustValid panics if rt was not obtained from Layout.Bytecode().
+func (rt Bytecode) mustValid() {
 	if !rt.Valid() {
-		panic("bpfmanfs: zero BytecodeFS used; obtain via FSLayout.BytecodeFS()")
+		panic("fs: zero Bytecode used; obtain via Layout.Bytecode()")
 	}
 }
 
-// FilesystemContext is a capability token proving that the filesystem
+// Context is a capability token proving that the filesystem
 // directories exist and bpffs is mounted. Obtain via runtime.New().
 //
-// Holding a FilesystemContext guarantees:
+// Holding a Context guarantees:
 //   - Base directory and subdirectories exist
 //   - bpffs is mounted at the expected mount point
 //
 // This enables upfront validation before operations begin.
-type FilesystemContext struct {
-	layout FSLayout
+type Context struct {
+	layout Layout
 }
 
-// NewFilesystemContext creates a FilesystemContext from a validated FSLayout.
+// NewContext creates a Context from a validated Layout.
 // This is called by runtime.New() after directories and bpffs are ready.
 // Direct callers must ensure the filesystem is properly initialised.
-func NewFilesystemContext(layout FSLayout) FilesystemContext {
-	return FilesystemContext{layout: layout}
+func NewContext(layout Layout) Context {
+	return Context{layout: layout}
 }
 
-// Layout returns the underlying FSLayout.
-func (r FilesystemContext) Layout() FSLayout {
+// Layout returns the underlying Layout.
+func (r Context) Layout() Layout {
 	return r.layout
 }
 
 // BPFFS returns the bpffs accessor for pin path conventions.
-func (r FilesystemContext) BPFFS() BPFFS {
+func (r Context) BPFFS() BPFFS {
 	return r.layout.BPFFS()
 }
 
-// BytecodeFS returns the bytecode filesystem accessor for program persistence.
-func (r FilesystemContext) BytecodeFS() BytecodeFS {
-	return r.layout.BytecodeFS()
+// Bytecode returns the bytecode filesystem accessor for program persistence.
+func (r Context) Bytecode() Bytecode {
+	return r.layout.Bytecode()
 }
 
-// Valid reports whether the FilesystemContext was properly constructed.
-func (r FilesystemContext) Valid() bool {
+// Valid reports whether the Context was properly constructed.
+func (r Context) Valid() bool {
 	return r.layout.Valid()
 }
 
 // programsPath returns <base>/programs.
-func (rt BytecodeFS) programsPath() string {
+func (rt Bytecode) programsPath() string {
 	return filepath.Join(rt.layout.base, programsDir)
 }
 
 // stagingPath returns <base>/.staging.
-func (rt BytecodeFS) stagingPath() string {
+func (rt Bytecode) stagingPath() string {
 	return filepath.Join(rt.layout.base, stagingDir)
 }
 
 // programDir returns <base>/programs/{id}.
-func (rt BytecodeFS) programDir(id kernel.ProgramID) string {
+func (rt Bytecode) programDir(id kernel.ProgramID) string {
 	return filepath.Join(rt.layout.base, programsDir, strconv.FormatUint(uint64(id), 10))
 }
 
@@ -121,7 +121,7 @@ func (rt BytecodeFS) programDir(id kernel.ProgramID) string {
 //
 // A provenance.json is written alongside the bytecode. Publish is
 // atomic (rename on the same filesystem).
-func (rt BytecodeFS) PublishBytecode(id kernel.ProgramID, srcPath string, prov Provenance) error {
+func (rt Bytecode) PublishBytecode(id kernel.ProgramID, srcPath string, prov Provenance) error {
 	rt.mustValid()
 
 	// Validate source file.
@@ -187,7 +187,7 @@ func (rt BytecodeFS) PublishBytecode(id kernel.ProgramID, srcPath string, prov P
 // RemoveProgram removes <base>/programs/{id}/ and its contents.
 // Returns nil if the directory does not exist. Uses safeRemoveAll to
 // verify the target is under the programs directory.
-func (rt BytecodeFS) RemoveProgram(id kernel.ProgramID) error {
+func (rt Bytecode) RemoveProgram(id kernel.ProgramID) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
 }
@@ -196,13 +196,13 @@ func (rt BytecodeFS) RemoveProgram(id kernel.ProgramID) error {
 // be a direct child of <base>/programs/. Returns nil if the directory
 // does not exist. This handles both numeric and non-numeric directory
 // names (e.g., orphaned directories with unexpected names).
-func (rt BytecodeFS) RemoveProgramDir(path string) error {
+func (rt Bytecode) RemoveProgramDir(path string) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), path)
 }
 
 // ProgramExists reports whether <base>/programs/{id}/ exists.
-func (rt BytecodeFS) ProgramExists(id kernel.ProgramID) bool {
+func (rt Bytecode) ProgramExists(id kernel.ProgramID) bool {
 	rt.mustValid()
 	_, err := os.Stat(rt.programDir(id))
 	return err == nil
@@ -210,14 +210,14 @@ func (rt BytecodeFS) ProgramExists(id kernel.ProgramID) bool {
 
 // ProgramBytecodePath returns the published bytecode path for DB
 // ObjectPath storage.
-func (rt BytecodeFS) ProgramBytecodePath(id kernel.ProgramID) string {
+func (rt Bytecode) ProgramBytecodePath(id kernel.ProgramID) string {
 	rt.mustValid()
 	return filepath.Join(rt.programDir(id), bytecodeName)
 }
 
 // CleanStaging removes all entries under <base>/.staging/. Staging is
 // a writer-only concern and is never visible to readers.
-func (rt BytecodeFS) CleanStaging() error {
+func (rt Bytecode) CleanStaging() error {
 	rt.mustValid()
 	staging := rt.stagingPath()
 
@@ -241,7 +241,7 @@ func (rt BytecodeFS) CleanStaging() error {
 // RemoveStagingDir removes a staging directory by path. The path must
 // be a direct child of <base>/.staging/. Returns nil if the directory
 // does not exist.
-func (rt BytecodeFS) RemoveStagingDir(path string) error {
+func (rt Bytecode) RemoveStagingDir(path string) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.stagingPath(), path)
 }
@@ -255,7 +255,7 @@ type ProgramDirEntry struct {
 
 // ScanProgramDirs returns all directories under <base>/programs/.
 // Returns nil (not error) if the programs directory does not exist.
-func (rt BytecodeFS) ScanProgramDirs() ([]ProgramDirEntry, error) {
+func (rt Bytecode) ScanProgramDirs() ([]ProgramDirEntry, error) {
 	rt.mustValid()
 	programsPath := rt.programsPath()
 
@@ -287,7 +287,7 @@ func (rt BytecodeFS) ScanProgramDirs() ([]ProgramDirEntry, error) {
 
 // ScanStagingDirs returns all entry paths under <base>/.staging/.
 // Returns nil (not error) if the staging directory does not exist.
-func (rt BytecodeFS) ScanStagingDirs() ([]string, error) {
+func (rt Bytecode) ScanStagingDirs() ([]string, error) {
 	rt.mustValid()
 	stagingPath := rt.stagingPath()
 

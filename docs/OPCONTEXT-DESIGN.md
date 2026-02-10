@@ -228,9 +228,9 @@ Action.
 
 **Executor dependency.** Today the executor holds `store` +
 `kernel`. Bytecode removal (`rt.RemoveProgram`) hangs off
-`fsctx.BytecodeFS()`, not the kernel interface. Adding
+`fsctx.Bytecode()`, not the kernel interface. Adding
 `RemoveProgramDir` means the executor needs a third dependency --
-either the `BytecodeFS` handle directly or a narrow interface
+either the `Bytecode` handle directly or a narrow interface
 exposing `RemoveProgram(ctx, uint32) error`. This is a small
 expansion of the executor's responsibility surface; it is the
 natural consequence of expressing all side effects as Actions.
@@ -879,7 +879,7 @@ makes details precise and local. Both undo patterns appear:
 func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
     return operation.WithOp(ctx, m.beginOp, m.executor, func(op *operation.OpContext) (bpfman.Program, error) {
         name := spec.ProgramName()
-        rt := m.fsctx.BytecodeFS()
+        rt := m.fsctx.Bytecode()
         now := time.Now()
 
         // Preflight validation.
@@ -1121,7 +1121,7 @@ manager/action/
     executor.go     Executor, ExecutorWithResult interfaces,
                     ExecutionResult struct
 
-    Imports: bpfman, bpfmanfs, dispatcher (leaf packages only)
+    Imports: bpfman, fs, dispatcher (leaf packages only)
 
 
 manager/operation/
@@ -1155,7 +1155,7 @@ manager/
 ### Dependency graph
 
 ```
-bpfman, bpfmanfs, dispatcher, platform, outcome   (leaf packages)
+bpfman, fs, dispatcher, platform, outcome   (leaf packages)
         |
         v
 manager/action       (effect vocabulary)
@@ -1175,7 +1175,7 @@ No cycles. Each layer depends only on layers below.
 
 * The `Action` interface and all 13 concrete types (currently in
   `manager/action.go`). These are pure data with no manager
-  dependencies -- they import only `bpfman`, `bpfmanfs`, `dispatcher`.
+  dependencies -- they import only `bpfman`, `fs`, `dispatcher`.
 * The `Executor`, `ExecutorWithResult` interfaces and `ExecutionResult`
   struct (currently in `manager/executor.go`). These reference only
   `Action` and `context`.
@@ -1225,7 +1225,7 @@ the handle, and Action types gain the `action.` prefix.
 func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
     return operation.WithOp(ctx, m.beginOp, m.executor, func(op *operation.OpContext) (bpfman.Program, error) {
         name := spec.ProgramName()
-        rt := m.fsctx.BytecodeFS()
+        rt := m.fsctx.Bytecode()
         now := time.Now()
 
         op.Step(outcome.StepKindPreflight, "validation", func() error { ... })
@@ -1284,7 +1284,7 @@ once as "pretend boundaries" (file-level separation) and once as real
 package moves. The boundaries are already clear from the dependency
 analysis above:
 
-* `manager/action` imports only leaf packages (`bpfman`, `bpfmanfs`,
+* `manager/action` imports only leaf packages (`bpfman`, `fs`,
   `dispatcher`).
 * `manager/operation` imports only `manager/action` + `outcome`.
 * Neither needs to import `manager`.
@@ -1472,7 +1472,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts) operation.Plan {
             operation.DependsOn("kernel-load"),
             func(ctx context.Context, loaded *KernelLoaded) error {
                 prov := buildProvenance(spec, loaded, time.Now())
-                return m.fsctx.BytecodeFS().PublishBytecode(loaded.Program.ID, ...)
+                return m.fsctx.Bytecode().PublishBytecode(loaded.Program.ID, ...)
             },
             operation.BestEffortUndo(func(loaded *KernelLoaded) operation.UndoEntry {
                 return operation.UndoEntry{
@@ -1758,7 +1758,7 @@ var loadedKey = operation.NewKey[*platform.KernelLoaded]("loaded")
 
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
     name := spec.ProgramName()
-    rt := m.fsctx.BytecodeFS()
+    rt := m.fsctx.Bytecode()
 
     return operation.Build(
         operation.Validate("preflight", outcome.StepKindPreflight, "validation",
@@ -1857,7 +1857,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
         return bpfman.Program{}, err
     }
     loaded := operation.Get(b, loadedKey)
-    record := buildProgramRecord(spec, loaded, opts, m.fsctx.BytecodeFS(), now)
+    record := buildProgramRecord(spec, loaded, opts, m.fsctx.Bytecode(), now)
     return constructProgram(loaded, record), nil
 }
 ```

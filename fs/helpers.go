@@ -1,4 +1,4 @@
-package bpfmanfs
+package fs
 
 import (
 	"encoding/json"

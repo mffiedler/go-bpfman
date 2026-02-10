@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
@@ -18,13 +18,13 @@ import (
 type executor struct {
 	store  platform.Store
 	kernel platform.KernelOperations
-	bcfs   bpfmanfs.BytecodeFS
-	bpffs  bpfmanfs.BPFFS
+	bcfs   fs.Bytecode
+	bpffs  fs.BPFFS
 	logger *slog.Logger
 }
 
 // newExecutor creates a new action executor.
-func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs bpfmanfs.BytecodeFS, bpffs bpfmanfs.BPFFS, logger *slog.Logger) action.Executor {
+func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs fs.Bytecode, bpffs fs.BPFFS, logger *slog.Logger) action.Executor {
 	return &executor{
 		store:  store,
 		kernel: kernel,

@@ -1,4 +1,4 @@
-package bpfmanfs_test
+package fs_test
 
 import (
 	"encoding/json"
@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-func mustNew(t *testing.T) bpfmanfs.FSLayout {
+func mustNew(t *testing.T) fs.Layout {
 	t.Helper()
-	layout, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
+	layout, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 	return layout
 }
@@ -30,11 +30,11 @@ func writeDummyBytecode(t *testing.T, dir string) string {
 
 func TestPublishBytecode(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := bpfmanfs.Provenance{
+	prov := fs.Provenance{
 		Version:     1,
 		KernelID:    42,
 		ProgramName: "test_prog",
@@ -60,7 +60,7 @@ func TestPublishBytecode(t *testing.T) {
 
 	provData, err := os.ReadFile(provPath)
 	require.NoError(t, err)
-	var readProv bpfmanfs.Provenance
+	var readProv fs.Provenance
 	require.NoError(t, json.Unmarshal(provData, &readProv))
 	assert.Equal(t, kernel.ProgramID(42), readProv.KernelID)
 	assert.Equal(t, "test_prog", readProv.ProgramName)
@@ -69,11 +69,11 @@ func TestPublishBytecode(t *testing.T) {
 
 func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := bpfmanfs.Provenance{Version: 1, KernelID: 99}
+	prov := fs.Provenance{Version: 1, KernelID: 99}
 
 	// First publish should succeed.
 	require.NoError(t, rt.PublishBytecode(99, srcPath, prov))
@@ -81,14 +81,14 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	// Second publish for the same ID should fail with ErrFinalExists.
 	err := rt.PublishBytecode(99, srcPath, prov)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, bpfmanfs.ErrFinalExists)
+	assert.ErrorIs(t, err, fs.ErrFinalExists)
 }
 
 func TestPublishBytecode_InvalidSource(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
-	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, KernelID: 1}
 
 	// Non-existent source file.
 	err := rt.PublishBytecode(1, "/nonexistent/path.o", prov)
@@ -102,12 +102,12 @@ func TestPublishBytecode_InvalidSource(t *testing.T) {
 
 func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	// Create a valid source file, then publish with ID 1.
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, KernelID: 1}
 
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
@@ -120,11 +120,11 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 
 func TestRemoveProgram(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := bpfmanfs.Provenance{Version: 1, KernelID: 10}
+	prov := fs.Provenance{Version: 1, KernelID: 10}
 	require.NoError(t, rt.PublishBytecode(10, srcPath, prov))
 	assert.True(t, rt.ProgramExists(10))
 
@@ -135,7 +135,7 @@ func TestRemoveProgram(t *testing.T) {
 
 func TestRemoveProgram_Idempotent(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	// Removing a non-existent program should not error.
 	require.NoError(t, rt.RemoveProgram(999))
@@ -143,13 +143,13 @@ func TestRemoveProgram_Idempotent(t *testing.T) {
 
 func TestProgramExists(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	assert.False(t, rt.ProgramExists(1))
 
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := bpfmanfs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, KernelID: 1}
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
 	assert.True(t, rt.ProgramExists(1))
@@ -157,7 +157,7 @@ func TestProgramExists(t *testing.T) {
 
 func TestProgramBytecodePath(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	path := rt.ProgramBytecodePath(42)
 	assert.Equal(t, filepath.Join(root.Base(), "programs", "42", "bytecode.o"), path)
@@ -165,7 +165,7 @@ func TestProgramBytecodePath(t *testing.T) {
 
 func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	programsPath := filepath.Join(root.Base(), "programs")
 	require.NoError(t, os.MkdirAll(filepath.Join(programsPath, "123abc"), 0755))
@@ -174,7 +174,7 @@ func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 	entries, err := rt.ScanProgramDirs()
 	require.NoError(t, err)
 
-	var numeric []bpfmanfs.ProgramDirEntry
+	var numeric []fs.ProgramDirEntry
 	for _, entry := range entries {
 		if entry.Numeric {
 			numeric = append(numeric, entry)
@@ -187,7 +187,7 @@ func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 
 func TestCleanStaging(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	// Create some staging leftovers.
 	stagingPath := filepath.Join(root.Base(), ".staging")
@@ -203,14 +203,14 @@ func TestCleanStaging(t *testing.T) {
 
 func TestCleanStaging_NoStagingDir(t *testing.T) {
 	root := mustNew(t)
-	rt := root.BytecodeFS()
+	rt := root.Bytecode()
 
 	// No staging directory exists; should not error.
 	require.NoError(t, rt.CleanStaging())
 }
 
-func TestZeroValueBytecodeFS(t *testing.T) {
-	var layout bpfmanfs.FSLayout
-	// Calling BytecodeFS() on zero FSLayout should panic
-	assert.Panics(t, func() { layout.BytecodeFS() }, "BytecodeFS() on zero FSLayout should panic")
+func TestZeroValueBytecode(t *testing.T) {
+	var layout fs.Layout
+	// Calling Bytecode() on zero Layout should panic
+	assert.Panics(t, func() { layout.Bytecode() }, "Bytecode() on zero Layout should panic")
 }

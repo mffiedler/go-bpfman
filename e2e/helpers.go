@@ -20,9 +20,9 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 	"github.com/frobware/go-bpfman/platform/image/oci"
@@ -38,7 +38,7 @@ import (
 // database, and socket, enabling t.Parallel() across all tests.
 type TestEnv struct {
 	T           *testing.T
-	Layout      bpfmanfs.FSLayout
+	Layout      fs.Layout
 	Manager     *manager.Manager
 	ImagePuller platform.ImagePuller
 	logger      *slog.Logger
@@ -63,16 +63,16 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		t.Fatalf("failed to create temp directory: %v", err)
 	}
 
-	layout, err := bpfmanfs.New(baseDir)
+	layout, err := fs.New(baseDir)
 	if err != nil {
 		t.Fatalf("invalid runtime directory: %v", err)
 	}
 
-	imageCacheBase, err := bpfmanfs.NewImageCache(filepath.Join(layout.Base(), "cache", "image"))
+	imageCacheBase, err := fs.NewImageCache(filepath.Join(layout.Base(), "cache", "image"))
 	if err != nil {
 		t.Fatalf("invalid image cache directory: %v", err)
 	}
-	imageCache, err := bpfmanfs.EnsureCache(imageCacheBase)
+	imageCache, err := fs.EnsureCache(imageCacheBase)
 	if err != nil {
 		t.Fatalf("failed to ensure image cache: %v", err)
 	}
@@ -585,7 +585,7 @@ func cleanupStaleTestDirs() error {
 
 		// Attempt to unmount bpffs; ignore errors as it may already
 		// be unmounted or never mounted.
-		layout, err := bpfmanfs.New(path)
+		layout, err := fs.New(path)
 		if err == nil {
 			unmount(layout.BPFFSMountPoint())
 		}

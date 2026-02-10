@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
@@ -109,9 +109,9 @@ func (k *fakeKernelSource) GetLinkByID(ctx context.Context, id kernel.LinkID) (k
 
 // testBPFFS creates a BPFFS for testing with a temporary directory.
 // Returns the BPFFS and a struct with convenient path accessors.
-func testBPFFS(t *testing.T) bpfmanfs.BPFFS {
+func testBPFFS(t *testing.T) fs.BPFFS {
 	t.Helper()
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to create layout: %v", err)
 	}

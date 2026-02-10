@@ -16,10 +16,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
-	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
+	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -53,9 +53,9 @@ func (DefaultNetIfaceResolver) InterfaceByName(name string) (*net.Interface, err
 
 // RunConfig configures the server daemon.
 type RunConfig struct {
-	Layout       bpfmanfs.FSLayout
-	ImageCache   bpfmanfs.EnsuredImageCache // Capability token proving cache directory exists
-	TCPAddress   string                     // Optional TCP address (e.g., ":50051") for remote access
+	Layout       fs.Layout
+	ImageCache   fs.EnsuredImageCache // Capability token proving cache directory exists
+	TCPAddress   string               // Optional TCP address (e.g., ":50051") for remote access
 	CSISupport   bool
 	PprofAddress string // Optional address for pprof HTTP server (e.g., "localhost:2026")
 	SocketPath   string // Optional override for Unix socket path (defaults to layout.SocketPath())
@@ -217,7 +217,7 @@ type Server struct {
 	pb.UnimplementedBpfmanServer
 
 	mu        sync.RWMutex
-	layout    bpfmanfs.FSLayout
+	layout    fs.Layout
 	netIface  NetIfaceResolver
 	mgr       *manager.Manager
 	logger    *slog.Logger
@@ -228,7 +228,7 @@ type Server struct {
 // The manager must be created by the caller - use manager.New() with
 // appropriate mounter (RealMounter for production, NoOpMounter for tests).
 // The manager should include an ImagePuller if OCI image loading is needed.
-func New(layout bpfmanfs.FSLayout, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
+func New(layout fs.Layout, netIface NetIfaceResolver, mgr *manager.Manager, logger *slog.Logger) *Server {
 	// Wrap with context-aware handler to extract op_id from context.
 	logger = manager.WithOpIDHandler(logger)
 	return &Server{

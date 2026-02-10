@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
-	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
+	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/fs/runtime"
 )
 
 // mockMounter records calls and can be configured to return errors.
@@ -25,7 +25,7 @@ func (m *mockMounter) EnsureMounted(mountPoint string) error {
 }
 
 func TestEnsure_CreatesDirectories(t *testing.T) {
-	root, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
+	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
 	mounter := &mockMounter{}
@@ -42,7 +42,7 @@ func TestEnsure_CreatesDirectories(t *testing.T) {
 }
 
 func TestEnsure_CallsMounter(t *testing.T) {
-	root, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
+	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
 	mounter := &mockMounter{}
@@ -54,7 +54,7 @@ func TestEnsure_CallsMounter(t *testing.T) {
 }
 
 func TestEnsure_MounterError(t *testing.T) {
-	root, err := bpfmanfs.New(filepath.Join(t.TempDir(), "bpfman"))
+	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
 	expectedErr := errors.New("mount failed")
@@ -67,7 +67,7 @@ func TestEnsure_MounterError(t *testing.T) {
 func TestEnsure_DirectoryCreationError(t *testing.T) {
 	// Create a file where a directory should be created
 	tmpDir := t.TempDir()
-	root, err := bpfmanfs.New(filepath.Join(tmpDir, "bpfman"))
+	root, err := fs.New(filepath.Join(tmpDir, "bpfman"))
 	require.NoError(t, err)
 
 	// Create a file at the base path to block directory creation

@@ -1,4 +1,4 @@
-package bpfmanfs
+package fs
 
 import (
 	"fmt"
@@ -12,9 +12,9 @@ import (
 )
 
 // BPFFS provides access to bpfman's bpffs path conventions.
-// Fields are unexported; obtain via FSLayout.BPFFS().
+// Fields are unexported; obtain via Layout.BPFFS().
 type BPFFS struct {
-	layout FSLayout
+	layout Layout
 }
 
 // Valid reports whether the BPFFS was obtained from a valid Layout.
@@ -22,10 +22,10 @@ func (b BPFFS) Valid() bool {
 	return b.layout.Valid()
 }
 
-// mustValid panics if b was not obtained from FSLayout.BPFFS().
+// mustValid panics if b was not obtained from Layout.BPFFS().
 func (b BPFFS) mustValid() {
 	if !b.Valid() {
-		panic("bpfmanfs: zero BPFFS used; obtain via FSLayout.BPFFS()")
+		panic("fs: zero BPFFS used; obtain via Layout.BPFFS()")
 	}
 }
 

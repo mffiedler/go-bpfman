@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
@@ -29,7 +29,7 @@ func buildProgramRecord(
 	spec bpfman.LoadSpec,
 	loaded bpfman.LoadOutput,
 	opts loadOpts,
-	rt bpfmanfs.BytecodeFS,
+	rt fs.Bytecode,
 	now time.Time,
 ) bpfman.ProgramRecord {
 	var mapOwnerID *kernel.ProgramID
@@ -114,7 +114,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
-	rt := m.fsctx.BytecodeFS()
+	rt := m.fsctx.Bytecode()
 	perProgOpts := loadOpts{
 		UserMetadata: opts.UserMetadata,
 		Owner:        opts.Owner,
@@ -170,7 +170,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 // fs-publish, store-save.
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
 	programName := spec.ProgramName()
-	rt := m.fsctx.BytecodeFS()
+	rt := m.fsctx.Bytecode()
 
 	return operation.Build(
 		operation.Produce(loadedKey, programName,
@@ -212,7 +212,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				return m.executor.Execute(ctx, action.PublishBytecode{
 					KernelID:   l.Program.ID,
 					SourcePath: spec.ObjectPath(),
-					Provenance: bpfmanfs.Provenance{
+					Provenance: fs.Provenance{
 						Version:     1,
 						KernelID:    l.Program.ID,
 						ProgramName: programName,

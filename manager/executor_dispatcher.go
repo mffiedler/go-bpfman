@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -22,7 +22,7 @@ func createXDPDispatcherHelper(
 	ctx context.Context,
 	store platform.Store,
 	kernel platform.KernelOperations,
-	bpffs bpfmanfs.BPFFS,
+	bpffs fs.BPFFS,
 	logger *slog.Logger,
 	nsid uint64,
 	ifindex uint32,
@@ -92,7 +92,7 @@ func createTCDispatcherHelper(
 	ctx context.Context,
 	store platform.Store,
 	kernel platform.KernelOperations,
-	bpffs bpfmanfs.BPFFS,
+	bpffs fs.BPFFS,
 	logger *slog.Logger,
 	nsid uint64,
 	ifindex uint32,
@@ -170,7 +170,7 @@ func attachXDPExtensionWithRetry(
 	ctx context.Context,
 	store platform.Store,
 	kernel platform.KernelOperations,
-	bpffs bpfmanfs.BPFFS,
+	bpffs fs.BPFFS,
 	logger *slog.Logger,
 	ds dispatcher.State,
 	netnsPath string,
@@ -245,7 +245,7 @@ func attachTCExtensionWithRetry(
 	ctx context.Context,
 	store platform.Store,
 	kernel platform.KernelOperations,
-	bpffs bpfmanfs.BPFFS,
+	bpffs fs.BPFFS,
 	logger *slog.Logger,
 	ds dispatcher.State,
 	ifname string,

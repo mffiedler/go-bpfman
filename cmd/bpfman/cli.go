@@ -15,8 +15,8 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/ns/nsenter"
@@ -64,25 +64,25 @@ type CLI struct {
 
 // Layout returns the filesystem layout for the configured runtime directory.
 // Returns an error if RuntimeDir is empty or not an absolute path.
-func (c *CLI) Layout() (bpfmanfs.FSLayout, error) {
-	return bpfmanfs.New(c.RuntimeDir)
+func (c *CLI) Layout() (fs.Layout, error) {
+	return fs.New(c.RuntimeDir)
 }
 
 // ImageCache returns the image cache for the configured cache directory.
 // Returns an error if ImageCacheDir is empty or not an absolute path.
-func (c *CLI) ImageCache() (bpfmanfs.ImageCache, error) {
-	return bpfmanfs.NewImageCache(c.ImageCacheDir)
+func (c *CLI) ImageCache() (fs.ImageCache, error) {
+	return fs.NewImageCache(c.ImageCacheDir)
 }
 
 // EnsuredImageCache returns an EnsuredImageCache capability token, creating
 // the cache directory if needed. Use this when you need to pass the cache
 // to functions that require proof the directory exists.
-func (c *CLI) EnsuredImageCache() (bpfmanfs.EnsuredImageCache, error) {
+func (c *CLI) EnsuredImageCache() (fs.EnsuredImageCache, error) {
 	cache, err := c.ImageCache()
 	if err != nil {
-		return bpfmanfs.EnsuredImageCache{}, err
+		return fs.EnsuredImageCache{}, err
 	}
-	return bpfmanfs.EnsureCache(cache)
+	return fs.EnsureCache(cache)
 }
 
 // WriteOut writes bytes to Out, returning an error if the write fails or

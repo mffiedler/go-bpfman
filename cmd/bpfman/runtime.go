@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
+	"github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"

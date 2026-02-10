@@ -1,4 +1,4 @@
-package bpfmanfs_test
+package fs_test
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 )
 
 func TestScanner_DispatcherParsing_Strict(t *testing.T) {
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()

@@ -2,8 +2,8 @@ package action
 
 import (
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
@@ -71,7 +71,7 @@ func (CheckProgramNotInStore) isAction() {}
 // the LoadOutput via ExecuteResult.
 type LoadProgram struct {
 	Spec  bpfman.LoadSpec
-	BPFFS bpfmanfs.BPFFS
+	BPFFS fs.BPFFS
 }
 
 func (LoadProgram) isAction() {}
@@ -208,7 +208,7 @@ func (DetachTCFilter) isAction() {}
 type PublishBytecode struct {
 	KernelID   kernel.ProgramID
 	SourcePath string
-	Provenance bpfmanfs.Provenance
+	Provenance fs.Provenance
 }
 
 func (PublishBytecode) isAction() {}

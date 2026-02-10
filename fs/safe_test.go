@@ -1,4 +1,4 @@
-package bpfmanfs_test
+package fs_test
 
 import (
 	"os"
@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 )
 
 func TestBPFFS_SafeRemoveAll_UnderParent(t *testing.T) {
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()
@@ -27,7 +27,7 @@ func TestBPFFS_SafeRemoveAll_UnderParent(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsEscape(t *testing.T) {
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()
@@ -35,12 +35,12 @@ func TestBPFFS_SafeRemoveAll_RejectsEscape(t *testing.T) {
 
 	err = b.SafeRemoveAll(outside)
 	assert.Error(t, err)
-	var errOutside bpfmanfs.ErrOutsideLayout
+	var errOutside fs.ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsDotDot(t *testing.T) {
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()
@@ -49,12 +49,12 @@ func TestBPFFS_SafeRemoveAll_RejectsDotDot(t *testing.T) {
 
 	err = b.SafeRemoveAll(target)
 	assert.Error(t, err)
-	var errOutside bpfmanfs.ErrOutsideLayout
+	var errOutside fs.ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsMountRoot(t *testing.T) {
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()
@@ -62,13 +62,13 @@ func TestBPFFS_SafeRemoveAll_RejectsMountRoot(t *testing.T) {
 
 	err = b.SafeRemoveAll(b.MountPoint())
 	assert.Error(t, err)
-	var errOutside bpfmanfs.ErrOutsideLayout
+	var errOutside fs.ErrOutsideLayout
 	assert.ErrorAs(t, err, &errOutside)
 }
 
 func TestBPFFS_SafeRemoveAll_PrefixFalsePositive(t *testing.T) {
 	// Ensure /base/fs/programs vs /base/fs/programsX doesn't match.
-	layout, err := bpfmanfs.New(t.TempDir())
+	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
 	b := layout.BPFFS()

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -326,7 +326,7 @@ func Snapshot(
 	ctx context.Context,
 	store StoreLister,
 	kern KernelLister,
-	scanner *bpfmanfs.Scanner,
+	scanner *fs.Scanner,
 ) (*World, error) {
 	w := &World{
 		Meta: SnapshotMeta{
@@ -355,11 +355,11 @@ func Snapshot(
 	}
 
 	// FS indexes
-	fsProgPins := make(map[kernel.ProgramID]string)        // kernelID -> path
-	fsLinkDirs := make(map[kernel.ProgramID]string)        // programID -> path
-	fsMapDirs := make(map[kernel.ProgramID]string)         // programID -> path
-	fsDispDirs := make(map[string]*bpfmanfs.DispatcherDir) // "type/nsid/ifindex" -> dir
-	fsDispLinks := make(map[string]string)                 // "type/nsid/ifindex" -> path
+	fsProgPins := make(map[kernel.ProgramID]string)  // kernelID -> path
+	fsLinkDirs := make(map[kernel.ProgramID]string)  // programID -> path
+	fsMapDirs := make(map[kernel.ProgramID]string)   // programID -> path
+	fsDispDirs := make(map[string]*fs.DispatcherDir) // "type/nsid/ifindex" -> dir
+	fsDispLinks := make(map[string]string)           // "type/nsid/ifindex" -> path
 
 	for pin, err := range scanner.ProgPins(ctx) {
 		if err != nil {
@@ -649,7 +649,7 @@ func GetProgram(
 	ctx context.Context,
 	storeGetter StoreGetter,
 	kern KernelGetter,
-	scanner *bpfmanfs.Scanner,
+	scanner *fs.Scanner,
 	kernelID kernel.ProgramID,
 ) (ProgramView, error) {
 	row := ProgramView{KernelID: kernelID}
@@ -699,7 +699,7 @@ func GetLink(
 	ctx context.Context,
 	linkGetter LinkGetter,
 	kern KernelLinkGetter,
-	scanner *bpfmanfs.Scanner,
+	scanner *fs.Scanner,
 	linkID kernel.LinkID,
 ) (LinkInfo, error) {
 	info := LinkInfo{}
@@ -750,7 +750,7 @@ func GetDispatcher(
 	dispGetter DispatcherGetter,
 	kern KernelGetter,
 	kernLinkGetter KernelLinkGetter,
-	scanner *bpfmanfs.Scanner,
+	scanner *fs.Scanner,
 	dispType string,
 	nsid uint64,
 	ifindex uint32,

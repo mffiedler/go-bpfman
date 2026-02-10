@@ -11,7 +11,7 @@ import (
 	"github.com/cilium/ebpf"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
@@ -30,7 +30,7 @@ import (
 // must exist and contain the required pinned maps. This is used when loading
 // multiple programs from the same image (e.g., via the bpfman-operator) where
 // all programs should share the same map instances.
-func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs bpfmanfs.BPFFS) (bpfman.LoadOutput, error) {
+func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
 	if err != nil {

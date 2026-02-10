@@ -20,7 +20,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -42,7 +42,7 @@ type cachedMetadata struct {
 
 // puller implements ImagePuller using ORAS for OCI registry access.
 type puller struct {
-	cache    bpfmanfs.EnsuredImageCache
+	cache    fs.EnsuredImageCache
 	logger   *slog.Logger
 	verifier platform.SignatureVerifier
 }
@@ -70,7 +70,7 @@ func WithVerifier(v platform.SignatureVerifier) Option {
 // NewPuller creates a new OCI image puller.
 // The cache parameter must be an EnsuredImageCache obtained via EnsureCache(),
 // which proves the cache directory exists.
-func NewPuller(cache bpfmanfs.EnsuredImageCache, opts ...Option) (platform.ImagePuller, error) {
+func NewPuller(cache fs.EnsuredImageCache, opts ...Option) (platform.ImagePuller, error) {
 	if !cache.Valid() {
 		return nil, fmt.Errorf("invalid image cache")
 	}

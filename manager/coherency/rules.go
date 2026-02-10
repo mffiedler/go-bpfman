@@ -670,7 +670,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove program dir %s", o.Path),
 							Execute: func() error {
-								return s.layout.BytecodeFS().RemoveProgramDir(oo.Path)
+								return s.layout.Bytecode().RemoveProgramDir(oo.Path)
 							},
 						},
 					})
@@ -702,7 +702,7 @@ Category: gc-orphan-pin`,
 						Op: &Operation{
 							Description: fmt.Sprintf("remove staging dir %s", o.Path),
 							Execute: func() error {
-								return s.layout.BytecodeFS().RemoveStagingDir(oo.Path)
+								return s.layout.Bytecode().RemoveStagingDir(oo.Path)
 							},
 						},
 					})

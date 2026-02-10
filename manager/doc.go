@@ -129,13 +129,13 @@
 //
 // Create a Manager via New(), providing:
 //
-//   - FilesystemContext: capability token proving bpffs is mounted
+//   - Context: capability token proving bpffs is mounted
 //   - Store: database interface (platform.Store)
 //   - KernelOperations: BPF syscall adapter
 //   - ProgramDiscoverer: kernel program enumeration
 //   - ImagePuller: optional OCI image puller for container images
 //   - Logger: structured logger with op_id support
 //
-// The FilesystemContext is obtained from bpfmanfs/runtime.New() after
+// The Context is obtained from fs/runtime.New() after
 // ensuring directories exist and bpffs is mounted.
 package manager

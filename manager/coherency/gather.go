@@ -7,8 +7,8 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -54,7 +54,7 @@ type ObservedState struct {
 	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
-	layout bpfmanfs.FSLayout
+	layout fs.Layout
 
 	// Mutation capability for GC operations only.
 	// Not used during rule evaluation.
@@ -68,7 +68,7 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store platform.Store, kops platform.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
+func GatherState(ctx context.Context, store platform.Store, kops platform.KernelOperations, layout fs.Layout) (*ObservedState, error) {
 	s := &ObservedState{
 		kernelProgs:           make(map[kernel.ProgramID]bool),
 		kernelLinks:           make(map[kernel.LinkID]bool),
@@ -183,13 +183,13 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 
 	// Dispatcher prog pins and XDP link pins.
-	fs := layout.BPFFS()
+	bpffs := layout.BPFFS()
 	for _, d := range s.dbDispatchers {
-		progPin := fs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
+		progPin := bpffs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 		pathsToStat[progPin] = struct{}{}
 
 		if d.Type == dispatcher.DispatcherTypeXDP {
-			linkPin := fs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
+			linkPin := bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
 			pathsToStat[linkPin] = struct{}{}
 		}
 	}
@@ -278,7 +278,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Phase 6a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 
-	rt := layout.BytecodeFS()
+	rt := layout.Bytecode()
 	programDirs, err := rt.ScanProgramDirs()
 	if err != nil {
 		return nil, fmt.Errorf("scan program dirs: %w", err)
@@ -391,11 +391,11 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	if s.dispatchers != nil {
 		return s.dispatchers
 	}
-	fs := s.layout.BPFFS()
+	bpffs := s.layout.BPFFS()
 	for _, d := range s.dbDispatchers {
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		revDir := fs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
-		progPin := fs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
+		revDir := bpffs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
+		progPin := bpffs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 
 		ds := DispatcherState{
 			DB:         &d,
@@ -413,7 +413,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		// XDP link checks from gathered facts.
 		if d.Type == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = d.LinkID != 0 && s.kernelLinks[d.LinkID]
-			linkPin := fs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
+			linkPin := bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
 			if exists, ok := s.fsPinExists[linkPin]; ok {
 				ds.LinkPinExist = &exists
 			}

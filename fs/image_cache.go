@@ -1,4 +1,4 @@
-package bpfmanfs
+package fs
 
 import (
 	"crypto/sha256"
@@ -20,9 +20,9 @@ const (
 // ImageCache provides validated operations on the OCI image cache.
 // Obtain via NewImageCache() with a validated root path.
 //
-// ImageCache is separate from FSLayout because they have different
+// ImageCache is separate from Layout because they have different
 // lifecycles:
-//   - FSLayout: /run/bpfman (tmpfs, cleared on reboot)
+//   - Layout: /run/bpfman (tmpfs, cleared on reboot)
 //   - ImageCache: /var/cache/bpfman (persistent, survives reboots)
 type ImageCache struct {
 	root string
@@ -35,10 +35,10 @@ type ImageCache struct {
 // on system directories.
 func NewImageCache(root string) (ImageCache, error) {
 	if root == "" {
-		return ImageCache{}, fmt.Errorf("bpfmanfs: image cache root cannot be empty")
+		return ImageCache{}, fmt.Errorf("fs: image cache root cannot be empty")
 	}
 	if !filepath.IsAbs(root) {
-		return ImageCache{}, fmt.Errorf("bpfmanfs: image cache root must be absolute, got %q", root)
+		return ImageCache{}, fmt.Errorf("fs: image cache root must be absolute, got %q", root)
 	}
 	return ImageCache{root: filepath.Clean(root)}, nil
 }
@@ -51,7 +51,7 @@ func (c ImageCache) Valid() bool {
 // mustValid panics if c was not obtained from NewImageCache.
 func (c ImageCache) mustValid() {
 	if !c.Valid() {
-		panic("bpfmanfs: zero ImageCache used; obtain via NewImageCache()")
+		panic("fs: zero ImageCache used; obtain via NewImageCache()")
 	}
 }
 

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform"
@@ -356,7 +356,7 @@ func (f *fakeKernel) Reset() {
 	f.loadCount = 0
 }
 
-func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs bpfmanfs.BPFFS) (bpfman.LoadOutput, error) {
+func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
 	if spec.ProgramType() == bpfman.ProgramTypeUnspecified {
 		err := fmt.Errorf("program type must be specified")

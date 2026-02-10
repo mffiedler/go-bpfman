@@ -179,16 +179,19 @@ hierarchy could be tightened.
 `NewLinkPath` moved to the root `bpfman` package alongside
 `LinkRecord` (where they belong as domain types). Mount functions
 (`IsMounted`, `Mount`, `Unmount`, `EnsureMounted`, `EnsureMountedWith`)
-moved to `bpfmanfs/runtime/`, which already owned the mounting
+moved to `fs/runtime/`, which already owned the mounting
 responsibility. The dead `MountPoint` type was dropped. The
 `intent.go` op-type abstraction (six wrapper types around trivial
-`os.*` calls) was replaced with plain helper functions.
+`os.*` calls) was replaced with plain helper functions. Subsequently
+renamed `bpfmanfs/` to `fs/` and eliminated type stutter (`FSLayout`
+to `Layout`, `BytecodeFS` to `Bytecode`, `FilesystemContext` to
+`Context`).
 
 ---
 
 ## 8. `bpfmanfs/` claims to be I/O-free but performs I/O
 
-**Resolved.** Updated `bpfmanfs/doc.go` to accurately describe the
+**Resolved.** Updated `fs/doc.go` to accurately describe the
 two layers: pure path computation (I/O-free) and filesystem operations
 (real I/O with path-safety invariants).
 

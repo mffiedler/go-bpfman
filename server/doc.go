@@ -52,7 +52,7 @@
 //
 //  1. Open SQLite store at the layout's database path
 //  2. Create the cilium/ebpf kernel adapter
-//  3. Ensure runtime directories and bpffs mount via bpfmanfs/runtime
+//  3. Ensure runtime directories and bpffs mount via fs/runtime
 //  4. Configure signature verification from config
 //  5. Create the OCI image puller
 //  6. Create the manager with all dependencies

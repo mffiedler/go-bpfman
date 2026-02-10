@@ -5,15 +5,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 )
 
 // New creates runtime directories and ensures bpffs is mounted.
-// Returns a FilesystemContext capability token that proves the filesystem
+// Returns a Context capability token that proves the filesystem
 // is ready. Call once at startup before constructing a manager.
 //
-// The returned FilesystemContext should be passed to manager.New().
-func New(layout bpfmanfs.FSLayout, mounter Mounter, logger *slog.Logger) (bpfmanfs.FilesystemContext, error) {
+// The returned Context should be passed to manager.New().
+func New(layout fs.Layout, mounter Mounter, logger *slog.Logger) (fs.Context, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -28,15 +28,15 @@ func New(layout bpfmanfs.FSLayout, mounter Mounter, logger *slog.Logger) (bpfman
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			setupLogger.Error("failed to create directory",
 				"dir", dir, "error", err)
-			return bpfmanfs.FilesystemContext{}, fmt.Errorf("create directory %s: %w", dir, err)
+			return fs.Context{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 
 	if err := mounter.EnsureMounted(layout.BPFFSMountPoint()); err != nil {
 		setupLogger.Error("failed to mount bpffs", "error", err)
-		return bpfmanfs.FilesystemContext{}, err
+		return fs.Context{}, err
 	}
 
 	setupLogger.Debug("runtime directories ready")
-	return bpfmanfs.NewFilesystemContext(layout), nil
+	return fs.NewContext(layout), nil
 }

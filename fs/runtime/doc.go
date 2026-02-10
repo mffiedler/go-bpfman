@@ -2,16 +2,16 @@
 //
 // This package handles the one-time setup required before constructing a
 // manager: creating runtime directories and mounting bpffs. It is separate
-// from the bpfmanfs package to maintain the distinction between pure path
-// computation (bpfmanfs) and actual I/O operations (bpfmanfs/runtime).
+// from the fs package to maintain the distinction between pure path
+// computation (fs) and actual I/O operations (fs/runtime).
 //
-// The New function returns a FilesystemContext capability token that proves
+// The New function returns a Context capability token that proves
 // the filesystem is ready. This token is required by manager.New(), enforcing
 // that setup is complete before any operations.
 //
 // Usage:
 //
-//	layout, err := bpfmanfs.New("/run/bpfman")
+//	layout, err := fs.New("/run/bpfman")
 //	if err != nil {
 //	    return err
 //	}

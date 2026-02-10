@@ -1,4 +1,4 @@
-package bpfmanfs_test
+package fs_test
 
 import (
 	"path/filepath"
@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/fs"
 )
 
 func TestNew_ValidAbsolutePaths(t *testing.T) {
@@ -21,14 +21,14 @@ func TestNew_ValidAbsolutePaths(t *testing.T) {
 		{"/bpfman", "/bpfman"},
 	}
 	for _, tt := range tests {
-		layout, err := bpfmanfs.New(tt.input)
+		layout, err := fs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
 		assert.Equal(t, tt.expected, layout.Base(), "New(%q)", tt.input)
 	}
 }
 
 func TestNew_RejectsEmpty(t *testing.T) {
-	_, err := bpfmanfs.New("")
+	_, err := fs.New("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 }
@@ -45,7 +45,7 @@ func TestNew_RejectsRelative(t *testing.T) {
 		"foo/bar",
 	}
 	for _, path := range relativePaths {
-		_, err := bpfmanfs.New(path)
+		_, err := fs.New(path)
 		require.Error(t, err, "New(%q) should fail", path)
 		assert.Contains(t, err.Error(), "absolute", "New(%q)", path)
 	}
@@ -65,37 +65,37 @@ func TestNew_CleansPath(t *testing.T) {
 		{"/run/bpfman/", "/run/bpfman"},
 	}
 	for _, tt := range tests {
-		layout, err := bpfmanfs.New(tt.input)
+		layout, err := fs.New(tt.input)
 		require.NoError(t, err, "New(%q)", tt.input)
 		assert.Equal(t, tt.expected, layout.Base(), "New(%q)", tt.input)
 	}
 }
 
 func TestZeroValueLayout(t *testing.T) {
-	var layout bpfmanfs.FSLayout
-	assert.False(t, layout.Valid(), "zero FSLayout should not be valid")
+	var layout fs.Layout
+	assert.False(t, layout.Valid(), "zero Layout should not be valid")
 
-	// Methods on zero FSLayout should panic
-	assert.Panics(t, func() { layout.Base() }, "Base() on zero FSLayout should panic")
-	assert.Panics(t, func() { layout.DBPath() }, "DBPath() on zero FSLayout should panic")
-	assert.Panics(t, func() { layout.SocketPath() }, "SocketPath() on zero FSLayout should panic")
-	assert.Panics(t, func() { layout.RuntimeDirs() }, "RuntimeDirs() on zero FSLayout should panic")
+	// Methods on zero Layout should panic
+	assert.Panics(t, func() { layout.Base() }, "Base() on zero Layout should panic")
+	assert.Panics(t, func() { layout.DBPath() }, "DBPath() on zero Layout should panic")
+	assert.Panics(t, func() { layout.SocketPath() }, "SocketPath() on zero Layout should panic")
+	assert.Panics(t, func() { layout.RuntimeDirs() }, "RuntimeDirs() on zero Layout should panic")
 }
 
 func TestLayoutString(t *testing.T) {
-	// String() on zero FSLayout should not panic and return a safe representation
-	var zero bpfmanfs.FSLayout
-	assert.Equal(t, "bpfmanfs.FSLayout(<invalid>)", zero.String())
+	// String() on zero Layout should not panic and return a safe representation
+	var zero fs.Layout
+	assert.Equal(t, "fs.Layout(<invalid>)", zero.String())
 
-	// String() on valid FSLayout should include the path
-	layout, err := bpfmanfs.New("/run/bpfman")
+	// String() on valid Layout should include the path
+	layout, err := fs.New("/run/bpfman")
 	require.NoError(t, err)
-	assert.Equal(t, "bpfmanfs.FSLayout(/run/bpfman)", layout.String())
+	assert.Equal(t, "fs.Layout(/run/bpfman)", layout.String())
 }
 
 func TestRuntimeDirs(t *testing.T) {
 	parent := t.TempDir()
-	layout, err := bpfmanfs.New(filepath.Join(parent, "bpfman"))
+	layout, err := fs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
 
 	dirs := layout.RuntimeDirs()
@@ -107,7 +107,7 @@ func TestRuntimeDirs(t *testing.T) {
 
 func TestCSIDirs(t *testing.T) {
 	parent := t.TempDir()
-	layout, err := bpfmanfs.New(filepath.Join(parent, "bpfman"))
+	layout, err := fs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
 
 	dirs := layout.CSIDirs()
@@ -116,14 +116,14 @@ func TestCSIDirs(t *testing.T) {
 	assert.Equal(t, layout.CSIFSDir(), dirs[1])
 }
 
-func TestBytecodeFS_ZeroValue(t *testing.T) {
-	var layout bpfmanfs.FSLayout
-	// Calling BytecodeFS() on zero FSLayout should panic
-	assert.Panics(t, func() { layout.BytecodeFS() }, "BytecodeFS() on zero FSLayout should panic")
+func TestBytecode_ZeroValue(t *testing.T) {
+	var layout fs.Layout
+	// Calling Bytecode() on zero Layout should panic
+	assert.Panics(t, func() { layout.Bytecode() }, "Bytecode() on zero Layout should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {
-	var layout bpfmanfs.FSLayout
-	// Calling BPFFS() on zero FSLayout should panic
-	assert.Panics(t, func() { layout.BPFFS() }, "BPFFS() on zero FSLayout should panic")
+	var layout fs.Layout
+	// Calling BPFFS() on zero Layout should panic
+	assert.Panics(t, func() { layout.BPFFS() }, "BPFFS() on zero Layout should panic")
 }
