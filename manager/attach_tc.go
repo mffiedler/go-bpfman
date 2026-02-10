@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -127,11 +126,8 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	linkPinPath := m.fsctx.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
 
 	// Stale pin removal (preflight I/O).
-	if _, statErr := os.Stat(linkPinPath); statErr == nil {
-		m.logger.WarnContext(ctx, "removing stale TCX link pin", "path", linkPinPath)
-		if removeErr := os.Remove(linkPinPath); removeErr != nil {
-			return bpfman.Link{}, fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, removeErr)
-		}
+	if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {
+		return bpfman.Link{}, fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, err)
 	}
 
 	progPinPath := prog.Handles.PinPath
