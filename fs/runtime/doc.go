@@ -5,7 +5,7 @@
 // from the fs package to maintain the distinction between pure path
 // computation (fs) and actual I/O operations (fs/runtime).
 //
-// The New function returns a Context capability token that proves
+// The New function returns a Runtime capability token that proves
 // the filesystem is ready. This token is required by manager.New(), enforcing
 // that setup is complete before any operations.
 //
@@ -15,13 +15,13 @@
 //	if err != nil {
 //	    return err
 //	}
-//	fsctx, err := runtime.New(layout, runtime.RealMounter{}, logger)
+//	rt, err := runtime.New(layout, runtime.RealMounter{}, logger)
 //	if err != nil {
 //	    return err
 //	}
-//	mgr, err := manager.New(fsctx, store, kernel, discoverer, logger)
+//	mgr, err := manager.New(rt, store, kernel, discoverer, logger)
 //
 // For tests, use NoOpMounter to skip actual bpffs mounting:
 //
-//	fsctx, _ := runtime.New(layout, runtime.NoOpMounter{}, logger)
+//	rt, _ := runtime.New(layout, runtime.NoOpMounter{}, logger)
 package runtime

@@ -185,7 +185,7 @@ responsibility. The dead `MountPoint` type was dropped. The
 `os.*` calls) was replaced with plain helper functions. Subsequently
 renamed `bpfmanfs/` to `fs/` and eliminated type stutter (`FSLayout`
 to `Layout`, `BytecodeFS` to `Bytecode`, `FilesystemContext` to
-`Context`).
+`Runtime`).
 
 ---
 

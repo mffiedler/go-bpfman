@@ -18,9 +18,9 @@ import (
 // the store lookup and dependency checks that the public Unload
 // performs.
 func (m *Manager) unload(ctx context.Context, kernelID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
-	progPinPath := m.fsctx.BPFFS().ProgPinPath(kernelID)
-	mapsDir := m.fsctx.BPFFS().MapPinDir(kernelID)
-	linksDir := m.fsctx.BPFFS().LinkPinDir(kernelID)
+	progPinPath := m.rt.BPFFS().ProgPinPath(kernelID)
+	mapsDir := m.rt.BPFFS().MapPinDir(kernelID)
+	linksDir := m.rt.BPFFS().LinkPinDir(kernelID)
 
 	plan := m.unloadPlan(kernelID, programName, progPinPath, mapsDir, linksDir, links, persisted)
 	return operation.Run0(ctx, m.logger, m.executor, plan)

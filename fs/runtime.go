@@ -50,42 +50,42 @@ func (rt Bytecode) mustValid() {
 	}
 }
 
-// Context is a capability token proving that the filesystem
+// Runtime is a capability token proving that the filesystem
 // directories exist and bpffs is mounted. Obtain via runtime.New().
 //
-// Holding a Context guarantees:
+// Holding a Runtime guarantees:
 //   - Base directory and subdirectories exist
 //   - bpffs is mounted at the expected mount point
 //
 // This enables upfront validation before operations begin.
-type Context struct {
+type Runtime struct {
 	layout Layout
 }
 
-// NewContext creates a Context from a validated Layout.
+// NewRuntime creates a Runtime from a validated Layout.
 // This is called by runtime.New() after directories and bpffs are ready.
 // Direct callers must ensure the filesystem is properly initialised.
-func NewContext(layout Layout) Context {
-	return Context{layout: layout}
+func NewRuntime(layout Layout) Runtime {
+	return Runtime{layout: layout}
 }
 
 // Layout returns the underlying Layout.
-func (r Context) Layout() Layout {
+func (r Runtime) Layout() Layout {
 	return r.layout
 }
 
 // BPFFS returns the bpffs accessor for pin path conventions.
-func (r Context) BPFFS() BPFFS {
+func (r Runtime) BPFFS() BPFFS {
 	return r.layout.BPFFS()
 }
 
 // Bytecode returns the bytecode filesystem accessor for program persistence.
-func (r Context) Bytecode() Bytecode {
+func (r Runtime) Bytecode() Bytecode {
 	return r.layout.Bytecode()
 }
 
-// Valid reports whether the Context was properly constructed.
-func (r Context) Valid() bool {
+// Valid reports whether the Runtime was properly constructed.
+func (r Runtime) Valid() bool {
 	return r.layout.Valid()
 }
 

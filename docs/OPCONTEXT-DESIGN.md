@@ -228,7 +228,7 @@ Action.
 
 **Executor dependency.** Today the executor holds `store` +
 `kernel`. Bytecode removal (`rt.RemoveProgram`) hangs off
-`fsctx.Bytecode()`, not the kernel interface. Adding
+`rt.Bytecode()`, not the kernel interface. Adding
 `RemoveProgramDir` means the executor needs a third dependency --
 either the `Bytecode` handle directly or a narrow interface
 exposing `RemoveProgram(ctx, uint32) error`. This is a small
@@ -879,7 +879,7 @@ makes details precise and local. Both undo patterns appear:
 func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
     return operation.WithOp(ctx, m.beginOp, m.executor, func(op *operation.OpContext) (bpfman.Program, error) {
         name := spec.ProgramName()
-        rt := m.fsctx.Bytecode()
+        rt := m.rt.Bytecode()
         now := time.Now()
 
         // Preflight validation.
@@ -892,7 +892,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 
         // Phase 1: load into kernel and pin to bpffs.
         hLoad, loaded := operation.Fetch(op, outcome.StepKindKernelLoad, name, func() (*platform.KernelLoaded, error) {
-            return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+            return m.kernel.Load(ctx, spec, m.rt.BPFFS())
         })
         if op.Failed() {
             return bpfman.Program{}, op.Err()
@@ -1225,13 +1225,13 @@ the handle, and Action types gain the `action.` prefix.
 func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts) (bpfman.Program, error) {
     return operation.WithOp(ctx, m.beginOp, m.executor, func(op *operation.OpContext) (bpfman.Program, error) {
         name := spec.ProgramName()
-        rt := m.fsctx.Bytecode()
+        rt := m.rt.Bytecode()
         now := time.Now()
 
         op.Step(outcome.StepKindPreflight, "validation", func() error { ... })
 
         hLoad, loaded := operation.Fetch(op, outcome.StepKindKernelLoad, name, func() (*platform.KernelLoaded, error) {
-            return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+            return m.kernel.Load(ctx, spec, m.rt.BPFFS())
         })
         if op.Failed() {
             return bpfman.Program{}, op.Err()
@@ -1458,7 +1458,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts) operation.Plan {
 
         operation.Produce("kernel-load", outcome.StepKindKernelLoad, name,
             func(ctx context.Context) (*KernelLoaded, error) {
-                return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+                return m.kernel.Load(ctx, spec, m.rt.BPFFS())
             },
             operation.UndoFrom(func(loaded *KernelLoaded) []operation.UndoEntry {
                 return []operation.UndoEntry{
@@ -1472,7 +1472,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts) operation.Plan {
             operation.DependsOn("kernel-load"),
             func(ctx context.Context, loaded *KernelLoaded) error {
                 prov := buildProvenance(spec, loaded, time.Now())
-                return m.fsctx.Bytecode().PublishBytecode(loaded.Program.ID, ...)
+                return m.rt.Bytecode().PublishBytecode(loaded.Program.ID, ...)
             },
             operation.BestEffortUndo(func(loaded *KernelLoaded) operation.UndoEntry {
                 return operation.UndoEntry{
@@ -1758,7 +1758,7 @@ var loadedKey = operation.NewKey[*platform.KernelLoaded]("loaded")
 
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
     name := spec.ProgramName()
-    rt := m.fsctx.Bytecode()
+    rt := m.rt.Bytecode()
 
     return operation.Build(
         operation.Validate("preflight", outcome.StepKindPreflight, "validation",
@@ -1772,7 +1772,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 
         operation.Produce(loadedKey, outcome.StepKindKernelLoad, name,
             func(ctx context.Context, b *operation.Bindings) (*platform.KernelLoaded, error) {
-                return m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
+                return m.kernel.Load(ctx, spec, m.rt.BPFFS())
             },
             operation.DetailsFn(func(b *operation.Bindings) any {
                 loaded := operation.Get(b, loadedKey)
@@ -1857,7 +1857,7 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
         return bpfman.Program{}, err
     }
     loaded := operation.Get(b, loadedKey)
-    record := buildProgramRecord(spec, loaded, opts, m.fsctx.Bytecode(), now)
+    record := buildProgramRecord(spec, loaded, opts, m.rt.Bytecode(), now)
     return constructProgram(loaded, record), nil
 }
 ```

@@ -95,12 +95,12 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 				if err != nil {
 					return preparedAttach{}, err
 				}
-				progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
+				progPinPath := m.rt.BPFFS().ProgPinPath(p.programKernelID)
 				ap, err := p.prepare(prog, progPinPath)
 				if err != nil {
 					return preparedAttach{}, err
 				}
-				linkPinPath := m.fsctx.BPFFS().LinkPinPath(p.programKernelID, ap.linkName)
+				linkPinPath := m.rt.BPFFS().LinkPinPath(p.programKernelID, ap.linkName)
 				return preparedAttach{plan: ap, linkPinPath: linkPinPath}, nil
 			},
 		),

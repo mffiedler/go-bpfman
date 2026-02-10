@@ -32,7 +32,7 @@ func OpIDFromContext(ctx context.Context) uint64 {
 
 // Manager orchestrates BPF program management using fetch/compute/execute.
 type Manager struct {
-	fsctx             fs.Context
+	rt                fs.Runtime
 	store             platform.Store
 	kernel            platform.KernelOperations
 	executor          action.ExecutorWithResult
@@ -48,7 +48,7 @@ type Manager struct {
 // New creates a new Manager with all required dependencies.
 //
 // Required parameters:
-//   - fsctx: filesystem context (from runtime.New()) proving directories and bpffs are ready
+//   - rt: runtime capability token (from runtime.New()) proving directories and bpffs are ready
 //   - store: database for program/link metadata
 //   - kernel: kernel operations adapter
 //   - programDiscoverer: discovers existing kernel programs
@@ -57,13 +57,13 @@ type Manager struct {
 // Optional parameters:
 //   - imagePuller: OCI image puller for loading programs from container images (nil to disable)
 //
-// The fsctx parameter is a capability token from fs/runtime.New()
+// The rt parameter is a capability token from fs/runtime.New()
 // that proves the filesystem directories exist and bpffs is mounted.
 //
 // The logger should already be wrapped with WithOpIDHandler by the caller
 // (typically the server) to enable op_id extraction from context.
 func New(
-	fsctx fs.Context,
+	rt fs.Runtime,
 	imagePuller platform.ImagePuller,
 	store platform.Store,
 	kernel platform.KernelOperations,
@@ -75,12 +75,12 @@ func New(
 	}
 
 	return &Manager{
-		fsctx:             fsctx,
+		rt:                rt,
 		store:             store,
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          newExecutor(store, kernel, fsctx.Bytecode(), fsctx.BPFFS(), logger).(action.ExecutorWithResult),
+		executor:          newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil
@@ -88,12 +88,12 @@ func New(
 
 // Layout returns the filesystem layout.
 func (m *Manager) Layout() fs.Layout {
-	return m.fsctx.Layout()
+	return m.rt.Layout()
 }
 
-// FilesystemContext returns the filesystem context.
-func (m *Manager) FilesystemContext() fs.Context {
-	return m.fsctx
+// Runtime returns the filesystem runtime capability token.
+func (m *Manager) Runtime() fs.Runtime {
+	return m.rt
 }
 
 // ImagePuller returns the image puller, or nil if not configured.
@@ -169,12 +169,12 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	if err != nil {
 		return result, fmt.Errorf("list programs: %w", err)
 	}
-	scanner := m.fsctx.BPFFS().Scanner()
+	scanner := m.rt.BPFFS().Scanner()
 	for id := range dbPrograms {
 		if !kernelProgramIDs[id] {
 			continue // already absent; store GC will reap
 		}
-		pinPath := m.fsctx.BPFFS().ProgPinPath(id)
+		pinPath := m.rt.BPFFS().ProgPinPath(id)
 		if !scanner.PathExists(pinPath) {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
 				"kernel_id", id, "pin_path", pinPath)

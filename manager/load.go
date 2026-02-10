@@ -114,7 +114,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
-	rt := m.fsctx.Bytecode()
+	rt := m.rt.Bytecode()
 	perProgOpts := loadOpts{
 		UserMetadata: opts.UserMetadata,
 		Owner:        opts.Owner,
@@ -170,14 +170,14 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 // fs-publish, store-save.
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
 	programName := spec.ProgramName()
-	rt := m.fsctx.Bytecode()
+	rt := m.rt.Bytecode()
 
 	return operation.Build(
 		operation.Produce(loadedKey, programName,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
 				loaded, err := action.Produce[bpfman.LoadOutput](ctx, m.executor, action.LoadProgram{
 					Spec:  spec,
-					BPFFS: m.fsctx.BPFFS(),
+					BPFFS: m.rt.BPFFS(),
 				})
 				if err != nil {
 					return bpfman.LoadOutput{}, fmt.Errorf("load program %s: %w", programName, err)

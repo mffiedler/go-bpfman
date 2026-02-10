@@ -155,7 +155,7 @@ func (m *Manager) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.Lin
 
 // GetLinkInfo retrieves a link with presence information across store, kernel, and filesystem.
 func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspect.LinkInfo, error) {
-	scanner := m.fsctx.BPFFS().Scanner()
+	scanner := m.rt.BPFFS().Scanner()
 	return inspect.GetLink(ctx, m.store, m.kernel, scanner, linkID)
 }
 
@@ -169,7 +169,7 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspec
 // Returns an error if no programs match, or if multiple map owners exist
 // (data inconsistency).
 func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
-	scanner := m.fsctx.BPFFS().Scanner()
+	scanner := m.rt.BPFFS().Scanner()
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramRecord{}, 0, fmt.Errorf("snapshot: %w", err)
@@ -241,7 +241,7 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (bpfman.ProgramListResult, error) {
 	filter := bpfman.ApplyListOptions(opts...)
 
-	scanner := m.fsctx.BPFFS().Scanner()
+	scanner := m.rt.BPFFS().Scanner()
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)

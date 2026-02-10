@@ -123,7 +123,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	linkPinPath := m.fsctx.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
+	linkPinPath := m.rt.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
 
 	// Stale pin removal (preflight I/O).
 	if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {

@@ -9,11 +9,11 @@ import (
 )
 
 // New creates runtime directories and ensures bpffs is mounted.
-// Returns a Context capability token that proves the filesystem
+// Returns a Runtime capability token that proves the filesystem
 // is ready. Call once at startup before constructing a manager.
 //
-// The returned Context should be passed to manager.New().
-func New(layout fs.Layout, mounter Mounter, logger *slog.Logger) (fs.Context, error) {
+// The returned Runtime should be passed to manager.New().
+func New(layout fs.Layout, mounter Mounter, logger *slog.Logger) (fs.Runtime, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -28,15 +28,15 @@ func New(layout fs.Layout, mounter Mounter, logger *slog.Logger) (fs.Context, er
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			setupLogger.Error("failed to create directory",
 				"dir", dir, "error", err)
-			return fs.Context{}, fmt.Errorf("create directory %s: %w", dir, err)
+			return fs.Runtime{}, fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 
 	if err := mounter.EnsureMounted(layout.BPFFSMountPoint()); err != nil {
 		setupLogger.Error("failed to mount bpffs", "error", err)
-		return fs.Context{}, err
+		return fs.Runtime{}, err
 	}
 
 	setupLogger.Debug("runtime directories ready")
-	return fs.NewContext(layout), nil
+	return fs.NewRuntime(layout), nil
 }
