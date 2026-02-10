@@ -2,12 +2,10 @@ package manager
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/platform"
 )
 
 // XDP proceed-on action bits (matches XDP return codes).
@@ -29,25 +27,29 @@ const (
 func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
+	netnsPath := spec.Netns()
+
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
 		programKernelID: spec.ProgramID(),
 		ifindex:         ifindex,
 		ifname:          ifname,
-		netnsPath:       spec.Netns(),
+		netnsPath:       netnsPath,
 		target:          ifname + ":xdp",
 		dispType:        dispatcher.DispatcherTypeXDP,
-		createDispatcher: func(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
-			return m.createXDPDispatcher(ctx, nsid, ifindex, netnsPath)
+		ensureAction: func() action.Action {
+			return action.EnsureXDPDispatcher{
+				Ifindex:   uint32(ifindex),
+				NetnsPath: netnsPath,
+			}
 		},
-		attachExtension: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
-			return m.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
-				DispatcherPinPath: dispatcherPinPath,
-				ObjectPath:        objectPath,
-				ProgramName:       programName,
-				Position:          position,
-				LinkPinPath:       linkPinPath,
-				MapPinDir:         mapPinDir,
-			})
+		extensionAction: func(ds dispatcher.State, prog bpfman.ProgramRecord) action.Action {
+			return action.AttachXDPExtension{
+				DispState:   ds,
+				NetnsPath:   netnsPath,
+				ObjectPath:  prog.Load.ObjectPath(),
+				ProgramName: prog.Meta.Name,
+				MapPinDir:   prog.Handles.MapPinPath,
+			}
 		},
 		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {
 			return bpfman.XDPDetails{
@@ -62,90 +64,4 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 			}
 		},
 	})
-}
-
-// createXDPDispatcher creates a new XDP dispatcher for the given interface.
-//
-// Pattern: COMPUTE -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) createXDPDispatcher(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
-	// COMPUTE: Calculate paths according to Rust bpfman convention
-	fs := m.fsctx.BPFFS()
-	revision := uint32(1)
-	linkPinPath := fs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	progPinPath := fs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
-
-	m.logger.InfoContext(ctx, "creating XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"netns", netnsPath,
-		"revision", revision,
-		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPinPath)
-
-	// KERNEL I/O: Create dispatcher (returns IDs)
-	spec := dispatcher.XDPDispatcherAttachSpec{
-		Target: bpfman.AttachTarget{
-			IfIndex: int(ifindex),
-			NetNS:   netnsPath,
-		},
-		ProgPinPath: progPinPath,
-		LinkPinPath: linkPinPath,
-		NumProgs:    dispatcher.MaxPrograms,
-		ProceedOn:   xdpProceedOnPass,
-	}
-	if err := spec.Validate(); err != nil {
-		return dispatcher.State{}, fmt.Errorf("invalid XDP dispatcher spec: %w", err)
-	}
-	result, err := m.kernel.AttachXDPDispatcher(ctx, spec)
-	if err != nil {
-		return dispatcher.State{}, err
-	}
-
-	// COMPUTE: Build save action from kernel result
-	state := computeXDPDispatcherState(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision, result)
-	saveAction := action.SaveDispatcher{State: state}
-
-	// EXECUTE: Save through executor
-	if err := m.executor.Execute(ctx, saveAction); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
-			"ifindex", ifindex, "error", err)
-		// Rollback: detach link first, then remove prog pin.
-		if rbErr := m.executor.Execute(ctx, action.DetachLink{PinPath: linkPinPath}); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
-				"path", linkPinPath, "error", rbErr)
-		}
-		if rbErr := m.executor.Execute(ctx, action.RemovePin{Path: progPinPath}); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-				"path", progPinPath, "error", rbErr)
-		}
-		return dispatcher.State{}, fmt.Errorf("save dispatcher: %w", err)
-	}
-
-	m.logger.InfoContext(ctx, "created XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"dispatcher_id", result.DispatcherID,
-		"link_id", result.LinkID,
-		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPinPath)
-
-	return state, nil
-}
-
-// computeXDPDispatcherState is a pure function that builds a DispatcherState
-// from kernel attach results.
-func computeXDPDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.XDPDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
-		Type:     dispType,
-		Nsid:     nsid,
-		Ifindex:  ifindex,
-		Revision: revision,
-		KernelID: result.DispatcherID,
-		LinkID:   result.LinkID,
-	}
 }

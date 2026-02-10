@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
-	"github.com/frobware/go-bpfman/platform"
 )
 
 // TC proceed-on action bits (matches TC_ACT_* return codes).
@@ -42,6 +41,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 	direction := spec.Direction()
 	priority := spec.Priority()
 	proceedOn := spec.ProceedOn()
+	netnsPath := spec.Netns()
 
 	var dispType dispatcher.DispatcherType
 	if direction == bpfman.TCDirectionIngress {
@@ -54,22 +54,29 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		programKernelID: spec.ProgramID(),
 		ifindex:         ifindex,
 		ifname:          ifname,
-		netnsPath:       spec.Netns(),
+		netnsPath:       netnsPath,
 		target:          ifname + ":" + string(direction),
-		direction:       string(direction),
 		dispType:        dispType,
-		createDispatcher: func(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
-			return m.createTCDispatcher(ctx, nsid, ifindex, ifname, direction, dispType, netnsPath)
+		ensureAction: func() action.Action {
+			return action.EnsureTCDispatcher{
+				Ifindex:   uint32(ifindex),
+				Ifname:    ifname,
+				Direction: direction,
+				DispType:  dispType,
+				NetnsPath: netnsPath,
+			}
 		},
-		attachExtension: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
-			return m.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
-				DispatcherPinPath: dispatcherPinPath,
-				ObjectPath:        objectPath,
-				ProgramName:       programName,
-				Position:          position,
-				LinkPinPath:       linkPinPath,
-				MapPinDir:         mapPinDir,
-			})
+		extensionAction: func(ds dispatcher.State, prog bpfman.ProgramRecord) action.Action {
+			return action.AttachTCExtension{
+				DispState:   ds,
+				Ifname:      ifname,
+				Direction:   direction,
+				DispType:    dispType,
+				NetnsPath:   netnsPath,
+				ObjectPath:  prog.Load.ObjectPath(),
+				ProgramName: prog.Meta.Name,
+				MapPinDir:   prog.Handles.MapPinPath,
+			}
 		},
 		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {
 			return bpfman.TCDetails{
@@ -245,103 +252,4 @@ func computeTCXAttachOrder(existingLinks []bpfman.TCXLinkInfo, newPriority int32
 	// All existing links have priority <= ours, attach after the last one
 	lastLink := existingLinks[len(existingLinks)-1]
 	return bpfman.TCXAttachAfter(lastLink.KernelProgramID)
-}
-
-// createTCDispatcher creates a new TC dispatcher for the given interface and direction.
-// The dispatcher is attached via legacy netlink TC (clsact qdisc + BPF filter),
-// matching the upstream Rust bpfman approach.
-//
-// Pattern: COMPUTE -> KERNEL I/O -> COMPUTE -> EXECUTE
-func (m *Manager) createTCDispatcher(ctx context.Context, nsid uint64, ifindex uint32, ifname string, direction bpfman.TCDirection, dispType dispatcher.DispatcherType, netnsPath string) (dispatcher.State, error) {
-	// COMPUTE: Calculate paths according to Rust bpfman convention.
-	// TC dispatchers do not use a link pin -- legacy netlink TC has no
-	// BPF link to pin. The filter is identified by handle + priority.
-	fs := m.fsctx.BPFFS()
-	revision := uint32(1)
-	progPinPath := fs.DispatcherProgPath(dispType, nsid, ifindex, revision)
-
-	m.logger.InfoContext(ctx, "creating TC dispatcher",
-		"direction", direction,
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"ifname", ifname,
-		"netns", netnsPath,
-		"revision", revision,
-		"prog_pin_path", progPinPath)
-
-	// KERNEL I/O: Create TC dispatcher using legacy netlink TC
-	spec := dispatcher.TCDispatcherAttachSpec{
-		Target: bpfman.AttachTarget{
-			IfIndex: int(ifindex),
-			NetNS:   netnsPath,
-		},
-		IfName:      ifname,
-		ProgPinPath: progPinPath,
-		Direction:   direction,
-		NumProgs:    dispatcher.MaxPrograms,
-		ProceedOn:   uint32(DefaultTCProceedOn),
-	}
-	if err := spec.Validate(); err != nil {
-		return dispatcher.State{}, fmt.Errorf("invalid TC dispatcher spec: %w", err)
-	}
-	result, err := m.kernel.AttachTCDispatcher(ctx, spec)
-	if err != nil {
-		return dispatcher.State{}, err
-	}
-
-	// COMPUTE: Build save action from kernel result
-	state := computeTCDispatcherState(dispType, nsid, ifindex, revision, result)
-	saveAction := action.SaveDispatcher{State: state}
-
-	// EXECUTE: Save through executor
-	if err := m.executor.Execute(ctx, saveAction); err != nil {
-		m.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
-			"ifname", ifname, "error", err)
-		// Rollback: detach TC filter first, then remove prog pin.
-		if rbErr := m.executor.Execute(ctx, action.DetachTCFilter{
-			Ifindex:  int(ifindex),
-			Ifname:   ifname,
-			Parent:   tcParentHandle(dispType),
-			Priority: result.Priority,
-			Handle:   result.Handle,
-		}); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback: detach TC filter failed",
-				"ifname", ifname, "error", rbErr)
-		}
-		if rbErr := m.executor.Execute(ctx, action.RemovePin{Path: progPinPath}); rbErr != nil {
-			m.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-				"path", progPinPath, "error", rbErr)
-		}
-		return dispatcher.State{}, fmt.Errorf("save TC dispatcher: %w", err)
-	}
-
-	m.logger.InfoContext(ctx, "created TC dispatcher",
-		"direction", direction,
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"ifname", ifname,
-		"dispatcher_id", result.DispatcherID,
-		"handle", fmt.Sprintf("%x", result.Handle),
-		"priority", result.Priority,
-		"prog_pin_path", progPinPath)
-
-	return state, nil
-}
-
-// computeTCDispatcherState is a pure function that builds a DispatcherState
-// from TC kernel attach results.
-func computeTCDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.TCDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
-		Type:     dispType,
-		Nsid:     nsid,
-		Ifindex:  ifindex,
-		Revision: revision,
-		KernelID: result.DispatcherID,
-		Priority: result.Priority,
-	}
 }

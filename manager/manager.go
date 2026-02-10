@@ -79,7 +79,7 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          newExecutor(store, kernel, fsctx.BytecodeFS()).(action.ExecutorWithResult),
+		executor:          newExecutor(store, kernel, fsctx.BytecodeFS(), fsctx.BPFFS(), logger).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil

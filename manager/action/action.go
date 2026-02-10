@@ -232,3 +232,63 @@ type RemoveProgramDir struct {
 }
 
 func (RemoveProgramDir) isAction() {}
+
+// Deep dispatcher actions - cross-subsystem operations that the
+// executor handles internally (kernel + store transactions with
+// rollback). These replace direct manager method calls for dispatcher
+// attach, moving all cross-subsystem complexity behind the opcode
+// boundary.
+
+// EnsureXDPDispatcher looks up an existing XDP dispatcher for the
+// given interface, or creates one if none exists. Returns
+// dispatcher.State via ExecuteResult.
+type EnsureXDPDispatcher struct {
+	Ifindex   uint32
+	NetnsPath string
+}
+
+func (EnsureXDPDispatcher) isAction() {}
+
+// EnsureTCDispatcher looks up an existing TC dispatcher for the given
+// interface and direction, or creates one if none exists. Returns
+// dispatcher.State via ExecuteResult.
+type EnsureTCDispatcher struct {
+	Ifindex   uint32
+	Ifname    string
+	Direction bpfman.TCDirection
+	DispType  dispatcher.DispatcherType
+	NetnsPath string
+}
+
+func (EnsureTCDispatcher) isAction() {}
+
+// AttachXDPExtension attaches a user program as an extension to an
+// XDP dispatcher slot. Includes stale-dispatcher recovery: if the
+// first attempt fails with os.ErrNotExist, the dispatcher is
+// recreated and the attach retried once. Returns extensionResult via
+// ExecuteResult (package-internal type; callers use action.Produce).
+type AttachXDPExtension struct {
+	DispState   dispatcher.State
+	NetnsPath   string
+	ObjectPath  string
+	ProgramName string
+	MapPinDir   string
+}
+
+func (AttachXDPExtension) isAction() {}
+
+// AttachTCExtension attaches a user program as an extension to a TC
+// dispatcher slot. Same stale-dispatcher recovery as XDP. Returns
+// extensionResult via ExecuteResult.
+type AttachTCExtension struct {
+	DispState   dispatcher.State
+	Ifname      string
+	Direction   bpfman.TCDirection
+	DispType    dispatcher.DispatcherType
+	NetnsPath   string
+	ObjectPath  string
+	ProgramName string
+	MapPinDir   string
+}
+
+func (AttachTCExtension) isAction() {}

@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store"
 )
@@ -17,14 +20,18 @@ type executor struct {
 	store  platform.Store
 	kernel platform.KernelOperations
 	bcfs   bpfmanfs.BytecodeFS
+	bpffs  bpfmanfs.BPFFS
+	logger *slog.Logger
 }
 
 // newExecutor creates a new action executor.
-func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs bpfmanfs.BytecodeFS) action.Executor {
+func newExecutor(store platform.Store, kernel platform.KernelOperations, bcfs bpfmanfs.BytecodeFS, bpffs bpfmanfs.BPFFS, logger *slog.Logger) action.Executor {
 	return &executor{
 		store:  store,
 		kernel: kernel,
 		bcfs:   bcfs,
+		bpffs:  bpffs,
+		logger: logger,
 	}
 }
 
@@ -120,6 +127,40 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 
 	case action.RemoveProgramDir:
 		return nil, e.bcfs.RemoveProgram(a.KernelID)
+
+	case action.EnsureXDPDispatcher:
+		nsid, err := netns.GetNsid(a.NetnsPath)
+		if err != nil {
+			return nil, fmt.Errorf("get nsid: %w", err)
+		}
+		state, err := e.store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), nsid, a.Ifindex)
+		if err == nil {
+			return state, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("get dispatcher: %w", err)
+		}
+		return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.NetnsPath)
+
+	case action.EnsureTCDispatcher:
+		nsid, err := netns.GetNsid(a.NetnsPath)
+		if err != nil {
+			return nil, fmt.Errorf("get nsid: %w", err)
+		}
+		state, err := e.store.GetDispatcher(ctx, string(a.DispType), nsid, a.Ifindex)
+		if err == nil {
+			return state, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("get dispatcher: %w", err)
+		}
+		return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+
+	case action.AttachXDPExtension:
+		return attachXDPExtensionWithRetry(ctx, e.store, e.kernel, e.bpffs, e.logger, a.DispState, a.NetnsPath, a.ObjectPath, a.ProgramName, a.MapPinDir)
+
+	case action.AttachTCExtension:
+		return attachTCExtensionWithRetry(ctx, e.store, e.kernel, e.bpffs, e.logger, a.DispState, a.Ifname, a.Direction, a.DispType, a.NetnsPath, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", a)
