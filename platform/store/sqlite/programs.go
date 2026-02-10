@@ -11,11 +11,10 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // Get retrieves program metadata by kernel ID.
-// Returns store.ErrNotFound if the program does not exist.
+// Returns platform.ErrRecordNotFound if the program does not exist.
 func (s *sqliteStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	start := time.Now()
 	row := s.stmtGetProgram.QueryRowContext(ctx, kernelID)
@@ -23,7 +22,7 @@ func (s *sqliteStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfma
 	prog, err := s.scanProgram(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.ProgramRecord{}, store.ErrNotFound
+		return bpfman.ProgramRecord{}, platform.ErrRecordNotFound
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)

@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -88,7 +88,7 @@ func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, p
 	link, err := s.mgr.Attach(ctx, scope, spec)
 	if err != nil {
 		var notFound bpfman.ErrProgramNotFound
-		if errors.As(err, &notFound) || errors.Is(err, store.ErrNotFound) {
+		if errors.As(err, &notFound) || errors.Is(err, platform.ErrRecordNotFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
 		}
 		return nil, status.Errorf(codes.Internal, "attach tracepoint: %v", err)
@@ -367,7 +367,7 @@ func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachR
 		switch {
 		case errors.As(err, &notManaged), errors.As(err, &notFound):
 			return nil, status.Errorf(codes.NotFound, "%v", err)
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, platform.ErrRecordNotFound):
 			return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.LinkId)
 		default:
 			return nil, status.Errorf(codes.Internal, "detach link: %v", err)

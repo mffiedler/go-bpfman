@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // ErrMultipleProgramsFound is returned when multiple programs match the
@@ -188,7 +188,7 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 
 	switch len(matches) {
 	case 0:
-		return bpfman.ProgramRecord{}, 0, fmt.Errorf("program with %s=%s: %w", key, value, store.ErrNotFound)
+		return bpfman.ProgramRecord{}, 0, fmt.Errorf("program with %s=%s: %w", key, value, platform.ErrRecordNotFound)
 	case 1:
 		return *matches[0].Managed, matches[0].KernelID, nil
 	default:

@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -180,7 +179,7 @@ func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadR
 		switch {
 		case errors.As(err, &notManaged), errors.As(err, &notFound):
 			return nil, status.Errorf(codes.NotFound, "%v", err)
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, platform.ErrRecordNotFound):
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
 		default:
 			return nil, status.Errorf(codes.Internal, "failed to unload program: %v", err)

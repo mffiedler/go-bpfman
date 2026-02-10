@@ -10,7 +10,7 @@ import (
 	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // ----------------------------------------------------------------------------
@@ -33,7 +33,7 @@ func (s *sqliteStore) DeleteLink(ctx context.Context, linkID kernel.LinkID) erro
 	}
 	s.logger.Debug("sql", "stmt", "DeleteLink", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
-		return fmt.Errorf("link %d: %w", linkID, store.ErrNotFound)
+		return fmt.Errorf("link %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 
 	return nil
@@ -588,7 +588,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 
 	err := row.Scan(&linkID, &kindStr, &programID, &pinPath, &isSynthetic, &createdAtStr)
 	if err == sql.ErrNoRows {
-		return bpfman.LinkRecord{}, store.ErrNotFound
+		return bpfman.LinkRecord{}, platform.ErrRecordNotFound
 	}
 	if err != nil {
 		return bpfman.LinkRecord{}, err
@@ -681,7 +681,7 @@ func (s *sqliteStore) getTracepointDetails(ctx context.Context, linkID kernel.Li
 	err := row.Scan(&details.Group, &details.Name)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetTracepointDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.TracepointDetails{}, fmt.Errorf("tracepoint details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.TracepointDetails{}, fmt.Errorf("tracepoint details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetTracepointDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -700,7 +700,7 @@ func (s *sqliteStore) getKprobeDetails(ctx context.Context, linkID kernel.LinkID
 	err := row.Scan(&details.FnName, &details.Offset, &retprobe)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetKprobeDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.KprobeDetails{}, fmt.Errorf("kprobe details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.KprobeDetails{}, fmt.Errorf("kprobe details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetKprobeDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -722,7 +722,7 @@ func (s *sqliteStore) getUprobeDetails(ctx context.Context, linkID kernel.LinkID
 	err := row.Scan(&details.Target, &fnName, &details.Offset, &pid, &retprobe)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetUprobeDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.UprobeDetails{}, fmt.Errorf("uprobe details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.UprobeDetails{}, fmt.Errorf("uprobe details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetUprobeDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -747,7 +747,7 @@ func (s *sqliteStore) getFentryDetails(ctx context.Context, linkID kernel.LinkID
 	err := row.Scan(&details.FnName)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetFentryDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.FentryDetails{}, fmt.Errorf("fentry details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.FentryDetails{}, fmt.Errorf("fentry details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetFentryDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -765,7 +765,7 @@ func (s *sqliteStore) getFexitDetails(ctx context.Context, linkID kernel.LinkID)
 	err := row.Scan(&details.FnName)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetFexitDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.FexitDetails{}, fmt.Errorf("fexit details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.FexitDetails{}, fmt.Errorf("fexit details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetFexitDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -786,7 +786,7 @@ func (s *sqliteStore) getXDPDetails(ctx context.Context, linkID kernel.LinkID) (
 		&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetXDPDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.XDPDetails{}, fmt.Errorf("xdp details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.XDPDetails{}, fmt.Errorf("xdp details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetXDPDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -814,7 +814,7 @@ func (s *sqliteStore) getTCDetails(ctx context.Context, linkID kernel.LinkID) (b
 		&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetTCDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.TCDetails{}, fmt.Errorf("tc details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.TCDetails{}, fmt.Errorf("tc details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetTCDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -841,7 +841,7 @@ func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID kernel.LinkID) (
 	err := row.Scan(&details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &netns, &nsid)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetTCXDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return bpfman.TCXDetails{}, fmt.Errorf("tcx details for %d: %w", linkID, store.ErrNotFound)
+		return bpfman.TCXDetails{}, fmt.Errorf("tcx details for %d: %w", linkID, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetTCXDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)

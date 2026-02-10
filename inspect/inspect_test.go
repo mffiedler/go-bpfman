@@ -17,7 +17,7 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // fakeStore implements StoreLister for testing.
@@ -35,7 +35,7 @@ func (s *fakeStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.
 	if p, ok := s.programs[kernelID]; ok {
 		return p, nil
 	}
-	return bpfman.ProgramRecord{}, store.ErrNotFound
+	return bpfman.ProgramRecord{}, platform.ErrRecordNotFound
 }
 
 func (s *fakeStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
@@ -48,7 +48,7 @@ func (s *fakeStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.L
 			return l, nil
 		}
 	}
-	return bpfman.LinkRecord{}, store.ErrNotFound
+	return bpfman.LinkRecord{}, platform.ErrRecordNotFound
 }
 
 func (s *fakeStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, error) {
@@ -61,7 +61,7 @@ func (s *fakeStore) GetDispatcher(ctx context.Context, dispType string, nsid uin
 			return d, nil
 		}
 	}
-	return dispatcher.State{}, store.ErrNotFound
+	return dispatcher.State{}, platform.ErrRecordNotFound
 }
 
 // fakeKernelSource implements KernelLister for testing.

@@ -12,7 +12,7 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // ErrNotFound is returned when a program is not found in any source.
@@ -659,7 +659,7 @@ func GetProgram(
 	if err == nil {
 		row.Managed = &prog
 		row.Presence.InStore = true
-	} else if !errors.Is(err, store.ErrNotFound) {
+	} else if !errors.Is(err, platform.ErrRecordNotFound) {
 		// Real error (not just "not found")
 		return ProgramView{}, err
 	}
@@ -709,7 +709,7 @@ func GetLink(
 	if err == nil {
 		info.Record = record
 		info.Presence.InStore = true
-	} else if !errors.Is(err, store.ErrNotFound) {
+	} else if !errors.Is(err, platform.ErrRecordNotFound) {
 		// Real error (not just "not found")
 		return LinkInfo{}, err
 	}
@@ -765,7 +765,7 @@ func GetDispatcher(
 		if state.LinkID != 0 {
 			info.LinkPresence.InStore = true
 		}
-	} else if !errors.Is(err, store.ErrNotFound) {
+	} else if !errors.Is(err, platform.ErrRecordNotFound) {
 		// Real error (not just "not found")
 		return DispatcherInfo{}, err
 	}

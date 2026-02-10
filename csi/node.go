@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // mapsMode is the permission mode for CSI-exposed maps (owner+group read/write).
@@ -137,7 +137,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		// NotFound is expected during reconciliation — the CSI
 		// driver may ask before the operator has loaded the program.
 		switch {
-		case errors.Is(err, store.ErrNotFound):
+		case errors.Is(err, platform.ErrRecordNotFound):
 			d.logger.Warn("program not yet loaded",
 				"programName", programName,
 				"error", err,

@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // executor interprets and executes actions.
@@ -48,7 +47,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.GetProgramFromStore:
 		rec, err := e.store.Get(ctx, a.KernelID)
 		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
+			if errors.Is(err, platform.ErrRecordNotFound) {
 				return nil, bpfman.ErrProgramNotFound{ID: a.KernelID}
 			}
 			return nil, fmt.Errorf("get program %d: %w", a.KernelID, err)
@@ -58,7 +57,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.CheckProgramNotInStore:
 		if _, err := e.store.Get(ctx, a.KernelID); err == nil {
 			return nil, fmt.Errorf("program %d already exists in database", a.KernelID)
-		} else if !errors.Is(err, store.ErrNotFound) {
+		} else if !errors.Is(err, platform.ErrRecordNotFound) {
 			return nil, fmt.Errorf("check existing program %d: %w", a.KernelID, err)
 		}
 		return nil, nil
@@ -101,12 +100,6 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.AttachFexit:
 		return e.kernel.AttachFexit(ctx, a.ProgPinPath, a.FnName, a.LinkPinPath)
 
-	case action.Batch:
-		return nil, e.ExecuteAll(ctx, a.Actions)
-
-	case action.Sequence:
-		return nil, e.ExecuteAll(ctx, a.Actions)
-
 	case action.SaveDispatcher:
 		return nil, e.store.SaveDispatcher(ctx, a.State)
 
@@ -137,7 +130,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		if err == nil {
 			return state, nil
 		}
-		if !errors.Is(err, store.ErrNotFound) {
+		if !errors.Is(err, platform.ErrRecordNotFound) {
 			return nil, fmt.Errorf("get dispatcher: %w", err)
 		}
 		return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.NetnsPath)
@@ -151,7 +144,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		if err == nil {
 			return state, nil
 		}
-		if !errors.Is(err, store.ErrNotFound) {
+		if !errors.Is(err, platform.ErrRecordNotFound) {
 			return nil, fmt.Errorf("get dispatcher: %w", err)
 		}
 		return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)

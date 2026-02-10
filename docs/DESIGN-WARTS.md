@@ -1,0 +1,243 @@
+# Design Warts
+
+An honest catalogue of where the architecture falls short, assessed
+against two reference texts:
+
+- Chiusano & Bjarnason, *Functional Programming in Scala* (2nd ed.)
+  -- "the Red Book"
+- Ousterhout, *A Philosophy of Software Design*
+
+Each section states the tension, points at concrete code, and sketches
+what a resolution might look like. Nothing here is urgent; the list is
+a backlog of design debts to revisit when adjacent code is changing.
+
+---
+
+## 1. Plans are closures, not values
+
+The Red Book's central idea is "programs as values": a plan should be
+a data structure you can inspect, transform, print, or diff before
+running it. The current plan model gets this right for the undo path
+(UndoFrom returns `[]action.Action` -- pure data) but not for the
+forward path.
+
+Forward nodes are opaque closures that capture the manager's executor,
+filesystem context, and logger by reference:
+
+    // manager/load.go:176-198
+    operation.Produce(loadedKey, programName,
+        func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
+            loaded, err := action.Produce[bpfman.LoadOutput](ctx, m.executor, action.LoadProgram{...})
+            ...
+        },
+        operation.UndoFrom(func(b *operation.Bindings) []action.Action { ... }),
+    )
+
+You cannot ask "what actions will this plan produce?" without running
+it. A fully Red-Book plan would be a free monad over the Action type
+(`Free[Action, A]`), where the interpreter threads results through via
+flatMap. In Go, that requires massive ceremony because the type system
+cannot express typed continuations, so closures are the pragmatic
+escape hatch.
+
+**What is lost:** plan-level testing without an executor ("given this
+input, what actions *would* be produced?"), and inspectability
+(logging the plan before execution, comparing two plans structurally).
+
+**Possible resolution:** if the need arises, factor each node's logic
+into a function that returns `[]action.Action` given bindings, and
+have the interpreter execute those actions. This lifts the forward
+path from closures to data. The cost is more boilerplate.
+
+---
+
+## 2. Bindings are stringly-typed with runtime panics
+
+`Key[T]` provides a type-safe wrapper, but the underlying store is
+`map[string]any`:
+
+    // manager/operation/types.go:16
+    type Bindings struct{ m map[string]any }
+
+    // manager/operation/types.go:23-32
+    func Get[T any](b *Bindings, key Key[T]) T {
+        v, ok := b.m[key.name]
+        if !ok {
+            panic(...)
+        }
+        ...
+    }
+
+If two keys share the same name but differ in type, or if `Get` is
+called before the producing node has run, the result is a runtime
+panic, not a compile error. The sequential structure of plans
+mitigates this in practice (node N only runs after node N-1), but
+nothing in the type system enforces that a `Get` for `loadedKey`
+appears only after the `Produce` that binds it.
+
+In Scala you would use an indexed state monad or HList to track what
+has been produced at the type level. Go cannot express this.
+
+**Risk level:** low -- the sequential execution order and the
+convention of declaring keys alongside the plan that produces them
+make misuse unlikely. But the invariant is maintained by convention,
+not by the compiler.
+
+---
+
+## 3. Coherency operations are opaque closures, not actions
+
+The coherency system separates diagnosis (declarative rules over an
+`ObservedState` snapshot) from remediation (`Operation` with an
+`Execute` function). But `Operation.Execute` is `func() error`, not
+`[]action.Action`:
+
+    // manager/coherency/types.go:119-124
+    type Operation struct {
+        Description string
+        Execute     func() error
+    }
+
+These closures close over the observed state and mutate the store
+through it. The `Violation` value is inspectable data; the `Operation`
+inside it is not -- you cannot see what it will do without running it.
+
+If the action pattern were applied consistently, `Operation` would
+contain `[]action.Action` and the GC executor would interpret those
+actions through the same executor used by plans. The coherency system
+predates the plan/action infrastructure, so this is likely historical
+rather than deliberate.
+
+**Possible resolution:** when touching GC rules, migrate `Operation`
+to carry actions rather than closures. This would unify the two
+execution paths and make GC operations testable via a fake executor.
+
+---
+
+## 4. Batch and Sequence have identical implementations
+
+**Resolved.** Removed both types; they were dead code with no
+construction sites in the codebase.
+
+---
+
+## 5. Two rollback strategies coexist
+
+The plan interpreter (`operation/run.go`) provides automatic rollback:
+accumulated undo groups executed in reverse order on failure. But the
+executor's dispatcher helpers (`manager/executor_dispatcher.go`)
+perform their own inline rollback:
+
+    if err := store.SaveDispatcher(ctx, state); err != nil {
+        kernel.DetachLink(ctx, linkPinPath)
+        kernel.RemovePin(ctx, progPinPath)
+        return err
+    }
+
+This is an honest escape hatch: dispatcher creation is "too deep" for
+the plan model because it needs a mini-transaction (kernel I/O + store
+persistence) inside a single action. Ousterhout would approve of
+pulling complexity downward. But a reader now has to know which
+rollback mechanism governs any given operation -- the plan
+interpreter's or the executor helper's.
+
+**Possible resolution:** document the two strategies explicitly in
+code comments at each site. If the dispatcher helper pattern
+proliferates beyond dispatchers, consider whether it should become a
+first-class plan feature (nested plans or sub-transactions).
+
+---
+
+## 6. Forward/undo asymmetry
+
+Within a single plan node, the forward path is a closure and the undo
+path is `[]action.Action`. This means undo is inspectable and
+testable independently of the executor, but the forward path is not.
+The asymmetry is not accidental -- forward nodes often have data
+dependencies (the output of node 1 feeds node 2) that require
+closures in Go -- but it does mean the two halves of a node's
+semantics have different testability characteristics.
+
+**Risk level:** low. The asymmetry is a direct consequence of Go's
+type system limitations and the pragmatic choice to use closures for
+forward execution. Noting it here so it remains a conscious trade-off
+rather than an accidental one.
+
+---
+
+# Package Structure
+
+The layering is clean, dependencies flow downward, and there are no
+circular imports. The following items are places where the package
+hierarchy could be tightened.
+
+---
+
+## 7. `bpffs/` and `bpfmanfs/` are confusingly named siblings
+
+`bpffs/` is a single file containing mount detection, mount/unmount,
+and two newtype wrappers (`MountPoint`, `LinkPath`). `bpfmanfs/` is
+the filesystem layout package -- path computation, bytecode
+persistence, scanning, and safe removal methods. The two names differ
+by three letters in the middle. A newcomer scanning the top-level
+directory will not know which is which.
+
+The dependency is one-directional: `bpfmanfs/runtime/` imports
+`bpffs/`, but `bpffs/` does not import `bpfmanfs/`. The newtypes
+`MountPoint` and `LinkPath` live in `bpffs/` and are used by the root
+`bpfman` package and `bpfmanfs/runtime/`.
+
+**Possible resolution:** fold `bpffs/` into `bpfmanfs/mount` or
+absorb it into `bpfmanfs` directly. The mount detection logic is
+small enough not to warrant its own top-level package, and the
+newtypes belong to the same filesystem domain. This removes the
+naming ambiguity without changing any dependency arrows.
+
+---
+
+## 8. `bpfmanfs/` claims to be I/O-free but performs I/O
+
+**Resolved.** Updated `bpfmanfs/doc.go` to accurately describe the
+two layers: pure path computation (I/O-free) and filesystem operations
+(real I/O with path-safety invariants).
+
+---
+
+## 9. `platform/store/` exists only for one sentinel error
+
+**Resolved.** Moved `store.ErrNotFound` to `platform.ErrRecordNotFound`
+(renamed to reflect its semantics: a store record lookup that found no
+row). Deleted `platform/store/errors.go`.
+
+---
+
+## 10. `inspect/` and `manager/coherency/gather.go` duplicate state correlation
+
+`inspect/` builds a correlated view of BPF objects across store,
+kernel, and filesystem -- the `World` type with `ManagedPrograms()`,
+`ManagedLinks()`, `ManagedDispatchers()`. `manager/coherency/gather.go`
+builds `ObservedState` doing the same thing: correlating programs,
+links, and dispatchers across the same three sources.
+
+Both solve "given three sources of truth, produce a unified snapshot."
+They differ in audience: `inspect` serves the CLI (list, get, doctor
+output) and gRPC handlers; `coherency` serves GC and doctor rules.
+But the correlation logic is reimplemented rather than shared.
+
+`inspect/` cannot move under `manager/` because `server/` also imports
+it, and `server/` should not reach into `manager/` subpackages. But
+`coherency/gather.go` could build its `ObservedState` from an
+`inspect.World` rather than reimplementing the correlation. That would
+make `inspect` the single correlation layer, with `coherency` as a
+pure rule engine over it.
+
+**Possible resolution:** refactor `coherency/gather.go` to accept an
+`inspect.World` (or a subset of it) and derive `ObservedState` from
+that. This removes the duplicated correlation logic and ensures that
+the two views are always consistent.
+
+---
+
+## 11. `netns/` and `nsenter/` are unrelated top-level packages for related work
+
+**Resolved.** Moved to `ns/netns/` and `ns/nsenter/`.

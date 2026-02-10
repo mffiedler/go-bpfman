@@ -8,7 +8,7 @@ import (
 
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // ----------------------------------------------------------------------------
@@ -26,7 +26,7 @@ func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType string, nsid u
 		&state.KernelID, &state.LinkID, &state.Priority)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "rows", 0)
-		return dispatcher.State{}, fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, store.ErrNotFound)
+		return dispatcher.State{}, fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, platform.ErrRecordNotFound)
 	}
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -104,7 +104,7 @@ func (s *sqliteStore) DeleteDispatcher(ctx context.Context, dispType string, nsi
 	}
 	s.logger.Debug("sql", "stmt", "DeleteDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
-		return fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, store.ErrNotFound)
+		return fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, platform.ErrRecordNotFound)
 	}
 
 	return nil
@@ -130,7 +130,7 @@ func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType string, ns
 	}
 	s.logger.Debug("sql", "stmt", "IncrementRevision", "args", []any{"(timestamp)", dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	if rows == 0 {
-		return 0, fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, store.ErrNotFound)
+		return 0, fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, platform.ErrRecordNotFound)
 	}
 
 	// Fetch the new revision

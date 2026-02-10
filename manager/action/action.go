@@ -154,20 +154,6 @@ type AttachFexit struct {
 
 func (AttachFexit) isAction() {}
 
-// Batch groups multiple actions to be executed together.
-type Batch struct {
-	Actions []Action
-}
-
-func (Batch) isAction() {}
-
-// Sequence executes actions in order, stopping on first error.
-type Sequence struct {
-	Actions []Action
-}
-
-func (Sequence) isAction() {}
-
 // Dispatcher actions - operations on dispatcher state
 
 // SaveDispatcher creates or updates a dispatcher in the store.

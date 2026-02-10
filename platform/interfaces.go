@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"io"
 	"iter"
 
@@ -11,6 +12,10 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
+
+// ErrRecordNotFound is returned when a store lookup by ID finds no
+// matching row.
+var ErrRecordNotFound = errors.New("record not found")
 
 // LinkWriter writes link metadata to the store.
 // SaveLink dispatches to the appropriate detail table based on record.Details.Kind().
@@ -47,7 +52,7 @@ type LinkStore interface {
 // DispatcherStore manages dispatcher state.
 type DispatcherStore interface {
 	// GetDispatcher retrieves a dispatcher by type, nsid, and ifindex.
-	// Returns store.ErrNotFound if the dispatcher does not exist.
+	// Returns ErrRecordNotFound if the dispatcher does not exist.
 	GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error)
 
 	// ListDispatchers returns all dispatchers.
@@ -108,7 +113,7 @@ type Transactional interface {
 }
 
 // ProgramReader reads program metadata from the store.
-// Get returns store.ErrNotFound if the program does not exist.
+// Get returns ErrRecordNotFound if the program does not exist.
 type ProgramReader interface {
 	Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }

@@ -12,9 +12,13 @@
 //   - A bpffs mount (typically /run/bpfman/fs) for BPF program pins,
 //     map pins, link pins, and dispatcher directories
 //
-// This package provides validated, I/O-free path computation for both
-// hierarchies. Actual directory creation and bpffs mounting are
-// handled by the bpfmanfs/runtime subpackage.
+// The package has two layers.  Path computation ([FSLayout], [BPFFS]
+// path methods, [ImageCache] key derivation) is pure and I/O-free.
+// Operations that touch the filesystem -- [BPFFS] removal methods,
+// [BytecodeFS] publish/remove, and [Scanner] directory reads -- perform
+// real I/O but enforce path-safety invariants before doing so.
+// Directory creation and bpffs mounting are handled by the
+// bpfmanfs/runtime subpackage.
 //
 // # Capability Tokens
 //

@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/platform/store"
+	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -78,7 +78,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 // Get implements the Get RPC method.
 func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	prog, err := s.mgr.Get(ctx, kernel.ProgramID(req.Id))
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, platform.ErrRecordNotFound) {
 		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
 	}
 	if err != nil {
@@ -175,7 +175,7 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 	if errors.Is(err, inspect.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
 	}
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, platform.ErrRecordNotFound) {
 		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
 	}
 	if err != nil {

@@ -17,7 +17,6 @@
 //     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,
 //     AttachFexit
 //   - Filesystem: PublishBytecode, RemoveProgramDir
-//   - Composite:  Batch, Sequence
 //
 // Execute runs an instruction for its side effect. ExecuteResult
 // runs it and returns a typed value (used by LoadProgram and the
