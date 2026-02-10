@@ -202,7 +202,7 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 			Kernel: &kernel.Program{
 				ID:     42,
 				Tag:    "abc123",
-				MapIDs: []uint32{1, 2, 3},
+				MapIDs: []kernel.MapID{1, 2, 3},
 			},
 			Links: []bpfman.Link{
 				{
@@ -436,7 +436,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 					Kernel: &kernel.Program{
 						ID:     42,
 						Tag:    "abc123",
-						MapIDs: []uint32{1, 2},
+						MapIDs: []kernel.MapID{1, 2},
 					},
 					Links: []bpfman.Link{
 						{

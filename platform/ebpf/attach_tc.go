@@ -15,6 +15,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -158,7 +159,7 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 		if !ok {
 			return fmt.Errorf("failed to get TC dispatcher program ID from kernel")
 		}
-		result.DispatcherID = uint32(progID)
+		result.DispatcherID = kernel.ProgramID(progID)
 
 		if err := pinWithRetry(dispatcherProg, spec.ProgPinPath); err != nil {
 			return fmt.Errorf("pin TC dispatcher program to %s: %w", spec.ProgPinPath, err)
@@ -349,7 +350,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	success = true
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    spec.LinkPinPath,
 	}, nil
@@ -440,7 +441,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 
 		success = true
 		result = bpfman.AttachOutput{
-			LinkID:     uint32(linkInfo.ID),
+			LinkID:     kernel.LinkID(linkInfo.ID),
 			KernelLink: ToKernelLink(linkInfo),
 			PinPath:    linkPinPath,
 		}

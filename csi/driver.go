@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // ProgramFinder finds BPF programs by metadata.
@@ -22,7 +23,7 @@ type ProgramFinder interface {
 	// Only programs that exist in both the database and the kernel are considered.
 	// Returns an error if multiple programs match (data inconsistency) or if
 	// no matching program is found.
-	FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, uint32, error)
+	FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error)
 }
 
 // KernelOperations provides BPF map operations.

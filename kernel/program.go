@@ -11,7 +11,7 @@ import "time"
 // by the Has* fields where relevant.
 type Program struct {
 	// Core identity
-	ID          uint32      `json:"id"`
+	ID          ProgramID   `json:"id"`
 	Name        string      `json:"name"`
 	ProgramType ProgramType `json:"program_type"`
 	Tag         string      `json:"tag,omitempty"`
@@ -24,8 +24,8 @@ type Program struct {
 	HasBTFId bool   `json:"has_btf_id,omitempty"` // Whether BTF ID is available (kernel 5.0+)
 
 	// Associated maps
-	MapIDs    []uint32 `json:"map_ids,omitempty"`
-	HasMapIDs bool     `json:"has_map_ids,omitempty"` // Whether MapIDs is available (kernel 4.15+)
+	MapIDs    []MapID `json:"map_ids,omitempty"`
+	HasMapIDs bool    `json:"has_map_ids,omitempty"` // Whether MapIDs is available (kernel 4.15+)
 
 	// Size information
 	JitedSize            uint32 `json:"jited_size,omitempty"`
@@ -50,10 +50,10 @@ type Program struct {
 // PinnedProgram represents a BPF program pinned on the filesystem.
 // Used for CLI output when scanning bpffs directories.
 type PinnedProgram struct {
-	ID         uint32      `json:"id"`
+	ID         ProgramID   `json:"id"`
 	Name       string      `json:"name"`
 	Type       ProgramType `json:"type"`
 	Tag        string      `json:"tag,omitempty"`
 	PinnedPath string      `json:"pinned_path"`
-	MapIDs     []uint32    `json:"map_ids,omitempty"`
+	MapIDs     []MapID     `json:"map_ids,omitempty"`
 }

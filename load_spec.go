@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // LoadSpec describes how to load a BPF program.
@@ -25,7 +27,7 @@ type LoadSpec struct {
 	imageUsername   string // for registry auth
 	imagePassword   string // for registry auth
 	attachFunc      string
-	mapOwnerID      uint32
+	mapOwnerID      kernel.ProgramID
 }
 
 // RequiresAttachFunc returns true if this program type requires an attach
@@ -119,7 +121,7 @@ func (s LoadSpec) ImagePullPolicy() ImagePullPolicy { return s.imagePullPolicy }
 func (s LoadSpec) ImageUsername() string            { return s.imageUsername }
 func (s LoadSpec) ImagePassword() string            { return s.imagePassword }
 func (s LoadSpec) AttachFunc() string               { return s.attachFunc }
-func (s LoadSpec) MapOwnerID() uint32               { return s.mapOwnerID }
+func (s LoadSpec) MapOwnerID() kernel.ProgramID     { return s.mapOwnerID }
 
 // HasImageAuth returns true if this LoadSpec has registry authentication configured.
 func (s LoadSpec) HasImageAuth() bool { return s.imageUsername != "" }
@@ -145,7 +147,7 @@ func (s LoadSpec) WithImageProvenance(url, digest string, policy ImagePullPolicy
 }
 
 // WithMapOwnerID returns a new LoadSpec with map owner ID set.
-func (s LoadSpec) WithMapOwnerID(id uint32) LoadSpec {
+func (s LoadSpec) WithMapOwnerID(id kernel.ProgramID) LoadSpec {
 	s.mapOwnerID = id
 	return s
 }
@@ -205,7 +207,7 @@ type loadSpecJSON struct {
 	GlobalData  map[string][]byte `json:"global_data,omitempty"`
 	ImageSource *imageSourceJSON  `json:"image_source,omitempty"`
 	AttachFunc  string            `json:"attach_func,omitempty"`
-	MapOwnerID  uint32            `json:"map_owner_id,omitempty"`
+	MapOwnerID  kernel.ProgramID  `json:"map_owner_id,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler.

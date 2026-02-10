@@ -15,8 +15,8 @@ func ToKernelLink(info *link.Info) *kernel.Link {
 	}
 
 	kl := &kernel.Link{
-		ID:        uint32(info.ID),
-		ProgramID: uint32(info.Program),
+		ID:        kernel.LinkID(info.ID),
+		ProgramID: kernel.ProgramID(info.Program),
 		LinkType:  linkTypeString(info.Type),
 	}
 

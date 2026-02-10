@@ -8,6 +8,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
@@ -171,7 +172,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 //     that detaches the link on failure.
 //  2. Produce linkKey -- construct link record, save to store.
 func (m *Manager) attachTCXPlan(
-	programKernelID uint32, ifindex int, ifname string,
+	programKernelID kernel.ProgramID, ifindex int, ifname string,
 	direction bpfman.TCDirection, priority int, nsid uint64,
 	netnsPath, linkPinPath, progPinPath, target string,
 	order bpfman.TCXAttachOrder,

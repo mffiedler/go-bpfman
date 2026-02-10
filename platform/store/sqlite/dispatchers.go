@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform/store"
 )
 
@@ -147,7 +148,7 @@ func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType string, ns
 
 // CountDispatcherLinks returns the number of extension links attached
 // to the dispatcher identified by its kernel program ID.
-func (s *sqliteStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID uint32) (int, error) {
+func (s *sqliteStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error) {
 	start := time.Now()
 	var count int
 	err := s.stmtCountDispatcherLinks.QueryRowContext(ctx, dispatcherKernelID, dispatcherKernelID).Scan(&count)

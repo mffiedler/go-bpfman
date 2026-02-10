@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // TestDetach_NonExistentLink_ReturnsNotFound verifies that:
@@ -72,7 +73,7 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 
 	var notFound bpfman.ErrProgramNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T", err)
-	assert.Equal(t, uint32(999), notFound.ID)
+	assert.Equal(t, kernel.ProgramID(999), notFound.ID)
 }
 
 // TestUnload_KernelOnlyProgram_ReturnsNotManaged verifies that:
@@ -96,5 +97,5 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 
 	var notManaged bpfman.ErrProgramNotManaged
 	assert.True(t, errors.As(err, &notManaged), "expected ErrProgramNotManaged, got %T", err)
-	assert.Equal(t, uint32(kernelOnlyProgID), notManaged.ID)
+	assert.Equal(t, kernel.ProgramID(kernelOnlyProgID), notManaged.ID)
 }

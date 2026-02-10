@@ -1,5 +1,7 @@
 package dispatcher
 
+import "github.com/frobware/go-bpfman/kernel"
+
 // Key uniquely identifies a dispatcher by its type, network namespace,
 // and interface index.
 type Key struct {
@@ -26,11 +28,11 @@ type State struct {
 	Revision uint32 `json:"revision"`
 
 	// KernelID is the kernel program ID of the dispatcher.
-	KernelID uint32 `json:"kernel_id"`
+	KernelID kernel.ProgramID `json:"kernel_id"`
 
 	// LinkID is the kernel link ID (XDP link for XDP dispatchers).
 	// Zero for TC dispatchers which use legacy netlink instead of BPF links.
-	LinkID uint32 `json:"link_id"`
+	LinkID kernel.LinkID `json:"link_id"`
 
 	// Priority is the tc filter priority.
 	// Only set for TC dispatchers (legacy netlink). Zero for XDP.

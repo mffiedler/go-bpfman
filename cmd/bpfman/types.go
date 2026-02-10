@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ProgramID wraps a uint32 kernel program ID with hex support.
+// ProgramID wraps a kernel program ID with hex support.
 type ProgramID struct {
-	Value uint32
+	Value kernel.ProgramID
 }
 
 // ParseProgramID parses a program ID from string, supporting hex (0x) prefix
@@ -39,12 +40,12 @@ func ParseProgramID(s string) (ProgramID, error) {
 		return ProgramID{}, fmt.Errorf("invalid program ID %q: %w", s, err)
 	}
 
-	return ProgramID{Value: uint32(val)}, nil
+	return ProgramID{Value: kernel.ProgramID(val)}, nil
 }
 
-// LinkID wraps a uint32 kernel link ID with hex support.
+// LinkID wraps a kernel link ID with hex support.
 type LinkID struct {
-	Value uint32
+	Value kernel.LinkID
 }
 
 // ParseLinkID parses a link ID from string, supporting hex (0x) prefix
@@ -71,7 +72,7 @@ func ParseLinkID(s string) (LinkID, error) {
 		return LinkID{}, fmt.Errorf("invalid link ID %q: %w", s, err)
 	}
 
-	return LinkID{Value: uint32(val)}, nil
+	return LinkID{Value: kernel.LinkID(val)}, nil
 }
 
 // KeyValue represents a KEY=VALUE metadata pair.

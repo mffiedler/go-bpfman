@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store"
@@ -77,9 +78,9 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			}
 		}
 
-		var mapOwnerID uint32
+		var mapOwnerID kernel.ProgramID
 		if req.MapOwnerId != nil && *req.MapOwnerId != 0 {
-			mapOwnerID = *req.MapOwnerId
+			mapOwnerID = kernel.ProgramID(*req.MapOwnerId)
 		}
 
 		programs = append(programs, manager.ProgramSpec{
@@ -124,23 +125,27 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		}
 		// Set MapOwnerId for dependent programs
 		if prog.Record.Load.MapOwnerID() != 0 {
-			ownerID := prog.Record.Load.MapOwnerID()
-			progInfo.MapOwnerId = &ownerID
+			v := uint32(prog.Record.Load.MapOwnerID())
+			progInfo.MapOwnerId = &v
 		}
 
 		// Build KernelProgramInfo from status
 		var kernelInfo *pb.KernelProgramInfo
 		if prog.Status.Kernel != nil {
 			kp := prog.Status.Kernel
+			mapIDs := make([]uint32, len(kp.MapIDs))
+			for j, id := range kp.MapIDs {
+				mapIDs[j] = uint32(id)
+			}
 			kernelInfo = &pb.KernelProgramInfo{
-				Id:            kp.ID,
+				Id:            uint32(kp.ID),
 				Name:          kp.Name,
 				ProgramType:   uint32(prog.Record.Load.ProgramType()),
 				LoadedAt:      loadedAt,
 				Tag:           kp.Tag,
 				GplCompatible: prog.Record.GPLCompatible,
 				Jited:         kp.JitedSize > 0,
-				MapIds:        kp.MapIDs,
+				MapIds:        mapIDs,
 				BtfId:         kp.BTFId,
 				BytesXlated:   kp.XlatedSize,
 				BytesJited:    kp.JitedSize,
@@ -156,7 +161,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	}
 
 	// Log summary
-	kernelIDs := make([]uint32, len(loaded))
+	kernelIDs := make([]kernel.ProgramID, len(loaded))
 	names := make([]string, len(loaded))
 	for i, prog := range loaded {
 		kernelIDs[i] = prog.Record.KernelID
@@ -169,7 +174,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 
 // Unload implements the Unload RPC method.
 func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadResponse, error) {
-	if err := s.mgr.Unload(ctx, req.Id); err != nil {
+	if err := s.mgr.Unload(ctx, kernel.ProgramID(req.Id)); err != nil {
 		var notManaged bpfman.ErrProgramNotManaged
 		var notFound bpfman.ErrProgramNotFound
 		switch {

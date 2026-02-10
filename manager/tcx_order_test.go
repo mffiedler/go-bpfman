@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 func TestComputeTCXAttachOrder(t *testing.T) {
@@ -13,8 +14,8 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 		newPriority   int32
 		wantFirst     bool
 		wantLast      bool
-		wantBefore    uint32
-		wantAfter     uint32
+		wantBefore    kernel.ProgramID
+		wantAfter     kernel.ProgramID
 	}{
 		{
 			name:          "empty chain - attach at head",

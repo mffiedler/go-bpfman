@@ -3,6 +3,7 @@ package coherency
 import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // Severity indicates the severity of a coherency finding.
@@ -64,7 +65,7 @@ func (r DoctorReport) HasWarnings() bool {
 // ProgramState correlates a program across all three sources.
 // Primary key: kernel program ID.
 type ProgramState struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 	DB       *bpfman.ProgramRecord // nil = no DB record
 	Kernel   bool                  // true = kernel program alive
 	PinPath  string                // derived from DB; empty if no DB record
@@ -111,8 +112,8 @@ const (
 // FsOrphan represents a filesystem entry with no matching DB record.
 type FsOrphan struct {
 	Path     string
-	KernelID uint32     // parsed from name; 0 if not parseable
-	Kind     OrphanKind // type of orphaned artefact
+	KernelID kernel.ProgramID // parsed from name; 0 if not parseable
+	Kind     OrphanKind       // type of orphaned artefact
 }
 
 // Operation is a planned mutation. Rules emit operations; the

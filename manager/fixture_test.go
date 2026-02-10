@@ -15,6 +15,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -175,7 +176,7 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 }
 
 // Unload is a convenience wrapper that calls Manager.Unload directly.
-func (f *testFixture) Unload(ctx context.Context, kernelID uint32) error {
+func (f *testFixture) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 	return f.Manager.Unload(ctx, kernelID)
 }
 

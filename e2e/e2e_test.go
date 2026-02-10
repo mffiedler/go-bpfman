@@ -117,12 +117,12 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 
 	// Register cleanup for the link
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
 	// Note: link.ID from attach is the kernel link ID. We verify type/details instead.
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -140,12 +140,12 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -230,11 +230,11 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindKprobe, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -252,12 +252,12 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -344,11 +344,11 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, link.ID, "kernel should assign link ID")
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return authoritative link info from server
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindKretprobe, gotLinkSummary.Kind, "server should report kretprobe link kind")
@@ -366,12 +366,12 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindKretprobe, listedLinks[0].Kind, "ListLinks should report kretprobe")
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -461,11 +461,11 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindUprobe, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -484,12 +484,12 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -580,11 +580,11 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, link.ID, "kernel should assign link ID")
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return authoritative link info from server
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindUretprobe, gotLinkSummary.Kind, "server should report uretprobe link kind")
@@ -603,12 +603,12 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindUretprobe, listedLinks[0].Kind, "ListLinks should report uretprobe")
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -694,11 +694,11 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindFentry, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -714,12 +714,12 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -804,11 +804,11 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindFexit, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -824,12 +824,12 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -923,13 +923,13 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.GreaterOrEqual(t, filterCount, 1, "tc filter should be visible after attach")
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
 	// Note: TC uses dispatchers, so ProgramID is the dispatcher's program ID,
 	// not the extension program ID used in attach. We verify the type/details instead.
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -963,12 +963,12 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Verify tc filter has been removed by the detach
@@ -1064,11 +1064,11 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindTCX, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -1088,12 +1088,12 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload
@@ -1179,13 +1179,13 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindXDP, link.Kind)
 
 	t.Cleanup(func() {
-		env.Detach(context.Background(), uint32(link.ID))
+		env.Detach(context.Background(), link.ID)
 	})
 
 	// Round-trip: GetLink should return matching link info
 	// Note: XDP uses dispatchers, so ProgramID is the dispatcher's program ID,
 	// not the extension program ID used in attach. We verify the type/details instead.
-	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, uint32(link.ID))
+	gotLinkSummary, gotLinkDetails, err := env.GetLink(ctx, link.ID)
 	require.NoError(t, err)
 	require.NotZero(t, gotLinkSummary.ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
@@ -1205,12 +1205,12 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// When: detach
-	err = env.Detach(ctx, uint32(link.ID))
+	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
 
 	// Then: no links, and GetLink should return error
 	env.AssertLinkCount(0)
-	_, _, err = env.GetLink(ctx, uint32(link.ID))
+	_, _, err = env.GetLink(ctx, link.ID)
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// When: unload

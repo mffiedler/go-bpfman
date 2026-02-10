@@ -9,6 +9,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -18,13 +19,13 @@ import (
 // GatherState; view builders and rules are pure joins over facts.
 type ObservedState struct {
 	// DB facts.
-	dbPrograms    map[uint32]bpfman.ProgramRecord
+	dbPrograms    map[kernel.ProgramID]bpfman.ProgramRecord
 	dbLinks       []bpfman.LinkRecord
 	dbDispatchers []dispatcher.State
 
 	// Kernel facts.
-	kernelProgs          map[uint32]bool
-	kernelLinks          map[uint32]bool
+	kernelProgs          map[kernel.ProgramID]bool
+	kernelLinks          map[kernel.LinkID]bool
 	kernelProgEnumErrors int
 	kernelLinkEnumErrors int
 
@@ -41,7 +42,7 @@ type ObservedState struct {
 
 	// Store-derived facts: dispatcher extension link counts.
 	// Key is dispatcher kernel program ID.
-	dbDispatcherExtCount map[uint32]int
+	dbDispatcherExtCount map[kernel.ProgramID]int
 
 	// Netlink-derived facts: TC filter existence.
 	// Key is dispatcherKey(type, nsid, ifindex).
@@ -49,7 +50,7 @@ type ObservedState struct {
 
 	// Indexes for join operations.
 	dbProgPins       map[string]bool
-	dbProgIDs        map[uint32]bool
+	dbProgIDs        map[kernel.ProgramID]bool
 	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
@@ -67,16 +68,16 @@ type ObservedState struct {
 
 // GatherState builds an ObservedState by scanning all three sources.
 // All I/O happens here; the returned state is a pure fact store.
-func GatherState(ctx context.Context, store platform.Store, kernel platform.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
+func GatherState(ctx context.Context, store platform.Store, kops platform.KernelOperations, layout bpfmanfs.FSLayout) (*ObservedState, error) {
 	s := &ObservedState{
-		kernelProgs:           make(map[uint32]bool),
-		kernelLinks:           make(map[uint32]bool),
+		kernelProgs:           make(map[kernel.ProgramID]bool),
+		kernelLinks:           make(map[kernel.LinkID]bool),
 		fsPinExists:           make(map[string]bool),
 		fsDispatcherLinkCount: make(map[string]int),
-		dbDispatcherExtCount:  make(map[uint32]int),
+		dbDispatcherExtCount:  make(map[kernel.ProgramID]int),
 		tcFilterOK:            make(map[string]bool),
 		dbProgPins:            make(map[string]bool),
-		dbProgIDs:             make(map[uint32]bool),
+		dbProgIDs:             make(map[kernel.ProgramID]bool),
 		dbDispatcherKeys:      make(map[string]bool),
 		layout:                layout,
 	}
@@ -117,7 +118,7 @@ func GatherState(ctx context.Context, store platform.Store, kernel platform.Kern
 	// Phase 2: Kernel facts
 	// ----------------------------------------------------------------
 
-	for kp, err := range kernel.Programs(ctx) {
+	for kp, err := range kops.Programs(ctx) {
 		if err != nil {
 			s.kernelProgEnumErrors++
 			continue
@@ -125,7 +126,7 @@ func GatherState(ctx context.Context, store platform.Store, kernel platform.Kern
 		s.kernelProgs[kp.ID] = true
 	}
 
-	for kl, err := range kernel.Links(ctx) {
+	for kl, err := range kops.Links(ctx) {
 		if err != nil {
 			s.kernelLinkEnumErrors++
 			continue
@@ -156,7 +157,7 @@ func GatherState(ctx context.Context, store platform.Store, kernel platform.Kern
 		}
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
 		parent := tcParentHandle(d.Type)
-		_, err := kernel.FindTCFilterHandle(ctx, int(d.Ifindex), parent, d.Priority)
+		_, err := kops.FindTCFilterHandle(ctx, int(d.Ifindex), parent, d.Priority)
 		s.tcFilterOK[key] = (err == nil)
 	}
 
@@ -366,7 +367,7 @@ func (s *ObservedState) Links() []LinkState {
 		inKernel := false
 		// For non-synthetic links, ID is the kernel link ID
 		if !synthetic {
-			inKernel = s.kernelLinks[uint32(link.ID)]
+			inKernel = s.kernelLinks[kernel.LinkID(link.ID)]
 		}
 		ls := LinkState{
 			DB:        link,
@@ -459,7 +460,7 @@ func (s *ObservedState) DispatcherFsLinkCount(ds DispatcherState) int {
 }
 
 // KernelAlive reports whether a kernel program ID is alive.
-func (s *ObservedState) KernelAlive(kernelID uint32) bool {
+func (s *ObservedState) KernelAlive(kernelID kernel.ProgramID) bool {
 	return s.kernelProgs[kernelID]
 }
 

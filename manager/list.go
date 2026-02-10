@@ -42,7 +42,7 @@ func GetHostInfo() bpfman.HostInfo {
 // and Status (from kernel enumeration + filesystem checks + links + maps).
 // Returns an error if the program exists in the store but not in the kernel,
 // as this indicates an inconsistent state that requires reconciliation.
-func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, error) {
+func (m *Manager) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.Program, error) {
 	// Fetch program from store
 	metadata, err := m.store.Get(ctx, kernelID)
 	if err != nil {
@@ -80,7 +80,7 @@ func (m *Manager) Get(ctx context.Context, kernelID uint32) (bpfman.Program, err
 
 		// Fetch kernel link if non-synthetic
 		if !record.IsSynthetic() {
-			kl, err := m.kernel.GetLinkByID(ctx, uint32(record.ID))
+			kl, err := m.kernel.GetLinkByID(ctx, kernel.LinkID(record.ID))
 			if err == nil {
 				link.Status.Kernel = &kl
 			}
@@ -140,7 +140,7 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 }
 
 // ListLinksByProgram returns all links for a given program.
-func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
+func (m *Manager) ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	return m.store.ListLinksByProgram(ctx, programKernelID)
 }
 
@@ -168,7 +168,7 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID bpfman.LinkID) (inspec
 //
 // Returns an error if no programs match, or if multiple map owners exist
 // (data inconsistency).
-func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, uint32, error) {
+func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
 	scanner := m.fsctx.BPFFS().Scanner()
 	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
@@ -206,7 +206,7 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 		case 0:
 			// No map owner found - all programs reference another owner
 			// that doesn't match our metadata query. This shouldn't happen.
-			ids := make([]uint32, len(matches))
+			ids := make([]kernel.ProgramID, len(matches))
 			for i, row := range matches {
 				ids[i] = row.KernelID
 			}
@@ -223,7 +223,7 @@ func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value st
 			return *owners[0].Managed, owners[0].KernelID, nil
 		default:
 			// Multiple map owners - data inconsistency
-			ids := make([]uint32, len(owners))
+			ids := make([]kernel.ProgramID, len(owners))
 			for i, row := range owners {
 				ids[i] = row.KernelID
 			}

@@ -1,6 +1,10 @@
 package bpfman
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/frobware/go-bpfman/kernel"
+)
 
 // ErrLinkNotManaged is returned when attempting to operate on a link
 // that exists in the kernel but is not managed by bpfman.
@@ -25,7 +29,7 @@ func (e ErrLinkNotFound) Error() string {
 // ErrProgramNotManaged is returned when attempting to operate on a program
 // that exists in the kernel but is not managed by bpfman.
 type ErrProgramNotManaged struct {
-	ID uint32 `json:"id"`
+	ID kernel.ProgramID `json:"id"`
 }
 
 func (e ErrProgramNotManaged) Error() string {
@@ -35,7 +39,7 @@ func (e ErrProgramNotManaged) Error() string {
 // ErrProgramNotFound is returned when attempting to operate on a program
 // that does not exist in either the kernel or bpfman's store.
 type ErrProgramNotFound struct {
-	ID uint32 `json:"id"`
+	ID kernel.ProgramID `json:"id"`
 }
 
 func (e ErrProgramNotFound) Error() string {

@@ -38,12 +38,12 @@ func (k *kernelAdapter) ListPinDir(ctx context.Context, pinDir string, includeMa
 			if info != nil {
 				id, _ := info.ID()
 				ebpfMapIDs, _ := info.MapIDs()
-				mapIDs := make([]uint32, len(ebpfMapIDs))
+				mapIDs := make([]kernel.MapID, len(ebpfMapIDs))
 				for i, mid := range ebpfMapIDs {
-					mapIDs[i] = uint32(mid)
+					mapIDs[i] = kernel.MapID(mid)
 				}
 				result.Programs = append(result.Programs, kernel.PinnedProgram{
-					ID:         uint32(id),
+					ID:         kernel.ProgramID(id),
 					Name:       info.Name,
 					Type:       kernel.NewProgramType(prog.Type().String()),
 					Tag:        info.Tag,
@@ -63,7 +63,7 @@ func (k *kernelAdapter) ListPinDir(ctx context.Context, pinDir string, includeMa
 				if info != nil {
 					id, _ := info.ID()
 					result.Maps = append(result.Maps, kernel.PinnedMap{
-						ID:         uint32(id),
+						ID:         kernel.MapID(id),
 						Name:       info.Name,
 						Type:       kernel.NewMapType(info.Type.String()),
 						KeySize:    info.KeySize,
@@ -98,13 +98,13 @@ func (k *kernelAdapter) GetPinned(ctx context.Context, pinPath string) (*kernel.
 		return nil, fmt.Errorf("failed to get program ID from kernel")
 	}
 	ebpfMapIDs, _ := info.MapIDs() // MapIDs may not be available on older kernels
-	mapIDs := make([]uint32, len(ebpfMapIDs))
+	mapIDs := make([]kernel.MapID, len(ebpfMapIDs))
 	for i, mid := range ebpfMapIDs {
-		mapIDs[i] = uint32(mid)
+		mapIDs[i] = kernel.MapID(mid)
 	}
 
 	return &kernel.PinnedProgram{
-		ID:         uint32(id),
+		ID:         kernel.ProgramID(id),
 		Name:       info.Name,
 		Type:       kernel.NewProgramType(prog.Type().String()),
 		Tag:        info.Tag,

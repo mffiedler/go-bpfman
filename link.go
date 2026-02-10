@@ -20,7 +20,7 @@ const SyntheticLinkIDBase = 0x80000000
 // IsSyntheticLinkID returns true if the link ID is synthetic (not from kernel).
 // Synthetic IDs are used for perf_event-based links that cannot be pinned
 // and don't have real kernel link IDs.
-func IsSyntheticLinkID(id uint32) bool {
+func IsSyntheticLinkID(id kernel.LinkID) bool {
 	return id >= SyntheticLinkIDBase
 }
 
@@ -34,10 +34,10 @@ type TCXAttachOrder struct {
 	Last bool `json:"last,omitempty"`
 	// BeforeProgID attaches before the program with this kernel ID.
 	// Zero means not set.
-	BeforeProgID uint32 `json:"before_prog_id,omitempty"`
+	BeforeProgID kernel.ProgramID `json:"before_prog_id,omitempty"`
 	// AfterProgID attaches after the program with this kernel ID.
 	// Zero means not set.
-	AfterProgID uint32 `json:"after_prog_id,omitempty"`
+	AfterProgID kernel.ProgramID `json:"after_prog_id,omitempty"`
 }
 
 // TCXAttachFirst returns an order that attaches at the head of the chain.
@@ -51,12 +51,12 @@ func TCXAttachLast() TCXAttachOrder {
 }
 
 // TCXAttachBefore returns an order that attaches before the given program.
-func TCXAttachBefore(progID uint32) TCXAttachOrder {
+func TCXAttachBefore(progID kernel.ProgramID) TCXAttachOrder {
 	return TCXAttachOrder{BeforeProgID: progID}
 }
 
 // TCXAttachAfter returns an order that attaches after the given program.
-func TCXAttachAfter(progID uint32) TCXAttachOrder {
+func TCXAttachAfter(progID kernel.ProgramID) TCXAttachOrder {
 	return TCXAttachOrder{AfterProgID: progID}
 }
 
@@ -129,15 +129,15 @@ func (FexitDetails) Kind() LinkKind { return LinkKindFexit }
 
 // XDPDetails contains fields specific to XDP attachments.
 type XDPDetails struct {
-	Interface    string  `json:"interface"`
-	Ifindex      uint32  `json:"ifindex"`
-	Priority     int32   `json:"priority"`
-	Position     int32   `json:"position"`
-	ProceedOn    []int32 `json:"proceed_on"`
-	Netns        string  `json:"netns,omitempty"`
-	Nsid         uint64  `json:"nsid"`
-	DispatcherID uint32  `json:"dispatcher_id"`
-	Revision     uint32  `json:"revision"`
+	Interface    string           `json:"interface"`
+	Ifindex      uint32           `json:"ifindex"`
+	Priority     int32            `json:"priority"`
+	Position     int32            `json:"position"`
+	ProceedOn    []int32          `json:"proceed_on"`
+	Netns        string           `json:"netns,omitempty"`
+	Nsid         uint64           `json:"nsid"`
+	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
+	Revision     uint32           `json:"revision"`
 }
 
 func (XDPDetails) linkDetails()   {}
@@ -169,16 +169,16 @@ func (d TCDirection) String() string { return string(d) }
 
 // TCDetails contains fields specific to TC attachments.
 type TCDetails struct {
-	Interface    string      `json:"interface"`
-	Ifindex      uint32      `json:"ifindex"`
-	Direction    TCDirection `json:"direction"`
-	Priority     int32       `json:"priority"`
-	Position     int32       `json:"position"`
-	ProceedOn    []int32     `json:"proceed_on"`
-	Netns        string      `json:"netns,omitempty"`
-	Nsid         uint64      `json:"nsid"`
-	DispatcherID uint32      `json:"dispatcher_id"`
-	Revision     uint32      `json:"revision"`
+	Interface    string           `json:"interface"`
+	Ifindex      uint32           `json:"ifindex"`
+	Direction    TCDirection      `json:"direction"`
+	Priority     int32            `json:"priority"`
+	Position     int32            `json:"position"`
+	ProceedOn    []int32          `json:"proceed_on"`
+	Netns        string           `json:"netns,omitempty"`
+	Nsid         uint64           `json:"nsid"`
+	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
+	Revision     uint32           `json:"revision"`
 }
 
 func (TCDetails) linkDetails()   {}
@@ -200,9 +200,9 @@ func (TCXDetails) Kind() LinkKind { return LinkKindTCX }
 // TCXLinkInfo combines link summary with TCX-specific details.
 // Used for computing attach order based on priority.
 type TCXLinkInfo struct {
-	KernelLinkID    uint32 `json:"kernel_link_id"`
-	KernelProgramID uint32 `json:"kernel_program_id"`
-	Priority        int32  `json:"priority"`
+	KernelLinkID    kernel.LinkID    `json:"kernel_link_id"`
+	KernelProgramID kernel.ProgramID `json:"kernel_program_id"`
+	Priority        int32            `json:"priority"`
 }
 
 // LinkKind is bpfman's discriminator for link types.
@@ -295,19 +295,19 @@ func (id LinkID) IsSynthetic() bool {
 	if id > math.MaxUint32 {
 		return false // future autoincrement ids are not synthetic
 	}
-	return IsSyntheticLinkID(uint32(id))
+	return IsSyntheticLinkID(kernel.LinkID(id))
 }
 
 // LinkRecord is the stored record of an attached link (DB-backed).
 // ID is the user-facing identity: kernel-assigned for real BPF links,
 // or bpfman-assigned (0x80000000+) for synthetic/perf_event links.
 type LinkRecord struct {
-	ID        LinkID          `json:"id"`
-	ProgramID uint32          `json:"program_id"` // program this attaches to
-	Kind      LinkKind        `json:"kind"`
-	PinPath   *bpffs.LinkPath `json:"pin_path,omitempty"` // nil == ephemeral
-	Details   LinkDetails     `json:"details,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID        LinkID           `json:"id"`
+	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
+	Kind      LinkKind         `json:"kind"`
+	PinPath   *bpffs.LinkPath  `json:"pin_path,omitempty"` // nil == ephemeral
+	Details   LinkDetails      `json:"details,omitempty"`
+	CreatedAt time.Time        `json:"created_at"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
 
@@ -323,7 +323,7 @@ type LinkListOption func(*linkListOptions)
 // linkListOptions holds the accumulated filter state.
 type linkListOptions struct {
 	kinds     map[LinkKind]struct{}
-	programID *uint32
+	programID *kernel.ProgramID
 }
 
 // Matches returns true if the link matches all filter criteria.
@@ -368,7 +368,7 @@ func WithKinds(kinds ...LinkKind) LinkListOption {
 }
 
 // WithProgramID filters to links attached to the given program.
-func WithProgramID(id uint32) LinkListOption {
+func WithProgramID(id kernel.ProgramID) LinkListOption {
 	return func(o *linkListOptions) {
 		o.programID = &id
 	}
@@ -403,15 +403,15 @@ type Link struct {
 // AttachOutput parallels LoadOutput for programs: it captures what the
 // kernel returned without mixing in user-provided metadata.
 type AttachOutput struct {
-	LinkID     uint32       // kernel-assigned link ID, or synthetic ID for perf_event
-	KernelLink *kernel.Link // kernel info, nil for synthetic links
-	PinPath    string       // where link was pinned, empty if ephemeral
-	Synthetic  bool         // true if this is a synthetic link (no kernel link)
+	LinkID     kernel.LinkID // kernel-assigned link ID, or synthetic ID for perf_event
+	KernelLink *kernel.Link  // kernel info, nil for synthetic links
+	PinPath    string        // where link was pinned, empty if ephemeral
+	Synthetic  bool          // true if this is a synthetic link (no kernel link)
 }
 
 // NewPinnedLinkRecord creates a fully-detailed record for a pinned link.
 // Kind is derived from details to enforce the invariant.
-func NewPinnedLinkRecord(id LinkID, programID uint32, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
+func NewPinnedLinkRecord(id LinkID, programID kernel.ProgramID, details LinkDetails, pin bpffs.LinkPath, createdAt time.Time) LinkRecord {
 	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,
@@ -424,7 +424,7 @@ func NewPinnedLinkRecord(id LinkID, programID uint32, details LinkDetails, pin b
 
 // NewEphemeralLinkRecord creates a fully-detailed record for an ephemeral (unpinned) link.
 // Kind is derived from details to enforce the invariant.
-func NewEphemeralLinkRecord(id LinkID, programID uint32, details LinkDetails, createdAt time.Time) LinkRecord {
+func NewEphemeralLinkRecord(id LinkID, programID kernel.ProgramID, details LinkDetails, createdAt time.Time) LinkRecord {
 	return LinkRecord{
 		ID:        id,
 		ProgramID: programID,

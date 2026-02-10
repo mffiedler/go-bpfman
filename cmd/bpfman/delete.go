@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -44,9 +45,9 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 			var err error
 			switch ref.Kind {
 			case ResourceKindLink:
-				err = c.deleteLink(ctx, mgr, ref.ID)
+				err = c.deleteLink(ctx, mgr, bpfman.LinkID(ref.ID))
 			case ResourceKindProgram:
-				err = c.deleteProgram(ctx, mgr, ref.ID)
+				err = c.deleteProgram(ctx, mgr, kernel.ProgramID(ref.ID))
 			}
 			results = append(results, result{ref: ref, err: err})
 		}
@@ -73,9 +74,9 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 }
 
 // deleteLink detaches the link, then deletes the program if it has no remaining links.
-func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID uint32) error {
+func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID bpfman.LinkID) error {
 	// Get link to find its program
-	link, err := mgr.GetLink(ctx, bpfman.LinkID(linkID))
+	link, err := mgr.GetLink(ctx, linkID)
 	if err != nil {
 		return fmt.Errorf("get link: %w", err)
 	}
@@ -83,7 +84,7 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID
 	programID := link.ProgramID
 
 	// Detach the link
-	if err := mgr.Detach(ctx, bpfman.LinkID(linkID)); err != nil {
+	if err := mgr.Detach(ctx, linkID); err != nil {
 		return fmt.Errorf("detach: %w", err)
 	}
 
@@ -105,7 +106,7 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID
 // deleteProgram detaches all links for the program, then unloads it.
 // With --recursive, also deletes dependent programs (those sharing
 // maps via map_owner_id) before unloading the target.
-func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, programID uint32) error {
+func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.ProgramID) error {
 	// With full-graph, find and delete map dependents first
 	if c.Recursive {
 		if err := c.deleteDependents(ctx, mgr, programID); err != nil {
@@ -135,7 +136,7 @@ func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, pro
 
 // deleteDependents finds programs that share maps with the target
 // (map_owner_id = programID) and deletes them first.
-func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID uint32) error {
+func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID kernel.ProgramID) error {
 	result, err := mgr.ListPrograms(ctx)
 	if err != nil {
 		return fmt.Errorf("list programs: %w", err)

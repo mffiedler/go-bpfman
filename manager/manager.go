@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
@@ -151,7 +152,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	start := time.Now()
 
 	// Gather kernel state
-	kernelProgramIDs := make(map[uint32]bool)
+	kernelProgramIDs := make(map[kernel.ProgramID]bool)
 	for kp, err := range m.kernel.Programs(ctx) {
 		if err != nil {
 			m.logger.WarnContext(ctx, "error iterating kernel programs", "error", err)
@@ -181,7 +182,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 		}
 	}
 
-	kernelLinkIDs := make(map[uint32]bool)
+	kernelLinkIDs := make(map[kernel.LinkID]bool)
 	for kl, err := range m.kernel.Links(ctx) {
 		if err != nil {
 			m.logger.WarnContext(ctx, "error iterating kernel links", "error", err)

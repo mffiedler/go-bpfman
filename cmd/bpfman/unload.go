@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // UnloadCmd unloads managed BPF programs by kernel ID.
@@ -21,7 +23,7 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Collect results to print after releasing lock
 	type result struct {
-		id  uint32
+		id  kernel.ProgramID
 		err error
 	}
 	results := make([]result, 0, len(c.ProgramIDs))

@@ -8,6 +8,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -17,7 +18,7 @@ import (
 // while the shared skeleton handles the plan structure and result
 // extraction.
 type dispatcherAttachParams struct {
-	programKernelID uint32
+	programKernelID kernel.ProgramID
 	ifindex         int
 	ifname          string
 	netnsPath       string

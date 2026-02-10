@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -62,7 +63,7 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	success = true
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    linkPinPath,
 	}, nil
@@ -126,14 +127,14 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 			lnk.Close()
 			return fmt.Errorf("failed to get dispatcher program ID from kernel")
 		}
-		result.DispatcherID = uint32(progID)
+		result.DispatcherID = kernel.ProgramID(progID)
 
 		linkInfo, err := lnk.Info()
 		if err != nil {
 			lnk.Close()
 			return fmt.Errorf("get dispatcher link info: %w", err)
 		}
-		result.LinkID = uint32(linkInfo.ID)
+		result.LinkID = kernel.LinkID(linkInfo.ID)
 
 		// Pin dispatcher program to the revision-specific path.
 		if err := pinWithRetry(dispatcherProg, spec.ProgPinPath); err != nil {
@@ -289,7 +290,7 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	success = true
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    spec.LinkPinPath,
 	}, nil

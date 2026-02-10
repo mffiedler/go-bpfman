@@ -6,12 +6,13 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // getProgram fetches a program from the store, translating
 // store.ErrNotFound into the domain error ErrProgramNotFound.
-func (m *Manager) getProgram(ctx context.Context, id uint32) (bpfman.ProgramRecord, error) {
+func (m *Manager) getProgram(ctx context.Context, id kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	rec, err := m.store.Get(ctx, id)
 	if err == nil {
 		return rec, nil

@@ -15,6 +15,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
@@ -54,7 +55,7 @@ func TestForeignKey_LinkRequiresProgram(t *testing.T) {
 		Name:  "sys_enter_openat",
 	}
 	linkID := bpfman.LinkID(1)
-	spec := bpfman.NewEphemeralLinkRecord(linkID, 999, details, time.Now()) // program 999 does not exist
+	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(999), details, time.Now()) // program 999 does not exist
 
 	err = store.SaveLink(ctx, spec)
 	require.Error(t, err, "expected FK constraint violation")
@@ -69,7 +70,7 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program directly.
-	kernelID := uint32(42)
+	kernelID := kernel.ProgramID(42)
 	prog := testProgram()
 
 	require.NoError(t, store.Save(ctx, kernelID, prog), "Save failed")
@@ -109,7 +110,7 @@ func TestMetadata_StoredAsJSON(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program with metadata.
-	kernelID := uint32(42)
+	kernelID := kernel.ProgramID(42)
 	prog := testProgram()
 	prog.Meta.Metadata = map[string]string{
 		"app":     "test",
@@ -147,7 +148,7 @@ func TestProgramName_DuplicatesAllowed(t *testing.T) {
 		"bpfman.io/ProgramName": "my-program",
 	}
 
-	require.NoError(t, store.Save(ctx, 100, prog1), "Save prog1 failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog1), "Save prog1 failed")
 
 	// Create second program with the same name - this should succeed.
 	prog2 := testProgram()
@@ -155,7 +156,7 @@ func TestProgramName_DuplicatesAllowed(t *testing.T) {
 		"bpfman.io/ProgramName": "my-program", // same name, allowed
 	}
 
-	err = store.Save(ctx, 200, prog2)
+	err = store.Save(ctx, kernel.ProgramID(200), prog2)
 	require.NoError(t, err, "duplicate program names should be allowed")
 }
 
@@ -173,7 +174,7 @@ func TestUniqueIndex_DifferentNamesAllowed(t *testing.T) {
 			"bpfman.io/ProgramName": name,
 		}
 
-		require.NoError(t, store.Save(ctx, uint32(100+i), prog), "Save %s failed", name)
+		require.NoError(t, store.Save(ctx, kernel.ProgramID(100+i), prog), "Save %s failed", name)
 	}
 
 	// Verify both exist.
@@ -195,10 +196,10 @@ func TestUniqueIndex_NameCanBeReusedAfterDelete(t *testing.T) {
 		"bpfman.io/ProgramName": "reusable-name",
 	}
 
-	require.NoError(t, store.Save(ctx, 100, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog), "Save failed")
 
 	// Delete it.
-	require.NoError(t, store.Delete(ctx, 100), "Delete failed")
+	require.NoError(t, store.Delete(ctx, kernel.ProgramID(100)), "Delete failed")
 
 	// Create a new program with the same name.
 	prog2 := testProgram()
@@ -206,10 +207,10 @@ func TestUniqueIndex_NameCanBeReusedAfterDelete(t *testing.T) {
 		"bpfman.io/ProgramName": "reusable-name", // same name, should work
 	}
 
-	require.NoError(t, store.Save(ctx, 200, prog2), "Save prog2 failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(200), prog2), "Save prog2 failed")
 
 	// Verify it exists.
-	found, err := store.Get(ctx, 200)
+	found, err := store.Get(ctx, kernel.ProgramID(200))
 	require.NoError(t, err, "Get failed")
 	assert.Equal(t, "reusable-name", found.Meta.Metadata["bpfman.io/ProgramName"], "name mismatch")
 }
@@ -223,7 +224,7 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 
 	// Create a program first
 	prog := testProgram()
-	require.NoError(t, store.Save(ctx, 42, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
 	linkID := bpfman.LinkID(100)
@@ -231,7 +232,7 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 		Group: "syscalls",
 		Name:  "sys_enter_openat",
 	}
-	spec := bpfman.NewPinnedLinkRecord(linkID, 42, details, bpffs.LinkPath("/sys/fs/bpf/bpfman/test/link"), time.Now())
+	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), details, bpffs.LinkPath("/sys/fs/bpf/bpfman/test/link"), time.Now())
 
 	err = store.SaveLink(ctx, spec)
 	require.NoError(t, err, "SaveLink failed")
@@ -242,7 +243,7 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 
 	assert.Equal(t, bpfman.LinkKindTracepoint, gotSpec.Kind)
 	assert.Equal(t, linkID, gotSpec.ID)
-	assert.Equal(t, uint32(42), gotSpec.ProgramID, "ProgramID should match the program kernel ID passed to SaveLink")
+	assert.Equal(t, kernel.ProgramID(42), gotSpec.ProgramID, "ProgramID should match the program kernel ID passed to SaveLink")
 	assert.Equal(t, spec.PinPath, gotSpec.PinPath)
 
 	tpDetails, ok := gotSpec.Details.(bpfman.TracepointDetails)
@@ -260,19 +261,19 @@ func TestLinkRegistry_LinkIDUniqueness(t *testing.T) {
 
 	// Create a program first
 	prog := testProgram()
-	require.NoError(t, store.Save(ctx, 42, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create first link
 	linkID := bpfman.LinkID(100)
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	spec := bpfman.NewEphemeralLinkRecord(linkID, 42, details, time.Now())
+	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
 
 	err = store.SaveLink(ctx, spec)
 	require.NoError(t, err, "first SaveLink failed")
 
 	// Try to create another link with same link_id (primary key violation)
 	kprobeDetails := bpfman.KprobeDetails{FnName: "test_fn"}
-	spec2 := bpfman.NewEphemeralLinkRecord(linkID, 42, kprobeDetails, time.Now())
+	spec2 := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), kprobeDetails, time.Now())
 
 	err = store.SaveLink(ctx, spec2) // same link_id
 	require.Error(t, err, "expected link_id uniqueness violation")
@@ -289,12 +290,12 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 
 	// Create a program first
 	prog := testProgram()
-	require.NoError(t, store.Save(ctx, 42, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
 	// Create a tracepoint link
 	linkID := bpfman.LinkID(100)
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	spec := bpfman.NewEphemeralLinkRecord(linkID, 42, details, time.Now())
+	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
 
 	err = store.SaveLink(ctx, spec)
 	require.NoError(t, err, "SaveLink failed")
@@ -501,8 +502,8 @@ func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
 			Nsid:     4026531840,
 			Ifindex:  ifindex,
 			Revision: 1,
-			KernelID: 100 + ifindex,
-			LinkID:   200 + ifindex,
+			KernelID: kernel.ProgramID(100 + ifindex),
+			LinkID:   kernel.LinkID(200 + ifindex),
 		}
 		require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher (ifindex %d) failed", ifindex)
 	}
@@ -510,11 +511,11 @@ func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
 	// Verify both exist independently
 	got1, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher (ifindex 1) failed")
-	assert.Equal(t, uint32(101), got1.KernelID)
+	assert.Equal(t, kernel.ProgramID(101), got1.KernelID)
 
 	got2, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 2)
 	require.NoError(t, err, "GetDispatcher (ifindex 2) failed")
-	assert.Equal(t, uint32(102), got2.KernelID)
+	assert.Equal(t, kernel.ProgramID(102), got2.KernelID)
 }
 
 // ----------------------------------------------------------------------------
@@ -529,7 +530,7 @@ func TestMapOwnership_CountDependentPrograms(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the owner program (first program from an image).
-	ownerID := uint32(100)
+	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "kprobe_counter"
 	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
@@ -541,7 +542,7 @@ func TestMapOwnership_CountDependentPrograms(t *testing.T) {
 	assert.Equal(t, 0, count, "expected 0 dependents initially")
 
 	// Create dependent programs that share the owner's maps.
-	for i := uint32(1); i <= 3; i++ {
+	for i := kernel.ProgramID(1); i <= 3; i++ {
 		depProg := testProgram()
 		depProg.Meta.Name = "dependent_" + string(rune('0'+i))
 		depProg.Handles.MapOwnerID = &ownerID
@@ -555,7 +556,7 @@ func TestMapOwnership_CountDependentPrograms(t *testing.T) {
 	assert.Equal(t, 3, count, "expected 3 dependents")
 
 	// Delete one dependent.
-	require.NoError(t, store.Delete(ctx, 101), "Delete dependent failed")
+	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)), "Delete dependent failed")
 
 	// Now we should have 2 dependents.
 	count, err = store.CountDependentPrograms(ctx, ownerID)
@@ -571,7 +572,7 @@ func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the owner program.
-	ownerID := uint32(100)
+	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "owner"
 	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
@@ -582,7 +583,7 @@ func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
 	depProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
-	require.NoError(t, store.Save(ctx, 101, depProg), "Save dependent failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), depProg), "Save dependent failed")
 
 	// Attempt to delete the owner while dependent exists - should fail due to FK.
 	err = store.Delete(ctx, ownerID)
@@ -591,7 +592,7 @@ func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
 		"expected FK constraint error, got: %v", err)
 
 	// Delete the dependent first.
-	require.NoError(t, store.Delete(ctx, 101), "Delete dependent failed")
+	require.NoError(t, store.Delete(ctx, kernel.ProgramID(101)), "Delete dependent failed")
 
 	// Now we can delete the owner.
 	require.NoError(t, store.Delete(ctx, ownerID), "Delete owner failed after dependents removed")
@@ -605,7 +606,7 @@ func TestMapOwnership_MapPinPathPersisted(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program with MapPinPath set.
-	kernelID := uint32(42)
+	kernelID := kernel.ProgramID(42)
 	prog := testProgram()
 	prog.Handles.MapPinPath = "/sys/fs/bpf/bpfman/42"
 
@@ -625,13 +626,13 @@ func TestMapOwnership_MapOwnerIDPersisted(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the owner program first.
-	ownerID := uint32(100)
+	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "owner"
 	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
 
 	// Create a dependent program with MapOwnerID set.
-	depID := uint32(101)
+	depID := kernel.ProgramID(101)
 	depProg := testProgram()
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
@@ -654,14 +655,14 @@ func TestMapOwnership_ListIncludesMapFields(t *testing.T) {
 	ctx := context.Background()
 
 	// Create owner.
-	ownerID := uint32(100)
+	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "owner"
 	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
 
 	// Create dependent.
-	depID := uint32(101)
+	depID := kernel.ProgramID(101)
 	depProg := testProgram()
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
@@ -696,7 +697,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program for the links to reference.
-	progID := uint32(100)
+	progID := kernel.ProgramID(100)
 	prog := testProgram()
 	prog.Load = bpfman.TestLoadSpec(bpfman.ProgramTypeTCX)
 	require.NoError(t, store.Save(ctx, progID, prog), "Save program failed")
@@ -746,7 +747,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 	}
 
 	// Verify the correct kernel link IDs are in order
-	expectedKernelLinkIDs := []uint32{1002, 1004, 1001, 1003}
+	expectedKernelLinkIDs := []kernel.LinkID{1002, 1004, 1001, 1003}
 	for i, link := range links {
 		assert.Equal(t, expectedKernelLinkIDs[i], link.KernelLinkID,
 			"link at position %d has wrong kernel_link_id", i)
@@ -763,7 +764,7 @@ func TestListTCXLinksByInterface_FiltersByInterfaceAndDirection(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program for the links to reference.
-	progID := uint32(100)
+	progID := kernel.ProgramID(100)
 	prog := testProgram()
 	prog.Load = bpfman.TestLoadSpec(bpfman.ProgramTypeTCX)
 	require.NoError(t, store.Save(ctx, progID, prog), "Save program failed")
@@ -801,20 +802,20 @@ func TestListTCXLinksByInterface_FiltersByInterfaceAndDirection(t *testing.T) {
 	links, err := store.ListTCXLinksByInterface(ctx, nsid, 2, "ingress")
 	require.NoError(t, err)
 	require.Len(t, links, 2, "expected 2 links for ifindex=2, ingress")
-	assert.Equal(t, uint32(1001), links[0].KernelLinkID)
-	assert.Equal(t, uint32(1002), links[1].KernelLinkID)
+	assert.Equal(t, kernel.LinkID(1001), links[0].KernelLinkID)
+	assert.Equal(t, kernel.LinkID(1002), links[1].KernelLinkID)
 
 	// Query for ifindex=2, egress - should return only 1 link.
 	links, err = store.ListTCXLinksByInterface(ctx, nsid, 2, "egress")
 	require.NoError(t, err)
 	require.Len(t, links, 1, "expected 1 link for ifindex=2, egress")
-	assert.Equal(t, uint32(1003), links[0].KernelLinkID)
+	assert.Equal(t, kernel.LinkID(1003), links[0].KernelLinkID)
 
 	// Query for ifindex=3, ingress - should return only 1 link.
 	links, err = store.ListTCXLinksByInterface(ctx, nsid, 3, "ingress")
 	require.NoError(t, err)
 	require.Len(t, links, 1, "expected 1 link for ifindex=3, ingress")
-	assert.Equal(t, uint32(1004), links[0].KernelLinkID)
+	assert.Equal(t, kernel.LinkID(1004), links[0].KernelLinkID)
 
 	// Query for non-existent interface - should return empty.
 	links, err = store.ListTCXLinksByInterface(ctx, nsid, 99, "ingress")
@@ -849,7 +850,7 @@ func TestGC_EmptyStore(t *testing.T) {
 	ctx := context.Background()
 
 	// GC with empty kernel state on empty store
-	result, err := store.GC(ctx, map[uint32]bool{}, map[uint32]bool{})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{}, map[kernel.LinkID]bool{})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.ProgramsRemoved)
 	assert.Equal(t, 0, result.DispatchersRemoved)
@@ -865,16 +866,16 @@ func TestGC_AllProgramsInKernel(t *testing.T) {
 
 	// Save a program
 	prog := testProgram()
-	err = store.Save(ctx, 100, prog)
+	err = store.Save(ctx, kernel.ProgramID(100), prog)
 	require.NoError(t, err)
 
 	// GC with program ID in kernel - nothing should be removed
-	result, err := store.GC(ctx, map[uint32]bool{100: true}, map[uint32]bool{})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.ProgramsRemoved)
 
 	// Verify program still exists
-	_, err = store.Get(ctx, 100)
+	_, err = store.Get(ctx, kernel.ProgramID(100))
 	require.NoError(t, err, "program should still exist")
 }
 
@@ -887,24 +888,24 @@ func TestGC_StalePrograms(t *testing.T) {
 
 	// Save multiple programs
 	prog := testProgram()
-	err = store.Save(ctx, 100, prog)
+	err = store.Save(ctx, kernel.ProgramID(100), prog)
 	require.NoError(t, err)
-	err = store.Save(ctx, 101, prog)
+	err = store.Save(ctx, kernel.ProgramID(101), prog)
 	require.NoError(t, err)
-	err = store.Save(ctx, 102, prog)
+	err = store.Save(ctx, kernel.ProgramID(102), prog)
 	require.NoError(t, err)
 
 	// GC with only program 100 in kernel - 101 and 102 should be removed
-	result, err := store.GC(ctx, map[uint32]bool{100: true}, map[uint32]bool{})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.ProgramsRemoved)
 
 	// Verify 100 still exists, 101 and 102 are gone
-	_, err = store.Get(ctx, 100)
+	_, err = store.Get(ctx, kernel.ProgramID(100))
 	require.NoError(t, err, "program 100 should still exist")
-	_, err = store.Get(ctx, 101)
+	_, err = store.Get(ctx, kernel.ProgramID(101))
 	require.Error(t, err, "program 101 should be deleted")
-	_, err = store.Get(ctx, 102)
+	_, err = store.Get(ctx, kernel.ProgramID(102))
 	require.Error(t, err, "program 102 should be deleted")
 }
 
@@ -921,35 +922,35 @@ func TestGC_MapOwnerOrdering(t *testing.T) {
 	// Create owner first (must exist for FK)
 	owner := testProgram()
 	owner.Meta.Name = "owner"
-	err = store.Save(ctx, 100, owner)
+	err = store.Save(ctx, kernel.ProgramID(100), owner)
 	require.NoError(t, err)
 
 	// Create dependents that reference the owner
-	ownerID := uint32(100)
+	ownerID := kernel.ProgramID(100)
 	dep1 := testProgram()
 	dep1.Meta.Name = "dep1"
 	dep1.Handles.MapOwnerID = &ownerID
-	err = store.Save(ctx, 101, dep1)
+	err = store.Save(ctx, kernel.ProgramID(101), dep1)
 	require.NoError(t, err)
 
 	dep2 := testProgram()
 	dep2.Meta.Name = "dep2"
 	dep2.Handles.MapOwnerID = &ownerID
-	err = store.Save(ctx, 102, dep2)
+	err = store.Save(ctx, kernel.ProgramID(102), dep2)
 	require.NoError(t, err)
 
 	// GC with empty kernel state - all should be removed
 	// If ordering is wrong, FK constraint will fail
-	result, err := store.GC(ctx, map[uint32]bool{}, map[uint32]bool{})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{}, map[kernel.LinkID]bool{})
 	require.NoError(t, err, "GC should handle FK ordering correctly")
 	assert.Equal(t, 3, result.ProgramsRemoved)
 
 	// Verify all are gone
-	_, err = store.Get(ctx, 100)
+	_, err = store.Get(ctx, kernel.ProgramID(100))
 	require.Error(t, err)
-	_, err = store.Get(ctx, 101)
+	_, err = store.Get(ctx, kernel.ProgramID(101))
 	require.Error(t, err)
-	_, err = store.Get(ctx, 102)
+	_, err = store.Get(ctx, kernel.ProgramID(102))
 	require.Error(t, err)
 }
 
@@ -985,7 +986,7 @@ func TestGC_StaleDispatchers(t *testing.T) {
 	require.NoError(t, err)
 
 	// GC with only program 100 in kernel - dispatcher for 101 should be removed
-	result, err := store.GC(ctx, map[uint32]bool{100: true}, map[uint32]bool{})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.DispatchersRemoved)
 
@@ -1005,24 +1006,24 @@ func TestGC_StaleLinks(t *testing.T) {
 
 	// Create a program first (FK requirement)
 	prog := testProgram()
-	err = store.Save(ctx, 100, prog)
+	err = store.Save(ctx, kernel.ProgramID(100), prog)
 	require.NoError(t, err)
 
 	// Create links
 	details1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
 	linkID1 := bpfman.LinkID(200)
-	spec1 := bpfman.NewEphemeralLinkRecord(linkID1, 100, details1, time.Now())
+	spec1 := bpfman.NewEphemeralLinkRecord(linkID1, kernel.ProgramID(100), details1, time.Now())
 	err = store.SaveLink(ctx, spec1)
 	require.NoError(t, err)
 
 	details2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_openat"}
 	linkID2 := bpfman.LinkID(201)
-	spec2 := bpfman.NewEphemeralLinkRecord(linkID2, 100, details2, time.Now())
+	spec2 := bpfman.NewEphemeralLinkRecord(linkID2, kernel.ProgramID(100), details2, time.Now())
 	err = store.SaveLink(ctx, spec2)
 	require.NoError(t, err)
 
 	// GC with program in kernel but only link 200 in kernel
-	result, err := store.GC(ctx, map[uint32]bool{100: true}, map[uint32]bool{200: true})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{200: true})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.ProgramsRemoved)
 	assert.Equal(t, 1, result.LinksRemoved)
@@ -1044,19 +1045,19 @@ func TestGC_Comprehensive(t *testing.T) {
 
 	// Create programs: 100 (alive), 101 (stale owner), 102 (stale dependent)
 	prog := testProgram()
-	err = store.Save(ctx, 100, prog)
+	err = store.Save(ctx, kernel.ProgramID(100), prog)
 	require.NoError(t, err)
 
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "stale_owner"
-	err = store.Save(ctx, 101, ownerProg)
+	err = store.Save(ctx, kernel.ProgramID(101), ownerProg)
 	require.NoError(t, err)
 
-	staleOwnerID := uint32(101)
+	staleOwnerID := kernel.ProgramID(101)
 	depProg := testProgram()
 	depProg.Meta.Name = "stale_dep"
 	depProg.Handles.MapOwnerID = &staleOwnerID
-	err = store.Save(ctx, 102, depProg)
+	err = store.Save(ctx, kernel.ProgramID(102), depProg)
 	require.NoError(t, err)
 
 	// Create dispatchers: one for alive program, one for stale
@@ -1086,20 +1087,20 @@ func TestGC_Comprehensive(t *testing.T) {
 	// Create links: one alive, one stale
 	aliveDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
 	aliveLinkID := bpfman.LinkID(400)
-	aliveSpec := bpfman.NewEphemeralLinkRecord(aliveLinkID, 100, aliveDetails, time.Now())
+	aliveSpec := bpfman.NewEphemeralLinkRecord(aliveLinkID, kernel.ProgramID(100), aliveDetails, time.Now())
 	err = store.SaveLink(ctx, aliveSpec)
 	require.NoError(t, err)
 
 	staleDetails := bpfman.TracepointDetails{Group: "syscalls", Name: "test2"}
 	staleLinkID := bpfman.LinkID(401)
-	staleSpec := bpfman.NewEphemeralLinkRecord(staleLinkID, 100, staleDetails, time.Now())
+	staleSpec := bpfman.NewEphemeralLinkRecord(staleLinkID, kernel.ProgramID(100), staleDetails, time.Now())
 	err = store.SaveLink(ctx, staleSpec)
 	require.NoError(t, err)
 
 	// GC with only program 100 and link 400 in kernel
 	result, err := store.GC(ctx,
-		map[uint32]bool{100: true},
-		map[uint32]bool{400: true})
+		map[kernel.ProgramID]bool{100: true},
+		map[kernel.LinkID]bool{400: true})
 	require.NoError(t, err)
 
 	// Should remove: 2 programs (101, 102), 2 dispatchers (101 stale program,
@@ -1138,7 +1139,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Create a program first (FK requirement for links)
 	prog := testProgram()
-	require.NoError(t, store.Save(ctx, 100, prog), "Save program failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog), "Save program failed")
 
 	// Create dispatchers for XDP and TC links (FK requirement for their details)
 	xdpDispatcher := dispatcher.State{
@@ -1242,7 +1243,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				assert.Equal(t, []int32{2, 31}, d.ProceedOn)
 				assert.Equal(t, "/proc/1/ns/net", d.Netns)
 				assert.Equal(t, uint64(4026531840), d.Nsid)
-				assert.Equal(t, uint32(500), d.DispatcherID)
+				assert.Equal(t, kernel.ProgramID(500), d.DispatcherID)
 				assert.Equal(t, uint32(1), d.Revision)
 			},
 		},
@@ -1298,7 +1299,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Save all links
 	for _, tc := range testCases {
-		spec := bpfman.NewEphemeralLinkRecord(tc.linkID, 100, tc.details, time.Now())
+		spec := bpfman.NewEphemeralLinkRecord(tc.linkID, kernel.ProgramID(100), tc.details, time.Now())
 		require.NoError(t, store.SaveLink(ctx, spec), "SaveLink %d failed", tc.linkID)
 	}
 
@@ -1334,22 +1335,22 @@ func TestListLinksByProgram_ReturnsDetails(t *testing.T) {
 
 	// Create two programs
 	prog := testProgram()
-	require.NoError(t, store.Save(ctx, 100, prog), "Save program 100 failed")
-	require.NoError(t, store.Save(ctx, 200, prog), "Save program 200 failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog), "Save program 100 failed")
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(200), prog), "Save program 200 failed")
 
 	// Create links for program 100
 	tp1 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(10), 100, tp1, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(10), kernel.ProgramID(100), tp1, time.Now())))
 
 	tp2 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_exit_read"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(11), 100, tp2, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(11), kernel.ProgramID(100), tp2, time.Now())))
 
 	// Create link for program 200
 	tp3 := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_write"}
-	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(20), 200, tp3, time.Now())))
+	require.NoError(t, store.SaveLink(ctx, bpfman.NewEphemeralLinkRecord(bpfman.LinkID(20), kernel.ProgramID(200), tp3, time.Now())))
 
 	// ListLinksByProgram for program 100 should return 2 links with details
-	links, err := store.ListLinksByProgram(ctx, 100)
+	links, err := store.ListLinksByProgram(ctx, kernel.ProgramID(100))
 	require.NoError(t, err)
 	require.Len(t, links, 2)
 
@@ -1372,13 +1373,13 @@ func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 
 	// Create a program first (FK requirement)
 	prog := testProgram()
-	err = store.Save(ctx, 100, prog)
+	err = store.Save(ctx, kernel.ProgramID(100), prog)
 	require.NoError(t, err)
 
 	// Create a real kernel link (kernel_link_id = 200)
 	realDetails := bpfman.UprobeDetails{Target: "/usr/bin/test", FnName: "main"}
 	realLinkID := bpfman.LinkID(200)
-	realSpec := bpfman.NewEphemeralLinkRecord(realLinkID, 100, realDetails, time.Now())
+	realSpec := bpfman.NewEphemeralLinkRecord(realLinkID, kernel.ProgramID(100), realDetails, time.Now())
 	err = store.SaveLink(ctx, realSpec)
 	require.NoError(t, err)
 
@@ -1386,7 +1387,7 @@ func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 	// This simulates a container uprobe with perf_event-based link
 	syntheticDetails := bpfman.UprobeDetails{Target: "/app/binary", FnName: "handler", ContainerPid: 12345}
 	syntheticLinkID := bpfman.LinkID(0x80000001) // synthetic range
-	syntheticSpec := bpfman.NewEphemeralLinkRecord(syntheticLinkID, 100, syntheticDetails, time.Now())
+	syntheticSpec := bpfman.NewEphemeralLinkRecord(syntheticLinkID, kernel.ProgramID(100), syntheticDetails, time.Now())
 	err = store.SaveLink(ctx, syntheticSpec)
 	require.NoError(t, err)
 
@@ -1397,7 +1398,7 @@ func TestGC_SyntheticLinkIDsSkipped(t *testing.T) {
 
 	// GC with program in kernel but only real link 200 in kernel
 	// (synthetic link cannot be in kernelLinkIDs since it has no kernel ID)
-	result, err := store.GC(ctx, map[uint32]bool{100: true}, map[uint32]bool{200: true})
+	result, err := store.GC(ctx, map[kernel.ProgramID]bool{100: true}, map[kernel.LinkID]bool{200: true})
 	require.NoError(t, err)
 
 	// Should NOT remove synthetic link even though it's not in kernelLinkIDs

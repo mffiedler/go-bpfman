@@ -4,6 +4,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
 
@@ -17,7 +18,7 @@ type Action interface {
 
 // SaveProgram saves program metadata to the store.
 type SaveProgram struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 	Metadata bpfman.ProgramRecord
 }
 
@@ -25,7 +26,7 @@ func (SaveProgram) isAction() {}
 
 // DeleteProgram removes program metadata from the store.
 type DeleteProgram struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 }
 
 func (DeleteProgram) isAction() {}
@@ -53,7 +54,7 @@ func (DeleteLink) isAction() {}
 // GetProgramFromStore fetches a program record from the store by
 // kernel ID. Returns bpfman.ProgramRecord via ExecuteResult.
 type GetProgramFromStore struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 }
 
 func (GetProgramFromStore) isAction() {}
@@ -61,7 +62,7 @@ func (GetProgramFromStore) isAction() {}
 // CheckProgramNotInStore verifies that no program with the given
 // kernel ID exists in the store. Returns an error if it does.
 type CheckProgramNotInStore struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 }
 
 func (CheckProgramNotInStore) isAction() {}
@@ -219,7 +220,7 @@ func (DetachTCFilter) isAction() {}
 // PublishBytecode copies a BPF object file to the per-program
 // bytecode directory and writes provenance metadata alongside it.
 type PublishBytecode struct {
-	KernelID   uint32
+	KernelID   kernel.ProgramID
 	SourcePath string
 	Provenance bpfmanfs.Provenance
 }
@@ -228,7 +229,7 @@ func (PublishBytecode) isAction() {}
 
 // RemoveProgramDir removes the persisted bytecode directory for a program.
 type RemoveProgramDir struct {
-	KernelID uint32
+	KernelID kernel.ProgramID
 }
 
 func (RemoveProgramDir) isAction() {}

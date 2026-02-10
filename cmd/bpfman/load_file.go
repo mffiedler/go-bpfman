@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -20,10 +21,10 @@ type LoadFileCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Path        string        `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
-	Programs    []ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
-	Application string        `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID  uint32        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	Path        string           `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
+	Programs    []ProgramSpec    `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	Application string           `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+	MapOwnerID  kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // loadFileResult captures the result of a load file operation.

@@ -32,7 +32,7 @@ func buildProgramRecord(
 	rt bpfmanfs.BytecodeFS,
 	now time.Time,
 ) bpfman.ProgramRecord {
-	var mapOwnerID *uint32
+	var mapOwnerID *kernel.ProgramID
 	if ownerID := spec.MapOwnerID(); ownerID != 0 {
 		mapOwnerID = &ownerID
 	}
@@ -75,7 +75,7 @@ type ProgramSpec struct {
 	Type       bpfman.ProgramType
 	AttachFunc string            // required for fentry/fexit
 	GlobalData map[string][]byte // per-program overrides (optional)
-	MapOwnerID uint32            // explicit external map owner (0 = none)
+	MapOwnerID kernel.ProgramID  // explicit external map owner (0 = none)
 }
 
 // LoadOpts configures a Load operation.
@@ -166,7 +166,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	return loaded, nil
 }
 
-// loadPlan builds the per-program plan: kernel-load, db-check,
+// loadPlan builds the per-program plan: kernel-load, db-consistency-check
 // fs-publish, store-save.
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
 	programName := spec.ProgramName()

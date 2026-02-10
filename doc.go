@@ -64,10 +64,10 @@
 // passes data from I/O boundary to manager.
 //
 //	AttachOutput {
-//	    LinkID     uint32       // kernel-assigned or synthetic
-//	    KernelLink *kernel.Link // nil for synthetic links
-//	    PinPath    string       // where link was pinned
-//	    Synthetic  bool         // true for perf_event-based links
+//	    LinkID     kernel.LinkID // kernel-assigned or synthetic
+//	    KernelLink *kernel.Link  // nil for synthetic links
+//	    PinPath    string        // where link was pinned
+//	    Synthetic  bool          // true for perf_event-based links
 //	}
 //
 // 3. LinkRecord: Manager combines *AttachSpec + AttachOutput and stores it in

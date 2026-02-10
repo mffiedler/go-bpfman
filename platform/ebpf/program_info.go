@@ -29,16 +29,16 @@ func ToKernelProgram(info *ebpf.ProgramInfo, license string) *kernel.Program {
 		loadedAt = bootTime().Add(loadTime)
 	}
 
-	var mapIDsU32 []uint32
+	var mapIDsTyped []kernel.MapID
 	if hasMapIDs && len(mapIDs) > 0 {
-		mapIDsU32 = make([]uint32, len(mapIDs))
+		mapIDsTyped = make([]kernel.MapID, len(mapIDs))
 		for i, mid := range mapIDs {
-			mapIDsU32[i] = uint32(mid)
+			mapIDsTyped[i] = kernel.MapID(mid)
 		}
 	}
 
 	return &kernel.Program{
-		ID:                   uint32(id),
+		ID:                   kernel.ProgramID(id),
 		Name:                 info.Name,
 		ProgramType:          kernel.NewProgramType(info.Type.String()),
 		Tag:                  info.Tag,
@@ -47,7 +47,7 @@ func ToKernelProgram(info *ebpf.ProgramInfo, license string) *kernel.Program {
 		HasUID:               false, // Not available from ProgramInfo
 		BTFId:                uint32(btfID),
 		HasBTFId:             hasBTFID,
-		MapIDs:               mapIDsU32,
+		MapIDs:               mapIDsTyped,
 		HasMapIDs:            hasMapIDs,
 		JitedSize:            jitedSize,
 		XlatedSize:           uint32(xlatedSize),

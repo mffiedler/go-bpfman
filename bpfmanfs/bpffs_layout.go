@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // BPFFS provides access to bpfman's bpffs path conventions.
@@ -92,35 +93,35 @@ func (b BPFFS) Links() string {
 
 // ProgPinPath returns the pin path for a program.
 // Format: {base}/fs/prog_{id}
-func (b BPFFS) ProgPinPath(kernelID uint32) string {
+func (b BPFFS) ProgPinPath(kernelID kernel.ProgramID) string {
 	b.mustValid()
 	return filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(kernelID), 10))
 }
 
 // MapPinDir returns the directory for a program's map pins.
 // Format: {base}/fs/maps/{program_id}/
-func (b BPFFS) MapPinDir(programID uint32) string {
+func (b BPFFS) MapPinDir(programID kernel.ProgramID) string {
 	b.mustValid()
 	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10))
 }
 
 // LinkPinDir returns the directory for a program's link pins.
 // Format: {base}/fs/links/{program_id}/
-func (b BPFFS) LinkPinDir(programID uint32) string {
+func (b BPFFS) LinkPinDir(programID kernel.ProgramID) string {
 	b.mustValid()
 	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10))
 }
 
 // LinkPinPath returns the pin path for a specific link.
 // Format: {base}/fs/links/{program_id}/{link_name}
-func (b BPFFS) LinkPinPath(programID uint32, linkName string) string {
+func (b BPFFS) LinkPinPath(programID kernel.ProgramID, linkName string) string {
 	b.mustValid()
 	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10), linkName)
 }
 
 // MapPinPath returns the pin path for a specific map.
 // Format: {base}/fs/maps/{program_id}/{map_name}
-func (b BPFFS) MapPinPath(programID uint32, mapName string) string {
+func (b BPFFS) MapPinPath(programID kernel.ProgramID, mapName string) string {
 	b.mustValid()
 	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10), mapName)
 }
@@ -183,7 +184,7 @@ func (b BPFFS) ExtensionLinkPath(dispType dispatcher.DispatcherType, nsid uint64
 // TCXLinkPath returns the path for a TCX link pin.
 //
 // Format: {bpffs}/tcx-{direction}/link_{nsid}_{ifindex}_{programID}
-func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, programID uint32) string {
+func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, programID kernel.ProgramID) string {
 	b.mustValid()
 	return filepath.Join(
 		b.mountPoint(),
@@ -198,7 +199,7 @@ func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, progra
 
 // EnsureMapsDir creates the maps directory for a program if it doesn't exist.
 // Format: {base}/fs/maps/{program_id}/
-func (b BPFFS) EnsureMapsDir(kernelID uint32) error {
+func (b BPFFS) EnsureMapsDir(kernelID kernel.ProgramID) error {
 	b.mustValid()
 	dir := b.MapPinDir(kernelID)
 	if err := os.MkdirAll(dir, 0755); err != nil {

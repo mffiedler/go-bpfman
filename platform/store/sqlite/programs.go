@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // Get retrieves program metadata by kernel ID.
 // Returns store.ErrNotFound if the program does not exist.
-func (s *sqliteStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error) {
+func (s *sqliteStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	start := time.Now()
 	row := s.stmtGetProgram.QueryRowContext(ctx, kernelID)
 
@@ -72,13 +73,13 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 
 	// Parse nullable scalar fields
 	var attachFuncVal string
-	var mapOwnerIDPtr *uint32
+	var mapOwnerIDPtr *kernel.ProgramID
 	var mapPinPathVal string
 	if attachFunc.Valid {
 		attachFuncVal = attachFunc.String
 	}
 	if mapOwnerID.Valid {
-		v := uint32(mapOwnerID.Int64)
+		v := kernel.ProgramID(mapOwnerID.Int64)
 		mapOwnerIDPtr = &v
 	}
 	if mapPinPath.Valid {
@@ -175,7 +176,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 // as a clear signal that the kernel_id was reused.
 //
 // For atomicity with other operations, wrap in RunInTransaction.
-func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramRecord) error {
+func (s *sqliteStore) Save(ctx context.Context, kernelID kernel.ProgramID, metadata bpfman.ProgramRecord) error {
 	// Marshal JSON fields
 	var globalDataJSON, imageSourceJSON sql.NullString
 	if metadata.Load.GlobalData() != nil {
@@ -274,7 +275,7 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID uint32, metadata bpfman
 }
 
 // Delete removes program metadata.
-func (s *sqliteStore) Delete(ctx context.Context, kernelID uint32) error {
+func (s *sqliteStore) Delete(ctx context.Context, kernelID kernel.ProgramID) error {
 	start := time.Now()
 	result, err := s.stmtDeleteProgram.ExecContext(ctx, kernelID)
 	if err != nil {
@@ -292,7 +293,7 @@ func (s *sqliteStore) Delete(ctx context.Context, kernelID uint32) error {
 //
 // All deletions run within a single transaction so the store is never
 // left in a partially collected state.
-func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (platform.GCResult, error) {
+func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs map[kernel.ProgramID]bool, kernelLinkIDs map[kernel.LinkID]bool) (platform.GCResult, error) {
 	start := time.Now()
 	var result platform.GCResult
 
@@ -305,7 +306,7 @@ func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs ma
 			return fmt.Errorf("list programs: %w", err)
 		}
 
-		var dependents, owners []uint32
+		var dependents, owners []kernel.ProgramID
 		for id, prog := range stored {
 			if !kernelProgramIDs[id] {
 				if prog.Handles.MapOwnerID != nil {
@@ -363,7 +364,7 @@ func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs ma
 				continue
 			}
 			// For non-synthetic links, ID is the kernel link ID
-			if !kernelLinkIDs[uint32(link.ID)] {
+			if !kernelLinkIDs[kernel.LinkID(link.ID)] {
 				if err := ts.DeleteLink(ctx, link.ID); err != nil {
 					s.logger.Warn("failed to delete link", "link_id", link.ID, "error", err)
 					continue
@@ -412,7 +413,7 @@ func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs ma
 
 // CountDependentPrograms returns the number of programs that share maps with
 // the given program (i.e., programs where map_owner_id = kernelID).
-func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID uint32) (int, error) {
+func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error) {
 	start := time.Now()
 	var count int
 	err := s.stmtCountDependentPrograms.QueryRowContext(ctx, kernelID).Scan(&count)
@@ -426,7 +427,7 @@ func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID uint3
 
 // List returns all program metadata. The returned map has no guaranteed
 // iteration order; sorting for deterministic output is done in inspect.Snapshot.
-func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error) {
+func (s *sqliteStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
 	start := time.Now()
 	rows, err := s.stmtListPrograms.QueryContext(ctx)
 	if err != nil {
@@ -435,7 +436,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord
 	}
 	defer rows.Close()
 
-	result := make(map[uint32]bpfman.ProgramRecord)
+	result := make(map[kernel.ProgramID]bpfman.ProgramRecord)
 	for rows.Next() {
 		kernelID, prog, err := s.scanProgramFromRows(rows)
 		if err != nil {
@@ -455,8 +456,8 @@ func (s *sqliteStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord
 
 // scanProgramFromRows scans a single row from *sql.Rows into a ProgramRecord struct.
 // The row must include the tags and metadata columns.
-func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.ProgramRecord, error) {
-	var kernelID uint32
+func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpfman.ProgramRecord, error) {
+	var kernelID kernel.ProgramID
 	var programName, programTypeStr, objectPath, pinPath string
 	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
@@ -494,13 +495,13 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (uint32, bpfman.Progra
 
 	// Parse nullable scalar fields
 	var attachFuncVal string
-	var mapOwnerIDPtr *uint32
+	var mapOwnerIDPtr *kernel.ProgramID
 	var mapPinPathVal string
 	if attachFunc.Valid {
 		attachFuncVal = attachFunc.String
 	}
 	if mapOwnerID.Valid {
-		v := uint32(mapOwnerID.Int64)
+		v := kernel.ProgramID(mapOwnerID.Int64)
 		mapOwnerIDPtr = &v
 	}
 	if mapPinPath.Valid {

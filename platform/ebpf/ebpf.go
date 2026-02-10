@@ -46,7 +46,7 @@ func New(opts ...Option) platform.KernelOperations {
 }
 
 // GetProgramByID retrieves a kernel program by its ID.
-func (k *kernelAdapter) GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error) {
+func (k *kernelAdapter) GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error) {
 	prog, err := ebpf.NewProgramFromID(ebpf.ProgramID(id))
 	if err != nil {
 		return kernel.Program{}, fmt.Errorf("program %d: %w", id, err)
@@ -63,7 +63,7 @@ func (k *kernelAdapter) GetProgramByID(ctx context.Context, id uint32) (kernel.P
 
 // GetProgramStatsByID retrieves runtime statistics for a BPF program.
 // Returns nil if stats are not available (e.g., kernel.bpf_stats_enabled=0).
-func (k *kernelAdapter) GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error) {
+func (k *kernelAdapter) GetProgramStatsByID(ctx context.Context, id kernel.ProgramID) (*kernel.ProgramStats, error) {
 	prog, err := ebpf.NewProgramFromID(ebpf.ProgramID(id))
 	if err != nil {
 		return nil, fmt.Errorf("program %d: %w", id, err)
@@ -84,7 +84,7 @@ func (k *kernelAdapter) GetProgramStatsByID(ctx context.Context, id uint32) (*ke
 }
 
 // GetLinkByID retrieves a kernel link by its ID.
-func (k *kernelAdapter) GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error) {
+func (k *kernelAdapter) GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error) {
 	lnk, err := link.NewFromID(link.ID(id))
 	if err != nil {
 		return kernel.Link{}, fmt.Errorf("link %d: %w", id, err)
@@ -100,7 +100,7 @@ func (k *kernelAdapter) GetLinkByID(ctx context.Context, id uint32) (kernel.Link
 }
 
 // GetMapByID retrieves a kernel map by its ID.
-func (k *kernelAdapter) GetMapByID(ctx context.Context, id uint32) (kernel.Map, error) {
+func (k *kernelAdapter) GetMapByID(ctx context.Context, id kernel.MapID) (kernel.Map, error) {
 	m, err := ebpf.NewMapFromID(ebpf.MapID(id))
 	if err != nil {
 		return kernel.Map{}, fmt.Errorf("map %d: %w", id, err)
@@ -143,7 +143,7 @@ func (k *kernelAdapter) Programs(ctx context.Context) iter.Seq2[kernel.Program, 
 				continue
 			}
 
-			kp := infoToProgram(info, uint32(id))
+			kp := infoToProgram(info, kernel.ProgramID(id))
 			if !yield(kp, nil) {
 				return
 			}
@@ -179,7 +179,7 @@ func (k *kernelAdapter) Maps(ctx context.Context) iter.Seq2[kernel.Map, error] {
 				continue
 			}
 
-			km := infoToMap(info, uint32(id))
+			km := infoToMap(info, kernel.MapID(id))
 			if !yield(km, nil) {
 				return
 			}

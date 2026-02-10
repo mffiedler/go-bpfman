@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -159,7 +160,7 @@ func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Inject a kernel failure on detach so the plan fails mid-execution.
-	fix.Kernel.FailOnDetach(uint32(link.Record.ID), fmt.Errorf("injected failure"))
+	fix.Kernel.FailOnDetach(kernel.LinkID(link.Record.ID), fmt.Errorf("injected failure"))
 
 	err = fix.Manager.Detach(ctx, link.Record.ID)
 	require.Error(t, err)

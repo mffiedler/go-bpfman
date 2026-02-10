@@ -46,18 +46,24 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 			MapPinPath: prog.Record.Handles.MapPinPath,
 		}
 		if prog.Record.Handles.MapOwnerID != nil {
-			info.MapOwnerId = prog.Record.Handles.MapOwnerID
+			v := uint32(*prog.Record.Handles.MapOwnerID)
+			info.MapOwnerId = &v
+		}
+
+		mapIDs := make([]uint32, len(kp.MapIDs))
+		for i, id := range kp.MapIDs {
+			mapIDs[i] = uint32(id)
 		}
 
 		results = append(results, &pb.ListResponse_ListResult{
 			Info: info,
 			KernelInfo: &pb.KernelProgramInfo{
-				Id:          prog.Record.KernelID,
+				Id:          uint32(prog.Record.KernelID),
 				Name:        kp.Name,
 				ProgramType: uint32(prog.Record.Load.ProgramType()),
 				Tag:         kp.Tag,
 				LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
-				MapIds:      kp.MapIDs,
+				MapIds:      mapIDs,
 				BtfId:       kp.BTFId,
 				BytesXlated: kp.XlatedSize,
 				BytesJited:  kp.JitedSize,
@@ -71,7 +77,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 
 // Get implements the Get RPC method.
 func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	prog, err := s.mgr.Get(ctx, req.Id)
+	prog, err := s.mgr.Get(ctx, kernel.ProgramID(req.Id))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
 	}
@@ -101,7 +107,13 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		Links:      linkIDs,
 	}
 	if prog.Record.Handles.MapOwnerID != nil {
-		info.MapOwnerId = prog.Record.Handles.MapOwnerID
+		v := uint32(*prog.Record.Handles.MapOwnerID)
+		info.MapOwnerId = &v
+	}
+
+	mapIDs := make([]uint32, len(kp.MapIDs))
+	for i, id := range kp.MapIDs {
+		mapIDs[i] = uint32(id)
 	}
 
 	return &pb.GetResponse{
@@ -113,7 +125,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 			Tag:           kp.Tag,
 			LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
 			GplCompatible: prog.Record.GPLCompatible,
-			MapIds:        kp.MapIDs,
+			MapIds:        mapIDs,
 			BtfId:         kp.BTFId,
 			BytesXlated:   kp.XlatedSize,
 			BytesJited:    kp.JitedSize,
@@ -125,7 +137,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.ListLinksResponse, error) {
 	var opts []bpfman.LinkListOption
 	if req.ProgramId != nil {
-		opts = append(opts, bpfman.WithProgramID(*req.ProgramId))
+		opts = append(opts, bpfman.WithProgramID(kernel.ProgramID(*req.ProgramId)))
 	}
 
 	records, err := s.mgr.ListLinks(ctx, opts...)
@@ -147,7 +159,7 @@ func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.L
 			Summary: &pb.LinkSummary{
 				KernelLinkId:    kernelLinkID,
 				LinkType:        linkKindToProto(record.Kind),
-				KernelProgramId: record.ProgramID,
+				KernelProgramId: uint32(record.ProgramID),
 			},
 		})
 	}
@@ -178,7 +190,7 @@ func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLi
 	// Get kernel program ID if available
 	var kernelProgramID uint32
 	if info.Kernel != nil {
-		kernelProgramID = info.Kernel.ProgramID
+		kernelProgramID = uint32(info.Kernel.ProgramID)
 	}
 
 	s.logger.InfoContext(ctx, "GetLink", "link_id", req.KernelLinkId, "type", info.Record.Kind, "program_id", kernelProgramID)
@@ -199,9 +211,9 @@ func linkRecordToProtoSummary(r bpfman.LinkRecord, k *kernel.Link) *pb.LinkSumma
 		kernelLinkID = uint32(r.ID)
 	}
 	// Use program ID from record (stored in DB), with kernel as verification
-	kernelProgramID := r.ProgramID
+	kernelProgramID := uint32(r.ProgramID)
 	if k != nil && kernelProgramID == 0 {
-		kernelProgramID = k.ProgramID
+		kernelProgramID = uint32(k.ProgramID)
 	}
 	var pinPath string
 	if r.PinPath != nil {
@@ -309,7 +321,7 @@ func linkDetailsToProto(d bpfman.LinkDetails) *pb.LinkDetails {
 					ProceedOn:    details.ProceedOn,
 					Netns:        details.Netns,
 					Nsid:         details.Nsid,
-					DispatcherId: details.DispatcherID,
+					DispatcherId: uint32(details.DispatcherID),
 					Revision:     details.Revision,
 				},
 			},
@@ -326,7 +338,7 @@ func linkDetailsToProto(d bpfman.LinkDetails) *pb.LinkDetails {
 					ProceedOn:    details.ProceedOn,
 					Netns:        details.Netns,
 					Nsid:         details.Nsid,
-					DispatcherId: details.DispatcherID,
+					DispatcherId: uint32(details.DispatcherID),
 					Revision:     details.Revision,
 				},
 			},

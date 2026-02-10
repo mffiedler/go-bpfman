@@ -7,9 +7,9 @@ package kernel
 // Type-specific fields are only populated when relevant to the LinkType.
 type Link struct {
 	// Core identity
-	ID        uint32 `json:"id"`
-	ProgramID uint32 `json:"program_id"`
-	LinkType  string `json:"link_type"`
+	ID        LinkID    `json:"id"`
+	ProgramID ProgramID `json:"program_id"`
+	LinkType  string    `json:"link_type"`
 
 	// Type-specific fields (populated based on LinkType)
 

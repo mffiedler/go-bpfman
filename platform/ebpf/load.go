@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // Load loads a BPF program into the kernel.
@@ -141,7 +142,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs bp
 	if !ok {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program ID from kernel")
 	}
-	kernelID := uint32(progID)
+	kernelID := kernel.ProgramID(progID)
 
 	// Track pinned paths for rollback on failure.
 	// Use BPFFS safe removal to ensure we only remove paths under the bpffs mount.

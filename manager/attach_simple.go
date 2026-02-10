@@ -7,6 +7,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -41,7 +42,7 @@ type attachPlan struct {
 // attachParams describes a non-dispatcher attach operation.
 type attachParams struct {
 	// programKernelID is the kernel ID of the program to attach.
-	programKernelID uint32
+	programKernelID kernel.ProgramID
 	// defaultTarget is used for plan node labels. The actual target
 	// may differ once the program record is fetched (e.g., fentry
 	// resolves the function name from the record).

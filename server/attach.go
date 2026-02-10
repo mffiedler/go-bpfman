@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform/store"
 	pb "github.com/frobware/go-bpfman/server/pb"
@@ -29,31 +30,33 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 	var resp *pb.AttachResponse
 	var err error
 
+	programID := kernel.ProgramID(req.Id)
+
 	switch info := req.Attach.Info.(type) {
 	case *pb.AttachInfo_TracepointAttachInfo:
 		attachType = "tracepoint"
-		resp, err = s.attachTracepoint(ctx, scope, req.Id, info.TracepointAttachInfo)
+		resp, err = s.attachTracepoint(ctx, scope, programID, info.TracepointAttachInfo)
 	case *pb.AttachInfo_XdpAttachInfo:
 		attachType = "xdp"
-		resp, err = s.attachXDP(ctx, scope, req.Id, info.XdpAttachInfo)
+		resp, err = s.attachXDP(ctx, scope, programID, info.XdpAttachInfo)
 	case *pb.AttachInfo_TcAttachInfo:
 		attachType = "tc"
-		resp, err = s.attachTC(ctx, scope, req.Id, info.TcAttachInfo)
+		resp, err = s.attachTC(ctx, scope, programID, info.TcAttachInfo)
 	case *pb.AttachInfo_TcxAttachInfo:
 		attachType = "tcx"
-		resp, err = s.attachTCX(ctx, scope, req.Id, info.TcxAttachInfo)
+		resp, err = s.attachTCX(ctx, scope, programID, info.TcxAttachInfo)
 	case *pb.AttachInfo_KprobeAttachInfo:
 		attachType = "kprobe"
-		resp, err = s.attachKprobe(ctx, scope, req.Id, info.KprobeAttachInfo)
+		resp, err = s.attachKprobe(ctx, scope, programID, info.KprobeAttachInfo)
 	case *pb.AttachInfo_UprobeAttachInfo:
 		attachType = "uprobe"
-		resp, err = s.attachUprobe(ctx, scope, req.Id, info.UprobeAttachInfo)
+		resp, err = s.attachUprobe(ctx, scope, programID, info.UprobeAttachInfo)
 	case *pb.AttachInfo_FentryAttachInfo:
 		attachType = "fentry"
-		resp, err = s.attachFentry(ctx, scope, req.Id, info.FentryAttachInfo)
+		resp, err = s.attachFentry(ctx, scope, programID, info.FentryAttachInfo)
 	case *pb.AttachInfo_FexitAttachInfo:
 		attachType = "fexit"
-		resp, err = s.attachFexit(ctx, scope, req.Id, info.FexitAttachInfo)
+		resp, err = s.attachFexit(ctx, scope, programID, info.FexitAttachInfo)
 	default:
 		return nil, status.Errorf(codes.Unimplemented, "attach type %T not yet implemented", req.Attach.Info)
 	}
@@ -67,7 +70,7 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 }
 
 // attachTracepoint handles tracepoint attachment via the manager.
-func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.TracepointAttachInfo) (*pb.AttachResponse, error) {
 	// Parse "group/name" format from tracepoint field
 	parts := strings.SplitN(info.Tracepoint, "/", 2)
 	if len(parts) != 2 {
@@ -97,7 +100,7 @@ func (s *Server) attachTracepoint(ctx context.Context, scope lock.WriterScope, p
 }
 
 // attachXDP handles XDP attachment via the manager.
-func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.XDPAttachInfo) (*pb.AttachResponse, error) {
 	// Get interface index from name
 	iface, err := s.netIface.InterfaceByName(info.Iface)
 	if err != nil {
@@ -131,7 +134,7 @@ func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programI
 }
 
 // attachTC handles TC attachment via the manager.
-func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.TCAttachInfo) (*pb.AttachResponse, error) {
 	// Parse direction at the boundary
 	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
 	if err != nil {
@@ -186,7 +189,7 @@ func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID
 }
 
 // attachTCX handles TCX attachment via the manager.
-func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.TCXAttachInfo) (*pb.AttachResponse, error) {
 	// Parse direction at the boundary
 	direction, err := bpfman.ParseTCDirection(strings.ToLower(info.Direction))
 	if err != nil {
@@ -233,7 +236,7 @@ func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programI
 }
 
 // attachKprobe handles kprobe/kretprobe attachment via the manager.
-func (s *Server) attachKprobe(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.KprobeAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachKprobe(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.KprobeAttachInfo) (*pb.AttachResponse, error) {
 	if info.FnName == "" {
 		return nil, status.Error(codes.InvalidArgument, "fn_name is required for kprobe attachment")
 	}
@@ -263,7 +266,7 @@ func (s *Server) attachKprobe(ctx context.Context, scope lock.WriterScope, progr
 }
 
 // attachUprobe handles uprobe/uretprobe attachment via the manager.
-func (s *Server) attachUprobe(ctx context.Context, scope lock.WriterScope, programID uint32, info *pb.UprobeAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachUprobe(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, info *pb.UprobeAttachInfo) (*pb.AttachResponse, error) {
 	s.logger.DebugContext(ctx, "attachUprobe request",
 		"program_id", programID,
 		"target", info.Target,
@@ -310,7 +313,7 @@ func (s *Server) attachUprobe(ctx context.Context, scope lock.WriterScope, progr
 
 // attachFentry handles fentry attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFentry(ctx context.Context, scope lock.WriterScope, programID uint32, _ *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFentry(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, _ *pb.FentryAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FentryAttachSpec with validated input
 	spec, err := bpfman.NewFentryAttachSpec(programID)
 	if err != nil {
@@ -334,7 +337,7 @@ func (s *Server) attachFentry(ctx context.Context, scope lock.WriterScope, progr
 
 // attachFexit handles fexit attachment via the manager.
 // The attach function is stored in the program metadata from load time.
-func (s *Server) attachFexit(ctx context.Context, scope lock.WriterScope, programID uint32, _ *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
+func (s *Server) attachFexit(ctx context.Context, scope lock.WriterScope, programID kernel.ProgramID, _ *pb.FexitAttachInfo) (*pb.AttachResponse, error) {
 	// Construct FexitAttachSpec with validated input
 	spec, err := bpfman.NewFexitAttachSpec(programID)
 	if err != nil {

@@ -19,9 +19,9 @@ import (
 // lack kernel link IDs (e.g., container uprobes on kernels < 5.15). IDs are
 // generated in the range 0x80000000-0xFFFFFFFF to avoid collision with real
 // kernel link IDs which are small sequential numbers.
-func generateSyntheticLinkID() uint32 {
+func generateSyntheticLinkID() kernel.LinkID {
 	// Generate random ID in high range (SyntheticLinkIDBase+)
-	return bpfman.SyntheticLinkIDBase | rand.Uint32()
+	return kernel.LinkID(bpfman.SyntheticLinkIDBase | rand.Uint32())
 }
 
 // inferProgramType returns the program type based on the ELF section name.
@@ -87,7 +87,7 @@ func bootTime() time.Time {
 	return time.Now()
 }
 
-func infoToProgram(info *ebpf.ProgramInfo, id uint32) kernel.Program {
+func infoToProgram(info *ebpf.ProgramInfo, id kernel.ProgramID) kernel.Program {
 	kp := kernel.Program{
 		ID:          id,
 		Name:        info.Name,
@@ -98,9 +98,9 @@ func infoToProgram(info *ebpf.ProgramInfo, id uint32) kernel.Program {
 	// Map IDs (available from kernel 4.15)
 	if ebpfMapIDs, ok := info.MapIDs(); ok {
 		kp.HasMapIDs = true
-		kp.MapIDs = make([]uint32, len(ebpfMapIDs))
+		kp.MapIDs = make([]kernel.MapID, len(ebpfMapIDs))
 		for i, mid := range ebpfMapIDs {
-			kp.MapIDs[i] = uint32(mid)
+			kp.MapIDs[i] = kernel.MapID(mid)
 		}
 	}
 
@@ -150,7 +150,7 @@ func infoToProgram(info *ebpf.ProgramInfo, id uint32) kernel.Program {
 	return kp
 }
 
-func infoToMap(info *ebpf.MapInfo, id uint32) kernel.Map {
+func infoToMap(info *ebpf.MapInfo, id kernel.MapID) kernel.Map {
 	km := kernel.Map{
 		ID:         id,
 		Name:       info.Name,
@@ -185,8 +185,8 @@ func infoToMap(info *ebpf.MapInfo, id uint32) kernel.Map {
 
 func infoToLink(info *link.Info) kernel.Link {
 	kl := kernel.Link{
-		ID:        uint32(info.ID),
-		ProgramID: uint32(info.Program),
+		ID:        kernel.LinkID(info.ID),
+		ProgramID: kernel.ProgramID(info.Program),
 		LinkType:  linkTypeString(info.Type),
 	}
 

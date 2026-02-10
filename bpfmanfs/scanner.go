@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // Scanner provides read-only access to bpfman's bpffs layout.
@@ -41,20 +43,20 @@ func (s *Scanner) reportMalformed(path string, err error) {
 
 // ProgPin represents a program pin: {fs}/prog_{kernel_id}
 type ProgPin struct {
-	Path     string `json:"path"`
-	KernelID uint32 `json:"kernel_id"`
+	Path     string           `json:"path"`
+	KernelID kernel.ProgramID `json:"kernel_id"`
 }
 
 // LinkDir represents a link directory: {fs}/links/{program_id}
 type LinkDir struct {
-	Path      string `json:"path"`
-	ProgramID uint32 `json:"program_id"`
+	Path      string           `json:"path"`
+	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
 // MapDir represents a map directory: {fs}/maps/{program_id}
 type MapDir struct {
-	Path      string `json:"path"`
-	ProgramID uint32 `json:"program_id"`
+	Path      string           `json:"path"`
+	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
 // DispatcherDir represents a dispatcher revision directory.
@@ -153,7 +155,7 @@ func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 
 			pin := ProgPin{
 				Path:     filepath.Join(fs, name),
-				KernelID: uint32(id),
+				KernelID: kernel.ProgramID(id),
 			}
 			if !yield(pin, nil) {
 				return
@@ -196,7 +198,7 @@ func (s *Scanner) LinkDirs(ctx context.Context) iter.Seq2[LinkDir, error] {
 
 			dir := LinkDir{
 				Path:      filepath.Join(linksDir, name),
-				ProgramID: uint32(id),
+				ProgramID: kernel.ProgramID(id),
 			}
 			if !yield(dir, nil) {
 				return
@@ -239,7 +241,7 @@ func (s *Scanner) MapDirs(ctx context.Context) iter.Seq2[MapDir, error] {
 
 			dir := MapDir{
 				Path:      filepath.Join(mapsDir, name),
-				ProgramID: uint32(id),
+				ProgramID: kernel.ProgramID(id),
 			}
 			if !yield(dir, nil) {
 				return

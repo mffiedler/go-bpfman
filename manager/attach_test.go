@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -1759,7 +1760,7 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 
 	var notFound bpfman.ErrProgramNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T: %v", err, err)
-	assert.Equal(t, uint32(99999), notFound.ID)
+	assert.Equal(t, kernel.ProgramID(99999), notFound.ID)
 }
 
 // TestGetLink_NonExistentLink_ReturnsNotFound verifies that:

@@ -21,6 +21,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/bpfmanfs/runtime"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
@@ -209,7 +210,7 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 }
 
 // Unload unloads a BPF program.
-func (e *TestEnv) Unload(ctx context.Context, kernelID uint32) error {
+func (e *TestEnv) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
 		return e.Manager.Unload(ctx, kernelID)
 	})
@@ -225,7 +226,7 @@ func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 }
 
 // Get returns detailed information about a program.
-func (e *TestEnv) Get(ctx context.Context, kernelID uint32) (bpfman.Program, error) {
+func (e *TestEnv) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.Program, error) {
 	return e.Manager.Get(ctx, kernelID)
 }
 
@@ -249,9 +250,9 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 }
 
 // Detach detaches a link.
-func (e *TestEnv) Detach(ctx context.Context, kernelLinkID uint32) error {
+func (e *TestEnv) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
-		return e.Manager.Detach(ctx, bpfman.LinkID(kernelLinkID))
+		return e.Manager.Detach(ctx, linkID)
 	})
 }
 
@@ -261,8 +262,8 @@ func (e *TestEnv) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
 }
 
 // GetLink returns detailed information about a link.
-func (e *TestEnv) GetLink(ctx context.Context, kernelLinkID uint32) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
-	record, err := e.Manager.GetLink(ctx, bpfman.LinkID(kernelLinkID))
+func (e *TestEnv) GetLink(ctx context.Context, linkID bpfman.LinkID) (bpfman.LinkRecord, bpfman.LinkDetails, error) {
+	record, err := e.Manager.GetLink(ctx, linkID)
 	if err != nil {
 		return bpfman.LinkRecord{}, nil, err
 	}

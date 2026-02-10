@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 const (
@@ -22,12 +24,12 @@ const (
 // alongside bytecode.o as a diagnostic trace; never read on
 // operational code paths.
 type Provenance struct {
-	Version     int       `json:"version"`
-	KernelID    uint32    `json:"kernel_id"`
-	ProgramName string    `json:"program_name"`
-	Source      string    `json:"source"`
-	SourceKind  string    `json:"source_kind"` // "file", "image", "unknown"
-	LoadedAt    time.Time `json:"loaded_at"`   // RFC 3339 UTC
+	Version     int              `json:"version"`
+	KernelID    kernel.ProgramID `json:"kernel_id"`
+	ProgramName string           `json:"program_name"`
+	Source      string           `json:"source"`
+	SourceKind  string           `json:"source_kind"` // "file", "image", "unknown"
+	LoadedAt    time.Time        `json:"loaded_at"`   // RFC 3339 UTC
 }
 
 // BytecodeFS provides regular-filesystem operations for bytecode
@@ -98,7 +100,7 @@ func (rt BytecodeFS) stagingPath() string {
 }
 
 // programDir returns <base>/programs/{id}.
-func (rt BytecodeFS) programDir(id uint32) string {
+func (rt BytecodeFS) programDir(id kernel.ProgramID) string {
 	return filepath.Join(rt.layout.base, programsDir, strconv.FormatUint(uint64(id), 10))
 }
 
@@ -119,7 +121,7 @@ func (rt BytecodeFS) programDir(id uint32) string {
 //
 // A provenance.json is written alongside the bytecode. Publish is
 // atomic (rename on the same filesystem).
-func (rt BytecodeFS) PublishBytecode(id uint32, srcPath string, prov Provenance) error {
+func (rt BytecodeFS) PublishBytecode(id kernel.ProgramID, srcPath string, prov Provenance) error {
 	rt.mustValid()
 
 	// Validate source file.
@@ -185,7 +187,7 @@ func (rt BytecodeFS) PublishBytecode(id uint32, srcPath string, prov Provenance)
 // RemoveProgram removes <base>/programs/{id}/ and its contents.
 // Returns nil if the directory does not exist. Uses safeRemoveAll to
 // verify the target is under the programs directory.
-func (rt BytecodeFS) RemoveProgram(id uint32) error {
+func (rt BytecodeFS) RemoveProgram(id kernel.ProgramID) error {
 	rt.mustValid()
 	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
 }
@@ -200,7 +202,7 @@ func (rt BytecodeFS) RemoveProgramDir(path string) error {
 }
 
 // ProgramExists reports whether <base>/programs/{id}/ exists.
-func (rt BytecodeFS) ProgramExists(id uint32) bool {
+func (rt BytecodeFS) ProgramExists(id kernel.ProgramID) bool {
 	rt.mustValid()
 	var exists bool
 	_ = (statExistsOp{path: rt.programDir(id), exists: &exists}).exec()
@@ -209,7 +211,7 @@ func (rt BytecodeFS) ProgramExists(id uint32) bool {
 
 // ProgramBytecodePath returns the published bytecode path for DB
 // ObjectPath storage.
-func (rt BytecodeFS) ProgramBytecodePath(id uint32) string {
+func (rt BytecodeFS) ProgramBytecodePath(id kernel.ProgramID) string {
 	rt.mustValid()
 	return filepath.Join(rt.programDir(id), bytecodeName)
 }
@@ -247,9 +249,9 @@ func (rt BytecodeFS) RemoveStagingDir(path string) error {
 
 // ProgramDirEntry represents a directory under <base>/programs/.
 type ProgramDirEntry struct {
-	Path     string // Full path to the directory
-	KernelID uint32 // Parsed kernel ID; 0 if name is not numeric
-	Numeric  bool   // True if directory name is a valid uint32
+	Path     string           // Full path to the directory
+	KernelID kernel.ProgramID // Parsed kernel ID; 0 if name is not numeric
+	Numeric  bool             // True if directory name is a valid numeric kernel ID
 }
 
 // ScanProgramDirs returns all directories under <base>/programs/.
@@ -276,7 +278,7 @@ func (rt BytecodeFS) ScanProgramDirs() ([]ProgramDirEntry, error) {
 			Path: filepath.Join(programsPath, name),
 		}
 		if id, err := strconv.ParseUint(name, 10, 32); err == nil {
-			pde.KernelID = uint32(id)
+			pde.KernelID = kernel.ProgramID(id)
 			pde.Numeric = true
 		}
 		result = append(result, pde)

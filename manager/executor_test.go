@@ -20,23 +20,23 @@ import (
 // Only implements methods used by SaveProgram/DeleteProgram actions.
 // All other methods panic - if a test hits them, it's using the wrong action type.
 type stubStore struct {
-	saveFunc   func(ctx context.Context, kernelID uint32) error
-	deleteFunc func(ctx context.Context, kernelID uint32) error
+	saveFunc   func(ctx context.Context, kernelID kernel.ProgramID) error
+	deleteFunc func(ctx context.Context, kernelID kernel.ProgramID) error
 }
 
 func newStubStore() *stubStore {
 	return &stubStore{
-		saveFunc:   func(ctx context.Context, kernelID uint32) error { return nil },
-		deleteFunc: func(ctx context.Context, kernelID uint32) error { return nil },
+		saveFunc:   func(ctx context.Context, kernelID kernel.ProgramID) error { return nil },
+		deleteFunc: func(ctx context.Context, kernelID kernel.ProgramID) error { return nil },
 	}
 }
 
 // ProgramWriter methods (used by tests)
-func (s *stubStore) Save(ctx context.Context, kernelID uint32, _ bpfman.ProgramRecord) error {
+func (s *stubStore) Save(ctx context.Context, kernelID kernel.ProgramID, _ bpfman.ProgramRecord) error {
 	return s.saveFunc(ctx, kernelID)
 }
 
-func (s *stubStore) Delete(ctx context.Context, kernelID uint32) error {
+func (s *stubStore) Delete(ctx context.Context, kernelID kernel.ProgramID) error {
 	return s.deleteFunc(ctx, kernelID)
 }
 
@@ -44,22 +44,22 @@ func (s *stubStore) Delete(ctx context.Context, kernelID uint32) error {
 func (s *stubStore) Close() error { return nil }
 
 // ProgramReader
-func (s *stubStore) Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error) {
+func (s *stubStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	panic("stubStore.Get not implemented")
 }
 
 // ProgramLister
-func (s *stubStore) List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error) {
+func (s *stubStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
 	panic("stubStore.List not implemented")
 }
 
 // ProgramFinder
-func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, uint32, error) {
+func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
 	panic("stubStore.FindProgramByMetadata not implemented")
 }
 
 // MapOwnershipReader
-func (s *stubStore) CountDependentPrograms(ctx context.Context, kernelID uint32) (int, error) {
+func (s *stubStore) CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error) {
 	panic("stubStore.CountDependentPrograms not implemented")
 }
 
@@ -82,7 +82,7 @@ func (s *stubStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) 
 	panic("stubStore.ListLinks not implemented")
 }
 
-func (s *stubStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
+func (s *stubStore) ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	panic("stubStore.ListLinksByProgram not implemented")
 }
 
@@ -111,7 +111,7 @@ func (s *stubStore) IncrementRevision(ctx context.Context, dispType string, nsid
 	panic("stubStore.IncrementRevision not implemented")
 }
 
-func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID uint32) (int, error) {
+func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error) {
 	panic("stubStore.CountDispatcherLinks not implemented")
 }
 
@@ -121,7 +121,7 @@ func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store
 }
 
 // GarbageCollector
-func (s *stubStore) GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (platform.GCResult, error) {
+func (s *stubStore) GC(ctx context.Context, kernelProgramIDs map[kernel.ProgramID]bool, kernelLinkIDs map[kernel.LinkID]bool) (platform.GCResult, error) {
 	panic("stubStore.GC not implemented")
 }
 
@@ -136,19 +136,19 @@ func (k *stubKernel) Programs(ctx context.Context) iter.Seq2[kernel.Program, err
 	panic("stubKernel.Programs not implemented")
 }
 
-func (k *stubKernel) GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error) {
+func (k *stubKernel) GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error) {
 	panic("stubKernel.GetProgramByID not implemented")
 }
 
-func (k *stubKernel) GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error) {
+func (k *stubKernel) GetProgramStatsByID(ctx context.Context, id kernel.ProgramID) (*kernel.ProgramStats, error) {
 	panic("stubKernel.GetProgramStatsByID not implemented")
 }
 
-func (k *stubKernel) GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error) {
+func (k *stubKernel) GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error) {
 	panic("stubKernel.GetLinkByID not implemented")
 }
 
-func (k *stubKernel) GetMapByID(ctx context.Context, id uint32) (kernel.Map, error) {
+func (k *stubKernel) GetMapByID(ctx context.Context, id kernel.MapID) (kernel.Map, error) {
 	panic("stubKernel.GetMapByID not implemented")
 }
 
@@ -262,8 +262,8 @@ func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent
 
 func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	kops := newStubKernel()
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 
 	execWithResult, ok := exec.(action.ExecutorWithResult)
 	if !ok {
@@ -298,8 +298,8 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 
 func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	kops := newStubKernel()
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), nil)
@@ -317,14 +317,14 @@ func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
 
 func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
 	expectedErr := errors.New("first action failed")
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		return expectedErr
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
@@ -352,17 +352,17 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 
 func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
 	expectedErr := errors.New("middle action failed")
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		if kernelID == 2 {
 			return expectedErr
 		}
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
@@ -390,17 +390,17 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 
 func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
 	expectedErr := errors.New("last action failed")
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		if kernelID == 3 {
 			return expectedErr
 		}
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
@@ -428,10 +428,10 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 
 func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
 	callCount := 0
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		callCount++
 		if kernelID == 2 {
 			return errors.New("stop here")
@@ -439,7 +439,7 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
@@ -459,16 +459,16 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 
 func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		if kernelID == 2 {
 			return errors.New("fail")
 		}
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
@@ -503,17 +503,17 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 
 func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
+	kops := newStubKernel()
 
 	expectedErr := errors.New("expected error")
-	store.saveFunc = func(ctx context.Context, kernelID uint32) error {
+	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
 		if kernelID == 2 {
 			return expectedErr
 		}
 		return nil
 	}
 
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},
@@ -529,8 +529,8 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 
 func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
 	store := newStubStore()
-	kernel := newStubKernel()
-	exec := manager.NewExecutorForTest(store, kernel, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
+	kops := newStubKernel()
+	exec := manager.NewExecutorForTest(store, kops, bpfmanfs.BytecodeFS{}, bpfmanfs.BPFFS{}, nil)
 
 	actions := []action.Action{
 		action.SaveProgram{KernelID: 1},

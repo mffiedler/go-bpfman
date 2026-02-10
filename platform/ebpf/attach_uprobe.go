@@ -88,7 +88,7 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 }
 
 // doAttachUprobeLocal attaches a uprobe directly (no namespace switching).
-func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (uint32, *kernel.Link, error) {
+func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (kernel.LinkID, *kernel.Link, error) {
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -117,7 +117,7 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		lnk.Close()
 		return 0, nil, fmt.Errorf("get link info: %w", err)
 	}
-	linkID := uint32(linkInfo.ID)
+	linkID := kernel.LinkID(linkInfo.ID)
 
 	k.logger.Debug("uprobe link created", "link_id", linkID, "link_type", linkInfo.Type)
 
@@ -151,7 +151,7 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 // 9. Child uses inherited program fd to attach uprobe
 // 10. Child sends link fd back to parent via socket (SCM_RIGHTS)
 // 11. Parent receives link fd, keeps it open to maintain the uprobe
-func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (uint32, error) {
+func (k *kernelAdapter) attachUprobeViaHelper(scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (kernel.LinkID, error) {
 	// Find the bpfman binary (which also serves as bpfman-ns)
 	bpfmanPath, err := os.Executable()
 	if err != nil {

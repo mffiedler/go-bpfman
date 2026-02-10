@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 func mustNew(t *testing.T) bpfmanfs.FSLayout {
@@ -61,7 +62,7 @@ func TestPublishBytecode(t *testing.T) {
 	require.NoError(t, err)
 	var readProv bpfmanfs.Provenance
 	require.NoError(t, json.Unmarshal(provData, &readProv))
-	assert.Equal(t, uint32(42), readProv.KernelID)
+	assert.Equal(t, kernel.ProgramID(42), readProv.KernelID)
 	assert.Equal(t, "test_prog", readProv.ProgramName)
 	assert.Equal(t, "file", readProv.SourceKind)
 }
@@ -181,7 +182,7 @@ func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 	}
 
 	require.Len(t, numeric, 1)
-	assert.Equal(t, uint32(42), numeric[0].KernelID)
+	assert.Equal(t, kernel.ProgramID(42), numeric[0].KernelID)
 }
 
 func TestCleanStaging(t *testing.T) {

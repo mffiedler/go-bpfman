@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -644,7 +645,7 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	require.NoError(t, err, "Attach failed")
 
 	// Configure kernel to fail on detach for this link ID
-	fix.Kernel.FailOnDetach(uint32(link.Record.ID), fmt.Errorf("injected detach failure"))
+	fix.Kernel.FailOnDetach(kernel.LinkID(link.Record.ID), fmt.Errorf("injected detach failure"))
 
 	// Attempt to detach - should fail
 	err = fix.Manager.Detach(ctx, link.Record.ID)

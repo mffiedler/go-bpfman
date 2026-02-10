@@ -120,9 +120,9 @@ func ParseProgramType(s string) (ProgramType, bool) {
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
-	PinPath    string  `json:"pin_path"`
-	MapPinPath string  `json:"map_pin_path,omitempty"`
-	MapOwnerID *uint32 `json:"map_owner_id,omitempty"`
+	PinPath    string            `json:"pin_path"`
+	MapPinPath string            `json:"map_pin_path,omitempty"`
+	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`
 }
 
 // ProgramMeta contains operator-facing management metadata.
@@ -142,8 +142,8 @@ type ProgramMeta struct {
 // stored state (output). They share some fields but serve different purposes.
 type ProgramRecord struct {
 	// Identity - KernelID is the DB primary key and user-facing ID
-	KernelID uint32   `json:"kernel_id"`
-	Load     LoadSpec `json:"load"`
+	KernelID kernel.ProgramID `json:"kernel_id"`
+	Load     LoadSpec         `json:"load"`
 	// License and GPLCompatible are discovered at load time from the ELF.
 	// They live on ProgramRecord (not LoadSpec) because they're properties
 	// of the loaded program, not part of the load request.

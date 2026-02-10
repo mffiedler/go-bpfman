@@ -9,6 +9,7 @@ import (
 
 	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpffs"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform/store"
 )
 
@@ -89,7 +90,7 @@ func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error
 
 // ListLinksByProgram returns all links for a given program kernel ID with
 // their details populated.
-func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error) {
+func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	start := time.Now()
 	rows, err := s.stmtListLinksByProgram.QueryContext(ctx, programKernelID)
 	if err != nil {
@@ -580,7 +581,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	var record bpfman.LinkRecord
 	var linkID int64
 	var kindStr string
-	var programID uint32
+	var programID kernel.ProgramID
 	var pinPath sql.NullString
 	var isSynthetic int
 	var createdAtStr string
@@ -617,7 +618,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 	for rows.Next() {
 		var linkID int64
 		var kindStr string
-		var programID uint32
+		var programID kernel.ProgramID
 		var pinPath sql.NullString
 		var isSynthetic int
 		var createdAtStr string

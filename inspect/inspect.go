@@ -20,14 +20,14 @@ var ErrNotFound = errors.New("not found")
 
 // StoreLister is the subset of platform.Store needed by Snapshot.
 type StoreLister interface {
-	List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error)
+	List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error)
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
 	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
 }
 
 // StoreGetter is the subset of platform.Store needed by GetProgram.
 type StoreGetter interface {
-	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error)
+	Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }
 
 // KernelLister is the subset of platform.KernelSource needed by Snapshot.
@@ -38,7 +38,7 @@ type KernelLister interface {
 
 // KernelGetter is the subset of platform.KernelSource needed by GetProgram.
 type KernelGetter interface {
-	GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error)
+	GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error)
 }
 
 // LinkGetter is the subset of platform.Store needed by GetLink.
@@ -48,7 +48,7 @@ type LinkGetter interface {
 
 // KernelLinkGetter is the subset of platform.KernelSource needed by GetLink.
 type KernelLinkGetter interface {
-	GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error)
+	GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error)
 }
 
 // LinkInfo is the result of GetLink, containing record and presence.
@@ -89,7 +89,7 @@ func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 // ProgramView is a correlation view of a program across store, kernel, and FS.
 // Renamed from ProgramRow.
 type ProgramView struct {
-	KernelID uint32 `json:"kernel_id"`
+	KernelID kernel.ProgramID `json:"kernel_id"`
 
 	// Store fields (valid when Presence.InStore is true)
 	Managed *bpfman.ProgramRecord `json:"managed,omitempty"`
@@ -190,9 +190,9 @@ func (r LinkRow) ID() bpfman.LinkID {
 // KernelLinkID returns the kernel link ID if available.
 // For non-synthetic links, the Spec.ID is the kernel link ID.
 // For synthetic links (perf_event-based), returns nil.
-func (r LinkRow) KernelLinkID() *uint32 {
+func (r LinkRow) KernelLinkID() *kernel.LinkID {
 	if r.Managed != nil && !r.Managed.IsSynthetic() {
-		id := uint32(r.Managed.ID)
+		id := kernel.LinkID(r.Managed.ID)
 		return &id
 	}
 	if r.Kernel != nil {
@@ -257,10 +257,10 @@ type DispatcherRow struct {
 	Ifindex  uint32 `json:"ifindex"`
 
 	// Store fields (valid when Presence.InStore is true)
-	Revision uint32 `json:"revision"`
-	KernelID uint32 `json:"kernel_id"`
-	LinkID   uint32 `json:"link_id"`
-	Priority uint32 `json:"priority"`
+	Revision uint32           `json:"revision"`
+	KernelID kernel.ProgramID `json:"kernel_id"`
+	LinkID   kernel.LinkID    `json:"link_id"`
+	Priority uint32           `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
 	ProgPresence Presence `json:"prog_presence"` // dispatcher program
@@ -335,8 +335,8 @@ func Snapshot(
 	}
 
 	// Phase 1: Build indexes from kernel and filesystem
-	kernelProgs := make(map[uint32]kernel.Program)
-	kernelLinks := make(map[uint32]bool)
+	kernelProgs := make(map[kernel.ProgramID]kernel.Program)
+	kernelLinks := make(map[kernel.LinkID]bool)
 
 	for kp, err := range kern.Programs(ctx) {
 		if err != nil {
@@ -355,9 +355,9 @@ func Snapshot(
 	}
 
 	// FS indexes
-	fsProgPins := make(map[uint32]string)                  // kernelID -> path
-	fsLinkDirs := make(map[uint32]string)                  // programID -> path
-	fsMapDirs := make(map[uint32]string)                   // programID -> path
+	fsProgPins := make(map[kernel.ProgramID]string)        // kernelID -> path
+	fsLinkDirs := make(map[kernel.ProgramID]string)        // programID -> path
+	fsMapDirs := make(map[kernel.ProgramID]string)         // programID -> path
 	fsDispDirs := make(map[string]*bpfmanfs.DispatcherDir) // "type/nsid/ifindex" -> dir
 	fsDispLinks := make(map[string]string)                 // "type/nsid/ifindex" -> path
 
@@ -410,7 +410,7 @@ func Snapshot(
 		return nil, err
 	}
 
-	seenProgIDs := make(map[uint32]bool)
+	seenProgIDs := make(map[kernel.ProgramID]bool)
 	for kernelID, prog := range storeProgs {
 		seenProgIDs[kernelID] = true
 		fsPath, inFS := fsProgPins[kernelID]
@@ -473,7 +473,7 @@ func Snapshot(
 
 	// Phase 3: Build link rows (store-first)
 	// Also build kernel link map for correlation
-	kernelLinkMap := make(map[uint32]kernel.Link)
+	kernelLinkMap := make(map[kernel.LinkID]kernel.Link)
 	for kl, err := range kern.Links(ctx) {
 		if err != nil {
 			continue
@@ -486,18 +486,18 @@ func Snapshot(
 		return nil, err
 	}
 
-	seenKernelLinkIDs := make(map[uint32]bool)
+	seenKernelLinkIDs := make(map[kernel.LinkID]bool)
 	for _, link := range storeLinks {
 		// Track kernel link IDs we've seen from store.
 		// For non-synthetic links, ID is the kernel link ID.
 		if !link.IsSynthetic() {
-			seenKernelLinkIDs[uint32(link.ID)] = true
+			seenKernelLinkIDs[kernel.LinkID(link.ID)] = true
 		}
 
 		// Check kernel presence
 		var kernelLink *kernel.Link
 		if !link.IsSynthetic() {
-			if kl, ok := kernelLinkMap[uint32(link.ID)]; ok {
+			if kl, ok := kernelLinkMap[kernel.LinkID(link.ID)]; ok {
 				kernelLink = &kl
 			}
 		}
@@ -606,7 +606,7 @@ func Snapshot(
 	}
 
 	// Correlate links to programs by ProgramID
-	programIndex := make(map[uint32]int, len(w.Programs))
+	programIndex := make(map[kernel.ProgramID]int, len(w.Programs))
 	for i := range w.Programs {
 		programIndex[w.Programs[i].KernelID] = i
 	}
@@ -650,7 +650,7 @@ func GetProgram(
 	storeGetter StoreGetter,
 	kern KernelGetter,
 	scanner *bpfmanfs.Scanner,
-	kernelID uint32,
+	kernelID kernel.ProgramID,
 ) (ProgramView, error) {
 	row := ProgramView{KernelID: kernelID}
 
@@ -717,7 +717,7 @@ func GetLink(
 	// Try kernel (skip for synthetic links which don't have kernel link IDs).
 	// For non-synthetic links, the Spec.ID is the kernel link ID.
 	if info.Presence.InStore && !record.IsSynthetic() {
-		kl, err := kern.GetLinkByID(ctx, uint32(record.ID))
+		kl, err := kern.GetLinkByID(ctx, kernel.LinkID(record.ID))
 		if err == nil {
 			info.Kernel = &kl
 			info.Presence.InKernel = true

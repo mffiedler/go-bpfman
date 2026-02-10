@@ -23,7 +23,7 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 
 	// Collect results to print after releasing lock
 	type result struct {
-		id  uint32
+		id  bpfman.LinkID
 		err error
 	}
 	results := make([]result, 0, len(c.LinkIDs))
@@ -31,8 +31,9 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Mutation under lock - process all IDs
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
 		for _, lid := range c.LinkIDs {
-			err := mgr.Detach(ctx, bpfman.LinkID(lid.Value))
-			results = append(results, result{id: lid.Value, err: err})
+			id := bpfman.LinkID(lid.Value)
+			err := mgr.Detach(ctx, id)
+			results = append(results, result{id: id, err: err})
 		}
 		return nil
 	})

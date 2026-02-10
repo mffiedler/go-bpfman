@@ -8,6 +8,7 @@ import (
 	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
 // AttachTracepoint attaches a pinned program to a tracepoint.
@@ -46,7 +47,7 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 	}
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    linkPinPath,
 	}, nil
@@ -93,7 +94,7 @@ func (k *kernelAdapter) AttachKprobe(ctx context.Context, progPinPath, fnName st
 	}
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    linkPinPath,
 	}, nil
@@ -144,7 +145,7 @@ func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName, 
 	}
 
 	return bpfman.AttachOutput{
-		LinkID:     uint32(linkInfo.ID),
+		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    linkPinPath,
 	}, nil

@@ -31,7 +31,7 @@ type LinkReader interface {
 // LinkLister lists links from the store.
 type LinkLister interface {
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
-	ListLinksByProgram(ctx context.Context, programKernelID uint32) ([]bpfman.LinkRecord, error)
+	ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error)
 	// ListTCXLinksByInterface returns all TCX links for a given interface/direction/namespace.
 	// Used for computing attach order based on priority.
 	ListTCXLinksByInterface(ctx context.Context, nsid uint64, ifindex uint32, direction string) ([]bpfman.TCXLinkInfo, error)
@@ -65,7 +65,7 @@ type DispatcherStore interface {
 
 	// CountDispatcherLinks returns the number of extension links
 	// attached to the dispatcher identified by its kernel program ID.
-	CountDispatcherLinks(ctx context.Context, dispatcherKernelID uint32) (int, error)
+	CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error)
 }
 
 // GCResult contains statistics from garbage collection.
@@ -86,7 +86,7 @@ type GarbageCollector interface {
 	// GC removes all stored entries (programs, dispatchers, links)
 	// that don't exist in the provided kernel state. Handles internal
 	// ordering constraints (e.g., dependent programs before map owners).
-	GC(ctx context.Context, kernelProgramIDs, kernelLinkIDs map[uint32]bool) (GCResult, error)
+	GC(ctx context.Context, kernelProgramIDs map[kernel.ProgramID]bool, kernelLinkIDs map[kernel.LinkID]bool) (GCResult, error)
 }
 
 // Store combines program, link, and dispatcher store operations.
@@ -110,18 +110,18 @@ type Transactional interface {
 // ProgramReader reads program metadata from the store.
 // Get returns store.ErrNotFound if the program does not exist.
 type ProgramReader interface {
-	Get(ctx context.Context, kernelID uint32) (bpfman.ProgramRecord, error)
+	Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }
 
 // ProgramWriter writes program metadata to the store.
 type ProgramWriter interface {
-	Save(ctx context.Context, kernelID uint32, metadata bpfman.ProgramRecord) error
-	Delete(ctx context.Context, kernelID uint32) error
+	Save(ctx context.Context, kernelID kernel.ProgramID, metadata bpfman.ProgramRecord) error
+	Delete(ctx context.Context, kernelID kernel.ProgramID) error
 }
 
 // ProgramLister lists all program metadata from the store.
 type ProgramLister interface {
-	List(ctx context.Context) (map[uint32]bpfman.ProgramRecord, error)
+	List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error)
 }
 
 // ProgramFinder finds programs by criteria.
@@ -134,7 +134,7 @@ type MapOwnershipReader interface {
 	// CountDependentPrograms returns the number of programs that share maps
 	// with the given program (i.e., programs where map_owner_id = kernelID).
 	// This is used to determine if a program's maps can be safely deleted.
-	CountDependentPrograms(ctx context.Context, kernelID uint32) (int, error)
+	CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error)
 }
 
 // ProgramStore combines all store operations.
@@ -149,10 +149,10 @@ type ProgramStore interface {
 // KernelSource provides access to kernel BPF objects.
 type KernelSource interface {
 	Programs(ctx context.Context) iter.Seq2[kernel.Program, error]
-	GetProgramByID(ctx context.Context, id uint32) (kernel.Program, error)
-	GetProgramStatsByID(ctx context.Context, id uint32) (*kernel.ProgramStats, error)
-	GetLinkByID(ctx context.Context, id uint32) (kernel.Link, error)
-	GetMapByID(ctx context.Context, id uint32) (kernel.Map, error)
+	GetProgramByID(ctx context.Context, id kernel.ProgramID) (kernel.Program, error)
+	GetProgramStatsByID(ctx context.Context, id kernel.ProgramID) (*kernel.ProgramStats, error)
+	GetLinkByID(ctx context.Context, id kernel.LinkID) (kernel.Link, error)
+	GetMapByID(ctx context.Context, id kernel.MapID) (kernel.Map, error)
 	Maps(ctx context.Context) iter.Seq2[kernel.Map, error]
 	Links(ctx context.Context) iter.Seq2[kernel.Link, error]
 }
@@ -214,10 +214,10 @@ type ProgramAttacher interface {
 
 // XDPDispatcherResult holds the result of loading an XDP dispatcher.
 type XDPDispatcherResult struct {
-	DispatcherID  uint32 // Kernel program ID of the dispatcher
-	LinkID        uint32 // Kernel link ID
-	DispatcherPin string // Pin path for dispatcher program
-	LinkPin       string // Pin path for link
+	DispatcherID  kernel.ProgramID // Kernel program ID of the dispatcher
+	LinkID        kernel.LinkID    // Kernel link ID
+	DispatcherPin string           // Pin path for dispatcher program
+	LinkPin       string           // Pin path for link
 }
 
 // TCDispatcherResult holds the result of loading a TC dispatcher.
@@ -225,10 +225,10 @@ type XDPDispatcherResult struct {
 // links, so there is no link ID or link pin. Instead the kernel
 // assigns a handle that identifies the filter for later removal.
 type TCDispatcherResult struct {
-	DispatcherID  uint32 // Kernel program ID of the dispatcher
-	DispatcherPin string // Pin path for dispatcher program
-	Handle        uint32 // Kernel-assigned tc filter handle
-	Priority      uint16 // tc filter priority (typically 50)
+	DispatcherID  kernel.ProgramID // Kernel program ID of the dispatcher
+	DispatcherPin string           // Pin path for dispatcher program
+	Handle        uint32           // Kernel-assigned tc filter handle
+	Priority      uint16           // tc filter priority (typically 50)
 }
 
 // DispatcherAttacher attaches dispatcher programs for multi-program chaining.

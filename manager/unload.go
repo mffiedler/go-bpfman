@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -16,7 +17,7 @@ import (
 // This is the internal workhorse; it takes data directly, bypassing
 // the store lookup and dependency checks that the public Unload
 // performs.
-func (m *Manager) unload(ctx context.Context, kernelID uint32, programName string, links []bpfman.LinkRecord, persisted bool) error {
+func (m *Manager) unload(ctx context.Context, kernelID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
 	progPinPath := m.fsctx.BPFFS().ProgPinPath(kernelID)
 	mapsDir := m.fsctx.BPFFS().MapPinDir(kernelID)
 	linksDir := m.fsctx.BPFFS().LinkPinDir(kernelID)
@@ -29,7 +30,7 @@ func (m *Manager) unload(ctx context.Context, kernelID uint32, programName strin
 //
 // Preflight failures (store lookup, dependency check) return plain
 // errors. Execution failures return plain errors.
-func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
+func (m *Manager) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.getProgram(ctx, kernelID)
 	if err != nil {
@@ -88,7 +89,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 // When persisted is false the delete-program node is omitted. This
 // is used during batch Load cleanup where programs have not yet been
 // saved to the store.
-func (m *Manager) unloadPlan(kernelID uint32, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
+func (m *Manager) unloadPlan(kernelID kernel.ProgramID, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
 	var nodes []operation.Node
 
 	for _, link := range links {

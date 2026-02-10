@@ -4,7 +4,7 @@ package kernel
 // All fields from cilium/ebpf's MapInfo are captured here.
 type Map struct {
 	// Core identity and structure
-	ID         uint32  `json:"id"`
+	ID         MapID   `json:"id"`
 	Name       string  `json:"name"`
 	MapType    MapType `json:"map_type"`
 	KeySize    uint32  `json:"key_size"`
@@ -29,7 +29,7 @@ type Map struct {
 
 // PinnedMap represents a BPF map pinned on the filesystem.
 type PinnedMap struct {
-	ID         uint32  `json:"id"`
+	ID         MapID   `json:"id"`
 	Name       string  `json:"name"`
 	Type       MapType `json:"type"`
 	KeySize    uint32  `json:"key_size"`
