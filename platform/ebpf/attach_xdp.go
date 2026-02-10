@@ -135,43 +135,35 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		}
 		result.LinkID = uint32(linkInfo.ID)
 
-		// Pin dispatcher program to the revision-specific path
-		if spec.ProgPinPath != "" {
-			if err := os.MkdirAll(filepath.Dir(spec.ProgPinPath), 0755); err != nil {
-				lnk.Close()
-				return fmt.Errorf("create dispatcher program directory: %w", err)
-			}
-			if err := dispatcherProg.Pin(spec.ProgPinPath); err != nil {
-				lnk.Close()
-				return fmt.Errorf("pin dispatcher program to %s: %w", spec.ProgPinPath, err)
-			}
-			result.DispatcherPin = spec.ProgPinPath
+		// Pin dispatcher program to the revision-specific path.
+		if err := os.MkdirAll(filepath.Dir(spec.ProgPinPath), 0755); err != nil {
+			lnk.Close()
+			return fmt.Errorf("create dispatcher program directory: %w", err)
 		}
+		if err := dispatcherProg.Pin(spec.ProgPinPath); err != nil {
+			lnk.Close()
+			return fmt.Errorf("pin dispatcher program to %s: %w", spec.ProgPinPath, err)
+		}
+		result.DispatcherPin = spec.ProgPinPath
 
-		// Pin link to the stable path (outside revision directory)
-		if spec.LinkPinPath != "" {
-			if err := os.MkdirAll(filepath.Dir(spec.LinkPinPath), 0755); err != nil {
-				if spec.ProgPinPath != "" {
-					if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
-						k.logger.Warn("failed to remove program pin during cleanup",
-							"path", spec.ProgPinPath, "error", rmErr)
-					}
-				}
-				lnk.Close()
-				return fmt.Errorf("create link pin directory: %w", err)
+		// Pin link to the stable path (outside revision directory).
+		if err := os.MkdirAll(filepath.Dir(spec.LinkPinPath), 0755); err != nil {
+			if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				k.logger.Warn("failed to remove program pin during cleanup",
+					"path", spec.ProgPinPath, "error", rmErr)
 			}
-			if err := lnk.Pin(spec.LinkPinPath); err != nil {
-				if spec.ProgPinPath != "" {
-					if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
-						k.logger.Warn("failed to remove program pin during cleanup",
-							"path", spec.ProgPinPath, "error", rmErr)
-					}
-				}
-				lnk.Close()
-				return fmt.Errorf("pin dispatcher link to %s: %w", spec.LinkPinPath, err)
-			}
-			result.LinkPin = spec.LinkPinPath
+			lnk.Close()
+			return fmt.Errorf("create link pin directory: %w", err)
 		}
+		if err := lnk.Pin(spec.LinkPinPath); err != nil {
+			if rmErr := os.Remove(spec.ProgPinPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				k.logger.Warn("failed to remove program pin during cleanup",
+					"path", spec.ProgPinPath, "error", rmErr)
+			}
+			lnk.Close()
+			return fmt.Errorf("pin dispatcher link to %s: %w", spec.LinkPinPath, err)
+		}
+		result.LinkPin = spec.LinkPinPath
 
 		return nil
 	})
