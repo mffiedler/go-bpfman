@@ -13,14 +13,17 @@
 //   - Store:      CheckProgramNotInStore, SaveProgram, DeleteProgram,
 //     SaveLink, DeleteLink, SaveDispatcher, DeleteDispatcher
 //   - Kernel:     LoadProgram, UnloadProgram, DetachLink, RemovePin,
-//     DetachTCFilter
+//     DetachTCFilter, AttachTracepoint, AttachKprobe,
+//     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,
+//     AttachFexit
 //   - Filesystem: PublishBytecode, RemoveProgramDir
 //   - Composite:  Batch, Sequence
 //
 // Execute runs an instruction for its side effect. ExecuteResult
-// runs it and returns a typed value (used by LoadProgram which
-// produces a LoadOutput). The generic Produce[T] wrapper provides
-// compile-time type safety over the raw any return.
+// runs it and returns a typed value (used by LoadProgram and the
+// Attach* actions which produce AttachOutput). The generic
+// Produce[T] wrapper provides compile-time type safety over the
+// raw any return.
 //
 // # Plans compose opcodes
 //

@@ -26,8 +26,8 @@ type attachPlan struct {
 	linkName string
 	// details is the sealed LinkDetails value for the link record.
 	details bpfman.LinkDetails
-	// attach performs the kernel I/O and returns the attach output.
-	attach func(linkPinPath string) (bpfman.AttachOutput, error)
+	// attachAction constructs the kernel attach action for the given link pin path.
+	attachAction func(linkPinPath string) action.Action
 }
 
 // attachParams describes a non-dispatcher attach operation.
@@ -96,7 +96,7 @@ func (m *Manager) simpleAttachPlan(
 	return operation.Build(
 		operation.Produce(attachOutKey, ap.target,
 			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
-				return ap.attach(linkPinPath)
+				return action.Produce[bpfman.AttachOutput](ctx, m.executor, ap.attachAction(linkPinPath))
 			},
 			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
 				return []action.Action{

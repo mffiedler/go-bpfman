@@ -6,6 +6,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/manager/action"
 )
 
 // attachTracepoint attaches a pinned program to a tracepoint.
@@ -20,8 +21,13 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 				target:   target,
 				linkName: fmt.Sprintf("%s_%s", group, name),
 				details:  bpfman.TracepointDetails{Group: group, Name: name},
-				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
-					return m.kernel.AttachTracepoint(ctx, progPinPath, group, name, linkPinPath)
+				attachAction: func(linkPinPath string) action.Action {
+					return action.AttachTracepoint{
+						ProgPinPath: progPinPath,
+						Group:       group,
+						Name:        name,
+						LinkPinPath: linkPinPath,
+					}
 				},
 			}, nil
 		},
@@ -45,8 +51,14 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 				target:   fnName,
 				linkName: linkName,
 				details:  bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
-				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
-					return m.kernel.AttachKprobe(ctx, progPinPath, fnName, offset, retprobe, linkPinPath)
+				attachAction: func(linkPinPath string) action.Action {
+					return action.AttachKprobe{
+						ProgPinPath: progPinPath,
+						FnName:      fnName,
+						Offset:      offset,
+						Retprobe:    retprobe,
+						LinkPinPath: linkPinPath,
+					}
 				},
 			}, nil
 		},
@@ -76,16 +88,37 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			if retprobe {
 				linkName = "ret_" + linkName
 			}
-			return attachPlan{
-				target:   binaryTarget + ":" + fnName,
-				linkName: linkName,
-				details:  bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
-				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
-					if containerPid > 0 {
-						return m.kernel.AttachUprobeContainer(ctx, scope, progPinPath, binaryTarget, fnName, offset, retprobe, linkPinPath, containerPid)
+			var attachFn func(linkPinPath string) action.Action
+			if containerPid > 0 {
+				attachFn = func(linkPinPath string) action.Action {
+					return action.AttachUprobeContainer{
+						Scope:        scope,
+						ProgPinPath:  progPinPath,
+						Target:       binaryTarget,
+						FnName:       fnName,
+						Offset:       offset,
+						Retprobe:     retprobe,
+						LinkPinPath:  linkPinPath,
+						ContainerPid: containerPid,
 					}
-					return m.kernel.AttachUprobeLocal(ctx, progPinPath, binaryTarget, fnName, offset, retprobe, linkPinPath)
-				},
+				}
+			} else {
+				attachFn = func(linkPinPath string) action.Action {
+					return action.AttachUprobeLocal{
+						ProgPinPath: progPinPath,
+						Target:      binaryTarget,
+						FnName:      fnName,
+						Offset:      offset,
+						Retprobe:    retprobe,
+						LinkPinPath: linkPinPath,
+					}
+				}
+			}
+			return attachPlan{
+				target:       binaryTarget + ":" + fnName,
+				linkName:     linkName,
+				details:      bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
+				attachAction: attachFn,
 			}, nil
 		},
 	})
@@ -105,8 +138,12 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 				target:   fnName,
 				linkName: "fentry_" + fnName,
 				details:  bpfman.FentryDetails{FnName: fnName},
-				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
-					return m.kernel.AttachFentry(ctx, progPinPath, fnName, linkPinPath)
+				attachAction: func(linkPinPath string) action.Action {
+					return action.AttachFentry{
+						ProgPinPath: progPinPath,
+						FnName:      fnName,
+						LinkPinPath: linkPinPath,
+					}
 				},
 			}, nil
 		},
@@ -127,8 +164,12 @@ func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) 
 				target:   fnName,
 				linkName: "fexit_" + fnName,
 				details:  bpfman.FexitDetails{FnName: fnName},
-				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
-					return m.kernel.AttachFexit(ctx, progPinPath, fnName, linkPinPath)
+				attachAction: func(linkPinPath string) action.Action {
+					return action.AttachFexit{
+						ProgPinPath: progPinPath,
+						FnName:      fnName,
+						LinkPinPath: linkPinPath,
+					}
 				},
 			}, nil
 		},

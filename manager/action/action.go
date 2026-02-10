@@ -4,6 +4,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/lock"
 )
 
 // Action represents an effect to be executed.
@@ -72,6 +73,77 @@ type UnloadProgram struct {
 }
 
 func (UnloadProgram) isAction() {}
+
+// Attach actions - kernel attach operations that produce AttachOutput
+
+// AttachTracepoint attaches a pinned program to a kernel tracepoint.
+type AttachTracepoint struct {
+	ProgPinPath string
+	Group       string
+	Name        string
+	LinkPinPath string
+}
+
+func (AttachTracepoint) isAction() {}
+
+// AttachKprobe attaches a pinned program to a kernel function.
+// If Retprobe is true, attaches as a kretprobe.
+type AttachKprobe struct {
+	ProgPinPath string
+	FnName      string
+	Offset      uint64
+	Retprobe    bool
+	LinkPinPath string
+}
+
+func (AttachKprobe) isAction() {}
+
+// AttachUprobeLocal attaches a pinned program to a user-space function
+// in the current namespace.
+type AttachUprobeLocal struct {
+	ProgPinPath string
+	Target      string
+	FnName      string
+	Offset      uint64
+	Retprobe    bool
+	LinkPinPath string
+}
+
+func (AttachUprobeLocal) isAction() {}
+
+// AttachUprobeContainer attaches a pinned program to a user-space
+// function in a container's mount namespace. Requires a WriterScope
+// to pass the lock fd to the helper subprocess.
+type AttachUprobeContainer struct {
+	Scope        lock.WriterScope
+	ProgPinPath  string
+	Target       string
+	FnName       string
+	Offset       uint64
+	Retprobe     bool
+	LinkPinPath  string
+	ContainerPid int32
+}
+
+func (AttachUprobeContainer) isAction() {}
+
+// AttachFentry attaches a pinned program to a kernel function entry point.
+type AttachFentry struct {
+	ProgPinPath string
+	FnName      string
+	LinkPinPath string
+}
+
+func (AttachFentry) isAction() {}
+
+// AttachFexit attaches a pinned program to a kernel function exit point.
+type AttachFexit struct {
+	ProgPinPath string
+	FnName      string
+	LinkPinPath string
+}
+
+func (AttachFexit) isAction() {}
 
 // Batch groups multiple actions to be executed together.
 type Batch struct {
