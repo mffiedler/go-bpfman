@@ -367,7 +367,7 @@ func (s *ObservedState) Links() []LinkState {
 		inKernel := false
 		// For non-synthetic links, ID is the kernel link ID
 		if !synthetic {
-			inKernel = s.kernelLinks[kernel.LinkID(link.ID)]
+			inKernel = s.kernelLinks[link.ID]
 		}
 		ls := LinkState{
 			DB:        link,

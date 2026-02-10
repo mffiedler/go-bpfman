@@ -237,7 +237,7 @@ func (f *fakeKernel) InjectKernelLink(id kernel.LinkID, kind bpfman.LinkKind) {
 	defer f.mu.Unlock()
 	f.links[id] = &bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:   bpfman.LinkID(id),
+			ID:   id,
 			Kind: kind,
 		},
 	}
@@ -558,7 +558,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindTracepoint,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -585,7 +585,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindXDP,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -617,7 +617,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -649,7 +649,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, f
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -679,7 +679,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      linkKind,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -706,7 +706,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName, linkPi
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindFentry,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -732,7 +732,7 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName, linkPin
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindFexit,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),
@@ -809,7 +809,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindXDP,
 			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
@@ -898,7 +898,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindTC,
 			PinPath:   bpffs.NewLinkPath(spec.LinkPinPath),
 			CreatedAt: time.Now(),
@@ -934,7 +934,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        linkID,
 			Kind:      bpfman.LinkKindTCX,
 			PinPath:   bpffs.NewLinkPath(linkPinPath),
 			CreatedAt: time.Now(),

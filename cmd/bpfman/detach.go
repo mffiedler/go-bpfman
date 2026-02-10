@@ -31,7 +31,7 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Mutation under lock - process all IDs
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
 		for _, lid := range c.LinkIDs {
-			id := bpfman.LinkID(lid.Value)
+			id := lid.Value
 			err := mgr.Detach(ctx, id)
 			results = append(results, result{id: id, err: err})
 		}

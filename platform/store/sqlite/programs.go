@@ -364,7 +364,7 @@ func (s *sqliteStore) GC(ctx context.Context, kernelProgramIDs map[kernel.Progra
 				continue
 			}
 			// For non-synthetic links, ID is the kernel link ID
-			if !kernelLinkIDs[kernel.LinkID(link.ID)] {
+			if !kernelLinkIDs[link.ID] {
 				if err := ts.DeleteLink(ctx, link.ID); err != nil {
 					s.logger.Warn("failed to delete link", "link_id", link.ID, "error", err)
 					continue

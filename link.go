@@ -278,19 +278,9 @@ func ParseLinkKind(s string) (LinkKind, bool) {
 	}
 }
 
-// LinkID is bpfman's identifier for a link.
-// Opaque to callers; currently backed by kernel/synthetic link ID.
-//
-// Implementation note: The current schema uses kernel_link_id as the primary
-// key. During this refactor, LinkID is populated from kernel_link_id for
-// compatibility. Callers must treat LinkID as opaque; it must not be used
-// as a kernel correlation key outside inspect/store internals.
-type LinkID uint32
-
-// IsSynthetic returns true if this ID was minted by bpfman (not a kernel-assigned link ID).
-func (id LinkID) IsSynthetic() bool {
-	return IsSyntheticLinkID(kernel.LinkID(id))
-}
+// LinkID is an alias for kernel.LinkID. Kernel link IDs and
+// bpfman-managed link IDs share the same type and value space.
+type LinkID = kernel.LinkID
 
 // LinkRecord is the stored record of an attached link (DB-backed).
 // ID is the user-facing identity: kernel-assigned for real BPF links,
@@ -369,7 +359,7 @@ func WithProgramID(id kernel.ProgramID) LinkListOption {
 }
 
 // IsSynthetic returns true if this is a synthetic link (perf_event-based, no kernel link).
-func (r LinkRecord) IsSynthetic() bool { return r.ID.IsSynthetic() }
+func (r LinkRecord) IsSynthetic() bool { return IsSyntheticLinkID(r.ID) }
 
 // HasPin returns true if this link has a pin path.
 func (r LinkRecord) HasPin() bool { return r.PinPath != nil }

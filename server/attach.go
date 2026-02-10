@@ -361,7 +361,7 @@ func (s *Server) attachFexit(ctx context.Context, scope lock.WriterScope, progra
 
 // Detach implements the Detach RPC method.
 func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachResponse, error) {
-	if err := s.mgr.Detach(ctx, bpfman.LinkID(req.LinkId)); err != nil {
+	if err := s.mgr.Detach(ctx, kernel.LinkID(req.LinkId)); err != nil {
 		var notManaged bpfman.ErrLinkNotManaged
 		var notFound bpfman.ErrLinkNotFound
 		switch {

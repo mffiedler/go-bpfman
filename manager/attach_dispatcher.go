@@ -143,7 +143,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				r := operation.Get(b, extResultKey)
 				record := bpfman.NewPinnedLinkRecord(
-					bpfman.LinkID(r.out.LinkID),
+					r.out.LinkID,
 					p.programKernelID,
 					p.buildLinkDetails(r.disp.Nsid, r.position, r.disp),
 					*bpffs.NewLinkPath(r.pinPath),

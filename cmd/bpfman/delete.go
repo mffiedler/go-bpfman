@@ -45,7 +45,7 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 			var err error
 			switch ref.Kind {
 			case ResourceKindLink:
-				err = c.deleteLink(ctx, mgr, bpfman.LinkID(ref.ID))
+				err = c.deleteLink(ctx, mgr, kernel.LinkID(ref.ID))
 			case ResourceKindProgram:
 				err = c.deleteProgram(ctx, mgr, kernel.ProgramID(ref.ID))
 			}

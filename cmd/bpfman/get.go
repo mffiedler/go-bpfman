@@ -53,7 +53,7 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	info, err := mgr.GetLinkInfo(ctx, bpfman.LinkID(c.LinkID.Value))
+	info, err := mgr.GetLinkInfo(ctx, c.LinkID.Value)
 	if err != nil {
 		return err
 	}

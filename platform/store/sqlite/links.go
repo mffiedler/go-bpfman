@@ -199,7 +199,7 @@ func (s *sqliteStore) batchPopulateTracepointDetails(ctx context.Context, links 
 		if err := rows.Scan(&linkID, &details.Group, &details.Name); err != nil {
 			return fmt.Errorf("scan tracepoint details: %w", err)
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -221,7 +221,7 @@ func (s *sqliteStore) batchPopulateKprobeDetails(ctx context.Context, links []bp
 			return fmt.Errorf("scan kprobe details: %w", err)
 		}
 		details.Retprobe = retprobe == 1
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -251,7 +251,7 @@ func (s *sqliteStore) batchPopulateUprobeDetails(ctx context.Context, links []bp
 			details.PID = int32(pid.Int64)
 		}
 		details.Retprobe = retprobe == 1
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -271,7 +271,7 @@ func (s *sqliteStore) batchPopulateFentryDetails(ctx context.Context, links []bp
 		if err := rows.Scan(&linkID, &details.FnName); err != nil {
 			return fmt.Errorf("scan fentry details: %w", err)
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -291,7 +291,7 @@ func (s *sqliteStore) batchPopulateFexitDetails(ctx context.Context, links []bpf
 		if err := rows.Scan(&linkID, &details.FnName); err != nil {
 			return fmt.Errorf("scan fexit details: %w", err)
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -320,7 +320,7 @@ func (s *sqliteStore) batchPopulateXDPDetails(ctx context.Context, links []bpfma
 		if netns.Valid {
 			details.Netns = netns.String
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -349,7 +349,7 @@ func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman
 		if netns.Valid {
 			details.Netns = netns.String
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -377,7 +377,7 @@ func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfma
 		if nsid.Valid {
 			details.Nsid = uint64(nsid.Int64)
 		}
-		if idx, ok := linkIndex[bpfman.LinkID(linkID)]; ok {
+		if idx, ok := linkIndex[kernel.LinkID(linkID)]; ok {
 			links[idx].Details = details
 		}
 	}
@@ -553,7 +553,7 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkRe
 
 	// Derive is_synthetic from the link ID
 	isSynthetic := 0
-	if spec.ID.IsSynthetic() {
+	if bpfman.IsSyntheticLinkID(spec.ID) {
 		isSynthetic = 1
 	}
 
@@ -594,7 +594,7 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 		return bpfman.LinkRecord{}, err
 	}
 
-	record.ID = bpfman.LinkID(linkID)
+	record.ID = kernel.LinkID(linkID)
 	record.Kind = bpfman.LinkKind(kindStr)
 	record.ProgramID = programID
 	if pinPath.Valid {
@@ -629,7 +629,7 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 		}
 
 		record := bpfman.LinkRecord{
-			ID:        bpfman.LinkID(linkID),
+			ID:        kernel.LinkID(linkID),
 			Kind:      bpfman.LinkKind(kindStr),
 			ProgramID: programID,
 		}

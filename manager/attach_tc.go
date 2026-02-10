@@ -193,7 +193,7 @@ func (m *Manager) attachTCXPlan(
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
-					bpfman.LinkID(out.LinkID),
+					out.LinkID,
 					programKernelID,
 					bpfman.TCXDetails{
 						Interface: ifname,

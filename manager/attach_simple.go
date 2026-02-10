@@ -124,7 +124,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 				pa := operation.Get(b, preparedKey)
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
-					bpfman.LinkID(out.LinkID),
+					out.LinkID,
 					p.programKernelID,
 					pa.plan.details,
 					*bpffs.NewLinkPath(pa.linkPinPath),

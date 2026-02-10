@@ -10,7 +10,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -33,7 +32,7 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	if err != nil {
 		var notFound bpfman.ErrLinkNotFound
 		if errors.As(err, &notFound) {
-			if _, kerr := m.kernel.GetLinkByID(ctx, kernel.LinkID(linkID)); kerr == nil {
+			if _, kerr := m.kernel.GetLinkByID(ctx, linkID); kerr == nil {
 				return bpfman.ErrLinkNotManaged{LinkID: linkID}
 			}
 		}

@@ -80,7 +80,7 @@ func (m *Manager) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.Pr
 
 		// Fetch kernel link if non-synthetic
 		if !record.IsSynthetic() {
-			kl, err := m.kernel.GetLinkByID(ctx, kernel.LinkID(record.ID))
+			kl, err := m.kernel.GetLinkByID(ctx, record.ID)
 			if err == nil {
 				link.Status.Kernel = &kl
 			}

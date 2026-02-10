@@ -192,7 +192,7 @@ func (r LinkRow) ID() bpfman.LinkID {
 // For synthetic links (perf_event-based), returns nil.
 func (r LinkRow) KernelLinkID() *kernel.LinkID {
 	if r.Managed != nil && !r.Managed.IsSynthetic() {
-		id := kernel.LinkID(r.Managed.ID)
+		id := r.Managed.ID
 		return &id
 	}
 	if r.Kernel != nil {
@@ -491,13 +491,13 @@ func Snapshot(
 		// Track kernel link IDs we've seen from store.
 		// For non-synthetic links, ID is the kernel link ID.
 		if !link.IsSynthetic() {
-			seenKernelLinkIDs[kernel.LinkID(link.ID)] = true
+			seenKernelLinkIDs[link.ID] = true
 		}
 
 		// Check kernel presence
 		var kernelLink *kernel.Link
 		if !link.IsSynthetic() {
-			if kl, ok := kernelLinkMap[kernel.LinkID(link.ID)]; ok {
+			if kl, ok := kernelLinkMap[link.ID]; ok {
 				kernelLink = &kl
 			}
 		}
@@ -717,7 +717,7 @@ func GetLink(
 	// Try kernel (skip for synthetic links which don't have kernel link IDs).
 	// For non-synthetic links, the Spec.ID is the kernel link ID.
 	if info.Presence.InStore && !record.IsSynthetic() {
-		kl, err := kern.GetLinkByID(ctx, kernel.LinkID(record.ID))
+		kl, err := kern.GetLinkByID(ctx, record.ID)
 		if err == nil {
 			info.Kernel = &kl
 			info.Presence.InKernel = true
