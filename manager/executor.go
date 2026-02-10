@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
@@ -37,6 +38,16 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 // Actions that produce no value return (nil, error).
 func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, error) {
 	switch a := a.(type) {
+	case action.GetProgramFromStore:
+		rec, err := e.store.Get(ctx, a.KernelID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, bpfman.ErrProgramNotFound{ID: a.KernelID}
+			}
+			return nil, fmt.Errorf("get program %d: %w", a.KernelID, err)
+		}
+		return rec, nil
+
 	case action.CheckProgramNotInStore:
 		if _, err := e.store.Get(ctx, a.KernelID); err == nil {
 			return nil, fmt.Errorf("program %d already exists in database", a.KernelID)

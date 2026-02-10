@@ -50,6 +50,14 @@ func (DeleteLink) isAction() {}
 
 // Kernel actions - operations on the BPF subsystem
 
+// GetProgramFromStore fetches a program record from the store by
+// kernel ID. Returns bpfman.ProgramRecord via ExecuteResult.
+type GetProgramFromStore struct {
+	KernelID uint32
+}
+
+func (GetProgramFromStore) isAction() {}
+
 // CheckProgramNotInStore verifies that no program with the given
 // kernel ID exists in the store. Returns an error if it does.
 type CheckProgramNotInStore struct {

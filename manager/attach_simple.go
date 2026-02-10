@@ -13,9 +13,17 @@ import (
 
 // Binding keys for simpleAttach plan nodes.
 var (
+	preparedKey  = operation.NewKey[preparedAttach]("prepared")
 	attachOutKey = operation.NewKey[bpfman.AttachOutput]("kernel-attach")
 	linkKey      = operation.NewKey[bpfman.Link]("link")
 )
+
+// preparedAttach bundles the output of getProgram + prepare for use
+// by subsequent plan nodes via bindings.
+type preparedAttach struct {
+	plan        attachPlan
+	linkPinPath string
+}
 
 // attachPlan captures the variable parts of a simple attach operation.
 // Returned by the prepare closure after inspecting the program record.
@@ -34,8 +42,9 @@ type attachPlan struct {
 type attachParams struct {
 	// programKernelID is the kernel ID of the program to attach.
 	programKernelID uint32
-	// defaultTarget is used for log messages that occur before
-	// prepare runs. Falls back to "program_<id>" if empty.
+	// defaultTarget is used for plan node labels when the actual
+	// target is not known until after the program record is fetched.
+	// Falls back to "program/<id>" if empty.
 	defaultTarget string
 	// prepare inspects the program record and returns the plan.
 	// progPinPath is the program's bpffs pin path, precomputed
@@ -46,38 +55,26 @@ type attachParams struct {
 // simpleAttach implements the common skeleton for non-dispatcher attach
 // types (tracepoint, kprobe, uprobe, fentry, fexit).
 //
-// Preflight (getProgram + prepare) stays outside the plan and returns
-// plain errors. The plan handles kernel I/O, link construction, and
-// store persistence. On plan failure, the interpreter rolls back
-// automatically.
+// It builds a plan via simpleAttachPlan and delegates to
+// operation.Run. The plan interpreter walks each node in sequence,
+// executing I/O through the executor as reified actions and
+// accumulating undo actions for automatic rollback on failure. Node
+// closures never call store or kernel methods directly; they
+// construct action values and hand them to the executor.
 func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link, error) {
-	// Preflight: verify program exists in store.
-	prog, err := m.getProgram(ctx, p.programKernelID)
-	if err != nil {
-		return bpfman.Link{}, err
-	}
-
-	// Prepare: caller-specific derivation.
-	progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
-	ap, err := p.prepare(prog, progPinPath)
-	if err != nil {
-		return bpfman.Link{}, err
-	}
-
-	// Build and execute plan.
-	plan := m.simpleAttachPlan(p, ap)
+	plan := m.simpleAttachPlan(p)
 	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
 		return bpfman.Link{}, err
 	}
 
+	pa := operation.Get(b, preparedKey)
 	link := operation.Get(b, linkKey)
 	m.logger.InfoContext(ctx, "attached",
 		"link_id", link.Record.ID,
 		"program_id", p.programKernelID,
-		"target", ap.target,
-		"pin_path", m.fsctx.BPFFS().LinkPinPath(
-			p.programKernelID, ap.linkName))
+		"target", pa.plan.target,
+		"pin_path", pa.linkPinPath)
 
 	return link, nil
 }
@@ -85,34 +82,56 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 // simpleAttachPlan builds the operation plan for a simple attach.
 //
 // Nodes:
-//  1. Produce attachOutKey -- kernel attach, with undo that detaches.
-//  2. Produce linkKey -- construct link record, save to store.
-func (m *Manager) simpleAttachPlan(
-	p attachParams, ap attachPlan,
-) operation.Plan {
-	linkPinPath := m.fsctx.BPFFS().LinkPinPath(
-		p.programKernelID, ap.linkName)
+//  1. Produce preparedKey -- fetch program record, run prepare,
+//     compute link pin path.
+//  2. Produce attachOutKey -- kernel attach via action, with undo
+//     that detaches.
+//  3. Produce linkKey -- construct link record, save to store.
+func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
+	target := p.defaultTarget
+	if target == "" {
+		target = fmt.Sprintf("program/%d", p.programKernelID)
+	}
 
 	return operation.Build(
-		operation.Produce(attachOutKey, ap.target,
-			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
-				return action.Produce[bpfman.AttachOutput](ctx, m.executor, ap.attachAction(linkPinPath))
+		operation.Produce(preparedKey, target,
+			func(ctx context.Context, _ *operation.Bindings) (preparedAttach, error) {
+				prog, err := action.Produce[bpfman.ProgramRecord](ctx, m.executor, action.GetProgramFromStore{KernelID: p.programKernelID})
+				if err != nil {
+					return preparedAttach{}, err
+				}
+				progPinPath := m.fsctx.BPFFS().ProgPinPath(p.programKernelID)
+				ap, err := p.prepare(prog, progPinPath)
+				if err != nil {
+					return preparedAttach{}, err
+				}
+				linkPinPath := m.fsctx.BPFFS().LinkPinPath(p.programKernelID, ap.linkName)
+				return preparedAttach{plan: ap, linkPinPath: linkPinPath}, nil
 			},
-			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
+		),
+
+		operation.Produce(attachOutKey, target,
+			func(ctx context.Context, b *operation.Bindings) (bpfman.AttachOutput, error) {
+				pa := operation.Get(b, preparedKey)
+				return action.Produce[bpfman.AttachOutput](ctx, m.executor, pa.plan.attachAction(pa.linkPinPath))
+			},
+			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
+				pa := operation.Get(b, preparedKey)
 				return []action.Action{
-					action.DetachLink{PinPath: linkPinPath},
+					action.DetachLink{PinPath: pa.linkPinPath},
 				}
 			}),
 		),
 
-		operation.Produce(linkKey, ap.target,
+		operation.Produce(linkKey, target,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+				pa := operation.Get(b, preparedKey)
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
 					bpfman.LinkID(out.LinkID),
 					p.programKernelID,
-					ap.details,
-					*bpffs.NewLinkPath(linkPinPath),
+					pa.plan.details,
+					*bpffs.NewLinkPath(pa.linkPinPath),
 					time.Now(),
 				)
 				link := bpfman.Link{
