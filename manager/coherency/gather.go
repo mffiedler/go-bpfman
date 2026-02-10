@@ -6,9 +6,9 @@ import (
 
 	"github.com/vishvananda/netlink"
 
-	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -18,19 +18,11 @@ import (
 // they never reach back into raw maps. All I/O happens during
 // GatherState; view builders and rules are pure joins over facts.
 type ObservedState struct {
-	// DB facts.
-	dbPrograms    map[kernel.ProgramID]bpfman.ProgramRecord
-	dbLinks       []bpfman.LinkRecord
-	dbDispatchers []dispatcher.State
+	// Correlated world from inspect.Snapshot.
+	world *inspect.World
 
-	// Kernel facts.
-	kernelProgs          map[kernel.ProgramID]bool
-	kernelLinks          map[kernel.LinkID]bool
-	kernelProgEnumErrors int
-	kernelLinkEnumErrors int
-
-	// Filesystem facts: pin existence by path.
-	fsPinExists map[string]bool
+	// Kernel-alive index derived from World.
+	kernelAlive map[kernel.ProgramID]bool
 
 	// Filesystem facts: directory scans.
 	// These are built during gather from bpffs directory listings.
@@ -47,11 +39,6 @@ type ObservedState struct {
 	// Netlink-derived facts: TC filter existence.
 	// Key is dispatcherKey(type, nsid, ifindex).
 	tcFilterOK map[string]bool
-
-	// Indexes for join operations.
-	dbProgPins       map[string]bool
-	dbProgIDs        map[kernel.ProgramID]bool
-	dbDispatcherKeys map[string]bool
 
 	// Runtime context (immutable after gather).
 	layout fs.Layout
@@ -70,77 +57,60 @@ type ObservedState struct {
 // All I/O happens here; the returned state is a pure fact store.
 func GatherState(ctx context.Context, store platform.Store, kops platform.KernelOperations, layout fs.Layout) (*ObservedState, error) {
 	s := &ObservedState{
-		kernelProgs:           make(map[kernel.ProgramID]bool),
-		kernelLinks:           make(map[kernel.LinkID]bool),
-		fsPinExists:           make(map[string]bool),
+		kernelAlive:           make(map[kernel.ProgramID]bool),
 		fsDispatcherLinkCount: make(map[string]int),
 		dbDispatcherExtCount:  make(map[kernel.ProgramID]int),
 		tcFilterOK:            make(map[string]bool),
-		dbProgPins:            make(map[string]bool),
-		dbProgIDs:             make(map[kernel.ProgramID]bool),
-		dbDispatcherKeys:      make(map[string]bool),
 		layout:                layout,
 	}
 
-	var err error
-
 	// ----------------------------------------------------------------
-	// Phase 1: DB facts
+	// Phase 1: Correlated world via inspect.Snapshot
 	// ----------------------------------------------------------------
 
-	s.dbPrograms, err = store.List(ctx)
+	scanner := layout.BPFFS().Scanner()
+	world, err := inspect.Snapshot(ctx, store, kops, scanner)
 	if err != nil {
-		return nil, fmt.Errorf("list programs: %w", err)
+		return nil, fmt.Errorf("snapshot: %w", err)
 	}
+	s.world = world
 
-	s.dbLinks, err = store.ListLinks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list links: %w", err)
-	}
+	// ----------------------------------------------------------------
+	// Phase 2: Build indexes from World
+	// ----------------------------------------------------------------
 
-	s.dbDispatchers, err = store.ListDispatchers(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list dispatchers: %w", err)
-	}
-
-	// Build DB indexes.
-	for kernelID, prog := range s.dbPrograms {
-		s.dbProgIDs[kernelID] = true
-		if prog.Handles.PinPath != "" {
-			s.dbProgPins[prog.Handles.PinPath] = true
+	// Kernel-alive index: any program present in the kernel.
+	for _, p := range world.Programs {
+		if p.Presence.InKernel {
+			s.kernelAlive[p.KernelID] = true
 		}
 	}
-	for _, d := range s.dbDispatchers {
-		s.dbDispatcherKeys[dispatcherKey(d.Type, d.Nsid, d.Ifindex)] = true
-	}
 
-	// ----------------------------------------------------------------
-	// Phase 2: Kernel facts
-	// ----------------------------------------------------------------
+	// DB index sets for orphan detection.
+	dbProgPins := make(map[string]bool)
+	dbProgIDs := make(map[kernel.ProgramID]bool)
+	dbDispatcherKeys := make(map[string]bool)
 
-	for kp, err := range kops.Programs(ctx) {
-		if err != nil {
-			s.kernelProgEnumErrors++
-			continue
+	for _, p := range world.ManagedPrograms() {
+		dbProgIDs[p.KernelID] = true
+		if p.Managed != nil && p.Managed.Handles.PinPath != "" {
+			dbProgPins[p.Managed.Handles.PinPath] = true
 		}
-		s.kernelProgs[kp.ID] = true
 	}
-
-	for kl, err := range kops.Links(ctx) {
-		if err != nil {
-			s.kernelLinkEnumErrors++
-			continue
-		}
-		s.kernelLinks[kl.ID] = true
+	for _, d := range world.ManagedDispatchers() {
+		dbDispatcherKeys[dispatcherKey(dispatcher.DispatcherType(d.DispType), d.Nsid, d.Ifindex)] = true
 	}
 
 	// ----------------------------------------------------------------
 	// Phase 3: Store-derived facts (dispatcher extension counts)
 	// ----------------------------------------------------------------
 
-	for _, d := range s.dbDispatchers {
-		if count, err := store.CountDispatcherLinks(ctx, d.KernelID); err == nil {
-			s.dbDispatcherExtCount[d.KernelID] = count
+	for _, d := range world.ManagedDispatchers() {
+		if d.Managed == nil {
+			continue
+		}
+		if count, err := store.CountDispatcherLinks(ctx, d.Managed.KernelID); err == nil {
+			s.dbDispatcherExtCount[d.Managed.KernelID] = count
 		}
 	}
 
@@ -148,65 +118,29 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Phase 4: Netlink facts (TC filter checks)
 	// ----------------------------------------------------------------
 
-	for _, d := range s.dbDispatchers {
-		if d.Type != dispatcher.DispatcherTypeTCIngress && d.Type != dispatcher.DispatcherTypeTCEgress {
+	for _, d := range world.ManagedDispatchers() {
+		if d.Managed == nil {
 			continue
 		}
-		if d.Priority == 0 {
+		dt := d.Managed.Type
+		if dt != dispatcher.DispatcherTypeTCIngress && dt != dispatcher.DispatcherTypeTCEgress {
 			continue
 		}
-		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		parent := tcParentHandle(d.Type)
-		_, err := kops.FindTCFilterHandle(ctx, int(d.Ifindex), parent, d.Priority)
+		if d.Managed.Priority == 0 {
+			continue
+		}
+		key := dispatcherKey(dt, d.Managed.Nsid, d.Managed.Ifindex)
+		parent := tcParentHandle(dt)
+		_, err := kops.FindTCFilterHandle(ctx, int(d.Managed.Ifindex), parent, d.Managed.Priority)
 		s.tcFilterOK[key] = (err == nil)
 	}
 
 	// ----------------------------------------------------------------
-	// Phase 5: Filesystem facts - collect paths to stat
-	// ----------------------------------------------------------------
-
-	pathsToStat := make(map[string]struct{})
-
-	// Program pin paths from DB.
-	for _, prog := range s.dbPrograms {
-		if prog.Handles.PinPath != "" {
-			pathsToStat[prog.Handles.PinPath] = struct{}{}
-		}
-	}
-
-	// Link pin paths from DB (non-synthetic only).
-	for i := range s.dbLinks {
-		link := &s.dbLinks[i]
-		if link.PinPath != nil && !link.IsSynthetic() {
-			pathsToStat[link.PinPath.String()] = struct{}{}
-		}
-	}
-
-	// Dispatcher prog pins and XDP link pins.
-	bpffs := layout.BPFFS()
-	for _, d := range s.dbDispatchers {
-		progPin := bpffs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
-		pathsToStat[progPin] = struct{}{}
-
-		if d.Type == dispatcher.DispatcherTypeXDP {
-			linkPin := bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
-			pathsToStat[linkPin] = struct{}{}
-		}
-	}
-
-	// ----------------------------------------------------------------
-	// Phase 6: Filesystem facts - directory scans for orphans
+	// Phase 5: Filesystem orphan detection via scanner.Scan
 	// ----------------------------------------------------------------
 
 	s.orphans = make([]FsOrphan, 0)
 
-	// Delegate bpfman-specific bpffs scanning to the scanner.
-	scanner := layout.BPFFS().Scanner()
-
-	// Stat all collected paths using the scanner.
-	for path := range pathsToStat {
-		s.fsPinExists[path] = scanner.PathExists(path)
-	}
 	fsState, err := scanner.Scan(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("scan bpffs: %w", err)
@@ -214,7 +148,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 
 	// Scan prog pins for orphans.
 	for _, pin := range fsState.ProgPins {
-		if s.dbProgPins[pin.Path] {
+		if dbProgPins[pin.Path] {
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
@@ -226,7 +160,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 
 	// Scan link directories for orphans.
 	for _, dir := range fsState.LinkDirs {
-		if s.dbProgIDs[dir.ProgramID] {
+		if dbProgIDs[dir.ProgramID] {
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
@@ -238,7 +172,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 
 	// Scan map directories for orphans.
 	for _, dir := range fsState.MapDirs {
-		if s.dbProgIDs[dir.ProgramID] {
+		if dbProgIDs[dir.ProgramID] {
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
@@ -252,7 +186,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// for non-orphans.
 	for _, d := range fsState.DispatcherDirs {
 		key := dispatcherKey(dispatcher.DispatcherType(d.DispType), d.Nsid, d.Ifindex)
-		if !s.dbDispatcherKeys[key] {
+		if !dbDispatcherKeys[key] {
 			s.orphans = append(s.orphans, FsOrphan{
 				Path: d.Path,
 				Kind: OrphanDispatcherDir,
@@ -265,7 +199,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Scan dispatcher link pins for orphans.
 	for _, pin := range fsState.DispatcherLinkPins {
 		key := dispatcherKey(dispatcher.DispatcherType(pin.DispType), pin.Nsid, pin.Ifindex)
-		if s.dbDispatcherKeys[key] {
+		if dbDispatcherKeys[key] {
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
@@ -275,7 +209,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 
 	// ----------------------------------------------------------------
-	// Phase 6a: Scan <base>/programs/ for orphan program dirs
+	// Phase 5a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 
 	rt := layout.Bytecode()
@@ -285,7 +219,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 	for _, pde := range programDirs {
 		if pde.Numeric {
-			if !s.dbProgIDs[pde.KernelID] {
+			if !dbProgIDs[pde.KernelID] {
 				s.orphans = append(s.orphans, FsOrphan{
 					Path:     pde.Path,
 					KernelID: pde.KernelID,
@@ -301,7 +235,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 
 	// ----------------------------------------------------------------
-	// Phase 6b: Scan <base>/.staging/ for orphan staging dirs
+	// Phase 5b: Scan <base>/.staging/ for orphan staging dirs
 	// ----------------------------------------------------------------
 
 	stagingDirs, err := rt.ScanStagingDirs()
@@ -327,96 +261,90 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 }
 
 // --------------------------------------------------------------------
-// View builders: construct correlated tuples from raw facts.
+// View builders: construct correlated tuples from World facts.
 // All joins happen here. Rules never touch raw maps.
 // --------------------------------------------------------------------
 
-// Programs returns one ProgramState per DB program, correlated with
-// kernel and filesystem state. This is a pure join over gathered facts.
+// Programs returns one ProgramState per managed program, correlated
+// with kernel and filesystem state. Derived from the World snapshot.
 func (s *ObservedState) Programs() []ProgramState {
 	if s.programs != nil {
 		return s.programs
 	}
-	for id, prog := range s.dbPrograms {
+	for _, p := range s.world.ManagedPrograms() {
 		ps := ProgramState{
-			KernelID: id,
-			DB:       &prog,
-			Kernel:   s.kernelProgs[id],
-			PinPath:  prog.Handles.PinPath,
+			KernelID: p.KernelID,
+			DB:       p.Managed,
+			Kernel:   p.Presence.InKernel,
+			PinPath:  p.PinPath(),
 		}
-		if prog.Handles.PinPath != "" {
-			if exists, ok := s.fsPinExists[prog.Handles.PinPath]; ok {
-				ps.PinExist = &exists
-			}
-			// Path not in map = stat failed with unknown error.
+		// For managed programs, inspect always checks the pin
+		// path, so Presence.InFS is definitive.
+		if p.Managed != nil && p.Managed.Handles.PinPath != "" {
+			exists := p.Presence.InFS
+			ps.PinExist = &exists
 		}
 		s.programs = append(s.programs, ps)
 	}
 	return s.programs
 }
 
-// Links returns one LinkState per DB link, correlated with kernel
-// state and filesystem. This is a pure join over gathered facts.
+// Links returns one LinkState per managed link, correlated with
+// kernel state and filesystem. Derived from the World snapshot.
 func (s *ObservedState) Links() []LinkState {
 	if s.links != nil {
 		return s.links
 	}
-	for i := range s.dbLinks {
-		link := &s.dbLinks[i]
-		synthetic := link.IsSynthetic()
-		inKernel := false
-		// For non-synthetic links, ID is the kernel link ID
-		if !synthetic {
-			inKernel = s.kernelLinks[link.ID]
-		}
+	for _, lr := range s.world.ManagedLinks() {
+		synthetic := lr.IsSynthetic()
 		ls := LinkState{
-			DB:        link,
+			DB:        lr.Managed,
 			Synthetic: synthetic,
-			Kernel:    inKernel,
+			Kernel:    lr.Presence.InKernel,
 		}
-		if link.PinPath != nil && !synthetic {
-			if exists, found := s.fsPinExists[link.PinPath.String()]; found {
-				ls.PinExist = &exists
-			}
+		if lr.HasPin() && !synthetic {
+			exists := lr.Presence.InFS
+			ls.PinExist = &exists
 		}
 		s.links = append(s.links, ls)
 	}
 	return s.links
 }
 
-// Dispatchers returns one DispatcherState per DB dispatcher,
+// Dispatchers returns one DispatcherState per managed dispatcher,
 // correlated with kernel, filesystem, and extension link counts.
-// This is a pure join over gathered facts.
+// Derived from the World snapshot plus additional gathered facts.
 func (s *ObservedState) Dispatchers() []DispatcherState {
 	if s.dispatchers != nil {
 		return s.dispatchers
 	}
 	bpffs := s.layout.BPFFS()
-	for _, d := range s.dbDispatchers {
+	for _, dr := range s.world.ManagedDispatchers() {
+		if dr.Managed == nil {
+			continue
+		}
+		d := dr.Managed
 		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
 		revDir := bpffs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
 		progPin := bpffs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
 
 		ds := DispatcherState{
-			DB:         &d,
-			KernelProg: s.kernelProgs[d.KernelID],
+			DB:         d,
+			KernelProg: dr.ProgPresence.InKernel,
 			RevDir:     revDir,
 			ProgPin:    progPin,
 			LinkCount:  -1,
 		}
 
-		// Prog pin existence from gathered facts.
-		if exists, ok := s.fsPinExists[progPin]; ok {
-			ds.ProgPinExist = &exists
-		}
+		// Prog pin existence from World presence.
+		exists := dr.ProgPresence.InFS
+		ds.ProgPinExist = &exists
 
-		// XDP link checks from gathered facts.
+		// XDP link checks from World presence.
 		if d.Type == dispatcher.DispatcherTypeXDP {
-			ds.KernelLink = d.LinkID != 0 && s.kernelLinks[d.LinkID]
-			linkPin := bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
-			if exists, ok := s.fsPinExists[linkPin]; ok {
-				ds.LinkPinExist = &exists
-			}
+			ds.KernelLink = dr.LinkPresence.InKernel
+			linkExists := dr.LinkPresence.InFS
+			ds.LinkPinExist = &linkExists
 		}
 
 		// TC filter check from gathered facts.
@@ -461,7 +389,7 @@ func (s *ObservedState) DispatcherFsLinkCount(ds DispatcherState) int {
 
 // KernelAlive reports whether a kernel program ID is alive.
 func (s *ObservedState) KernelAlive(kernelID kernel.ProgramID) bool {
-	return s.kernelProgs[kernelID]
+	return s.kernelAlive[kernelID]
 }
 
 // LiveOrphans returns the count of orphan program pins where the
@@ -473,7 +401,7 @@ func (s *ObservedState) KernelAlive(kernelID kernel.ProgramID) bool {
 func (s *ObservedState) LiveOrphans() int {
 	count := 0
 	for _, o := range s.orphans {
-		if o.Kind == OrphanProgPin && o.KernelID != 0 && s.kernelProgs[o.KernelID] {
+		if o.Kind == OrphanProgPin && o.KernelID != 0 && s.kernelAlive[o.KernelID] {
 			count++
 		}
 	}

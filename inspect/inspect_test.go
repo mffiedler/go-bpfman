@@ -298,6 +298,8 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 	assert.True(t, d.ProgPresence.InStore)
 	assert.True(t, d.ProgPresence.InKernel)
 	assert.True(t, d.ProgPresence.InFS)
+	require.NotNil(t, d.Managed, "store dispatcher should have Managed set")
+	assert.Equal(t, kernel.ProgramID(500), d.Managed.KernelID)
 }
 
 func TestSnapshot_OrphanDispatcher(t *testing.T) {
@@ -324,6 +326,7 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 	assert.False(t, d.ProgPresence.InStore)
 	assert.False(t, d.ProgPresence.InKernel)
 	assert.True(t, d.ProgPresence.InFS)
+	assert.Nil(t, d.Managed, "orphan dispatcher should have nil Managed")
 }
 
 func TestPresence_Methods(t *testing.T) {

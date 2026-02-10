@@ -60,12 +60,13 @@ Severity: WARNING
 Category: enumeration`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
-				total := s.kernelProgEnumErrors + s.kernelLinkEnumErrors
-				if total > 0 {
+				progErrors := s.world.Meta.ProgramEnumErrors
+				linkErrors := s.world.Meta.LinkEnumErrors
+				if progErrors+linkErrors > 0 {
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "enumeration",
-						Description: fmt.Sprintf("Kernel enumeration incomplete (%d program errors, %d link errors); results may be partial", s.kernelProgEnumErrors, s.kernelLinkEnumErrors),
+						Description: fmt.Sprintf("Kernel enumeration incomplete (%d program errors, %d link errors); results may be partial", progErrors, linkErrors),
 					})
 				}
 				return out

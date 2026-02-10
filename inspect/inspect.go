@@ -256,11 +256,12 @@ type DispatcherRow struct {
 	Nsid     uint64 `json:"nsid"`
 	Ifindex  uint32 `json:"ifindex"`
 
-	// Store fields (valid when Presence.InStore is true)
-	Revision uint32           `json:"revision"`
-	KernelID kernel.ProgramID `json:"kernel_id"`
-	LinkID   kernel.LinkID    `json:"link_id"`
-	Priority uint32           `json:"priority"`
+	// Store fields (valid when ProgPresence.InStore is true)
+	Managed  *dispatcher.State `json:"managed,omitempty"`
+	Revision uint32            `json:"revision"`
+	KernelID kernel.ProgramID  `json:"kernel_id"`
+	LinkID   kernel.LinkID     `json:"link_id"`
+	Priority uint32            `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
 	ProgPresence Presence `json:"prog_presence"` // dispatcher program
@@ -276,6 +277,10 @@ type SnapshotMeta struct {
 	ObservedAt time.Time `json:"observed_at"`
 	// Errors encountered during snapshot (non-fatal)
 	Errors []error `json:"-"` // errors don't serialize well to JSON
+	// ProgramEnumErrors counts errors during kernel program enumeration.
+	ProgramEnumErrors int `json:"program_enum_errors"`
+	// LinkEnumErrors counts errors during kernel link enumeration.
+	LinkEnumErrors int `json:"link_enum_errors"`
 }
 
 // World is a point-in-time snapshot of bpfman's state across all sources.
@@ -341,6 +346,7 @@ func Snapshot(
 	for kp, err := range kern.Programs(ctx) {
 		if err != nil {
 			w.Meta.Errors = append(w.Meta.Errors, err)
+			w.Meta.ProgramEnumErrors++
 			continue
 		}
 		kernelProgs[kp.ID] = kp
@@ -349,6 +355,7 @@ func Snapshot(
 	for kl, err := range kern.Links(ctx) {
 		if err != nil {
 			w.Meta.Errors = append(w.Meta.Errors, err)
+			w.Meta.LinkEnumErrors++
 			continue
 		}
 		kernelLinks[kl.ID] = true
@@ -560,6 +567,7 @@ func Snapshot(
 			DispType:    string(disp.Type),
 			Nsid:        disp.Nsid,
 			Ifindex:     disp.Ifindex,
+			Managed:     &disp,
 			Revision:    disp.Revision,
 			KernelID:    disp.KernelID,
 			LinkID:      disp.LinkID,
