@@ -129,6 +129,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
+		defaultTarget:   fmt.Sprintf("fentry/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {
@@ -155,6 +156,7 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
+		defaultTarget:   fmt.Sprintf("fexit/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {

@@ -42,9 +42,9 @@ type attachPlan struct {
 type attachParams struct {
 	// programKernelID is the kernel ID of the program to attach.
 	programKernelID uint32
-	// defaultTarget is used for plan node labels when the actual
-	// target is not known until after the program record is fetched.
-	// Falls back to "program/<id>" if empty.
+	// defaultTarget is used for plan node labels. The actual target
+	// may differ once the program record is fetched (e.g., fentry
+	// resolves the function name from the record).
 	defaultTarget string
 	// prepare inspects the program record and returns the plan.
 	// progPinPath is the program's bpffs pin path, precomputed
@@ -88,13 +88,8 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 //     that detaches.
 //  3. Produce linkKey -- construct link record, save to store.
 func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
-	target := p.defaultTarget
-	if target == "" {
-		target = fmt.Sprintf("program/%d", p.programKernelID)
-	}
-
 	return operation.Build(
-		operation.Produce(preparedKey, target,
+		operation.Produce(preparedKey, p.defaultTarget,
 			func(ctx context.Context, _ *operation.Bindings) (preparedAttach, error) {
 				prog, err := action.Produce[bpfman.ProgramRecord](ctx, m.executor, action.GetProgramFromStore{KernelID: p.programKernelID})
 				if err != nil {
@@ -110,7 +105,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 			},
 		),
 
-		operation.Produce(attachOutKey, target,
+		operation.Produce(attachOutKey, p.defaultTarget,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.AttachOutput, error) {
 				pa := operation.Get(b, preparedKey)
 				return action.Produce[bpfman.AttachOutput](ctx, m.executor, pa.plan.attachAction(pa.linkPinPath))
@@ -123,7 +118,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 			}),
 		),
 
-		operation.Produce(linkKey, target,
+		operation.Produce(linkKey, p.defaultTarget,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				pa := operation.Get(b, preparedKey)
 				out := operation.Get(b, attachOutKey)
