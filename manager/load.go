@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // loadedKey is the binding key for the per-program load plan.
@@ -199,15 +197,12 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			}),
 		),
 
-		operation.Do("db-check", programName,
+		operation.Do("db-consistency-check", programName,
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
-				if _, err := m.store.Get(ctx, l.Program.ID); err == nil {
-					return fmt.Errorf("program %d already exists in database", l.Program.ID)
-				} else if !errors.Is(err, store.ErrNotFound) {
-					return fmt.Errorf("check existing program %d: %w", l.Program.ID, err)
-				}
-				return nil
+				return m.executor.Execute(ctx, action.CheckProgramNotInStore{
+					KernelID: l.Program.ID,
+				})
 			},
 		),
 

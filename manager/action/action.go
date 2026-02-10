@@ -49,6 +49,14 @@ func (DeleteLink) isAction() {}
 
 // Kernel actions - operations on the BPF subsystem
 
+// CheckProgramNotInStore verifies that no program with the given
+// kernel ID exists in the store. Returns an error if it does.
+type CheckProgramNotInStore struct {
+	KernelID uint32
+}
+
+func (CheckProgramNotInStore) isAction() {}
+
 // LoadProgram loads a BPF program into the kernel and returns
 // the LoadOutput via ExecuteResult.
 type LoadProgram struct {

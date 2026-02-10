@@ -2,11 +2,13 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
+	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // executor interprets and executes actions.
@@ -35,6 +37,14 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 // Actions that produce no value return (nil, error).
 func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, error) {
 	switch a := a.(type) {
+	case action.CheckProgramNotInStore:
+		if _, err := e.store.Get(ctx, a.KernelID); err == nil {
+			return nil, fmt.Errorf("program %d already exists in database", a.KernelID)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("check existing program %d: %w", a.KernelID, err)
+		}
+		return nil, nil
+
 	case action.LoadProgram:
 		return e.kernel.Load(ctx, a.Spec, a.BPFFS)
 
