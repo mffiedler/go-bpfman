@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/manager"
 )
 
 // TestDetach_NonExistentLink_ReturnsNotFound verifies that:
@@ -18,9 +17,8 @@ import (
 //	When I attempt to detach a non-existent link ID,
 //	Then the manager returns ErrLinkNotFound as a plain error.
 //
-// Preflight failures from Detach return plain errors (not
-// *ManagerError) because no operation state is created until
-// the plan executes.
+// Preflight failures from Detach return plain errors because no
+// operation state is created until the plan executes.
 func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -31,10 +29,6 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
 	assert.Equal(t, bpfman.LinkID(999), notFound.LinkID)
-
-	// Preflight errors are plain errors, not *ManagerError.
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestDetach_KernelOnlyLink_ReturnsNotManaged verifies that:
@@ -43,9 +37,8 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 //	When I attempt to detach it,
 //	Then the manager returns ErrLinkNotManaged as a plain error.
 //
-// Preflight failures from Detach return plain errors (not
-// *ManagerError) because no operation state is created until
-// the plan executes.
+// Preflight failures from Detach return plain errors because no
+// operation state is created until the plan executes.
 func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -60,10 +53,6 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	var notManaged bpfman.ErrLinkNotManaged
 	assert.True(t, errors.As(err, &notManaged), "expected ErrLinkNotManaged, got %T", err)
 	assert.Equal(t, bpfman.LinkID(kernelOnlyLinkID), notManaged.LinkID)
-
-	// Preflight errors are plain errors, not *ManagerError.
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_NonExistentProgram_ReturnsNotFound verifies that:
@@ -72,9 +61,8 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 //	When I attempt to unload a non-existent program ID,
 //	Then the manager returns ErrProgramNotFound.
 //
-// Preflight failures from Unload return plain errors (not
-// *ManagerError) because no operation state is created until
-// the plan executes.
+// Preflight failures from Unload return plain errors because no
+// operation state is created until the plan executes.
 func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -85,10 +73,6 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	var notFound bpfman.ErrProgramNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T", err)
 	assert.Equal(t, uint32(999), notFound.ID)
-
-	// Preflight errors are plain errors, not *ManagerError.
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_KernelOnlyProgram_ReturnsNotManaged verifies that:
@@ -97,9 +81,8 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 //	When I attempt to unload it,
 //	Then the manager returns ErrProgramNotManaged.
 //
-// Preflight failures from Unload return plain errors (not
-// *ManagerError) because no operation state is created until
-// the plan executes.
+// Preflight failures from Unload return plain errors because no
+// operation state is created until the plan executes.
 func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -114,8 +97,4 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	var notManaged bpfman.ErrProgramNotManaged
 	assert.True(t, errors.As(err, &notManaged), "expected ErrProgramNotManaged, got %T", err)
 	assert.Equal(t, uint32(kernelOnlyProgID), notManaged.ID)
-
-	// Preflight errors are plain errors, not *ManagerError.
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }

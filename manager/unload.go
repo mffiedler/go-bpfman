@@ -8,7 +8,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // unload removes a program's kernel-side artefacts. If persisted is
@@ -23,20 +22,13 @@ func (m *Manager) unload(ctx context.Context, kernelID uint32, programName strin
 	linksDir := m.fsctx.BPFFS().LinkPinDir(kernelID)
 
 	plan := m.unloadPlan(kernelID, programName, progPinPath, mapsDir, linksDir, links, persisted)
-	begin := func(_ context.Context) *operation.RunState {
-		return m.beginOp(ctx)
-	}
-	if err := operation.Run0(ctx, begin, m.executor, plan); err != nil {
-		return wrapOpErr(err)
-	}
-	return nil
+	return operation.Run0(ctx, m.logger, m.executor, plan)
 }
 
 // Unload removes a BPF program, its links, and metadata.
 //
 // Preflight failures (store lookup, dependency check) return plain
-// errors. Execution failures return *ManagerError with the full
-// operation outcome.
+// errors. Execution failures return plain errors.
 func (m *Manager) Unload(ctx context.Context, kernelID uint32) error {
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.getProgram(ctx, kernelID)
@@ -104,60 +96,47 @@ func (m *Manager) unloadPlan(kernelID uint32, programName, progPinPath, mapsDir,
 			continue
 		}
 		pinPath := link.PinPath.String()
-		linkID := uint32(link.ID)
 		nodes = append(nodes, operation.Do(
-			"detach-link", outcome.StepKindKernelDetachLink,
+			"detach-link",
 			fmt.Sprintf("%d", link.ID),
 			func(ctx context.Context, _ *operation.Bindings) error {
 				return m.executor.Execute(ctx, action.DetachLink{PinPath: pinPath})
 			},
-			operation.DetailsFn(func(_ *operation.Bindings) any {
-				return outcome.LinkDetails{LinkID: linkID, PinPath: pinPath}
-			}),
 		))
 	}
 
 	nodes = append(nodes, operation.Do(
-		"remove-links-dir", outcome.StepKindKernelRemovePin, linksDir,
+		"remove-links-dir", linksDir,
 		func(ctx context.Context, _ *operation.Bindings) error {
 			return m.executor.Execute(ctx, action.RemovePin{Path: linksDir})
 		},
 	))
 
 	nodes = append(nodes, operation.Do(
-		"unload-prog", outcome.StepKindKernelUnload, programName,
+		"unload-prog", programName,
 		func(ctx context.Context, _ *operation.Bindings) error {
 			return m.executor.Execute(ctx, action.UnloadProgram{PinPath: progPinPath})
 		},
-		operation.DetailsFn(func(_ *operation.Bindings) any {
-			return outcome.ProgramDetails{KernelID: kernelID, PinPath: progPinPath}
-		}),
 	))
 
 	nodes = append(nodes, operation.Do(
-		"unload-maps", outcome.StepKindKernelUnload, programName,
+		"unload-maps", programName,
 		func(ctx context.Context, _ *operation.Bindings) error {
 			return m.executor.Execute(ctx, action.UnloadProgram{PinPath: mapsDir})
 		},
-		operation.DetailsFn(func(_ *operation.Bindings) any {
-			return outcome.ProgramDetails{KernelID: kernelID, MapsDirPath: mapsDir}
-		}),
 	))
 
 	if persisted {
 		nodes = append(nodes, operation.Do(
-			"delete-program", outcome.StepKindStoreDeleteProgram, programName,
+			"delete-program", programName,
 			func(ctx context.Context, _ *operation.Bindings) error {
 				return m.executor.Execute(ctx, action.DeleteProgram{KernelID: kernelID})
 			},
-			operation.DetailsFn(func(_ *operation.Bindings) any {
-				return outcome.ProgramDetails{KernelID: kernelID}
-			}),
 		))
 	}
 
 	nodes = append(nodes, operation.Try(
-		"fs-remove-program", outcome.StepKindFSRemoveProgram, programName,
+		"fs-remove-program", programName,
 		func(ctx context.Context, _ *operation.Bindings) error {
 			return m.executor.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID})
 		},

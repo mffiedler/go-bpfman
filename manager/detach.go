@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // Detach removes a link by link ID.
@@ -26,8 +25,7 @@ import (
 // deleted from store).
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
-// extraction) return plain errors. Execution failures return
-// *ManagerError with the full operation outcome.
+// extraction) return plain errors.
 func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
@@ -62,11 +60,8 @@ func (m *Manager) Detach(ctx context.Context, linkID bpfman.LinkID) error {
 		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
 	plan := m.detachPlan(record, dispState)
-	begin := func(_ context.Context) *operation.RunState {
-		return m.beginOp(ctx)
-	}
-	if err := operation.Run0(ctx, begin, m.executor, plan); err != nil {
-		return wrapOpErr(err)
+	if err := operation.Run0(ctx, m.logger, m.executor, plan); err != nil {
+		return err
 	}
 
 	m.logger.InfoContext(ctx, "removed link", "link_id", linkID, "kind", record.Kind)
@@ -89,44 +84,33 @@ func (m *Manager) detachPlan(
 	record bpfman.LinkRecord, dispState *dispatcher.State,
 ) operation.Plan {
 	var nodes []operation.Node
-	linkID := uint32(record.ID)
 	target := fmt.Sprintf("%d", record.ID)
 
 	if record.PinPath != nil {
 		pinPath := record.PinPath.String()
 		nodes = append(nodes, operation.Do(
-			"detach-link", outcome.StepKindKernelDetachLink, target,
+			"detach-link", target,
 			func(ctx context.Context, _ *operation.Bindings) error {
 				return m.executor.Execute(ctx, action.DetachLink{PinPath: pinPath})
 			},
-			operation.DetailsFn(func(_ *operation.Bindings) any {
-				return outcome.LinkDetails{LinkID: linkID, PinPath: pinPath}
-			}),
 		))
 	}
 
 	nodes = append(nodes, operation.Do(
-		"delete-link", outcome.StepKindStoreDeleteLink, target,
+		"delete-link", target,
 		func(ctx context.Context, _ *operation.Bindings) error {
 			return m.executor.Execute(ctx, action.DeleteLink{LinkID: record.ID})
 		},
-		operation.DetailsFn(func(_ *operation.Bindings) any {
-			return outcome.LinkDetails{LinkID: linkID}
-		}),
 	))
 
 	if dispState != nil {
 		ds := *dispState
 		nodes = append(nodes, operation.Do(
 			"dispatcher-cleanup",
-			outcome.StepKindStoreDeleteDispatcher,
 			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
 			func(ctx context.Context, _ *operation.Bindings) error {
 				return m.cleanupEmptyDispatcher(ctx, ds)
 			},
-			operation.DetailsFn(func(_ *operation.Bindings) any {
-				return outcome.DispatcherDetails{DispatcherID: ds.KernelID}
-			}),
 		))
 	}
 

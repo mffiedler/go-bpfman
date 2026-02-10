@@ -14,23 +14,21 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform/store"
 )
 
 // dispatcherAttachParams describes a dispatcher-based attach operation
 // (XDP or TC). The closures capture the type-specific kernel calls and
-// link construction while the shared skeleton handles outcome recording,
-// stale dispatcher recovery, persistence, and rollback.
+// link construction while the shared skeleton handles stale dispatcher
+// recovery, persistence, and rollback.
 type dispatcherAttachParams struct {
 	programKernelID uint32
 	ifindex         int
 	ifname          string
 	netnsPath       string
-	target          string // outcome target (e.g., "eth0:xdp", "eth0:ingress")
+	target          string // target (e.g., "eth0:xdp", "eth0:ingress")
 	direction       string // empty for XDP, "ingress"/"egress" for TC
 	dispType        dispatcher.DispatcherType
-	dispStepKind    outcome.StepKind
 
 	// createDispatcher creates the kernel dispatcher and persists it.
 	createDispatcher func(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error)
@@ -72,8 +70,6 @@ var (
 // recreated and the attach retried once.
 //
 // Preflight failures (getProgram, GetNsid) return plain errors.
-// Execution failures return *ManagerError with the full operation
-// outcome.
 func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
 	prog, err := m.getProgram(ctx, p.programKernelID)
@@ -87,12 +83,9 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 
 	// --- Build and execute plan ---
 	plan := m.dispatcherAttachPlan(p, prog, nsid)
-	begin := func(_ context.Context) *operation.RunState {
-		return m.beginOp(ctx)
-	}
-	b, err := operation.Run(ctx, begin, m.executor, plan)
+	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
-		return bpfman.Link{}, wrapOpErr(err)
+		return bpfman.Link{}, err
 	}
 
 	link := operation.Get(b, linkKey)
@@ -130,7 +123,7 @@ func (m *Manager) dispatcherAttachPlan(
 
 	return operation.Build(
 		// Node 1: Dispatcher lookup or creation.
-		operation.Produce(dispStateKey, p.dispStepKind, p.target,
+		operation.Produce(dispStateKey, p.target,
 			func(ctx context.Context, _ *operation.Bindings) (dispatcher.State, error) {
 				state, err := m.store.GetDispatcher(ctx, string(p.dispType), nsid, ifindex)
 				if errors.Is(err, store.ErrNotFound) {
@@ -141,49 +134,24 @@ func (m *Manager) dispatcherAttachPlan(
 				}
 				return state, nil
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				ds := operation.Get(b, dispStateKey)
-				return outcome.DispatcherDetails{
-					DispatcherID: ds.KernelID,
-					Interface:    p.ifname,
-					Direction:    p.direction,
-				}
-			}),
 		),
 
 		// Node 2: Attach extension (with stale-dispatcher retry).
-		operation.Produce(extResultKey, outcome.StepKindAttachExtension, p.target,
+		operation.Produce(extResultKey, p.target,
 			func(ctx context.Context, b *operation.Bindings) (extensionResult, error) {
 				ds := operation.Get(b, dispStateKey)
 				return m.attachExtensionWithRetry(ctx, p, ds, nsid, ifindex, fs, mapPinDir, prog)
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
+			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				r := operation.Get(b, extResultKey)
-				return outcome.LinkDetails{
-					LinkID:       r.out.LinkID,
-					ProgramID:    p.programKernelID,
-					Interface:    p.ifname,
-					PinPath:      r.pinPath,
-					DispatcherID: r.disp.KernelID,
+				return []action.Action{
+					action.DetachLink{PinPath: r.pinPath},
 				}
-			}),
-			operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
-				r := operation.Get(b, extResultKey)
-				return []operation.UndoEntry{{
-					Action: action.DetachLink{PinPath: r.pinPath},
-					Step: outcome.Step{
-						Kind:   outcome.StepKindKernelDetachLink,
-						Target: p.target,
-						Details: outcome.LinkDetails{
-							PinPath: r.pinPath,
-						},
-					},
-				}}
 			}),
 		),
 
 		// Node 3: Construct link record + save to store.
-		operation.Produce(linkKey, outcome.StepKindStoreSaveLink, p.target,
+		operation.Produce(linkKey, p.target,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				r := operation.Get(b, extResultKey)
 				record := bpfman.NewPinnedLinkRecord(
@@ -206,17 +174,6 @@ func (m *Manager) dispatcherAttachPlan(
 				}
 				return link, nil
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				link := operation.Get(b, linkKey)
-				r := operation.Get(b, extResultKey)
-				return outcome.LinkDetails{
-					LinkID:       uint32(link.Record.ID),
-					ProgramID:    p.programKernelID,
-					Interface:    p.ifname,
-					PinPath:      r.pinPath,
-					DispatcherID: r.disp.KernelID,
-				}
-			}),
 		),
 	)
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/frobware/go-bpfman/bpffs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // Binding keys for simpleAttach plan nodes.
@@ -21,12 +20,10 @@ var (
 // attachPlan captures the variable parts of a simple attach operation.
 // Returned by the prepare closure after inspecting the program record.
 type attachPlan struct {
-	// target is the outcome recording target (e.g., "sched/sched_switch").
+	// target is the recording target (e.g., "sched/sched_switch").
 	target string
 	// linkName determines the bpffs pin path for the link.
 	linkName string
-	// function is an optional function name included in outcome details.
-	function string
 	// details is the sealed LinkDetails value for the link record.
 	details bpfman.LinkDetails
 	// attach performs the kernel I/O and returns the attach output.
@@ -37,9 +34,7 @@ type attachPlan struct {
 type attachParams struct {
 	// programKernelID is the kernel ID of the program to attach.
 	programKernelID uint32
-	// stepKind is the outcome step kind for the kernel attach step.
-	stepKind outcome.StepKind
-	// defaultTarget is used for outcome steps that occur before
+	// defaultTarget is used for log messages that occur before
 	// prepare runs. Falls back to "program_<id>" if empty.
 	defaultTarget string
 	// prepare inspects the program record and returns the plan.
@@ -71,12 +66,9 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 
 	// Build and execute plan.
 	plan := m.simpleAttachPlan(p, ap)
-	begin := func(_ context.Context) *operation.RunState {
-		return m.beginOp(ctx)
-	}
-	b, err := operation.Run(ctx, begin, m.executor, plan)
+	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
-		return bpfman.Link{}, wrapOpErr(err)
+		return bpfman.Link{}, err
 	}
 
 	link := operation.Get(b, linkKey)
@@ -102,34 +94,18 @@ func (m *Manager) simpleAttachPlan(
 		p.programKernelID, ap.linkName)
 
 	return operation.Build(
-		operation.Produce(attachOutKey, p.stepKind, ap.target,
+		operation.Produce(attachOutKey, ap.target,
 			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
 				return ap.attach(linkPinPath)
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				out := operation.Get(b, attachOutKey)
-				return outcome.LinkDetails{
-					LinkID:    out.LinkID,
-					ProgramID: p.programKernelID,
-					PinPath:   linkPinPath,
-					Function:  ap.function,
+			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
+				return []action.Action{
+					action.DetachLink{PinPath: linkPinPath},
 				}
-			}),
-			operation.UndoFrom(func(_ *operation.Bindings) []operation.UndoEntry {
-				return []operation.UndoEntry{{
-					Action: action.DetachLink{PinPath: linkPinPath},
-					Step: outcome.Step{
-						Kind:   outcome.StepKindKernelDetachLink,
-						Target: ap.target,
-						Details: outcome.LinkDetails{
-							PinPath: linkPinPath,
-						},
-					},
-				}}
 			}),
 		),
 
-		operation.Produce(linkKey, outcome.StepKindStoreSaveLink, ap.target,
+		operation.Produce(linkKey, ap.target,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
@@ -152,15 +128,6 @@ func (m *Manager) simpleAttachPlan(
 				}
 				return link, nil
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				link := operation.Get(b, linkKey)
-				return outcome.LinkDetails{
-					LinkID:    uint32(link.Record.ID),
-					ProgramID: p.programKernelID,
-					PinPath:   linkPinPath,
-					Function:  ap.function,
-				}
-			}),
 		),
 	)
 }

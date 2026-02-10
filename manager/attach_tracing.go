@@ -6,18 +6,14 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // attachTracepoint attaches a pinned program to a tracepoint.
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec) (bpfman.Link, error) {
 	group, name := spec.Group(), spec.Name()
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
-		stepKind:        outcome.StepKindAttachTracepoint,
 		defaultTarget:   target,
 		prepare: func(_ bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			return attachPlan{
@@ -34,13 +30,10 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 
 // attachKprobe attaches a pinned program to a kernel function.
 // retprobe is derived from the program type stored in the database.
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec) (bpfman.Link, error) {
 	fnName, offset := spec.FnName(), spec.Offset()
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
-		stepKind:        outcome.StepKindAttachKprobe,
 		defaultTarget:   fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeKretprobe
@@ -51,7 +44,6 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 			return attachPlan{
 				target:   fnName,
 				linkName: linkName,
-				function: fnName,
 				details:  bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
 				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
 					return m.kernel.AttachKprobe(ctx, progPinPath, fnName, offset, retprobe, linkPinPath)
@@ -67,8 +59,6 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 // The scope parameter is required for container uprobes (containerPid > 0)
 // to pass the lock fd to the helper subprocess. For local uprobes, scope
 // is not used but accepted for API uniformity.
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec bpfman.UprobeAttachSpec) (bpfman.Link, error) {
 	binaryTarget := spec.Target()
 	fnName := spec.FnName()
@@ -76,7 +66,6 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	containerPid := spec.ContainerPid()
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
-		stepKind:        outcome.StepKindAttachUprobe,
 		defaultTarget:   binaryTarget + ":" + fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeUretprobe
@@ -90,7 +79,6 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			return attachPlan{
 				target:   binaryTarget + ":" + fnName,
 				linkName: linkName,
-				function: fnName,
 				details:  bpfman.UprobeDetails{Target: binaryTarget, FnName: fnName, Offset: offset, Retprobe: retprobe, ContainerPid: containerPid},
 				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
 					if containerPid > 0 {
@@ -105,12 +93,9 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 
 // attachFentry attaches a pinned fentry program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
-		stepKind:        outcome.StepKindAttachFentry,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {
@@ -119,7 +104,6 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 			return attachPlan{
 				target:   fnName,
 				linkName: "fentry_" + fnName,
-				function: fnName,
 				details:  bpfman.FentryDetails{FnName: fnName},
 				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
 					return m.kernel.AttachFentry(ctx, progPinPath, fnName, linkPinPath)
@@ -131,12 +115,9 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 
 // attachFexit attaches a pinned fexit program to its target kernel function.
 // The target function was specified at load time and stored in the program's AttachFunc.
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
 		programKernelID: spec.ProgramID(),
-		stepKind:        outcome.StepKindAttachFexit,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {
@@ -145,7 +126,6 @@ func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) 
 			return attachPlan{
 				target:   fnName,
 				linkName: "fexit_" + fnName,
-				function: fnName,
 				details:  bpfman.FexitDetails{FnName: fnName},
 				attach: func(linkPinPath string) (bpfman.AttachOutput, error) {
 					return m.kernel.AttachFexit(ctx, progPinPath, fnName, linkPinPath)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -10,65 +9,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
-
-// extractOutcome extracts the OperationOutcome from a manager error.
-// Returns the outcome if present, otherwise a zero value.
-func extractOutcome(err error) outcome.OperationOutcome {
-	var me *manager.ManagerError
-	if errors.As(err, &me) {
-		return me.Outcome
-	}
-	return outcome.OperationOutcome{}
-}
-
-// isSimpleFailure returns true if the outcome represents a simple failure
-// that doesn't warrant the full structured output (no residual artefacts,
-// no rollback errors, no multi-step timeline).
-func isSimpleFailure(o outcome.OperationOutcome) bool {
-	// Has residual artefacts - show full output
-	if len(o.Residual) > 0 {
-		return false
-	}
-	// Has rollback errors - show full output
-	if len(o.RollbackErrors) > 0 {
-		return false
-	}
-	// Multi-step timeline - show full output
-	if len(o.Timeline) > 1 {
-		return false
-	}
-	// Single timeline event with different error - show full output
-	if len(o.Timeline) == 1 && o.Timeline[0].Error != o.PrimaryError {
-		return false
-	}
-	return true
-}
-
-// displayOutcomeError formats and displays an operation outcome for a failed operation.
-// For simple failures (no orphans, no complex timeline), returns the original error
-// to use the standard error display. For complex failures or JSON output, displays
-// the structured outcome and returns ErrSilent.
-func displayOutcomeError(cli *CLI, err error, o outcome.OperationOutcome, flags *OutputFlags) error {
-	format, _ := flags.Format()
-
-	// For table output, simple failures just use the standard error display
-	if format == OutputFormatTable && isSimpleFailure(o) {
-		return err
-	}
-
-	outcomeStr, fmtErr := FormatOutcome(o, flags)
-	if fmtErr != nil {
-		return err
-	}
-	if format == OutputFormatJSON || format == OutputFormatJSONPath {
-		_ = cli.PrintOut(outcomeStr)
-	} else {
-		_ = cli.PrintErr(outcomeStr)
-	}
-	return ErrSilent
-}
 
 // AttachCmd attaches a loaded program to a hook.
 type AttachCmd struct {
@@ -107,8 +48,7 @@ type AttachCmd struct {
 
 // attachResult holds the result of an attach operation for output outside the lock.
 type attachResult struct {
-	Link          bpfman.Link
-	FailedOutcome outcome.OperationOutcome
+	Link bpfman.Link
 }
 
 // Run executes the attach command: mutation under lock, output outside.
@@ -122,9 +62,6 @@ func (c *AttachCmd) Run(cli *CLI, ctx context.Context) error {
 	// Execute mutation under lock
 	result, err := c.execute(ctx, cli, mgr)
 	if err != nil {
-		if result.FailedOutcome.Status != "" {
-			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
-		}
 		return err
 	}
 
@@ -185,7 +122,7 @@ func (c *AttachCmd) attachTracepoint(ctx context.Context, mgr *manager.Manager, 
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -210,7 +147,7 @@ func (c *AttachCmd) attachXDP(ctx context.Context, mgr *manager.Manager, scope l
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -253,7 +190,7 @@ func (c *AttachCmd) attachTC(ctx context.Context, mgr *manager.Manager, scope lo
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -290,7 +227,7 @@ func (c *AttachCmd) attachTCX(ctx context.Context, mgr *manager.Manager, scope l
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -310,7 +247,7 @@ func (c *AttachCmd) attachKprobe(ctx context.Context, mgr *manager.Manager, scop
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -336,7 +273,7 @@ func (c *AttachCmd) attachUprobe(ctx context.Context, mgr *manager.Manager, scop
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -349,7 +286,7 @@ func (c *AttachCmd) attachFentry(ctx context.Context, mgr *manager.Manager, scop
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }
@@ -362,7 +299,7 @@ func (c *AttachCmd) attachFexit(ctx context.Context, mgr *manager.Manager, scope
 
 	link, err := mgr.Attach(ctx, scope, spec)
 	if err != nil {
-		return attachResult{FailedOutcome: extractOutcome(err)}, err
+		return attachResult{}, err
 	}
 	return attachResult{Link: link}, nil
 }

@@ -14,8 +14,8 @@ import (
 // be passed to a helper subprocess); for all other types it may be
 // nil.
 //
-// On failure, returns a *ManagerError containing the full operation
-// outcome.
+// On failure, returns a plain error. Completed steps are rolled back
+// automatically by the plan interpreter.
 func (m *Manager) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
 	switch s := spec.(type) {
 	case bpfman.TracepointAttachSpec:

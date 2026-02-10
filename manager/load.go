@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/store"
 )
@@ -142,7 +141,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 	rt := m.fsctx.BytecodeFS()
 
 	return operation.Build(
-		operation.Produce(loadedKey, outcome.StepKindKernelLoad, programName,
+		operation.Produce(loadedKey, programName,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
 				loaded, err := m.kernel.Load(ctx, spec, m.fsctx.BPFFS())
 				if err != nil {
@@ -154,45 +153,16 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 					"pin_path", loaded.PinPath)
 				return loaded, nil
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
+			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				l := operation.Get(b, loadedKey)
-				return outcome.ProgramDetails{
-					KernelID: l.Program.ID,
-					PinPath:  l.PinPath,
-				}
-			}),
-			operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
-				l := operation.Get(b, loadedKey)
-				return []operation.UndoEntry{
-					{
-						Action: action.UnloadProgram{PinPath: l.PinPath},
-						Step: outcome.Step{
-							Kind:   outcome.StepKindKernelUnload,
-							Target: programName,
-							Details: outcome.ProgramDetails{
-								KernelID: l.Program.ID,
-								PinPath:  l.PinPath,
-							},
-						},
-						Severity: operation.SeverityError,
-					},
-					{
-						Action: action.UnloadProgram{PinPath: l.MapsDir},
-						Step: outcome.Step{
-							Kind:   outcome.StepKindKernelUnload,
-							Target: programName,
-							Details: outcome.ProgramDetails{
-								KernelID:    l.Program.ID,
-								MapsDirPath: l.MapsDir,
-							},
-						},
-						Severity: operation.SeverityError,
-					},
+				return []action.Action{
+					action.UnloadProgram{PinPath: l.PinPath},
+					action.UnloadProgram{PinPath: l.MapsDir},
 				}
 			}),
 		),
 
-		operation.Do("db-check", outcome.StepKindPreflight, programName,
+		operation.Do("db-check", programName,
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				if _, err := m.store.Get(ctx, l.Program.ID); err == nil {
@@ -204,7 +174,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			},
 		),
 
-		operation.Do("fs-publish", outcome.StepKindFSPublish, programName,
+		operation.Do("fs-publish", programName,
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				prov := bpfmanfs.Provenance{
@@ -217,27 +187,15 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				}
 				return rt.PublishBytecode(l.Program.ID, spec.ObjectPath(), prov)
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
+			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				l := operation.Get(b, loadedKey)
-				return outcome.ProgramDetails{KernelID: l.Program.ID}
-			}),
-			operation.UndoFrom(func(b *operation.Bindings) []operation.UndoEntry {
-				l := operation.Get(b, loadedKey)
-				return []operation.UndoEntry{{
-					Action: action.RemoveProgramDir{KernelID: l.Program.ID},
-					Step: outcome.Step{
-						Kind:   outcome.StepKindFSRemoveProgram,
-						Target: programName,
-						Details: outcome.ProgramDetails{
-							KernelID: l.Program.ID,
-						},
-					},
-					Severity: operation.SeverityWarning,
-				}}
+				return []action.Action{
+					action.RemoveProgramDir{KernelID: l.Program.ID},
+				}
 			}),
 		),
 
-		operation.Do("store-save", outcome.StepKindStoreSaveProgram, programName,
+		operation.Do("store-save", programName,
 			func(ctx context.Context, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				record := buildProgramRecord(spec, l, opts, rt, now)
@@ -254,9 +212,9 @@ func (m *Manager) load(ctx context.Context, spec bpfman.LoadSpec, opts loadOpts)
 	now := time.Now()
 	rt := m.fsctx.BytecodeFS()
 
-	b, err := operation.Run(ctx, m.beginOp, m.executor, m.loadPlan(spec, opts, now))
+	b, err := operation.Run(ctx, m.logger, m.executor, m.loadPlan(spec, opts, now))
 	if err != nil {
-		return bpfman.Program{}, wrapOpErr(err)
+		return bpfman.Program{}, err
 	}
 
 	loaded := operation.Get(b, loadedKey)

@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
 
 // LoadCmd loads a BPF program from an object file or OCI image.
@@ -28,10 +26,9 @@ type LoadFileCmd struct {
 	MapOwnerID  uint32        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
-// loadFileResult captures both successful programs and any failure outcome.
+// loadFileResult captures the result of a load file operation.
 type loadFileResult struct {
-	Programs      []bpfman.Program
-	FailedOutcome outcome.OperationOutcome
+	Programs []bpfman.Program
 }
 
 // Run executes the load file command.
@@ -82,21 +79,12 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 			GlobalData:   globalData,
 		})
 
-		var res loadFileResult
 		if loadErr != nil {
-			var me *manager.ManagerError
-			if errors.As(loadErr, &me) {
-				res.FailedOutcome = me.Outcome
-			}
-			return res, fmt.Errorf("failed to load programs: %w", loadErr)
+			return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
 		}
-		res.Programs = loaded
-		return res, nil
+		return loadFileResult{Programs: loaded}, nil
 	})
 	if err != nil {
-		if result.FailedOutcome.Status != "" {
-			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
-		}
 		return err
 	}
 

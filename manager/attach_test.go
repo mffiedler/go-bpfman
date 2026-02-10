@@ -12,39 +12,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
-
-// findFailedEntry returns the first failed entry from the timeline, or nil if none.
-func findFailedEntry(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
-	for i := range timeline {
-		if timeline[i].Status == outcome.StepStatusFailed {
-			return &timeline[i]
-		}
-	}
-	return nil
-}
-
-// countCompletedPrimary counts completed entries in the primary phase.
-func countCompletedPrimary(timeline []outcome.TimelineEntry) int {
-	count := 0
-	for _, e := range timeline {
-		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
-			count++
-		}
-	}
-	return count
-}
-
-// hasRollbackEntries returns true if there are any rollback phase entries.
-func hasRollbackEntries(timeline []outcome.TimelineEntry) bool {
-	for _, e := range timeline {
-		if e.Phase == outcome.PhaseRollback {
-			return true
-		}
-	}
-	return false
-}
 
 // =============================================================================
 // Fentry Lifecycle Tests
@@ -873,19 +841,6 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 	require.Error(t, err, "First Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
-	// Verify outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
-	assert.Equal(t, "first_prog", failed.Target)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.False(t, hasRollbackEntries(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
-
 	// Verify clean state
 	fix.AssertCleanState()
 }
@@ -916,17 +871,7 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 	require.NoError(t, err)
 	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 	require.Error(t, err, "Third Load should fail")
-
-	// Verify third load outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
-	assert.Equal(t, "third_prog", failed.Target)
-	assert.Equal(t, 0, countCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
 	// First two should still exist
 	listResult, err := fix.Manager.ListPrograms(ctx)
@@ -1733,16 +1678,6 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 	_, err = fix.Manager.Attach(ctx, nil, attachSpec)
 	require.Error(t, err, "AttachXDP to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
-
-	// Verify outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.NotEmpty(t, failed.Error)
-	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestTC_AttachToNonExistentInterface verifies that:
@@ -1770,16 +1705,6 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 	_, err = fix.Manager.Attach(ctx, nil, attachSpec)
 	require.Error(t, err, "AttachTC to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
-
-	// Verify outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.NotEmpty(t, failed.Error)
-	assert.Equal(t, "clean", o.SystemState)
 }
 
 // TestTCX_AttachToNonExistentInterface verifies that:
@@ -1808,16 +1733,6 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 	_, err = fix.Manager.Attach(ctx, nil, attachSpec)
 	require.Error(t, err, "AttachTCX to non-existent interface should fail")
 	assert.Contains(t, err.Error(), "interface not found", "error should mention interface")
-
-	// Verify outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := findFailedEntry(o.Timeline)
-	require.NotNil(t, failed)
-	assert.NotEmpty(t, failed.Error)
-	assert.Equal(t, "clean", o.SystemState)
 }
 
 // =============================================================================
@@ -1845,10 +1760,6 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	var notFound bpfman.ErrProgramNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T: %v", err, err)
 	assert.Equal(t, uint32(99999), notFound.ID)
-
-	// Preflight returns a plain error, not a ManagerError.
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight should not produce ManagerError, got %T: %v", err, err)
 }
 
 // TestGetLink_NonExistentLink_ReturnsNotFound verifies that:

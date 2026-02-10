@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -50,10 +48,9 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		"pull_policy", c.PullPolicy.Value,
 	)
 
-	// loadImageResult captures both successful programs and any failure outcome.
+	// loadImageResult captures the result of a load image operation.
 	type loadImageResult struct {
-		Programs      []bpfman.Program
-		FailedOutcome outcome.OperationOutcome
+		Programs []bpfman.Program
 	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {
@@ -114,19 +111,11 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		})
 
 		if loadErr != nil {
-			var me *manager.ManagerError
-			if errors.As(loadErr, &me) {
-				res.FailedOutcome = me.Outcome
-			}
-			return res, fmt.Errorf("failed to load from image: %w", loadErr)
+			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
 		}
-		res.Programs = loaded
-		return res, nil
+		return loadImageResult{Programs: loaded}, nil
 	})
 	if err != nil {
-		if result.FailedOutcome.Status != "" {
-			return displayOutcomeError(cli, err, result.FailedOutcome, &c.OutputFlags)
-		}
 		return err
 	}
 

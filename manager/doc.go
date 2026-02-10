@@ -60,16 +60,9 @@
 // # Rollback and Error Reporting
 //
 // Failed mutating operations (Load, Unload, Attach*, Detach*)
-// return *ManagerError, which wraps the underlying error and includes a
-// structured OperationOutcome containing:
-//
-//   - Timeline of completed and failed steps
-//   - Rollback errors (if cleanup also failed)
-//   - Residual artefacts that could not be cleaned
-//
-// Callers can use errors.As to extract structured diagnostics.
-// Read-only methods (Get, ListPrograms, ListLinks, ListLinksByProgram,
-// GetLink, GetLinkInfo, FindLoadedProgramByMetadata) return plain errors.
+// return plain errors. On failure the plan interpreter automatically
+// rolls back completed steps in reverse order; rollback failures are
+// logged but do not alter the returned error.
 //
 // # Garbage Collection
 //

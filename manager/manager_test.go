@@ -24,39 +24,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
-
-// mgrTestFindFailed returns the first failed entry from the timeline, or nil if none.
-func mgrTestFindFailed(timeline []outcome.TimelineEntry) *outcome.TimelineEntry {
-	for i := range timeline {
-		if timeline[i].Status == outcome.StepStatusFailed {
-			return &timeline[i]
-		}
-	}
-	return nil
-}
-
-// mgrTestCountCompletedPrimary counts completed entries in the primary phase.
-func mgrTestCountCompletedPrimary(timeline []outcome.TimelineEntry) int {
-	count := 0
-	for _, e := range timeline {
-		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
-			count++
-		}
-	}
-	return count
-}
-
-// mgrTestHasRollback returns true if there are any rollback phase entries.
-func mgrTestHasRollback(timeline []outcome.TimelineEntry) bool {
-	for _, e := range timeline {
-		if e.Phase == outcome.PhaseRollback {
-			return true
-		}
-	}
-	return false
-}
 
 // =============================================================================
 // Program Load/Unload/Get/List Tests
@@ -406,26 +374,6 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 	require.Error(t, err, "Second Load should fail")
 	assert.Contains(t, err.Error(), "injected failure", "error should mention injected failure")
 
-	// Verify second load outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := mgrTestFindFailed(o.Timeline)
-	require.NotNil(t, failed, "outcome should have failed step")
-	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
-	assert.Equal(t, "prog_two", failed.Target)
-	assert.NotEmpty(t, failed.Error)
-
-	// No completed steps for this Load call (failed on first step)
-	assert.Equal(t, 0, mgrTestCountCompletedPrimary(o.Timeline))
-
-	// No cleanup needed (nothing was created before failure)
-	assert.False(t, mgrTestHasRollback(o.Timeline))
-
-	// SystemState should be clean (failure on first step, nothing to clean)
-	assert.Equal(t, "clean", o.SystemState)
-
 	// First program should still exist (manager doesn't auto-rollback across separate Load calls)
 	_, err = fix.Manager.Get(ctx, prog1.Record.KernelID)
 	require.NoError(t, err, "First program should still exist")
@@ -455,24 +403,7 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 	_, err = fix.Load(ctx, spec, manager.LoadOpts{})
 
 	require.Error(t, err, "Load should fail")
-
-	// Verify outcome records the failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := mgrTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
-	assert.Equal(t, "single_prog", failed.Target)
-
-	// No steps completed before failure
-	assert.Equal(t, 0, mgrTestCountCompletedPrimary(o.Timeline))
-	assert.False(t, mgrTestHasRollback(o.Timeline))
-
-	// SystemState should be clean
-	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.ManualCleanupRequired)
+	assert.Contains(t, err.Error(), "injected failure")
 
 	fix.AssertKernelOps([]string{"load:single_prog:error"})
 	fix.AssertCleanState()
@@ -502,17 +433,7 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 	require.NoError(t, err)
 	_, err = fix.Load(ctx, spec2, manager.LoadOpts{})
 	require.Error(t, err, "Second Load should fail on 2nd program")
-
-	// Verify second load has failure outcome
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	failed := mgrTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindKernelLoad, failed.Kind)
-	assert.Equal(t, "prog_b", failed.Target)
-	assert.Equal(t, 0, mgrTestCountCompletedPrimary(o.Timeline))
-	assert.Equal(t, "clean", o.SystemState)
+	assert.Contains(t, err.Error(), "injected error on load")
 
 	fix.AssertKernelOps([]string{
 		"load:prog_a:ok",
@@ -550,27 +471,6 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	_, err = fix.Manager.Attach(ctx, nil, attachSpec)
 	require.Error(t, err, "attach should fail")
 	assert.Contains(t, err.Error(), "injected attach failure")
-
-	// Verify outcome records the attach failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := mgrTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindAttachTracepoint, failed.Kind)
-	assert.Equal(t, "syscalls/sys_enter_read", failed.Target)
-	assert.NotEmpty(t, failed.Error)
-
-	// No completed steps (attach failed before anything succeeded)
-	assert.Equal(t, 0, mgrTestCountCompletedPrimary(o.Timeline))
-
-	// No cleanup needed (nothing was created)
-	assert.False(t, mgrTestHasRollback(o.Timeline))
-
-	// SystemState should be clean
-	assert.Equal(t, "clean", o.SystemState)
-	assert.False(t, o.ManualCleanupRequired)
 
 	// Program should still be loaded
 	retrieved, err := fix.Manager.Get(ctx, prog.Record.KernelID)
@@ -750,22 +650,6 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	err = fix.Manager.Detach(ctx, link.Record.ID)
 	require.Error(t, err, "Detach should fail due to kernel error")
 	assert.Contains(t, err.Error(), "injected detach failure", "error should mention injected failure")
-
-	// Verify outcome records the detach failure
-	me := extractManagerError(t, err)
-	o := me.Outcome
-	assert.Equal(t, outcome.StatusFailure, o.Status)
-	assert.NotEmpty(t, o.PrimaryError)
-	failed := mgrTestFindFailed(o.Timeline)
-	require.NotNil(t, failed)
-	assert.Equal(t, outcome.StepKindKernelDetachLink, failed.Kind)
-	assert.NotEmpty(t, failed.Error)
-
-	// No completed steps (detach failed on the kernel operation)
-	assert.Equal(t, 0, mgrTestCountCompletedPrimary(o.Timeline))
-
-	// No cleanup needed
-	assert.False(t, mgrTestHasRollback(o.Timeline))
 
 	// Verify the link still exists in the fake kernel (was not deleted)
 	assert.Equal(t, 1, fix.Kernel.LinkCount(), "link should still exist in kernel after failed detach")

@@ -11,27 +11,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/outcome"
 )
-
-// outcomeTestCompletedPrimary returns completed entries in the primary phase.
-func outcomeTestCompletedPrimary(timeline []outcome.TimelineEntry) []outcome.TimelineEntry {
-	var result []outcome.TimelineEntry
-	for _, e := range timeline {
-		if e.Phase == outcome.PhasePrimary && e.Status == outcome.StepStatusCompleted {
-			result = append(result, e)
-		}
-	}
-	return result
-}
-
-// extractManagerError extracts the ManagerError from an error using errors.As.
-func extractManagerError(t *testing.T, err error) *manager.ManagerError {
-	t.Helper()
-	var me *manager.ManagerError
-	require.True(t, errors.As(err, &me), "expected error to be *manager.ManagerError, got %T", err)
-	return me
-}
 
 // TestLoad_Success verifies that a successful load operation completes
 // without error and returns the program.
@@ -72,8 +52,8 @@ func TestUnload_Success(t *testing.T) {
 }
 
 // TestDetach_NotFound_ReturnsPlainError verifies that a detach
-// operation for a non-existent link returns a plain error (not
-// *ManagerError) because preflight failures bypass plan execution.
+// operation for a non-existent link returns a plain error because
+// preflight failures bypass plan execution.
 func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -83,14 +63,11 @@ func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 
 	var notFound bpfman.ErrLinkNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrLinkNotFound, got %T", err)
-
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestUnload_NotFound_ReturnsPlainError verifies that an unload
-// operation for a non-existent program returns a plain error (not
-// *ManagerError) because preflight failures bypass plan execution.
+// operation for a non-existent program returns a plain error because
+// preflight failures bypass plan execution.
 func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -100,9 +77,6 @@ func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
 
 	var notFound bpfman.ErrProgramNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T", err)
-
-	var me *manager.ManagerError
-	assert.False(t, errors.As(err, &me), "preflight errors should not be *ManagerError")
 }
 
 // TestAttachTracepoint_Success verifies that a successful attach operation
@@ -130,8 +104,8 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	assert.Equal(t, prog.Record.KernelID, link.Record.ProgramID)
 }
 
-// TestGC_Success_OutcomeTracksPhases verifies that GC records both
-// store GC and rule engine phases.
+// TestGC_Success_OutcomeTracksPhases verifies that GC completes
+// successfully and reports correct statistics.
 func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -139,22 +113,12 @@ func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 	result, err := fix.Manager.GC(ctx)
 	require.NoError(t, err)
 
-	// Verify outcome indicates success
-	assert.Equal(t, outcome.StatusSuccess, result.Outcome.Status)
-	assert.Empty(t, result.Outcome.PrimaryError)
-
-	// Verify Phase 1 steps (store GC)
-	completed := outcomeTestCompletedPrimary(result.Outcome.Timeline)
-	require.GreaterOrEqual(t, len(completed), 3, "expected at least 3 store GC steps")
-
-	// Check for store GC step kinds
-	stepKinds := make(map[outcome.StepKind]bool)
-	for _, step := range completed {
-		stepKinds[step.Kind] = true
-	}
-	assert.True(t, stepKinds[outcome.StepKindStoreGCPrograms], "missing store.gc_programs step")
-	assert.True(t, stepKinds[outcome.StepKindStoreGCLinks], "missing store.gc_links step")
-	assert.True(t, stepKinds[outcome.StepKindStoreGCDispatchers], "missing store.gc_dispatchers step")
+	// On an empty manager, GC should remove nothing.
+	assert.Equal(t, 0, result.ProgramsRemoved)
+	assert.Equal(t, 0, result.DispatchersRemoved)
+	assert.Equal(t, 0, result.LinksRemoved)
+	assert.Equal(t, 0, result.OrphanPinsRemoved)
+	assert.Equal(t, 0, result.LiveOrphans)
 }
 
 // TestOutcome_SystemStateReflectsActualState verifies that after an unload
@@ -178,8 +142,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 }
 
 // TestOutcome_ExecutionFailure_HasTimeline verifies that an operation
-// that fails during plan execution produces a *ManagerError with
-// timeline entries.
+// that fails during plan execution produces a useful error.
 func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
@@ -200,10 +163,5 @@ func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 
 	err = fix.Manager.Detach(ctx, link.Record.ID)
 	require.Error(t, err)
-
-	// Extract outcome from error
-	me := extractManagerError(t, err)
-
-	// Timeline should have at least one entry (the failed step)
-	assert.NotEmpty(t, me.Outcome.Timeline, "execution failure should have timeline entry")
+	assert.Contains(t, err.Error(), "injected failure")
 }

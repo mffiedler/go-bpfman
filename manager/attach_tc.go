@@ -12,7 +12,6 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/netns"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -37,8 +36,6 @@ var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcher
 //   - Dispatcher link: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_link
 //   - Dispatcher prog: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
 //   - Extension links: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
@@ -61,7 +58,6 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		target:          ifname + ":" + string(direction),
 		direction:       string(direction),
 		dispType:        dispType,
-		dispStepKind:    outcome.StepKindAttachTCDispatcher,
 		createDispatcher: func(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
 			return m.createTCDispatcher(ctx, nsid, ifindex, ifname, direction, dispType, netnsPath)
 		},
@@ -98,8 +94,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 //   - Link: /sys/fs/bpf/bpfman/tcx-{direction}/link_{nsid}_{ifindex}_{linkid}
 //
 // Preflight failures (getProgram, type check, GetNsid, stale pin
-// removal, link listing) return plain errors. Execution failures
-// return *ManagerError with the full operation outcome.
+// removal, link listing) return plain errors.
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
 	programKernelID := spec.ProgramID()
@@ -147,12 +142,9 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 
 	// --- Build and execute plan ---
 	plan := m.attachTCXPlan(programKernelID, ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
-	begin := func(_ context.Context) *operation.RunState {
-		return m.beginOp(ctx)
-	}
-	b, err := operation.Run(ctx, begin, m.executor, plan)
+	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
-		return bpfman.Link{}, wrapOpErr(err)
+		return bpfman.Link{}, err
 	}
 
 	link := operation.Get(b, linkKey)
@@ -182,34 +174,18 @@ func (m *Manager) attachTCXPlan(
 	order bpfman.TCXAttachOrder,
 ) operation.Plan {
 	return operation.Build(
-		operation.Produce(attachOutKey, outcome.StepKindAttachTCX, target,
+		operation.Produce(attachOutKey, target,
 			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
 				return m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				out := operation.Get(b, attachOutKey)
-				return outcome.LinkDetails{
-					LinkID:    out.LinkID,
-					ProgramID: programKernelID,
-					Interface: ifname,
-					PinPath:   linkPinPath,
+			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
+				return []action.Action{
+					action.DetachLink{PinPath: linkPinPath},
 				}
-			}),
-			operation.UndoFrom(func(_ *operation.Bindings) []operation.UndoEntry {
-				return []operation.UndoEntry{{
-					Action: action.DetachLink{PinPath: linkPinPath},
-					Step: outcome.Step{
-						Kind:   outcome.StepKindKernelDetachLink,
-						Target: target,
-						Details: outcome.LinkDetails{
-							PinPath: linkPinPath,
-						},
-					},
-				}}
 			}),
 		),
 
-		operation.Produce(linkKey, outcome.StepKindStoreSaveLink, target,
+		operation.Produce(linkKey, target,
 			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
@@ -238,15 +214,6 @@ func (m *Manager) attachTCXPlan(
 				}
 				return link, nil
 			},
-			operation.DetailsFn(func(b *operation.Bindings) any {
-				link := operation.Get(b, linkKey)
-				return outcome.LinkDetails{
-					LinkID:    uint32(link.Record.ID),
-					ProgramID: programKernelID,
-					Interface: ifname,
-					PinPath:   linkPinPath,
-				}
-			}),
 		),
 	)
 }

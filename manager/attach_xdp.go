@@ -7,7 +7,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -27,8 +26,6 @@ const (
 //   - Dispatcher link: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_link
 //   - Dispatcher prog: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
 //   - Extension links: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
-//
-// On failure, returns a *ManagerError containing the full operation outcome.
 func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpfman.Link, error) {
 	ifname := spec.Ifname()
 	ifindex := spec.Ifindex()
@@ -39,7 +36,6 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 		netnsPath:       spec.Netns(),
 		target:          ifname + ":xdp",
 		dispType:        dispatcher.DispatcherTypeXDP,
-		dispStepKind:    outcome.StepKindAttachXDPDispatcher,
 		createDispatcher: func(ctx context.Context, nsid uint64, ifindex uint32, netnsPath string) (dispatcher.State, error) {
 			return m.createXDPDispatcher(ctx, nsid, ifindex, netnsPath)
 		},

@@ -2,7 +2,6 @@ package manager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -11,8 +10,6 @@ import (
 	"github.com/frobware/go-bpfman/bpfmanfs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
-	"github.com/frobware/go-bpfman/manager/operation"
-	"github.com/frobware/go-bpfman/outcome"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -103,9 +100,8 @@ func (m *Manager) ImagePuller() platform.ImagePuller {
 	return m.imagePuller
 }
 
-// GCResult contains statistics and outcome from garbage collection.
+// GCResult contains statistics from garbage collection.
 type GCResult struct {
-	// Statistics from GC.
 	ProgramsRemoved    int
 	DispatchersRemoved int
 	LinksRemoved       int
@@ -113,9 +109,6 @@ type GCResult struct {
 	// LiveOrphans counts programs pinned under bpfman's bpffs root
 	// that are still alive in the kernel but have no DB record.
 	LiveOrphans int
-
-	// Outcome tracks the structured result of the GC operation.
-	Outcome outcome.OperationOutcome
 }
 
 // GCOptions configures garbage collection behaviour.
@@ -155,11 +148,6 @@ func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, er
 
 // GCWithOptions runs garbage collection with the given options.
 func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCResult, retErr error) {
-	rec := outcome.NewRecorder(&result.Outcome, func(err error) {
-		m.logger.Error("outcome recorder: invariant violation", "error", err)
-	})
-	defer func() { rec.Finalise() }()
-	result.Outcome.OpID = OpIDFromContext(ctx)
 	start := time.Now()
 
 	// Gather kernel state
@@ -178,10 +166,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// remove it from the live set so the store GC reaps the row.
 	dbPrograms, err := m.store.List(ctx)
 	if err != nil {
-		retErr = fmt.Errorf("list programs: %w", err)
-		rec.FailStep(outcome.StepKindPreflight, "store", retErr)
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return result, fmt.Errorf("list programs: %w", err)
 	}
 	scanner := m.fsctx.BPFFS().Scanner()
 	for id := range dbPrograms {
@@ -208,26 +193,12 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 	// Phase 1: Delegate to store - it handles ordering constraints internally
 	storeResult, err := m.store.GC(ctx, kernelProgramIDs, kernelLinkIDs)
 	if err != nil {
-		retErr = fmt.Errorf("store gc: %w", err)
-		rec.FailStep(outcome.StepKindStoreGCPrograms, "store", retErr)
-		result.Outcome.PrimaryError = retErr.Error()
-		return
+		return result, fmt.Errorf("store gc: %w", err)
 	}
 
-	// Record Phase 1 steps
 	result.ProgramsRemoved = storeResult.ProgramsRemoved
 	result.LinksRemoved = storeResult.LinksRemoved
 	result.DispatchersRemoved = storeResult.DispatchersRemoved
-
-	rec.CompleteStep(outcome.StepKindStoreGCPrograms, "store", outcome.GCPhaseDetails{
-		Removed: storeResult.ProgramsRemoved,
-	})
-	rec.CompleteStep(outcome.StepKindStoreGCLinks, "store", outcome.GCPhaseDetails{
-		Removed: storeResult.LinksRemoved,
-	})
-	rec.CompleteStep(outcome.StepKindStoreGCDispatchers, "store", outcome.GCPhaseDetails{
-		Removed: storeResult.DispatchersRemoved,
-	})
 
 	// Phase 2: Post-store GC using the coherency rule engine to detect and
 	// remove stale dispatchers and orphan filesystem artefacts.
@@ -262,18 +233,9 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (result GCR
 			if err := v.Op.Execute(); err != nil {
 				m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
 				retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
-				rec.FailStep(outcome.StepKindGCRemoveOrphan, v.Op.Description,
-					retErr, outcome.OrphanDetails{
-						Category: v.Category,
-					})
-				result.Outcome.PrimaryError = retErr.Error()
-				// Continue to attempt other cleanup operations but mark overall as failed
 				continue
 			}
 			m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
-			rec.CompleteStep(outcome.StepKindGCRemoveOrphan, v.Op.Description, outcome.OrphanDetails{
-				Category: v.Category,
-			})
 			switch v.Category {
 			case "gc-dispatcher":
 				result.DispatchersRemoved++
@@ -334,58 +296,4 @@ func (m *Manager) MarkMutated() {
 	m.gcMu.Lock()
 	m.mutatedSinceGC = true
 	m.gcMu.Unlock()
-}
-
-// beginOp creates the RunState that the operation interpreter needs.
-// It bridges the manager's owned state (logger, OpID) to the
-// operation package.
-func (m *Manager) beginOp(ctx context.Context) *operation.RunState {
-	o := &outcome.OperationOutcome{OpID: OpIDFromContext(ctx)}
-	rec := outcome.NewRecorder(o, func(err error) {
-		m.logger.Error("outcome recorder: invariant violation", "error", err)
-	})
-	return &operation.RunState{
-		Outcome: o,
-		Rec:     rec,
-		Logger:  m.logger,
-	}
-}
-
-// ManagerError is returned when a manager operation fails.
-// It implements error and contains the full operation outcome,
-// including timeline, rollback errors, and residual artefacts.
-//
-// Callers can use errors.As() to extract structured details:
-//
-//	prog, err := mgr.Load(ctx, spec, opts)
-//	if err != nil {
-//	    var me *ManagerError
-//	    if errors.As(err, &me) {
-//	        // Access me.Outcome.RollbackErrors, me.Outcome.Timeline, etc.
-//	    }
-//	}
-type ManagerError struct {
-	Outcome outcome.OperationOutcome
-	Cause   error // Underlying error, accessible via errors.As/errors.Is
-}
-
-// Error returns the primary error message.
-func (e *ManagerError) Error() string {
-	return e.Outcome.PrimaryError
-}
-
-// Unwrap returns the underlying error for use with errors.Is/errors.As.
-func (e *ManagerError) Unwrap() error {
-	return e.Cause
-}
-
-// wrapOpErr converts an *operation.OperationError to a *ManagerError
-// at the boundary so existing errors.As(err, &me) call sites keep
-// working. Non-OperationError values pass through unchanged.
-func wrapOpErr(err error) error {
-	var opErr *operation.OperationError
-	if errors.As(err, &opErr) {
-		return &ManagerError{Outcome: opErr.Outcome, Cause: opErr.Cause}
-	}
-	return err
 }
