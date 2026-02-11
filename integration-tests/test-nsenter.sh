@@ -96,7 +96,7 @@ main() {
     fi
 
     log_info "Loading uprobe program from $UPROBE_OBJ..."
-    LOAD_OUTPUT=$("$BPFMAN" load file \
+    LOAD_OUTPUT=$("$BPFMAN" program load file \
         --path "$UPROBE_OBJ" \
         --programs uprobe:uprobe \
         --metadata bpfman.io/test=nsenter 2>&1)
@@ -112,13 +112,14 @@ main() {
     # Attach uprobe to libc in container namespace
     # Alpine uses musl libc at /lib/ld-musl-x86_64.so.1
     log_info "Attaching uprobe to container's libc..."
-    ATTACH_OUTPUT=$("$BPFMAN" attach "$PROGRAM_ID" uprobe \
+    ATTACH_OUTPUT=$("$BPFMAN" link attach uprobe \
         --target /lib/ld-musl-x86_64.so.1 \
         --fn-name malloc \
-        --container-pid "$CONTAINER_PID" 2>&1) || {
+        --container-pid "$CONTAINER_PID" \
+        "$PROGRAM_ID" 2>&1) || {
         log_fail "Failed to attach uprobe"
         echo "$ATTACH_OUTPUT"
-        "$BPFMAN" unload "$PROGRAM_ID" || true
+        "$BPFMAN" program unload "$PROGRAM_ID" || true
         exit 1
     }
 
@@ -132,15 +133,15 @@ main() {
 
     # Verify attachment by listing links
     log_info "Verifying attachment..."
-    LIST_OUTPUT=$("$BPFMAN" list links 2>&1)
+    LIST_OUTPUT=$("$BPFMAN" link list 2>&1)
     echo "$LIST_OUTPUT"
 
     # Clean up
     log_info "Cleaning up..."
     if [[ -n "${LINK_ID:-}" ]]; then
-        "$BPFMAN" detach "$LINK_ID" || true
+        "$BPFMAN" link detach "$LINK_ID" || true
     fi
-    "$BPFMAN" unload "$PROGRAM_ID" || true
+    "$BPFMAN" program unload "$PROGRAM_ID" || true
 
     echo ""
     echo "=========================================="

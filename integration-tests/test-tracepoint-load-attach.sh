@@ -11,12 +11,17 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 # - config/test.toml present (with signature verification disabled)
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration - can be overridden via environment
 BPFMAN="${BPFMAN:-./bin/bpfman}"
@@ -47,25 +52,25 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     # Detach any test links
     if [ -n "${LINK_ID:-}" ]; then
-        bpfman detach "$LINK_ID" 2>/dev/null || true
+        bpfman link detach "$LINK_ID" 2>/dev/null || true
     fi
     # Unload any test programs
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
     fi
     # Unmount bpffs if mounted
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
     # Remove runtime directory
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -99,7 +104,7 @@ check_tracepoint() {
     name=$(echo "$TRACEPOINT" | cut -d/ -f2)
 
     local tracepoint_path="/sys/kernel/debug/tracing/events/$group/$name"
-    if sudo test -d "$tracepoint_path"; then
+    if test -d "$tracepoint_path"; then
         log_info "Tracepoint $TRACEPOINT found at $tracepoint_path"
     else
         log_warn "Tracepoint $TRACEPOINT not found at $tracepoint_path"
@@ -116,9 +121,9 @@ ensure_clean_state() {
 
     # Clean up any previous run
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 
 # Step 1: Load tracepoint program from OCI image
@@ -127,8 +132,8 @@ load_program() {
     log_info "Image: $IMAGE"
 
     local output
-    output=$(bpfman load image -o json --programs=tracepoint:tracepoint_kill_recorder --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    output=$(bpfman program load image -o json --programs=tracepoint:tracepoint_kill_recorder --image-url="$IMAGE" 2>&1)
+    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -139,11 +144,15 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].kernel.type')
-    assert_eq "tracepoint" "$prog_type" "Program type should be tracepoint"
+    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    assert_eq "tracepoint" "$prog_type" "Managed program type should be tracepoint"
+
+    local kernel_type
+    kernel_type=$(echo "$output" | jq -r '.[0].status.kernel.program_type')
+    assert_eq "tracepoint" "$kernel_type" "Kernel program type should be tracepoint"
 
     local prog_name
-    prog_name=$(echo "$output" | jq -r '.[0].kernel.name')
+    prog_name=$(echo "$output" | jq -r '.[0].status.kernel.name')
     # Kernel truncates long names - tracepoint_kill_recorder becomes tracepoint_kill
     assert_eq "tracepoint_kill" "$prog_name" "Program name should be tracepoint_kill"
 
@@ -155,9 +164,9 @@ attach_tracepoint() {
     log_info "Step 2: Attaching tracepoint program to $TRACEPOINT..."
 
     local output
-    output=$(bpfman attach "$PROG_ID" tracepoint --tracepoint "$TRACEPOINT" -o json 2>&1)
+    output=$(bpfman link attach tracepoint --tracepoint "$TRACEPOINT" -o json "$PROG_ID" 2>&1)
 
-    LINK_ID=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+    LINK_ID=$(echo "$output" | jq -r '.record.id // empty' 2>/dev/null) || true
 
     if [ -z "$LINK_ID" ]; then
         log_fail "Failed to attach tracepoint"
@@ -168,9 +177,9 @@ attach_tracepoint() {
 
     # Verify link details
     local link_type tp_group tp_name
-    link_type=$(echo "$output" | jq -r '.summary.link_type')
-    tp_group=$(echo "$output" | jq -r '.details.group')
-    tp_name=$(echo "$output" | jq -r '.details.name')
+    link_type=$(echo "$output" | jq -r '.record.kind')
+    tp_group=$(echo "$output" | jq -r '.record.details.group')
+    tp_name=$(echo "$output" | jq -r '.record.details.name')
 
     assert_eq "tracepoint" "$link_type" "Link type should be tracepoint"
     assert_eq "$TRACEPOINT" "$tp_group/$tp_name" "Tracepoint should be $TRACEPOINT"
@@ -183,10 +192,10 @@ verify_links() {
     log_info "Step 3: Verifying link via list..."
 
     local output
-    output=$(bpfman list links 2>&1)
+    output=$(bpfman link list -o json 2>&1)
 
     local tracepoint_link_count
-    tracepoint_link_count=$(echo "$output" | jq '[.[] | select(.link_type == "tracepoint")] | length')
+    tracepoint_link_count=$(echo "$output" | jq '[.links[] | select(.kind == "tracepoint")] | length')
 
     assert_eq "1" "$tracepoint_link_count" "Should have 1 tracepoint link"
 
@@ -199,7 +208,7 @@ verify_no_dispatchers() {
 
     # Check database for dispatchers - should be none for tracepoint
     local disp_count
-    disp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
 
     assert_eq "0" "$disp_count" "Should have 0 dispatchers (tracepoint is single-attach)"
 
@@ -210,18 +219,14 @@ verify_no_dispatchers() {
 detach_link() {
     log_info "Step 5: Detaching tracepoint link..."
 
-    bpfman detach "$LINK_ID" 2>&1
+    bpfman link detach "$LINK_ID" 2>&1
     local saved_link_id="$LINK_ID"
     LINK_ID=""  # Clear so cleanup doesn't try again
 
     # Verify link is gone
     local link_output tracepoint_link_count
-    link_output=$(bpfman list links 2>&1)
-    if echo "$link_output" | grep -q "No managed links found"; then
-        tracepoint_link_count=0
-    else
-        tracepoint_link_count=$(echo "$link_output" | jq '[.[] | select(.link_type == "tracepoint")] | length')
-    fi
+    link_output=$(bpfman link list -o json 2>&1)
+    tracepoint_link_count=$(echo "$link_output" | jq '[.links[] | select(.kind == "tracepoint")] | length')
     assert_eq "0" "$tracepoint_link_count" "Should have 0 tracepoint links after detach"
 
     log_pass "Tracepoint link detached"
@@ -230,7 +235,7 @@ detach_link() {
 # Step 6: Unload program
 unload_program() {
     log_info "Step 6: Unloading tracepoint program..."
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""  # Clear so cleanup doesn't try again
     log_pass "Tracepoint program unloaded"
 }
@@ -241,8 +246,8 @@ verify_final_state() {
 
     # Check database - all zeros
     local prog_count tracepoint_link_count
-    prog_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
-    tracepoint_link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tracepoint_link_details;")
+    prog_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
+    tracepoint_link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_tracepoint_details;")
 
     assert_eq "0" "$prog_count" "Should have 0 programs"
     assert_eq "0" "$tracepoint_link_count" "Should have 0 tracepoint link details"

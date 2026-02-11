@@ -12,13 +12,18 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 # - config/test.toml present (with signature verification disabled)
 # - Kernel with BTF support
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration - can be overridden via environment
 BPFMAN="${BPFMAN:-./bin/bpfman}"
@@ -54,25 +59,25 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     # Detach any test links
     if [ -n "${LINK_ID:-}" ]; then
-        bpfman detach "$LINK_ID" 2>/dev/null || true
+        bpfman link detach "$LINK_ID" 2>/dev/null || true
     fi
     # Unload any test programs
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
     fi
     # Unmount bpffs if mounted
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
     # Remove runtime directory
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -110,8 +115,8 @@ check_prerequisites() {
 
     # Check kernel function exists
     if [ -f /proc/kallsyms ]; then
-        if sudo grep -q " ${FEXIT_FN}$" /proc/kallsyms 2>/dev/null || \
-           sudo grep -q " ${FEXIT_FN}\." /proc/kallsyms 2>/dev/null; then
+        if grep -q " ${FEXIT_FN}$" /proc/kallsyms 2>/dev/null || \
+           grep -q " ${FEXIT_FN}\." /proc/kallsyms 2>/dev/null; then
             log_info "Kernel function $FEXIT_FN found"
         else
             log_warn "Kernel function $FEXIT_FN not found in /proc/kallsyms"
@@ -133,9 +138,9 @@ ensure_clean_state() {
 
     # Clean up any previous run
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 
 # Step 1: Load fexit program from bytecode file
@@ -154,8 +159,8 @@ load_program() {
 
     local output
     # For fexit, the format is: fexit:<bpf_func_name>:<kernel_attach_func>
-    output=$(bpfman load file -o json --programs="fexit:${BPF_FUNC}:${FEXIT_FN}" --path="$BYTECODE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    output=$(bpfman program load file -o json --programs="fexit:${BPF_FUNC}:${FEXIT_FN}" --path="$BYTECODE" 2>&1)
+    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -166,11 +171,15 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].kernel.type')
-    assert_eq "fexit" "$prog_type" "Program type should be fexit"
+    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    assert_eq "fexit" "$prog_type" "Managed program type should be fexit"
+
+    local kernel_type
+    kernel_type=$(echo "$output" | jq -r '.[0].status.kernel.program_type')
+    assert_eq "tracing" "$kernel_type" "Kernel program type should be tracing"
 
     local prog_name
-    prog_name=$(echo "$output" | jq -r '.[0].kernel.name')
+    prog_name=$(echo "$output" | jq -r '.[0].status.kernel.name')
     assert_eq "$BPF_FUNC" "$prog_name" "Program name should be $BPF_FUNC"
 
     log_pass "Fexit program loaded successfully"
@@ -184,9 +193,9 @@ attach_fexit() {
 
     local output
     # For fexit, we don't pass --fn-name - it's stored from load time
-    output=$(bpfman attach "$PROG_ID" fexit -o json 2>&1)
+    output=$(bpfman link attach fexit -o json "$PROG_ID" 2>&1)
 
-    LINK_ID=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+    LINK_ID=$(echo "$output" | jq -r '.record.id // empty' 2>/dev/null) || true
 
     if [ -z "$LINK_ID" ]; then
         log_fail "Failed to attach fexit"
@@ -197,8 +206,8 @@ attach_fexit() {
 
     # Verify link details
     local link_type fn_name
-    link_type=$(echo "$output" | jq -r '.summary.link_type')
-    fn_name=$(echo "$output" | jq -r '.details.fn_name')
+    link_type=$(echo "$output" | jq -r '.record.kind')
+    fn_name=$(echo "$output" | jq -r '.record.details.fn_name')
 
     assert_eq "fexit" "$link_type" "Link type should be fexit"
     assert_eq "$FEXIT_FN" "$fn_name" "Function name should be $FEXIT_FN"
@@ -211,10 +220,10 @@ verify_links() {
     log_info "Step 3: Verifying link via list..."
 
     local output
-    output=$(bpfman list links 2>&1)
+    output=$(bpfman link list -o json 2>&1)
 
     local fexit_link_count
-    fexit_link_count=$(echo "$output" | jq '[.[] | select(.link_type == "fexit")] | length')
+    fexit_link_count=$(echo "$output" | jq '[.links[] | select(.kind == "fexit")] | length')
 
     assert_eq "1" "$fexit_link_count" "Should have 1 fexit link"
 
@@ -227,7 +236,7 @@ verify_no_dispatchers() {
 
     # Check database for dispatchers - should be none for fexit
     local disp_count
-    disp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
 
     assert_eq "0" "$disp_count" "Should have 0 dispatchers (fexit is single-attach)"
 
@@ -238,18 +247,14 @@ verify_no_dispatchers() {
 detach_link() {
     log_info "Step 5: Detaching fexit link..."
 
-    bpfman detach "$LINK_ID" 2>&1
+    bpfman link detach "$LINK_ID" 2>&1
     local saved_link_id="$LINK_ID"
     LINK_ID=""  # Clear so cleanup doesn't try again
 
     # Verify link is gone
     local link_output fexit_link_count
-    link_output=$(bpfman list links 2>&1)
-    if echo "$link_output" | grep -q "No managed links found"; then
-        fexit_link_count=0
-    else
-        fexit_link_count=$(echo "$link_output" | jq '[.[] | select(.link_type == "fexit")] | length')
-    fi
+    link_output=$(bpfman link list -o json 2>&1)
+    fexit_link_count=$(echo "$link_output" | jq '[.links[] | select(.kind == "fexit")] | length')
     assert_eq "0" "$fexit_link_count" "Should have 0 fexit links after detach"
 
     log_pass "Fexit link detached"
@@ -258,7 +263,7 @@ detach_link() {
 # Step 6: Unload program
 unload_program() {
     log_info "Step 6: Unloading fexit program..."
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""  # Clear so cleanup doesn't try again
     log_pass "Fexit program unloaded"
 }
@@ -269,8 +274,8 @@ verify_final_state() {
 
     # Check database - all zeros
     local prog_count fexit_link_count
-    prog_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
-    fexit_link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM fexit_link_details;")
+    prog_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
+    fexit_link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_fexit_details;")
 
     assert_eq "0" "$prog_count" "Should have 0 programs"
     assert_eq "0" "$fexit_link_count" "Should have 0 fexit link details"

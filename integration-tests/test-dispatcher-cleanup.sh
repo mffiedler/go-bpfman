@@ -14,17 +14,23 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration - can be overridden via environment
 BPFMAN="${BPFMAN:-./bin/bpfman}"
 CONFIG="${CONFIG:-./config/test.toml}"
 RUNTIME_DIR="${RUNTIME_DIR:-/tmp/bpfman-integration-test-$$}"
 IMAGE="${IMAGE:-quay.io/bpfman-bytecode/xdp_pass:latest}"
+IFACE="bpfman-disp"
 
 # Derived paths (matching RuntimeDirs structure)
 DB_PATH="$RUNTIME_DIR/db/store.db"
@@ -44,21 +50,25 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     # Unload any test programs
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
+    fi
+    # Delete test interface
+    if ip link show "$IFACE" &>/dev/null; then
+        ip link del "$IFACE" 2>/dev/null || true
     fi
     # Unmount bpffs if mounted
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
     # Remove runtime directory
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -72,6 +82,18 @@ assert_eq() {
     fi
 }
 
+# Create a test dummy interface. If it already exists (leaked from a
+# previous run), delete it first.
+create_test_interface() {
+    if ip link show "$IFACE" &>/dev/null; then
+        log_warn "Interface $IFACE already exists (leaked from previous run?), removing"
+        ip link del "$IFACE" 2>/dev/null || true
+    fi
+    ip link add "$IFACE" type dummy
+    ip link set "$IFACE" up
+    log_info "Created test interface: $IFACE"
+}
+
 # Ensure clean initial state
 ensure_clean_state() {
     log_info "Ensuring clean initial state..."
@@ -79,18 +101,18 @@ ensure_clean_state() {
 
     # Clean up any previous run
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+
+    create_test_interface
 }
 
 # Step 1: Load XDP program
 load_program() {
     log_info "Step 1: Loading XDP program..."
     log_info "Image: $IMAGE"
-    local output
-    output=$(bpfman load image -o json --programs=xdp:pass --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    PROG_ID=$(bpfman program load image -o 'jsonpath={[0].record.program_id}' --programs=xdp:pass --image-url="$IMAGE" 2>&1)
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -108,10 +130,8 @@ attach_until_full() {
 
     for i in $(seq 1 $((max_slots + 2))); do
         local output
-        output=$(bpfman attach "$PROG_ID" xdp --iface lo -o json 2>&1) || true
-
         local link_id
-        link_id=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+        link_id=$(bpfman link attach xdp --iface "$IFACE" -o 'jsonpath={.record.id}' "$PROG_ID" 2>/dev/null) || true
 
         if [ -z "$link_id" ]; then
             if [ "$i" -gt "$max_slots" ]; then
@@ -137,9 +157,9 @@ verify_dispatcher_state() {
 
     # Check interface
     local xdp_info
-    xdp_info=$(ip link show lo | grep -o "prog/xdp id [0-9]*" || echo "none")
+    xdp_info=$(ip link show "$IFACE" | grep -o "prog/xdp id [0-9]*" || echo "none")
     if [ "$xdp_info" = "none" ]; then
-        log_fail "No XDP program attached to lo"
+        log_fail "No XDP program attached to $IFACE"
         exit 1
     fi
     log_info "Interface: $xdp_info"
@@ -158,15 +178,15 @@ verify_dispatcher_state() {
     log_info "Filesystem: dispatcher link and revision directory present"
 
     # Check database
-    local num_ext
-    num_ext=$(sudo sqlite3 "$DB_PATH" "SELECT num_extensions FROM dispatchers WHERE type='xdp';")
-    assert_eq "10" "$num_ext" "Dispatcher should have 10 extensions"
-
     local link_count
-    link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM xdp_link_details;")
+    link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_xdp_details;")
     assert_eq "10" "$link_count" "Should have 10 XDP link details"
 
-    log_info "Database: dispatcher num_extensions=$num_ext, links=$link_count"
+    local disp_count
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers WHERE type='xdp';")
+    assert_eq "1" "$disp_count" "Should have 1 XDP dispatcher"
+
+    log_info "Database: dispatcher count=$disp_count, links=$link_count"
 }
 
 # Step 4: Detach all links
@@ -175,21 +195,21 @@ detach_all_links() {
     local expected_count=10
 
     for link_id in "${LINK_IDS[@]}"; do
-        bpfman detach "$link_id" 2>&1
+        bpfman link detach "$link_id" 2>&1
         expected_count=$((expected_count - 1))
 
         local actual_count
-        actual_count=$(sudo sqlite3 "$DB_PATH" "SELECT num_extensions FROM dispatchers WHERE type='xdp';" 2>/dev/null || echo "DELETED")
+        actual_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_xdp_details;" 2>/dev/null || echo "0")
 
         if [ "$expected_count" -eq 0 ]; then
-            if [ "$actual_count" != "DELETED" ] && [ -n "$actual_count" ]; then
-                log_fail "Dispatcher should be deleted when num_extensions reaches 0"
-                exit 1
-            fi
+            assert_eq "0" "$actual_count" "Should have 0 XDP link details after last detach"
+            local disp_count
+            disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers WHERE type='xdp';" 2>/dev/null || echo "0")
+            assert_eq "0" "$disp_count" "Dispatcher should be deleted when all extensions removed"
             log_info "Detached link_id=$link_id -> Dispatcher DELETED"
         else
             assert_eq "$expected_count" "$actual_count" "Extension count mismatch after detach"
-            log_info "Detached link_id=$link_id -> num_extensions: $actual_count"
+            log_info "Detached link_id=$link_id -> extensions: $actual_count"
         fi
     done
 }
@@ -197,7 +217,7 @@ detach_all_links() {
 # Step 5: Unload program
 unload_program() {
     log_info "Step 5: Unloading program..."
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""  # Clear so cleanup doesn't try again
     log_info "Program unloaded"
 }
@@ -208,22 +228,22 @@ verify_final_state() {
 
     # Check interface - no XDP
     local xdp_info
-    xdp_info=$(ip link show lo | grep -o "xdpgeneric" || echo "none")
+    xdp_info=$(ip link show "$IFACE" | grep -o "xdpgeneric" || echo "none")
     assert_eq "none" "$xdp_info" "Interface should have no XDP program"
     log_info "Interface: clean (no XDP)"
 
     # Check filesystem - empty
     local contents
-    contents=$(sudo ls "$BPFFS_XDP" 2>/dev/null | wc -l)
+    contents=$(ls "$BPFFS_XDP" 2>/dev/null | wc -l)
     assert_eq "0" "$contents" "XDP directory should be empty"
     log_info "Filesystem: clean (empty)"
 
     # Check database - all zeros
     local prog_count link_count disp_count xdp_count
-    prog_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
-    link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_registry;")
-    disp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;")
-    xdp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM xdp_link_details;")
+    prog_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
+    link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM links;")
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;")
+    xdp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_xdp_details;")
 
     assert_eq "0" "$prog_count" "Should have 0 programs"
     assert_eq "0" "$link_count" "Should have 0 links"

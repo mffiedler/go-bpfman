@@ -11,12 +11,17 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 # - config/test.toml present (with signature verification disabled)
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration - can be overridden via environment
 BPFMAN="${BPFMAN:-./bin/bpfman}"
@@ -47,25 +52,25 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     # Detach any test links
     if [ -n "${LINK_ID:-}" ]; then
-        bpfman detach "$LINK_ID" 2>/dev/null || true
+        bpfman link detach "$LINK_ID" 2>/dev/null || true
     fi
     # Unload any test programs
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
     fi
     # Unmount bpffs if mounted
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
     # Remove runtime directory
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -94,8 +99,8 @@ check_kernel_function() {
     log_info "Checking kernel function $KPROBE_FN exists..."
 
     if [ -f /proc/kallsyms ]; then
-        if sudo grep -q " ${KPROBE_FN}$" /proc/kallsyms 2>/dev/null || \
-           sudo grep -q " ${KPROBE_FN}\." /proc/kallsyms 2>/dev/null; then
+        if grep -q " ${KPROBE_FN}$" /proc/kallsyms 2>/dev/null || \
+           grep -q " ${KPROBE_FN}\." /proc/kallsyms 2>/dev/null; then
             log_info "Kernel function $KPROBE_FN found"
         else
             log_warn "Kernel function $KPROBE_FN not found in /proc/kallsyms"
@@ -115,9 +120,9 @@ ensure_clean_state() {
 
     # Clean up any previous run
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 
 # Step 1: Load kprobe program from OCI image
@@ -126,8 +131,8 @@ load_program() {
     log_info "Image: $IMAGE"
 
     local output
-    output=$(bpfman load image -o json --programs=kprobe:kprobe_counter --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    output=$(bpfman program load image -o json --programs=kprobe:kprobe_counter --image-url="$IMAGE" 2>&1)
+    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -138,11 +143,15 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].kernel.type')
-    assert_eq "kprobe" "$prog_type" "Program type should be kprobe"
+    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    assert_eq "kprobe" "$prog_type" "Managed program type should be kprobe"
+
+    local kernel_type
+    kernel_type=$(echo "$output" | jq -r '.[0].status.kernel.program_type')
+    assert_eq "kprobe" "$kernel_type" "Kernel program type should be kprobe"
 
     local prog_name
-    prog_name=$(echo "$output" | jq -r '.[0].kernel.name')
+    prog_name=$(echo "$output" | jq -r '.[0].status.kernel.name')
     assert_eq "kprobe_counter" "$prog_name" "Program name should be kprobe_counter"
 
     log_pass "Kprobe program loaded successfully"
@@ -153,9 +162,9 @@ attach_kprobe() {
     log_info "Step 2: Attaching kprobe program to $KPROBE_FN..."
 
     local output
-    output=$(bpfman attach "$PROG_ID" kprobe --fn-name "$KPROBE_FN" -o json 2>&1)
+    output=$(bpfman link attach kprobe --fn-name "$KPROBE_FN" -o json "$PROG_ID" 2>&1)
 
-    LINK_ID=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+    LINK_ID=$(echo "$output" | jq -r '.record.id // empty' 2>/dev/null) || true
 
     if [ -z "$LINK_ID" ]; then
         log_fail "Failed to attach kprobe"
@@ -166,8 +175,8 @@ attach_kprobe() {
 
     # Verify link details
     local link_type fn_name
-    link_type=$(echo "$output" | jq -r '.summary.link_type')
-    fn_name=$(echo "$output" | jq -r '.details.fn_name')
+    link_type=$(echo "$output" | jq -r '.record.kind')
+    fn_name=$(echo "$output" | jq -r '.record.details.fn_name')
 
     assert_eq "kprobe" "$link_type" "Link type should be kprobe"
     assert_eq "$KPROBE_FN" "$fn_name" "Function name should be $KPROBE_FN"
@@ -180,10 +189,10 @@ verify_links() {
     log_info "Step 3: Verifying link via list..."
 
     local output
-    output=$(bpfman list links 2>&1)
+    output=$(bpfman link list -o json 2>&1)
 
     local kprobe_link_count
-    kprobe_link_count=$(echo "$output" | jq '[.[] | select(.link_type == "kprobe")] | length')
+    kprobe_link_count=$(echo "$output" | jq '[.links[] | select(.kind == "kprobe")] | length')
 
     assert_eq "1" "$kprobe_link_count" "Should have 1 kprobe link"
 
@@ -196,7 +205,7 @@ verify_no_dispatchers() {
 
     # Check database for dispatchers - should be none for kprobe
     local disp_count
-    disp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
 
     assert_eq "0" "$disp_count" "Should have 0 dispatchers (kprobe is single-attach)"
 
@@ -207,18 +216,14 @@ verify_no_dispatchers() {
 detach_link() {
     log_info "Step 5: Detaching kprobe link..."
 
-    bpfman detach "$LINK_ID" 2>&1
+    bpfman link detach "$LINK_ID" 2>&1
     local saved_link_id="$LINK_ID"
     LINK_ID=""  # Clear so cleanup doesn't try again
 
     # Verify link is gone
     local link_output kprobe_link_count
-    link_output=$(bpfman list links 2>&1)
-    if echo "$link_output" | grep -q "No managed links found"; then
-        kprobe_link_count=0
-    else
-        kprobe_link_count=$(echo "$link_output" | jq '[.[] | select(.link_type == "kprobe")] | length')
-    fi
+    link_output=$(bpfman link list -o json 2>&1)
+    kprobe_link_count=$(echo "$link_output" | jq '[.links[] | select(.kind == "kprobe")] | length')
     assert_eq "0" "$kprobe_link_count" "Should have 0 kprobe links after detach"
 
     log_pass "Kprobe link detached"
@@ -227,7 +232,7 @@ detach_link() {
 # Step 6: Unload program
 unload_program() {
     log_info "Step 6: Unloading kprobe program..."
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""  # Clear so cleanup doesn't try again
     log_pass "Kprobe program unloaded"
 }
@@ -238,8 +243,8 @@ verify_final_state() {
 
     # Check database - all zeros
     local prog_count kprobe_link_count
-    prog_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
-    kprobe_link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM kprobe_link_details;")
+    prog_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
+    kprobe_link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_kprobe_details;")
 
     assert_eq "0" "$prog_count" "Should have 0 programs"
     assert_eq "0" "$kprobe_link_count" "Should have 0 kprobe link details"

@@ -10,12 +10,17 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 # - config/test.toml present
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration
 BPFMAN="${BPFMAN:-./bin/bpfman}"
@@ -45,21 +50,21 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     if [ -n "${LINK_ID:-}" ]; then
-        bpfman detach "$LINK_ID" 2>/dev/null || true
+        bpfman link detach "$LINK_ID" 2>/dev/null || true
     fi
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
     fi
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -129,9 +134,9 @@ ensure_clean_state() {
     log_info "Ensuring clean initial state..."
     log_info "Using runtime directory: $RUNTIME_DIR"
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 
 # Step 1: Load as URETPROBE (not uprobe)
@@ -141,12 +146,12 @@ load_program() {
     log_info "Using: --programs uretprobe:uprobe_counter"
 
     local output
-    if ! output=$(bpfman load image -o json --programs=uretprobe:uprobe_counter --image-url="$IMAGE" 2>/dev/null); then
+    if ! output=$(bpfman program load image -o json --programs=uretprobe:uprobe_counter --image-url="$IMAGE" 2>/dev/null); then
         log_fail "Failed to load program"
-        bpfman load image -o json --programs=uretprobe:uprobe_counter --image-url="$IMAGE" || true
+        bpfman program load image -o json --programs=uretprobe:uprobe_counter --image-url="$IMAGE" || true
         exit 1
     fi
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to parse program ID from output"
@@ -157,7 +162,7 @@ load_program() {
 
     # Verify program type is uretprobe (this is the key check!)
     local stored_type
-    stored_type=$(echo "$output" | jq -r '.[0].managed.type')
+    stored_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
     log_info "Program type from managed metadata: $stored_type"
     assert_eq "uretprobe" "$stored_type" "Managed program type should be uretprobe"
 
@@ -170,13 +175,13 @@ attach_uretprobe() {
     log_info "Note: Using 'attach <id> uprobe' - retprobe flag derived from program type"
 
     local output
-    if ! output=$(bpfman attach "$PROG_ID" uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json 2>/dev/null); then
+    if ! output=$(bpfman link attach uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json "$PROG_ID" 2>/dev/null); then
         log_fail "Failed to attach uretprobe"
-        bpfman attach "$PROG_ID" uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json || true
+        bpfman link attach uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json "$PROG_ID" || true
         exit 1
     fi
 
-    LINK_ID=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+    LINK_ID=$(echo "$output" | jq -r '.record.id // empty' 2>/dev/null) || true
 
     if [ -z "$LINK_ID" ]; then
         log_fail "Failed to parse link ID from output"
@@ -187,15 +192,15 @@ attach_uretprobe() {
 
     # THE KEY CHECK: Link type should be "uretprobe" not "uprobe"
     local link_type
-    link_type=$(echo "$output" | jq -r '.summary.link_type')
+    link_type=$(echo "$output" | jq -r '.record.kind')
     log_info "Link type: $link_type"
     assert_eq "uretprobe" "$link_type" "Link type should be uretprobe (not uprobe)"
 
     # Verify details
     local target fn_name retprobe_flag
-    target=$(echo "$output" | jq -r '.details.target')
-    fn_name=$(echo "$output" | jq -r '.details.fn_name')
-    retprobe_flag=$(echo "$output" | jq -r '.details.retprobe')
+    target=$(echo "$output" | jq -r '.record.details.target')
+    fn_name=$(echo "$output" | jq -r '.record.details.fn_name')
+    retprobe_flag=$(echo "$output" | jq -r '.record.details.retprobe')
 
     assert_eq "$UPROBE_TARGET" "$target" "Target should match"
     assert_eq "$UPROBE_FN" "$fn_name" "Function name should match"
@@ -209,15 +214,15 @@ verify_links() {
     log_info "Step 3: Verifying link type in list..."
 
     local output
-    output=$(bpfman list links 2>&1)
+    output=$(bpfman link list -o json 2>&1)
 
     local uretprobe_count
-    uretprobe_count=$(echo "$output" | jq '[.[] | select(.link_type == "uretprobe")] | length')
+    uretprobe_count=$(echo "$output" | jq '[.links[] | select(.kind == "uretprobe")] | length')
     assert_eq "1" "$uretprobe_count" "Should have 1 uretprobe link"
 
     # Also verify no uprobe links (to ensure it's not misclassified)
     local uprobe_count
-    uprobe_count=$(echo "$output" | jq '[.[] | select(.link_type == "uprobe")] | length')
+    uprobe_count=$(echo "$output" | jq '[.links[] | select(.kind == "uprobe")] | length')
     assert_eq "0" "$uprobe_count" "Should have 0 uprobe links (it's a uretprobe)"
 
     log_pass "Link correctly shows as uretprobe type"
@@ -229,12 +234,12 @@ verify_database() {
 
     # Check link_registry has correct type
     local link_type
-    link_type=$(sudo sqlite3 "$DB_PATH" "SELECT link_type FROM link_registry WHERE kernel_link_id = $LINK_ID;")
+    link_type=$(sqlite3 "$DB_PATH" "SELECT kind FROM links WHERE link_id = $LINK_ID;")
     assert_eq "uretprobe" "$link_type" "Database link_type should be uretprobe"
 
     # Check uprobe_link_details has retprobe=1
     local retprobe_val
-    retprobe_val=$(sudo sqlite3 "$DB_PATH" "SELECT retprobe FROM uprobe_link_details WHERE kernel_link_id = $LINK_ID;")
+    retprobe_val=$(sqlite3 "$DB_PATH" "SELECT retprobe FROM link_uprobe_details WHERE link_id = $LINK_ID;")
     assert_eq "1" "$retprobe_val" "Database retprobe should be 1"
 
     log_pass "Database entries correct"
@@ -244,11 +249,11 @@ verify_database() {
 cleanup_test() {
     log_info "Step 5: Detaching and unloading..."
 
-    bpfman detach "$LINK_ID" 2>&1
+    bpfman link detach "$LINK_ID" 2>&1
     LINK_ID=""
     log_info "Detached"
 
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""
     log_info "Unloaded"
 

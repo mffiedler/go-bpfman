@@ -11,12 +11,17 @@
 #
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
-# - Root privileges (uses sudo)
+# - Root privileges (run with sudo)
 # - SQLite3 installed
 # - jq installed
 # - config/test.toml present (with signature verification disabled)
 
 set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This test must be run as root (sudo $0)" >&2
+    exit 1
+fi
 
 # Configuration - can be overridden via environment
 BPFMAN="${BPFMAN:-./bin/bpfman}"
@@ -48,25 +53,25 @@ log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 
 bpfman() {
-    sudo "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
+    "$BPFMAN" --config="$CONFIG" --runtime-dir="$RUNTIME_DIR" "$@"
 }
 
 cleanup() {
     log_info "Cleaning up..."
     # Detach any test links
     if [ -n "${LINK_ID:-}" ]; then
-        bpfman detach "$LINK_ID" 2>/dev/null || true
+        bpfman link detach "$LINK_ID" 2>/dev/null || true
     fi
     # Unload any test programs
     if [ -n "${PROG_ID:-}" ]; then
-        bpfman unload "$PROG_ID" 2>/dev/null || true
+        bpfman program unload "$PROG_ID" 2>/dev/null || true
     fi
     # Unmount bpffs if mounted
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
     # Remove runtime directory
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -152,9 +157,9 @@ ensure_clean_state() {
 
     # Clean up any previous run
     if mountpoint -q "$BPFFS_ROOT" 2>/dev/null; then
-        sudo umount "$BPFFS_ROOT" 2>/dev/null || true
+        umount "$BPFFS_ROOT" 2>/dev/null || true
     fi
-    sudo rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
+    rm -rf "$RUNTIME_DIR" "${RUNTIME_DIR}-sock" 2>/dev/null || true
 }
 
 # Step 1: Load uprobe program from OCI image
@@ -163,13 +168,13 @@ load_program() {
     log_info "Image: $IMAGE"
 
     local output
-    if ! output=$(bpfman load image -o json --programs=uprobe:uprobe_counter --image-url="$IMAGE" 2>/dev/null); then
+    if ! output=$(bpfman program load image -o json --programs=uprobe:uprobe_counter --image-url="$IMAGE" 2>/dev/null); then
         log_fail "Failed to load program"
         # Re-run without redirecting stderr to show the error
-        bpfman load image -o json --programs=uprobe:uprobe_counter --image-url="$IMAGE" || true
+        bpfman program load image -o json --programs=uprobe:uprobe_counter --image-url="$IMAGE" || true
         exit 1
     fi
-    PROG_ID=$(echo "$output" | jq -r '.[0].kernel.id')
+    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to parse program ID from output"
@@ -180,11 +185,15 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].kernel.type')
-    assert_eq "uprobe" "$prog_type" "Program type should be uprobe"
+    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    assert_eq "uprobe" "$prog_type" "Managed program type should be uprobe"
+
+    local kernel_type
+    kernel_type=$(echo "$output" | jq -r '.[0].status.kernel.program_type')
+    assert_eq "kprobe" "$kernel_type" "Kernel program type should be kprobe (uprobe is a variant)"
 
     local prog_name
-    prog_name=$(echo "$output" | jq -r '.[0].kernel.name')
+    prog_name=$(echo "$output" | jq -r '.[0].status.kernel.name')
     assert_eq "uprobe_counter" "$prog_name" "Program name should be uprobe_counter"
 
     log_pass "Uprobe program loaded successfully"
@@ -195,13 +204,13 @@ attach_uprobe() {
     log_info "Step 2: Attaching uprobe program to $UPROBE_FN in $UPROBE_TARGET..."
 
     local output
-    if ! output=$(bpfman attach "$PROG_ID" uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json 2>/dev/null); then
+    if ! output=$(bpfman link attach uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json "$PROG_ID" 2>/dev/null); then
         log_fail "Failed to attach uprobe"
-        bpfman attach "$PROG_ID" uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json || true
+        bpfman link attach uprobe --target "$UPROBE_TARGET" --fn-name "$UPROBE_FN" -o json "$PROG_ID" || true
         exit 1
     fi
 
-    LINK_ID=$(echo "$output" | jq -r '.summary.kernel_link_id // empty' 2>/dev/null) || true
+    LINK_ID=$(echo "$output" | jq -r '.record.id // empty' 2>/dev/null) || true
 
     if [ -z "$LINK_ID" ]; then
         log_fail "Failed to parse link ID from output"
@@ -212,9 +221,9 @@ attach_uprobe() {
 
     # Verify link details
     local link_type target fn_name
-    link_type=$(echo "$output" | jq -r '.summary.link_type')
-    target=$(echo "$output" | jq -r '.details.target')
-    fn_name=$(echo "$output" | jq -r '.details.fn_name')
+    link_type=$(echo "$output" | jq -r '.record.kind')
+    target=$(echo "$output" | jq -r '.record.details.target')
+    fn_name=$(echo "$output" | jq -r '.record.details.fn_name')
 
     assert_eq "uprobe" "$link_type" "Link type should be uprobe"
     assert_eq "$UPROBE_TARGET" "$target" "Target should be $UPROBE_TARGET"
@@ -228,10 +237,10 @@ verify_links() {
     log_info "Step 3: Verifying link via list..."
 
     local output
-    output=$(bpfman list links 2>&1)
+    output=$(bpfman link list -o json 2>&1)
 
     local uprobe_link_count
-    uprobe_link_count=$(echo "$output" | jq '[.[] | select(.link_type == "uprobe")] | length')
+    uprobe_link_count=$(echo "$output" | jq '[.links[] | select(.kind == "uprobe")] | length')
 
     assert_eq "1" "$uprobe_link_count" "Should have 1 uprobe link"
 
@@ -244,7 +253,7 @@ verify_no_dispatchers() {
 
     # Check database for dispatchers - should be none for uprobe
     local disp_count
-    disp_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
+    disp_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM dispatchers;" 2>/dev/null || echo "0")
 
     assert_eq "0" "$disp_count" "Should have 0 dispatchers (uprobe is single-attach)"
 
@@ -255,18 +264,14 @@ verify_no_dispatchers() {
 detach_link() {
     log_info "Step 5: Detaching uprobe link..."
 
-    bpfman detach "$LINK_ID" 2>&1
+    bpfman link detach "$LINK_ID" 2>&1
     local saved_link_id="$LINK_ID"
     LINK_ID=""  # Clear so cleanup doesn't try again
 
     # Verify link is gone
     local link_output uprobe_link_count
-    link_output=$(bpfman list links 2>&1)
-    if echo "$link_output" | grep -q "No managed links found"; then
-        uprobe_link_count=0
-    else
-        uprobe_link_count=$(echo "$link_output" | jq '[.[] | select(.link_type == "uprobe")] | length')
-    fi
+    link_output=$(bpfman link list -o json 2>&1)
+    uprobe_link_count=$(echo "$link_output" | jq '[.links[] | select(.kind == "uprobe")] | length')
     assert_eq "0" "$uprobe_link_count" "Should have 0 uprobe links after detach"
 
     log_pass "Uprobe link detached"
@@ -275,7 +280,7 @@ detach_link() {
 # Step 6: Unload program
 unload_program() {
     log_info "Step 6: Unloading uprobe program..."
-    bpfman unload "$PROG_ID" 2>&1
+    bpfman program unload "$PROG_ID" 2>&1
     PROG_ID=""  # Clear so cleanup doesn't try again
     log_pass "Uprobe program unloaded"
 }
@@ -286,8 +291,8 @@ verify_final_state() {
 
     # Check database - all zeros
     local prog_count uprobe_link_count
-    prog_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
-    uprobe_link_count=$(sudo sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM uprobe_link_details;")
+    prog_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM managed_programs;")
+    uprobe_link_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM link_uprobe_details;")
 
     assert_eq "0" "$prog_count" "Should have 0 programs"
     assert_eq "0" "$uprobe_link_count" "Should have 0 uprobe link details"
