@@ -57,10 +57,10 @@ func TestStaleDispatcher_XDP(t *testing.T) {
 	s := newTestState()
 	s.dispatchers = []DispatcherState{{
 		DB: &dispatcher.State{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     1,
-			Ifindex:  2,
-			KernelID: 100,
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      1,
+			Ifindex:   2,
+			ProgramID: 100,
 		},
 		ProgPinExist: boolPtr(false),
 		LinkCount:    0,
@@ -85,11 +85,11 @@ func TestStaleDispatcher_TC(t *testing.T) {
 	s.tcFilterOK[dispatcherKey(dispatcher.DispatcherTypeTCIngress, 1, 3)] = false
 	s.dispatchers = []DispatcherState{{
 		DB: &dispatcher.State{
-			Type:     dispatcher.DispatcherTypeTCIngress,
-			Nsid:     1,
-			Ifindex:  3,
-			KernelID: 200,
-			Priority: 100,
+			Type:      dispatcher.DispatcherTypeTCIngress,
+			Nsid:      1,
+			Ifindex:   3,
+			ProgramID: 200,
+			Priority:  100,
 		},
 		TCFilterOK: boolPtr(false),
 		LinkCount:  0,
@@ -113,10 +113,10 @@ func TestStaleDispatcher_NotStale(t *testing.T) {
 	// Dispatcher with extensions is not stale.
 	s.dispatchers = []DispatcherState{{
 		DB: &dispatcher.State{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     1,
-			Ifindex:  2,
-			KernelID: 100,
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      1,
+			Ifindex:   2,
+			ProgramID: 100,
 		},
 		ProgPinExist: boolPtr(true),
 		LinkCount:    1,
@@ -135,7 +135,7 @@ func TestStaleDispatcher_NotStale(t *testing.T) {
 func TestOrphanProgramArtefacts_DeadProgPin(t *testing.T) {
 	s := newTestState()
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/prog_42", KernelID: 42, Kind: OrphanProgPin},
+		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
 	}
 	// kernel ID 42 is not alive
 
@@ -150,7 +150,7 @@ func TestOrphanProgramArtefacts_DeadProgPin(t *testing.T) {
 func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
 	s := newTestState()
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/links/42", KernelID: 42, Kind: OrphanLinkDir},
+		{Path: "/bpffs/links/42", ProgramID: 42, Kind: OrphanLinkDir},
 	}
 
 	rule := ruleByName(GCRules(), "orphan-program-artefacts")
@@ -164,7 +164,7 @@ func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
 func TestOrphanProgramArtefacts_MapDir(t *testing.T) {
 	s := newTestState()
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/maps/42", KernelID: 42, Kind: OrphanMapDir},
+		{Path: "/bpffs/maps/42", ProgramID: 42, Kind: OrphanMapDir},
 	}
 
 	rule := ruleByName(GCRules(), "orphan-program-artefacts")
@@ -179,7 +179,7 @@ func TestOrphanProgramArtefacts_LiveSkipped(t *testing.T) {
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/prog_42", KernelID: 42, Kind: OrphanProgPin},
+		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
 	}
 
 	rule := ruleByName(GCRules(), "orphan-program-artefacts")
@@ -221,7 +221,7 @@ func TestOrphanDispatcherArtefacts_Link(t *testing.T) {
 func TestOrphanProgramDirs(t *testing.T) {
 	s := newTestState()
 	s.orphans = []FsOrphan{
-		{Path: "/data/programs/42", KernelID: 42, Kind: OrphanProgramDir},
+		{Path: "/data/programs/42", ProgramID: 42, Kind: OrphanProgramDir},
 	}
 
 	rule := ruleByName(GCRules(), "orphan-program-dirs")
@@ -264,7 +264,7 @@ func TestPruneLiveOrphans_ProgPin(t *testing.T) {
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/prog_42", KernelID: 42, Kind: OrphanProgPin},
+		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
 	}
 
 	rule := PruneRule()
@@ -279,7 +279,7 @@ func TestPruneLiveOrphans_LinkDir(t *testing.T) {
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/links/42", KernelID: 42, Kind: OrphanLinkDir},
+		{Path: "/bpffs/links/42", ProgramID: 42, Kind: OrphanLinkDir},
 	}
 
 	rule := PruneRule()
@@ -294,7 +294,7 @@ func TestPruneLiveOrphans_SkipsDeadOrphans(t *testing.T) {
 	s := newTestState()
 	// kernel ID 42 is NOT alive
 	s.orphans = []FsOrphan{
-		{Path: "/bpffs/prog_42", KernelID: 42, Kind: OrphanProgPin},
+		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
 	}
 
 	rule := PruneRule()

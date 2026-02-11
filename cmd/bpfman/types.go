@@ -11,7 +11,7 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ProgramID wraps a kernel program ID with hex support.
+// ProgramID wraps a program ID with hex support.
 type ProgramID struct {
 	Value kernel.ProgramID
 }
@@ -43,7 +43,7 @@ func ParseProgramID(s string) (ProgramID, error) {
 	return ProgramID{Value: kernel.ProgramID(val)}, nil
 }
 
-// LinkID wraps a kernel link ID with hex support.
+// LinkID wraps a link ID with hex support.
 type LinkID struct {
 	Value kernel.LinkID
 }

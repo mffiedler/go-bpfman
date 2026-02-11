@@ -41,10 +41,10 @@ func (s *Scanner) reportMalformed(path string, err error) {
 	}
 }
 
-// ProgPin represents a program pin: {fs}/prog_{kernel_id}
+// ProgPin represents a program pin: {fs}/prog_{program_id}
 type ProgPin struct {
-	Path     string           `json:"path"`
-	KernelID kernel.ProgramID `json:"kernel_id"`
+	Path      string           `json:"path"`
+	ProgramID kernel.ProgramID `json:"program_id"`
 }
 
 // LinkDir represents a link directory: {fs}/links/{program_id}
@@ -149,13 +149,13 @@ func (s *Scanner) ProgPins(ctx context.Context) iter.Seq2[ProgPin, error] {
 			suffix := strings.TrimPrefix(name, "prog_")
 			id, err := strconv.ParseUint(suffix, 10, 32)
 			if err != nil {
-				s.reportMalformed(filepath.Join(fs, name), fmt.Errorf("parse kernel ID: %w", err))
+				s.reportMalformed(filepath.Join(fs, name), fmt.Errorf("parse program ID: %w", err))
 				continue
 			}
 
 			pin := ProgPin{
-				Path:     filepath.Join(fs, name),
-				KernelID: kernel.ProgramID(id),
+				Path:      filepath.Join(fs, name),
+				ProgramID: kernel.ProgramID(id),
 			}
 			if !yield(pin, nil) {
 				return

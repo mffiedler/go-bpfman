@@ -18,15 +18,15 @@ type Action interface {
 
 // SaveProgram saves program metadata to the store.
 type SaveProgram struct {
-	KernelID kernel.ProgramID
-	Metadata bpfman.ProgramRecord
+	ProgramID kernel.ProgramID
+	Metadata  bpfman.ProgramRecord
 }
 
 func (SaveProgram) isAction() {}
 
 // DeleteProgram removes program metadata from the store.
 type DeleteProgram struct {
-	KernelID kernel.ProgramID
+	ProgramID kernel.ProgramID
 }
 
 func (DeleteProgram) isAction() {}
@@ -52,17 +52,17 @@ func (DeleteLink) isAction() {}
 // Kernel actions - operations on the BPF subsystem
 
 // GetProgramFromStore fetches a program record from the store by
-// kernel ID. Returns bpfman.ProgramRecord via ExecuteResult.
+// program ID. Returns bpfman.ProgramRecord via ExecuteResult.
 type GetProgramFromStore struct {
-	KernelID kernel.ProgramID
+	ProgramID kernel.ProgramID
 }
 
 func (GetProgramFromStore) isAction() {}
 
 // CheckProgramNotInStore verifies that no program with the given
-// kernel ID exists in the store. Returns an error if it does.
+// program ID exists in the store. Returns an error if it does.
 type CheckProgramNotInStore struct {
-	KernelID kernel.ProgramID
+	ProgramID kernel.ProgramID
 }
 
 func (CheckProgramNotInStore) isAction() {}
@@ -206,7 +206,7 @@ func (DetachTCFilter) isAction() {}
 // PublishBytecode copies a BPF object file to the per-program
 // bytecode directory and writes provenance metadata alongside it.
 type PublishBytecode struct {
-	KernelID   kernel.ProgramID
+	ProgramID  kernel.ProgramID
 	SourcePath string
 	Provenance fs.Provenance
 }
@@ -215,7 +215,7 @@ func (PublishBytecode) isAction() {}
 
 // RemoveProgramDir removes the persisted bytecode directory for a program.
 type RemoveProgramDir struct {
-	KernelID kernel.ProgramID
+	ProgramID kernel.ProgramID
 }
 
 func (RemoveProgramDir) isAction() {}

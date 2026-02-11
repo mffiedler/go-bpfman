@@ -83,26 +83,26 @@ func TestComputeStoreGC_StaleDependentBeforeOwner(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DeleteProgram, got %T", actions[0])
 	}
-	if first.KernelID != 101 {
-		t.Errorf("expected dependent 101 first, got %d", first.KernelID)
+	if first.ProgramID != 101 {
+		t.Errorf("expected dependent 101 first, got %d", first.ProgramID)
 	}
 
 	second, ok := actions[1].(action.DeleteProgram)
 	if !ok {
 		t.Fatalf("expected DeleteProgram, got %T", actions[1])
 	}
-	if second.KernelID != 100 {
-		t.Errorf("expected owner 100 second, got %d", second.KernelID)
+	if second.ProgramID != 100 {
+		t.Errorf("expected owner 100 second, got %d", second.ProgramID)
 	}
 }
 
 func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  2,
-			KernelID: 100,
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 100,
 		},
 	}
 	actions := computeStoreGC(
@@ -128,10 +128,10 @@ func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
 func TestComputeStoreGC_LiveDispatcherNotDeleted(t *testing.T) {
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  2,
-			KernelID: 100,
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 100,
 		},
 	}
 	actions := computeStoreGC(
@@ -201,10 +201,10 @@ func TestComputeStoreGC_OrphanedDispatcherAfterLinkGC(t *testing.T) {
 	// After link GC, dispatcher has zero extensions and should be deleted.
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  2,
-			KernelID: 500, // alive in kernel
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 500, // alive in kernel
 		},
 	}
 	links := []bpfman.LinkRecord{
@@ -245,10 +245,10 @@ func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
 	// Dispatcher should NOT be deleted.
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  2,
-			KernelID: 500,
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 500,
 		},
 	}
 	links := []bpfman.LinkRecord{
@@ -308,16 +308,16 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeTCIngress,
-			Nsid:     4026531840,
-			Ifindex:  3,
-			KernelID: 100, // stale (program 100 is dead)
+			Type:      dispatcher.DispatcherTypeTCIngress,
+			Nsid:      4026531840,
+			Ifindex:   3,
+			ProgramID: 100, // stale (program 100 is dead)
 		},
 		{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  2,
-			KernelID: 500, // alive
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 500, // alive
 		},
 	}
 
@@ -375,7 +375,7 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 	var deletedProgs []kernel.ProgramID
 	for _, a := range actions {
 		if dp, ok := a.(action.DeleteProgram); ok {
-			deletedProgs = append(deletedProgs, dp.KernelID)
+			deletedProgs = append(deletedProgs, dp.ProgramID)
 		}
 	}
 	if len(deletedProgs) < 2 {
@@ -394,10 +394,10 @@ func TestComputeStoreGC_TCDispatcherOrphaned(t *testing.T) {
 	// TC dispatcher whose only extension link dies.
 	dispatchers := []dispatcher.State{
 		{
-			Type:     dispatcher.DispatcherTypeTCIngress,
-			Nsid:     4026531840,
-			Ifindex:  3,
-			KernelID: 600,
+			Type:      dispatcher.DispatcherTypeTCIngress,
+			Nsid:      4026531840,
+			Ifindex:   3,
+			ProgramID: 600,
 		},
 	}
 	links := []bpfman.LinkRecord{

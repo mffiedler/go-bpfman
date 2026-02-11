@@ -66,11 +66,11 @@ func (r DoctorReport) HasWarnings() bool {
 // ProgramState correlates a program across all three sources.
 // Primary key: kernel program ID.
 type ProgramState struct {
-	KernelID kernel.ProgramID
-	DB       *bpfman.ProgramRecord // nil = no DB record
-	Kernel   bool                  // true = kernel program alive
-	PinPath  string                // derived from DB; empty if no DB record
-	PinExist *bool                 // nil = not checked; non-nil = stat result
+	ProgramID kernel.ProgramID
+	DB        *bpfman.ProgramRecord // nil = no DB record
+	Kernel    bool                  // true = kernel program alive
+	PinPath   string                // derived from DB; empty if no DB record
+	PinExist  *bool                 // nil = not checked; non-nil = stat result
 }
 
 // LinkState correlates a link across DB and kernel.
@@ -113,9 +113,9 @@ const (
 
 // FsOrphan represents a filesystem entry with no matching DB record.
 type FsOrphan struct {
-	Path     string
-	KernelID kernel.ProgramID // parsed from name; 0 if not parseable
-	Kind     OrphanKind       // type of orphaned artefact
+	Path      string
+	ProgramID kernel.ProgramID // parsed from name; 0 if not parseable
+	Kind      OrphanKind       // type of orphaned artefact
 }
 
 // Operation is a planned mutation. Rules emit operations; the

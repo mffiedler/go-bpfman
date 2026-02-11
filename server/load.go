@@ -160,13 +160,13 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	}
 
 	// Log summary
-	kernelIDs := make([]kernel.ProgramID, len(loaded))
+	programIDs := make([]kernel.ProgramID, len(loaded))
 	names := make([]string, len(loaded))
 	for i, prog := range loaded {
-		kernelIDs[i] = prog.Record.KernelID
+		programIDs[i] = prog.Record.ProgramID
 		names[i] = prog.Record.Meta.Name
 	}
-	s.logger.InfoContext(ctx, "Load", "programs", names, "kernel_ids", kernelIDs)
+	s.logger.InfoContext(ctx, "Load", "programs", names, "program_ids", programIDs)
 
 	return resp, nil
 }

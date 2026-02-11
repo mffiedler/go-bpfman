@@ -25,30 +25,30 @@ func TestParseCustomColumns(t *testing.T) {
 		},
 		{
 			name:    "single column",
-			spec:    "ID:.record.kernel_id",
+			spec:    "ID:.record.program_id",
 			want:    1,
 			wantErr: false,
 		},
 		{
 			name:    "multiple columns",
-			spec:    "ID:.record.kernel_id,NAME:.record.meta.name,TYPE:.record.load.program_type",
+			spec:    "ID:.record.program_id,NAME:.record.meta.name,TYPE:.record.load.program_type",
 			want:    3,
 			wantErr: false,
 		},
 		{
 			name:    "with spaces",
-			spec:    "ID : .record.kernel_id , NAME : .record.meta.name",
+			spec:    "ID : .record.program_id , NAME : .record.meta.name",
 			want:    2,
 			wantErr: false,
 		},
 		{
 			name:    "missing colon",
-			spec:    "ID.record.kernel_id",
+			spec:    "ID.record.program_id",
 			wantErr: true,
 		},
 		{
 			name:    "empty column name",
-			spec:    ":.record.kernel_id",
+			spec:    ":.record.program_id",
 			wantErr: true,
 		},
 		{
@@ -86,7 +86,7 @@ func TestParseCustomColumnsFile(t *testing.T) {
 	}{
 		{
 			name:    "valid two-line file",
-			content: "ID NAME TYPE\n.record.kernel_id .record.meta.name .record.load.program_type",
+			content: "ID NAME TYPE\n.record.program_id .record.meta.name .record.load.program_type",
 			want:    3,
 			wantErr: false,
 		},
@@ -102,17 +102,17 @@ func TestParseCustomColumnsFile(t *testing.T) {
 		},
 		{
 			name:    "mismatched counts",
-			content: "ID NAME\n.record.kernel_id",
+			content: "ID NAME\n.record.program_id",
 			wantErr: true,
 		},
 		{
 			name:    "empty header line",
-			content: "\n.record.kernel_id",
+			content: "\n.record.program_id",
 			wantErr: true,
 		},
 		{
 			name:    "with tabs",
-			content: "ID\tNAME\tTYPE\n.record.kernel_id\t.record.meta.name\t.record.load.program_type",
+			content: "ID\tNAME\tTYPE\n.record.program_id\t.record.meta.name\t.record.load.program_type",
 			want:    3,
 			wantErr: false,
 		},
@@ -155,7 +155,7 @@ func TestColumnSet_Validate(t *testing.T) {
 			name: "valid jsonpaths",
 			columns: ColumnSet{
 				Columns: []ColumnSpec{
-					{Name: "ID", JSONPath: ".record.kernel_id"},
+					{Name: "ID", JSONPath: ".record.program_id"},
 					{Name: "NAME", JSONPath: ".record.meta.name"},
 				},
 			},
@@ -192,8 +192,8 @@ func TestColumnSet_Validate(t *testing.T) {
 func TestColumnSpec_ExtractValue(t *testing.T) {
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{
-			KernelID: 42,
-			Load:     bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
+			ProgramID: 42,
+			Load:      bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
 			Meta: bpfman.ProgramMeta{
 				Name: "test_prog",
 			},
@@ -225,8 +225,8 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 		want string
 	}{
 		{
-			name: "kernel_id",
-			col:  ColumnSpec{Name: "ID", JSONPath: ".record.kernel_id"},
+			name: "program_id",
+			col:  ColumnSpec{Name: "ID", JSONPath: ".record.program_id"},
 			want: "42",
 		},
 		{
@@ -280,8 +280,8 @@ func TestColumnSet_FormatTable(t *testing.T) {
 	programs := []bpfman.Program{
 		{
 			Record: bpfman.ProgramRecord{
-				KernelID: 42,
-				Load:     bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog1.o"),
+				ProgramID: 42,
+				Load:      bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog1.o"),
 				Meta: bpfman.ProgramMeta{
 					Name: "prog1",
 				},
@@ -289,8 +289,8 @@ func TestColumnSet_FormatTable(t *testing.T) {
 		},
 		{
 			Record: bpfman.ProgramRecord{
-				KernelID: 43,
-				Load:     bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeTC, "/path/to/prog2.o"),
+				ProgramID: 43,
+				Load:      bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeTC, "/path/to/prog2.o"),
 				Meta: bpfman.ProgramMeta{
 					Name: "prog2",
 				},
@@ -300,7 +300,7 @@ func TestColumnSet_FormatTable(t *testing.T) {
 
 	columns := ColumnSet{
 		Columns: []ColumnSpec{
-			{Name: "ID", JSONPath: ".record.kernel_id"},
+			{Name: "ID", JSONPath: ".record.program_id"},
 			{Name: "NAME", JSONPath: ".record.meta.name"},
 		},
 	}
@@ -327,7 +327,7 @@ func TestDefaultColumns(t *testing.T) {
 		t.Errorf("DefaultColumns() has %d columns, want 4", len(cols.Columns))
 	}
 
-	expected := []string{"KERNEL_ID", "TYPE", "NAME", "SOURCE"}
+	expected := []string{"PROGRAM_ID", "TYPE", "NAME", "SOURCE"}
 	for i, col := range cols.Columns {
 		if col.Name != expected[i] {
 			t.Errorf("DefaultColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
@@ -341,7 +341,7 @@ func TestWideColumns(t *testing.T) {
 		t.Errorf("WideColumns() has %d columns, want 8", len(cols.Columns))
 	}
 
-	expected := []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+	expected := []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 	for i, col := range cols.Columns {
 		if col.Name != expected[i] {
 			t.Errorf("WideColumns()[%d].Name = %q, want %q", i, col.Name, expected[i])
@@ -426,8 +426,8 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 		Programs: []bpfman.Program{
 			{
 				Record: bpfman.ProgramRecord{
-					KernelID: 42,
-					Load:     bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
+					ProgramID: 42,
+					Load:      bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/path/to/prog.o"),
 					Meta: bpfman.ProgramMeta{
 						Name: "xdp_pass",
 					},
@@ -462,7 +462,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 	}
 
 	// Check all wide columns appear in header
-	expectedHeaders := []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+	expectedHeaders := []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 	for _, h := range expectedHeaders {
 		if !strings.Contains(output, h) {
 			t.Errorf("Wide output missing header %q: %s", h, output)
@@ -471,7 +471,7 @@ func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
 
 	// Check data values
 	if !strings.Contains(output, "42") {
-		t.Errorf("Wide output missing kernel_id: %s", output)
+		t.Errorf("Wide output missing program_id: %s", output)
 	}
 	if !strings.Contains(output, "xdp_pass") {
 		t.Errorf("Wide output missing name: %s", output)
@@ -487,7 +487,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumns(t *testing.T) {
 		Programs: []bpfman.Program{
 			{
 				Record: bpfman.ProgramRecord{
-					KernelID: 42,
+					ProgramID: 42,
 					Meta: bpfman.ProgramMeta{
 						Name: "test",
 					},
@@ -496,7 +496,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumns(t *testing.T) {
 		},
 	}
 
-	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns=ID:.record.kernel_id,NAME:.record.meta.name"}}
+	flags := &OutputFlags{Output: OutputValue{Value: "custom-columns=ID:.record.program_id,NAME:.record.meta.name"}}
 	output, err := FormatProgramsComposite(result, flags)
 	if err != nil {
 		t.Fatalf("FormatProgramsComposite() error = %v", err)
@@ -513,7 +513,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumns(t *testing.T) {
 func TestIntegration_FormatProgramsCompositeCustomColumnsFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "columns.txt")
-	content := "ID NAME\n.record.kernel_id .record.meta.name"
+	content := "ID NAME\n.record.program_id .record.meta.name"
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestIntegration_FormatProgramsCompositeCustomColumnsFile(t *testing.T) {
 		Programs: []bpfman.Program{
 			{
 				Record: bpfman.ProgramRecord{
-					KernelID: 42,
+					ProgramID: 42,
 					Meta: bpfman.ProgramMeta{
 						Name: "test",
 					},

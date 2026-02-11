@@ -36,7 +36,7 @@ type LinkReader interface {
 // LinkLister lists links from the store.
 type LinkLister interface {
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
-	ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error)
+	ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error)
 	// ListTCXLinksByInterface returns all TCX links for a given interface/direction/namespace.
 	// Used for computing attach order based on priority.
 	ListTCXLinksByInterface(ctx context.Context, nsid uint64, ifindex uint32, direction string) ([]bpfman.TCXLinkInfo, error)
@@ -69,8 +69,8 @@ type DispatcherStore interface {
 	IncrementRevision(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (uint32, error)
 
 	// CountDispatcherLinks returns the number of extension links
-	// attached to the dispatcher identified by its kernel program ID.
-	CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error)
+	// attached to the dispatcher identified by its program ID.
+	CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error)
 }
 
 // Store combines program, link, and dispatcher store operations.
@@ -93,13 +93,13 @@ type Transactional interface {
 // ProgramReader reads program metadata from the store.
 // Get returns ErrRecordNotFound if the program does not exist.
 type ProgramReader interface {
-	Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error)
+	Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }
 
 // ProgramWriter writes program metadata to the store.
 type ProgramWriter interface {
-	Save(ctx context.Context, kernelID kernel.ProgramID, metadata bpfman.ProgramRecord) error
-	Delete(ctx context.Context, kernelID kernel.ProgramID) error
+	Save(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error
+	Delete(ctx context.Context, programID kernel.ProgramID) error
 }
 
 // ProgramLister lists all program metadata from the store.
@@ -115,9 +115,9 @@ type ProgramFinder interface {
 // MapOwnershipReader provides access to map ownership information.
 type MapOwnershipReader interface {
 	// CountDependentPrograms returns the number of programs that share maps
-	// with the given program (i.e., programs where map_owner_id = kernelID).
+	// with the given program (i.e., programs where map_owner_id = programID).
 	// This is used to determine if a program's maps can be safely deleted.
-	CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error)
+	CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error)
 }
 
 // ProgramStore combines all store operations.
@@ -144,8 +144,8 @@ type KernelSource interface {
 type ProgramLoader interface {
 	// Load loads a BPF program and pins it using the bpffs paths.
 	// Pin paths are computed from the kernel ID using bpffs methods:
-	//   - Program: bpffs.ProgPinPath(kernel_id)
-	//   - Maps: bpffs.MapPinDir(kernel_id) / <map_name>
+	//   - Program: bpffs.ProgPinPath(program_id)
+	//   - Maps: bpffs.MapPinDir(program_id) / <map_name>
 	Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error)
 }
 

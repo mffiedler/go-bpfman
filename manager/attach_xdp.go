@@ -28,12 +28,12 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 	netnsPath := spec.Netns()
 
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
-		programKernelID: spec.ProgramID(),
-		ifindex:         ifindex,
-		ifname:          ifname,
-		netnsPath:       netnsPath,
-		target:          ifname + ":xdp",
-		dispType:        dispatcher.DispatcherTypeXDP,
+		programID: spec.ProgramID(),
+		ifindex:   ifindex,
+		ifname:    ifname,
+		netnsPath: netnsPath,
+		target:    ifname + ":xdp",
+		dispType:  dispatcher.DispatcherTypeXDP,
 		ensureAction: func() action.Action {
 			return action.EnsureXDPDispatcher{
 				Ifindex:   uint32(ifindex),
@@ -57,7 +57,7 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 				Position:     int32(position),
 				ProceedOn:    []int32{int32(dispatcher.XDPPass)},
 				Nsid:         nsid,
-				DispatcherID: dispState.KernelID,
+				DispatcherID: dispState.ProgramID,
 				Revision:     dispState.Revision,
 			}
 		},

@@ -17,12 +17,12 @@ import (
 // while the shared skeleton handles the plan structure and result
 // extraction.
 type dispatcherAttachParams struct {
-	programKernelID kernel.ProgramID
-	ifindex         int
-	ifname          string
-	netnsPath       string
-	target          string // target (e.g., "eth0:xdp", "eth0:ingress")
-	dispType        dispatcher.DispatcherType
+	programID kernel.ProgramID
+	ifindex   int
+	ifname    string
+	netnsPath string
+	target    string // target (e.g., "eth0:xdp", "eth0:ingress")
+	dispType  dispatcher.DispatcherType
 
 	// ensureAction constructs the Ensure action for this
 	// dispatcher type.
@@ -80,7 +80,7 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 	m.logger.InfoContext(ctx, "attached via dispatcher",
 		"type", p.dispType,
 		"link_id", link.Record.ID,
-		"program_id", p.programKernelID,
+		"program_id", p.programID,
 		"interface", p.ifname,
 		"ifindex", p.ifindex,
 		"nsid", r.disp.Nsid,
@@ -107,7 +107,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 		// Node 1: Fetch program record.
 		operation.Produce(dispPreparedKey, p.target,
 			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (dispPrepared, error) {
-				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{KernelID: p.programKernelID})
+				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{ProgramID: p.programID})
 				if err != nil {
 					return dispPrepared{}, err
 				}
@@ -143,7 +143,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 				r := operation.Get(b, extResultKey)
 				record := bpfman.NewPinnedLinkRecord(
 					r.out.LinkID,
-					p.programKernelID,
+					p.programID,
 					p.buildLinkDetails(r.disp.Nsid, r.position, r.disp),
 					*bpfman.NewLinkPath(r.pinPath),
 					time.Now(),

@@ -7,10 +7,10 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-// UnloadCmd unloads managed BPF programs by kernel ID.
+// UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
 	OutputFlags
-	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Kernel program IDs to unload (supports hex with 0x prefix)." required:""`
+	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
 }
 
 // Run executes the unload command: mutation under lock, output outside.

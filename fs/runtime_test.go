@@ -36,7 +36,7 @@ func TestPublishBytecode(t *testing.T) {
 
 	prov := fs.Provenance{
 		Version:     1,
-		KernelID:    42,
+		ProgramID:   42,
 		ProgramName: "test_prog",
 		Source:      srcPath,
 		SourceKind:  "file",
@@ -62,7 +62,7 @@ func TestPublishBytecode(t *testing.T) {
 	require.NoError(t, err)
 	var readProv fs.Provenance
 	require.NoError(t, json.Unmarshal(provData, &readProv))
-	assert.Equal(t, kernel.ProgramID(42), readProv.KernelID)
+	assert.Equal(t, kernel.ProgramID(42), readProv.ProgramID)
 	assert.Equal(t, "test_prog", readProv.ProgramName)
 	assert.Equal(t, "file", readProv.SourceKind)
 }
@@ -73,7 +73,7 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fs.Provenance{Version: 1, KernelID: 99}
+	prov := fs.Provenance{Version: 1, ProgramID: 99}
 
 	// First publish should succeed.
 	require.NoError(t, rt.PublishBytecode(99, srcPath, prov))
@@ -88,7 +88,7 @@ func TestPublishBytecode_InvalidSource(t *testing.T) {
 	root := mustNew(t)
 	rt := root.Bytecode()
 
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, ProgramID: 1}
 
 	// Non-existent source file.
 	err := rt.PublishBytecode(1, "/nonexistent/path.o", prov)
@@ -107,7 +107,7 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 	// Create a valid source file, then publish with ID 1.
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, ProgramID: 1}
 
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
@@ -124,7 +124,7 @@ func TestRemoveProgram(t *testing.T) {
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
 
-	prov := fs.Provenance{Version: 1, KernelID: 10}
+	prov := fs.Provenance{Version: 1, ProgramID: 10}
 	require.NoError(t, rt.PublishBytecode(10, srcPath, prov))
 	assert.True(t, rt.ProgramExists(10))
 
@@ -149,7 +149,7 @@ func TestProgramExists(t *testing.T) {
 
 	srcDir := t.TempDir()
 	srcPath := writeDummyBytecode(t, srcDir)
-	prov := fs.Provenance{Version: 1, KernelID: 1}
+	prov := fs.Provenance{Version: 1, ProgramID: 1}
 	require.NoError(t, rt.PublishBytecode(1, srcPath, prov))
 
 	assert.True(t, rt.ProgramExists(1))
@@ -182,7 +182,7 @@ func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 	}
 
 	require.Len(t, numeric, 1)
-	assert.Equal(t, kernel.ProgramID(42), numeric[0].KernelID)
+	assert.Equal(t, kernel.ProgramID(42), numeric[0].ProgramID)
 }
 
 func TestCleanStaging(t *testing.T) {

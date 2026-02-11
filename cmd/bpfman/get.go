@@ -13,10 +13,10 @@ type GetCmd struct {
 	Link    GetLinkCmd    `cmd:"" help:"Get a loaded eBPF program's attachment using the Link Id."`
 }
 
-// GetProgramCmd gets details of a managed program by kernel ID.
+// GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
 	OutputFlags
-	ProgramID ProgramID `arg:"" name:"program-id" help:"Kernel program ID (supports hex with 0x prefix)."`
+	ProgramID ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
 }
 
 // Run executes the get program command.
@@ -39,10 +39,10 @@ func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
 	return cli.PrintOut(output)
 }
 
-// GetLinkCmd gets details of a link by kernel link ID.
+// GetLinkCmd gets details of a link by link ID.
 type GetLinkCmd struct {
 	OutputFlags
-	LinkID LinkID `arg:"" name:"link-id" help:"Kernel link ID."`
+	LinkID LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 
 // Run executes the get link command.

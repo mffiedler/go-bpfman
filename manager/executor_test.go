@@ -20,31 +20,31 @@ import (
 // Only implements methods used by SaveProgram/DeleteProgram actions.
 // All other methods panic - if a test hits them, it's using the wrong action type.
 type stubStore struct {
-	saveFunc   func(ctx context.Context, kernelID kernel.ProgramID) error
-	deleteFunc func(ctx context.Context, kernelID kernel.ProgramID) error
+	saveFunc   func(ctx context.Context, programID kernel.ProgramID) error
+	deleteFunc func(ctx context.Context, programID kernel.ProgramID) error
 }
 
 func newStubStore() *stubStore {
 	return &stubStore{
-		saveFunc:   func(ctx context.Context, kernelID kernel.ProgramID) error { return nil },
-		deleteFunc: func(ctx context.Context, kernelID kernel.ProgramID) error { return nil },
+		saveFunc:   func(ctx context.Context, programID kernel.ProgramID) error { return nil },
+		deleteFunc: func(ctx context.Context, programID kernel.ProgramID) error { return nil },
 	}
 }
 
 // ProgramWriter methods (used by tests)
-func (s *stubStore) Save(ctx context.Context, kernelID kernel.ProgramID, _ bpfman.ProgramRecord) error {
-	return s.saveFunc(ctx, kernelID)
+func (s *stubStore) Save(ctx context.Context, programID kernel.ProgramID, _ bpfman.ProgramRecord) error {
+	return s.saveFunc(ctx, programID)
 }
 
-func (s *stubStore) Delete(ctx context.Context, kernelID kernel.ProgramID) error {
-	return s.deleteFunc(ctx, kernelID)
+func (s *stubStore) Delete(ctx context.Context, programID kernel.ProgramID) error {
+	return s.deleteFunc(ctx, programID)
 }
 
 // io.Closer
 func (s *stubStore) Close() error { return nil }
 
 // ProgramReader
-func (s *stubStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error) {
+func (s *stubStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	panic("stubStore.Get not implemented")
 }
 
@@ -59,7 +59,7 @@ func (s *stubStore) FindProgramByMetadata(ctx context.Context, key, value string
 }
 
 // MapOwnershipReader
-func (s *stubStore) CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error) {
+func (s *stubStore) CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error) {
 	panic("stubStore.CountDependentPrograms not implemented")
 }
 
@@ -82,7 +82,7 @@ func (s *stubStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) 
 	panic("stubStore.ListLinks not implemented")
 }
 
-func (s *stubStore) ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
+func (s *stubStore) ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	panic("stubStore.ListLinksByProgram not implemented")
 }
 
@@ -111,7 +111,7 @@ func (s *stubStore) IncrementRevision(ctx context.Context, dispType string, nsid
 	panic("stubStore.IncrementRevision not implemented")
 }
 
-func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error) {
+func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error) {
 	panic("stubStore.CountDispatcherLinks not implemented")
 }
 
@@ -266,9 +266,9 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 	}
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -315,7 +315,7 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 	kops := newStubKernel()
 
 	expectedErr := errors.New("first action failed")
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
 		return expectedErr
 	}
 
@@ -323,9 +323,9 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -350,8 +350,8 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 	kops := newStubKernel()
 
 	expectedErr := errors.New("middle action failed")
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
-		if kernelID == 2 {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
+		if programID == 2 {
 			return expectedErr
 		}
 		return nil
@@ -361,9 +361,9 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -388,8 +388,8 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 	kops := newStubKernel()
 
 	expectedErr := errors.New("last action failed")
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
-		if kernelID == 3 {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
+		if programID == 3 {
 			return expectedErr
 		}
 		return nil
@@ -399,9 +399,9 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -426,9 +426,9 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 	kops := newStubKernel()
 
 	callCount := 0
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
 		callCount++
-		if kernelID == 2 {
+		if programID == 2 {
 			return errors.New("stop here")
 		}
 		return nil
@@ -438,10 +438,10 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
-		action.SaveProgram{KernelID: 4},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
+		action.SaveProgram{ProgramID: 4},
 	}
 
 	_ = execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -456,8 +456,8 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	store := newStubStore()
 	kops := newStubKernel()
 
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
-		if kernelID == 2 {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
+		if programID == 2 {
 			return errors.New("fail")
 		}
 		return nil
@@ -467,9 +467,9 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	execWithResult := exec.(action.ExecutorWithResult)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
-		action.SaveProgram{KernelID: 3},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
+		action.SaveProgram{ProgramID: 3},
 	}
 
 	result := execWithResult.ExecuteAllWithResult(context.Background(), actions)
@@ -486,8 +486,8 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 	}
 
 	failed := result.Actions[result.FailedIndex]
-	if sp, ok := failed.(action.SaveProgram); !ok || sp.KernelID != 2 {
-		t.Errorf("failed action = %v, want SaveProgram{KernelID: 2}", failed)
+	if sp, ok := failed.(action.SaveProgram); !ok || sp.ProgramID != 2 {
+		t.Errorf("failed action = %v, want SaveProgram{ProgramID: 2}", failed)
 	}
 
 	remaining := result.Actions[result.FailedIndex+1:]
@@ -501,8 +501,8 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 	kops := newStubKernel()
 
 	expectedErr := errors.New("expected error")
-	store.saveFunc = func(ctx context.Context, kernelID kernel.ProgramID) error {
-		if kernelID == 2 {
+	store.saveFunc = func(ctx context.Context, programID kernel.ProgramID) error {
+		if programID == 2 {
 			return expectedErr
 		}
 		return nil
@@ -511,8 +511,8 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kops, fs.Bytecode{}, fs.BPFFS{}, nil)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)
@@ -528,8 +528,8 @@ func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
 	exec := manager.NewExecutorForTest(store, kops, fs.Bytecode{}, fs.BPFFS{}, nil)
 
 	actions := []action.Action{
-		action.SaveProgram{KernelID: 1},
-		action.SaveProgram{KernelID: 2},
+		action.SaveProgram{ProgramID: 1},
+		action.SaveProgram{ProgramID: 2},
 	}
 
 	err := exec.ExecuteAll(context.Background(), actions)

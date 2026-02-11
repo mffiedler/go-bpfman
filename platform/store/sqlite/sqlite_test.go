@@ -70,10 +70,10 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program directly.
-	kernelID := kernel.ProgramID(42)
+	programID := kernel.ProgramID(42)
 	prog := testProgram()
 
-	require.NoError(t, store.Save(ctx, kernelID, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, programID, prog), "Save failed")
 
 	// Create two links for that program.
 	for i := 0; i < 2; i++ {
@@ -83,21 +83,21 @@ func TestForeignKey_CascadeDeleteRemovesLinks(t *testing.T) {
 			Retprobe: false,
 		}
 		linkID := kernel.LinkID(100 + i)
-		spec := bpfman.NewEphemeralLinkRecord(linkID, kernelID, details, time.Now())
+		spec := bpfman.NewEphemeralLinkRecord(linkID, programID, details, time.Now())
 		err := store.SaveLink(ctx, spec)
 		require.NoError(t, err, "SaveLink failed")
 	}
 
 	// Verify links exist.
-	links, err := store.ListLinksByProgram(ctx, kernelID)
+	links, err := store.ListLinksByProgram(ctx, programID)
 	require.NoError(t, err, "ListLinksByProgram failed")
 	require.Len(t, links, 2, "expected 2 links")
 
 	// Delete the program.
-	require.NoError(t, store.Delete(ctx, kernelID), "Delete failed")
+	require.NoError(t, store.Delete(ctx, programID), "Delete failed")
 
 	// Verify CASCADE removed the links.
-	links, err = store.ListLinksByProgram(ctx, kernelID)
+	links, err = store.ListLinksByProgram(ctx, programID)
 	require.NoError(t, err, "ListLinksByProgram after delete failed")
 	assert.Empty(t, links, "expected 0 links after CASCADE delete")
 }
@@ -110,26 +110,26 @@ func TestMetadata_StoredAsJSON(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program with metadata.
-	kernelID := kernel.ProgramID(42)
+	programID := kernel.ProgramID(42)
 	prog := testProgram()
 	prog.Meta.Metadata = map[string]string{
 		"app":     "test",
 		"version": "1.0",
 	}
 
-	require.NoError(t, store.Save(ctx, kernelID, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, programID, prog), "Save failed")
 
 	// Verify metadata is stored and retrieved correctly.
-	found, err := store.Get(ctx, kernelID)
+	found, err := store.Get(ctx, programID)
 	require.NoError(t, err, "Get failed")
 	assert.Equal(t, "test", found.Meta.Metadata["app"], "metadata app mismatch")
 	assert.Equal(t, "1.0", found.Meta.Metadata["version"], "metadata version mismatch")
 
 	// Delete the program.
-	require.NoError(t, store.Delete(ctx, kernelID), "Delete failed")
+	require.NoError(t, store.Delete(ctx, programID), "Delete failed")
 
 	// Verify program is gone.
-	_, err = store.Get(ctx, kernelID)
+	_, err = store.Get(ctx, programID)
 	assert.Error(t, err, "expected error after delete")
 }
 
@@ -321,12 +321,12 @@ func TestDispatcherStore_SaveAndGet(t *testing.T) {
 
 	// Create a dispatcher
 	state := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   101,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    101,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
@@ -339,7 +339,7 @@ func TestDispatcherStore_SaveAndGet(t *testing.T) {
 	assert.Equal(t, state.Nsid, got.Nsid)
 	assert.Equal(t, state.Ifindex, got.Ifindex)
 	assert.Equal(t, state.Revision, got.Revision)
-	assert.Equal(t, state.KernelID, got.KernelID)
+	assert.Equal(t, state.ProgramID, got.ProgramID)
 	assert.Equal(t, state.LinkID, got.LinkID)
 }
 
@@ -352,12 +352,12 @@ func TestDispatcherStore_Update(t *testing.T) {
 
 	// Create a dispatcher
 	state := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   101,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    101,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
@@ -383,12 +383,12 @@ func TestDispatcherStore_Delete(t *testing.T) {
 
 	// Create a dispatcher
 	state := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   101,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    101,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
@@ -422,12 +422,12 @@ func TestDispatcherStore_IncrementRevision(t *testing.T) {
 
 	// Create a dispatcher with revision 1
 	state := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   101,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    101,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
@@ -457,12 +457,12 @@ func TestDispatcherStore_UniqueConstraint(t *testing.T) {
 
 	// Create an XDP dispatcher
 	xdpState := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   101,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    101,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, xdpState), "SaveDispatcher (xdp) failed")
@@ -470,12 +470,12 @@ func TestDispatcherStore_UniqueConstraint(t *testing.T) {
 	// Create a TC-ingress dispatcher on same nsid/ifindex - should work (different type)
 	// TC dispatchers have LinkID=0 (they use netlink filters, not BPF links)
 	tcState := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeTCIngress,
-		Nsid:     4026531840,
-		Ifindex:  1,
-		Revision: 1,
-		KernelID: 200,
-		LinkID:   0,
+		Type:      dispatcher.DispatcherTypeTCIngress,
+		Nsid:      4026531840,
+		Ifindex:   1,
+		Revision:  1,
+		ProgramID: 200,
+		LinkID:    0,
 	}
 
 	require.NoError(t, store.SaveDispatcher(ctx, tcState), "SaveDispatcher (tc-ingress) failed")
@@ -498,12 +498,12 @@ func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
 	// Create dispatchers for ifindex 1 and 2
 	for ifindex := uint32(1); ifindex <= 2; ifindex++ {
 		state := dispatcher.State{
-			Type:     dispatcher.DispatcherTypeXDP,
-			Nsid:     4026531840,
-			Ifindex:  ifindex,
-			Revision: 1,
-			KernelID: kernel.ProgramID(100 + ifindex),
-			LinkID:   kernel.LinkID(200 + ifindex),
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   ifindex,
+			Revision:  1,
+			ProgramID: kernel.ProgramID(100 + ifindex),
+			LinkID:    kernel.LinkID(200 + ifindex),
 		}
 		require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher (ifindex %d) failed", ifindex)
 	}
@@ -511,11 +511,11 @@ func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
 	// Verify both exist independently
 	got1, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher (ifindex 1) failed")
-	assert.Equal(t, kernel.ProgramID(101), got1.KernelID)
+	assert.Equal(t, kernel.ProgramID(101), got1.ProgramID)
 
 	got2, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 2)
 	require.NoError(t, err, "GetDispatcher (ifindex 2) failed")
-	assert.Equal(t, kernel.ProgramID(102), got2.KernelID)
+	assert.Equal(t, kernel.ProgramID(102), got2.ProgramID)
 }
 
 // ----------------------------------------------------------------------------
@@ -606,14 +606,14 @@ func TestMapOwnership_MapPinPathPersisted(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a program with MapPinPath set.
-	kernelID := kernel.ProgramID(42)
+	programID := kernel.ProgramID(42)
 	prog := testProgram()
 	prog.Handles.MapPinPath = "/sys/fs/bpf/bpfman/42"
 
-	require.NoError(t, store.Save(ctx, kernelID, prog), "Save failed")
+	require.NoError(t, store.Save(ctx, programID, prog), "Save failed")
 
 	// Retrieve and verify MapPinPath is persisted.
-	got, err := store.Get(ctx, kernelID)
+	got, err := store.Get(ctx, programID)
 	require.NoError(t, err, "Get failed")
 	assert.Equal(t, "/sys/fs/bpf/bpfman/42", got.Handles.MapPinPath, "MapPinPath mismatch")
 }
@@ -919,22 +919,22 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 	ctx := context.Background()
 
 	disp1 := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  2,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   200,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   2,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    200,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, disp1))
 
 	disp2 := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeTCIngress,
-		Nsid:     4026531840,
-		Ifindex:  3,
-		Revision: 1,
-		KernelID: 101,
-		LinkID:   0,
+		Type:      dispatcher.DispatcherTypeTCIngress,
+		Nsid:      4026531840,
+		Ifindex:   3,
+		Revision:  1,
+		ProgramID: 101,
+		LinkID:    0,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, disp2))
 
@@ -988,12 +988,12 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 
 	disp := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  2,
-		Revision: 1,
-		KernelID: 500,
-		LinkID:   501,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   2,
+		Revision:  1,
+		ProgramID: 500,
+		LinkID:    501,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, disp))
 
@@ -1043,11 +1043,11 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), prog))
 
 	disp := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeTCIngress,
-		Nsid:     4026531840,
-		Ifindex:  3,
-		Revision: 1,
-		KernelID: 101,
+		Type:      dispatcher.DispatcherTypeTCIngress,
+		Nsid:      4026531840,
+		Ifindex:   3,
+		Revision:  1,
+		ProgramID: 101,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, disp))
 
@@ -1087,7 +1087,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	//
 	// Setup:
 	//   Programs: 100 (alive), 101 (stale owner), 102 (stale dependent of 101)
-	//   Dispatchers: XDP ifindex=2 (kernelID=100, alive), TC ifindex=3 (kernelID=101, stale)
+	//   Dispatchers: XDP ifindex=2 (programID=100, alive), TC ifindex=3 (programID=101, stale)
 	//   Links: 400 (alive tracepoint), 401 (stale tracepoint)
 	//
 	// After GC:
@@ -1116,22 +1116,22 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 
 	// Dispatchers.
 	xdpDisp := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  2,
-		Revision: 1,
-		KernelID: 100,
-		LinkID:   300,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   2,
+		Revision:  1,
+		ProgramID: 100,
+		LinkID:    300,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, xdpDisp))
 
 	tcDisp := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeTCIngress,
-		Nsid:     4026531840,
-		Ifindex:  3,
-		Revision: 1,
-		KernelID: 101,
-		LinkID:   0,
+		Type:      dispatcher.DispatcherTypeTCIngress,
+		Nsid:      4026531840,
+		Ifindex:   3,
+		Revision:  1,
+		ProgramID: 101,
+		LinkID:    0,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, tcDisp))
 
@@ -1251,22 +1251,22 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Create dispatchers for XDP and TC links (FK requirement for their details)
 	xdpDispatcher := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeXDP,
-		Nsid:     4026531840,
-		Ifindex:  2,
-		Revision: 1,
-		KernelID: 500,
-		LinkID:   501,
+		Type:      dispatcher.DispatcherTypeXDP,
+		Nsid:      4026531840,
+		Ifindex:   2,
+		Revision:  1,
+		ProgramID: 500,
+		LinkID:    501,
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, xdpDispatcher), "SaveDispatcher XDP failed")
 
 	tcDispatcher := dispatcher.State{
-		Type:     dispatcher.DispatcherTypeTCIngress,
-		Nsid:     4026531840,
-		Ifindex:  3,
-		Revision: 1,
-		KernelID: 502,
-		LinkID:   0, // TC dispatchers don't have links
+		Type:      dispatcher.DispatcherTypeTCIngress,
+		Nsid:      4026531840,
+		Ifindex:   3,
+		Revision:  1,
+		ProgramID: 502,
+		LinkID:    0, // TC dispatchers don't have links
 	}
 	require.NoError(t, store.SaveDispatcher(ctx, tcDispatcher), "SaveDispatcher TC failed")
 

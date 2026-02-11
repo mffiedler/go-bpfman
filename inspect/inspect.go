@@ -27,7 +27,7 @@ type StoreLister interface {
 
 // StoreGetter is the subset of platform.Store needed by GetProgram.
 type StoreGetter interface {
-	Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error)
+	Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error)
 }
 
 // KernelLister is the subset of platform.KernelSource needed by Snapshot.
@@ -89,7 +89,7 @@ func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 // ProgramView is a correlation view of a program across store, kernel, and FS.
 // Renamed from ProgramRow.
 type ProgramView struct {
-	KernelID kernel.ProgramID `json:"kernel_id"`
+	ProgramID kernel.ProgramID `json:"program_id"`
 
 	// Store fields (valid when Presence.InStore is true)
 	Managed *bpfman.ProgramRecord `json:"managed,omitempty"`
@@ -257,11 +257,11 @@ type DispatcherRow struct {
 	Ifindex  uint32 `json:"ifindex"`
 
 	// Store fields (valid when ProgPresence.InStore is true)
-	Managed  *dispatcher.State `json:"managed,omitempty"`
-	Revision uint32            `json:"revision"`
-	KernelID kernel.ProgramID  `json:"kernel_id"`
-	LinkID   kernel.LinkID     `json:"link_id"`
-	Priority uint32            `json:"priority"`
+	Managed   *dispatcher.State `json:"managed,omitempty"`
+	Revision  uint32            `json:"revision"`
+	ProgramID kernel.ProgramID  `json:"program_id"`
+	LinkID    kernel.LinkID     `json:"link_id"`
+	Priority  uint32            `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
 	ProgPresence Presence `json:"prog_presence"` // dispatcher program
@@ -362,7 +362,7 @@ func Snapshot(
 	}
 
 	// FS indexes
-	fsProgPins := make(map[kernel.ProgramID]string)  // kernelID -> path
+	fsProgPins := make(map[kernel.ProgramID]string)  // programID -> path
 	fsLinkDirs := make(map[kernel.ProgramID]string)  // programID -> path
 	fsMapDirs := make(map[kernel.ProgramID]string)   // programID -> path
 	fsDispDirs := make(map[string]*fs.DispatcherDir) // "type/nsid/ifindex" -> dir
@@ -373,7 +373,7 @@ func Snapshot(
 			w.Meta.Errors = append(w.Meta.Errors, err)
 			continue
 		}
-		fsProgPins[pin.KernelID] = pin.Path
+		fsProgPins[pin.ProgramID] = pin.Path
 	}
 
 	for dir, err := range scanner.LinkDirs(ctx) {
@@ -418,14 +418,14 @@ func Snapshot(
 	}
 
 	seenProgIDs := make(map[kernel.ProgramID]bool)
-	for kernelID, prog := range storeProgs {
-		seenProgIDs[kernelID] = true
-		fsPath, inFS := fsProgPins[kernelID]
-		kp, inKernel := kernelProgs[kernelID]
-		_, mapsPresent := fsMapDirs[kernelID]
+	for programID, prog := range storeProgs {
+		seenProgIDs[programID] = true
+		fsPath, inFS := fsProgPins[programID]
+		kp, inKernel := kernelProgs[programID]
+		_, mapsPresent := fsMapDirs[programID]
 
 		row := ProgramView{
-			KernelID:    kernelID,
+			ProgramID:   programID,
 			Managed:     &prog,
 			FSPinPath:   fsPath,
 			MapsPresent: mapsPresent,
@@ -442,13 +442,13 @@ func Snapshot(
 	}
 
 	// Add kernel-only programs (not in store)
-	for kernelID, kp := range kernelProgs {
-		if seenProgIDs[kernelID] {
+	for programID, kp := range kernelProgs {
+		if seenProgIDs[programID] {
 			continue
 		}
-		fsPath, inFS := fsProgPins[kernelID]
+		fsPath, inFS := fsProgPins[programID]
 		row := ProgramView{
-			KernelID:  kernelID,
+			ProgramID: programID,
 			Kernel:    &kp,
 			FSPinPath: fsPath,
 			Presence: Presence{
@@ -458,16 +458,16 @@ func Snapshot(
 			},
 		}
 		w.Programs = append(w.Programs, row)
-		seenProgIDs[kernelID] = true
+		seenProgIDs[programID] = true
 	}
 
 	// Add FS-only programs (not in store, not in kernel)
-	for kernelID, fsPath := range fsProgPins {
-		if seenProgIDs[kernelID] {
+	for programID, fsPath := range fsProgPins {
+		if seenProgIDs[programID] {
 			continue
 		}
 		row := ProgramView{
-			KernelID:  kernelID,
+			ProgramID: programID,
 			FSPinPath: fsPath,
 			Presence: Presence{
 				InStore:  false,
@@ -562,14 +562,14 @@ func Snapshot(
 			progInFS = true
 		}
 
-		_, progInKernel := kernelProgs[disp.KernelID]
+		_, progInKernel := kernelProgs[disp.ProgramID]
 		row := DispatcherRow{
 			DispType:    string(disp.Type),
 			Nsid:        disp.Nsid,
 			Ifindex:     disp.Ifindex,
 			Managed:     &disp,
 			Revision:    disp.Revision,
-			KernelID:    disp.KernelID,
+			ProgramID:   disp.ProgramID,
 			LinkID:      disp.LinkID,
 			Priority:    uint32(disp.Priority),
 			FSLinkCount: fsLinkCount,
@@ -616,7 +616,7 @@ func Snapshot(
 	// Correlate links to programs by ProgramID
 	programIndex := make(map[kernel.ProgramID]int, len(w.Programs))
 	for i := range w.Programs {
-		programIndex[w.Programs[i].KernelID] = i
+		programIndex[w.Programs[i].ProgramID] = i
 	}
 	for _, link := range w.Links {
 		if link.Managed == nil {
@@ -629,7 +629,7 @@ func Snapshot(
 
 	// Sort all slices for deterministic output
 	slices.SortFunc(w.Programs, func(a, b ProgramView) int {
-		return cmp.Compare(a.KernelID, b.KernelID)
+		return cmp.Compare(a.ProgramID, b.ProgramID)
 	})
 	slices.SortFunc(w.Links, func(a, b LinkRow) int {
 		return cmp.Compare(a.ID(), b.ID())
@@ -658,12 +658,12 @@ func GetProgram(
 	storeGetter StoreGetter,
 	kern KernelGetter,
 	scanner *fs.Scanner,
-	kernelID kernel.ProgramID,
+	programID kernel.ProgramID,
 ) (ProgramView, error) {
-	row := ProgramView{KernelID: kernelID}
+	row := ProgramView{ProgramID: programID}
 
 	// Try store
-	prog, err := storeGetter.Get(ctx, kernelID)
+	prog, err := storeGetter.Get(ctx, programID)
 	if err == nil {
 		row.Managed = &prog
 		row.Presence.InStore = true
@@ -673,7 +673,7 @@ func GetProgram(
 	}
 
 	// Try kernel
-	kp, err := kern.GetProgramByID(ctx, kernelID)
+	kp, err := kern.GetProgramByID(ctx, programID)
 	if err == nil {
 		row.Kernel = &kp
 		row.Presence.InKernel = true
@@ -779,8 +779,8 @@ func GetDispatcher(
 	}
 
 	// Try kernel for dispatcher program
-	if info.ProgPresence.InStore && info.State.KernelID != 0 {
-		_, err := kern.GetProgramByID(ctx, info.State.KernelID)
+	if info.ProgPresence.InStore && info.State.ProgramID != 0 {
+		_, err := kern.GetProgramByID(ctx, info.State.ProgramID)
 		if err == nil {
 			info.ProgPresence.InKernel = true
 		}

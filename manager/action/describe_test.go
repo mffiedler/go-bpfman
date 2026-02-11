@@ -18,12 +18,12 @@ func TestDescribe(t *testing.T) {
 		// Store actions
 		{
 			name:     "SaveProgram",
-			action:   SaveProgram{KernelID: kernel.ProgramID(42)},
+			action:   SaveProgram{ProgramID: kernel.ProgramID(42)},
 			contains: "save program 42 to store",
 		},
 		{
 			name:     "DeleteProgram",
-			action:   DeleteProgram{KernelID: kernel.ProgramID(42)},
+			action:   DeleteProgram{ProgramID: kernel.ProgramID(42)},
 			contains: "delete program 42 from store",
 		},
 		{
@@ -38,12 +38,12 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name:     "GetProgramFromStore",
-			action:   GetProgramFromStore{KernelID: kernel.ProgramID(10)},
+			action:   GetProgramFromStore{ProgramID: kernel.ProgramID(10)},
 			contains: "get program 10 from store",
 		},
 		{
 			name:     "CheckProgramNotInStore",
-			action:   CheckProgramNotInStore{KernelID: kernel.ProgramID(10)},
+			action:   CheckProgramNotInStore{ProgramID: kernel.ProgramID(10)},
 			contains: "verify program 10 not in store",
 		},
 
@@ -111,7 +111,7 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name:     "PublishBytecode",
-			action:   PublishBytecode{KernelID: kernel.ProgramID(42)},
+			action:   PublishBytecode{ProgramID: kernel.ProgramID(42)},
 			contains: "publish bytecode for program 42",
 		},
 
@@ -199,7 +199,7 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name:     "RemoveProgramDir",
-			action:   RemoveProgramDir{KernelID: kernel.ProgramID(77)},
+			action:   RemoveProgramDir{ProgramID: kernel.ProgramID(77)},
 			contains: "remove program directory for 77",
 		},
 		{

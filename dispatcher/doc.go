@@ -95,7 +95,7 @@
 // The [State] type records runtime state:
 //
 //   - Revision: incremented on each atomic update
-//   - KernelID: the dispatcher program's kernel ID
+//   - ProgramID: the dispatcher program's kernel program ID
 //   - LinkID: the BPF link ID (XDP only; zero for TC)
 //   - Priority: TC filter priority (TC only; zero for XDP)
 //

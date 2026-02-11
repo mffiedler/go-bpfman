@@ -14,8 +14,8 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 	group, name := spec.Group(), spec.Name()
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
-		programKernelID: spec.ProgramID(),
-		defaultTarget:   target,
+		programID:     spec.ProgramID(),
+		defaultTarget: target,
 		prepare: func(_ bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			return attachPlan{
 				target:   target,
@@ -39,8 +39,8 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec) (bpfman.Link, error) {
 	fnName, offset := spec.FnName(), spec.Offset()
 	return m.simpleAttach(ctx, attachParams{
-		programKernelID: spec.ProgramID(),
-		defaultTarget:   fnName,
+		programID:     spec.ProgramID(),
+		defaultTarget: fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeKretprobe
 			linkName := fnName
@@ -77,8 +77,8 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 	offset := spec.Offset()
 	containerPid := spec.ContainerPid()
 	return m.simpleAttach(ctx, attachParams{
-		programKernelID: spec.ProgramID(),
-		defaultTarget:   binaryTarget + ":" + fnName,
+		programID:     spec.ProgramID(),
+		defaultTarget: binaryTarget + ":" + fnName,
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			retprobe := prog.Load.ProgramType() == bpfman.ProgramTypeUretprobe
 			if containerPid > 0 && scope == nil {
@@ -128,8 +128,8 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 // The target function was specified at load time and stored in the program's AttachFunc.
 func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
-		programKernelID: spec.ProgramID(),
-		defaultTarget:   fmt.Sprintf("fentry/program/%d", spec.ProgramID()),
+		programID:     spec.ProgramID(),
+		defaultTarget: fmt.Sprintf("fentry/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {
@@ -155,8 +155,8 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 // The target function was specified at load time and stored in the program's AttachFunc.
 func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) (bpfman.Link, error) {
 	return m.simpleAttach(ctx, attachParams{
-		programKernelID: spec.ProgramID(),
-		defaultTarget:   fmt.Sprintf("fexit/program/%d", spec.ProgramID()),
+		programID:     spec.ProgramID(),
+		defaultTarget: fmt.Sprintf("fexit/program/%d", spec.ProgramID()),
 		prepare: func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
 			fnName := prog.Load.AttachFunc()
 			if fnName == "" {

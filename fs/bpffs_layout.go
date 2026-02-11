@@ -93,9 +93,9 @@ func (b BPFFS) Links() string {
 
 // ProgPinPath returns the pin path for a program.
 // Format: {base}/fs/prog_{id}
-func (b BPFFS) ProgPinPath(kernelID kernel.ProgramID) string {
+func (b BPFFS) ProgPinPath(programID kernel.ProgramID) string {
 	b.mustValid()
-	return filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(kernelID), 10))
+	return filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(programID), 10))
 }
 
 // MapPinDir returns the directory for a program's map pins.
@@ -199,9 +199,9 @@ func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, progra
 
 // EnsureMapsDir creates the maps directory for a program if it doesn't exist.
 // Format: {base}/fs/maps/{program_id}/
-func (b BPFFS) EnsureMapsDir(kernelID kernel.ProgramID) error {
+func (b BPFFS) EnsureMapsDir(programID kernel.ProgramID) error {
 	b.mustValid()
-	dir := b.MapPinDir(kernelID)
+	dir := b.MapPinDir(programID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return &PathError{Op: "ensure_maps_dir", Path: dir, Err: err}
 	}

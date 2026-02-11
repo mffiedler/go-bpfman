@@ -38,7 +38,7 @@ func TestOutputFlags_Format(t *testing.T) {
 		},
 		{
 			name:   "custom-columns",
-			output: "custom-columns=ID:.spec.kernel_id",
+			output: "custom-columns=ID:.record.program_id",
 			want:   OutputFormatCustomColumns,
 		},
 		{
@@ -120,8 +120,8 @@ func TestOutputFlags_CustomColumnsSpec(t *testing.T) {
 	}{
 		{
 			name:   "valid spec",
-			output: "custom-columns=ID:.spec.kernel_id,NAME:.spec.meta.name",
-			want:   "ID:.spec.kernel_id,NAME:.spec.meta.name",
+			output: "custom-columns=ID:.record.program_id,NAME:.spec.meta.name",
+			want:   "ID:.record.program_id,NAME:.spec.meta.name",
 		},
 		{
 			name:   "not custom-columns",
@@ -174,7 +174,7 @@ func TestOutputFlags_CustomColumnsFile(t *testing.T) {
 		},
 		{
 			name:   "custom-columns is not custom-columns-file",
-			output: "custom-columns=ID:.spec.kernel_id",
+			output: "custom-columns=ID:.record.program_id",
 			want:   "",
 		},
 	}

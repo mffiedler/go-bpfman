@@ -31,7 +31,7 @@ func ProgramSchemaDoc() SchemaDoc {
 		Description: "A BPF program object returned by 'bpfman list programs -o json'.",
 		Fields: []FieldInfo{
 			{Name: "spec", Type: "<ProgramSpec>", Children: []FieldInfo{
-				{Name: "kernel_id", Type: "<number>", Description: "Kernel-assigned program ID"},
+				{Name: "program_id", Type: "<number>", Description: "Program ID"},
 				{Name: "load", Type: "<LoadSpec>", Children: []FieldInfo{
 					{Name: "program_type", Type: "<string>", Description: "Program type (xdp, tc, etc.)"},
 					{Name: "object_path", Type: "<string>", Description: "Path to BPF object file"},

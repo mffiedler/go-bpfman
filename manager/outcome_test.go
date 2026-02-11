@@ -27,7 +27,7 @@ func TestLoad_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify program was loaded
-	assert.NotZero(t, prog.Record.KernelID)
+	assert.NotZero(t, prog.Record.ProgramID)
 	assert.Equal(t, "test_prog", prog.Record.Meta.Name)
 }
 
@@ -45,7 +45,7 @@ func TestUnload_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now unload it
-	err = fix.Manager.Unload(ctx, prog.Record.KernelID)
+	err = fix.Manager.Unload(ctx, prog.Record.ProgramID)
 	require.NoError(t, err)
 
 	// Verify state is clean
@@ -94,7 +94,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attach it
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, "sched", "sched_switch")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "sched", "sched_switch")
 	require.NoError(t, err)
 
 	link, err := fix.Manager.Attach(ctx, nil, attachSpec)
@@ -102,7 +102,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 
 	// Verify link was created
 	assert.NotZero(t, link.Record.ID)
-	assert.Equal(t, prog.Record.KernelID, link.Record.ProgramID)
+	assert.Equal(t, prog.Record.ProgramID, link.Record.ProgramID)
 }
 
 // TestGC_Success_OutcomeTracksPhases verifies that GC completes
@@ -135,7 +135,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	err = fix.Manager.Unload(ctx, prog.Record.KernelID)
+	err = fix.Manager.Unload(ctx, prog.Record.ProgramID)
 	require.NoError(t, err)
 
 	// Verify actual state is clean
@@ -154,7 +154,7 @@ func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.KernelID, "syscalls", "sys_enter_close")
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_close")
 	require.NoError(t, err)
 	link, err := fix.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err)

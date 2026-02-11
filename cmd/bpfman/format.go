@@ -157,8 +157,8 @@ func formatProgramTable(prog bpfman.Program) string {
 	var b strings.Builder
 	p := &prog.Record
 
-	// Header - kernel-assigned identifier
-	fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
+	// Header - program identifier
+	fmt.Fprintf(&b, "Program ID: %d\n", p.ProgramID)
 
 	// Collect Spec, Status, and Stats fields, then align them together
 	var specFields, statusFields, statsFields []string
@@ -340,10 +340,10 @@ func formatProgramListTable(programs []bpfman.Program) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "KERNEL ID\tTYPE\tNAME\tSOURCE")
+	fmt.Fprintln(w, "PROGRAM ID\tTYPE\tNAME\tSOURCE")
 
 	for _, p := range programs {
-		id := p.Record.KernelID
+		id := p.Record.ProgramID
 		name := p.Record.Meta.Name
 		progType := p.Record.Load.ProgramType()
 		source := p.Record.Load.ObjectPath()
@@ -451,7 +451,7 @@ func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
 func formatLinkResultTable(link bpfman.Link) string {
 	var b strings.Builder
 
-	// Primary identifier at column one (like Kernel ID for programs)
+	// Primary identifier at column one (like Program ID for programs)
 	fmt.Fprintf(&b, "Link ID: %d\n", link.Record.ID)
 
 	// Collect Spec fields from LinkSpec, then sort alphabetically
@@ -664,13 +664,13 @@ func formatLoadedProgramsJSONPath(programs []bpfman.Program, expr string) (strin
 }
 
 func formatLoadedProgramsTable(programs []bpfman.Program) string {
-	// Sort programs by kernel ID for consistent, scannable output
+	// Sort programs by program ID for consistent, scannable output
 	sorted := slices.Clone(programs)
 	slices.SortFunc(sorted, func(a, b bpfman.Program) int {
-		if a.Record.KernelID < b.Record.KernelID {
+		if a.Record.ProgramID < b.Record.ProgramID {
 			return -1
 		}
-		if a.Record.KernelID > b.Record.KernelID {
+		if a.Record.ProgramID > b.Record.ProgramID {
 			return 1
 		}
 		return 0
@@ -685,8 +685,8 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 
 		p := &prog.Record
 
-		// Header - kernel-assigned identifier
-		fmt.Fprintf(&b, "Kernel ID: %d\n", p.KernelID)
+		// Header - program identifier
+		fmt.Fprintf(&b, "Program ID: %d\n", p.ProgramID)
 
 		// Collect Spec, Status, and Stats fields, then align them together
 		var specFields, statusFields, statsFields []string
@@ -844,10 +844,10 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "KERNEL ID\tTYPE\tNAME\tSOURCE")
+	fmt.Fprintln(w, "PROGRAM ID\tTYPE\tNAME\tSOURCE")
 
 	for _, p := range result.Programs {
-		id := p.Record.KernelID
+		id := p.Record.ProgramID
 
 		// Get info from spec (always present as value type)
 		name := p.Record.Meta.Name

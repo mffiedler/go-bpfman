@@ -45,20 +45,20 @@ func (e *executor) Execute(ctx context.Context, a action.Action) error {
 func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, error) {
 	switch a := a.(type) {
 	case action.GetProgramFromStore:
-		rec, err := e.store.Get(ctx, a.KernelID)
+		rec, err := e.store.Get(ctx, a.ProgramID)
 		if err != nil {
 			if errors.Is(err, platform.ErrRecordNotFound) {
-				return nil, bpfman.ErrProgramNotFound{ID: a.KernelID}
+				return nil, bpfman.ErrProgramNotFound{ID: a.ProgramID}
 			}
-			return nil, fmt.Errorf("get program %d: %w", a.KernelID, err)
+			return nil, fmt.Errorf("get program %d: %w", a.ProgramID, err)
 		}
 		return rec, nil
 
 	case action.CheckProgramNotInStore:
-		if _, err := e.store.Get(ctx, a.KernelID); err == nil {
-			return nil, fmt.Errorf("program %d already exists in database", a.KernelID)
+		if _, err := e.store.Get(ctx, a.ProgramID); err == nil {
+			return nil, fmt.Errorf("program %d already exists in database", a.ProgramID)
 		} else if !errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, fmt.Errorf("check existing program %d: %w", a.KernelID, err)
+			return nil, fmt.Errorf("check existing program %d: %w", a.ProgramID, err)
 		}
 		return nil, nil
 
@@ -67,11 +67,11 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 
 	case action.SaveProgram:
 		return nil, e.store.RunInTransaction(ctx, func(tx platform.Store) error {
-			return tx.Save(ctx, a.KernelID, a.Metadata)
+			return tx.Save(ctx, a.ProgramID, a.Metadata)
 		})
 
 	case action.DeleteProgram:
-		return nil, e.store.Delete(ctx, a.KernelID)
+		return nil, e.store.Delete(ctx, a.ProgramID)
 
 	case action.SaveLink:
 		return nil, e.store.SaveLink(ctx, a.Record)
@@ -119,10 +119,10 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
 
 	case action.PublishBytecode:
-		return nil, e.bcfs.PublishBytecode(a.KernelID, a.SourcePath, a.Provenance)
+		return nil, e.bcfs.PublishBytecode(a.ProgramID, a.SourcePath, a.Provenance)
 
 	case action.RemoveProgramDir:
-		return nil, e.bcfs.RemoveProgram(a.KernelID)
+		return nil, e.bcfs.RemoveProgram(a.ProgramID)
 
 	case action.RemoveProgPin:
 		return nil, e.bpffs.RemoveProgPin(a.Path)
@@ -221,7 +221,7 @@ func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Ac
 // remaining extension links and, if not, removes it from both the
 // kernel and the store.
 func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
-	remaining, err := e.store.CountDispatcherLinks(ctx, state.KernelID)
+	remaining, err := e.store.CountDispatcherLinks(ctx, state.ProgramID)
 	if err != nil {
 		e.logger.WarnContext(ctx, "failed to count dispatcher links", "error", err)
 		return nil

@@ -37,7 +37,7 @@ func buildProgramRecord(
 		mapOwnerID = &ownerID
 	}
 	return bpfman.ProgramRecord{
-		KernelID: loaded.Program.ID,
+		ProgramID: loaded.Program.ID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(rt.ProgramBytecodePath(loaded.Program.ID)).
 			WithProgramName(spec.ProgramName()).
@@ -123,16 +123,16 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	var loaded []bpfman.Program
 	cleanupLoaded := func() {
 		for j := len(loaded) - 1; j >= 0; j-- {
-			if uerr := m.Unload(ctx, loaded[j].Record.KernelID); uerr != nil {
+			if uerr := m.Unload(ctx, loaded[j].Record.ProgramID); uerr != nil {
 				m.logger.Error("failed to unload during batch rollback",
-					"kernel_id", loaded[j].Record.KernelID, "error", uerr)
+					"program_id", loaded[j].Record.ProgramID, "error", uerr)
 			}
 		}
 	}
 
 	for i, spec := range specs {
 		if opts.ShareMaps && i > 0 && spec.MapOwnerID() == 0 {
-			spec = spec.WithMapOwnerID(loaded[0].Record.KernelID)
+			spec = spec.WithMapOwnerID(loaded[0].Record.ProgramID)
 		}
 
 		now := time.Now()
@@ -184,7 +184,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				}
 				m.logger.InfoContext(ctx, "loaded program",
 					"name", programName,
-					"kernel_id", loaded.Program.ID,
+					"program_id", loaded.Program.ID,
 					"pin_path", loaded.PinPath)
 				return loaded, nil
 			},
@@ -201,7 +201,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				return exec.Execute(ctx, action.CheckProgramNotInStore{
-					KernelID: l.Program.ID,
+					ProgramID: l.Program.ID,
 				})
 			},
 		),
@@ -210,11 +210,11 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				return exec.Execute(ctx, action.PublishBytecode{
-					KernelID:   l.Program.ID,
+					ProgramID:  l.Program.ID,
 					SourcePath: spec.ObjectPath(),
 					Provenance: fs.Provenance{
 						Version:     1,
-						KernelID:    l.Program.ID,
+						ProgramID:   l.Program.ID,
 						ProgramName: programName,
 						Source:      spec.ObjectPath(),
 						SourceKind:  sourceKindFromSpec(spec),
@@ -225,7 +225,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				l := operation.Get(b, loadedKey)
 				return []action.Action{
-					action.RemoveProgramDir{KernelID: l.Program.ID},
+					action.RemoveProgramDir{ProgramID: l.Program.ID},
 				}
 			}),
 		),
@@ -235,8 +235,8 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				l := operation.Get(b, loadedKey)
 				record := buildProgramRecord(spec, l, opts, rt, now)
 				return exec.Execute(ctx, action.SaveProgram{
-					KernelID: l.Program.ID,
-					Metadata: record,
+					ProgramID: l.Program.ID,
+					Metadata:  record,
 				})
 			},
 		),

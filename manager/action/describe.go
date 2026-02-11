@@ -7,17 +7,17 @@ func Describe(a Action) string {
 	switch a := a.(type) {
 	// Store actions
 	case SaveProgram:
-		return fmt.Sprintf("save program %d to store", a.KernelID)
+		return fmt.Sprintf("save program %d to store", a.ProgramID)
 	case DeleteProgram:
-		return fmt.Sprintf("delete program %d from store", a.KernelID)
+		return fmt.Sprintf("delete program %d from store", a.ProgramID)
 	case SaveLink:
 		return fmt.Sprintf("save link %d to store", a.Record.ID)
 	case DeleteLink:
 		return fmt.Sprintf("delete link %d from store", a.LinkID)
 	case GetProgramFromStore:
-		return fmt.Sprintf("get program %d from store", a.KernelID)
+		return fmt.Sprintf("get program %d from store", a.ProgramID)
 	case CheckProgramNotInStore:
-		return fmt.Sprintf("verify program %d not in store", a.KernelID)
+		return fmt.Sprintf("verify program %d not in store", a.ProgramID)
 
 	// Kernel load/unload
 	case LoadProgram:
@@ -47,7 +47,7 @@ func Describe(a Action) string {
 	case RemovePin:
 		return fmt.Sprintf("remove pin %s", a.Path)
 	case PublishBytecode:
-		return fmt.Sprintf("publish bytecode for program %d", a.KernelID)
+		return fmt.Sprintf("publish bytecode for program %d", a.ProgramID)
 
 	// Dispatcher actions
 	case SaveDispatcher:
@@ -83,7 +83,7 @@ func Describe(a Action) string {
 	case RemoveStagingDir:
 		return fmt.Sprintf("remove staging directory %s", a.Path)
 	case RemoveProgramDir:
-		return fmt.Sprintf("remove program directory for %d", a.KernelID)
+		return fmt.Sprintf("remove program directory for %d", a.ProgramID)
 	case DetachTCFilter:
 		return fmt.Sprintf("detach TC filter ifindex=%d priority=%d", a.Ifindex, a.Priority)
 

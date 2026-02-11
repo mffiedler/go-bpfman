@@ -93,7 +93,7 @@ Category: db-vs-kernel`,
 						out = append(out, Violation{
 							Severity:    SeverityError,
 							Category:    "db-vs-kernel",
-							Description: fmt.Sprintf("Program %d in DB not found in kernel (pin: %s)", p.KernelID, p.PinPath),
+							Description: fmt.Sprintf("Program %d in DB not found in kernel (pin: %s)", p.ProgramID, p.PinPath),
 						})
 					}
 				}
@@ -150,7 +150,7 @@ Category: db-vs-kernel`,
 						out = append(out, Violation{
 							Severity:    SeverityError,
 							Category:    "db-vs-kernel",
-							Description: fmt.Sprintf("Dispatcher %s nsid=%d ifindex=%d: program %d not found in kernel", d.DB.Type, d.DB.Nsid, d.DB.Ifindex, d.DB.KernelID),
+							Description: fmt.Sprintf("Dispatcher %s nsid=%d ifindex=%d: program %d not found in kernel", d.DB.Type, d.DB.Nsid, d.DB.Ifindex, d.DB.ProgramID),
 						})
 					}
 				}
@@ -240,7 +240,7 @@ Category: db-vs-fs`,
 						out = append(out, Violation{
 							Severity:    SeverityWarning,
 							Category:    "db-vs-fs",
-							Description: fmt.Sprintf("Program %d: pin path missing: %s", p.KernelID, p.PinPath),
+							Description: fmt.Sprintf("Program %d: pin path missing: %s", p.ProgramID, p.PinPath),
 						})
 					}
 				}
@@ -357,7 +357,7 @@ Category: fs-vs-db`,
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
 					// Skip live prog-pins - reported by kernel-program-pinned-but-not-in-db.
-					if o.Kind == OrphanProgPin && o.KernelID != 0 && s.KernelAlive(o.KernelID) {
+					if o.Kind == OrphanProgPin && o.ProgramID != 0 && s.KernelAlive(o.ProgramID) {
 						continue
 					}
 					out = append(out, Violation{
@@ -396,16 +396,16 @@ Category: kernel-vs-db`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanProgPin || o.KernelID == 0 {
+					if o.Kind != OrphanProgPin || o.ProgramID == 0 {
 						continue
 					}
-					if !s.KernelAlive(o.KernelID) {
+					if !s.KernelAlive(o.ProgramID) {
 						continue // not a live EBUSY risk
 					}
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "kernel-vs-db",
-						Description: fmt.Sprintf("Kernel program %d is pinned under %s but not tracked in DB; may cause EBUSY", o.KernelID, o.Path),
+						Description: fmt.Sprintf("Kernel program %d is pinned under %s but not tracked in DB; may cause EBUSY", o.ProgramID, o.Path),
 					})
 				}
 				return out
@@ -554,7 +554,7 @@ Category: gc-orphan-pin`,
 					if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
 						continue
 					}
-					if o.KernelID != 0 && s.KernelAlive(o.KernelID) {
+					if o.ProgramID != 0 && s.KernelAlive(o.ProgramID) {
 						continue // kernel object alive; leave it
 					}
 					out = append(out, Violation{
@@ -711,13 +711,13 @@ Category: gc-orphan-pin`,
 				if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
 					continue
 				}
-				if o.KernelID == 0 || !s.KernelAlive(o.KernelID) {
+				if o.ProgramID == 0 || !s.KernelAlive(o.ProgramID) {
 					continue // dead orphans handled by orphan-program-artefacts
 				}
 				out = append(out, Violation{
 					Severity:    SeverityWarning,
 					Category:    "gc-orphan-pin",
-					Description: fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.KernelID),
+					Description: fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.ProgramID),
 					Op: &Operation{
 						Description: fmt.Sprintf("remove %s", o.Path),
 						Actions:     []action.Action{orphanPinAction(o)},

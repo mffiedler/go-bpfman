@@ -180,7 +180,7 @@ func attachXDPExtensionWithRetry(
 ) (extensionResult, error) {
 	dispType := dispatcher.DispatcherTypeXDP
 
-	position, err := store.CountDispatcherLinks(ctx, ds.KernelID)
+	position, err := store.CountDispatcherLinks(ctx, ds.ProgramID)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links: %w", err)
 	}
@@ -206,7 +206,7 @@ func attachXDPExtensionWithRetry(
 
 	logger.WarnContext(ctx, "dispatcher pin missing, recreating",
 		"prog_pin_path", progPinPath,
-		"dispatcher_id", ds.KernelID,
+		"dispatcher_id", ds.ProgramID,
 		"error", err)
 
 	if delErr := store.DeleteDispatcher(ctx, string(dispType), ds.Nsid, ds.Ifindex); delErr != nil {
@@ -217,7 +217,7 @@ func attachXDPExtensionWithRetry(
 		return extensionResult{}, fmt.Errorf("recreate XDP dispatcher: %w", err)
 	}
 
-	position, err = store.CountDispatcherLinks(ctx, ds.KernelID)
+	position, err = store.CountDispatcherLinks(ctx, ds.ProgramID)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links after recreate: %w", err)
 	}
@@ -256,7 +256,7 @@ func attachTCExtensionWithRetry(
 	programName string,
 	mapPinDir string,
 ) (extensionResult, error) {
-	position, err := store.CountDispatcherLinks(ctx, ds.KernelID)
+	position, err := store.CountDispatcherLinks(ctx, ds.ProgramID)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links: %w", err)
 	}
@@ -282,7 +282,7 @@ func attachTCExtensionWithRetry(
 
 	logger.WarnContext(ctx, "dispatcher pin missing, recreating",
 		"prog_pin_path", progPinPath,
-		"dispatcher_id", ds.KernelID,
+		"dispatcher_id", ds.ProgramID,
 		"error", err)
 
 	if delErr := store.DeleteDispatcher(ctx, string(dispType), ds.Nsid, ds.Ifindex); delErr != nil {
@@ -293,7 +293,7 @@ func attachTCExtensionWithRetry(
 		return extensionResult{}, fmt.Errorf("recreate TC dispatcher: %w", err)
 	}
 
-	position, err = store.CountDispatcherLinks(ctx, ds.KernelID)
+	position, err = store.CountDispatcherLinks(ctx, ds.ProgramID)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links after recreate: %w", err)
 	}
@@ -323,12 +323,12 @@ func computeXDPDispatcherState(
 	result *platform.XDPDispatcherResult,
 ) dispatcher.State {
 	return dispatcher.State{
-		Type:     dispType,
-		Nsid:     nsid,
-		Ifindex:  ifindex,
-		Revision: revision,
-		KernelID: result.DispatcherID,
-		LinkID:   result.LinkID,
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ifindex,
+		Revision:  revision,
+		ProgramID: result.DispatcherID,
+		LinkID:    result.LinkID,
 	}
 }
 
@@ -341,11 +341,11 @@ func computeTCDispatcherState(
 	result *platform.TCDispatcherResult,
 ) dispatcher.State {
 	return dispatcher.State{
-		Type:     dispType,
-		Nsid:     nsid,
-		Ifindex:  ifindex,
-		Revision: revision,
-		KernelID: result.DispatcherID,
-		Priority: result.Priority,
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ifindex,
+		Revision:  revision,
+		ProgramID: result.DispatcherID,
+		Priority:  result.Priority,
 	}
 }

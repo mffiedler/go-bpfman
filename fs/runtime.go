@@ -25,7 +25,7 @@ const (
 // operational code paths.
 type Provenance struct {
 	Version     int              `json:"version"`
-	KernelID    kernel.ProgramID `json:"kernel_id"`
+	ProgramID   kernel.ProgramID `json:"program_id"`
 	ProgramName string           `json:"program_name"`
 	Source      string           `json:"source"`
 	SourceKind  string           `json:"source_kind"` // "file", "image", "unknown"
@@ -248,9 +248,9 @@ func (rt Bytecode) RemoveStagingDir(path string) error {
 
 // ProgramDirEntry represents a directory under <base>/programs/.
 type ProgramDirEntry struct {
-	Path     string           // Full path to the directory
-	KernelID kernel.ProgramID // Parsed kernel ID; 0 if name is not numeric
-	Numeric  bool             // True if directory name is a valid numeric kernel ID
+	Path      string           // Full path to the directory
+	ProgramID kernel.ProgramID // Parsed program ID; 0 if name is not numeric
+	Numeric   bool             // True if directory name is a valid numeric program ID
 }
 
 // ScanProgramDirs returns all directories under <base>/programs/.
@@ -277,7 +277,7 @@ func (rt Bytecode) ScanProgramDirs() ([]ProgramDirEntry, error) {
 			Path: filepath.Join(programsPath, name),
 		}
 		if id, err := strconv.ParseUint(name, 10, 32); err == nil {
-			pde.KernelID = kernel.ProgramID(id)
+			pde.ProgramID = kernel.ProgramID(id)
 			pde.Numeric = true
 		}
 		result = append(result, pde)

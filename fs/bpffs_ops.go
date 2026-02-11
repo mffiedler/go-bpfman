@@ -42,9 +42,9 @@ func (b BPFFS) removeDir(path string) error {
 
 // RemoveProgPin removes a bpfman program pin of the form:
 //
-//	{bpffs}/prog_{kernel_id}
+//	{bpffs}/prog_{program_id}
 //
-// The suffix must be a valid numeric kernel ID.
+// The suffix must be a valid numeric program ID.
 func (b BPFFS) RemoveProgPin(path string) error {
 	path, err := b.cleanUnderMount(path)
 	if err != nil {

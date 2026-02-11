@@ -87,13 +87,13 @@ func (s *sqliteStore) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error
 	return result, nil
 }
 
-// ListLinksByProgram returns all links for a given program kernel ID with
+// ListLinksByProgram returns all links for a given program ID with
 // their details populated.
-func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
+func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	start := time.Now()
-	rows, err := s.stmtListLinksByProgram.QueryContext(ctx, programKernelID)
+	rows, err := s.stmtListLinksByProgram.QueryContext(ctx, programID)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programKernelID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -102,7 +102,7 @@ func (s *sqliteStore) ListLinksByProgram(ctx context.Context, programKernelID ke
 	if err != nil {
 		return nil, err
 	}
-	s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programKernelID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
+	s.logger.Debug("sql", "stmt", "ListLinksByProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
 
 	// Batch-fetch all details and populate links
 	if err := s.populateLinkDetails(ctx, result); err != nil {

@@ -143,8 +143,8 @@ func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, 
 
 	for _, prog := range result.Programs {
 		if prog.Record.Handles.MapOwnerID != nil && *prog.Record.Handles.MapOwnerID == ownerID {
-			if err := c.deleteProgram(ctx, mgr, prog.Record.KernelID); err != nil {
-				return fmt.Errorf("delete dependent program %d: %w", prog.Record.KernelID, err)
+			if err := c.deleteProgram(ctx, mgr, prog.Record.ProgramID); err != nil {
+				return fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
 			}
 		}
 	}

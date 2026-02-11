@@ -176,8 +176,8 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 }
 
 // Unload is a convenience wrapper that calls Manager.Unload directly.
-func (f *testFixture) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
-	return f.Manager.Unload(ctx, kernelID)
+func (f *testFixture) Unload(ctx context.Context, programID kernel.ProgramID) error {
+	return f.Manager.Unload(ctx, programID)
 }
 
 // Attach is a convenience wrapper that calls Manager.Attach directly.

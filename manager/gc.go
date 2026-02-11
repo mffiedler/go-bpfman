@@ -42,10 +42,10 @@ func computeStoreGC(
 		}
 	}
 	for _, id := range dependents {
-		actions = append(actions, action.DeleteProgram{KernelID: id})
+		actions = append(actions, action.DeleteProgram{ProgramID: id})
 	}
 	for _, id := range owners {
-		actions = append(actions, action.DeleteProgram{KernelID: id})
+		actions = append(actions, action.DeleteProgram{ProgramID: id})
 	}
 
 	// Phase 2: stale dispatchers. Track which dispatcher keys were
@@ -57,7 +57,7 @@ func computeStoreGC(
 	}
 	deletedDispatchers := make(map[dispKey]bool)
 	for _, disp := range dispatchers {
-		if !kernelPrograms[disp.KernelID] {
+		if !kernelPrograms[disp.ProgramID] {
 			actions = append(actions, action.DeleteDispatcher{
 				Type:    string(disp.Type),
 				Nsid:    disp.Nsid,
@@ -88,7 +88,7 @@ func computeStoreGC(
 			if deletedDispatchers[dk] {
 				continue // already deleted in phase 2
 			}
-			if countExtensionLinks(links, deletedLinks, disp.KernelID) == 0 {
+			if countExtensionLinks(links, deletedLinks, disp.ProgramID) == 0 {
 				actions = append(actions, action.DeleteDispatcher{
 					Type:    string(disp.Type),
 					Nsid:    disp.Nsid,
@@ -116,7 +116,7 @@ func countByType[T action.Action](actions []action.Action) int {
 // countExtensionLinks counts the non-deleted extension links that
 // reference the given dispatcher kernel ID. An extension link is an
 // XDP or TC link whose DispatcherID matches.
-func countExtensionLinks(links []bpfman.LinkRecord, deletedLinks map[kernel.LinkID]bool, dispatcherKernelID kernel.ProgramID) int {
+func countExtensionLinks(links []bpfman.LinkRecord, deletedLinks map[kernel.LinkID]bool, dispatcherProgramID kernel.ProgramID) int {
 	count := 0
 	for _, link := range links {
 		if deletedLinks[link.ID] {
@@ -124,11 +124,11 @@ func countExtensionLinks(links []bpfman.LinkRecord, deletedLinks map[kernel.Link
 		}
 		switch d := link.Details.(type) {
 		case bpfman.XDPDetails:
-			if d.DispatcherID == dispatcherKernelID {
+			if d.DispatcherID == dispatcherProgramID {
 				count++
 			}
 		case bpfman.TCDetails:
-			if d.DispatcherID == dispatcherKernelID {
+			if d.DispatcherID == dispatcherProgramID {
 				count++
 			}
 		}

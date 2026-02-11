@@ -78,7 +78,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Kernel-alive index: any program present in the kernel.
 	for _, p := range world.Programs {
 		if p.Presence.InKernel {
-			s.kernelAlive[p.KernelID] = true
+			s.kernelAlive[p.ProgramID] = true
 		}
 	}
 
@@ -88,7 +88,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	dbDispatcherKeys := make(map[string]bool)
 
 	for _, p := range world.ManagedPrograms() {
-		dbProgIDs[p.KernelID] = true
+		dbProgIDs[p.ProgramID] = true
 		if p.Managed != nil && p.Managed.Handles.PinPath != "" {
 			dbProgPins[p.Managed.Handles.PinPath] = true
 		}
@@ -105,8 +105,8 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 		if d.Managed == nil {
 			continue
 		}
-		if count, err := store.CountDispatcherLinks(ctx, d.Managed.KernelID); err == nil {
-			s.dbDispatcherExtCount[d.Managed.KernelID] = count
+		if count, err := store.CountDispatcherLinks(ctx, d.Managed.ProgramID); err == nil {
+			s.dbDispatcherExtCount[d.Managed.ProgramID] = count
 		}
 	}
 
@@ -148,9 +148,9 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
-			Path:     pin.Path,
-			KernelID: pin.KernelID,
-			Kind:     OrphanProgPin,
+			Path:      pin.Path,
+			ProgramID: pin.ProgramID,
+			Kind:      OrphanProgPin,
 		})
 	}
 
@@ -160,9 +160,9 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
-			Path:     dir.Path,
-			KernelID: dir.ProgramID,
-			Kind:     OrphanLinkDir,
+			Path:      dir.Path,
+			ProgramID: dir.ProgramID,
+			Kind:      OrphanLinkDir,
 		})
 	}
 
@@ -172,9 +172,9 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 			continue
 		}
 		s.orphans = append(s.orphans, FsOrphan{
-			Path:     dir.Path,
-			KernelID: dir.ProgramID,
-			Kind:     OrphanMapDir,
+			Path:      dir.Path,
+			ProgramID: dir.ProgramID,
+			Kind:      OrphanMapDir,
 		})
 	}
 
@@ -215,11 +215,11 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 	for _, pde := range programDirs {
 		if pde.Numeric {
-			if !dbProgIDs[pde.KernelID] {
+			if !dbProgIDs[pde.ProgramID] {
 				s.orphans = append(s.orphans, FsOrphan{
-					Path:     pde.Path,
-					KernelID: pde.KernelID,
-					Kind:     OrphanProgramDir,
+					Path:      pde.Path,
+					ProgramID: pde.ProgramID,
+					Kind:      OrphanProgramDir,
 				})
 			}
 		} else {
@@ -261,10 +261,10 @@ func (s *ObservedState) Programs() []ProgramState {
 	}
 	for _, p := range s.world.ManagedPrograms() {
 		ps := ProgramState{
-			KernelID: p.KernelID,
-			DB:       p.Managed,
-			Kernel:   p.Presence.InKernel,
-			PinPath:  p.PinPath(),
+			ProgramID: p.ProgramID,
+			DB:        p.Managed,
+			Kernel:    p.Presence.InKernel,
+			PinPath:   p.PinPath(),
 		}
 		// For managed programs, inspect always checks the pin
 		// path, so Presence.InFS is definitive.
@@ -346,7 +346,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		}
 
 		// Extension link count from gathered facts.
-		if count, found := s.dbDispatcherExtCount[d.KernelID]; found {
+		if count, found := s.dbDispatcherExtCount[d.ProgramID]; found {
 			ds.LinkCount = count
 		}
 
@@ -377,8 +377,8 @@ func (s *ObservedState) DispatcherFsLinkCount(ds DispatcherState) int {
 }
 
 // KernelAlive reports whether a kernel program ID is alive.
-func (s *ObservedState) KernelAlive(kernelID kernel.ProgramID) bool {
-	return s.kernelAlive[kernelID]
+func (s *ObservedState) KernelAlive(programID kernel.ProgramID) bool {
+	return s.kernelAlive[programID]
 }
 
 // LiveOrphans returns the count of orphan program pins where the
@@ -390,7 +390,7 @@ func (s *ObservedState) KernelAlive(kernelID kernel.ProgramID) bool {
 func (s *ObservedState) LiveOrphans() int {
 	count := 0
 	for _, o := range s.orphans {
-		if o.Kind == OrphanProgPin && o.KernelID != 0 && s.kernelAlive[o.KernelID] {
+		if o.Kind == OrphanProgPin && o.ProgramID != 0 && s.kernelAlive[o.ProgramID] {
 			count++
 		}
 	}

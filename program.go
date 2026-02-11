@@ -135,15 +135,15 @@ type ProgramMeta struct {
 }
 
 // ProgramRecord is the stored record of a loaded program (DB-backed).
-// KernelID is the DB primary key and user-facing identity.
+// ProgramID is the DB primary key and user-facing identity.
 //
 // Note: ProgramRecord is distinct from LoadSpec. LoadSpec describes how to load
 // a program (validated input), while ProgramRecord describes a loaded program's
 // stored state (output). They share some fields but serve different purposes.
 type ProgramRecord struct {
-	// Identity - KernelID is the DB primary key and user-facing ID
-	KernelID kernel.ProgramID `json:"kernel_id"`
-	Load     LoadSpec         `json:"load"`
+	// Identity - ProgramID is the DB primary key and user-facing ID
+	ProgramID kernel.ProgramID `json:"program_id"`
+	Load      LoadSpec         `json:"load"`
 	// License and GPLCompatible are discovered at load time from the ELF.
 	// They live on ProgramRecord (not LoadSpec) because they're properties
 	// of the loaded program, not part of the load request.

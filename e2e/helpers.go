@@ -211,9 +211,9 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 }
 
 // Unload unloads a BPF program.
-func (e *TestEnv) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
+func (e *TestEnv) Unload(ctx context.Context, programID kernel.ProgramID) error {
 	return e.runWithLock(ctx, func(ctx context.Context) error {
-		return e.Manager.Unload(ctx, kernelID)
+		return e.Manager.Unload(ctx, programID)
 	})
 }
 
@@ -227,8 +227,8 @@ func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 }
 
 // Get returns detailed information about a program.
-func (e *TestEnv) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.Program, error) {
-	return e.Manager.Get(ctx, kernelID)
+func (e *TestEnv) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.Program, error) {
+	return e.Manager.Get(ctx, programID)
 }
 
 // Attach attaches a program using the given spec.  The lock scope is

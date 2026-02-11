@@ -17,11 +17,11 @@ import (
 
 // Load loads a BPF program into the kernel.
 //
-// Load loads a BPF program and pins it using kernel ID-based paths.
+// Load loads a BPF program and pins it using program ID-based paths.
 //
 // Pin paths follow the upstream bpfman convention, computed via bpffs methods:
-//   - Program: bpffs.ProgPinPath(kernel_id)
-//   - Maps: bpffs.MapPinDir(kernel_id)/<map_name>
+//   - Program: bpffs.ProgPinPath(program_id)
+//   - Maps: bpffs.MapPinDir(program_id)/<map_name>
 //
 // On failure, all successfully pinned objects are cleaned up.
 //
@@ -142,7 +142,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	if !ok {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to get program ID from kernel")
 	}
-	kernelID := kernel.ProgramID(progID)
+	programID := kernel.ProgramID(progID)
 
 	// Track pinned paths for rollback on failure.
 	// Use BPFFS safe removal to ensure we only remove paths under the bpffs mount.
@@ -156,7 +156,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	}
 
 	// Pin program using bpffs convention
-	progPinPath := bpffs.ProgPinPath(kernelID)
+	progPinPath := bpffs.ProgPinPath(programID)
 	if err := prog.Pin(progPinPath); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to pin program: %w", err)
 	}
@@ -170,13 +170,13 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		// Use owner's maps directory - maps are already pinned there
 		mapsDir = ownerMapsDir
 		k.logger.Debug("using shared maps from owner",
-			"program_id", kernelID,
+			"program_id", programID,
 			"map_owner_id", mapOwnerID,
 			"maps_dir", mapsDir)
 	} else {
 		// Create our own maps directory using bpffs convention
-		mapsDir = bpffs.MapPinDir(kernelID)
-		if err := bpffs.EnsureMapsDir(kernelID); err != nil {
+		mapsDir = bpffs.MapPinDir(programID)
+		if err := bpffs.EnsureMapsDir(programID); err != nil {
 			cleanup()
 			return bpfman.LoadOutput{}, fmt.Errorf("failed to create maps directory: %w", err)
 		}
@@ -186,7 +186,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
-			mapPinPath := bpffs.MapPinPath(kernelID, name)
+			mapPinPath := bpffs.MapPinPath(programID, name)
 			if err := m.Pin(mapPinPath); err != nil {
 				cleanup()
 				if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {

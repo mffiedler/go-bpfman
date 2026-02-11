@@ -18,7 +18,7 @@ import (
 // ColumnSpec defines a single column for custom-columns output.
 type ColumnSpec struct {
 	Name     string // Column header
-	JSONPath string // JSONPath expression (e.g., ".record.kernel_id")
+	JSONPath string // JSONPath expression (e.g., ".record.program_id")
 }
 
 // ColumnSet holds multiple column specifications.
@@ -29,7 +29,7 @@ type ColumnSet struct {
 // ColumnInfo is for documentation/explain output.
 // It extends ColumnSpec with description and computed flag.
 type ColumnInfo struct {
-	Name        string // Column name (e.g., "KERNEL_ID")
+	Name        string // Column name (e.g., "PROGRAM_ID")
 	JSONPath    string // JSONPath expression (empty if Computed)
 	Description string // Human-readable description
 	Computed    bool   // True for special columns that need custom extraction
@@ -39,7 +39,7 @@ type ColumnInfo struct {
 // This is the authoritative source - DefaultColumns/WideColumns derive from it.
 func ProgramColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
-		{Name: "KERNEL_ID", JSONPath: ".record.kernel_id", Description: "Kernel-assigned program ID"},
+		{Name: "PROGRAM_ID", JSONPath: ".record.program_id", Description: "Program ID"},
 		{Name: "TYPE", JSONPath: ".record.load.program_type", Description: "Program type (xdp, tc, etc.)"},
 		{Name: "NAME", JSONPath: ".record.meta.name", Description: "User-defined name"},
 		{Name: "SOURCE", JSONPath: ".record.load.object_path", Description: "BPF object path (source)"},
@@ -96,13 +96,13 @@ func selectProgramColumns(names []string) (ColumnSet, error) {
 
 // Column name constants for default and wide output.
 var (
-	defaultColumnNames = []string{"KERNEL_ID", "TYPE", "NAME", "SOURCE"}
-	wideColumnNames    = []string{"KERNEL_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
+	defaultColumnNames = []string{"PROGRAM_ID", "TYPE", "NAME", "SOURCE"}
+	wideColumnNames    = []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 )
 
 // ParseCustomColumns parses a custom-columns spec string.
 // Format: NAME:.jsonpath,NAME2:.jsonpath2
-// Example: ID:.record.kernel_id,NAME:.record.meta.name
+// Example: ID:.record.program_id,NAME:.record.meta.name
 func ParseCustomColumns(spec string) (ColumnSet, error) {
 	if spec == "" {
 		return ColumnSet{}, fmt.Errorf("custom-columns spec cannot be empty")
@@ -148,7 +148,7 @@ func ParseCustomColumns(spec string) (ColumnSet, error) {
 // ParseCustomColumnsFile parses a custom-columns file.
 // Format: Two lines, whitespace-separated
 // Line 1: Column headers (e.g., "ID NAME MAPS")
-// Line 2: JSONPath expressions (e.g., ".record.kernel_id .record.meta.name .status.kernel.map_ids")
+// Line 2: JSONPath expressions (e.g., ".record.program_id .record.meta.name .status.kernel.map_ids")
 func ParseCustomColumnsFile(path string) (ColumnSet, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -322,7 +322,7 @@ func (cs ColumnSet) FormatTable(programs []bpfman.Program) string {
 }
 
 // DefaultColumns returns the standard table columns.
-// Matches the current default: KERNEL_ID, TYPE, NAME, SOURCE
+// Matches the current default: PROGRAM_ID, TYPE, NAME, SOURCE
 func DefaultColumns() ColumnSet {
 	return MustSelectProgramColumns(defaultColumnNames)
 }

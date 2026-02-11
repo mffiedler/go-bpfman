@@ -58,7 +58,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 		results = append(results, &pb.ListResponse_ListResult{
 			Info: info,
 			KernelInfo: &pb.KernelProgramInfo{
-				Id:          uint32(prog.Record.KernelID),
+				Id:          uint32(prog.Record.ProgramID),
 				Name:        kp.Name,
 				ProgramType: uint32(prog.Record.Load.ProgramType()),
 				Tag:         kp.Tag,

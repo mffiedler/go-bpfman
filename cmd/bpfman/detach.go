@@ -10,7 +10,7 @@ import (
 // DetachCmd detaches links.
 type DetachCmd struct {
 	OutputFlags
-	LinkIDs []LinkID `arg:"" name:"link-id" help:"Kernel link IDs to detach." required:""`
+	LinkIDs []LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
 }
 
 // Run executes the detach command: mutation under lock, output outside.

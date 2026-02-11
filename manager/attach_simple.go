@@ -40,8 +40,8 @@ type attachPlan struct {
 
 // attachParams describes a non-dispatcher attach operation.
 type attachParams struct {
-	// programKernelID is the kernel ID of the program to attach.
-	programKernelID kernel.ProgramID
+	// programID is the kernel ID of the program to attach.
+	programID kernel.ProgramID
 	// defaultTarget is used for plan node labels. The actual target
 	// may differ once the program record is fetched (e.g., fentry
 	// resolves the function name from the record).
@@ -72,7 +72,7 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 	link := operation.Get(b, linkKey)
 	m.logger.InfoContext(ctx, "attached",
 		"link_id", link.Record.ID,
-		"program_id", p.programKernelID,
+		"program_id", p.programID,
 		"target", pa.plan.target,
 		"pin_path", pa.linkPinPath)
 
@@ -91,16 +91,16 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 	return operation.Build(
 		operation.Produce(preparedKey, p.defaultTarget,
 			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (preparedAttach, error) {
-				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{KernelID: p.programKernelID})
+				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{ProgramID: p.programID})
 				if err != nil {
 					return preparedAttach{}, err
 				}
-				progPinPath := m.rt.BPFFS().ProgPinPath(p.programKernelID)
+				progPinPath := m.rt.BPFFS().ProgPinPath(p.programID)
 				ap, err := p.prepare(prog, progPinPath)
 				if err != nil {
 					return preparedAttach{}, err
 				}
-				linkPinPath := m.rt.BPFFS().LinkPinPath(p.programKernelID, ap.linkName)
+				linkPinPath := m.rt.BPFFS().LinkPinPath(p.programID, ap.linkName)
 				return preparedAttach{plan: ap, linkPinPath: linkPinPath}, nil
 			},
 		),
@@ -124,7 +124,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
 					out.LinkID,
-					p.programKernelID,
+					p.programID,
 					pa.plan.details,
 					*bpfman.NewLinkPath(pa.linkPinPath),
 					time.Now(),

@@ -13,24 +13,24 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// Get retrieves program metadata by kernel ID.
+// Get retrieves program metadata by program ID.
 // Returns platform.ErrRecordNotFound if the program does not exist.
-func (s *sqliteStore) Get(ctx context.Context, kernelID kernel.ProgramID) (bpfman.ProgramRecord, error) {
+func (s *sqliteStore) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.ProgramRecord, error) {
 	start := time.Now()
-	row := s.stmtGetProgram.QueryRowContext(ctx, kernelID)
+	row := s.stmtGetProgram.QueryRowContext(ctx, programID)
 
 	prog, err := s.scanProgram(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows", 0)
+		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return bpfman.ProgramRecord{}, platform.ErrRecordNotFound
 	}
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return bpfman.ProgramRecord{}, err
 	}
-	s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows", 1)
+	s.logger.Debug("sql", "stmt", "GetProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
-	prog.KernelID = kernelID
+	prog.ProgramID = programID
 	return prog, nil
 }
 
@@ -175,7 +175,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 // as a clear signal that the kernel_id was reused.
 //
 // For atomicity with other operations, wrap in RunInTransaction.
-func (s *sqliteStore) Save(ctx context.Context, kernelID kernel.ProgramID, metadata bpfman.ProgramRecord) error {
+func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error {
 	// Marshal JSON fields
 	var globalDataJSON, imageSourceJSON sql.NullString
 	if metadata.Load.GlobalData() != nil {
@@ -245,7 +245,7 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID kernel.ProgramID, metad
 
 	start := time.Now()
 	result, err := s.stmtSaveProgram.ExecContext(ctx,
-		kernelID,
+		programID,
 		metadata.Meta.Name,
 		metadata.Load.ProgramType().String(),
 		metadata.Load.ObjectPath(),
@@ -264,39 +264,39 @@ func (s *sqliteStore) Save(ctx context.Context, kernelID kernel.ProgramID, metad
 		now,
 	)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{kernelID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{programID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert program: %w", err)
 	}
 	rows, _ := result.RowsAffected()
-	s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{kernelID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
+	s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{programID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 
 	return nil
 }
 
 // Delete removes program metadata.
-func (s *sqliteStore) Delete(ctx context.Context, kernelID kernel.ProgramID) error {
+func (s *sqliteStore) Delete(ctx context.Context, programID kernel.ProgramID) error {
 	start := time.Now()
-	result, err := s.stmtDeleteProgram.ExecContext(ctx, kernelID)
+	result, err := s.stmtDeleteProgram.ExecContext(ctx, programID)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return err
 	}
 	rows, _ := result.RowsAffected()
-	s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
+	s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 	return nil
 }
 
 // CountDependentPrograms returns the number of programs that share maps with
-// the given program (i.e., programs where map_owner_id = kernelID).
-func (s *sqliteStore) CountDependentPrograms(ctx context.Context, kernelID kernel.ProgramID) (int, error) {
+// the given program (i.e., programs where map_owner_id = programID).
+func (s *sqliteStore) CountDependentPrograms(ctx context.Context, programID kernel.ProgramID) (int, error) {
 	start := time.Now()
 	var count int
-	err := s.stmtCountDependentPrograms.QueryRowContext(ctx, kernelID).Scan(&count)
+	err := s.stmtCountDependentPrograms.QueryRowContext(ctx, programID).Scan(&count)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, err
 	}
-	s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{kernelID}, "duration_ms", msec(time.Since(start)), "count", count)
+	s.logger.Debug("sql", "stmt", "CountDependentPrograms", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
 }
 
@@ -313,12 +313,12 @@ func (s *sqliteStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.Pro
 
 	result := make(map[kernel.ProgramID]bpfman.ProgramRecord)
 	for rows.Next() {
-		kernelID, prog, err := s.scanProgramFromRows(rows)
+		programID, prog, err := s.scanProgramFromRows(rows)
 		if err != nil {
 			return nil, err
 		}
-		prog.KernelID = kernelID
-		result[kernelID] = prog
+		prog.ProgramID = programID
+		result[programID] = prog
 	}
 
 	if err := rows.Err(); err != nil {
@@ -332,7 +332,7 @@ func (s *sqliteStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.Pro
 // scanProgramFromRows scans a single row from *sql.Rows into a ProgramRecord struct.
 // The row must include the tags and metadata columns.
 func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpfman.ProgramRecord, error) {
-	var kernelID kernel.ProgramID
+	var programID kernel.ProgramID
 	var programName, programTypeStr, objectPath, pinPath string
 	var attachFunc, globalDataJSON, mapPinPath, imageSourceJSON, owner, description, license, metadataJSON sql.NullString
 	var mapOwnerID sql.NullInt64
@@ -340,7 +340,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	var createdAtStr, updatedAtStr string
 
 	err := rows.Scan(
-		&kernelID,
+		&programID,
 		&programName,
 		&programTypeStr,
 		&objectPath,
@@ -365,7 +365,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	// Parse program type
 	programType, ok := bpfman.ParseProgramType(programTypeStr)
 	if !ok {
-		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid program type for %d: %q", kernelID, programTypeStr)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid program type for %d: %q", programID, programTypeStr)
 	}
 
 	// Parse nullable scalar fields
@@ -390,7 +390,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	var metadata map[string]string
 	if globalDataJSON.Valid {
 		if err := json.Unmarshal([]byte(globalDataJSON.String), &globalData); err != nil {
-			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal global_data for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal global_data for %d: %w", programID, err)
 		}
 	}
 	if imageSourceJSON.Valid {
@@ -400,7 +400,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imgSrc); err != nil {
-			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", programID, err)
 		}
 		imageURL = imgSrc.URL
 		imageDigest = imgSrc.Digest
@@ -408,18 +408,18 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
-			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal metadata for %d: %w", kernelID, err)
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal metadata for %d: %w", programID, err)
 		}
 	}
 
 	// Parse timestamps
 	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
-		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp for %d: %q: %w", kernelID, createdAtStr, err)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp for %d: %q: %w", programID, createdAtStr, err)
 	}
 	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
 	if err != nil {
-		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp for %d: %q: %w", kernelID, updatedAtStr, err)
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp for %d: %q: %w", programID, updatedAtStr, err)
 	}
 
 	// Parse license field
@@ -430,7 +430,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 
 	// Build the ProgramRecord from the stored fields using nested structs
 	prog := bpfman.ProgramRecord{
-		KernelID: kernelID,
+		ProgramID: programID,
 		Load: bpfman.LoadSpec{}.
 			WithObjectPath(objectPath).
 			WithProgramName(programName).
@@ -459,5 +459,5 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 		prog.Meta.Description = description.String
 	}
 
-	return kernelID, prog, nil
+	return programID, prog, nil
 }

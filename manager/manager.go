@@ -207,7 +207,7 @@ func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error)
 		pinPath := m.rt.BPFFS().ProgPinPath(id)
 		if !scanner.PathExists(pinPath) {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
-				"kernel_id", id, "pin_path", pinPath)
+				"program_id", id, "pin_path", pinPath)
 			delete(kernelProgramIDs, id)
 		}
 	}

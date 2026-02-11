@@ -17,12 +17,12 @@ import (
 // This is the internal workhorse; it takes data directly, bypassing
 // the store lookup and dependency checks that the public Unload
 // performs.
-func (m *Manager) unload(ctx context.Context, kernelID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
-	progPinPath := m.rt.BPFFS().ProgPinPath(kernelID)
-	mapsDir := m.rt.BPFFS().MapPinDir(kernelID)
-	linksDir := m.rt.BPFFS().LinkPinDir(kernelID)
+func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, programName string, links []bpfman.LinkRecord, persisted bool) error {
+	progPinPath := m.rt.BPFFS().ProgPinPath(programID)
+	mapsDir := m.rt.BPFFS().MapPinDir(programID)
+	linksDir := m.rt.BPFFS().LinkPinDir(programID)
 
-	plan := m.unloadPlan(kernelID, programName, progPinPath, mapsDir, linksDir, links, persisted)
+	plan := m.unloadPlan(programID, programName, progPinPath, mapsDir, linksDir, links, persisted)
 	return operation.Run0(ctx, m.logger, m.executor, plan)
 }
 
@@ -30,15 +30,15 @@ func (m *Manager) unload(ctx context.Context, kernelID kernel.ProgramID, program
 //
 // Preflight failures (store lookup, dependency check) return plain
 // errors. Execution failures return plain errors.
-func (m *Manager) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
+func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) error {
 	// FETCH: Get metadata and links (for link cleanup)
-	progSpec, err := m.getProgram(ctx, kernelID)
+	progSpec, err := m.getProgram(ctx, programID)
 	if err != nil {
 		// Distinguish "not found" from "not managed" by checking kernel.
 		var notFound bpfman.ErrProgramNotFound
 		if errors.As(err, &notFound) {
-			if _, kerr := m.kernel.GetProgramByID(ctx, kernelID); kerr == nil {
-				return bpfman.ErrProgramNotManaged{ID: kernelID}
+			if _, kerr := m.kernel.GetProgramByID(ctx, programID); kerr == nil {
+				return bpfman.ErrProgramNotManaged{ID: programID}
 			}
 		}
 		return err
@@ -48,17 +48,17 @@ func (m *Manager) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 
 	// FETCH: Check for dependent programs (map sharing)
 	// Programs that share maps with this program must be unloaded first.
-	depCount, err := m.store.CountDependentPrograms(ctx, kernelID)
+	depCount, err := m.store.CountDependentPrograms(ctx, programID)
 	if err != nil {
-		return fmt.Errorf("check dependent programs for %d: %w", kernelID, err)
+		return fmt.Errorf("check dependent programs for %d: %w", programID, err)
 	}
 	if depCount > 0 {
-		return fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", kernelID, depCount)
+		return fmt.Errorf("cannot unload program %d: %d dependent program(s) share its maps; unload dependents first", programID, depCount)
 	}
 
-	links, err := m.store.ListLinksByProgram(ctx, kernelID)
+	links, err := m.store.ListLinksByProgram(ctx, programID)
 	if err != nil {
-		return fmt.Errorf("list links for program %d: %w", kernelID, err)
+		return fmt.Errorf("list links for program %d: %w", programID, err)
 	}
 
 	// FETCH: Collect dispatcher keys for any TC/XDP links before
@@ -66,16 +66,16 @@ func (m *Manager) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 	// to check whether the dispatchers are now empty afterwards.
 	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
 
-	m.logger.InfoContext(ctx, "unloading program", "kernel_id", kernelID, "links", len(links))
+	m.logger.InfoContext(ctx, "unloading program", "program_id", programID, "links", len(links))
 
-	if err := m.unload(ctx, kernelID, programName, links, true); err != nil {
+	if err := m.unload(ctx, programID, programName, links, true); err != nil {
 		return err
 	}
 
 	// Clean up any dispatchers left empty by the link removal.
 	m.cleanupEmptyDispatchers(ctx, dispatcherKeys)
 
-	m.logger.InfoContext(ctx, "unloaded program", "kernel_id", kernelID)
+	m.logger.InfoContext(ctx, "unloaded program", "program_id", programID)
 	return nil
 }
 
@@ -89,7 +89,7 @@ func (m *Manager) Unload(ctx context.Context, kernelID kernel.ProgramID) error {
 // When persisted is false the delete-program node is omitted. This
 // is used during batch Load cleanup where programs have not yet been
 // saved to the store.
-func (m *Manager) unloadPlan(kernelID kernel.ProgramID, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
+func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
 	var nodes []operation.Node
 
 	for _, link := range links {
@@ -131,7 +131,7 @@ func (m *Manager) unloadPlan(kernelID kernel.ProgramID, programName, progPinPath
 		nodes = append(nodes, operation.Do(
 			"delete-program", programName,
 			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-				return exec.Execute(ctx, action.DeleteProgram{KernelID: kernelID})
+				return exec.Execute(ctx, action.DeleteProgram{ProgramID: programID})
 			},
 		))
 	}
@@ -139,7 +139,7 @@ func (m *Manager) unloadPlan(kernelID kernel.ProgramID, programName, progPinPath
 	nodes = append(nodes, operation.Try(
 		"fs-remove-program", programName,
 		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID})
+			return exec.Execute(ctx, action.RemoveProgramDir{ProgramID: programID})
 		},
 	))
 

@@ -27,8 +27,8 @@ type State struct {
 	// Incremented on each atomic update, wraps at MaxUint32.
 	Revision uint32 `json:"revision"`
 
-	// KernelID is the kernel program ID of the dispatcher.
-	KernelID kernel.ProgramID `json:"kernel_id"`
+	// ProgramID is the kernel program ID of the dispatcher.
+	ProgramID kernel.ProgramID `json:"program_id"`
 
 	// LinkID is the kernel link ID (XDP link for XDP dispatchers).
 	// Zero for TC dispatchers which use legacy netlink instead of BPF links.

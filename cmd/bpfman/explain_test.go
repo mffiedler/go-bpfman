@@ -10,7 +10,7 @@ func TestProgramColumnRegistry_Completeness(t *testing.T) {
 
 	// Check that expected columns exist
 	expectedColumns := []string{
-		"KERNEL_ID", "TYPE", "NAME", "SOURCE", "MAP_IDS",
+		"PROGRAM_ID", "TYPE", "NAME", "SOURCE", "MAP_IDS",
 		"TAG", "BTF_ID", "PIN_PATH", "LOADED_AT", "JIT_SIZE",
 		"MEMLOCK", "LINK_IDS", "ATTACH",
 	}

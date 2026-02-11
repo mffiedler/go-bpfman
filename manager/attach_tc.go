@@ -50,12 +50,12 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 	}
 
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
-		programKernelID: spec.ProgramID(),
-		ifindex:         ifindex,
-		ifname:          ifname,
-		netnsPath:       netnsPath,
-		target:          ifname + ":" + string(direction),
-		dispType:        dispType,
+		programID: spec.ProgramID(),
+		ifindex:   ifindex,
+		ifname:    ifname,
+		netnsPath: netnsPath,
+		target:    ifname + ":" + string(direction),
+		dispType:  dispType,
 		ensureAction: func() action.Action {
 			return action.EnsureTCDispatcher{
 				Ifindex:   uint32(ifindex),
@@ -86,7 +86,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				Position:     int32(position),
 				ProceedOn:    proceedOn,
 				Nsid:         nsid,
-				DispatcherID: dispState.KernelID,
+				DispatcherID: dispState.ProgramID,
 				Revision:     dispState.Revision,
 			}
 		},
@@ -103,7 +103,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 // removal, link listing) return plain errors.
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
-	programKernelID := spec.ProgramID()
+	programID := spec.ProgramID()
 	ifindex := spec.Ifindex()
 	ifname := spec.Ifname()
 	direction := spec.Direction()
@@ -111,19 +111,19 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	netnsPath := spec.Netns()
 	target := ifname + ":" + string(direction)
 
-	prog, err := m.getProgram(ctx, programKernelID)
+	prog, err := m.getProgram(ctx, programID)
 	if err != nil {
 		return bpfman.Link{}, err
 	}
 	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
-		return bpfman.Link{}, fmt.Errorf("program %d is type %s, not tcx", programKernelID, prog.Load.ProgramType())
+		return bpfman.Link{}, fmt.Errorf("program %d is type %s, not tcx", programID, prog.Load.ProgramType())
 	}
 	nsid, err := netns.GetNsid(netnsPath)
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	linkPinPath := m.rt.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programKernelID)
+	linkPinPath := m.rt.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programID)
 
 	// Stale pin removal (preflight I/O).
 	if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {
@@ -138,13 +138,13 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	order := computeTCXAttachOrder(existingLinks, int32(priority))
 
 	m.logger.DebugContext(ctx, "computed TCX attach order",
-		"program_id", programKernelID,
+		"program_id", programID,
 		"priority", priority,
 		"existing_links", len(existingLinks),
 		"order", order)
 
 	// --- Build and execute plan ---
-	plan := m.attachTCXPlan(programKernelID, ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
+	plan := m.attachTCXPlan(programID, ifindex, ifname, direction, priority, nsid, netnsPath, linkPinPath, progPinPath, target, order)
 	b, err := operation.Run(ctx, m.logger, m.executor, plan)
 	if err != nil {
 		return bpfman.Link{}, err
@@ -153,7 +153,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	link := operation.Get(b, linkKey)
 	m.logger.InfoContext(ctx, "attached TCX program",
 		"link_id", link.Record.ID,
-		"program_id", programKernelID,
+		"program_id", programID,
 		"interface", ifname,
 		"direction", direction,
 		"ifindex", ifindex,
@@ -171,7 +171,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 //     that detaches the link on failure.
 //  2. Produce linkKey -- construct link record, save to store.
 func (m *Manager) attachTCXPlan(
-	programKernelID kernel.ProgramID, ifindex int, ifname string,
+	programID kernel.ProgramID, ifindex int, ifname string,
 	direction bpfman.TCDirection, priority int, nsid uint64,
 	netnsPath, linkPinPath, progPinPath, target string,
 	order bpfman.TCXAttachOrder,
@@ -200,7 +200,7 @@ func (m *Manager) attachTCXPlan(
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
 					out.LinkID,
-					programKernelID,
+					programID,
 					bpfman.TCXDetails{
 						Interface: ifname,
 						Ifindex:   uint32(ifindex),

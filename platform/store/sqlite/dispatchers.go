@@ -23,7 +23,7 @@ func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType string, nsid u
 	var state dispatcher.State
 	var dispTypeStr string
 	err := row.Scan(&dispTypeStr, &state.Nsid, &state.Ifindex, &state.Revision,
-		&state.KernelID, &state.LinkID, &state.Priority)
+		&state.ProgramID, &state.LinkID, &state.Priority)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return dispatcher.State{}, fmt.Errorf("dispatcher (%s, %d, %d): %w", dispType, nsid, ifindex, platform.ErrRecordNotFound)
@@ -54,7 +54,7 @@ func (s *sqliteStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, 
 		var state dispatcher.State
 		var dispTypeStr string
 		if err := rows.Scan(&dispTypeStr, &state.Nsid, &state.Ifindex, &state.Revision,
-			&state.KernelID, &state.LinkID, &state.Priority); err != nil {
+			&state.ProgramID, &state.LinkID, &state.Priority); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatchers", "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, err
 		}
@@ -77,14 +77,14 @@ func (s *sqliteStore) SaveDispatcher(ctx context.Context, state dispatcher.State
 	start := time.Now()
 	result, err := s.stmtSaveDispatcher.ExecContext(ctx,
 		string(state.Type), state.Nsid, state.Ifindex, state.Revision,
-		state.KernelID, state.LinkID,
+		state.ProgramID, state.LinkID,
 		state.Priority, now, now)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "SaveDispatcher", "args", []any{state.Type, state.Nsid, state.Ifindex, state.Revision, state.KernelID, state.LinkID, state.Priority, "(timestamp)", "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "SaveDispatcher", "args", []any{state.Type, state.Nsid, state.Ifindex, state.Revision, state.ProgramID, state.LinkID, state.Priority, "(timestamp)", "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("save dispatcher: %w", err)
 	}
 	rows, _ := result.RowsAffected()
-	s.logger.Debug("sql", "stmt", "SaveDispatcher", "args", []any{state.Type, state.Nsid, state.Ifindex, state.Revision, state.KernelID, state.LinkID, state.Priority, "(timestamp)", "(timestamp)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
+	s.logger.Debug("sql", "stmt", "SaveDispatcher", "args", []any{state.Type, state.Nsid, state.Ifindex, state.Revision, state.ProgramID, state.LinkID, state.Priority, "(timestamp)", "(timestamp)"}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
 
 	return nil
 }
@@ -147,15 +147,15 @@ func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType string, ns
 }
 
 // CountDispatcherLinks returns the number of extension links attached
-// to the dispatcher identified by its kernel program ID.
-func (s *sqliteStore) CountDispatcherLinks(ctx context.Context, dispatcherKernelID kernel.ProgramID) (int, error) {
+// to the dispatcher identified by its program ID.
+func (s *sqliteStore) CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error) {
 	start := time.Now()
 	var count int
-	err := s.stmtCountDispatcherLinks.QueryRowContext(ctx, dispatcherKernelID, dispatcherKernelID).Scan(&count)
+	err := s.stmtCountDispatcherLinks.QueryRowContext(ctx, dispatcherProgramID, dispatcherProgramID).Scan(&count)
 	if err != nil {
-		s.logger.Debug("sql", "stmt", "CountDispatcherLinks", "args", []any{dispatcherKernelID}, "duration_ms", msec(time.Since(start)), "error", err)
+		s.logger.Debug("sql", "stmt", "CountDispatcherLinks", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, err
 	}
-	s.logger.Debug("sql", "stmt", "CountDispatcherLinks", "args", []any{dispatcherKernelID}, "duration_ms", msec(time.Since(start)), "count", count)
+	s.logger.Debug("sql", "stmt", "CountDispatcherLinks", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
 }

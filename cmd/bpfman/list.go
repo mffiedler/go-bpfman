@@ -94,7 +94,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 	if c.Quiet {
 		var b strings.Builder
 		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "program/%d\n", p.Record.KernelID)
+			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
 		}
 		return cli.PrintOut(b.String())
 	}
