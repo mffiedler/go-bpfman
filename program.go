@@ -5,25 +5,27 @@ import (
 	"maps"
 	"time"
 
-	"github.com/frobware/go-bpfman/kernel"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ProgramType represents the type of BPF program.
-type ProgramType uint32
+// ProgramType is bpfman's discriminator for BPF program types.
+// It is an opaque value; the only valid instances are the
+// package-level variables or ParseProgramType.
+type ProgramType struct{ v string }
 
-const (
-	ProgramTypeUnspecified ProgramType = iota
-	ProgramTypeXDP
-	ProgramTypeTC
-	ProgramTypeTCX
-	ProgramTypeTracepoint
-	ProgramTypeKprobe
-	ProgramTypeKretprobe
-	ProgramTypeUprobe
-	ProgramTypeUretprobe
-	ProgramTypeFentry
-	ProgramTypeFexit
+var (
+	ProgramTypeXDP        = ProgramType{"xdp"}
+	ProgramTypeTC         = ProgramType{"tc"}
+	ProgramTypeTCX        = ProgramType{"tcx"}
+	ProgramTypeTracepoint = ProgramType{"tracepoint"}
+	ProgramTypeKprobe     = ProgramType{"kprobe"}
+	ProgramTypeKretprobe  = ProgramType{"kretprobe"}
+	ProgramTypeUprobe     = ProgramType{"uprobe"}
+	ProgramTypeUretprobe  = ProgramType{"uretprobe"}
+	ProgramTypeFentry     = ProgramType{"fentry"}
+	ProgramTypeFexit      = ProgramType{"fexit"}
 )
 
 // allProgramTypes is the canonical list of valid program types.
@@ -41,16 +43,6 @@ var allProgramTypes = []ProgramType{
 	ProgramTypeFexit,
 }
 
-// programTypeByName maps lowercase type names to ProgramType values.
-// Built from allProgramTypes to ensure consistency.
-var programTypeByName = func() map[string]ProgramType {
-	m := make(map[string]ProgramType, len(allProgramTypes))
-	for _, pt := range allProgramTypes {
-		m[pt.String()] = pt
-	}
-	return m
-}()
-
 // AllProgramTypes returns all valid program types.
 func AllProgramTypes() []ProgramType {
 	return allProgramTypes
@@ -66,55 +58,46 @@ func ProgramTypeNames() []string {
 }
 
 // String returns the string representation of the program type.
-func (t ProgramType) String() string {
-	switch t {
-	case ProgramTypeXDP:
-		return "xdp"
-	case ProgramTypeTC:
-		return "tc"
-	case ProgramTypeTCX:
-		return "tcx"
-	case ProgramTypeTracepoint:
-		return "tracepoint"
-	case ProgramTypeKprobe:
-		return "kprobe"
-	case ProgramTypeKretprobe:
-		return "kretprobe"
-	case ProgramTypeUprobe:
-		return "uprobe"
-	case ProgramTypeUretprobe:
-		return "uretprobe"
-	case ProgramTypeFentry:
-		return "fentry"
-	case ProgramTypeFexit:
-		return "fexit"
-	default:
-		return "unspecified"
-	}
-}
+func (t ProgramType) String() string               { return t.v }
+func (t ProgramType) MarshalText() ([]byte, error) { return []byte(t.v), nil }
 
-// MarshalText implements encoding.TextMarshaler so ProgramType
-// serialises as its string name in JSON.
-func (t ProgramType) MarshalText() ([]byte, error) {
-	return []byte(t.String()), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler so ProgramType
-// can be parsed from its string name in JSON.
-func (t *ProgramType) UnmarshalText(text []byte) error {
-	parsed, ok := ParseProgramType(string(text))
-	if !ok {
-		return fmt.Errorf("invalid program type: %q", string(text))
+func (t *ProgramType) UnmarshalText(b []byte) error {
+	parsed, err := ParseProgramType(string(b))
+	if err != nil {
+		return err
 	}
 	*t = parsed
 	return nil
 }
 
 // ParseProgramType parses a string into a ProgramType.
-// Returns the program type and true if valid, or ProgramTypeUnspecified and false if not.
-func ParseProgramType(s string) (ProgramType, bool) {
-	pt, ok := programTypeByName[s]
-	return pt, ok
+// Returns the ProgramType and a nil error if valid, or the zero value
+// and an error if not recognised.
+func ParseProgramType(s string) (ProgramType, error) {
+	switch s {
+	case "xdp":
+		return ProgramTypeXDP, nil
+	case "tc":
+		return ProgramTypeTC, nil
+	case "tcx":
+		return ProgramTypeTCX, nil
+	case "tracepoint":
+		return ProgramTypeTracepoint, nil
+	case "kprobe":
+		return ProgramTypeKprobe, nil
+	case "kretprobe":
+		return ProgramTypeKretprobe, nil
+	case "uprobe":
+		return ProgramTypeUprobe, nil
+	case "uretprobe":
+		return ProgramTypeUretprobe, nil
+	case "fentry":
+		return ProgramTypeFentry, nil
+	case "fexit":
+		return ProgramTypeFexit, nil
+	default:
+		return ProgramType{}, fmt.Errorf("unknown program type %q", s)
+	}
 }
 
 // ProgramHandles contains stable filesystem handles for management.

@@ -358,13 +358,8 @@ func (f *fakeKernel) Reset() {
 
 func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
-	if spec.ProgramType() == bpfman.ProgramTypeUnspecified {
-		err := fmt.Errorf("program type must be specified")
-		f.recordOp("load", spec.ProgramName(), 0, err)
-		return bpfman.LoadOutput{}, err
-	}
-	if spec.ProgramType() < bpfman.ProgramTypeXDP || spec.ProgramType() > bpfman.ProgramTypeFexit {
-		err := fmt.Errorf("invalid program type: %d", spec.ProgramType())
+	if !spec.ProgramType().Valid() {
+		err := fmt.Errorf("invalid program type: %s", spec.ProgramType())
 		f.recordOp("load", spec.ProgramName(), 0, err)
 		return bpfman.LoadOutput{}, err
 	}

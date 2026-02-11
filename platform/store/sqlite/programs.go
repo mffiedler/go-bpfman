@@ -65,9 +65,9 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 	}
 
 	// Parse program type
-	programType, ok := bpfman.ParseProgramType(programTypeStr)
-	if !ok {
-		return bpfman.ProgramRecord{}, fmt.Errorf("invalid program type: %q", programTypeStr)
+	programType, err := bpfman.ParseProgramType(programTypeStr)
+	if err != nil {
+		return bpfman.ProgramRecord{}, fmt.Errorf("invalid program type: %q: %w", programTypeStr, err)
 	}
 
 	// Parse nullable scalar fields
@@ -363,9 +363,9 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 	}
 
 	// Parse program type
-	programType, ok := bpfman.ParseProgramType(programTypeStr)
-	if !ok {
-		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid program type for %d: %q", programID, programTypeStr)
+	programType, err := bpfman.ParseProgramType(programTypeStr)
+	if err != nil {
+		return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid program type for %d: %q: %w", programID, programTypeStr, err)
 	}
 
 	// Parse nullable scalar fields

@@ -19,7 +19,11 @@ import (
 func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
 	var opts []bpfman.ListOption
 	if req.ProgramType != nil {
-		opts = append(opts, bpfman.WithTypes(bpfman.ProgramType(*req.ProgramType)))
+		pt, err := protoToBpfmanType(pb.BpfmanProgramType(*req.ProgramType))
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid program type: %v", err)
+		}
+		opts = append(opts, bpfman.WithTypes(pt))
 	}
 	if len(req.MatchMetadata) > 0 {
 		opts = append(opts, bpfman.MatchingLabels(req.MatchMetadata))
@@ -60,7 +64,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 			KernelInfo: &pb.KernelProgramInfo{
 				Id:          uint32(prog.Record.ProgramID),
 				Name:        kp.Name,
-				ProgramType: uint32(prog.Record.Load.ProgramType()),
+				ProgramType: bpfmanTypeToProto(prog.Record.Load.ProgramType()),
 				Tag:         kp.Tag,
 				LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
 				MapIds:      mapIDs,
@@ -121,7 +125,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		KernelInfo: &pb.KernelProgramInfo{
 			Id:            req.Id,
 			Name:          kp.Name,
-			ProgramType:   uint32(prog.Record.Load.ProgramType()),
+			ProgramType:   bpfmanTypeToProto(prog.Record.Load.ProgramType()),
 			Tag:           kp.Tag,
 			LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
 			GplCompatible: prog.Record.GPLCompatible,

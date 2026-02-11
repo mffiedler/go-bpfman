@@ -69,7 +69,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// The user's CLI specification (e.g., --programs kretprobe:func) takes precedence
 	// because a kprobe program CAN be attached as either entry or return probe.
 	programType := spec.ProgramType()
-	if programType == bpfman.ProgramTypeUnspecified {
+	if programType == (bpfman.ProgramType{}) {
 		// Fall back to inferring from ELF section name
 		programType = inferProgramType(progSpec.SectionName)
 	}

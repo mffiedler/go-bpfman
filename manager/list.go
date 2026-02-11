@@ -264,7 +264,7 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		}
 		// Fallback for zero IDs: sort by type, then name
 		if programs[i].Record.Load.ProgramType() != programs[j].Record.Load.ProgramType() {
-			return programs[i].Record.Load.ProgramType() < programs[j].Record.Load.ProgramType()
+			return programs[i].Record.Load.ProgramType().String() < programs[j].Record.Load.ProgramType().String()
 		}
 		return programs[i].Record.Meta.Name < programs[j].Record.Meta.Name
 	})

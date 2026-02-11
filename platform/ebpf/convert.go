@@ -65,7 +65,7 @@ func inferProgramType(sectionName string) bpfman.ProgramType {
 	case strings.HasPrefix(sectionName, "tc") || strings.HasPrefix(sectionName, "classifier"):
 		return bpfman.ProgramTypeTC
 	default:
-		return bpfman.ProgramTypeUnspecified
+		return bpfman.ProgramType{}
 	}
 }
 

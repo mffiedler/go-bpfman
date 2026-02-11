@@ -38,15 +38,7 @@ func (t ProgramType) RequiresAttachFunc() bool {
 
 // Valid returns true if this is a known, specified program type.
 func (t ProgramType) Valid() bool {
-	switch t {
-	case ProgramTypeXDP, ProgramTypeTC, ProgramTypeTCX,
-		ProgramTypeTracepoint, ProgramTypeKprobe, ProgramTypeKretprobe,
-		ProgramTypeUprobe, ProgramTypeUretprobe,
-		ProgramTypeFentry, ProgramTypeFexit:
-		return true
-	default:
-		return false
-	}
+	return t != (ProgramType{})
 }
 
 // NewLoadSpec creates a LoadSpec for program types that do not require

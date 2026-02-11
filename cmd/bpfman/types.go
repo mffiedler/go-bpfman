@@ -225,8 +225,8 @@ func ParseProgramSpec(s string) (ProgramSpec, error) {
 		return ProgramSpec{}, fmt.Errorf("invalid program spec %q: name cannot be empty", s)
 	}
 
-	progType, ok := bpfman.ParseProgramType(typeStr)
-	if !ok {
+	progType, err := bpfman.ParseProgramType(typeStr)
+	if err != nil {
 		return ProgramSpec{}, fmt.Errorf("invalid program spec %q: unknown type %q (valid: xdp, tc, tcx, tracepoint, kprobe, kretprobe, uprobe, uretprobe, fentry, fexit)", s, typeStr)
 	}
 
@@ -361,8 +361,8 @@ func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) 
 		if t == "" {
 			continue
 		}
-		pt, ok := bpfman.ParseProgramType(strings.ToLower(t))
-		if !ok {
+		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
+		if err != nil {
 			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
 				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
 		}
@@ -380,8 +380,8 @@ func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
 		if t == "" {
 			continue
 		}
-		pt, ok := bpfman.ParseProgramType(strings.ToLower(t))
-		if !ok {
+		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
+		if err != nil {
 			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
 				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
 		}

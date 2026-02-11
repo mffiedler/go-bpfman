@@ -49,7 +49,7 @@ func DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
 		progType := InferProgramType(progSpec.SectionName)
 
 		// Skip programs with unspecified type
-		if progType == bpfman.ProgramTypeUnspecified {
+		if progType == (bpfman.ProgramType{}) {
 			continue
 		}
 

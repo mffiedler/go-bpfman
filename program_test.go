@@ -22,13 +22,13 @@ func TestProgramTypeConsistency(t *testing.T) {
 
 	// Verify ParseProgramType accepts all names from ProgramTypeNames
 	for _, name := range allNames {
-		pt, ok := bpfman.ParseProgramType(name)
-		assert.True(t, ok, "ParseProgramType should accept %q", name)
+		pt, err := bpfman.ParseProgramType(name)
+		assert.NoError(t, err, "ParseProgramType should accept %q", name)
 		assert.Equal(t, name, pt.String(), "round-trip should preserve name")
 	}
 
-	// Verify AllProgramTypes doesn't include Unspecified
+	// Verify AllProgramTypes doesn't include zero value
 	for _, pt := range allTypes {
-		assert.NotEqual(t, bpfman.ProgramTypeUnspecified, pt, "AllProgramTypes should not include Unspecified")
+		assert.NotEqual(t, bpfman.ProgramType{}, pt, "AllProgramTypes should not include zero value")
 	}
 }

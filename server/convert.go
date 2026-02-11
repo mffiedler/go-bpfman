@@ -28,7 +28,31 @@ func protoToBpfmanType(pt pb.BpfmanProgramType) (bpfman.ProgramType, error) {
 	case pb.BpfmanProgramType_TCX:
 		return bpfman.ProgramTypeTCX, nil
 	default:
-		return bpfman.ProgramTypeUnspecified, fmt.Errorf("unknown program type: %d", pt)
+		return bpfman.ProgramType{}, fmt.Errorf("unknown program type: %d", pt)
+	}
+}
+
+// bpfmanTypeToProto converts a bpfman ProgramType to its proto uint32 value.
+func bpfmanTypeToProto(pt bpfman.ProgramType) uint32 {
+	switch pt {
+	case bpfman.ProgramTypeXDP:
+		return uint32(pb.BpfmanProgramType_XDP)
+	case bpfman.ProgramTypeTC:
+		return uint32(pb.BpfmanProgramType_TC)
+	case bpfman.ProgramTypeTracepoint:
+		return uint32(pb.BpfmanProgramType_TRACEPOINT)
+	case bpfman.ProgramTypeKprobe, bpfman.ProgramTypeKretprobe:
+		return uint32(pb.BpfmanProgramType_KPROBE)
+	case bpfman.ProgramTypeUprobe, bpfman.ProgramTypeUretprobe:
+		return uint32(pb.BpfmanProgramType_UPROBE)
+	case bpfman.ProgramTypeFentry:
+		return uint32(pb.BpfmanProgramType_FENTRY)
+	case bpfman.ProgramTypeFexit:
+		return uint32(pb.BpfmanProgramType_FEXIT)
+	case bpfman.ProgramTypeTCX:
+		return uint32(pb.BpfmanProgramType_TCX)
+	default:
+		return uint32(pb.BpfmanProgramType_XDP) // zero value
 	}
 }
 
@@ -48,7 +72,7 @@ func resolveActualType(protoType bpfman.ProgramType, programName string, metadat
 
 	key := actualTypeMetadataKey(programName)
 	if actualTypeStr, ok := metadata[key]; ok {
-		if actualType, valid := bpfman.ParseProgramType(actualTypeStr); valid {
+		if actualType, err := bpfman.ParseProgramType(actualTypeStr); err == nil {
 			return actualType
 		}
 	}
