@@ -93,37 +93,37 @@ func NewPuller(cache fs.EnsuredImageCache, opts ...Option) (platform.ImagePuller
 
 // Pull downloads an image and returns the extracted bytecode.
 func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.PulledImage, error) {
-	logger := p.logger.With("url", ref.URL(), "policy", ref.PullPolicy().String())
+	logger := p.logger.With("url", ref.URL, "policy", ref.PullPolicy.String())
 	logger.Info("pulling OCI image")
 
 	// Compute cache key from URL
-	cacheKey := p.cache.CacheKey(ref.URL())
+	cacheKey := p.cache.CacheKey(ref.URL)
 	logger = logger.With("cache_key", cacheKey)
 
 	// Check cache based on pull policy
-	if ref.PullPolicy() != bpfman.PullAlways {
+	if ref.PullPolicy != bpfman.PullAlways {
 		if cached, ok := p.checkCache(cacheKey, ref, logger); ok {
 			logger.Info("using cached image", "digest", cached.Digest)
 			return cached, nil
 		}
 
-		if ref.PullPolicy() == bpfman.PullNever {
+		if ref.PullPolicy == bpfman.PullNever {
 			logger.Error("image not in cache and pull policy is Never")
-			return platform.PulledImage{}, fmt.Errorf("image %s not in cache and pull policy is Never", ref.URL())
+			return platform.PulledImage{}, fmt.Errorf("image %s not in cache and pull policy is Never", ref.URL)
 		}
 	}
 
 	logger.Debug("pulling image from registry")
 
 	// Parse the reference
-	repo, err := remote.NewRepository(ref.URL())
+	repo, err := remote.NewRepository(ref.URL)
 	if err != nil {
 		logger.Error("failed to parse image reference", "error", err)
 		return platform.PulledImage{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	// Set up authentication
-	if err := p.configureAuth(repo, ref.Auth(), logger); err != nil {
+	if err := p.configureAuth(repo, ref.Auth, logger); err != nil {
 		return platform.PulledImage{}, err
 	}
 
@@ -141,10 +141,10 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 	// Verify image signature if a verifier is configured
 	if p.verifier != nil {
 		// Use the resolved digest for verification to ensure we verify what we pull
-		verifyRef := ref.URL()
+		verifyRef := ref.URL
 		if desc.Digest != "" {
 			// Append digest to ensure we verify the exact image
-			verifyRef = ref.URL() + "@" + desc.Digest.String()
+			verifyRef = ref.URL + "@" + desc.Digest.String()
 		}
 		if err := p.verifier.Verify(ctx, verifyRef); err != nil {
 			logger.Error("image signature verification failed", "error", err)
@@ -291,9 +291,9 @@ func (p *puller) Pull(ctx context.Context, ref platform.ImageRef) (platform.Pull
 		ObjectPath: destPath,
 		Programs:   programs,
 		Maps:       maps,
-		URL:        ref.URL(),
+		URL:        ref.URL,
 		Digest:     resolvedDigest,
-		PullPolicy: ref.PullPolicy(),
+		PullPolicy: ref.PullPolicy,
 	}, nil
 }
 
@@ -318,9 +318,9 @@ func (p *puller) checkCache(cacheKey string, ref platform.ImageRef, logger *slog
 		ObjectPath: p.cache.BytecodePath(cacheKey),
 		Programs:   meta.Programs,
 		Maps:       meta.Maps,
-		URL:        ref.URL(),
+		URL:        ref.URL,
 		Digest:     meta.Digest,
-		PullPolicy: ref.PullPolicy(),
+		PullPolicy: ref.PullPolicy,
 	}, true
 }
 

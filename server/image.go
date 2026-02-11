@@ -27,7 +27,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 	}
-	ref := platform.NewImageRef(req.Image.Url, pullPolicy)
+	ref := platform.ImageRef{URL: req.Image.Url, PullPolicy: pullPolicy}
 	if req.Image.Username != nil && *req.Image.Username != "" {
 		auth := &platform.ImageAuth{
 			Username: *req.Image.Username,
@@ -35,7 +35,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 		if req.Image.Password != nil {
 			auth.Password = *req.Image.Password
 		}
-		ref = ref.WithAuth(auth)
+		ref.Auth = auth
 	}
 
 	// Pull the image (this caches it)

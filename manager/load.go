@@ -264,21 +264,21 @@ func (m *Manager) resolveBatchSource(
 		if m.imagePuller == nil {
 			return "", nil, fmt.Errorf("image puller is required")
 		}
-		if !source.Image.PullPolicy().Valid() {
+		if !source.Image.PullPolicy.Valid() {
 			return "", nil, fmt.Errorf("image pull policy is required")
 		}
 
 		m.logger.InfoContext(ctx, "pulling OCI image",
-			"url", source.Image.URL(),
-			"pull_policy", source.Image.PullPolicy())
+			"url", source.Image.URL,
+			"pull_policy", source.Image.PullPolicy)
 
 		p, err := m.imagePuller.Pull(ctx, *source.Image)
 		if err != nil {
-			return "", nil, fmt.Errorf("pull image %s: %w", source.Image.URL(), err)
+			return "", nil, fmt.Errorf("pull image %s: %w", source.Image.URL, err)
 		}
 
 		m.logger.InfoContext(ctx, "pulled OCI image",
-			"url", source.Image.URL(),
+			"url", source.Image.URL,
 			"object_path", p.ObjectPath)
 
 		return p.ObjectPath, &p, nil

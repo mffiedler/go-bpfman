@@ -14,8 +14,10 @@ import (
 )
 
 func newTestImageRef() *platform.ImageRef {
-	ref := platform.NewImageRef("test.io/image:latest", bpfman.PullIfNotPresent)
-	return &ref
+	return &platform.ImageRef{
+		URL:        "test.io/image:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
 }
 
 func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {

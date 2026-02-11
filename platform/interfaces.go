@@ -297,32 +297,11 @@ type KernelOperations interface {
 	TCFilterDetacher
 }
 
-// ImageRef describes an OCI image to pull. Construct via NewImageRef;
-// fields are unexported to enforce that URL and PullPolicy are always set.
+// ImageRef describes an OCI image to pull.
 type ImageRef struct {
-	url        string
-	pullPolicy bpfman.ImagePullPolicy
-	auth       *ImageAuth
-}
-
-// NewImageRef creates an ImageRef with the required URL and pull policy.
-func NewImageRef(url string, pullPolicy bpfman.ImagePullPolicy) ImageRef {
-	return ImageRef{url: url, pullPolicy: pullPolicy}
-}
-
-// URL returns the OCI image reference.
-func (r ImageRef) URL() string { return r.url }
-
-// PullPolicy returns the pull policy.
-func (r ImageRef) PullPolicy() bpfman.ImagePullPolicy { return r.pullPolicy }
-
-// Auth returns the optional authentication credentials. Nil for anonymous access.
-func (r ImageRef) Auth() *ImageAuth { return r.auth }
-
-// WithAuth returns a copy of r with the given authentication credentials.
-func (r ImageRef) WithAuth(auth *ImageAuth) ImageRef {
-	r.auth = auth
-	return r
+	URL        string
+	PullPolicy bpfman.ImagePullPolicy
+	Auth       *ImageAuth // nil for anonymous access
 }
 
 // ImageAuth contains credentials for authenticating to an OCI registry.

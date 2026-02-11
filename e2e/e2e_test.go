@@ -47,7 +47,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-tracepoint-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tracepoint-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTracepoint,
@@ -169,7 +169,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-kprobe-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-kprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKprobe,
@@ -280,7 +280,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: load from OCI image via client
 	// Note: kretprobe uses the same image as kprobe but loads the kretprobe program
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-kprobe-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-kprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKretprobe,
@@ -395,7 +395,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-uprobe-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-uprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUprobe,
@@ -511,7 +511,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-uprobe-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-uprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUretprobe,
@@ -847,7 +847,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-tc-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tc-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTC,
@@ -992,7 +992,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/go-tc-counter:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tc-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTCX,
@@ -1106,7 +1106,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from OCI image via client
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/xdp_pass:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/xdp_pass:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,
@@ -1231,7 +1231,7 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	}
 
 	// When: load from OCI image with metadata and global data
-	imageRef := platform.NewImageRef("quay.io/bpfman-bytecode/xdp_pass:latest", bpfman.PullIfNotPresent)
+	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/xdp_pass:latest", PullPolicy: bpfman.PullIfNotPresent}
 	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,

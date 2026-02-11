@@ -38,7 +38,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 		}
-		ref := platform.NewImageRef(loc.Image.Url, pullPolicy)
+		ref := platform.ImageRef{URL: loc.Image.Url, PullPolicy: pullPolicy}
 		if loc.Image.Username != nil && *loc.Image.Username != "" {
 			auth := &platform.ImageAuth{
 				Username: *loc.Image.Username,
@@ -46,7 +46,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			if loc.Image.Password != nil {
 				auth.Password = *loc.Image.Password
 			}
-			ref = ref.WithAuth(auth)
+			ref.Auth = auth
 		}
 		source.Image = &ref
 	default:
