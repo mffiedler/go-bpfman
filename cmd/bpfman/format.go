@@ -380,6 +380,9 @@ func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, erro
 }
 
 func formatLinkListJSON(links []bpfman.LinkRecord) (string, error) {
+	if links == nil {
+		links = []bpfman.LinkRecord{}
+	}
 	result := bpfman.LinkListResult{Links: links}
 	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
@@ -389,6 +392,9 @@ func formatLinkListJSON(links []bpfman.LinkRecord) (string, error) {
 }
 
 func formatLinkListJSONPath(links []bpfman.LinkRecord, expr string) (string, error) {
+	if links == nil {
+		links = []bpfman.LinkRecord{}
+	}
 	result := bpfman.LinkListResult{Links: links}
 	return executeJSONPath(result, expr)
 }
@@ -814,6 +820,9 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 // FormatProgramsComposite formats bpfman.ProgramListResult with full spec/status.
 // This returns the canonical domain type with both Spec and Status, plus observation metadata.
 func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags) (string, error) {
+	if result.Programs == nil {
+		result.Programs = []bpfman.Program{}
+	}
 	format, err := flags.Format()
 	if err != nil {
 		return "", err

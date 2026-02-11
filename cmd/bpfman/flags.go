@@ -74,6 +74,17 @@ func (f *OutputFlags) Format() (OutputFormat, error) {
 	}
 }
 
+// IsStructured reports whether the output format is a structured
+// format (JSON or JSONPath) that should produce valid output even when
+// the result set is empty.
+func (f *OutputFlags) IsStructured() bool {
+	format, err := f.Format()
+	if err != nil {
+		return false
+	}
+	return format == OutputFormatJSON || format == OutputFormatJSONPath
+}
+
 // JSONPathExpr returns the JSONPath expression if format is jsonpath=EXPR.
 func (f *OutputFlags) JSONPathExpr() string {
 	v := f.Output.Value

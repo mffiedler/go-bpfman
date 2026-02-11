@@ -87,7 +87,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	if len(result.Programs) == 0 {
+	if len(result.Programs) == 0 && !c.OutputFlags.IsStructured() {
 		return nil
 	}
 
@@ -150,7 +150,7 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	if len(links) == 0 {
+	if len(links) == 0 && !c.OutputFlags.IsStructured() {
 		return nil
 	}
 
