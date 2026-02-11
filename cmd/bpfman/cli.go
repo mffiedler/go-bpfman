@@ -29,6 +29,7 @@ type CLI struct {
 	Config        string        `name:"config" help:"Config file path." default:"${default_config_path}"`
 	Log           string        `name:"log" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
 	LockTimeout   time.Duration `name:"lock-timeout" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
+	Verbose       bool          `name:"verbose" help:"Print each action before it executes."`
 
 	// Out is the writer for command output. Defaults to os.Stdout.
 	// Injected for testability.
@@ -60,6 +61,16 @@ type CLI struct {
 	GC      GCCmd      `cmd:"" help:"Garbage collect stale resources."`
 	Doctor  DoctorCmd  `cmd:"" help:"Check coherency of database, kernel, and filesystem state."`
 	Image   ImageCmd   `cmd:"" help:"Image operations (verify signatures)."`
+}
+
+// verboseWriter returns the writer for verbose action narration.
+// When --verbose is set, actions are narrated to stderr; otherwise
+// output is discarded.
+func (c *CLI) verboseWriter() io.Writer {
+	if c.Verbose {
+		return c.Err
+	}
+	return io.Discard
 }
 
 // Layout returns the filesystem layout for the configured runtime directory.
