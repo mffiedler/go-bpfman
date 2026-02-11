@@ -81,16 +81,16 @@ func resolveActualType(protoType bpfman.ProgramType, programName string, metadat
 }
 
 // protoToPullPolicy converts a proto image pull policy to managed type.
-// Proto values: 0=Always, 1=IfNotPresent, 2=Never (matches bpfman.ImagePullPolicy iota).
-func protoToPullPolicy(policy int32) bpfman.ImagePullPolicy {
+// Proto values: 0=Always, 1=IfNotPresent, 2=Never.
+func protoToPullPolicy(policy int32) (bpfman.ImagePullPolicy, error) {
 	switch policy {
 	case 0:
-		return bpfman.PullAlways
+		return bpfman.PullAlways, nil
 	case 1:
-		return bpfman.PullIfNotPresent
+		return bpfman.PullIfNotPresent, nil
 	case 2:
-		return bpfman.PullNever
+		return bpfman.PullNever, nil
 	default:
-		return bpfman.PullIfNotPresent
+		return bpfman.ImagePullPolicy{}, fmt.Errorf("unknown pull policy: %d", policy)
 	}
 }

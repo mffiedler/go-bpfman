@@ -3,57 +3,44 @@ package bpfman
 import "fmt"
 
 // ImagePullPolicy specifies when to pull an OCI image.
-type ImagePullPolicy int
+// It is an opaque value; the only valid instances are the
+// package-level variables or ParseImagePullPolicy.
+type ImagePullPolicy struct{ v string }
 
-const (
+var (
 	// PullAlways always pulls the image, even if cached.
-	PullAlways ImagePullPolicy = iota
+	PullAlways = ImagePullPolicy{"Always"}
 	// PullIfNotPresent uses the cache if available, otherwise pulls.
-	PullIfNotPresent
+	PullIfNotPresent = ImagePullPolicy{"IfNotPresent"}
 	// PullNever only uses the cache, fails if not present.
-	PullNever
+	PullNever = ImagePullPolicy{"Never"}
 )
 
 // String returns the string representation of the pull policy.
-func (p ImagePullPolicy) String() string {
-	switch p {
-	case PullAlways:
-		return "Always"
-	case PullIfNotPresent:
-		return "IfNotPresent"
-	case PullNever:
-		return "Never"
-	default:
-		return "Unknown"
-	}
-}
+func (p ImagePullPolicy) String() string               { return p.v }
+func (p ImagePullPolicy) MarshalText() ([]byte, error) { return []byte(p.v), nil }
 
-// MarshalText implements encoding.TextMarshaler.
-func (p ImagePullPolicy) MarshalText() ([]byte, error) {
-	return []byte(p.String()), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (p *ImagePullPolicy) UnmarshalText(text []byte) error {
-	parsed, ok := ParseImagePullPolicy(string(text))
-	if !ok {
-		return fmt.Errorf("unknown pull policy: %s", text)
+func (p *ImagePullPolicy) UnmarshalText(b []byte) error {
+	parsed, err := ParseImagePullPolicy(string(b))
+	if err != nil {
+		return err
 	}
 	*p = parsed
 	return nil
 }
 
 // ParseImagePullPolicy parses a string into an ImagePullPolicy.
-// Returns the policy and true if valid, or PullIfNotPresent and false if not.
-func ParseImagePullPolicy(s string) (ImagePullPolicy, bool) {
+// Returns the ImagePullPolicy and a nil error if valid, or the zero
+// value and an error if not recognised. Matching is case-insensitive.
+func ParseImagePullPolicy(s string) (ImagePullPolicy, error) {
 	switch s {
 	case "Always", "always":
-		return PullAlways, true
+		return PullAlways, nil
 	case "IfNotPresent", "ifnotpresent":
-		return PullIfNotPresent, true
+		return PullIfNotPresent, nil
 	case "Never", "never":
-		return PullNever, true
+		return PullNever, nil
 	default:
-		return PullIfNotPresent, false
+		return ImagePullPolicy{}, fmt.Errorf("unknown pull policy %q", s)
 	}
 }

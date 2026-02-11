@@ -23,7 +23,10 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	}
 
 	// Convert proto to platform types
-	pullPolicy := protoToPullPolicy(req.Image.ImagePullPolicy)
+	pullPolicy, err := protoToPullPolicy(req.Image.ImagePullPolicy)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
+	}
 	ref := platform.ImageRef{
 		URL:        req.Image.Url,
 		PullPolicy: pullPolicy,
@@ -38,7 +41,7 @@ func (s *Server) PullBytecode(ctx context.Context, req *pb.PullBytecodeRequest) 
 	}
 
 	// Pull the image (this caches it)
-	_, err := puller.Pull(ctx, ref)
+	_, err = puller.Pull(ctx, ref)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to pull image %s: %v", req.Image.Url, err)
 	}

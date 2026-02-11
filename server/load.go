@@ -34,9 +34,13 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if s.mgr.ImagePuller() == nil {
 			return nil, status.Error(codes.Unimplemented, "OCI image loading not configured on this server")
 		}
+		pullPolicy, err := protoToPullPolicy(loc.Image.ImagePullPolicy)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
+		}
 		ref := &platform.ImageRef{
 			URL:        loc.Image.Url,
-			PullPolicy: protoToPullPolicy(loc.Image.ImagePullPolicy),
+			PullPolicy: pullPolicy,
 		}
 		if loc.Image.Username != nil && *loc.Image.Username != "" {
 			ref.Auth = &platform.ImageAuth{

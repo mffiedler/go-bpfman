@@ -30,9 +30,9 @@ type LoadImageCmd struct {
 // Run executes the load image command.
 func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 	// Parse pull policy (before acquiring lock)
-	pullPolicy, ok := bpfman.ParseImagePullPolicy(c.PullPolicy.Value)
-	if !ok {
-		return fmt.Errorf("invalid pull policy %q", c.PullPolicy.Value)
+	pullPolicy, err := bpfman.ParseImagePullPolicy(c.PullPolicy.Value)
+	if err != nil {
+		return fmt.Errorf("invalid pull policy %q: %w", c.PullPolicy.Value, err)
 	}
 
 	logger := cli.Logger()
