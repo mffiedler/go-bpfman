@@ -238,9 +238,35 @@ func KongOptions() []kong.Option {
 
 // compactHelpPrinter wraps Kong's default help printer. When invoked
 // via -h it omits the global flags group for a more focused output.
-// With --help the full output is shown.
+// With --help the full output is shown. Command aliases are always
+// suppressed from help output to keep it clean; the aliases still
+// work for command resolution.
 func compactHelpPrinter(options kong.HelpOptions, ctx *kong.Context) error {
 	short := slices.Contains(os.Args[1:], "-h")
+
+	// Temporarily strip aliases from all nodes so the default
+	// printer does not append "(aliases)" after command names.
+	type saved struct {
+		node    *kong.Node
+		aliases []string
+	}
+	var restored []saved
+	var strip func(n *kong.Node)
+	strip = func(n *kong.Node) {
+		if len(n.Aliases) > 0 {
+			restored = append(restored, saved{n, n.Aliases})
+			n.Aliases = nil
+		}
+		for _, child := range n.Children {
+			strip(child)
+		}
+	}
+	strip(ctx.Model.Node)
+	defer func() {
+		for _, s := range restored {
+			s.node.Aliases = s.aliases
+		}
+	}()
 
 	if short {
 		// Temporarily hide global-group flags so the default
