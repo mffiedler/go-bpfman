@@ -88,10 +88,9 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		}
 
 		// Build image ref
-		ref := platform.ImageRef{
-			URL:        c.ImageURL,
-			PullPolicy: pullPolicy,
-			Auth:       auth,
+		ref := platform.NewImageRef(c.ImageURL, pullPolicy)
+		if auth != nil {
+			ref = ref.WithAuth(auth)
 		}
 
 		// Convert CLI ProgramSpec to manager.ProgramSpec

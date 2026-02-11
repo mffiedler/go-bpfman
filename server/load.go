@@ -38,19 +38,17 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid pull policy: %v", err)
 		}
-		ref := &platform.ImageRef{
-			URL:        loc.Image.Url,
-			PullPolicy: pullPolicy,
-		}
+		ref := platform.NewImageRef(loc.Image.Url, pullPolicy)
 		if loc.Image.Username != nil && *loc.Image.Username != "" {
-			ref.Auth = &platform.ImageAuth{
+			auth := &platform.ImageAuth{
 				Username: *loc.Image.Username,
 			}
 			if loc.Image.Password != nil {
-				ref.Auth.Password = *loc.Image.Password
+				auth.Password = *loc.Image.Password
 			}
+			ref = ref.WithAuth(auth)
 		}
-		source.Image = ref
+		source.Image = &ref
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid bytecode location")
 	}

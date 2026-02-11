@@ -13,6 +13,11 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
+func newTestImageRef() *platform.ImageRef {
+	ref := platform.NewImageRef("test.io/image:latest", bpfman.PullIfNotPresent)
+	return &ref
+}
+
 func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
@@ -24,7 +29,7 @@ func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -46,7 +51,7 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -68,7 +73,7 @@ func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 	// Don't set any programs - empty object file
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -89,7 +94,7 @@ func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
 
 	// Request only prog_b
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "prog_b", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
@@ -112,7 +117,7 @@ func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
 
 	// Request non-existent program
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "nonexistent", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
@@ -137,7 +142,7 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	f.Kernel.FailOnProgram("prog_b", fmt.Errorf("injected load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -184,7 +189,7 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	f.Kernel.FailOnProgram("prog_c", fmt.Errorf("injected load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -203,7 +208,7 @@ func TestLoad_PullError(t *testing.T) {
 	puller.SetObjectPath(objPath)
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -220,7 +225,7 @@ func TestLoad_DiscoverError(t *testing.T) {
 	puller.SetObjectPath(objPath)
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -240,7 +245,7 @@ func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
 	})
 
 	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.NoError(t, err)
@@ -267,7 +272,7 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -310,7 +315,7 @@ func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_read", fmt.Errorf("injected fentry load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -350,7 +355,7 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
 	require.Error(t, err)
@@ -399,7 +404,7 @@ func TestLoad_ValidationError(t *testing.T) {
 
 	// Request explicit programs to trigger validation
 	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
-		Image: &platform.ImageRef{URL: "test.io/image:latest", PullPolicy: bpfman.PullIfNotPresent},
+		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
 	}, manager.LoadOpts{})
