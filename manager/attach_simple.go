@@ -90,8 +90,8 @@ func (m *Manager) simpleAttach(ctx context.Context, p attachParams) (bpfman.Link
 func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 	return operation.Build(
 		operation.Produce(preparedKey, p.defaultTarget,
-			func(ctx context.Context, _ *operation.Bindings) (preparedAttach, error) {
-				prog, err := action.Produce[bpfman.ProgramRecord](ctx, m.executor, action.GetProgramFromStore{KernelID: p.programKernelID})
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (preparedAttach, error) {
+				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{KernelID: p.programKernelID})
 				if err != nil {
 					return preparedAttach{}, err
 				}
@@ -106,9 +106,9 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 		),
 
 		operation.Produce(attachOutKey, p.defaultTarget,
-			func(ctx context.Context, b *operation.Bindings) (bpfman.AttachOutput, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.AttachOutput, error) {
 				pa := operation.Get(b, preparedKey)
-				return action.Produce[bpfman.AttachOutput](ctx, m.executor, pa.plan.attachAction(pa.linkPinPath))
+				return action.Produce[bpfman.AttachOutput](ctx, exec, pa.plan.attachAction(pa.linkPinPath))
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				pa := operation.Get(b, preparedKey)
@@ -119,7 +119,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 		),
 
 		operation.Produce(linkKey, p.defaultTarget,
-			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
 				pa := operation.Get(b, preparedKey)
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
@@ -137,7 +137,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 						PinPresent: out.PinPath != "" && !out.Synthetic,
 					},
 				}
-				if err := m.executor.Execute(ctx, action.SaveLink{Record: record}); err != nil {
+				if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
 					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
 				}
 				return link, nil

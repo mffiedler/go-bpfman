@@ -27,8 +27,8 @@ type node struct {
 
 	// Exactly one of these is set, depending on flavour.
 	// validate/do/try use execFn; produce uses produceFn.
-	execFn    func(context.Context, *Bindings) error
-	produceFn func(context.Context, *Bindings) (any, error)
+	execFn    func(context.Context, action.ExecutorWithResult, *Bindings) error
+	produceFn func(context.Context, action.ExecutorWithResult, *Bindings) (any, error)
 
 	// For produce: the key name used to store the binding.
 	bindKey string
@@ -45,6 +45,10 @@ type Node = node
 
 // Validate creates a pure-check node. Validate nodes have no undo
 // capability; if they fail, the operation fails immediately.
+//
+// The closure signature omits the executor because validation is
+// semantically pure (no I/O). The narrower type enforces that
+// constraint at compile time.
 func Validate(label string, target string,
 	fn func(context.Context, *Bindings) error,
 ) Node {
@@ -52,14 +56,16 @@ func Validate(label string, target string,
 		label:   label,
 		flavour: flavourValidate,
 		target:  target,
-		execFn:  fn,
+		execFn: func(ctx context.Context, _ action.ExecutorWithResult, b *Bindings) error {
+			return fn(ctx, b)
+		},
 	}
 }
 
 // Produce creates a value-producing node. The returned value is stored
 // under the given key and can be retrieved by later nodes via Get.
 func Produce[T any](key Key[T], target string,
-	fn func(context.Context, *Bindings) (T, error),
+	fn func(context.Context, action.ExecutorWithResult, *Bindings) (T, error),
 	opts ...NodeOpt,
 ) Node {
 	n := node{
@@ -67,8 +73,8 @@ func Produce[T any](key Key[T], target string,
 		flavour: flavourProduce,
 		target:  target,
 		bindKey: key.name,
-		produceFn: func(ctx context.Context, b *Bindings) (any, error) {
-			return fn(ctx, b)
+		produceFn: func(ctx context.Context, exec action.ExecutorWithResult, b *Bindings) (any, error) {
+			return fn(ctx, exec, b)
 		},
 	}
 	for _, o := range opts {
@@ -80,7 +86,7 @@ func Produce[T any](key Key[T], target string,
 // Do creates a side-effecting node. Do nodes support undo via
 // WithUndo or UndoFrom options.
 func Do(label string, target string,
-	fn func(context.Context, *Bindings) error,
+	fn func(context.Context, action.ExecutorWithResult, *Bindings) error,
 	opts ...NodeOpt,
 ) Node {
 	n := node{
@@ -99,7 +105,7 @@ func Do(label string, target string,
 // the operation continues without setting the error state. Try nodes
 // have no undo.
 func Try(label string, target string,
-	fn func(context.Context, *Bindings) error,
+	fn func(context.Context, action.ExecutorWithResult, *Bindings) error,
 ) Node {
 	return node{
 		label:   label,

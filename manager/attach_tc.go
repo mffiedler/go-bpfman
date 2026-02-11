@@ -178,7 +178,7 @@ func (m *Manager) attachTCXPlan(
 ) operation.Plan {
 	return operation.Build(
 		operation.Produce(attachOutKey, target,
-			func(ctx context.Context, _ *operation.Bindings) (bpfman.AttachOutput, error) {
+			func(ctx context.Context, _ action.ExecutorWithResult, _ *operation.Bindings) (bpfman.AttachOutput, error) {
 				return m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
 			},
 			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
@@ -189,7 +189,7 @@ func (m *Manager) attachTCXPlan(
 		),
 
 		operation.Produce(linkKey, target,
-			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
 				out := operation.Get(b, attachOutKey)
 				record := bpfman.NewPinnedLinkRecord(
 					out.LinkID,
@@ -212,7 +212,7 @@ func (m *Manager) attachTCXPlan(
 						PinPresent: out.PinPath != "",
 					},
 				}
-				if err := m.executor.Execute(ctx, action.SaveLink{Record: record}); err != nil {
+				if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
 					return bpfman.Link{}, fmt.Errorf("save TCX link metadata: %w", err)
 				}
 				return link, nil

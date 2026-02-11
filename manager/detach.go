@@ -91,16 +91,16 @@ func (m *Manager) detachPlan(
 		pinPath := record.PinPath.String()
 		nodes = append(nodes, operation.Do(
 			"detach-link", target,
-			func(ctx context.Context, _ *operation.Bindings) error {
-				return m.executor.Execute(ctx, action.DetachLink{PinPath: pinPath})
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+				return exec.Execute(ctx, action.DetachLink{PinPath: pinPath})
 			},
 		))
 	}
 
 	nodes = append(nodes, operation.Do(
 		"delete-link", target,
-		func(ctx context.Context, _ *operation.Bindings) error {
-			return m.executor.Execute(ctx, action.DeleteLink{LinkID: record.ID})
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+			return exec.Execute(ctx, action.DeleteLink{LinkID: record.ID})
 		},
 	))
 
@@ -109,7 +109,7 @@ func (m *Manager) detachPlan(
 		nodes = append(nodes, operation.Do(
 			"dispatcher-cleanup",
 			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
-			func(ctx context.Context, _ *operation.Bindings) error {
+			func(ctx context.Context, _ action.ExecutorWithResult, _ *operation.Bindings) error {
 				return m.cleanupEmptyDispatcher(ctx, ds)
 			},
 		))

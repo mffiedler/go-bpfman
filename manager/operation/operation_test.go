@@ -100,7 +100,7 @@ func TestValidateFailure(t *testing.T) {
 func TestDoSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("action", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}),
 	)
@@ -114,7 +114,7 @@ func TestDoSuccess(t *testing.T) {
 func TestDoFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("action", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -129,7 +129,7 @@ func TestProduceSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[int]("produce-success-value")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 42, nil
 		}),
 	)
@@ -147,7 +147,7 @@ func TestProduceFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[int]("produce-failure-value")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 0, errTest
 		}),
 	)
@@ -161,7 +161,7 @@ func TestProduceFailure(t *testing.T) {
 func TestTrySuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Try("best-effort", "t1", func(_ context.Context, _ *Bindings) error {
+		Try("best-effort", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}),
 	)
@@ -175,7 +175,7 @@ func TestTrySuccess(t *testing.T) {
 func TestTryFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Try("best-effort", "t1", func(_ context.Context, _ *Bindings) error {
+		Try("best-effort", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -190,10 +190,10 @@ func TestTryAfterPriorFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	tryCalled := false
 	plan := Build(
-		Do("fail", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
-		Try("best-effort", "t2", func(_ context.Context, _ *Bindings) error {
+		Try("best-effort", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			tryCalled = true
 			return nil
 		}),
@@ -213,10 +213,10 @@ func TestTryAfterPriorFailure(t *testing.T) {
 func TestAutoSkipAfterDoFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
-		Do("second", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("second", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			t.Fatal("should not be called")
 			return nil
 		}),
@@ -234,11 +234,11 @@ func TestAutoSkipValidateFailsSkipsDoAndTry(t *testing.T) {
 		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
 			return errTest
 		}),
-		Do("action", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("action", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			t.Fatal("should not be called")
 			return nil
 		}),
-		Try("try", "t3", func(_ context.Context, _ *Bindings) error {
+		Try("try", "t3", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			t.Fatal("should not be called")
 			return nil
 		}),
@@ -254,10 +254,10 @@ func TestAutoSkipProduceFailsSkipsDo(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[int]("autoskip-val")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 0, errTest
 		}),
-		Do("action", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("action", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			t.Fatal("should not be called")
 			return nil
 		}),
@@ -276,10 +276,10 @@ func TestProduceStoresBindingForLaterDo(t *testing.T) {
 	key := NewKey[string]("binding-msg")
 	var captured string
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (string, error) {
 			return "hello", nil
 		}),
-		Do("use", "t2", func(_ context.Context, b *Bindings) error {
+		Do("use", "t2", func(_ context.Context, _ action.ExecutorWithResult, b *Bindings) error {
 			captured = Get(b, key)
 			return nil
 		}),
@@ -318,10 +318,10 @@ func TestMultipleProduceBindings(t *testing.T) {
 	keyA := NewKey[int]("multi-a")
 	keyB := NewKey[string]("multi-b")
 	plan := Build(
-		Produce(keyA, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(keyA, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 1, nil
 		}),
-		Produce(keyB, "t2", func(_ context.Context, _ *Bindings) (string, error) {
+		Produce(keyB, "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (string, error) {
 			return "two", nil
 		}),
 	)
@@ -344,10 +344,10 @@ func TestDoWithUndoOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	// Set up: Do succeeds, then a subsequent Do fails to trigger rollback.
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-a"))),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -365,7 +365,7 @@ func TestDoWithUndoOnSuccess(t *testing.T) {
 func TestDoWithUndoOnFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("fail", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}, WithUndo(testAction("undo-a"))),
 	)
@@ -384,13 +384,13 @@ func TestProduceWithUndoFromOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[string]("undo-from-success-val")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (string, error) {
 			return "produced", nil
 		}, UndoFrom(func(b *Bindings) []action.Action {
 			v := Get(b, key)
 			return []action.Action{testAction("undo-" + v)}
 		})),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -408,7 +408,7 @@ func TestProduceWithUndoFromOnFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[string]("undo-from-failure-val")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (string, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (string, error) {
 			return "", errTest
 		}, UndoFrom(func(_ *Bindings) []action.Action {
 			t.Fatal("UndoFrom should not be called on failure")
@@ -434,7 +434,7 @@ func TestValidateNeverAccumulatesUndo(t *testing.T) {
 		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
 			return nil
 		}),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -453,10 +453,10 @@ func TestTryNeverAccumulatesUndo(t *testing.T) {
 	// are accumulated.
 	exec := newFakeExecutor()
 	plan := Build(
-		Try("try", "t1", func(_ context.Context, _ *Bindings) error {
+		Try("try", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -475,10 +475,10 @@ func TestTryNeverAccumulatesUndo(t *testing.T) {
 func TestRollbackSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-a"))),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -496,10 +496,10 @@ func TestRollbackFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	exec.failOn("undo-a", errors.New("undo failed"))
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-a"))),
-		Do("fail", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -517,13 +517,13 @@ func TestRollbackFailure(t *testing.T) {
 func TestRollbackReversedOrder(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-a"))),
-		Do("second", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("second", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-b"))),
-		Do("fail", "t3", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t3", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -545,13 +545,13 @@ func TestRollbackAllAttempted(t *testing.T) {
 	exec := newFakeExecutor()
 	exec.failOn("undo-b", errors.New("undo-b failed"))
 	plan := Build(
-		Do("first", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-a"))),
-		Do("second", "t2", func(_ context.Context, _ *Bindings) error {
+		Do("second", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}, WithUndo(testAction("undo-b"))),
-		Do("fail", "t3", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t3", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -573,7 +573,7 @@ func TestRollbackAllAttempted(t *testing.T) {
 func TestNoRollbackEntriesNoUndoExecuted(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("fail", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -593,7 +593,7 @@ func TestRunReturnsBindingsOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	key := NewKey[int]("run-bindings-val")
 	plan := Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 7, nil
 		}),
 	)
@@ -613,7 +613,7 @@ func TestRunReturnsBindingsOnSuccess(t *testing.T) {
 func TestRunReturnsErrorOnFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("fail", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -627,7 +627,7 @@ func TestRunReturnsErrorOnFailure(t *testing.T) {
 func TestRun0ReturnsNilOnSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("action", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}),
 	)
@@ -641,7 +641,7 @@ func TestRun0ReturnsNilOnSuccess(t *testing.T) {
 func TestRun0ReturnsErrorOnFailure(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Do("fail", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 	)
@@ -683,10 +683,10 @@ func TestBuildDuplicateProduceKeyPanics(t *testing.T) {
 		}
 	}()
 	Build(
-		Produce(key, "t1", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 1, nil
 		}),
-		Produce(key, "t2", func(_ context.Context, _ *Bindings) (int, error) {
+		Produce(key, "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) (int, error) {
 			return 2, nil
 		}),
 	)
@@ -695,10 +695,10 @@ func TestBuildDuplicateProduceKeyPanics(t *testing.T) {
 func TestAllTryNodesFailIsSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Try("try1", "t1", func(_ context.Context, _ *Bindings) error {
+		Try("try1", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errors.New("warn 1")
 		}),
-		Try("try2", "t2", func(_ context.Context, _ *Bindings) error {
+		Try("try2", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errors.New("warn 2")
 		}),
 	)

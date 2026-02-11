@@ -17,7 +17,7 @@ func Run(
 ) (*Bindings, error) {
 	bindings := newBindings()
 
-	undos, opErr := interpret(ctx, plan, bindings)
+	undos, opErr := interpret(ctx, exec, plan, bindings)
 
 	if opErr != nil {
 		executeRollback(ctx, logger, exec, undos)
@@ -44,6 +44,7 @@ func Run0(
 // them for rollback).
 func interpret(
 	ctx context.Context,
+	exec action.ExecutorWithResult,
 	plan Plan,
 	bindings *Bindings,
 ) (undos [][]action.Action, opErr error) {
@@ -54,7 +55,7 @@ func interpret(
 
 		switch n.flavour {
 		case flavourValidate, flavourDo:
-			err := n.execFn(ctx, bindings)
+			err := n.execFn(ctx, exec, bindings)
 			if err != nil {
 				opErr = err
 			} else {
@@ -62,7 +63,7 @@ func interpret(
 			}
 
 		case flavourProduce:
-			val, err := n.produceFn(ctx, bindings)
+			val, err := n.produceFn(ctx, exec, bindings)
 			if err != nil {
 				opErr = err
 			} else {
@@ -71,7 +72,7 @@ func interpret(
 			}
 
 		case flavourTry:
-			_ = n.execFn(ctx, bindings)
+			_ = n.execFn(ctx, exec, bindings)
 		}
 	}
 

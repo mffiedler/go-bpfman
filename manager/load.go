@@ -174,8 +174,8 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 
 	return operation.Build(
 		operation.Produce(loadedKey, programName,
-			func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
-				loaded, err := action.Produce[bpfman.LoadOutput](ctx, m.executor, action.LoadProgram{
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.LoadOutput, error) {
+				loaded, err := action.Produce[bpfman.LoadOutput](ctx, exec, action.LoadProgram{
 					Spec:  spec,
 					BPFFS: m.rt.BPFFS(),
 				})
@@ -198,18 +198,18 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 		),
 
 		operation.Do("db-consistency-check", programName,
-			func(ctx context.Context, b *operation.Bindings) error {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
-				return m.executor.Execute(ctx, action.CheckProgramNotInStore{
+				return exec.Execute(ctx, action.CheckProgramNotInStore{
 					KernelID: l.Program.ID,
 				})
 			},
 		),
 
 		operation.Do("fs-publish", programName,
-			func(ctx context.Context, b *operation.Bindings) error {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
-				return m.executor.Execute(ctx, action.PublishBytecode{
+				return exec.Execute(ctx, action.PublishBytecode{
 					KernelID:   l.Program.ID,
 					SourcePath: spec.ObjectPath(),
 					Provenance: fs.Provenance{
@@ -231,10 +231,10 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 		),
 
 		operation.Do("store-save", programName,
-			func(ctx context.Context, b *operation.Bindings) error {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
 				record := buildProgramRecord(spec, l, opts, rt, now)
-				return m.executor.Execute(ctx, action.SaveProgram{
+				return exec.Execute(ctx, action.SaveProgram{
 					KernelID: l.Program.ID,
 					Metadata: record,
 				})

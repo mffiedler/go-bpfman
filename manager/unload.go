@@ -100,46 +100,46 @@ func (m *Manager) unloadPlan(kernelID kernel.ProgramID, programName, progPinPath
 		nodes = append(nodes, operation.Do(
 			"detach-link",
 			fmt.Sprintf("%d", link.ID),
-			func(ctx context.Context, _ *operation.Bindings) error {
-				return m.executor.Execute(ctx, action.DetachLink{PinPath: pinPath})
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+				return exec.Execute(ctx, action.DetachLink{PinPath: pinPath})
 			},
 		))
 	}
 
 	nodes = append(nodes, operation.Do(
 		"remove-links-dir", linksDir,
-		func(ctx context.Context, _ *operation.Bindings) error {
-			return m.executor.Execute(ctx, action.RemovePin{Path: linksDir})
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+			return exec.Execute(ctx, action.RemovePin{Path: linksDir})
 		},
 	))
 
 	nodes = append(nodes, operation.Do(
 		"unload-prog", programName,
-		func(ctx context.Context, _ *operation.Bindings) error {
-			return m.executor.Execute(ctx, action.UnloadProgram{PinPath: progPinPath})
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+			return exec.Execute(ctx, action.UnloadProgram{PinPath: progPinPath})
 		},
 	))
 
 	nodes = append(nodes, operation.Do(
 		"unload-maps", programName,
-		func(ctx context.Context, _ *operation.Bindings) error {
-			return m.executor.Execute(ctx, action.UnloadProgram{PinPath: mapsDir})
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+			return exec.Execute(ctx, action.UnloadProgram{PinPath: mapsDir})
 		},
 	))
 
 	if persisted {
 		nodes = append(nodes, operation.Do(
 			"delete-program", programName,
-			func(ctx context.Context, _ *operation.Bindings) error {
-				return m.executor.Execute(ctx, action.DeleteProgram{KernelID: kernelID})
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+				return exec.Execute(ctx, action.DeleteProgram{KernelID: kernelID})
 			},
 		))
 	}
 
 	nodes = append(nodes, operation.Try(
 		"fs-remove-program", programName,
-		func(ctx context.Context, _ *operation.Bindings) error {
-			return m.executor.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID})
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+			return exec.Execute(ctx, action.RemoveProgramDir{KernelID: kernelID})
 		},
 	))
 

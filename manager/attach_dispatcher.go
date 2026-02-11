@@ -106,8 +106,8 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 	return operation.Build(
 		// Node 1: Fetch program record.
 		operation.Produce(dispPreparedKey, p.target,
-			func(ctx context.Context, _ *operation.Bindings) (dispPrepared, error) {
-				prog, err := action.Produce[bpfman.ProgramRecord](ctx, m.executor, action.GetProgramFromStore{KernelID: p.programKernelID})
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (dispPrepared, error) {
+				prog, err := action.Produce[bpfman.ProgramRecord](ctx, exec, action.GetProgramFromStore{KernelID: p.programKernelID})
 				if err != nil {
 					return dispPrepared{}, err
 				}
@@ -117,17 +117,17 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 
 		// Node 2: Ensure dispatcher exists.
 		operation.Produce(dispStateKey, p.target,
-			func(ctx context.Context, _ *operation.Bindings) (dispatcher.State, error) {
-				return action.Produce[dispatcher.State](ctx, m.executor, p.ensureAction())
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (dispatcher.State, error) {
+				return action.Produce[dispatcher.State](ctx, exec, p.ensureAction())
 			},
 		),
 
 		// Node 3: Attach extension (with stale-dispatcher retry inside the executor).
 		operation.Produce(extResultKey, p.target,
-			func(ctx context.Context, b *operation.Bindings) (extensionResult, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (extensionResult, error) {
 				dp := operation.Get(b, dispPreparedKey)
 				ds := operation.Get(b, dispStateKey)
-				return action.Produce[extensionResult](ctx, m.executor, p.extensionAction(ds, dp.prog))
+				return action.Produce[extensionResult](ctx, exec, p.extensionAction(ds, dp.prog))
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				r := operation.Get(b, extResultKey)
@@ -139,7 +139,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 
 		// Node 4: Construct link record + save to store.
 		operation.Produce(linkKey, p.target,
-			func(ctx context.Context, b *operation.Bindings) (bpfman.Link, error) {
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
 				r := operation.Get(b, extResultKey)
 				record := bpfman.NewPinnedLinkRecord(
 					r.out.LinkID,
@@ -156,7 +156,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 						PinPresent: r.out.PinPath != "",
 					},
 				}
-				if err := m.executor.Execute(ctx, action.SaveLink{Record: record}); err != nil {
+				if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
 					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
 				}
 				return link, nil
