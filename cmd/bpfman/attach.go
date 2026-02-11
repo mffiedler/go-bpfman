@@ -53,10 +53,11 @@ func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx co
 // AttachXDPCmd attaches an XDP program to a network interface.
 type AttachXDPCmd struct {
 	OutputFlags
-	Iface     string     `short:"i" name:"iface" required:"" help:"Network interface."`
-	Netns     string     `short:"n" name:"netns" help:"Network namespace path."`
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
+	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
@@ -85,13 +86,14 @@ func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachTCCmd attaches a TC program to a network interface.
 type AttachTCCmd struct {
 	OutputFlags
-	Iface     string     `short:"i" name:"iface" required:"" help:"Network interface."`
-	Direction string     `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int        `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
-	ProceedOn []string   `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"ok,pipe,dispatcher_return"`
-	Netns     string     `short:"n" name:"netns" help:"Network namespace path."`
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
+	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
+	Priority  int         `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
+	ProceedOn []string    `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"ok,pipe,dispatcher_return"`
+	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
@@ -135,12 +137,13 @@ func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachTCXCmd attaches a TCX program to a network interface.
 type AttachTCXCmd struct {
 	OutputFlags
-	Iface     string     `short:"i" name:"iface" required:"" help:"Network interface."`
-	Direction string     `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int        `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
-	Netns     string     `short:"n" name:"netns" help:"Network namespace path."`
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
+	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
+	Priority  int         `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
+	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
@@ -179,9 +182,10 @@ func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachTracepointCmd attaches a program to a tracepoint.
 type AttachTracepointCmd struct {
 	OutputFlags
-	Tracepoint string     `short:"t" name:"tracepoint" required:"" help:"Tracepoint (group/name format, e.g., sched/sched_switch)."`
-	Metadata   []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID  ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example    ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Tracepoint string      `short:"t" name:"tracepoint" required:"" help:"Tracepoint (group/name format, e.g., sched/sched_switch)."`
+	Metadata   []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID  ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
@@ -208,10 +212,11 @@ func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachKprobeCmd attaches a program to a kernel probe.
 type AttachKprobeCmd struct {
 	OutputFlags
-	FnName    string     `short:"f" name:"fn-name" required:"" help:"Kernel function name to attach to."`
-	Offset    uint64     `name:"offset" help:"Offset within the function." default:"0"`
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	FnName    string      `short:"f" name:"fn-name" required:"" help:"Kernel function name to attach to."`
+	Offset    uint64      `name:"offset" help:"Offset within the function." default:"0"`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
@@ -235,12 +240,13 @@ func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachUprobeCmd attaches a program to a user-space probe.
 type AttachUprobeCmd struct {
 	OutputFlags
-	Target       string     `name:"target" required:"" help:"Path to target binary or library."`
-	FnName       string     `short:"f" name:"fn-name" help:"Function name to attach to."`
-	Offset       uint64     `name:"offset" help:"Offset within the function." default:"0"`
-	ContainerPid int32      `name:"container-pid" help:"Container PID for namespace-aware uprobe attachment."`
-	Metadata     []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID    ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example      ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Target       string      `name:"target" required:"" help:"Path to target binary or library."`
+	FnName       string      `short:"f" name:"fn-name" help:"Function name to attach to."`
+	Offset       uint64      `name:"offset" help:"Offset within the function." default:"0"`
+	ContainerPid int32       `name:"container-pid" help:"Container PID for namespace-aware uprobe attachment."`
+	Metadata     []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID    ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
@@ -270,8 +276,9 @@ func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachFentryCmd attaches a program to a function entry tracing point.
 type AttachFentryCmd struct {
 	OutputFlags
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachFentryCmd) Run(cli *CLI, ctx context.Context) error {
@@ -292,8 +299,9 @@ func (c *AttachFentryCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachFexitCmd attaches a program to a function exit tracing point.
 type AttachFexitCmd struct {
 	OutputFlags
-	Metadata  []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
+	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
 func (c *AttachFexitCmd) Run(cli *CLI, ctx context.Context) error {

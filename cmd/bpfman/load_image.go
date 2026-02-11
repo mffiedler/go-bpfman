@@ -18,6 +18,7 @@ type LoadImageCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
+	Example      ExampleFlag      `name:"example" help:"Show working examples and exit."`
 	ImageURL     string           `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
 	Programs     []ProgramSpec    `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
 	PullPolicy   ImagePullPolicy  `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`

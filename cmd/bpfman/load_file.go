@@ -21,6 +21,7 @@ type LoadFileCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
+	Example     ExampleFlag      `name:"example" help:"Show working examples and exit."`
 	Path        string           `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
 	Programs    []ProgramSpec    `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
 	Application string           `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
