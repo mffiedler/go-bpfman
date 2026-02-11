@@ -15,58 +15,16 @@ a backlog of design debts to revisit when adjacent code is changing.
 
 ## 1. Plans are closures, not values
 
-The Red Book's central idea is "programs as values": a plan should be
-a data structure you can inspect, transform, print, or diff before
-running it. The current plan model gets this right for the undo path
-(UndoFrom returns `[]action.Action` -- pure data) but not for the
-forward path.
-
-Forward nodes are opaque closures that capture the manager's executor,
-filesystem context, and logger by reference:
-
-    // manager/load.go:176-198
-    operation.Produce(loadedKey, programName,
-        func(ctx context.Context, b *operation.Bindings) (bpfman.LoadOutput, error) {
-            loaded, err := action.Produce[bpfman.LoadOutput](ctx, m.executor, action.LoadProgram{...})
-            ...
-        },
-        operation.UndoFrom(func(b *operation.Bindings) []action.Action { ... }),
-    )
-
-You cannot ask "what actions will this plan produce?" without running
-it. A fully Red-Book plan would be a free monad over the Action type
-(`Free[Action, A]`), where the interpreter threads results through via
-flatMap. In Go, that requires massive ceremony because the type system
-cannot express typed continuations, so closures are the pragmatic
-escape hatch.
-
-**What is lost:** plan-level testing without an executor ("given this
-input, what actions *would* be produced?"), and inspectability
-(logging the plan before execution, comparing two plans structurally).
-
-**Possible resolution:** if the need arises, factor each node's logic
-into a function that returns `[]action.Action` given bindings, and
-have the interpreter execute those actions. This lifts the forward
-path from closures to data. The cost is more boilerplate.
+**Documented.** The trade-off is captured in `manager/operation/doc.go`
+alongside the related binding and forward/undo asymmetry compromises.
 
 ---
 
 ## 2. Bindings are stringly-typed with runtime panics
 
-**Partially resolved.** `NewKey` now registers each key name (with its
-`reflect.Type`) in a global registry and panics at process startup if
-a duplicate name is registered. `Build` additionally panics if two
-`Produce` nodes in the same plan bind the same key. Together these
-catch name collisions and silent-overwrite bugs before any real
-operation executes.
-
-The remaining gap is ordering: nothing verifies at build time that a
-`Get` for a key appears only in a node sequenced after the `Produce`
-that binds it. This cannot be checked statically because `Get` calls
-live inside opaque closures; it would require nodes to declare key
-dependencies as data, which pulls into wart 1 territory. The
-sequential plan interpreter and the convention of declaring keys
-alongside their producer continue to prevent this in practice.
+**Documented.** The remaining ordering gap is captured in
+`manager/operation/doc.go` alongside the closure and asymmetry
+trade-offs.
 
 ---
 
@@ -116,18 +74,8 @@ absorbs the sub-transaction complexity.
 
 ## 6. Forward/undo asymmetry
 
-Within a single plan node, the forward path is a closure and the undo
-path is `[]action.Action`. This means undo is inspectable and
-testable independently of the executor, but the forward path is not.
-The asymmetry is not accidental -- forward nodes often have data
-dependencies (the output of node 1 feeds node 2) that require
-closures in Go -- but it does mean the two halves of a node's
-semantics have different testability characteristics.
-
-**Risk level:** low. The asymmetry is a direct consequence of Go's
-type system limitations and the pragmatic choice to use closures for
-forward execution. Noting it here so it remains a conscious trade-off
-rather than an accidental one.
+**Documented.** Captured in `manager/operation/doc.go` as a direct
+consequence of the closure compromise (wart 1).
 
 ---
 
@@ -173,28 +121,8 @@ row). Deleted `platform/store/errors.go`.
 
 ## 10. `inspect/` and `manager/coherency/gather.go` duplicate state correlation
 
-`inspect/` builds a correlated view of BPF objects across store,
-kernel, and filesystem -- the `World` type with `ManagedPrograms()`,
-`ManagedLinks()`, `ManagedDispatchers()`. `manager/coherency/gather.go`
-builds `ObservedState` doing the same thing: correlating programs,
-links, and dispatchers across the same three sources.
-
-Both solve "given three sources of truth, produce a unified snapshot."
-They differ in audience: `inspect` serves the CLI (list, get, doctor
-output) and gRPC handlers; `coherency` serves GC and doctor rules.
-But the correlation logic is reimplemented rather than shared.
-
-`inspect/` cannot move under `manager/` because `server/` also imports
-it, and `server/` should not reach into `manager/` subpackages. But
-`coherency/gather.go` could build its `ObservedState` from an
-`inspect.World` rather than reimplementing the correlation. That would
-make `inspect` the single correlation layer, with `coherency` as a
-pure rule engine over it.
-
-**Possible resolution:** refactor `coherency/gather.go` to accept an
-`inspect.World` (or a subset of it) and derive `ObservedState` from
-that. This removes the duplicated correlation logic and ensures that
-the two views are always consistent.
+**Resolved.** Coherency now builds from `inspect.World` rather than
+reimplementing the correlation (commit 7319348).
 
 ---
 
