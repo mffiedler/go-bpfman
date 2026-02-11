@@ -50,8 +50,8 @@ type CLI struct {
 	// kctx is the parsed Kong context, stored for Execute to dispatch.
 	kctx *kong.Context `kong:"-"`
 
-	Program ProgramCmd `cmd:"" group:"resources" help:"Manage BPF programs."`
-	Link    LinkCmd    `cmd:"" group:"resources" help:"Manage BPF links."`
+	Program ProgramCmd `cmd:"" aliases:"programs" group:"resources" help:"Manage BPF programs."`
+	Link    LinkCmd    `cmd:"" aliases:"links" group:"resources" help:"Manage BPF links."`
 	Image   ImageCmd   `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
 	Serve   ServeCmd   `cmd:"" group:"infra" help:"Start the gRPC daemon."`
 	GC      GCCmd      `cmd:"" group:"diag" help:"Garbage collect stale resources."`
