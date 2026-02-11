@@ -90,30 +90,27 @@ construction sites in the codebase.
 
 ---
 
-## 5. Two rollback strategies coexist
+## 5. Two scopes of rollback atomicity
 
-The plan interpreter (`operation/run.go`) provides automatic rollback:
-accumulated undo groups executed in reverse order on failure. But the
-executor's dispatcher helpers (`manager/executor_dispatcher.go`)
-perform their own inline rollback:
+**Assessed, not a wart.** The plan interpreter (`operation/run.go`)
+and the executor's dispatcher helpers (`manager/executor_dispatcher.go`)
+both perform rollback, but at different scopes that compose correctly.
 
-    if err := store.SaveDispatcher(ctx, state); err != nil {
-        kernel.DetachLink(ctx, linkPinPath)
-        kernel.RemovePin(ctx, progPinPath)
-        return err
-    }
+The plan interpreter handles rollback *across* actions: if node 3
+fails, accumulated undo groups from nodes 1 and 2 execute in reverse
+order. The executor's dispatcher helpers handle rollback *within* a
+single action: if `createXDPDispatcherHelper` succeeds at kernel I/O
+but fails at store persistence, it rolls back the kernel artefacts
+before returning an error. The plan interpreter never sees the partial
+internal state.
 
-This is an honest escape hatch: dispatcher creation is "too deep" for
-the plan model because it needs a mini-transaction (kernel I/O + store
-persistence) inside a single action. Ousterhout would approve of
-pulling complexity downward. But a reader now has to know which
-rollback mechanism governs any given operation -- the plan
-interpreter's or the executor helper's.
-
-**Possible resolution:** document the two strategies explicitly in
-code comments at each site. If the dispatcher helper pattern
-proliferates beyond dispatchers, consider whether it should become a
-first-class plan feature (nested plans or sub-transactions).
+These nest cleanly. If `EnsureXDPDispatcher` fails internally, the
+inline rollback cleans up the kernel artefact, then the action returns
+an error, then the plan interpreter undoes any earlier nodes that
+succeeded. A reader needs to know that deep actions manage their own
+partial-failure cleanup, but this is Ousterhout's "pull complexity
+downward" -- the plan interpreter stays simple because the executor
+absorbs the sub-transaction complexity.
 
 ---
 
