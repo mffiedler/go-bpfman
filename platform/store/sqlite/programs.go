@@ -99,7 +99,7 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 		var imgSrc struct {
 			URL        string                 `json:"url"`
 			Digest     string                 `json:"digest,omitempty"`
-			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy"`
 		}
 		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imgSrc); err != nil {
 			return bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source: %w", err)
@@ -107,6 +107,9 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 		imageURL = imgSrc.URL
 		imageDigest = imgSrc.Digest
 		imagePullPolicy = imgSrc.PullPolicy
+		if !imagePullPolicy.Valid() {
+			return bpfman.ProgramRecord{}, fmt.Errorf("invalid image pull policy in image_source for program %q", programName)
+		}
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {
@@ -189,7 +192,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		imgSrc := struct {
 			URL        string                 `json:"url"`
 			Digest     string                 `json:"digest,omitempty"`
-			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy"`
 		}{
 			URL:        metadata.Load.ImageURL(),
 			Digest:     metadata.Load.ImageDigest(),
@@ -397,7 +400,7 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 		var imgSrc struct {
 			URL        string                 `json:"url"`
 			Digest     string                 `json:"digest,omitempty"`
-			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy,omitempty"`
+			PullPolicy bpfman.ImagePullPolicy `json:"pull_policy"`
 		}
 		if err := json.Unmarshal([]byte(imageSourceJSON.String), &imgSrc); err != nil {
 			return 0, bpfman.ProgramRecord{}, fmt.Errorf("failed to unmarshal image_source for %d: %w", programID, err)
@@ -405,6 +408,9 @@ func (s *sqliteStore) scanProgramFromRows(rows *sql.Rows) (kernel.ProgramID, bpf
 		imageURL = imgSrc.URL
 		imageDigest = imgSrc.Digest
 		imagePullPolicy = imgSrc.PullPolicy
+		if !imagePullPolicy.Valid() {
+			return 0, bpfman.ProgramRecord{}, fmt.Errorf("invalid image pull policy in image_source for program %d", programID)
+		}
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		if err := json.Unmarshal([]byte(metadataJSON.String), &metadata); err != nil {

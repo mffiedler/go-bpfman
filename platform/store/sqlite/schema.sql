@@ -8,19 +8,34 @@
 CREATE TABLE IF NOT EXISTS managed_programs (
     program_id INTEGER PRIMARY KEY,
     program_name TEXT NOT NULL,
-    program_type TEXT NOT NULL,
+    program_type TEXT NOT NULL CHECK (program_type IN (
+        'xdp','tc','tcx','tracepoint','kprobe','kretprobe',
+        'uprobe','uretprobe','fentry','fexit'
+    )),
     object_path TEXT NOT NULL,
     pin_path TEXT NOT NULL,
     attach_func TEXT,
-    global_data TEXT,            -- JSON map<string, bytes>, opaque
+    global_data TEXT CHECK (global_data IS NULL OR json_valid(global_data)),
+                                     -- JSON map<string, bytes>, opaque
     map_owner_id INTEGER,        -- Self-reference: program that owns shared maps
     map_pin_path TEXT,           -- Directory where maps are pinned
-    image_source TEXT,           -- JSON ImageSource struct, NULL if file-loaded
+    image_source TEXT CHECK (
+        image_source IS NULL
+        OR (
+            json_valid(image_source)
+            AND json_extract(image_source, '$.url') IS NOT NULL
+            AND json_extract(image_source, '$.url') != ''
+            AND json_extract(image_source, '$.pull_policy') IN (
+                'Always', 'IfNotPresent', 'Never'
+            )
+        )
+    ),           -- JSON ImageSource struct, NULL if file-loaded
     owner TEXT,
     description TEXT,
     license TEXT,                -- ELF license string from bytecode
-    gpl_compatible INTEGER NOT NULL DEFAULT 0,
-    metadata_json TEXT NOT NULL DEFAULT '{}', -- User key-value metadata as JSON
+    gpl_compatible INTEGER NOT NULL DEFAULT 0 CHECK (gpl_compatible IN (0, 1)),
+    metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json)),
+                                     -- User key-value metadata as JSON
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
@@ -43,7 +58,10 @@ CREATE TABLE IF NOT EXISTS managed_programs (
 -- This matches the ID users see in CLI and bpftool.
 CREATE TABLE IF NOT EXISTS links (
     link_id         INTEGER PRIMARY KEY,  -- kernel ID or synthetic ID
-    kind            TEXT NOT NULL,        -- LinkKind discriminator
+    kind            TEXT NOT NULL CHECK (kind IN (
+                        'tracepoint','kprobe','kretprobe','uprobe','uretprobe',
+                        'fentry','fexit','xdp','tc','tcx'
+                    )),        -- LinkKind discriminator
     kernel_prog_id  INTEGER NOT NULL,     -- useful for queries
     pin_path        TEXT,
     is_synthetic    INTEGER NOT NULL DEFAULT 0 CHECK (is_synthetic IN (0, 1)),
@@ -84,7 +102,7 @@ CREATE TABLE IF NOT EXISTS link_tracepoint_details (
 CREATE TABLE IF NOT EXISTS link_kprobe_details (
     link_id INTEGER PRIMARY KEY,
     fn_name TEXT NOT NULL,
-    offset INTEGER NOT NULL DEFAULT 0,
+    offset INTEGER NOT NULL DEFAULT 0 CHECK (offset >= 0),
     retprobe INTEGER NOT NULL DEFAULT 0 CHECK (retprobe IN (0, 1)),
 
     FOREIGN KEY (link_id)
@@ -97,7 +115,7 @@ CREATE TABLE IF NOT EXISTS link_uprobe_details (
     link_id INTEGER PRIMARY KEY,
     target TEXT NOT NULL,
     fn_name TEXT,
-    offset INTEGER NOT NULL DEFAULT 0,
+    offset INTEGER NOT NULL DEFAULT 0 CHECK (offset >= 0),
     pid INTEGER,
     retprobe INTEGER NOT NULL DEFAULT 0 CHECK (retprobe IN (0, 1)),
 
@@ -134,10 +152,10 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     type TEXT NOT NULL CHECK (type IN ('xdp', 'tc-ingress', 'tc-egress')),
     nsid INTEGER NOT NULL,
     ifindex INTEGER NOT NULL,
-    revision INTEGER NOT NULL DEFAULT 1,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     program_id INTEGER NOT NULL UNIQUE,
     link_id INTEGER NOT NULL DEFAULT 0,
-    priority INTEGER NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
@@ -162,7 +180,7 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     netns TEXT,
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
-    revision INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
@@ -188,7 +206,7 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     netns TEXT,
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
-    revision INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)

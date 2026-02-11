@@ -68,10 +68,6 @@ func (a TCAction) String() string               { return a.v }
 func (a TCAction) MarshalText() ([]byte, error) { return []byte(a.v), nil }
 
 func (a *TCAction) UnmarshalText(b []byte) error {
-	if len(b) == 0 {
-		*a = TCAction{}
-		return nil
-	}
 	parsed, err := ParseTCAction(string(b))
 	if err != nil {
 		return err

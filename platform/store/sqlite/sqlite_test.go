@@ -1004,6 +1004,7 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 			Ifindex:      2,
 			DispatcherID: 500,
 			Nsid:         4026531840,
+			Revision:     1,
 		},
 		time.Now(),
 	)

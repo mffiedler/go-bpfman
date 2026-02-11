@@ -187,7 +187,7 @@ func (s LoadSpec) WithAttachFunc(fn string) LoadSpec {
 type imageSourceJSON struct {
 	URL        string          `json:"url"`
 	Digest     string          `json:"digest,omitempty"`
-	PullPolicy ImagePullPolicy `json:"pull_policy,omitempty"`
+	PullPolicy ImagePullPolicy `json:"pull_policy"`
 }
 
 // loadSpecJSON is the JSON representation of LoadSpec.

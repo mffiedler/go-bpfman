@@ -62,10 +62,6 @@ func (t ProgramType) String() string               { return t.v }
 func (t ProgramType) MarshalText() ([]byte, error) { return []byte(t.v), nil }
 
 func (t *ProgramType) UnmarshalText(b []byte) error {
-	if len(b) == 0 {
-		*t = ProgramType{}
-		return nil
-	}
 	parsed, err := ParseProgramType(string(b))
 	if err != nil {
 		return err

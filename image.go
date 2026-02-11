@@ -24,10 +24,6 @@ func (p ImagePullPolicy) String() string               { return p.v }
 func (p ImagePullPolicy) MarshalText() ([]byte, error) { return []byte(p.v), nil }
 
 func (p *ImagePullPolicy) UnmarshalText(b []byte) error {
-	if len(b) == 0 {
-		*p = ImagePullPolicy{}
-		return nil
-	}
 	parsed, err := ParseImagePullPolicy(string(b))
 	if err != nil {
 		return err
