@@ -284,6 +284,29 @@ type RemoveStagingDir struct {
 
 func (RemoveStagingDir) isAction() {}
 
+// AttachTCX attaches a pinned program to an interface using the
+// kernel-native TCX multi-program mechanism. Returns
+// bpfman.AttachOutput via ExecuteResult.
+type AttachTCX struct {
+	Ifindex     int
+	Direction   string
+	ProgPinPath string
+	LinkPinPath string
+	NetnsPath   string
+	Order       bpfman.TCXAttachOrder
+}
+
+func (AttachTCX) isAction() {}
+
+// CleanupEmptyDispatcher checks whether the given dispatcher has any
+// remaining extension links and, if empty, removes it from both the
+// kernel and the store. A no-op when extensions remain.
+type CleanupEmptyDispatcher struct {
+	State dispatcher.State
+}
+
+func (CleanupEmptyDispatcher) isAction() {}
+
 // Deep dispatcher actions - cross-subsystem operations that the
 // executor handles internally (kernel + store transactions with
 // rollback). These replace direct manager method calls for dispatcher

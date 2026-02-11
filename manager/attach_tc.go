@@ -178,8 +178,15 @@ func (m *Manager) attachTCXPlan(
 ) operation.Plan {
 	return operation.Build(
 		operation.Produce(attachOutKey, target,
-			func(ctx context.Context, _ action.ExecutorWithResult, _ *operation.Bindings) (bpfman.AttachOutput, error) {
-				return m.kernel.AttachTCX(ctx, ifindex, string(direction), progPinPath, linkPinPath, netnsPath, order)
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (bpfman.AttachOutput, error) {
+				return action.Produce[bpfman.AttachOutput](ctx, exec, action.AttachTCX{
+					Ifindex:     ifindex,
+					Direction:   string(direction),
+					ProgPinPath: progPinPath,
+					LinkPinPath: linkPinPath,
+					NetnsPath:   netnsPath,
+					Order:       order,
+				})
 			},
 			operation.UndoFrom(func(_ *operation.Bindings) []action.Action {
 				return []action.Action{

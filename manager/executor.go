@@ -100,6 +100,9 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.AttachFexit:
 		return e.kernel.AttachFexit(ctx, a.ProgPinPath, a.FnName, a.LinkPinPath)
 
+	case action.AttachTCX:
+		return e.kernel.AttachTCX(ctx, a.Ifindex, a.Direction, a.ProgPinPath, a.LinkPinPath, a.NetnsPath, a.Order)
+
 	case action.SaveDispatcher:
 		return nil, e.store.SaveDispatcher(ctx, a.State)
 
@@ -179,6 +182,9 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.AttachTCExtension:
 		return attachTCExtensionWithRetry(ctx, e.store, e.kernel, e.bpffs, e.logger, a.DispState, a.Ifname, a.Direction, a.DispType, a.NetnsPath, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
+	case action.CleanupEmptyDispatcher:
+		return nil, e.cleanupEmptyDispatcher(ctx, a.State)
+
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", a)
 	}
@@ -209,6 +215,39 @@ func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Ac
 	}
 
 	return res
+}
+
+// cleanupEmptyDispatcher checks whether a dispatcher has any
+// remaining extension links and, if not, removes it from both the
+// kernel and the store.
+func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
+	remaining, err := e.store.CountDispatcherLinks(ctx, state.KernelID)
+	if err != nil {
+		e.logger.WarnContext(ctx, "failed to count dispatcher links", "error", err)
+		return nil
+	}
+	if remaining > 0 {
+		return nil
+	}
+
+	// For TC dispatchers, query the kernel for the filter handle
+	// since it is no longer stored.
+	var tcHandle uint32
+	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
+		parent := tcParentHandle(state.Type)
+		handle, err := e.kernel.FindTCFilterHandle(ctx, int(state.Ifindex), parent, state.Priority)
+		if err != nil {
+			e.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)
+		} else {
+			tcHandle = handle
+		}
+	}
+
+	cleanupActions := computeDispatcherCleanupActions(e.bpffs, state, tcHandle)
+	if err := e.ExecuteAll(ctx, cleanupActions); err != nil {
+		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
+	}
+	return nil
 }
 
 // Ensure executor implements action.ExecutorWithResult.

@@ -38,6 +38,8 @@ func Describe(a Action) string {
 		return fmt.Sprintf("attach fentry %s", a.FnName)
 	case AttachFexit:
 		return fmt.Sprintf("attach fexit %s", a.FnName)
+	case AttachTCX:
+		return fmt.Sprintf("attach TCX ifindex=%d %s", a.Ifindex, a.Direction)
 
 	// Link/pin actions
 	case DetachLink:
@@ -60,6 +62,8 @@ func Describe(a Action) string {
 		return fmt.Sprintf("attach XDP extension %s", a.ProgramName)
 	case AttachTCExtension:
 		return fmt.Sprintf("attach TC extension %s", a.ProgramName)
+	case CleanupEmptyDispatcher:
+		return fmt.Sprintf("cleanup empty %s dispatcher nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
 
 	// GC filesystem cleanup
 	case RemoveProgPin:

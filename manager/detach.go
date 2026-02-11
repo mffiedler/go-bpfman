@@ -75,9 +75,9 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 //  1. (conditional) Do "detach-link" -- kernel detach via DetachLink.
 //     Only included when the link has a pin path.
 //  2. Do "delete-link" -- store delete via DeleteLink.
-//  3. (conditional) Do "dispatcher-cleanup" -- calls
-//     cleanupEmptyDispatcher. Only included when the link uses a
-//     dispatcher (XDP/TC).
+//  3. (conditional) Do "dispatcher-cleanup" -- executes
+//     CleanupEmptyDispatcher via executor. Only included when the
+//     link uses a dispatcher (XDP/TC).
 //
 // No undo entries on any node. Detach is destructive and
 // non-reversible.
@@ -109,8 +109,8 @@ func (m *Manager) detachPlan(
 		nodes = append(nodes, operation.Do(
 			"dispatcher-cleanup",
 			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
-			func(ctx context.Context, _ action.ExecutorWithResult, _ *operation.Bindings) error {
-				return m.cleanupEmptyDispatcher(ctx, ds)
+			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
+				return exec.Execute(ctx, action.CleanupEmptyDispatcher{State: ds})
 			},
 		))
 	}
@@ -148,40 +148,6 @@ func tcParentHandle(dispType dispatcher.DispatcherType) uint32 {
 	default:
 		return 0
 	}
-}
-
-// cleanupEmptyDispatcher checks whether a dispatcher has any remaining
-// extension links and, if not, removes it from both the kernel and the
-// store. This is called after link removal to eagerly reclaim
-// dispatchers that are no longer needed.
-func (m *Manager) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
-	remaining, err := m.store.CountDispatcherLinks(ctx, state.KernelID)
-	if err != nil {
-		m.logger.WarnContext(ctx, "failed to count dispatcher links", "error", err)
-		return nil
-	}
-	if remaining > 0 {
-		return nil
-	}
-
-	// For TC dispatchers, query the kernel for the filter handle
-	// since it is no longer stored.
-	var tcHandle uint32
-	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
-		parent := tcParentHandle(state.Type)
-		handle, err := m.kernel.FindTCFilterHandle(ctx, int(state.Ifindex), parent, state.Priority)
-		if err != nil {
-			m.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)
-		} else {
-			tcHandle = handle
-		}
-	}
-
-	cleanupActions := computeDispatcherCleanupActions(m.rt.BPFFS(), state, tcHandle)
-	if err := m.executor.ExecuteAll(ctx, cleanupActions); err != nil {
-		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
-	}
-	return nil
 }
 
 // collectDispatcherKeys examines links for dispatcher associations and
@@ -223,7 +189,7 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 			// Detach call or GC). Nothing to do.
 			continue
 		}
-		if err := m.cleanupEmptyDispatcher(ctx, state); err != nil {
+		if err := m.executor.Execute(ctx, action.CleanupEmptyDispatcher{State: state}); err != nil {
 			m.logger.WarnContext(ctx, "dispatcher cleanup failed",
 				"type", key.Type,
 				"nsid", key.Nsid,

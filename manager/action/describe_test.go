@@ -92,6 +92,11 @@ func TestDescribe(t *testing.T) {
 			action:   AttachFexit{FnName: "tcp_connect"},
 			contains: "attach fexit tcp_connect",
 		},
+		{
+			name:     "AttachTCX",
+			action:   AttachTCX{Ifindex: 3, Direction: "ingress"},
+			contains: "attach TCX ifindex=3 ingress",
+		},
 
 		// Link/pin actions
 		{
@@ -142,6 +147,13 @@ func TestDescribe(t *testing.T) {
 			name:     "AttachTCExtension",
 			action:   AttachTCExtension{ProgramName: "my_tc_prog"},
 			contains: "attach TC extension my_tc_prog",
+		},
+		{
+			name: "CleanupEmptyDispatcher",
+			action: CleanupEmptyDispatcher{State: dispatcher.State{
+				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
+			}},
+			contains: "cleanup empty xdp dispatcher nsid=1 ifindex=2",
 		},
 
 		// GC filesystem cleanup
