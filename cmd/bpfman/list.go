@@ -10,12 +10,6 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// ListCmd lists managed programs or links.
-type ListCmd struct {
-	Programs ListProgramsCmd `cmd:"" default:"withargs" help:"List managed programs."`
-	Links    ListLinksCmd    `cmd:"" help:"List managed links."`
-}
-
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
 	OutputFlags

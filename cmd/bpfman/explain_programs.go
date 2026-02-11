@@ -28,7 +28,7 @@ func ProgramSchemaDoc() SchemaDoc {
 	return SchemaDoc{
 		Kind:        "Program",
 		Version:     "",
-		Description: "A BPF program object returned by 'bpfman list programs -o json'.",
+		Description: "A BPF program object returned by 'bpfman program list -o json'.",
 		Fields: []FieldInfo{
 			{Name: "spec", Type: "<ProgramSpec>", Children: []FieldInfo{
 				{Name: "program_id", Type: "<number>", Description: "Program ID"},
@@ -102,8 +102,8 @@ func FormatProgramSchema() string {
 	w.Flush()
 
 	b.WriteString("\nSee also:\n")
-	b.WriteString("  bpfman explain programs --columns\n")
-	b.WriteString("  bpfman list programs -o custom-columns=...\n")
+	b.WriteString("  bpfman program explain --columns\n")
+	b.WriteString("  bpfman program list -o custom-columns=...\n")
 
 	return b.String()
 }
@@ -127,9 +127,9 @@ func formatFieldTree(w *tabwriter.Writer, fields []FieldInfo, depth int) {
 func FormatProgramColumnExplanation() string {
 	var b strings.Builder
 
-	b.WriteString("Available columns for 'bpfman list programs -o custom-columns=...':\n\n")
+	b.WriteString("Available columns for 'bpfman program list -o custom-columns=...':\n\n")
 	b.WriteString("These are the stable, documented columns. You can also reference any\n")
-	b.WriteString("JSON field via JSONPath (see 'bpfman explain programs' for the schema).\n\n")
+	b.WriteString("JSON field via JSONPath (see 'bpfman program explain' for the schema).\n\n")
 
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "COLUMN\tJSONPATH\tDESCRIPTION")
@@ -144,7 +144,7 @@ func FormatProgramColumnExplanation() string {
 	w.Flush()
 
 	b.WriteString("\nExample:\n")
-	b.WriteString("  bpfman list programs -o custom-columns=NAME:.spec.meta.name,TAG:.status.kernel.tag\n")
+	b.WriteString("  bpfman program list -o custom-columns=NAME:.spec.meta.name,TAG:.status.kernel.tag\n")
 
 	return b.String()
 }

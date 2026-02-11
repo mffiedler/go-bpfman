@@ -12,7 +12,7 @@ func LinkSchemaDoc() SchemaDoc {
 	return SchemaDoc{
 		Kind:        "Link",
 		Version:     "",
-		Description: "A BPF link object returned by 'bpfman list links -o json'.",
+		Description: "A BPF link object returned by 'bpfman link list -o json'.",
 		Fields: []FieldInfo{
 			{Name: "id", Type: "<number>", Description: "Link ID"},
 			{Name: "program_id", Type: "<number>", Description: "Associated program ID"},
@@ -68,8 +68,8 @@ func FormatLinkSchema() string {
 	b.WriteString("    fexit:       fn_name\n")
 
 	b.WriteString("\nSee also:\n")
-	b.WriteString("  bpfman explain links --columns\n")
-	b.WriteString("  bpfman list links -o custom-columns=...\n")
+	b.WriteString("  bpfman link explain --columns\n")
+	b.WriteString("  bpfman link list -o custom-columns=...\n")
 
 	return b.String()
 }
@@ -78,9 +78,9 @@ func FormatLinkSchema() string {
 func FormatLinkColumnExplanation() string {
 	var b strings.Builder
 
-	b.WriteString("Available columns for 'bpfman list links -o custom-columns=...':\n\n")
+	b.WriteString("Available columns for 'bpfman link list -o custom-columns=...':\n\n")
 	b.WriteString("These are the stable, documented columns. You can also reference any\n")
-	b.WriteString("JSON field via JSONPath (see 'bpfman explain links' for the schema).\n\n")
+	b.WriteString("JSON field via JSONPath (see 'bpfman link explain' for the schema).\n\n")
 
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "COLUMN\tJSONPATH\tDESCRIPTION")
@@ -95,7 +95,7 @@ func FormatLinkColumnExplanation() string {
 	w.Flush()
 
 	b.WriteString("\nExample:\n")
-	b.WriteString("  bpfman list links -o custom-columns=ID:.id,KIND:.kind,PROG:.program_id\n")
+	b.WriteString("  bpfman link list -o custom-columns=ID:.id,KIND:.kind,PROG:.program_id\n")
 
 	return b.String()
 }

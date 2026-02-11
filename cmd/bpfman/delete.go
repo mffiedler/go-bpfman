@@ -8,47 +8,34 @@ import (
 	"github.com/frobware/go-bpfman/manager"
 )
 
-// DeleteCmd deletes BPF resources with cascading cleanup.
-// Unlike unload/detach which are single-level primitives, delete
-// cascades through links:
-//   - delete link/123: detaches the link, unloads the program if orphaned
-//   - delete program/456: detaches all links, then unloads the program
-//
+// ProgramDeleteCmd deletes BPF programs with cascading cleanup.
+// For each program: detaches all links, then unloads the program.
 // With --recursive, also removes programs that depend on the target
-// through map ownership (map_owner_id). Without it, delete fails if
-// other programs share the target's maps.
-type DeleteCmd struct {
+// through map ownership (map_owner_id).
+type ProgramDeleteCmd struct {
 	OutputFlags
-	Recursive bool          `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
-	Resources []ResourceRef `arg:"" name:"resource" help:"Resources to delete (e.g., link/123, program/456)." required:""`
+	Recursive  bool        `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
+	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Program IDs to delete." required:""`
 }
 
-// Run executes the delete command with cascading cleanup.
-func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
+// Run executes the program delete command with cascading cleanup.
+func (c *ProgramDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
 
-	// Collect results to print after releasing lock
 	type result struct {
-		ref ResourceRef
+		id  kernel.ProgramID
 		err error
 	}
-	results := make([]result, 0, len(c.Resources))
+	results := make([]result, 0, len(c.ProgramIDs))
 
-	// Mutation under lock - process all resources
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
-		for _, ref := range c.Resources {
-			var err error
-			switch ref.Kind {
-			case ResourceKindLink:
-				err = c.deleteLink(ctx, mgr, kernel.LinkID(ref.ID))
-			case ResourceKindProgram:
-				err = c.deleteProgram(ctx, mgr, kernel.ProgramID(ref.ID))
-			}
-			results = append(results, result{ref: ref, err: err})
+		for _, pid := range c.ProgramIDs {
+			err := deleteProgram(ctx, mgr, pid.Value, c.Recursive)
+			results = append(results, result{id: pid.Value, err: err})
 		}
 		return nil
 	})
@@ -56,25 +43,73 @@ func (c *DeleteCmd) Run(cli *CLI, ctx context.Context) error {
 		return lockErr
 	}
 
-	// Print results outside lock
 	var failCount int
 	for _, r := range results {
 		if r.err != nil {
-			_ = cli.PrintErrf("%s: %v\n", r.ref, r.err)
+			_ = cli.PrintErrf("program %d: %v\n", r.id, r.err)
 			failCount++
 		}
 	}
 
 	if failCount > 0 {
-		return fmt.Errorf("%d of %d resource(s) failed to delete", failCount, len(results))
+		return fmt.Errorf("%d of %d program(s) failed to delete", failCount, len(results))
+	}
+
+	return nil
+}
+
+// LinkDeleteCmd deletes BPF links with cascading cleanup.
+// For each link: detaches the link, then unloads the program if it
+// has no remaining links. With --recursive, also removes programs
+// that depend on the orphaned program through map ownership.
+type LinkDeleteCmd struct {
+	OutputFlags
+	Recursive bool     `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
+	LinkIDs   []LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
+}
+
+// Run executes the link delete command with cascading cleanup.
+func (c *LinkDeleteCmd) Run(cli *CLI, ctx context.Context) error {
+	mgr, cleanup, err := cli.NewManager(ctx)
+	if err != nil {
+		return fmt.Errorf("create manager: %w", err)
+	}
+	defer cleanup()
+
+	type result struct {
+		id  kernel.LinkID
+		err error
+	}
+	results := make([]result, 0, len(c.LinkIDs))
+
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+		for _, lid := range c.LinkIDs {
+			err := deleteLink(ctx, mgr, lid.Value, c.Recursive)
+			results = append(results, result{id: lid.Value, err: err})
+		}
+		return nil
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	var failCount int
+	for _, r := range results {
+		if r.err != nil {
+			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
+			failCount++
+		}
+	}
+
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d link(s) failed to delete", failCount, len(results))
 	}
 
 	return nil
 }
 
 // deleteLink detaches the link, then deletes the program if it has no remaining links.
-func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID) error {
-	// Get link to find its program
+func deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID, recursive bool) error {
 	link, err := mgr.GetLink(ctx, linkID)
 	if err != nil {
 		return fmt.Errorf("get link: %w", err)
@@ -82,19 +117,17 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID
 
 	programID := link.ProgramID
 
-	// Detach the link
 	if err := mgr.Detach(ctx, linkID); err != nil {
 		return fmt.Errorf("detach: %w", err)
 	}
 
-	// Check if program now has no links
 	links, err := mgr.ListLinksByProgram(ctx, programID)
 	if err != nil {
 		return fmt.Errorf("list links for program %d: %w", programID, err)
 	}
 
 	if len(links) == 0 {
-		if err := c.deleteProgram(ctx, mgr, programID); err != nil {
+		if err := deleteProgram(ctx, mgr, programID, recursive); err != nil {
 			return fmt.Errorf("delete orphaned program %d: %w", programID, err)
 		}
 	}
@@ -103,17 +136,15 @@ func (c *DeleteCmd) deleteLink(ctx context.Context, mgr *manager.Manager, linkID
 }
 
 // deleteProgram detaches all links for the program, then unloads it.
-// With --recursive, also deletes dependent programs (those sharing
-// maps via map_owner_id) before unloading the target.
-func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.ProgramID) error {
-	// With full-graph, find and delete map dependents first
-	if c.Recursive {
-		if err := c.deleteDependents(ctx, mgr, programID); err != nil {
+// With recursive, also deletes dependent programs (those sharing maps
+// via map_owner_id) before unloading the target.
+func deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.ProgramID, recursive bool) error {
+	if recursive {
+		if err := deleteDependents(ctx, mgr, programID); err != nil {
 			return err
 		}
 	}
 
-	// Detach all links for this program
 	links, err := mgr.ListLinksByProgram(ctx, programID)
 	if err != nil {
 		return fmt.Errorf("list links: %w", err)
@@ -125,7 +156,6 @@ func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, pro
 		}
 	}
 
-	// Unload the program
 	if err := mgr.Unload(ctx, programID); err != nil {
 		return fmt.Errorf("unload: %w", err)
 	}
@@ -135,7 +165,7 @@ func (c *DeleteCmd) deleteProgram(ctx context.Context, mgr *manager.Manager, pro
 
 // deleteDependents finds programs that share maps with the target
 // (map_owner_id = programID) and deletes them first.
-func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID kernel.ProgramID) error {
+func deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID kernel.ProgramID) error {
 	result, err := mgr.ListPrograms(ctx)
 	if err != nil {
 		return fmt.Errorf("list programs: %w", err)
@@ -143,7 +173,7 @@ func (c *DeleteCmd) deleteDependents(ctx context.Context, mgr *manager.Manager, 
 
 	for _, prog := range result.Programs {
 		if prog.Record.Handles.MapOwnerID != nil && *prog.Record.Handles.MapOwnerID == ownerID {
-			if err := c.deleteProgram(ctx, mgr, prog.Record.ProgramID); err != nil {
+			if err := deleteProgram(ctx, mgr, prog.Record.ProgramID, true); err != nil {
 				return fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
 			}
 		}

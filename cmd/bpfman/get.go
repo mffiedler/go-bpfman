@@ -7,12 +7,6 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// GetCmd gets details of a program or link.
-type GetCmd struct {
-	Program GetProgramCmd `cmd:"" help:"Get a loaded eBPF program using the Program Id."`
-	Link    GetLinkCmd    `cmd:"" help:"Get a loaded eBPF program's attachment using the Link Id."`
-}
-
 // GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
 	OutputFlags

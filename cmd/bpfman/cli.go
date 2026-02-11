@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -24,12 +25,12 @@ import (
 
 // CLI is the root command structure for bpfman.
 type CLI struct {
-	RuntimeDir    string        `name:"runtime-dir" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
-	ImageCacheDir string        `name:"image-cache-dir" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
-	Config        string        `name:"config" help:"Config file path." default:"${default_config_path}"`
-	Log           string        `name:"log" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
-	LockTimeout   time.Duration `name:"lock-timeout" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
-	Verbose       bool          `name:"verbose" help:"Print each action before it executes."`
+	RuntimeDir    string        `name:"runtime-dir" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
+	ImageCacheDir string        `name:"image-cache-dir" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
+	Config        string        `name:"config" group:"global" help:"Config file path." default:"${default_config_path}"`
+	Log           string        `name:"log" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
+	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
+	Verbose       bool          `name:"verbose" group:"global" help:"Print each action before it executes."`
 
 	// Out is the writer for command output. Defaults to os.Stdout.
 	// Injected for testability.
@@ -49,18 +50,12 @@ type CLI struct {
 	// kctx is the parsed Kong context, stored for Execute to dispatch.
 	kctx *kong.Context `kong:"-"`
 
-	Serve   ServeCmd   `cmd:"" help:"Start the gRPC daemon."`
-	Load    LoadCmd    `cmd:"" help:"Load a BPF program from an object file."`
-	Unload  UnloadCmd  `cmd:"" help:"Unload a managed BPF program."`
-	Attach  AttachCmd  `cmd:"" help:"Attach a loaded program to a hook."`
-	Detach  DetachCmd  `cmd:"" help:"Detach a link."`
-	Delete  DeleteCmd  `cmd:"" help:"Delete resources with cascading cleanup."`
-	List    ListCmd    `cmd:"" help:"List managed programs or links."`
-	Get     GetCmd     `cmd:"" help:"Get a loaded eBPF program or program attachment link."`
-	Explain ExplainCmd `cmd:"" help:"Explain available fields and columns for a resource."`
-	GC      GCCmd      `cmd:"" help:"Garbage collect stale resources."`
-	Doctor  DoctorCmd  `cmd:"" help:"Check coherency of database, kernel, and filesystem state."`
-	Image   ImageCmd   `cmd:"" help:"Image operations (verify signatures)."`
+	Program ProgramCmd `cmd:"" group:"resources" help:"Manage BPF programs."`
+	Link    LinkCmd    `cmd:"" group:"resources" help:"Manage BPF links."`
+	Image   ImageCmd   `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
+	Serve   ServeCmd   `cmd:"" group:"infra" help:"Start the gRPC daemon."`
+	GC      GCCmd      `cmd:"" group:"diag" help:"Garbage collect stale resources."`
+	Doctor  DoctorCmd  `cmd:"" group:"diag" help:"Check coherency of database, kernel, and filesystem state."`
 }
 
 // verboseWriter returns the writer for verbose action narration.
@@ -159,6 +154,13 @@ func NewCLI() (*CLI, error) {
 		os.Args = append([]string{os.Args[0], "serve"}, os.Args[1:]...)
 	}
 
+	// Rewrite "help [cmd...]" to "[cmd...] --help" so that
+	// "bpfman help link attach xdp" works like most CLI tools.
+	if len(os.Args) >= 2 && os.Args[1] == "help" {
+		rest := os.Args[2:]
+		os.Args = append(append([]string{os.Args[0]}, rest...), "--help")
+	}
+
 	var c CLI
 	c.kctx = kong.Parse(&c, KongOptions()...)
 
@@ -204,6 +206,19 @@ func KongOptions() []kong.Option {
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 		}),
+		kong.Groups{
+			"global":    "Global Flags:",
+			"resources": "BPF Resources:",
+			"infra":     "Infrastructure:",
+			"diag":      "Diagnostics:",
+		},
+		kong.Help(compactHelpPrinter),
+		kong.PostBuild(func(k *kong.Kong) error {
+			if k.Model.HelpFlag != nil {
+				k.Model.HelpFlag.Value.Help = "Show help (-h for compact, --help for full)."
+			}
+			return nil
+		}),
 		kong.ShortUsageOnError(),
 		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
 		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
@@ -219,6 +234,32 @@ func KongOptions() []kong.Option {
 			"default_config_path":     "/etc/bpfman/bpfman.toml",
 		},
 	}
+}
+
+// compactHelpPrinter wraps Kong's default help printer. When invoked
+// via -h it omits the global flags group for a more focused output.
+// With --help the full output is shown.
+func compactHelpPrinter(options kong.HelpOptions, ctx *kong.Context) error {
+	short := slices.Contains(os.Args[1:], "-h")
+
+	if short {
+		// Temporarily hide global-group flags so the default
+		// printer skips them via AllFlags(hide=true).
+		var hidden []*kong.Flag
+		for _, flag := range ctx.Model.Node.Flags {
+			if flag.Group != nil && flag.Group.Key == "global" && !flag.Hidden {
+				flag.Hidden = true
+				hidden = append(hidden, flag)
+			}
+		}
+		err := kong.DefaultHelpPrinter(options, ctx)
+		for _, flag := range hidden {
+			flag.Hidden = false
+		}
+		return err
+	}
+
+	return kong.DefaultHelpPrinter(options, ctx)
 }
 
 // LoadConfig loads the configuration from the config file path.
