@@ -17,6 +17,10 @@ func (d DispatcherType) String() string               { return d.v }
 func (d DispatcherType) MarshalText() ([]byte, error) { return []byte(d.v), nil }
 
 func (d *DispatcherType) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*d = DispatcherType{}
+		return nil
+	}
 	parsed, err := ParseDispatcherType(string(b))
 	if err != nil {
 		return err

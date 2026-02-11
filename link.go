@@ -186,6 +186,10 @@ func (d TCDirection) String() string               { return d.v }
 func (d TCDirection) MarshalText() ([]byte, error) { return []byte(d.v), nil }
 
 func (d *TCDirection) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*d = TCDirection{}
+		return nil
+	}
 	parsed, err := ParseTCDirection(string(b))
 	if err != nil {
 		return err
@@ -283,6 +287,10 @@ func (k LinkKind) String() string               { return k.v }
 func (k LinkKind) MarshalText() ([]byte, error) { return []byte(k.v), nil }
 
 func (k *LinkKind) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*k = LinkKind{}
+		return nil
+	}
 	parsed, err := ParseLinkKind(string(b))
 	if err != nil {
 		return err

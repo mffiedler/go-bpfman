@@ -16,11 +16,18 @@ var (
 	PullNever = ImagePullPolicy{"Never"}
 )
 
+// Valid reports whether p is a recognised pull policy (not the zero value).
+func (p ImagePullPolicy) Valid() bool { return p != (ImagePullPolicy{}) }
+
 // String returns the string representation of the pull policy.
 func (p ImagePullPolicy) String() string               { return p.v }
 func (p ImagePullPolicy) MarshalText() ([]byte, error) { return []byte(p.v), nil }
 
 func (p *ImagePullPolicy) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*p = ImagePullPolicy{}
+		return nil
+	}
 	parsed, err := ParseImagePullPolicy(string(b))
 	if err != nil {
 		return err
