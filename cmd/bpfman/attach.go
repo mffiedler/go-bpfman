@@ -112,7 +112,7 @@ func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
 			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
 		}
 
-		proceedOn, err := ParseTCActions(c.ProceedOn)
+		proceedOn, err := bpfman.ParseTCActions(c.ProceedOn)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid proceed-on value: %w", err)
 		}

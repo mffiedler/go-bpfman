@@ -500,7 +500,7 @@ func formatLinkResultTable(link bpfman.Link) string {
 		}
 		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
 		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
-		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", TCActionsToString(d.ProceedOn)))
+		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", bpfman.TCActionsToString(d.ProceedOn)))
 	case bpfman.TCXDetails:
 		specFields = append(specFields, fmt.Sprintf("    Direction:\t%s", d.Direction))
 		specFields = append(specFields, fmt.Sprintf("    Interface:\t%s", d.Interface))

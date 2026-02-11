@@ -163,8 +163,11 @@ func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID
 	// Use provided proceed-on or default
 	proceedOn := info.ProceedOn
 	if len(proceedOn) == 0 {
-		// Default: ok (0), pipe (3), dispatcher_return (30)
-		proceedOn = []int32{0, 3, 30}
+		proceedOn = []int32{
+			bpfman.TCActionOK.Int32(),
+			bpfman.TCActionPipe.Int32(),
+			bpfman.TCActionDispatcherReturn.Int32(),
+		}
 	}
 	spec = spec.WithProceedOn(proceedOn)
 
