@@ -137,7 +137,7 @@ func (b BPFFS) Scanner() *Scanner {
 
 // dispatcherTypeDir returns the base directory for a dispatcher type.
 func (b BPFFS) dispatcherTypeDir(dispType dispatcher.DispatcherType) string {
-	return filepath.Join(b.mountPoint(), string(dispType))
+	return filepath.Join(b.mountPoint(), dispType.String())
 }
 
 // DispatcherLinkPath returns the stable path for the dispatcher link.

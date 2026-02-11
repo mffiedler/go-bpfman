@@ -76,7 +76,7 @@ func TestStaleDispatcher_XDP(t *testing.T) {
 		action.RemoveDispatcherProgPin{Path: "/bpffs/xdp/dispatcher_1_2_1/dispatcher"},
 		action.RemoveDispatcherRevDir{Path: "/bpffs/xdp/dispatcher_1_2_1"},
 		action.RemoveDispatcherLinkPin{Path: "/bpffs/xdp/dispatcher_1_2_link"},
-		action.DeleteDispatcher{Type: "xdp", Nsid: 1, Ifindex: 2},
+		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
 	}})
 }
 
@@ -104,7 +104,7 @@ func TestStaleDispatcher_TC(t *testing.T) {
 	assertActions(t, violations, [][]action.Action{{
 		action.RemoveDispatcherProgPin{Path: "/bpffs/tc_ingress/dispatcher_1_3_1/dispatcher"},
 		action.RemoveDispatcherRevDir{Path: "/bpffs/tc_ingress/dispatcher_1_3_1"},
-		action.DeleteDispatcher{Type: "tc-ingress", Nsid: 1, Ifindex: 3},
+		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 1, Ifindex: 3},
 	}})
 }
 

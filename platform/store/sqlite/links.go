@@ -336,12 +336,18 @@ func (s *sqliteStore) batchPopulateTCDetails(ctx context.Context, links []bpfman
 	for rows.Next() {
 		var linkID int64
 		var details bpfman.TCDetails
+		var dirStr string
 		var proceedOnJSON string
 		var netns sql.NullString
-		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &details.Position,
+		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &dirStr, &details.Priority, &details.Position,
 			&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision); err != nil {
 			return fmt.Errorf("scan tc details: %w", err)
 		}
+		dir, err := bpfman.ParseTCDirection(dirStr)
+		if err != nil {
+			return fmt.Errorf("invalid tc direction in DB for link %d: %w", linkID, err)
+		}
+		details.Direction = dir
 		if err := json.Unmarshal([]byte(proceedOnJSON), &details.ProceedOn); err != nil {
 			return fmt.Errorf("unmarshal tc proceed_on: %w", err)
 		}
@@ -365,11 +371,17 @@ func (s *sqliteStore) batchPopulateTCXDetails(ctx context.Context, links []bpfma
 	for rows.Next() {
 		var linkID int64
 		var details bpfman.TCXDetails
+		var dirStr string
 		var netns sql.NullString
 		var nsid sql.NullInt64
-		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &netns, &nsid); err != nil {
+		if err := rows.Scan(&linkID, &details.Interface, &details.Ifindex, &dirStr, &details.Priority, &netns, &nsid); err != nil {
 			return fmt.Errorf("scan tcx details: %w", err)
 		}
+		dir, err := bpfman.ParseTCDirection(dirStr)
+		if err != nil {
+			return fmt.Errorf("invalid tcx direction in DB for link %d: %w", linkID, err)
+		}
+		details.Direction = dir
 		if netns.Valid {
 			details.Netns = netns.String
 		}
@@ -520,7 +532,7 @@ func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID kernel.LinkID, d
 
 	start := time.Now()
 	_, err = s.stmtSaveTCDetails.ExecContext(ctx,
-		linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Position,
+		linkID, details.Interface, details.Ifindex, details.Direction.String(), details.Priority, details.Position,
 		string(proceedOnJSON), details.Netns, details.Nsid, details.DispatcherID, details.Revision)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveTCDetails", "args", []any{linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Position, "(proceed_on)", details.Netns, details.Nsid, details.DispatcherID, details.Revision}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -533,7 +545,7 @@ func (s *sqliteStore) saveTCDetails(ctx context.Context, linkID kernel.LinkID, d
 func (s *sqliteStore) saveTCXDetails(ctx context.Context, linkID kernel.LinkID, details bpfman.TCXDetails) error {
 	start := time.Now()
 	_, err := s.stmtSaveTCXDetails.ExecContext(ctx,
-		linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid)
+		linkID, details.Interface, details.Ifindex, details.Direction.String(), details.Priority, details.Netns, details.Nsid)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveTCXDetails", "args", []any{linkID, details.Interface, details.Ifindex, details.Direction, details.Priority, details.Netns, details.Nsid}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("failed to insert tcx details: %w", err)
@@ -563,7 +575,7 @@ func (s *sqliteStore) insertLinkRegistry(ctx context.Context, spec bpfman.LinkRe
 	}
 
 	_, err := s.stmtInsertLinkRegistry.ExecContext(ctx,
-		spec.ID, string(spec.Kind), spec.ProgramID,
+		spec.ID, spec.Kind.String(), spec.ProgramID,
 		pinPath, isSynthetic, spec.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "InsertLinkRegistry", "args", []any{spec.ID, spec.Kind, spec.ProgramID, pinPath, isSynthetic, "(timestamp)"}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -594,7 +606,11 @@ func (s *sqliteStore) scanLinkRecord(row *sql.Row) (bpfman.LinkRecord, error) {
 	}
 
 	record.ID = kernel.LinkID(linkID)
-	record.Kind = bpfman.LinkKind(kindStr)
+	kind, err := bpfman.ParseLinkKind(kindStr)
+	if err != nil {
+		return bpfman.LinkRecord{}, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
+	}
+	record.Kind = kind
 	record.ProgramID = programID
 	if pinPath.Valid {
 		pin := bpfman.LinkPath(pinPath.String)
@@ -627,9 +643,13 @@ func (s *sqliteStore) scanLinkRecords(rows *sql.Rows) ([]bpfman.LinkRecord, erro
 			return nil, err
 		}
 
+		kind, err := bpfman.ParseLinkKind(kindStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid link kind in DB for link %d: %w", linkID, err)
+		}
 		record := bpfman.LinkRecord{
 			ID:        kernel.LinkID(linkID),
-			Kind:      bpfman.LinkKind(kindStr),
+			Kind:      kind,
 			ProgramID: programID,
 		}
 		if pinPath.Valid {
@@ -807,9 +827,10 @@ func (s *sqliteStore) getTCDetails(ctx context.Context, linkID kernel.LinkID) (b
 	row := s.stmtGetTCDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.TCDetails
+	var dirStr string
 	var proceedOnJSON string
 	var netns sql.NullString
-	err := row.Scan(&details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &details.Position,
+	err := row.Scan(&details.Interface, &details.Ifindex, &dirStr, &details.Priority, &details.Position,
 		&proceedOnJSON, &netns, &details.Nsid, &details.DispatcherID, &details.Revision)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetTCDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
@@ -821,6 +842,11 @@ func (s *sqliteStore) getTCDetails(ctx context.Context, linkID kernel.LinkID) (b
 	}
 	s.logger.Debug("sql", "stmt", "GetTCDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
+	dir, err := bpfman.ParseTCDirection(dirStr)
+	if err != nil {
+		return bpfman.TCDetails{}, fmt.Errorf("invalid tc direction in DB for link %d: %w", linkID, err)
+	}
+	details.Direction = dir
 	if err := json.Unmarshal([]byte(proceedOnJSON), &details.ProceedOn); err != nil {
 		return bpfman.TCDetails{}, fmt.Errorf("failed to unmarshal proceed_on: %w", err)
 	}
@@ -835,9 +861,10 @@ func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID kernel.LinkID) (
 	row := s.stmtGetTCXDetails.QueryRowContext(ctx, linkID)
 
 	var details bpfman.TCXDetails
+	var dirStr string
 	var netns sql.NullString
 	var nsid sql.NullInt64
-	err := row.Scan(&details.Interface, &details.Ifindex, &details.Direction, &details.Priority, &netns, &nsid)
+	err := row.Scan(&details.Interface, &details.Ifindex, &dirStr, &details.Priority, &netns, &nsid)
 	if err == sql.ErrNoRows {
 		s.logger.Debug("sql", "stmt", "GetTCXDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 0)
 		return bpfman.TCXDetails{}, fmt.Errorf("tcx details for %d: %w", linkID, platform.ErrRecordNotFound)
@@ -848,6 +875,11 @@ func (s *sqliteStore) getTCXDetails(ctx context.Context, linkID kernel.LinkID) (
 	}
 	s.logger.Debug("sql", "stmt", "GetTCXDetails", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
+	dir, err := bpfman.ParseTCDirection(dirStr)
+	if err != nil {
+		return bpfman.TCXDetails{}, fmt.Errorf("invalid tcx direction in DB for link %d: %w", linkID, err)
+	}
+	details.Direction = dir
 	if netns.Valid {
 		details.Netns = netns.String
 	}

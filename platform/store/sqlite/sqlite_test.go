@@ -332,7 +332,7 @@ func TestDispatcherStore_SaveAndGet(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
 
 	// Retrieve and verify
-	got, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher failed")
 
 	assert.Equal(t, state.Type, got.Type)
@@ -368,7 +368,7 @@ func TestDispatcherStore_Update(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher (update) failed")
 
 	// Verify the update
-	got, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher failed")
 
 	assert.Equal(t, uint32(2), got.Revision)
@@ -394,10 +394,10 @@ func TestDispatcherStore_Delete(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
 
 	// Delete it
-	require.NoError(t, store.DeleteDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1), "DeleteDispatcher failed")
+	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1), "DeleteDispatcher failed")
 
 	// Verify it's gone
-	_, err = store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.Error(t, err, "expected dispatcher to be deleted")
 }
 
@@ -409,7 +409,7 @@ func TestDispatcherStore_DeleteNonExistent(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to delete a non-existent dispatcher
-	err = store.DeleteDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 99)
+	err = store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 99)
 	require.Error(t, err, "expected error for non-existent dispatcher")
 }
 
@@ -433,17 +433,17 @@ func TestDispatcherStore_IncrementRevision(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
 
 	// Increment revision
-	newRev, err := store.IncrementRevision(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	newRev, err := store.IncrementRevision(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "IncrementRevision failed")
 	assert.Equal(t, uint32(2), newRev, "expected revision 2")
 
 	// Increment again
-	newRev, err = store.IncrementRevision(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	newRev, err = store.IncrementRevision(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "IncrementRevision (2nd) failed")
 	assert.Equal(t, uint32(3), newRev, "expected revision 3")
 
 	// Verify via Get
-	got, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher failed")
 	assert.Equal(t, uint32(3), got.Revision, "revision mismatch")
 }
@@ -481,10 +481,10 @@ func TestDispatcherStore_UniqueConstraint(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, tcState), "SaveDispatcher (tc-ingress) failed")
 
 	// Verify both exist
-	_, err = store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher (xdp) failed")
 
-	_, err = store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeTCIngress), 4026531840, 1)
+	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher (tc-ingress) failed")
 }
 
@@ -509,11 +509,11 @@ func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
 	}
 
 	// Verify both exist independently
-	got1, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 1)
+	got1, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
 	require.NoError(t, err, "GetDispatcher (ifindex 1) failed")
 	assert.Equal(t, kernel.ProgramID(101), got1.ProgramID)
 
-	got2, err := store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), 4026531840, 2)
+	got2, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2)
 	require.NoError(t, err, "GetDispatcher (ifindex 2) failed")
 	assert.Equal(t, kernel.ProgramID(102), got2.ProgramID)
 }
@@ -704,10 +704,10 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 
 	// Create TCX links with varying priorities (insert out of order).
 	const (
-		nsid      = uint64(4026531840)
-		ifindex   = uint32(2)
-		direction = "ingress"
+		nsid    = uint64(4026531840)
+		ifindex = uint32(2)
 	)
+	direction := bpfman.TCDirectionIngress
 
 	// Insert links with priorities: 300, 100, 500, 200 (intentionally unordered)
 	linksToCreate := []struct {
@@ -735,7 +735,7 @@ func TestListTCXLinksByInterface_OrderByPriority(t *testing.T) {
 	}
 
 	// Query links - they should be ordered by priority ASC.
-	links, err := store.ListTCXLinksByInterface(ctx, nsid, ifindex, direction)
+	links, err := store.ListTCXLinksByInterface(ctx, nsid, ifindex, direction.String())
 	require.NoError(t, err, "ListTCXLinksByInterface failed")
 	require.Len(t, links, 4, "expected 4 links")
 
@@ -939,12 +939,12 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 	require.NoError(t, store.SaveDispatcher(ctx, disp2))
 
 	// Delete the TC dispatcher, keep the XDP one.
-	require.NoError(t, store.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3))
+	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3))
 
-	_, err = store.GetDispatcher(ctx, "xdp", 4026531840, 2)
+	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2)
 	require.NoError(t, err, "XDP dispatcher should survive")
 
-	_, err = store.GetDispatcher(ctx, "tc-ingress", 4026531840, 3)
+	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3)
 	require.Error(t, err, "TC dispatcher should be deleted")
 }
 
@@ -1023,7 +1023,7 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 	assert.Equal(t, 0, count, "dispatcher should have no remaining links")
 
 	// Deleting the now-orphaned dispatcher should succeed.
-	require.NoError(t, store.DeleteDispatcher(ctx, "xdp", 4026531840, 2))
+	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2))
 
 	dispatchers, err := store.ListDispatchers(ctx)
 	require.NoError(t, err)
@@ -1059,7 +1059,7 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
 			return err
 		}
-		if err := tx.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3); err != nil {
+		if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3); err != nil {
 			return err
 		}
 		return tx.DeleteLink(ctx, kernel.LinkID(400))
@@ -1162,7 +1162,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 		}
 
 		// Phase 2: delete stale dispatcher.
-		if err := tx.DeleteDispatcher(ctx, "tc-ingress", 4026531840, 3); err != nil {
+		if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3); err != nil {
 			return err
 		}
 
@@ -1177,7 +1177,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 			return err
 		}
 		if count == 0 {
-			if err := tx.DeleteDispatcher(ctx, "xdp", 4026531840, 2); err != nil {
+			if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2); err != nil {
 				return err
 			}
 		}
@@ -1360,7 +1360,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 			details: bpfman.TCDetails{
 				Interface:    "eth1",
 				Ifindex:      3,
-				Direction:    "ingress",
+				Direction:    bpfman.TCDirectionIngress,
 				Priority:     100,
 				Position:     1,
 				ProceedOn:    []int32{0, 3}, // TC_ACT_OK=0, TC_ACT_PIPE=3
@@ -1374,7 +1374,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				require.True(t, ok, "expected TCDetails, got %T", got)
 				assert.Equal(t, "eth1", d.Interface)
 				assert.Equal(t, uint32(3), d.Ifindex)
-				assert.Equal(t, bpfman.TCDirection("ingress"), d.Direction)
+				assert.Equal(t, bpfman.TCDirectionIngress, d.Direction)
 				assert.Equal(t, int32(100), d.Priority)
 				assert.Equal(t, int32(1), d.Position)
 				assert.Equal(t, []int32{0, 3}, d.ProceedOn)
@@ -1387,7 +1387,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 			details: bpfman.TCXDetails{
 				Interface: "eth2",
 				Ifindex:   4,
-				Direction: "egress",
+				Direction: bpfman.TCDirectionEgress,
 				Priority:  200,
 				Netns:     "/proc/1/ns/net",
 				Nsid:      4026531840,
@@ -1397,7 +1397,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 				require.True(t, ok, "expected TCXDetails, got %T", got)
 				assert.Equal(t, "eth2", d.Interface)
 				assert.Equal(t, uint32(4), d.Ifindex)
-				assert.Equal(t, bpfman.TCDirection("egress"), d.Direction)
+				assert.Equal(t, bpfman.TCDirectionEgress, d.Direction)
 				assert.Equal(t, int32(200), d.Priority)
 				assert.Equal(t, "/proc/1/ns/net", d.Netns)
 				assert.Equal(t, uint64(4026531840), d.Nsid)
@@ -1424,7 +1424,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Verify each link's details
 	for _, tc := range testCases {
-		t.Run(string(tc.details.Kind()), func(t *testing.T) {
+		t.Run(tc.details.Kind().String(), func(t *testing.T) {
 			link, ok := linksByID[tc.linkID]
 			require.True(t, ok, "link %d not found", tc.linkID)
 			require.NotNil(t, link.Details, "link %d Details should not be nil", tc.linkID)

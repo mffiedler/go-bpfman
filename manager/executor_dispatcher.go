@@ -209,7 +209,7 @@ func attachXDPExtensionWithRetry(
 		"dispatcher_id", ds.ProgramID,
 		"error", err)
 
-	if delErr := store.DeleteDispatcher(ctx, string(dispType), ds.Nsid, ds.Ifindex); delErr != nil {
+	if delErr := store.DeleteDispatcher(ctx, dispType, ds.Nsid, ds.Ifindex); delErr != nil {
 		return extensionResult{}, fmt.Errorf("delete stale XDP dispatcher: %w", delErr)
 	}
 	ds, err = createXDPDispatcherHelper(ctx, store, kernel, bpffs, logger, ds.Nsid, ds.Ifindex, netnsPath)
@@ -285,7 +285,7 @@ func attachTCExtensionWithRetry(
 		"dispatcher_id", ds.ProgramID,
 		"error", err)
 
-	if delErr := store.DeleteDispatcher(ctx, string(dispType), ds.Nsid, ds.Ifindex); delErr != nil {
+	if delErr := store.DeleteDispatcher(ctx, dispType, ds.Nsid, ds.Ifindex); delErr != nil {
 		return extensionResult{}, fmt.Errorf("delete stale TC dispatcher: %w", delErr)
 	}
 	ds, err = createTCDispatcherHelper(ctx, store, kernel, bpffs, logger, ds.Nsid, ds.Ifindex, ifname, direction, dispType, netnsPath)

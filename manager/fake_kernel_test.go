@@ -505,7 +505,7 @@ func (f *fakeKernel) GetLinkByID(_ context.Context, id kernel.LinkID) (kernel.Li
 	}
 	return kernel.Link{
 		ID:        id,
-		LinkType:  string(link.Record.Kind),
+		LinkType:  link.Record.Kind.String(),
 		ProgramID: 0, // fakeKernel doesn't track program association
 	}, nil
 }

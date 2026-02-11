@@ -907,7 +907,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: attach via client to test interface
 	// TC uses dispatchers and supports both ingress and egress
-	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
+	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcSpec = tcSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcSpec)
@@ -1053,7 +1053,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, "ingress")
+	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcxSpec = tcxSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcxSpec)

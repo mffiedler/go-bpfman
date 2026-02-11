@@ -120,7 +120,7 @@ func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DeleteDispatcher, got %T", actions[0])
 	}
-	if dd.Type != "xdp" || dd.Nsid != 4026531840 || dd.Ifindex != 2 {
+	if dd.Type != dispatcher.DispatcherTypeXDP || dd.Nsid != 4026531840 || dd.Ifindex != 2 {
 		t.Errorf("unexpected DeleteDispatcher fields: %+v", dd)
 	}
 }
@@ -431,7 +431,7 @@ func TestComputeStoreGC_TCDispatcherOrphaned(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DeleteDispatcher second, got %T", actions[1])
 	}
-	if dd.Type != "tc-ingress" {
+	if dd.Type != dispatcher.DispatcherTypeTCIngress {
 		t.Errorf("expected tc-ingress, got %s", dd.Type)
 	}
 }

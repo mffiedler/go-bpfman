@@ -515,7 +515,7 @@ Category: gc-dispatcher`,
 						actions = append(actions, action.RemoveDispatcherLinkPin{Path: d.LinkPin})
 					}
 					actions = append(actions, action.DeleteDispatcher{
-						Type: string(d.DB.Type), Nsid: d.DB.Nsid, Ifindex: d.DB.Ifindex,
+						Type: d.DB.Type, Nsid: d.DB.Nsid, Ifindex: d.DB.Ifindex,
 					})
 					out = append(out, Violation{
 						Severity:    SeverityWarning,

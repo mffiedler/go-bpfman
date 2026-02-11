@@ -94,7 +94,11 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 		}
 	}
 	for _, d := range world.ManagedDispatchers() {
-		dbDispatcherKeys[dispatcherKey(dispatcher.DispatcherType(d.DispType), d.Nsid, d.Ifindex)] = true
+		dt, err := dispatcher.ParseDispatcherType(d.DispType)
+		if err != nil {
+			return nil, fmt.Errorf("parse dispatcher type %q: %w", d.DispType, err)
+		}
+		dbDispatcherKeys[dispatcherKey(dt, d.Nsid, d.Ifindex)] = true
 	}
 
 	// ----------------------------------------------------------------
@@ -181,7 +185,11 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Scan dispatcher directories for orphans and record link counts
 	// for non-orphans.
 	for _, d := range fsState.DispatcherDirs {
-		key := dispatcherKey(dispatcher.DispatcherType(d.DispType), d.Nsid, d.Ifindex)
+		dt, err := dispatcher.ParseDispatcherType(d.DispType)
+		if err != nil {
+			return nil, fmt.Errorf("parse dispatcher type %q from fs: %w", d.DispType, err)
+		}
+		key := dispatcherKey(dt, d.Nsid, d.Ifindex)
 		if !dbDispatcherKeys[key] {
 			s.orphans = append(s.orphans, FsOrphan{
 				Path: d.Path,
@@ -194,7 +202,11 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 
 	// Scan dispatcher link pins for orphans.
 	for _, pin := range fsState.DispatcherLinkPins {
-		key := dispatcherKey(dispatcher.DispatcherType(pin.DispType), pin.Nsid, pin.Ifindex)
+		dt, err := dispatcher.ParseDispatcherType(pin.DispType)
+		if err != nil {
+			return nil, fmt.Errorf("parse dispatcher type %q from fs link pin: %w", pin.DispType, err)
+		}
+		key := dispatcherKey(dt, pin.Nsid, pin.Ifindex)
 		if dbDispatcherKeys[key] {
 			continue
 		}

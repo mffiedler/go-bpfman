@@ -317,27 +317,6 @@ func ParseTCActions(actions []string) ([]int32, error) {
 	return result, nil
 }
 
-// TCDirection represents the direction for TC attachment.
-type TCDirection string
-
-const (
-	TCDirectionIngress TCDirection = "ingress"
-	TCDirectionEgress  TCDirection = "egress"
-)
-
-// ParseTCDirection parses a TC direction string.
-func ParseTCDirection(s string) (TCDirection, error) {
-	s = strings.TrimSpace(strings.ToLower(s))
-	switch s {
-	case "ingress":
-		return TCDirectionIngress, nil
-	case "egress":
-		return TCDirectionEgress, nil
-	default:
-		return "", fmt.Errorf("invalid TC direction %q: must be ingress or egress", s)
-	}
-}
-
 // tcActionToString maps TC action values to human-readable names.
 var tcActionToString = map[TCAction]string{
 	TCActionUnspec:           "unspec",
@@ -420,8 +399,8 @@ func ParseLinkKindsSlice(kinds []string) ([]bpfman.LinkKind, error) {
 		if k == "" {
 			continue
 		}
-		kind, ok := bpfman.ParseLinkKind(strings.ToLower(k))
-		if !ok {
+		kind, err := bpfman.ParseLinkKind(strings.ToLower(k))
+		if err != nil {
 			return nil, fmt.Errorf("unknown link kind %q (valid: %s)",
 				raw, strings.Join(bpfman.LinkKindNames(), ", "))
 		}

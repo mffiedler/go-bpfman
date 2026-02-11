@@ -56,7 +56,7 @@ func (s *fakeStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, er
 
 func (s *fakeStore) GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 	for _, d := range s.dispatchers {
-		if string(d.Type) == dispType && d.Nsid == nsid && d.Ifindex == ifindex {
+		if d.Type.String() == dispType && d.Nsid == nsid && d.Ifindex == ifindex {
 			return d, nil
 		}
 	}

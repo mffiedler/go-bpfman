@@ -210,8 +210,8 @@ func NewTCAttachSpec(programID kernel.ProgramID, ifname string, ifindex int, dir
 	if ifindex <= 0 {
 		return TCAttachSpec{}, errors.New("ifindex must be positive")
 	}
-	if direction != TCDirectionIngress && direction != TCDirectionEgress {
-		return TCAttachSpec{}, errors.New("direction must be TCDirectionIngress or TCDirectionEgress")
+	if direction == (TCDirection{}) {
+		return TCAttachSpec{}, errors.New("direction is required")
 	}
 	return TCAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
 }
@@ -266,8 +266,8 @@ func NewTCXAttachSpec(programID kernel.ProgramID, ifname string, ifindex int, di
 	if ifindex <= 0 {
 		return TCXAttachSpec{}, errors.New("ifindex must be positive")
 	}
-	if direction != TCDirectionIngress && direction != TCDirectionEgress {
-		return TCXAttachSpec{}, errors.New("direction must be TCDirectionIngress or TCDirectionEgress")
+	if direction == (TCDirection{}) {
+		return TCXAttachSpec{}, errors.New("direction is required")
 	}
 	return TCXAttachSpec{programID: programID, ifname: ifname, ifindex: ifindex, direction: direction}, nil
 }

@@ -16,9 +16,9 @@ import (
 // ----------------------------------------------------------------------------
 
 // GetDispatcher retrieves a dispatcher by type, nsid, and ifindex.
-func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 	start := time.Now()
-	row := s.stmtGetDispatcher.QueryRowContext(ctx, dispType, nsid, ifindex)
+	row := s.stmtGetDispatcher.QueryRowContext(ctx, dispType.String(), nsid, ifindex)
 
 	var state dispatcher.State
 	var dispTypeStr string
@@ -34,7 +34,11 @@ func (s *sqliteStore) GetDispatcher(ctx context.Context, dispType string, nsid u
 	}
 	s.logger.Debug("sql", "stmt", "GetDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "rows", 1)
 
-	state.Type = dispatcher.DispatcherType(dispTypeStr)
+	parsed, err := dispatcher.ParseDispatcherType(dispTypeStr)
+	if err != nil {
+		return dispatcher.State{}, fmt.Errorf("invalid dispatcher type in DB: %w", err)
+	}
+	state.Type = parsed
 	return state, nil
 }
 
@@ -58,7 +62,11 @@ func (s *sqliteStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, 
 			s.logger.Debug("sql", "stmt", "ListDispatchers", "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, err
 		}
-		state.Type = dispatcher.DispatcherType(dispTypeStr)
+		parsed, err := dispatcher.ParseDispatcherType(dispTypeStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dispatcher type in DB: %w", err)
+		}
+		state.Type = parsed
 		result = append(result, state)
 	}
 	if err := rows.Err(); err != nil {
@@ -76,7 +84,7 @@ func (s *sqliteStore) SaveDispatcher(ctx context.Context, state dispatcher.State
 
 	start := time.Now()
 	result, err := s.stmtSaveDispatcher.ExecContext(ctx,
-		string(state.Type), state.Nsid, state.Ifindex, state.Revision,
+		state.Type.String(), state.Nsid, state.Ifindex, state.Revision,
 		state.ProgramID, state.LinkID,
 		state.Priority, now, now)
 	if err != nil {
@@ -90,9 +98,9 @@ func (s *sqliteStore) SaveDispatcher(ctx context.Context, state dispatcher.State
 }
 
 // DeleteDispatcher removes a dispatcher by type, nsid, and ifindex.
-func (s *sqliteStore) DeleteDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) error {
+func (s *sqliteStore) DeleteDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) error {
 	start := time.Now()
-	result, err := s.stmtDeleteDispatcher.ExecContext(ctx, dispType, nsid, ifindex)
+	result, err := s.stmtDeleteDispatcher.ExecContext(ctx, dispType.String(), nsid, ifindex)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "DeleteDispatcher", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "error", err)
 		return fmt.Errorf("delete dispatcher: %w", err)
@@ -113,12 +121,12 @@ func (s *sqliteStore) DeleteDispatcher(ctx context.Context, dispType string, nsi
 // IncrementRevision atomically increments the dispatcher revision.
 // Returns the new revision number. Wraps from MaxUint32 to 1.
 // For atomicity with other operations, wrap in RunInTransaction.
-func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (uint32, error) {
+func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (uint32, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Use CASE to handle wrap-around at MaxUint32
 	start := time.Now()
-	result, err := s.stmtIncrementRevision.ExecContext(ctx, now, dispType, nsid, ifindex)
+	result, err := s.stmtIncrementRevision.ExecContext(ctx, now, dispType.String(), nsid, ifindex)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "IncrementRevision", "args", []any{"(timestamp)", dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, fmt.Errorf("increment revision: %w", err)
@@ -136,7 +144,7 @@ func (s *sqliteStore) IncrementRevision(ctx context.Context, dispType string, ns
 	// Fetch the new revision
 	start = time.Now()
 	var newRevision uint32
-	err = s.stmtGetDispatcherByType.QueryRowContext(ctx, dispType, nsid, ifindex).Scan(&newRevision)
+	err = s.stmtGetDispatcherByType.QueryRowContext(ctx, dispType.String(), nsid, ifindex).Scan(&newRevision)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "GetDispatcherByType", "args", []any{dispType, nsid, ifindex}, "duration_ms", msec(time.Since(start)), "error", err)
 		return 0, fmt.Errorf("fetch new revision: %w", err)

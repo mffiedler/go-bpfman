@@ -53,7 +53,7 @@ type LinkStore interface {
 type DispatcherStore interface {
 	// GetDispatcher retrieves a dispatcher by type, nsid, and ifindex.
 	// Returns ErrRecordNotFound if the dispatcher does not exist.
-	GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error)
+	GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error)
 
 	// ListDispatchers returns all dispatchers.
 	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
@@ -62,11 +62,11 @@ type DispatcherStore interface {
 	SaveDispatcher(ctx context.Context, state dispatcher.State) error
 
 	// DeleteDispatcher removes a dispatcher by type, nsid, and ifindex.
-	DeleteDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) error
+	DeleteDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) error
 
 	// IncrementRevision atomically increments the dispatcher revision.
 	// Returns the new revision number. Wraps from MaxUint32 to 1.
-	IncrementRevision(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (uint32, error)
+	IncrementRevision(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (uint32, error)
 
 	// CountDispatcherLinks returns the number of extension links
 	// attached to the dispatcher identified by its program ID.

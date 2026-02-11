@@ -91,7 +91,7 @@ func (s *stubStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, if
 }
 
 // DispatcherStore
-func (s *stubStore) GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+func (s *stubStore) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 	panic("stubStore.GetDispatcher not implemented")
 }
 
@@ -103,11 +103,11 @@ func (s *stubStore) SaveDispatcher(ctx context.Context, state dispatcher.State) 
 	panic("stubStore.SaveDispatcher not implemented")
 }
 
-func (s *stubStore) DeleteDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) error {
+func (s *stubStore) DeleteDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) error {
 	panic("stubStore.DeleteDispatcher not implemented")
 }
 
-func (s *stubStore) IncrementRevision(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (uint32, error) {
+func (s *stubStore) IncrementRevision(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (uint32, error) {
 	panic("stubStore.IncrementRevision not implemented")
 }
 

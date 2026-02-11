@@ -160,12 +160,13 @@ func (XDPDetails) linkDetails()   {}
 func (XDPDetails) Kind() LinkKind { return LinkKindXDP }
 
 // TCDirection represents the direction of TC traffic (ingress or egress).
-// This is a closed set - use ParseTCDirection to create from strings.
-type TCDirection string
+// The unexported field prevents construction of invalid values; use the
+// package-level variables or ParseTCDirection.
+type TCDirection struct{ v string }
 
-const (
-	TCDirectionIngress TCDirection = "ingress"
-	TCDirectionEgress  TCDirection = "egress"
+var (
+	TCDirectionIngress = TCDirection{"ingress"}
+	TCDirectionEgress  = TCDirection{"egress"}
 )
 
 // ParseTCDirection parses a string into a TCDirection.
@@ -177,11 +178,21 @@ func ParseTCDirection(s string) (TCDirection, error) {
 	case "egress":
 		return TCDirectionEgress, nil
 	default:
-		return "", fmt.Errorf("invalid TC direction %q: must be 'ingress' or 'egress'", s)
+		return TCDirection{}, fmt.Errorf("invalid TC direction %q: must be 'ingress' or 'egress'", s)
 	}
 }
 
-func (d TCDirection) String() string { return string(d) }
+func (d TCDirection) String() string               { return d.v }
+func (d TCDirection) MarshalText() ([]byte, error) { return []byte(d.v), nil }
+
+func (d *TCDirection) UnmarshalText(b []byte) error {
+	parsed, err := ParseTCDirection(string(b))
+	if err != nil {
+		return err
+	}
+	*d = parsed
+	return nil
+}
 
 // TCDetails contains fields specific to TC attachments.
 type TCDetails struct {
@@ -223,19 +234,21 @@ type TCXLinkInfo struct {
 
 // LinkKind is bpfman's discriminator for link types.
 // Distinct from kernel.Link.LinkType which is kernel-reported.
-type LinkKind string
+// The unexported field prevents construction of invalid values; use the
+// package-level variables or ParseLinkKind.
+type LinkKind struct{ v string }
 
-const (
-	LinkKindTracepoint LinkKind = "tracepoint"
-	LinkKindKprobe     LinkKind = "kprobe"
-	LinkKindKretprobe  LinkKind = "kretprobe"
-	LinkKindUprobe     LinkKind = "uprobe"
-	LinkKindUretprobe  LinkKind = "uretprobe"
-	LinkKindFentry     LinkKind = "fentry"
-	LinkKindFexit      LinkKind = "fexit"
-	LinkKindXDP        LinkKind = "xdp"
-	LinkKindTC         LinkKind = "tc"
-	LinkKindTCX        LinkKind = "tcx"
+var (
+	LinkKindTracepoint = LinkKind{"tracepoint"}
+	LinkKindKprobe     = LinkKind{"kprobe"}
+	LinkKindKretprobe  = LinkKind{"kretprobe"}
+	LinkKindUprobe     = LinkKind{"uprobe"}
+	LinkKindUretprobe  = LinkKind{"uretprobe"}
+	LinkKindFentry     = LinkKind{"fentry"}
+	LinkKindFexit      = LinkKind{"fexit"}
+	LinkKindXDP        = LinkKind{"xdp"}
+	LinkKindTC         = LinkKind{"tc"}
+	LinkKindTCX        = LinkKind{"tcx"}
 )
 
 // allLinkKinds is the canonical list of valid link kinds.
@@ -261,37 +274,50 @@ func AllLinkKinds() []LinkKind {
 func LinkKindNames() []string {
 	names := make([]string, len(allLinkKinds))
 	for i, k := range allLinkKinds {
-		names[i] = string(k)
+		names[i] = k.v
 	}
 	return names
 }
 
+func (k LinkKind) String() string               { return k.v }
+func (k LinkKind) MarshalText() ([]byte, error) { return []byte(k.v), nil }
+
+func (k *LinkKind) UnmarshalText(b []byte) error {
+	parsed, err := ParseLinkKind(string(b))
+	if err != nil {
+		return err
+	}
+	*k = parsed
+	return nil
+}
+
 // ParseLinkKind parses a string into a LinkKind.
-// Returns the LinkKind and true if valid, or empty string and false if invalid.
-func ParseLinkKind(s string) (LinkKind, bool) {
+// Returns the LinkKind and a nil error if valid, or the zero value and
+// an error if unrecognised.
+func ParseLinkKind(s string) (LinkKind, error) {
 	switch s {
 	case "tracepoint":
-		return LinkKindTracepoint, true
+		return LinkKindTracepoint, nil
 	case "kprobe":
-		return LinkKindKprobe, true
+		return LinkKindKprobe, nil
 	case "kretprobe":
-		return LinkKindKretprobe, true
+		return LinkKindKretprobe, nil
 	case "uprobe":
-		return LinkKindUprobe, true
+		return LinkKindUprobe, nil
 	case "uretprobe":
-		return LinkKindUretprobe, true
+		return LinkKindUretprobe, nil
 	case "fentry":
-		return LinkKindFentry, true
+		return LinkKindFentry, nil
 	case "fexit":
-		return LinkKindFexit, true
+		return LinkKindFexit, nil
 	case "xdp":
-		return LinkKindXDP, true
+		return LinkKindXDP, nil
 	case "tc":
-		return LinkKindTC, true
+		return LinkKindTC, nil
 	case "tcx":
-		return LinkKindTCX, true
+		return LinkKindTCX, nil
 	default:
-		return "", false
+		return LinkKind{}, fmt.Errorf("unknown link kind %q", s)
 	}
 }
 

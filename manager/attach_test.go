@@ -1394,7 +1394,7 @@ func TestTC_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirection("sideways"))
+	_, err = bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirection{})
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist
@@ -1416,7 +1416,7 @@ func TestTCX_InvalidDirection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Attempt to create attach spec with invalid direction
-	_, err = bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirection("sideways"))
+	_, err = bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirection{})
 	require.Error(t, err, "creating attach spec with invalid direction should fail")
 
 	// No links should exist

@@ -153,7 +153,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		if err != nil {
 			return nil, fmt.Errorf("get nsid: %w", err)
 		}
-		state, err := e.store.GetDispatcher(ctx, string(dispatcher.DispatcherTypeXDP), nsid, a.Ifindex)
+		state, err := e.store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, nsid, a.Ifindex)
 		if err == nil {
 			return state, nil
 		}
@@ -167,7 +167,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		if err != nil {
 			return nil, fmt.Errorf("get nsid: %w", err)
 		}
-		state, err := e.store.GetDispatcher(ctx, string(a.DispType), nsid, a.Ifindex)
+		state, err := e.store.GetDispatcher(ctx, a.DispType, nsid, a.Ifindex)
 		if err == nil {
 			return state, nil
 		}

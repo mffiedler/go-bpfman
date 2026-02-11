@@ -206,7 +206,7 @@ func (r LinkRow) Kind() bpfman.LinkKind {
 	if r.Managed != nil {
 		return r.Managed.Kind
 	}
-	return ""
+	return bpfman.LinkKind{}
 }
 
 // PinPath returns the pin path (from store if available).
@@ -549,7 +549,7 @@ func Snapshot(
 
 	seenDispKeys := make(map[string]bool)
 	for _, disp := range storeDisps {
-		key := dispatcherKey(string(disp.Type), disp.Nsid, disp.Ifindex)
+		key := dispatcherKey(disp.Type.String(), disp.Nsid, disp.Ifindex)
 		seenDispKeys[key] = true
 
 		fsDir := fsDispDirs[key]
@@ -564,7 +564,7 @@ func Snapshot(
 
 		_, progInKernel := kernelProgs[disp.ProgramID]
 		row := DispatcherRow{
-			DispType:    string(disp.Type),
+			DispType:    disp.Type.String(),
 			Nsid:        disp.Nsid,
 			Ifindex:     disp.Ifindex,
 			Managed:     &disp,

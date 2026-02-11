@@ -59,7 +59,7 @@ func computeStoreGC(
 	for _, disp := range dispatchers {
 		if !kernelPrograms[disp.ProgramID] {
 			actions = append(actions, action.DeleteDispatcher{
-				Type:    string(disp.Type),
+				Type:    disp.Type,
 				Nsid:    disp.Nsid,
 				Ifindex: disp.Ifindex,
 			})
@@ -90,7 +90,7 @@ func computeStoreGC(
 			}
 			if countExtensionLinks(links, deletedLinks, disp.ProgramID) == 0 {
 				actions = append(actions, action.DeleteDispatcher{
-					Type:    string(disp.Type),
+					Type:    disp.Type,
 					Nsid:    disp.Nsid,
 					Ifindex: disp.Ifindex,
 				})

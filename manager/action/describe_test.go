@@ -125,7 +125,7 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name:     "DeleteDispatcher",
-			action:   DeleteDispatcher{Type: "xdp", Nsid: 4026531840, Ifindex: 2},
+			action:   DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2},
 			contains: "delete xdp dispatcher nsid=4026531840 ifindex=2 from store",
 		},
 		{

@@ -165,7 +165,7 @@ func (SaveDispatcher) isAction() {}
 
 // DeleteDispatcher removes a dispatcher from the store.
 type DeleteDispatcher struct {
-	Type    string
+	Type    dispatcher.DispatcherType
 	Nsid    uint64
 	Ifindex uint32
 }

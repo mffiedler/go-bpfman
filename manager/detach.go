@@ -47,8 +47,8 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 		if err != nil {
 			return fmt.Errorf("extract dispatcher key: %w", err)
 		}
-		if dispType != "" {
-			state, err := m.store.GetDispatcher(ctx, string(dispType), nsid, ifindex)
+		if dispType != (dispatcher.DispatcherType{}) {
+			state, err := m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
 			if err != nil {
 				m.logger.WarnContext(ctx, "failed to get dispatcher for cleanup", "error", err)
 			} else {
@@ -126,15 +126,15 @@ func extractDispatcherKey(details bpfman.LinkDetails) (dispType dispatcher.Dispa
 		return dispatcher.DispatcherTypeXDP, d.Nsid, d.Ifindex, nil
 	case bpfman.TCDetails:
 		switch d.Direction {
-		case "ingress":
+		case bpfman.TCDirectionIngress:
 			return dispatcher.DispatcherTypeTCIngress, d.Nsid, d.Ifindex, nil
-		case "egress":
+		case bpfman.TCDirectionEgress:
 			return dispatcher.DispatcherTypeTCEgress, d.Nsid, d.Ifindex, nil
 		default:
-			return "", 0, 0, fmt.Errorf("unknown TC direction: %s", d.Direction)
+			return dispatcher.DispatcherType{}, 0, 0, fmt.Errorf("unknown TC direction: %s", d.Direction)
 		}
 	default:
-		return "", 0, 0, nil
+		return dispatcher.DispatcherType{}, 0, 0, nil
 	}
 }
 
@@ -171,7 +171,7 @@ func (m *Manager) collectDispatcherKeys(ctx context.Context, links []bpfman.Link
 				"link_id", link.ID, "error", err)
 			continue
 		}
-		if dispType != "" {
+		if dispType != (dispatcher.DispatcherType{}) {
 			keys[dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}] = struct{}{}
 		}
 	}
@@ -183,7 +183,7 @@ func (m *Manager) collectDispatcherKeys(ctx context.Context, links []bpfman.Link
 // but do not prevent cleanup of remaining dispatchers.
 func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[dispatcher.Key]struct{}) {
 	for key := range dispatchers {
-		state, err := m.store.GetDispatcher(ctx, string(key.Type), key.Nsid, key.Ifindex)
+		state, err := m.store.GetDispatcher(ctx, key.Type, key.Nsid, key.Ifindex)
 		if err != nil {
 			// Already gone (e.g., cleaned up by a concurrent
 			// Detach call or GC). Nothing to do.
@@ -229,7 +229,7 @@ func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcH
 		action.RemovePin{Path: progPinPath},
 		action.RemovePin{Path: revisionDir},
 		action.DeleteDispatcher{
-			Type:    string(state.Type),
+			Type:    state.Type,
 			Nsid:    state.Nsid,
 			Ifindex: state.Ifindex,
 		},

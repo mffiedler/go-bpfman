@@ -56,9 +56,8 @@ func (s TCDispatcherAttachSpec) Validate() error {
 	if s.ProgPinPath == "" {
 		return errors.New("ProgPinPath is required")
 	}
-	if s.Direction != bpfman.TCDirectionIngress &&
-		s.Direction != bpfman.TCDirectionEgress {
-		return errors.New("Direction must be ingress or egress")
+	if s.Direction == (bpfman.TCDirection{}) {
+		return errors.New("direction is required")
 	}
 	if s.NumProgs <= 0 {
 		return errors.New("NumProgs must be positive")

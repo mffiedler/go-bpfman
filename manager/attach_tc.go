@@ -54,7 +54,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		ifindex:   ifindex,
 		ifname:    ifname,
 		netnsPath: netnsPath,
-		target:    ifname + ":" + string(direction),
+		target:    ifname + ":" + direction.String(),
 		dispType:  dispType,
 		ensureAction: func() action.Action {
 			return action.EnsureTCDispatcher{
@@ -109,7 +109,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	direction := spec.Direction()
 	priority := spec.Priority()
 	netnsPath := spec.Netns()
-	target := ifname + ":" + string(direction)
+	target := ifname + ":" + direction.String()
 
 	prog, err := m.getProgram(ctx, programID)
 	if err != nil {
@@ -123,7 +123,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	linkPinPath := m.rt.BPFFS().TCXLinkPath(string(direction), nsid, uint32(ifindex), programID)
+	linkPinPath := m.rt.BPFFS().TCXLinkPath(direction.String(), nsid, uint32(ifindex), programID)
 
 	// Stale pin removal (preflight I/O).
 	if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {
@@ -131,7 +131,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	}
 
 	progPinPath := prog.Handles.PinPath
-	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), string(direction))
+	existingLinks, err := m.store.ListTCXLinksByInterface(ctx, nsid, uint32(ifindex), direction.String())
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("list existing TCX links: %w", err)
 	}
@@ -181,7 +181,7 @@ func (m *Manager) attachTCXPlan(
 			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (bpfman.AttachOutput, error) {
 				return action.Produce[bpfman.AttachOutput](ctx, exec, action.AttachTCX{
 					Ifindex:     ifindex,
-					Direction:   string(direction),
+					Direction:   direction.String(),
 					ProgPinPath: progPinPath,
 					LinkPinPath: linkPinPath,
 					NetnsPath:   netnsPath,
