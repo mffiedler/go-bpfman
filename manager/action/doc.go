@@ -11,12 +11,24 @@
 // filesystem.
 //
 //   - Store:      CheckProgramNotInStore, SaveProgram, DeleteProgram,
-//     SaveLink, DeleteLink, SaveDispatcher, DeleteDispatcher
+//     GetProgramFromStore, SaveLink, DeleteLink, SaveDispatcher,
+//     DeleteDispatcher
 //   - Kernel:     LoadProgram, UnloadProgram, DetachLink, RemovePin,
-//     DetachTCFilter, AttachTracepoint, AttachKprobe,
+//     DetachTCFilter, AttachTracepoint, AttachKprobe, AttachTCX,
 //     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,
 //     AttachFexit
-//   - Filesystem: PublishBytecode, RemoveProgramDir
+//   - Filesystem: PublishBytecode, RemoveProgramDir, RemoveProgPin,
+//     RemoveLinkDir, RemoveMapDir, RemoveProgramDirByPath,
+//     RemoveStagingDir, RemoveDispatcherProgPin,
+//     RemoveDispatcherRevDir, RemoveDispatcherLinkPin
+//   - Deep:       EnsureXDPDispatcher, EnsureTCDispatcher,
+//     AttachXDPExtension, AttachTCExtension,
+//     CleanupEmptyDispatcher
+//
+// Deep actions are cross-subsystem operations that the executor
+// handles internally (kernel + store with inline rollback).  They
+// encapsulate a mini-transaction so the plan interpreter sees a
+// single atomic action rather than multiple steps.
 //
 // Execute runs an instruction for its side effect. ExecuteResult
 // runs it and returns a typed value (used by LoadProgram and the

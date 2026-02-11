@@ -77,10 +77,29 @@
 //
 // # Rollback and Error Reporting
 //
-// Failed mutating operations (Load, Unload, Attach*, Detach*)
-// return plain errors. On failure the plan interpreter automatically
-// rolls back completed steps in reverse order; rollback failures are
-// logged but do not alter the returned error.
+// Rollback operates at two scopes that compose cleanly.
+//
+// The plan interpreter (operation/run.go) handles rollback across
+// actions.  Each plan node may declare undo actions via UndoFrom or
+// WithUndo.  When a node fails, the interpreter walks previously
+// completed nodes in reverse order and executes their undo actions.
+// This is the coarse-grained scope: it ensures that a multi-step
+// operation either completes fully or leaves no partial artefacts
+// from earlier steps.
+//
+// The executor handles rollback within a single action.  Deep actions
+// such as EnsureXDPDispatcher and EnsureTCDispatcher perform a
+// mini-transaction internally: kernel I/O followed by a store
+// persist.  If the persist fails, the executor rolls back the kernel
+// artefacts before returning an error.  The plan interpreter never
+// sees the partial internal state — it receives a clean error and
+// undoes earlier nodes as usual.
+//
+// The two scopes nest: if a deep action fails internally, its inline
+// rollback cleans up within that action, then the plan interpreter
+// undoes any earlier nodes that succeeded.  Failed mutating
+// operations (Load, Unload, Attach*, Detach*) return plain errors.
+// Rollback failures are logged but do not alter the returned error.
 //
 // # Garbage Collection
 //
