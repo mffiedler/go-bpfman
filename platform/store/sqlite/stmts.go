@@ -14,30 +14,30 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m
-		WHERE m.kernel_id = ?`
+		WHERE m.program_id = ?`
 	if s.stmtGetProgram, err = s.db.PrepareContext(ctx, sqlGetProgram); err != nil {
 		return fmt.Errorf("prepare GetProgram: %w", err)
 	}
 
 	// Save uses upsert semantics: insert a new row, or overwrite an
-	// existing row that has the same kernel_id. This is necessary
+	// existing row that has the same program_id. This is necessary
 	// because the kernel can reuse program IDs aggressively after
-	// unload, so a kernel_id collision does not necessarily indicate
+	// unload, so a program_id collision does not necessarily indicate
 	// a bug -- it may simply mean the ID was recycled. The store
 	// treats Save as "last write wins" and the DB as a cache of
 	// currently managed kernel objects.
 	//
 	// On conflict, created_at is deliberately preserved from the
-	// original row so it records when the kernel_id first appeared
+	// original row so it records when the program_id first appeared
 	// in the store. updated_at is set to the caller-supplied
 	// timestamp so that created_at != updated_at serves as a clear
-	// signal that a kernel_id was reused and the row was overwritten.
+	// signal that a program_id was reused and the row was overwritten.
 	const sqlSaveProgram = `
 		INSERT INTO managed_programs
-		(kernel_id, program_name, program_type, object_path, pin_path, attach_func,
+		(program_id, program_name, program_type, object_path, pin_path, attach_func,
 		 global_data, map_owner_id, map_pin_path, image_source, owner, description, license, gpl_compatible, metadata_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(kernel_id) DO UPDATE SET
+		ON CONFLICT(program_id) DO UPDATE SET
 		  program_name = excluded.program_name,
 		  program_type = excluded.program_type,
 		  object_path = excluded.object_path,
@@ -57,13 +57,13 @@ func (s *sqliteStore) prepareProgramStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare SaveProgram: %w", err)
 	}
 
-	const sqlDeleteProgram = "DELETE FROM managed_programs WHERE kernel_id = ?"
+	const sqlDeleteProgram = "DELETE FROM managed_programs WHERE program_id = ?"
 	if s.stmtDeleteProgram, err = s.db.PrepareContext(ctx, sqlDeleteProgram); err != nil {
 		return fmt.Errorf("prepare DeleteProgram: %w", err)
 	}
 
 	const sqlListPrograms = `
-		SELECT m.kernel_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
+		SELECT m.program_id, m.program_name, m.program_type, m.object_path, m.pin_path, m.attach_func,
 		       m.global_data, m.map_owner_id, m.map_pin_path, m.image_source, m.owner, m.description,
 		       m.license, m.gpl_compatible, m.created_at, m.updated_at, m.metadata_json
 		FROM managed_programs m`
@@ -162,14 +162,14 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlGetXDPDetails = `
-		SELECT interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		SELECT interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
 		FROM link_xdp_details WHERE link_id = ?`
 	if s.stmtGetXDPDetails, err = s.db.PrepareContext(ctx, sqlGetXDPDetails); err != nil {
 		return fmt.Errorf("prepare GetXDPDetails: %w", err)
 	}
 
 	const sqlGetTCDetails = `
-		SELECT interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		SELECT interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
 		FROM link_tc_details WHERE link_id = ?`
 	if s.stmtGetTCDetails, err = s.db.PrepareContext(ctx, sqlGetTCDetails); err != nil {
 		return fmt.Errorf("prepare GetTCDetails: %w", err)
@@ -219,14 +219,14 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlSaveXDPDetails = `
-		INSERT INTO link_xdp_details (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision)
+		INSERT INTO link_xdp_details (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if s.stmtSaveXDPDetails, err = s.db.PrepareContext(ctx, sqlSaveXDPDetails); err != nil {
 		return fmt.Errorf("prepare SaveXDPDetails: %w", err)
 	}
 
 	const sqlSaveTCDetails = `
-		INSERT INTO link_tc_details (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision)
+		INSERT INTO link_tc_details (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if s.stmtSaveTCDetails, err = s.db.PrepareContext(ctx, sqlSaveTCDetails); err != nil {
 		return fmt.Errorf("prepare SaveTCDetails: %w", err)
@@ -266,14 +266,14 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlListAllXDPDetails = `
-		SELECT link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		SELECT link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
 		FROM link_xdp_details`
 	if s.stmtListAllXDPDetails, err = s.db.PrepareContext(ctx, sqlListAllXDPDetails); err != nil {
 		return fmt.Errorf("prepare ListAllXDPDetails: %w", err)
 	}
 
 	const sqlListAllTCDetails = `
-		SELECT link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_kernel_id, revision
+		SELECT link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
 		FROM link_tc_details`
 	if s.stmtListAllTCDetails, err = s.db.PrepareContext(ctx, sqlListAllTCDetails); err != nil {
 		return fmt.Errorf("prepare ListAllTCDetails: %w", err)
@@ -294,25 +294,25 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	var err error
 
 	const sqlGetDispatcher = `
-		SELECT type, nsid, ifindex, revision, kernel_id, link_id, priority
+		SELECT type, nsid, ifindex, revision, program_id, link_id, priority
 		FROM dispatchers WHERE type = ? AND nsid = ? AND ifindex = ?`
 	if s.stmtGetDispatcher, err = s.db.PrepareContext(ctx, sqlGetDispatcher); err != nil {
 		return fmt.Errorf("prepare GetDispatcher: %w", err)
 	}
 
 	const sqlListDispatchers = `
-		SELECT type, nsid, ifindex, revision, kernel_id, link_id, priority
+		SELECT type, nsid, ifindex, revision, program_id, link_id, priority
 		FROM dispatchers`
 	if s.stmtListDispatchers, err = s.db.PrepareContext(ctx, sqlListDispatchers); err != nil {
 		return fmt.Errorf("prepare ListDispatchers: %w", err)
 	}
 
 	const sqlSaveDispatcher = `
-		INSERT INTO dispatchers (type, nsid, ifindex, revision, kernel_id, link_id, priority, created_at, updated_at)
+		INSERT INTO dispatchers (type, nsid, ifindex, revision, program_id, link_id, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(type, nsid, ifindex) DO UPDATE SET
 		  revision = excluded.revision,
-		  kernel_id = excluded.kernel_id,
+		  program_id = excluded.program_id,
 		  link_id = excluded.link_id,
 		  priority = excluded.priority,
 		  updated_at = excluded.updated_at`
@@ -341,8 +341,8 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const sqlCountDispatcherLinks = `
 		SELECT
-			(SELECT COUNT(*) FROM link_tc_details WHERE dispatcher_kernel_id = ?) +
-			(SELECT COUNT(*) FROM link_xdp_details WHERE dispatcher_kernel_id = ?)`
+			(SELECT COUNT(*) FROM link_tc_details WHERE dispatcher_program_id = ?) +
+			(SELECT COUNT(*) FROM link_xdp_details WHERE dispatcher_program_id = ?)`
 	if s.stmtCountDispatcherLinks, err = s.db.PrepareContext(ctx, sqlCountDispatcherLinks); err != nil {
 		return fmt.Errorf("prepare CountDispatcherLinks: %w", err)
 	}

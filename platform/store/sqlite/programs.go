@@ -165,14 +165,14 @@ func (s *sqliteStore) scanProgram(row *sql.Row) (bpfman.ProgramRecord, error) {
 
 // Save stores program metadata using last-write-wins upsert semantics.
 //
-// If a row with the same kernel_id already exists it is overwritten
+// If a row with the same program_id already exists it is overwritten
 // rather than rejected. This is necessary because the kernel reuses
 // program IDs aggressively after unload, so a collision may simply
 // mean the ID was recycled rather than indicating a bug.
 //
 // On overwrite the original created_at is preserved and updated_at
 // is set to the current time so that created_at != updated_at serves
-// as a clear signal that the kernel_id was reused.
+// as a clear signal that the program_id was reused.
 //
 // For atomicity with other operations, wrap in RunInTransaction.
 func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, metadata bpfman.ProgramRecord) error {

@@ -6,7 +6,7 @@
 -- A row exists only after successful load - no reservation/loading states.
 -- Schema is normalised: individual columns for queryable fields, JSON only for opaque data.
 CREATE TABLE IF NOT EXISTS managed_programs (
-    kernel_id INTEGER PRIMARY KEY,
+    program_id INTEGER PRIMARY KEY,
     program_name TEXT NOT NULL,
     program_type TEXT NOT NULL,
     object_path TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     updated_at TEXT NOT NULL,
 
     FOREIGN KEY (map_owner_id)
-        REFERENCES managed_programs(kernel_id)
+        REFERENCES managed_programs(program_id)
         ON DELETE RESTRICT       -- Prevent deleting owner while dependents exist
 ) STRICT;
 
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS links (
     ),
 
     FOREIGN KEY (kernel_prog_id)
-        REFERENCES managed_programs(kernel_id)
+        REFERENCES managed_programs(program_id)
         ON DELETE CASCADE
 ) STRICT;
 
@@ -129,13 +129,13 @@ CREATE TABLE IF NOT EXISTS link_fexit_details (
 -- Dispatchers table for XDP/TC multi-program chaining
 -- Natural key (type, nsid, ifindex) is the primary key - this is how
 -- the system identifies a dispatcher ("the XDP dispatcher for this interface").
--- kernel_id is the kernel-assigned program ID for the dispatcher program.
+-- program_id is the program ID for the dispatcher program.
 CREATE TABLE IF NOT EXISTS dispatchers (
     type TEXT NOT NULL CHECK (type IN ('xdp', 'tc-ingress', 'tc-egress')),
     nsid INTEGER NOT NULL,
     ifindex INTEGER NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1,
-    kernel_id INTEGER NOT NULL UNIQUE,
+    program_id INTEGER NOT NULL UNIQUE,
     link_id INTEGER NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -161,14 +161,14 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     proceed_on TEXT NOT NULL CHECK (json_valid(proceed_on)),
     netns TEXT,
     nsid INTEGER NOT NULL,
-    dispatcher_kernel_id INTEGER NOT NULL,
+    dispatcher_program_id INTEGER NOT NULL,
     revision INTEGER NOT NULL,
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    FOREIGN KEY (dispatcher_kernel_id)
-        REFERENCES dispatchers(kernel_id)
+    FOREIGN KEY (dispatcher_program_id)
+        REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
 ) STRICT;
 
@@ -187,14 +187,14 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     proceed_on TEXT NOT NULL CHECK (json_valid(proceed_on)),
     netns TEXT,
     nsid INTEGER NOT NULL,
-    dispatcher_kernel_id INTEGER NOT NULL,
+    dispatcher_program_id INTEGER NOT NULL,
     revision INTEGER NOT NULL,
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    FOREIGN KEY (dispatcher_kernel_id)
-        REFERENCES dispatchers(kernel_id)
+    FOREIGN KEY (dispatcher_program_id)
+        REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
 ) STRICT;
 
