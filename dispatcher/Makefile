@@ -4,6 +4,7 @@
 # Makefile for eBPF dispatcher compilation.
 
 LIBBPF_CFLAGS := $(shell pkg-config --cflags libbpf)
+BPF_CFLAGS ?=
 
 # Dynamic architecture detection using uname
 TARGET_ARCH ?= $(shell uname -m)
@@ -42,11 +43,11 @@ install: $(OBJECTS)
 # Explicit static pattern rule handles Docker builds without disabling builtin rules
 
 $(OUT_DIR)/bpf/%.bpf.o: bpf/%.bpf.c Makefile | $(OUT_DIR)
-	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$(OUT_DIR)/bpf/$*.bpf.d $< -o $@
+	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$(OUT_DIR)/bpf/$*.bpf.d $< -o $@
 
 # Explicit rules for Docker builds (matches pattern rule)
 tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o xdp_dispatcher_v3.bpf.o tc_dispatcher_v2.bpf.o: %.bpf.o: bpf/%.bpf.c Makefile
-	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$*.bpf.d $< -o $@
+	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$*.bpf.d $< -o $@
 
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)

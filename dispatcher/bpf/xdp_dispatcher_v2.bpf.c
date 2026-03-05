@@ -39,7 +39,7 @@ struct xdp_dispatcher_conf {
  *   compile-time value of the variables, which is important since we will be
  *   changing the values before loading the program into the kernel.
  */
-static volatile const struct xdp_dispatcher_conf conf = {};
+volatile const struct xdp_dispatcher_conf conf = {};
 
 __attribute__((noinline)) int prog0(struct xdp_md *ctx) {
   volatile int ret = XDP_DISPATCHER_RETVAL;

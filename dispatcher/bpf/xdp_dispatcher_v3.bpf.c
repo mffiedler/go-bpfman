@@ -43,7 +43,7 @@ struct xdp_dispatcher_conf {
   __u32 program_flags[MAX_DISPATCHER_ACTIONS];
 };
 
-static volatile const struct xdp_dispatcher_conf conf = {};
+volatile const struct xdp_dispatcher_conf conf = {};
 
 // Runtime dispatch configuration, written by the control plane.
 struct dispatcher_runtime {

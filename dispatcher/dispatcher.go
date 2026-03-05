@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"bytes"
 	_ "embed"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/cilium/ebpf"
@@ -117,22 +116,12 @@ func LoadXDPDispatcher(cfg XDPConfig) (*ebpf.CollectionSpec, error) {
 		return nil, fmt.Errorf("load XDP dispatcher spec: %w", err)
 	}
 
-	// The 'conf' variable is static, so we need to directly set the .rodata
-	// map's contents. The entire .rodata section contains just this config struct.
-	rodata, ok := spec.Maps[".rodata"]
+	confVar, ok := spec.Variables["conf"]
 	if !ok {
-		return nil, fmt.Errorf("XDP dispatcher missing .rodata map")
+		return nil, fmt.Errorf("XDP dispatcher missing 'conf' variable")
 	}
-
-	// Serialize config to bytes
-	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, binary.LittleEndian, cfg); err != nil {
-		return nil, fmt.Errorf("serialize XDP config: %w", err)
-	}
-
-	// Set as the map's contents (single entry at key 0)
-	rodata.Contents = []ebpf.MapKV{
-		{Key: uint32(0), Value: buf.Bytes()},
+	if err := confVar.Set(cfg); err != nil {
+		return nil, fmt.Errorf("set XDP dispatcher config: %w", err)
 	}
 
 	return spec, nil
@@ -145,22 +134,12 @@ func LoadTCDispatcher(cfg TCConfig) (*ebpf.CollectionSpec, error) {
 		return nil, fmt.Errorf("load TC dispatcher spec: %w", err)
 	}
 
-	// The 'CONFIG' variable is static, so we need to directly set the .rodata
-	// map's contents.
-	rodata, ok := spec.Maps[".rodata"]
+	confVar, ok := spec.Variables["CONFIG"]
 	if !ok {
-		return nil, fmt.Errorf("TC dispatcher missing .rodata map")
+		return nil, fmt.Errorf("TC dispatcher missing 'CONFIG' variable")
 	}
-
-	// Serialize config to bytes
-	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, binary.LittleEndian, cfg); err != nil {
-		return nil, fmt.Errorf("serialize TC config: %w", err)
-	}
-
-	// Set as the map's contents (single entry at key 0)
-	rodata.Contents = []ebpf.MapKV{
-		{Key: uint32(0), Value: buf.Bytes()},
+	if err := confVar.Set(cfg); err != nil {
+		return nil, fmt.Errorf("set TC dispatcher config: %w", err)
 	}
 
 	return spec, nil
@@ -192,18 +171,12 @@ func LoadXDPDispatcherV3(cfg XDPConfig) (*ebpf.CollectionSpec, error) {
 		return nil, fmt.Errorf("load XDP v3 dispatcher spec: %w", err)
 	}
 
-	rodata, ok := spec.Maps[".rodata"]
+	confVar, ok := spec.Variables["conf"]
 	if !ok {
-		return nil, fmt.Errorf("XDP v3 dispatcher missing .rodata map")
+		return nil, fmt.Errorf("XDP v3 dispatcher missing 'conf' variable")
 	}
-
-	buf := new(bytes.Buffer)
-	if err := binary.Write(buf, binary.LittleEndian, cfg); err != nil {
-		return nil, fmt.Errorf("serialize XDP config: %w", err)
-	}
-
-	rodata.Contents = []ebpf.MapKV{
-		{Key: uint32(0), Value: buf.Bytes()},
+	if err := confVar.Set(cfg); err != nil {
+		return nil, fmt.Errorf("set XDP v3 dispatcher config: %w", err)
 	}
 
 	return spec, nil
