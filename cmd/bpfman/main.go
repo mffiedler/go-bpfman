@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/frobware/go-bpfman/ns/nsenter"
@@ -33,7 +34,8 @@ func RunNamespaceSwitcher() NamespaceSwitcherResult {
 }
 
 func main() {
-	if os.Geteuid() != 0 {
+	// Allow version to run without root.
+	if os.Geteuid() != 0 && !slices.Contains(os.Args[1:], "version") {
 		fmt.Fprintln(os.Stderr, "bpfman: error: must run as root")
 		os.Exit(1)
 	}

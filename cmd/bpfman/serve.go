@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/server"
+	"github.com/frobware/go-bpfman/version"
 )
 
 // ServeCmd starts the gRPC daemon.
@@ -23,6 +24,8 @@ func (c *ServeCmd) Run(cli *CLI, ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
+
+	logger.Info("starting bpfman", "version", version.Get().String())
 
 	appConfig, err := cli.LoadConfig()
 	if err != nil {

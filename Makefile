@@ -125,6 +125,20 @@ doc-text:
 		echo "--- $$pkg ---" && go doc -all $$pkg 2>/dev/null && echo; \
 	done
 
+# Version information injected at build time.
+VERSION_PKG := github.com/frobware/go-bpfman/version
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+GIT_STATE := $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo dirty; fi)
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+
+LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
+           -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
+           -X $(VERSION_PKG).gitState=$(GIT_STATE) \
+           -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
+           -X $(VERSION_PKG).version=$(GIT_VERSION)
+
 # bpfman targets
 # Note: bpfman-proto is not a dependency here since pb files are committed.
 # Run 'make bpfman-proto' explicitly after modifying proto/bpfman.proto.
@@ -142,7 +156,7 @@ bpfman-vet: ensure-dispatchers
 # Compile bpfman without the dispatcher dependency. Used directly by
 # container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
-	CGO_ENABLED=1 go build -mod=vendor -o $(BIN_DIR)/bpfman ./cmd/bpfman
+	CGO_ENABLED=1 go build -mod=vendor -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
 
 # Ensure bin directory exists
 $(BIN_DIR):
@@ -274,7 +288,7 @@ dispatchers-clean:
 	rm -f $(DISPATCHER_OBJECTS) $(DISPATCHER_STAMP)
 
 # Smart Docker-based dispatcher build - only rebuilds when sources change
-DISPATCHER_OBJECTS := dispatcher/tc_dispatcher.bpf.o dispatcher/xdp_dispatcher_v1.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o
+DISPATCHER_OBJECTS := dispatcher/tc_dispatcher.bpf.o dispatcher/tc_dispatcher_v2.bpf.o dispatcher/xdp_dispatcher_v1.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o dispatcher/xdp_dispatcher_v3.bpf.o
 DISPATCHER_SOURCES := $(patsubst dispatcher/%.bpf.o,dispatcher/bpf/%.bpf.c,$(DISPATCHER_OBJECTS))
 DISPATCHER_STAMP := .dispatcher-docker-stamp
 
