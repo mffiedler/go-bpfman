@@ -238,6 +238,7 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		CheckProgramNotInStore{},
 		LoadProgram{},
 		UnloadProgram{},
+		RemoveMapsPins{},
 		AttachTracepoint{},
 		AttachKprobe{},
 		AttachUprobeLocal{},

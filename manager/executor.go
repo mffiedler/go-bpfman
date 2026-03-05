@@ -82,6 +82,9 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.UnloadProgram:
 		return nil, e.kernel.Unload(ctx, a.PinPath)
 
+	case action.RemoveMapsPins:
+		return nil, e.kernel.Unload(ctx, a.PinPath)
+
 	case action.AttachTracepoint:
 		return e.kernel.AttachTracepoint(ctx, a.ProgPinPath, a.Group, a.Name, a.LinkPinPath)
 

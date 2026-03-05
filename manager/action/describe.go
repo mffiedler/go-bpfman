@@ -24,6 +24,8 @@ func Describe(a Action) string {
 		return fmt.Sprintf("load program %s", a.Spec.ProgramName())
 	case UnloadProgram:
 		return fmt.Sprintf("unload program at %s", a.PinPath)
+	case RemoveMapsPins:
+		return fmt.Sprintf("remove maps pins at %s", a.PinPath)
 
 	// Attach actions
 	case AttachTracepoint:
@@ -86,7 +88,6 @@ func Describe(a Action) string {
 		return fmt.Sprintf("remove program directory for %d", a.ProgramID)
 	case DetachTCFilter:
 		return fmt.Sprintf("detach TC filter ifindex=%d priority=%d", a.Ifindex, a.Priority)
-
 	default:
 		return fmt.Sprintf("%T", a)
 	}

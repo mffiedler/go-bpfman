@@ -83,6 +83,13 @@ type UnloadProgram struct {
 
 func (UnloadProgram) isAction() {}
 
+// RemoveMapsPins removes BPF map pins from the kernel.
+type RemoveMapsPins struct {
+	PinPath string
+}
+
+func (RemoveMapsPins) isAction() {}
+
 // Attach actions - kernel attach operations that produce AttachOutput
 
 // AttachTracepoint attaches a pinned program to a kernel tracepoint.
