@@ -13,153 +13,234 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// createXDPDispatcherHelper creates a new XDP dispatcher for the
-// given interface. It performs kernel I/O (attach dispatcher), then
-// persists state to the store. On store save failure, it rolls back
-// the kernel artefacts directly (no self-recursion through the
-// executor).
-func createXDPDispatcherHelper(
+// dispatcherCreateOps captures the type-specific operations for
+// dispatcher creation. The shared skeleton in createDispatcher handles
+// revision initialisation, path computation, logging, store
+// persistence, and rollback on persist failure.
+type dispatcherCreateOps struct {
+	label    string
+	dispType dispatcher.DispatcherType
+	nsid     uint64
+	ifindex  uint32
+
+	// kernelCreate builds the type-specific spec, validates it,
+	// calls the kernel attach method, and computes the resulting
+	// dispatcher state. On success it returns a rollback closure
+	// and extra log attributes for the success message.
+	kernelCreate func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error)
+
+	// creatingAttrs holds extra slog attributes appended to the
+	// "creating dispatcher" log message.
+	creatingAttrs []any
+}
+
+// dispatcherKernelResult bundles the output of a type-specific kernel
+// attach: the computed state, a rollback closure for persist failure,
+// and extra log attributes for the success message.
+type dispatcherKernelResult struct {
+	state        dispatcher.State
+	rollback     func(ctx context.Context)
+	createdAttrs []any
+}
+
+// createDispatcher is the shared skeleton for creating a new
+// dispatcher. It computes the initial revision and program pin path,
+// delegates the kernel attach to ops.kernelCreate, persists the
+// resulting state to the store, and rolls back on persist failure.
+func (e *executor) createDispatcher(
 	ctx context.Context,
-	store platform.Store,
-	kernel platform.KernelOperations,
-	bpffs fs.BPFFS,
-	logger *slog.Logger,
-	nsid uint64,
-	ifindex uint32,
-	netnsPath string,
+	ops dispatcherCreateOps,
 ) (dispatcher.State, error) {
-	revision := uint32(1)
-	linkPinPath := bpffs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	progPinPath := bpffs.DispatcherProgPath(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision)
+	progPinPath := e.bpffs.DispatcherProgPath(ops.dispType, ops.nsid, ops.ifindex, 1)
 
-	logger.InfoContext(ctx, "creating XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"netns", netnsPath,
-		"revision", revision,
+	attrs := []any{
+		"nsid", ops.nsid,
+		"ifindex", ops.ifindex,
+		"revision", uint32(1),
 		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPinPath)
+	}
+	attrs = append(attrs, ops.creatingAttrs...)
+	e.logger.InfoContext(ctx, "creating "+ops.label+" dispatcher", attrs...)
 
-	spec := dispatcher.XDPDispatcherAttachSpec{
-		Target: bpfman.AttachTarget{
-			IfIndex: int(ifindex),
-			NetNS:   netnsPath,
-		},
-		ProgPinPath: progPinPath,
-		LinkPinPath: linkPinPath,
-		NumProgs:    dispatcher.MaxPrograms,
-		ProceedOn:   xdpProceedOnPass,
-	}
-	if err := spec.Validate(); err != nil {
-		return dispatcher.State{}, fmt.Errorf("invalid XDP dispatcher spec: %w", err)
-	}
-	result, err := kernel.AttachXDPDispatcher(ctx, spec)
+	result, err := ops.kernelCreate(ctx, progPinPath)
 	if err != nil {
 		return dispatcher.State{}, err
 	}
 
-	state := computeXDPDispatcherState(dispatcher.DispatcherTypeXDP, nsid, ifindex, revision, result)
-
-	if err := store.SaveDispatcher(ctx, state); err != nil {
-		logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
-			"ifindex", ifindex, "error", err)
-		if rbErr := kernel.DetachLink(ctx, linkPinPath); rbErr != nil {
-			logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
-				"path", linkPinPath, "error", rbErr)
-		}
-		if rbErr := kernel.RemovePin(ctx, progPinPath); rbErr != nil {
-			logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-				"path", progPinPath, "error", rbErr)
-		}
-		return dispatcher.State{}, fmt.Errorf("save dispatcher: %w", err)
+	if err := e.store.SaveDispatcher(ctx, result.state); err != nil {
+		e.logger.ErrorContext(ctx, "persist failed, rolling back "+ops.label+" dispatcher",
+			"ifindex", ops.ifindex, "error", err)
+		result.rollback(ctx)
+		return dispatcher.State{}, fmt.Errorf("save %s dispatcher: %w", ops.label, err)
 	}
 
-	logger.InfoContext(ctx, "created XDP dispatcher",
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"dispatcher_id", result.DispatcherID,
-		"link_id", result.LinkID,
+	attrs = []any{
+		"nsid", ops.nsid,
+		"ifindex", ops.ifindex,
+		"dispatcher_id", result.state.ProgramID,
 		"prog_pin_path", progPinPath,
-		"link_pin_path", linkPinPath)
+	}
+	attrs = append(attrs, result.createdAttrs...)
+	e.logger.InfoContext(ctx, "created "+ops.label+" dispatcher", attrs...)
 
-	return state, nil
+	return result.state, nil
 }
 
-// createTCDispatcherHelper creates a new TC dispatcher for the given
-// interface and direction. Same pattern as XDP, but rollback uses
-// DetachTCFilter instead of DetachLink.
-func createTCDispatcherHelper(
-	ctx context.Context,
-	store platform.Store,
-	kernel platform.KernelOperations,
-	bpffs fs.BPFFS,
-	logger *slog.Logger,
+// xdpDispatcherCreateOps returns the type-specific operations for
+// creating an XDP dispatcher.
+func (e *executor) xdpDispatcherCreateOps(
+	nsid uint64,
+	ifindex uint32,
+	netnsPath string,
+) dispatcherCreateOps {
+	linkPinPath := e.bpffs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
+	return dispatcherCreateOps{
+		label:    "XDP",
+		dispType: dispatcher.DispatcherTypeXDP,
+		nsid:     nsid,
+		ifindex:  ifindex,
+		creatingAttrs: []any{
+			"netns", netnsPath,
+			"link_pin_path", linkPinPath,
+		},
+		kernelCreate: func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error) {
+			spec := dispatcher.XDPDispatcherAttachSpec{
+				Target: bpfman.AttachTarget{
+					IfIndex: int(ifindex),
+					NetNS:   netnsPath,
+				},
+				ProgPinPath: progPinPath,
+				LinkPinPath: linkPinPath,
+				NumProgs:    dispatcher.MaxPrograms,
+				ProceedOn:   xdpProceedOnPass,
+			}
+			if err := spec.Validate(); err != nil {
+				return dispatcherKernelResult{}, fmt.Errorf("invalid XDP dispatcher spec: %w", err)
+			}
+			result, err := e.kernel.AttachXDPDispatcher(ctx, spec)
+			if err != nil {
+				return dispatcherKernelResult{}, err
+			}
+			state := computeXDPDispatcherState(dispatcher.DispatcherTypeXDP, nsid, ifindex, 1, result)
+			return dispatcherKernelResult{
+				state: state,
+				rollback: func(ctx context.Context) {
+					if rbErr := e.kernel.DetachLink(ctx, linkPinPath); rbErr != nil {
+						e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
+							"path", linkPinPath, "error", rbErr)
+					}
+					if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+						e.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
+							"path", progPinPath, "error", rbErr)
+					}
+				},
+				createdAttrs: []any{
+					"link_id", result.LinkID,
+					"link_pin_path", linkPinPath,
+				},
+			}, nil
+		},
+	}
+}
+
+// tcDispatcherCreateOps returns the type-specific operations for
+// creating a TC dispatcher.
+func (e *executor) tcDispatcherCreateOps(
 	nsid uint64,
 	ifindex uint32,
 	ifname string,
 	direction bpfman.TCDirection,
 	dispType dispatcher.DispatcherType,
 	netnsPath string,
-) (dispatcher.State, error) {
-	revision := uint32(1)
-	progPinPath := bpffs.DispatcherProgPath(dispType, nsid, ifindex, revision)
-
-	logger.InfoContext(ctx, "creating TC dispatcher",
-		"direction", direction,
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"ifname", ifname,
-		"netns", netnsPath,
-		"revision", revision,
-		"prog_pin_path", progPinPath)
-
-	spec := dispatcher.TCDispatcherAttachSpec{
-		Target: bpfman.AttachTarget{
-			IfIndex: int(ifindex),
-			NetNS:   netnsPath,
+) dispatcherCreateOps {
+	return dispatcherCreateOps{
+		label:    "TC",
+		dispType: dispType,
+		nsid:     nsid,
+		ifindex:  ifindex,
+		creatingAttrs: []any{
+			"direction", direction,
+			"ifname", ifname,
+			"netns", netnsPath,
 		},
-		IfName:      ifname,
-		ProgPinPath: progPinPath,
-		Direction:   direction,
-		NumProgs:    dispatcher.MaxPrograms,
-		ProceedOn:   uint32(DefaultTCProceedOn),
+		kernelCreate: func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error) {
+			spec := dispatcher.TCDispatcherAttachSpec{
+				Target: bpfman.AttachTarget{
+					IfIndex: int(ifindex),
+					NetNS:   netnsPath,
+				},
+				IfName:      ifname,
+				ProgPinPath: progPinPath,
+				Direction:   direction,
+				NumProgs:    dispatcher.MaxPrograms,
+				ProceedOn:   uint32(DefaultTCProceedOn),
+			}
+			if err := spec.Validate(); err != nil {
+				return dispatcherKernelResult{}, fmt.Errorf("invalid TC dispatcher spec: %w", err)
+			}
+			result, err := e.kernel.AttachTCDispatcher(ctx, spec)
+			if err != nil {
+				return dispatcherKernelResult{}, err
+			}
+			state := computeTCDispatcherState(dispType, nsid, ifindex, 1, result)
+			return dispatcherKernelResult{
+				state: state,
+				rollback: func(ctx context.Context) {
+					parent := dispatcher.TCParentHandle(dispType)
+					if rbErr := e.kernel.DetachTCFilter(ctx, int(ifindex), ifname, parent, result.Priority, result.Handle); rbErr != nil {
+						e.logger.ErrorContext(ctx, "rollback: detach TC filter failed",
+							"ifname", ifname, "error", rbErr)
+					}
+					if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+						e.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
+							"path", progPinPath, "error", rbErr)
+					}
+				},
+				createdAttrs: []any{
+					"direction", direction,
+					"ifname", ifname,
+					"handle", fmt.Sprintf("%x", result.Handle),
+					"priority", result.Priority,
+				},
+			}, nil
+		},
 	}
-	if err := spec.Validate(); err != nil {
-		return dispatcher.State{}, fmt.Errorf("invalid TC dispatcher spec: %w", err)
+}
+
+// computeXDPDispatcherState is a pure function that builds a
+// dispatcher.State from kernel attach results.
+func computeXDPDispatcherState(
+	dispType dispatcher.DispatcherType,
+	nsid uint64,
+	ifindex, revision uint32,
+	result *platform.XDPDispatcherResult,
+) dispatcher.State {
+	return dispatcher.State{
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ifindex,
+		Revision:  revision,
+		ProgramID: result.DispatcherID,
+		LinkID:    result.LinkID,
 	}
-	result, err := kernel.AttachTCDispatcher(ctx, spec)
-	if err != nil {
-		return dispatcher.State{}, err
+}
+
+// computeTCDispatcherState is a pure function that builds a
+// dispatcher.State from TC kernel attach results.
+func computeTCDispatcherState(
+	dispType dispatcher.DispatcherType,
+	nsid uint64,
+	ifindex, revision uint32,
+	result *platform.TCDispatcherResult,
+) dispatcher.State {
+	return dispatcher.State{
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ifindex,
+		Revision:  revision,
+		ProgramID: result.DispatcherID,
+		Priority:  result.Priority,
 	}
-
-	state := computeTCDispatcherState(dispType, nsid, ifindex, revision, result)
-
-	if err := store.SaveDispatcher(ctx, state); err != nil {
-		logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
-			"ifname", ifname, "error", err)
-		parent := dispatcher.TCParentHandle(dispType)
-		if rbErr := kernel.DetachTCFilter(ctx, int(ifindex), ifname, parent, result.Priority, result.Handle); rbErr != nil {
-			logger.ErrorContext(ctx, "rollback: detach TC filter failed",
-				"ifname", ifname, "error", rbErr)
-		}
-		if rbErr := kernel.RemovePin(ctx, progPinPath); rbErr != nil {
-			logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-				"path", progPinPath, "error", rbErr)
-		}
-		return dispatcher.State{}, fmt.Errorf("save TC dispatcher: %w", err)
-	}
-
-	logger.InfoContext(ctx, "created TC dispatcher",
-		"direction", direction,
-		"nsid", nsid,
-		"ifindex", ifindex,
-		"ifname", ifname,
-		"dispatcher_id", result.DispatcherID,
-		"handle", fmt.Sprintf("%x", result.Handle),
-		"priority", result.Priority,
-		"prog_pin_path", progPinPath)
-
-	return state, nil
 }
 
 // extensionOps captures the two operations that vary between XDP and
@@ -231,40 +312,4 @@ func attachExtensionWithRetry(
 		return extensionResult{}, fmt.Errorf("attach %s extension slot %d (after recreate): %w", ops.label, position, err)
 	}
 	return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
-}
-
-// computeXDPDispatcherState is a pure function that builds a
-// dispatcher.State from kernel attach results.
-func computeXDPDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.XDPDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
-		Type:      dispType,
-		Nsid:      nsid,
-		Ifindex:   ifindex,
-		Revision:  revision,
-		ProgramID: result.DispatcherID,
-		LinkID:    result.LinkID,
-	}
-}
-
-// computeTCDispatcherState is a pure function that builds a
-// dispatcher.State from TC kernel attach results.
-func computeTCDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.TCDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
-		Type:      dispType,
-		Nsid:      nsid,
-		Ifindex:   ifindex,
-		Revision:  revision,
-		ProgramID: result.DispatcherID,
-		Priority:  result.Priority,
-	}
 }

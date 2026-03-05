@@ -151,13 +151,13 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.EnsureXDPDispatcher:
 		return e.ensureDispatcher(ctx, dispatcher.DispatcherTypeXDP, a.Ifindex, a.NetnsPath,
 			func(nsid uint64) (dispatcher.State, error) {
-				return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.NetnsPath)
+				return e.createDispatcher(ctx, e.xdpDispatcherCreateOps(nsid, a.Ifindex, a.NetnsPath))
 			})
 
 	case action.EnsureTCDispatcher:
 		return e.ensureDispatcher(ctx, a.DispType, a.Ifindex, a.NetnsPath,
 			func(nsid uint64) (dispatcher.State, error) {
-				return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+				return e.createDispatcher(ctx, e.tcDispatcherCreateOps(nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath))
 			})
 
 	case action.AttachXDPExtension:
@@ -176,7 +176,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 					})
 				},
 				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-					return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, ifindex, a.NetnsPath)
+					return e.createDispatcher(ctx, e.xdpDispatcherCreateOps(nsid, ifindex, a.NetnsPath))
 				},
 			},
 			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
@@ -197,7 +197,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 					})
 				},
 				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-					return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+					return e.createDispatcher(ctx, e.tcDispatcherCreateOps(nsid, ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath))
 				},
 			},
 			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
