@@ -90,6 +90,7 @@ type sqliteStore struct {
 	stmtIncrementRevision    *sql.Stmt
 	stmtGetDispatcherByType  *sql.Stmt
 	stmtCountDispatcherLinks *sql.Stmt
+	stmtListDispatcherSlots  *sql.Stmt
 }
 
 // New creates a new SQLite store at the given path.
@@ -227,6 +228,7 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtIncrementRevision,
 		s.stmtGetDispatcherByType,
 		s.stmtCountDispatcherLinks,
+		s.stmtListDispatcherSlots,
 	}
 	for _, stmt := range stmts {
 		if stmt != nil {
@@ -416,6 +418,7 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Sto
 		stmtIncrementRevision:    tx.StmtContext(ctx, s.stmtIncrementRevision),
 		stmtGetDispatcherByType:  tx.StmtContext(ctx, s.stmtGetDispatcherByType),
 		stmtCountDispatcherLinks: tx.StmtContext(ctx, s.stmtCountDispatcherLinks),
+		stmtListDispatcherSlots:  tx.StmtContext(ctx, s.stmtListDispatcherSlots),
 	}
 
 	if err := fn(txStore); err != nil {

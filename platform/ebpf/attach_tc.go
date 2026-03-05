@@ -29,18 +29,10 @@ const tcDispatcherPriority = 50
 // the upstream Rust bpfman approach: the dispatcher program is attached
 // as a cls_bpf filter on the clsact qdisc, visible to tc(8) tooling,
 // and works on kernels older than 6.6.
+// Uses the v2 map-based dispatcher with double-buffered runtime config.
 func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
-	// Configure the TC dispatcher
-	// TC_DISPATCHER_RETVAL (30) is returned by empty slots - we must include
-	// this bit so the dispatcher continues past empty slots to the final TC_ACT_OK.
-	const tcDispatcherRetval = 30
-	cfg := dispatcher.NewTCConfig(spec.NumProgs)
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << tcDispatcherRetval)
-	}
-
-	// Load the TC dispatcher collection spec with config injected
-	collSpec, err := dispatcher.LoadTCDispatcher(cfg)
+	// Load the v2 map-based TC dispatcher (no .rodata injection needed)
+	collSpec, err := dispatcher.LoadTCDispatcherV2()
 	if err != nil {
 		return nil, fmt.Errorf("load TC dispatcher spec: %w", err)
 	}
@@ -54,6 +46,25 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 	dispatcherProg := coll.Programs["tc_dispatcher"]
 	if dispatcherProg == nil {
 		return nil, fmt.Errorf("tc_dispatcher program not found in collection")
+	}
+
+	// Get map handles for pinning
+	configMap := coll.Maps[dispatcher.ConfigMapName]
+	if configMap == nil {
+		return nil, fmt.Errorf("dispatcher_config map not found in collection")
+	}
+	activeMap := coll.Maps[dispatcher.ActiveMapName]
+	if activeMap == nil {
+		return nil, fmt.Errorf("active_config map not found in collection")
+	}
+
+	// Initialise the maps: empty config in buffer 0, active index = 0
+	zeroConfig := dispatcher.RuntimeConfig{}
+	if err := configMap.Put(uint32(0), &zeroConfig); err != nil {
+		return nil, fmt.Errorf("initialise dispatcher_config[0]: %w", err)
+	}
+	if err := activeMap.Put(uint32(0), uint32(0)); err != nil {
+		return nil, fmt.Errorf("initialise active_config[0]: %w", err)
 	}
 
 	// Determine the parent handle based on direction
@@ -111,8 +122,6 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 		// Step 3: Read back the kernel-assigned handle.
 		handle, err := readBackTCFilterHandle(spec.Target.IfIndex, parent, tcDispatcherPriority)
 		if err != nil {
-			// Filter was added but we can't get its handle; attempt cleanup.
-			// We can't call FilterDel without a handle, so log and return.
 			k.logger.Warn("TC filter added but handle readback failed; filter may be orphaned",
 				"ifname", spec.IfName,
 				"ifindex", spec.Target.IfIndex,
@@ -171,6 +180,18 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Pin config and active maps outside the revision directory.
+	if spec.ConfigMapPinPath != "" {
+		if err := pinWithRetry(configMap, spec.ConfigMapPinPath); err != nil {
+			return nil, fmt.Errorf("pin dispatcher_config map to %s: %w", spec.ConfigMapPinPath, err)
+		}
+	}
+	if spec.ActiveMapPinPath != "" {
+		if err := pinWithRetry(activeMap, spec.ActiveMapPinPath); err != nil {
+			return nil, fmt.Errorf("pin active_config map to %s: %w", spec.ActiveMapPinPath, err)
+		}
 	}
 
 	return result, nil

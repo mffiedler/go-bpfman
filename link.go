@@ -149,6 +149,7 @@ type XDPDetails struct {
 	Ifindex      uint32           `json:"ifindex"`
 	Priority     int32            `json:"priority"`
 	Position     int32            `json:"position"`
+	Order        int32            `json:"order"`
 	ProceedOn    []int32          `json:"proceed_on"`
 	Netns        string           `json:"netns,omitempty"`
 	Nsid         uint64           `json:"nsid"`
@@ -201,6 +202,7 @@ type TCDetails struct {
 	Direction    TCDirection      `json:"direction"`
 	Priority     int32            `json:"priority"`
 	Position     int32            `json:"position"`
+	Order        int32            `json:"order"`
 	ProceedOn    []int32          `json:"proceed_on"`
 	Netns        string           `json:"netns,omitempty"`
 	Nsid         uint64           `json:"nsid"`

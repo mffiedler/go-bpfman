@@ -34,8 +34,10 @@ GO_PKG_DIR := .
 all: $(OBJECTS) install
 
 install: $(OBJECTS)
-	cp $(OUT_DIR)/xdp_dispatcher_v2.bpf.o $(GO_PKG_DIR)/
-	cp $(OUT_DIR)/tc_dispatcher.bpf.o $(GO_PKG_DIR)/
+	cp $(OUT_DIR)/bpf/xdp_dispatcher_v2.bpf.o $(GO_PKG_DIR)/
+	cp $(OUT_DIR)/bpf/tc_dispatcher.bpf.o $(GO_PKG_DIR)/
+	cp $(OUT_DIR)/bpf/xdp_dispatcher_v3.bpf.o $(GO_PKG_DIR)/
+	cp $(OUT_DIR)/bpf/tc_dispatcher_v2.bpf.o $(GO_PKG_DIR)/
 
 # Explicit static pattern rule handles Docker builds without disabling builtin rules
 
@@ -43,7 +45,7 @@ $(OUT_DIR)/bpf/%.bpf.o: bpf/%.bpf.c Makefile | $(OUT_DIR)
 	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$(OUT_DIR)/bpf/$*.bpf.d $< -o $@
 
 # Explicit rules for Docker builds (matches pattern rule)
-tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o: %.bpf.o: bpf/%.bpf.c Makefile
+tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o xdp_dispatcher_v3.bpf.o tc_dispatcher_v2.bpf.o: %.bpf.o: bpf/%.bpf.c Makefile
 	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$*.bpf.d $< -o $@
 
 $(OUT_DIR):

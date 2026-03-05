@@ -20,7 +20,7 @@ WORKDIR /build
 COPY dispatcher/ dispatcher/
 
 # Build just the BPF objects (now self-contained in dispatcher/)
-RUN cd dispatcher && make tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o
+RUN cd dispatcher && make tc_dispatcher.bpf.o tc_dispatcher_v2.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o xdp_dispatcher_v3.bpf.o
 
 # Verify build outputs
 RUN ls -la dispatcher/*.bpf.o

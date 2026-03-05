@@ -167,10 +167,11 @@ type fakeKernel struct {
 	tcFilters map[tcFilterKey]uint32
 
 	// Operation recording for verification
-	ops        []kernelOp
-	removePins []string      // paths passed to RemovePin
-	tcDetaches []tcFilterKey // TC filters detached
-	mu         sync.Mutex
+	ops           []kernelOp
+	removePins    []string                 // paths passed to RemovePin
+	tcDetaches    []tcFilterKey            // TC filters detached
+	configUpdates []dispatcherConfigUpdate // dispatcher config updates
+	mu            sync.Mutex
 
 	// Error injection - set these to control behaviour
 	failOnProgram map[string]error // fail Load if program name matches
@@ -346,6 +347,7 @@ func (f *fakeKernel) Reset() {
 	f.ops = nil
 	f.removePins = nil
 	f.tcDetaches = nil
+	f.configUpdates = nil
 	f.tcFilters = make(map[tcFilterKey]uint32)
 	f.failOnProgram = make(map[string]error)
 	f.failOnAttach = make(map[string]error)
@@ -991,4 +993,31 @@ func (f *fakeKernel) TCFilterCount() int {
 
 func (f *fakeKernel) RepinMap(_ context.Context, srcPath, dstPath string) error {
 	return nil // Fake implementation - no-op
+}
+
+// dispatcherConfigUpdate records a single UpdateDispatcherConfig call.
+type dispatcherConfigUpdate struct {
+	ConfigMapPin string
+	ActiveMapPin string
+	Config       dispatcher.RuntimeConfig
+}
+
+func (f *fakeKernel) UpdateDispatcherConfig(_ context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.configUpdates = append(f.configUpdates, dispatcherConfigUpdate{
+		ConfigMapPin: configMapPin,
+		ActiveMapPin: activeMapPin,
+		Config:       config,
+	})
+	return nil
+}
+
+// ConfigUpdates returns a copy of all dispatcher config update operations.
+func (f *fakeKernel) ConfigUpdates() []dispatcherConfigUpdate {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := make([]dispatcherConfigUpdate, len(f.configUpdates))
+	copy(result, f.configUpdates)
+	return result
 }

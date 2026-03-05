@@ -1828,3 +1828,277 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 	}
 	assert.Equal(t, 3, count, "should have 3 programs with app=test-app")
 }
+
+// =============================================================================
+// Dispatcher Runtime Config Tests
+// =============================================================================
+
+// TestXDP_DispatcherConfigUpdatedOnAttach verifies that attaching an
+// XDP extension produces an UpdateDispatcherConfig call with the
+// correct runtime config.
+func TestXDP_DispatcherConfigUpdatedOnAttach(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 1)
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, nil, attachSpec)
+	require.NoError(t, err)
+
+	updates := fix.Kernel.ConfigUpdates()
+	require.Len(t, updates, 1, "should have 1 config update after attach")
+
+	cfg := updates[0].Config
+	assert.Equal(t, uint32(1), cfg.NumProgsEnabled)
+	// Single program at slot 0
+	assert.Equal(t, uint32(0), cfg.RunOrder[0])
+}
+
+// TestXDP_DispatcherConfigUpdatedOnDetach verifies that filling all
+// 10 XDP slots then detaching them one at a time correctly
+// recomputes the runtime config at each step. The final detach
+// triggers full dispatcher cleanup with no additional config update.
+func TestXDP_DispatcherConfigUpdatedOnDetach(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	// Fill all 10 slots
+	var links []bpfman.Link
+	for i := 0; i < 10; i++ {
+		attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 1)
+		require.NoError(t, err)
+		link, err := fix.Attach(ctx, nil, attachSpec)
+		require.NoError(t, err, "attach %d should succeed", i)
+		links = append(links, link)
+	}
+
+	// 10 config updates from the 10 attaches
+	updates := fix.Kernel.ConfigUpdates()
+	require.Len(t, updates, 10)
+	for i, u := range updates {
+		assert.Equal(t, uint32(i+1), u.Config.NumProgsEnabled,
+			"after attach %d", i)
+	}
+
+	// Detach 9 of 10, each triggers a config recomputation
+	for i := 0; i < 9; i++ {
+		err = fix.Detach(ctx, links[i].Record.ID)
+		require.NoError(t, err, "detach %d should succeed", i)
+
+		updates = fix.Kernel.ConfigUpdates()
+		expectedUpdates := 10 + i + 1 // 10 attaches + (i+1) detaches
+		require.Len(t, updates, expectedUpdates,
+			"after detach %d", i)
+		cfg := updates[len(updates)-1].Config
+		assert.Equal(t, uint32(9-i), cfg.NumProgsEnabled,
+			"after detaching %d of 10, should have %d enabled", i+1, 9-i)
+	}
+
+	// Detach last -- dispatcher is cleaned up, no config update
+	err = fix.Detach(ctx, links[9].Record.ID)
+	require.NoError(t, err)
+
+	updates = fix.Kernel.ConfigUpdates()
+	assert.Len(t, updates, 19,
+		"no additional config update when dispatcher is fully cleaned up")
+}
+
+// TestTC_DispatcherConfigPriorityOrdering verifies that filling all
+// 10 TC extension slots with different priorities produces a runtime
+// config whose run_order reflects priority ordering.
+func TestTC_DispatcherConfigPriorityOrdering(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	// Load 10 separate programs so each gets a distinct name.
+	names := []string{
+		"tc_a", "tc_b", "tc_c", "tc_d", "tc_e",
+		"tc_f", "tc_g", "tc_h", "tc_i", "tc_j",
+	}
+	var progIDs []kernel.ProgramID
+	for _, name := range names {
+		s, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), name, bpfman.ProgramTypeTC)
+		require.NoError(t, err)
+		p, err := fix.Load(ctx, s, manager.LoadOpts{})
+		require.NoError(t, err)
+		progIDs = append(progIDs, p.Record.ProgramID)
+	}
+
+	// Attach with scrambled priorities: slot 0 = 900, slot 1 = 0,
+	// slot 2 = 400, ..., arranged so the priority order reverses
+	// the attachment order.
+	priorities := []int{900, 0, 400, 100, 800, 200, 600, 300, 700, 500}
+	for i, prio := range priorities {
+		attachSpec, err := bpfman.NewTCAttachSpec(progIDs[i], "eth0", 2, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		attachSpec = attachSpec.WithPriority(prio)
+		_, err = fix.Attach(ctx, nil, attachSpec)
+		require.NoError(t, err, "attach slot %d should succeed", i)
+	}
+
+	updates := fix.Kernel.ConfigUpdates()
+	require.NotEmpty(t, updates)
+
+	lastCfg := updates[len(updates)-1].Config
+	assert.Equal(t, uint32(10), lastCfg.NumProgsEnabled)
+
+	// Expected run_order: sort slots by priority ascending.
+	// priority -> slot: 0->1, 100->3, 200->5, 300->7, 400->2,
+	//                   500->9, 600->6, 700->8, 800->4, 900->0
+	expectedOrder := []uint32{1, 3, 5, 7, 2, 9, 6, 8, 4, 0}
+	for i, expected := range expectedOrder {
+		assert.Equal(t, expected, lastCfg.RunOrder[i],
+			"run_order[%d] should be slot %d (priority %d)",
+			i, expected, priorities[expected])
+	}
+}
+
+// TestTC_DispatcherConfigRecomputedOnDetach verifies that filling
+// all 10 TC extension slots with distinct priorities then detaching
+// the lowest-priority program recomputes the runtime config with
+// the remaining 9 in correct priority order.
+func TestTC_DispatcherConfigRecomputedOnDetach(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	names := []string{
+		"tc_a", "tc_b", "tc_c", "tc_d", "tc_e",
+		"tc_f", "tc_g", "tc_h", "tc_i", "tc_j",
+	}
+	var progIDs []kernel.ProgramID
+	for _, name := range names {
+		s, err := bpfman.NewLoadSpec(fix.BytecodeFile("tc.o"), name, bpfman.ProgramTypeTC)
+		require.NoError(t, err)
+		p, err := fix.Load(ctx, s, manager.LoadOpts{})
+		require.NoError(t, err)
+		progIDs = append(progIDs, p.Record.ProgramID)
+	}
+
+	tcProceedOn := []int32{0, 3} // TC_ACT_OK=0, TC_ACT_PIPE=3
+
+	// Attach all 10 with ascending priorities: slot 0 = priority 0,
+	// slot 1 = priority 100, ..., slot 9 = priority 900.
+	var links []bpfman.Link
+	for i := range 10 {
+		spec, err := bpfman.NewTCAttachSpec(progIDs[i], "eth0", 2, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		spec = spec.WithPriority(i * 100).WithProceedOn(tcProceedOn)
+		link, err := fix.Attach(ctx, nil, spec)
+		require.NoError(t, err, "attach %d should succeed", i)
+		links = append(links, link)
+	}
+
+	updates := fix.Kernel.ConfigUpdates()
+	require.Len(t, updates, 10)
+
+	// Verify all 10 in priority order before detach
+	cfg := updates[9].Config
+	require.Equal(t, uint32(10), cfg.NumProgsEnabled)
+	for i := range 10 {
+		assert.Equal(t, uint32(i), cfg.RunOrder[i],
+			"before detach: run_order[%d] should be slot %d", i, i)
+	}
+
+	// Detach the lowest-priority program (slot 0, priority 0)
+	err := fix.Detach(ctx, links[0].Record.ID)
+	require.NoError(t, err)
+
+	updates = fix.Kernel.ConfigUpdates()
+	require.Len(t, updates, 11, "detach should trigger config recomputation")
+	cfg = updates[10].Config
+	assert.Equal(t, uint32(9), cfg.NumProgsEnabled,
+		"should have 9 programs after detach")
+
+	// Remaining slots 1-9, still in ascending priority order
+	for i := range 9 {
+		assert.Equal(t, uint32(i+1), cfg.RunOrder[i],
+			"after detach: run_order[%d] should be slot %d", i, i+1)
+	}
+
+	// Verify chain_call_actions set for remaining slots
+	for i := 1; i <= 9; i++ {
+		assert.NotEqual(t, uint32(0), cfg.ChainCallActions[i],
+			"slot %d should have proceed_on set", i)
+	}
+	// Detached slot should have zero chain_call_actions
+	assert.Equal(t, uint32(0), cfg.ChainCallActions[0],
+		"detached slot 0 should have no proceed_on")
+}
+
+// TestXDP_SlotReuse verifies that when slots are freed by detach,
+// subsequent attaches reuse the freed slot positions. Fills all 10
+// slots, detaches even-numbered slots, then re-attaches to verify
+// the freed slots are reclaimed.
+func TestXDP_SlotReuse(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("xdp.o"), "xdp_pass", bpfman.ProgramTypeXDP)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	// Fill all 10 slots
+	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "lo", 1)
+	require.NoError(t, err)
+
+	var links []bpfman.Link
+	for i := range 10 {
+		link, err := fix.Attach(ctx, nil, attachSpec)
+		require.NoError(t, err, "initial attach %d should succeed", i)
+		links = append(links, link)
+	}
+
+	// Detach even-numbered slots (0, 2, 4, 6, 8) -- frees 5 slots
+	for i := 0; i < 10; i += 2 {
+		err = fix.Detach(ctx, links[i].Record.ID)
+		require.NoError(t, err, "detach slot %d should succeed", i)
+	}
+
+	// Verify 5 programs remain
+	updates := fix.Kernel.ConfigUpdates()
+	lastCfg := updates[len(updates)-1].Config
+	assert.Equal(t, uint32(5), lastCfg.NumProgsEnabled,
+		"should have 5 programs after detaching evens")
+
+	// Odd slots should be present in run_order
+	oddSlots := map[uint32]bool{}
+	for i := 0; i < 5; i++ {
+		oddSlots[lastCfg.RunOrder[i]] = true
+	}
+	for i := 1; i < 10; i += 2 {
+		assert.True(t, oddSlots[uint32(i)],
+			"odd slot %d should be in run order", i)
+	}
+
+	// Re-attach 5 times -- should reuse freed even slots
+	for i := range 5 {
+		_, err := fix.Attach(ctx, nil, attachSpec)
+		require.NoError(t, err, "re-attach %d should succeed", i)
+	}
+
+	updates = fix.Kernel.ConfigUpdates()
+	lastCfg = updates[len(updates)-1].Config
+	assert.Equal(t, uint32(10), lastCfg.NumProgsEnabled,
+		"should be back to 10 programs after re-attach")
+
+	// All 10 slots should appear in run_order
+	allSlots := map[uint32]bool{}
+	for i := range 10 {
+		allSlots[lastCfg.RunOrder[i]] = true
+	}
+	for i := range 10 {
+		assert.True(t, allSlots[uint32(i)],
+			"slot %d should be in run order after refill", i)
+	}
+}

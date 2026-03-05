@@ -111,6 +111,10 @@ func (s *stubStore) IncrementRevision(ctx context.Context, dispType dispatcher.D
 	panic("stubStore.IncrementRevision not implemented")
 }
 
+func (s *stubStore) ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]platform.DispatcherSlot, error) {
+	panic("stubStore.ListDispatcherSlots not implemented")
+}
+
 func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error) {
 	panic("stubStore.CountDispatcherLinks not implemented")
 }
@@ -250,6 +254,10 @@ func (k *stubKernel) DetachTCFilter(ctx context.Context, ifindex int, ifname str
 
 func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent uint32, priority uint16) (uint32, error) {
 	panic("stubKernel.FindTCFilterHandle not implemented")
+}
+
+func (k *stubKernel) UpdateDispatcherConfig(ctx context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error {
+	panic("stubKernel.UpdateDispatcherConfig not implemented")
 }
 
 // The remaining methods panic if called - tests should only use store actions.

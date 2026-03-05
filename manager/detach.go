@@ -169,6 +169,8 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
 	progPinPath := bpffs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
 	revisionDir := bpffs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
+	configMapPath := bpffs.DispatcherConfigMapPath(state.Type, state.Nsid, state.Ifindex)
+	activeMapPath := bpffs.DispatcherActiveMapPath(state.Type, state.Nsid, state.Ifindex)
 	var actions []action.Action
 
 	// TC dispatchers use legacy netlink and must be detached via
@@ -191,6 +193,8 @@ func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcH
 	actions = append(actions,
 		action.RemovePin{Path: progPinPath},
 		action.RemovePin{Path: revisionDir},
+		action.RemovePin{Path: configMapPath},
+		action.RemovePin{Path: activeMapPath},
 		action.DeleteDispatcher{
 			Type:    state.Type,
 			Nsid:    state.Nsid,

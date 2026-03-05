@@ -71,6 +71,19 @@ type DispatcherStore interface {
 	// CountDispatcherLinks returns the number of extension links
 	// attached to the dispatcher identified by its program ID.
 	CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error)
+
+	// ListDispatcherSlots returns the occupied extension slots for a
+	// dispatcher, including each slot's position, priority, and
+	// program name. Results are ordered by (priority, program_name).
+	ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]DispatcherSlot, error)
+}
+
+// DispatcherSlot describes an occupied extension slot in a dispatcher.
+type DispatcherSlot struct {
+	Position    int
+	Priority    int
+	ProgramName string
+	ProceedOn   uint32
 }
 
 // Store combines program, link, and dispatcher store operations.
@@ -234,6 +247,11 @@ type DispatcherAttacher interface {
 	// it to a TC dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
 	// targeting the dispatcher's slot function.
 	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error)
+
+	// UpdateDispatcherConfig atomically updates the dispatcher runtime
+	// configuration using the double-buffer mechanism. It writes the
+	// new config to the inactive buffer and flips the active index.
+	UpdateDispatcherConfig(ctx context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error
 
 	// AttachTCX attaches a loaded program directly to an interface using TCX link.
 	// Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.

@@ -74,6 +74,8 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				ObjectPath:  prog.Load.ObjectPath(),
 				ProgramName: prog.Meta.Name,
 				MapPinDir:   prog.Handles.MapPinPath,
+				Priority:    priority,
+				ProceedOn:   uint32(DefaultTCProceedOn),
 			}
 		},
 		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {

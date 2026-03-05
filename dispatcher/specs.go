@@ -9,11 +9,13 @@ import (
 
 // XDPDispatcherAttachSpec contains parameters for creating an XDP dispatcher.
 type XDPDispatcherAttachSpec struct {
-	Target      bpfman.AttachTarget `json:"target"`
-	ProgPinPath string              `json:"prog_pin_path"`        // where to pin dispatcher program
-	LinkPinPath string              `json:"link_pin_path"`        // where to pin dispatcher link
-	NumProgs    int                 `json:"num_progs"`            // extension slot count
-	ProceedOn   uint32              `json:"proceed_on,omitempty"` // XDP action bitmask
+	Target           bpfman.AttachTarget `json:"target"`
+	ProgPinPath      string              `json:"prog_pin_path"`                 // where to pin dispatcher program
+	LinkPinPath      string              `json:"link_pin_path"`                 // where to pin dispatcher link
+	ConfigMapPinPath string              `json:"config_map_pin_path,omitempty"` // where to pin dispatcher_config map
+	ActiveMapPinPath string              `json:"active_map_pin_path,omitempty"` // where to pin active_config map
+	NumProgs         int                 `json:"num_progs"`                     // extension slot count
+	ProceedOn        uint32              `json:"proceed_on,omitempty"`          // XDP action bitmask
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -37,12 +39,14 @@ func (s XDPDispatcherAttachSpec) Validate() error {
 // Note: TC legacy uses netlink, not BPF links, so no LinkPinPath.
 // TC netlink requires interface name; manager resolves and supplies it.
 type TCDispatcherAttachSpec struct {
-	Target      bpfman.AttachTarget `json:"target"`
-	IfName      string              `json:"ifname"`               // needed for netlink operations
-	ProgPinPath string              `json:"prog_pin_path"`        // where to pin dispatcher program
-	Direction   bpfman.TCDirection  `json:"direction"`            // ingress or egress
-	NumProgs    int                 `json:"num_progs"`            // extension slot count
-	ProceedOn   uint32              `json:"proceed_on,omitempty"` // TC action bitmask
+	Target           bpfman.AttachTarget `json:"target"`
+	IfName           string              `json:"ifname"`                        // needed for netlink operations
+	ProgPinPath      string              `json:"prog_pin_path"`                 // where to pin dispatcher program
+	ConfigMapPinPath string              `json:"config_map_pin_path,omitempty"` // where to pin dispatcher_config map
+	ActiveMapPinPath string              `json:"active_map_pin_path,omitempty"` // where to pin active_config map
+	Direction        bpfman.TCDirection  `json:"direction"`                     // ingress or egress
+	NumProgs         int                 `json:"num_progs"`                     // extension slot count
+	ProceedOn        uint32              `json:"proceed_on,omitempty"`          // TC action bitmask
 }
 
 // Validate checks the spec for invalid or missing values.

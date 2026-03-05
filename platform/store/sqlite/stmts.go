@@ -347,5 +347,22 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		return fmt.Errorf("prepare CountDispatcherLinks: %w", err)
 	}
 
+	const sqlListDispatcherSlots = `
+		SELECT d.position, d.priority, p.program_name, d.proceed_on
+		FROM link_xdp_details d
+		JOIN links l ON d.link_id = l.link_id
+		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
+		WHERE d.dispatcher_program_id = ?
+		UNION ALL
+		SELECT d.position, d.priority, p.program_name, d.proceed_on
+		FROM link_tc_details d
+		JOIN links l ON d.link_id = l.link_id
+		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
+		WHERE d.dispatcher_program_id = ?
+		ORDER BY priority ASC, program_name ASC`
+	if s.stmtListDispatcherSlots, err = s.db.PrepareContext(ctx, sqlListDispatcherSlots); err != nil {
+		return fmt.Errorf("prepare ListDispatcherSlots: %w", err)
+	}
+
 	return nil
 }

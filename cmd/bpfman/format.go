@@ -476,6 +476,7 @@ func formatLinkResultTable(link bpfman.Link) string {
 		if d.Netns != "" {
 			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
 		}
+		specFields = append(specFields, fmt.Sprintf("    Order:\t%d", d.Order))
 		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
 		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
 		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", bpfman.TCActionsToString(d.ProceedOn)))
@@ -507,6 +508,7 @@ func formatLinkResultTable(link bpfman.Link) string {
 		if d.Netns != "" {
 			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
 		}
+		specFields = append(specFields, fmt.Sprintf("    Order:\t%d", d.Order))
 		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
 		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
 		specFields = append(specFields, fmt.Sprintf("    Proceed On:\t%s", formatXDPProceedOn(d.ProceedOn)))

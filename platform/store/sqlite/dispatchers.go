@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -166,4 +167,50 @@ func (s *sqliteStore) CountDispatcherLinks(ctx context.Context, dispatcherProgra
 	}
 	s.logger.Debug("sql", "stmt", "CountDispatcherLinks", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "count", count)
 	return count, nil
+}
+
+// ListDispatcherSlots returns occupied extension slots for a
+// dispatcher, including position, priority, and program name. Results
+// are ordered by (priority ASC, program_name ASC).
+func (s *sqliteStore) ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]platform.DispatcherSlot, error) {
+	start := time.Now()
+	rows, err := s.stmtListDispatcherSlots.QueryContext(ctx, dispatcherProgramID, dispatcherProgramID)
+	if err != nil {
+		s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []platform.DispatcherSlot
+	for rows.Next() {
+		var slot platform.DispatcherSlot
+		var proceedOnJSON string
+		if err := rows.Scan(&slot.Position, &slot.Priority, &slot.ProgramName, &proceedOnJSON); err != nil {
+			s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+			return nil, err
+		}
+		// proceed_on is stored as a JSON array of action codes
+		// (e.g., [2,31] for XDP_PASS and XDP_DISPATCHER_RETURN).
+		// Reconstruct the bitmask: bit v is set for each code v.
+		var actions []int32
+		if err := json.Unmarshal([]byte(proceedOnJSON), &actions); err != nil {
+			s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+			return nil, fmt.Errorf("unmarshal proceed_on: %w", err)
+		}
+		var bitmask uint32
+		for _, v := range actions {
+			if v >= 0 && v < 32 {
+				bitmask |= 1 << uint(v)
+			}
+		}
+		slot.ProceedOn = bitmask
+		result = append(result, slot)
+	}
+	if err := rows.Err(); err != nil {
+		s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return nil, err
+	}
+
+	s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
+	return result, nil
 }

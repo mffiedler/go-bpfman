@@ -71,33 +71,50 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 
 // AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 // The dispatcher allows multiple XDP programs to be chained together.
+// Uses the v3 map-based dispatcher with double-buffered runtime config.
 func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
-	// Configure the dispatcher
-	// XDP_DISPATCHER_RETVAL (31) is returned by empty slots - we must include
-	// this bit so the dispatcher continues past empty slots to the final XDP_PASS.
+	// Configure the dispatcher .rodata metadata for xdp-tools compatibility.
+	// The dispatch loop itself reads from BPF maps, not .rodata.
 	const xdpDispatcherRetval = 31
 	cfg := dispatcher.NewXDPConfig(spec.NumProgs)
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
 		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << xdpDispatcherRetval)
 	}
 
-	// Load the dispatcher collection spec with config injected
-	collSpec, err := dispatcher.LoadXDPDispatcher(cfg)
+	// Load the v3 map-based dispatcher
+	collSpec, err := dispatcher.LoadXDPDispatcherV3(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load XDP dispatcher spec: %w", err)
 	}
 
-	// Create collection from spec
 	coll, err := ebpf.NewCollection(collSpec)
 	if err != nil {
 		return nil, fmt.Errorf("create XDP dispatcher collection: %w", err)
 	}
 	defer coll.Close()
 
-	// Get the dispatcher program
 	dispatcherProg := coll.Programs["xdp_dispatcher"]
 	if dispatcherProg == nil {
 		return nil, fmt.Errorf("xdp_dispatcher program not found in collection")
+	}
+
+	// Get map handles for pinning
+	configMap := coll.Maps[dispatcher.ConfigMapName]
+	if configMap == nil {
+		return nil, fmt.Errorf("dispatcher_config map not found in collection")
+	}
+	activeMap := coll.Maps[dispatcher.ActiveMapName]
+	if activeMap == nil {
+		return nil, fmt.Errorf("active_config map not found in collection")
+	}
+
+	// Initialise the maps: empty config in buffer 0, active index = 0
+	zeroConfig := dispatcher.RuntimeConfig{}
+	if err := configMap.Put(uint32(0), &zeroConfig); err != nil {
+		return nil, fmt.Errorf("initialise dispatcher_config[0]: %w", err)
+	}
+	if err := activeMap.Put(uint32(0), uint32(0)); err != nil {
+		return nil, fmt.Errorf("initialise active_config[0]: %w", err)
 	}
 
 	if spec.Target.NetNS != "" {
@@ -158,6 +175,18 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Pin config and active maps outside the revision directory.
+	if spec.ConfigMapPinPath != "" {
+		if err := pinWithRetry(configMap, spec.ConfigMapPinPath); err != nil {
+			return nil, fmt.Errorf("pin dispatcher_config map to %s: %w", spec.ConfigMapPinPath, err)
+		}
+	}
+	if spec.ActiveMapPinPath != "" {
+		if err := pinWithRetry(activeMap, spec.ActiveMapPinPath); err != nil {
+			return nil, fmt.Errorf("pin active_config map to %s: %w", spec.ActiveMapPinPath, err)
+		}
 	}
 
 	return result, nil

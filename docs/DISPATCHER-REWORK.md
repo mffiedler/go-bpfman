@@ -240,3 +240,96 @@ handles the multi-step transaction.
    case (1-3 programs per interface), this is negligible. At the
    maximum (10 programs), it is still fast since each re-attachment
    is a single `BPF_PROG_LOAD` + `BPF_LINK_CREATE`.
+
+## TC Double-Counting Correctness Issue
+
+The full-rebuild approach described above has a correctness problem
+for TC dispatchers. During the swap phase, the old and new TC
+filters briefly coexist (netlink requires adding the new filter
+before removing the old one). Both dispatchers share the same
+extension programs via freplace, and those extensions share the same
+BPF maps. Any packet that arrives during this window is processed
+by both dispatchers, causing shared counters and statistics maps to
+be updated twice.
+
+XDP does not suffer from this problem because `bpf_link_update` is
+an atomic operation -- the old and new dispatcher programs never
+coexist on the same interface.
+
+## Alternative: Double-Buffered BPF Map Approach
+
+Instead of rebuilding the entire dispatcher on every attach or
+detach, the dispatcher program is loaded once and its execution
+order is controlled at runtime via BPF maps. Two maps provide a
+double-buffer mechanism:
+
+- **`dispatcher_config`** -- An `ARRAY` map with `max_entries=2`.
+  Each entry is a `RuntimeConfig` struct containing
+  `num_progs_enabled`, a `run_order[10]` array mapping execution
+  positions to physical slots, and a `chain_call_actions[10]` array
+  indexed by physical slot.
+
+- **`active_config`** -- An `ARRAY` map with `max_entries=1`.
+  Entry 0 holds a `uint32` index (0 or 1) indicating which
+  `dispatcher_config` buffer is currently active.
+
+The BPF dispatcher entry point reads `active_config[0]` to find the
+current generation, then reads the corresponding `RuntimeConfig`
+from `dispatcher_config[gen]`. It iterates `run_order` up to
+`num_progs_enabled`, calling each physical slot function via a
+compile-time `switch` (the verifier requires static dispatch).
+
+### Why this is the recommended approach
+
+1. **TC correctness** -- No dispatcher rebuild means no filter swap
+   window. The existing dispatcher program stays attached; only the
+   map contents change. A single `uint32` write to `active_config`
+   atomically flips the execution order. Packets in flight continue
+   using the old configuration until they re-read the active index.
+
+2. **XDP correctness** -- Equally correct. The same atomic map
+   flip applies.
+
+3. **Simpler control plane** -- No need to load a new dispatcher
+   program, re-attach all extensions via freplace, perform atomic
+   link/filter swaps, or clean up old revision directories. Adding
+   or reordering programs is a map write followed by a single
+   `uint32` flip.
+
+4. **No transient packet loss** -- The switch is a single map
+   update. There is no window where both dispatchers exist.
+
+### Performance analysis
+
+The double-buffer approach adds two map lookups to the BPF fast
+path (one for `active_config`, one for the `RuntimeConfig` entry).
+`BPF_MAP_TYPE_ARRAY` lookups are O(1) pointer arithmetic -- each
+lookup costs roughly 5-10ns. For a dispatcher running 10 programs,
+each program call via freplace costs 50-100ns (function call +
+context save/restore), so the total dispatch overhead is
+500-1000ns. The two extra map lookups add less than 1% overhead.
+
+The original `.rodata`-based approach benefits from dead-code
+elimination by the kernel verifier. However, the runtime map
+approach still uses a compile-time `switch` for the slot dispatch
+(the verifier requires it), so the only additional cost is the two
+map reads. In practice, the difference is negligible.
+
+### Implementation summary
+
+New BPF source files (`xdp_dispatcher_v3.bpf.c`,
+`tc_dispatcher_v2.bpf.c`) implement the map-based dispatch loop.
+XDP retains `.rodata` for xdp-tools compatibility metadata (magic,
+version, `is_xdp_frags`, `program_flags`, `run_prios`). TC has no
+metadata to preserve, so `.rodata` is eliminated entirely. The old
+BPF source files remain in the tree as a fallback but are no longer
+embedded.
+
+The Go `dispatcher` package gains a `RuntimeConfig` type matching
+the BPF map value, and the `Load*Dispatcher` functions are updated
+to work with the new object files. The platform kernel adapter pins
+the two maps alongside the dispatcher program and provides an
+`UpdateDispatcherConfig` method that writes a new config to the
+inactive buffer and atomically flips the active index. The manager
+calls this method on attach and detach instead of rebuilding the
+dispatcher.

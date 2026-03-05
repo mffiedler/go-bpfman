@@ -347,6 +347,8 @@ type AttachXDPExtension struct {
 	ObjectPath  string
 	ProgramName string
 	MapPinDir   string
+	Priority    int
+	ProceedOn   uint32
 }
 
 func (AttachXDPExtension) isAction() {}
@@ -363,6 +365,8 @@ type AttachTCExtension struct {
 	ObjectPath  string
 	ProgramName string
 	MapPinDir   string
+	Priority    int
+	ProceedOn   uint32
 }
 
 func (AttachTCExtension) isAction() {}

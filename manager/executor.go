@@ -178,6 +178,9 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 					return e.createDispatcher(ctx, e.xdpDispatcherCreateOps(nsid, ifindex, a.NetnsPath))
 				},
+				updateConfig: e.kernel.UpdateDispatcherConfig,
+				priority:     a.Priority,
+				proceedOn:    a.ProceedOn,
 			},
 			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
@@ -199,6 +202,9 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 					return e.createDispatcher(ctx, e.tcDispatcherCreateOps(nsid, ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath))
 				},
+				updateConfig: e.kernel.UpdateDispatcherConfig,
+				priority:     a.Priority,
+				proceedOn:    a.ProceedOn,
 			},
 			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
@@ -262,15 +268,30 @@ func (e *executor) ensureDispatcher(
 }
 
 // cleanupEmptyDispatcher checks whether a dispatcher has any
-// remaining extension links and, if not, removes it from both the
-// kernel and the store.
+// remaining extension links. If extensions remain, it recomputes
+// the runtime config (run_order and chain_call_actions) from the
+// remaining slots and flips the double-buffer. If no extensions
+// remain, the dispatcher is removed from both the kernel and the
+// store.
 func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
 	remaining, err := e.store.CountDispatcherLinks(ctx, state.ProgramID)
 	if err != nil {
-		e.logger.WarnContext(ctx, "failed to count dispatcher links", "error", err)
-		return nil
+		return fmt.Errorf("count dispatcher links: %w", err)
 	}
 	if remaining > 0 {
+		// Extensions still attached: recompute the runtime
+		// config from the remaining slots and update the BPF
+		// maps via double-buffer flip.
+		slots, err := e.store.ListDispatcherSlots(ctx, state.ProgramID)
+		if err != nil {
+			return fmt.Errorf("list dispatcher slots for config update: %w", err)
+		}
+		config := computeRuntimeConfig(slots, nil)
+		configMapPin := e.bpffs.DispatcherConfigMapPath(state.Type, state.Nsid, state.Ifindex)
+		activeMapPin := e.bpffs.DispatcherActiveMapPath(state.Type, state.Nsid, state.Ifindex)
+		if err := e.kernel.UpdateDispatcherConfig(ctx, configMapPin, activeMapPin, config); err != nil {
+			return fmt.Errorf("update dispatcher config after detach: %w", err)
+		}
 		return nil
 	}
 
