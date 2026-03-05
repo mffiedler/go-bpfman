@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
@@ -252,5 +254,137 @@ func TestTC_DispatcherConfigRecomputedOnDetach(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		assert.Equal(t, uint32(i+1), cfg.RunOrder[i],
 			"after detach: run_order[%d] should be slot %d", i, i+1)
+	}
+}
+
+// tcStatsEntry matches the BPF struct used by go-tc-counter.
+type tcStatsEntry struct {
+	Packets uint64
+	Bytes   uint64
+}
+
+// readStatsMap loads a pinned tc_stats_map (PerCPUArray) and returns
+// the total packet count summed across all CPUs. The go-tc-counter
+// program stores a tcStatsEntry per CPU at key 0.
+func readStatsMap(t *testing.T, mapPinPath string) uint64 {
+	t.Helper()
+
+	m, err := ebpf.LoadPinnedMap(mapPinPath, nil)
+	require.NoError(t, err, "load pinned tc_stats_map at %s", mapPinPath)
+	defer m.Close()
+
+	var perCPU []tcStatsEntry
+	err = m.Lookup(uint32(0), &perCPU)
+	require.NoError(t, err, "lookup key 0 in tc_stats_map")
+
+	var total uint64
+	for _, entry := range perCPU {
+		total += entry.Packets
+	}
+	return total
+}
+
+// TestTC_DispatcherChainExecution verifies that all programs in a TC
+// dispatch chain actually execute when real traffic flows through the
+// interface. Five separate programs are loaded and attached at
+// different priorities; after sending traffic through a veth pair,
+// each program's independent counter map must show a non-zero packet
+// count.
+func TestTC_DispatcherChainExecution(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t, "chain")
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+
+	// Load 5 separate instances so each gets independent maps.
+	type loadedProg struct {
+		kernelID   kernel.ProgramID
+		mapPinPath string
+	}
+
+	var progs []loadedProg
+	for i := 0; i < 5; i++ {
+		programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err, "load %d", i)
+		require.Len(t, programs, 1)
+
+		prog := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+		progs = append(progs, loadedProg{
+			kernelID:   prog.Status.Kernel.ID,
+			mapPinPath: prog.Record.Handles.MapPinPath,
+		})
+	}
+
+	// Attach each at a different priority with proceed-on
+	// OK|Pipe|DispatcherReturn so the chain continues through all
+	// programs.
+	priorities := []int{500, 100, 300, 200, 400}
+	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, bpfman dispatcher return
+
+	var linkIDs []bpfman.LinkRecord
+	for i, prio := range priorities {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			progs[i].kernelID, veth.A.Name, veth.A.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(prio).WithProceedOn(proceedOn)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "attach %d at priority %d", i, prio)
+		linkIDs = append(linkIDs, link)
+	}
+
+	t.Cleanup(func() {
+		for _, link := range linkIDs {
+			env.Detach(context.Background(), link.ID)
+		}
+	})
+
+	// Verify the runtime config has all 5 programs in priority order.
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	configMapPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+	activeMapPin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+
+	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
+	assert.Equal(t, uint32(5), cfg.NumProgsEnabled,
+		"should have 5 programs enabled")
+
+	// Expected run_order by priority ascending:
+	// priority 100 -> slot 1, 200 -> slot 3, 300 -> slot 2,
+	// 400 -> slot 4, 500 -> slot 0
+	expectedOrder := []uint32{1, 3, 2, 4, 0}
+	for i, expected := range expectedOrder {
+		assert.Equal(t, expected, cfg.RunOrder[i],
+			"run_order[%d] should be slot %d", i, expected)
+	}
+
+	// Send traffic through the veth pair.
+	veth.Ping(t, 20)
+
+	// Read each program's counter map and verify non-zero counts.
+	for i, prog := range progs {
+		statsPath := filepath.Join(prog.mapPinPath, "tc_stats_map")
+		packets := readStatsMap(t, statsPath)
+		t.Logf("program %d (kernel_id=%d, priority=%d): %d packets",
+			i, prog.kernelID, priorities[i], packets)
+		assert.Greater(t, packets, uint64(0),
+			"program %d (priority %d) should have counted packets", i, priorities[i])
 	}
 }

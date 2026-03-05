@@ -22,6 +22,26 @@ const (
 // DefaultTCProceedOn is the default bitmask for TC proceed-on actions.
 var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcherReturn
 
+// tcProceedOnBitmask converts a list of TC action codes to a bitmask.
+// Each action code a produces bit (1 << a). If the list is empty, the
+// default bitmask (OK|Pipe|DispatcherReturn) is returned.
+//
+// This must match the reconstruction in ListDispatcherSlots so that
+// the BPF map written at initial attach is identical to the one
+// produced when recomputing after detach.
+func tcProceedOnBitmask(actions []int32) uint32 {
+	if len(actions) == 0 {
+		return uint32(DefaultTCProceedOn)
+	}
+	var mask uint32
+	for _, a := range actions {
+		if a >= 0 && a < 32 {
+			mask |= 1 << uint(a)
+		}
+	}
+	return mask
+}
+
 // attachTC attaches a TC program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
@@ -75,7 +95,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				ProgramName: prog.Meta.Name,
 				MapPinDir:   prog.Handles.MapPinPath,
 				Priority:    priority,
-				ProceedOn:   uint32(DefaultTCProceedOn),
+				ProceedOn:   tcProceedOnBitmask(proceedOn),
 			}
 		},
 		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {

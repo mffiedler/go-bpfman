@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,10 +19,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/fs/runtime"
+	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
@@ -108,7 +110,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	kernel := ebpf.New(ebpf.WithLogger(logger))
 
 	// Ensure runtime directories and bpffs mount
-	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
+	ensuredRuntime, err := fsruntime.New(layout, fsruntime.RealMounter{}, logger)
 	require.NoError(t, err, "failed to ensure runtime")
 
 	// Create signature verifier (disabled for tests)
@@ -544,6 +546,175 @@ func NewTestInterface(t *testing.T, id string) TestInterface {
 	return TestInterface{
 		Name:    name,
 		Ifindex: link.Attrs().Index,
+	}
+}
+
+// TestVethPair holds information about a veth pair where one end is
+// in the root namespace and the other is in a test network namespace.
+// Programs are attached to interface A (root namespace); traffic is
+// generated from interface B (test namespace).
+type TestVethPair struct {
+	A     TestInterface // root namespace, attach programs here
+	B     TestInterface // test namespace, generate traffic here
+	Netns string        // network namespace name
+}
+
+// NewTestVethPair creates a veth pair with one end in a dedicated
+// network namespace for generating real traffic through TC hooks.
+//
+// Interface A (bpfman-{id}a) stays in the root namespace with
+// 198.51.100.1/24. Interface B (bpfman-{id}b) is moved to a new
+// network namespace (bpfman-{id}) with 198.51.100.2/24. Traffic sent
+// from B arrives as real ingress on A, triggering TC hooks.
+//
+// Both interfaces and the namespace are cleaned up via t.Cleanup().
+func NewTestVethPair(t *testing.T, id string) TestVethPair {
+	t.Helper()
+
+	nameA := "bpfman-" + id + "a"
+	nameB := "bpfman-" + id + "b"
+	nsName := "bpfman-" + id
+
+	if len(nameA) > 15 || len(nameB) > 15 {
+		t.Fatalf("interface names %q/%q exceed 15 chars", nameA, nameB)
+	}
+
+	// Fail if interfaces already exist.
+	for _, name := range []string{nameA, nameB} {
+		if _, err := netlink.LinkByName(name); err == nil {
+			t.Fatalf("interface %s already exists (leaked from previous test?)", name)
+		}
+	}
+
+	// Create named network namespace. NewNamed switches the calling
+	// thread's netns, so we must lock the OS thread and restore.
+	runtime.LockOSThread()
+	origNs, err := netns.Get()
+	if err != nil {
+		runtime.UnlockOSThread()
+		t.Fatalf("failed to get current network namespace: %v", err)
+	}
+	newNs, err := netns.NewNamed(nsName)
+	if err != nil {
+		origNs.Close()
+		runtime.UnlockOSThread()
+		t.Fatalf("failed to create network namespace %s: %v", nsName, err)
+	}
+	newNs.Close()
+	if err := netns.Set(origNs); err != nil {
+		origNs.Close()
+		runtime.UnlockOSThread()
+		t.Fatalf("failed to restore network namespace: %v", err)
+	}
+	origNs.Close()
+	runtime.UnlockOSThread()
+
+	t.Cleanup(func() {
+		netns.DeleteNamed(nsName)
+	})
+
+	// Create veth pair in root namespace.
+	veth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{Name: nameA},
+		PeerName:  nameB,
+	}
+	if err := netlink.LinkAdd(veth); err != nil {
+		t.Fatalf("failed to create veth pair %s/%s: %v", nameA, nameB, err)
+	}
+	t.Cleanup(func() {
+		if link, err := netlink.LinkByName(nameA); err == nil {
+			netlink.LinkDel(link)
+		}
+	})
+
+	// Move B into the namespace via netlink.
+	linkB, err := netlink.LinkByName(nameB)
+	if err != nil {
+		t.Fatalf("failed to find interface %s: %v", nameB, err)
+	}
+	nsHandleForMove, err := netns.GetFromName(nsName)
+	if err != nil {
+		t.Fatalf("failed to get ns handle for %s: %v", nsName, err)
+	}
+	if err := netlink.LinkSetNsFd(linkB, int(nsHandleForMove)); err != nil {
+		nsHandleForMove.Close()
+		t.Fatalf("failed to move %s to namespace %s: %v", nameB, nsName, err)
+	}
+	nsHandleForMove.Close()
+
+	// Configure A in root namespace.
+	linkA, err := netlink.LinkByName(nameA)
+	if err != nil {
+		t.Fatalf("failed to find interface %s: %v", nameA, err)
+	}
+	addrA, _ := netlink.ParseAddr("198.51.100.1/24")
+	if err := netlink.AddrAdd(linkA, addrA); err != nil {
+		t.Fatalf("failed to add address to %s: %v", nameA, err)
+	}
+	if err := netlink.LinkSetUp(linkA); err != nil {
+		t.Fatalf("failed to bring up %s: %v", nameA, err)
+	}
+
+	// Configure B inside the namespace via a netlink handle.
+	nsHandleForConfig, err := netns.GetFromName(nsName)
+	if err != nil {
+		t.Fatalf("failed to get ns handle for config: %v", err)
+	}
+	nlh, err := netlink.NewHandleAt(nsHandleForConfig)
+	nsHandleForConfig.Close()
+	if err != nil {
+		t.Fatalf("failed to create netlink handle in namespace %s: %v", nsName, err)
+	}
+	defer nlh.Close()
+
+	nsLinkB, err := nlh.LinkByName(nameB)
+	if err != nil {
+		t.Fatalf("failed to find %s in namespace: %v", nameB, err)
+	}
+	addrB, _ := netlink.ParseAddr("198.51.100.2/24")
+	if err := nlh.AddrAdd(nsLinkB, addrB); err != nil {
+		t.Fatalf("failed to add address to %s: %v", nameB, err)
+	}
+	if err := nlh.LinkSetUp(nsLinkB); err != nil {
+		t.Fatalf("failed to bring up %s: %v", nameB, err)
+	}
+
+	// Bring up loopback in the namespace.
+	lo, err := nlh.LinkByName("lo")
+	if err != nil {
+		t.Fatalf("failed to find lo in namespace: %v", err)
+	}
+	if err := nlh.LinkSetUp(lo); err != nil {
+		t.Fatalf("failed to bring up lo in namespace: %v", err)
+	}
+
+	return TestVethPair{
+		A: TestInterface{
+			Name:    nameA,
+			Ifindex: linkA.Attrs().Index,
+		},
+		B: TestInterface{
+			Name: nameB,
+		},
+		Netns: nsName,
+	}
+}
+
+// Ping sends count ICMP echo requests from the veth pair's B
+// interface (inside the test namespace) to A's IP address. This
+// generates real ingress traffic on A, triggering any attached TC
+// programs.
+func (v TestVethPair) Ping(t *testing.T, count int) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns,
+		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", "198.51.100.1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("ping failed: %v\n%s", err, out)
 	}
 }
 

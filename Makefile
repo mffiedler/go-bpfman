@@ -108,7 +108,7 @@ coverage-clean:
 
 test-e2e:
 	@echo "Running e2e tests (requires root)..."
-	go test -race -count=1 -tags=e2e -v ./e2e/...
+	go test -race -count=1 -tags=e2e -v $(if $(TEST),-run $(TEST)) ./e2e/...
 
 # Documentation
 DOC_PORT ?= 6060
