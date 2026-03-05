@@ -2,8 +2,6 @@ package manager
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -138,29 +136,9 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 		),
 
 		// Node 4: Construct link record + save to store.
-		operation.Produce(linkKey, p.target,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
-				r := operation.Get(b, extResultKey)
-				record := bpfman.NewPinnedLinkRecord(
-					r.out.LinkID,
-					p.programID,
-					p.buildLinkDetails(r.disp.Nsid, r.position, r.disp),
-					*bpfman.NewLinkPath(r.pinPath),
-					time.Now(),
-				)
-				link := bpfman.Link{
-					Record: record,
-					Status: bpfman.LinkStatus{
-						Kernel:     r.out.KernelLink,
-						KernelSeen: r.out.KernelLink != nil,
-						PinPresent: r.out.PinPath != "",
-					},
-				}
-				if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
-					return bpfman.Link{}, fmt.Errorf("save link metadata: %w", err)
-				}
-				return link, nil
-			},
-		),
+		saveLinkNode(p.programID, p.target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
+			r := operation.Get(b, extResultKey)
+			return r.out.LinkID, p.buildLinkDetails(r.disp.Nsid, r.position, r.disp), r.pinPath, r.out
+		}),
 	)
 }

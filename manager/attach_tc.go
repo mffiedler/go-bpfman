@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -195,36 +194,16 @@ func (m *Manager) attachTCXPlan(
 			}),
 		),
 
-		operation.Produce(linkKey, target,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {
-				out := operation.Get(b, attachOutKey)
-				record := bpfman.NewPinnedLinkRecord(
-					out.LinkID,
-					programID,
-					bpfman.TCXDetails{
-						Interface: ifname,
-						Ifindex:   uint32(ifindex),
-						Direction: direction,
-						Priority:  int32(priority),
-						Nsid:      nsid,
-					},
-					*bpfman.NewLinkPath(linkPinPath),
-					time.Now(),
-				)
-				link := bpfman.Link{
-					Record: record,
-					Status: bpfman.LinkStatus{
-						Kernel:     out.KernelLink,
-						KernelSeen: out.KernelLink != nil,
-						PinPresent: out.PinPath != "",
-					},
-				}
-				if err := exec.Execute(ctx, action.SaveLink{Record: record}); err != nil {
-					return bpfman.Link{}, fmt.Errorf("save TCX link metadata: %w", err)
-				}
-				return link, nil
-			},
-		),
+		saveLinkNode(programID, target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
+			out := operation.Get(b, attachOutKey)
+			return out.LinkID, bpfman.TCXDetails{
+				Interface: ifname,
+				Ifindex:   uint32(ifindex),
+				Direction: direction,
+				Priority:  int32(priority),
+				Nsid:      nsid,
+			}, linkPinPath, out
+		}),
 	)
 }
 
