@@ -1,6 +1,10 @@
 package dispatcher
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/vishvananda/netlink"
+)
 
 // DispatcherType represents the type of dispatcher (XDP or TC).
 // The unexported field prevents construction of invalid values; use the
@@ -23,6 +27,19 @@ func (d *DispatcherType) UnmarshalText(b []byte) error {
 	}
 	*d = parsed
 	return nil
+}
+
+// TCParentHandle returns the netlink parent handle for a TC
+// dispatcher type.
+func TCParentHandle(dispType DispatcherType) uint32 {
+	switch dispType {
+	case DispatcherTypeTCIngress:
+		return netlink.HANDLE_MIN_INGRESS
+	case DispatcherTypeTCEgress:
+		return netlink.HANDLE_MIN_EGRESS
+	default:
+		return 0
+	}
 }
 
 // ParseDispatcherType parses a string into a DispatcherType.

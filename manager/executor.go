@@ -149,38 +149,58 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.bcfs.RemoveStagingDir(a.Path)
 
 	case action.EnsureXDPDispatcher:
-		nsid, err := netns.GetNsid(a.NetnsPath)
-		if err != nil {
-			return nil, fmt.Errorf("get nsid: %w", err)
-		}
-		state, err := e.store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, nsid, a.Ifindex)
-		if err == nil {
-			return state, nil
-		}
-		if !errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, fmt.Errorf("get dispatcher: %w", err)
-		}
-		return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.NetnsPath)
+		return e.ensureDispatcher(ctx, dispatcher.DispatcherTypeXDP, a.Ifindex, a.NetnsPath,
+			func(nsid uint64) (dispatcher.State, error) {
+				return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.NetnsPath)
+			})
 
 	case action.EnsureTCDispatcher:
-		nsid, err := netns.GetNsid(a.NetnsPath)
-		if err != nil {
-			return nil, fmt.Errorf("get nsid: %w", err)
-		}
-		state, err := e.store.GetDispatcher(ctx, a.DispType, nsid, a.Ifindex)
-		if err == nil {
-			return state, nil
-		}
-		if !errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, fmt.Errorf("get dispatcher: %w", err)
-		}
-		return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+		return e.ensureDispatcher(ctx, a.DispType, a.Ifindex, a.NetnsPath,
+			func(nsid uint64) (dispatcher.State, error) {
+				return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+			})
 
 	case action.AttachXDPExtension:
-		return attachXDPExtensionWithRetry(ctx, e.store, e.kernel, e.bpffs, e.logger, a.DispState, a.NetnsPath, a.ObjectPath, a.ProgramName, a.MapPinDir)
+		return attachExtensionWithRetry(ctx, e.store, e.bpffs, e.logger,
+			extensionOps{
+				label:    "XDP",
+				dispType: dispatcher.DispatcherTypeXDP,
+				attach: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
+					return e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
+						DispatcherPinPath: dispatcherPinPath,
+						ObjectPath:        objectPath,
+						ProgramName:       programName,
+						Position:          position,
+						LinkPinPath:       linkPinPath,
+						MapPinDir:         mapPinDir,
+					})
+				},
+				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+					return createXDPDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, ifindex, a.NetnsPath)
+				},
+			},
+			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
 	case action.AttachTCExtension:
-		return attachTCExtensionWithRetry(ctx, e.store, e.kernel, e.bpffs, e.logger, a.DispState, a.Ifname, a.Direction, a.DispType, a.NetnsPath, a.ObjectPath, a.ProgramName, a.MapPinDir)
+		return attachExtensionWithRetry(ctx, e.store, e.bpffs, e.logger,
+			extensionOps{
+				label:    "TC",
+				dispType: a.DispType,
+				attach: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
+					return e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
+						DispatcherPinPath: dispatcherPinPath,
+						ObjectPath:        objectPath,
+						ProgramName:       programName,
+						Position:          position,
+						LinkPinPath:       linkPinPath,
+						MapPinDir:         mapPinDir,
+					})
+				},
+				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+					return createTCDispatcherHelper(ctx, e.store, e.kernel, e.bpffs, e.logger, nsid, ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath)
+				},
+			},
+			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
 
 	case action.CleanupEmptyDispatcher:
 		return nil, e.cleanupEmptyDispatcher(ctx, a.State)
@@ -217,6 +237,30 @@ func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Ac
 	return res
 }
 
+// ensureDispatcher looks up an existing dispatcher by type, namespace,
+// and interface index. If none exists, it calls create to provision a
+// new one. The nsid is resolved from netnsPath before the lookup.
+func (e *executor) ensureDispatcher(
+	ctx context.Context,
+	dispType dispatcher.DispatcherType,
+	ifindex uint32,
+	netnsPath string,
+	create func(nsid uint64) (dispatcher.State, error),
+) (dispatcher.State, error) {
+	nsid, err := netns.GetNsid(netnsPath)
+	if err != nil {
+		return dispatcher.State{}, fmt.Errorf("get nsid: %w", err)
+	}
+	state, err := e.store.GetDispatcher(ctx, dispType, nsid, ifindex)
+	if err == nil {
+		return state, nil
+	}
+	if !errors.Is(err, platform.ErrRecordNotFound) {
+		return dispatcher.State{}, fmt.Errorf("get dispatcher: %w", err)
+	}
+	return create(nsid)
+}
+
 // cleanupEmptyDispatcher checks whether a dispatcher has any
 // remaining extension links and, if not, removes it from both the
 // kernel and the store.
@@ -234,7 +278,7 @@ func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.
 	// since it is no longer stored.
 	var tcHandle uint32
 	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
-		parent := tcParentHandle(state.Type)
+		parent := dispatcher.TCParentHandle(state.Type)
 		handle, err := e.kernel.FindTCFilterHandle(ctx, int(state.Ifindex), parent, state.Priority)
 		if err != nil {
 			e.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)

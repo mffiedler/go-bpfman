@@ -69,34 +69,6 @@ var errTest = errors.New("test error")
 
 // ---------- Forward execution ----------
 
-func TestValidateSuccess(t *testing.T) {
-	exec := newFakeExecutor()
-	plan := Build(
-		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
-			return nil
-		}),
-	)
-
-	_, err := Run(context.Background(), slog.Default(), exec, plan)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateFailure(t *testing.T) {
-	exec := newFakeExecutor()
-	plan := Build(
-		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
-			return errTest
-		}),
-	)
-
-	_, err := Run(context.Background(), slog.Default(), exec, plan)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-}
-
 func TestDoSuccess(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
@@ -228,10 +200,10 @@ func TestAutoSkipAfterDoFailure(t *testing.T) {
 	}
 }
 
-func TestAutoSkipValidateFailsSkipsDoAndTry(t *testing.T) {
+func TestAutoSkipDoFailsSkipsDoAndTry(t *testing.T) {
 	exec := newFakeExecutor()
 	plan := Build(
-		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("check", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
 		Do("action", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -425,13 +397,12 @@ func TestProduceWithUndoFromOnFailure(t *testing.T) {
 	}
 }
 
-func TestValidateNeverAccumulatesUndo(t *testing.T) {
-	// Validate nodes have no undo options. This test verifies that
-	// even if a Validate succeeds before a failure, no rollback
-	// actions are accumulated.
+func TestDoWithoutUndoNeverAccumulatesUndo(t *testing.T) {
+	// Do nodes without undo options should not accumulate any
+	// rollback actions.
 	exec := newFakeExecutor()
 	plan := Build(
-		Validate("check", "t1", func(_ context.Context, _ *Bindings) error {
+		Do("check", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
 		}),
 		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {

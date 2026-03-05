@@ -54,7 +54,7 @@ func interpret(
 		}
 
 		switch n.flavour {
-		case flavourValidate, flavourDo:
+		case flavourDo:
 			err := n.execFn(ctx, exec, bindings)
 			if err != nil {
 				opErr = err

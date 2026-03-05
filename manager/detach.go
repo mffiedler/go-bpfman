@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/vishvananda/netlink"
-
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
@@ -88,30 +86,17 @@ func (m *Manager) detachPlan(
 	target := fmt.Sprintf("%d", record.ID)
 
 	if record.PinPath != nil {
-		pinPath := record.PinPath.String()
-		nodes = append(nodes, operation.Do(
-			"detach-link", target,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-				return exec.Execute(ctx, action.DetachLink{PinPath: pinPath})
-			},
-		))
+		nodes = append(nodes, operation.DoAction("detach-link", target, action.DetachLink{PinPath: record.PinPath.String()}))
 	}
 
-	nodes = append(nodes, operation.Do(
-		"delete-link", target,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.DeleteLink{LinkID: record.ID})
-		},
-	))
+	nodes = append(nodes, operation.DoAction("delete-link", target, action.DeleteLink{LinkID: record.ID}))
 
 	if dispState != nil {
 		ds := *dispState
-		nodes = append(nodes, operation.Do(
+		nodes = append(nodes, operation.DoAction(
 			"dispatcher-cleanup",
 			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-				return exec.Execute(ctx, action.CleanupEmptyDispatcher{State: ds})
-			},
+			action.CleanupEmptyDispatcher{State: ds},
 		))
 	}
 
@@ -135,18 +120,6 @@ func extractDispatcherKey(details bpfman.LinkDetails) (dispType dispatcher.Dispa
 		}
 	default:
 		return dispatcher.DispatcherType{}, 0, 0, nil
-	}
-}
-
-// tcParentHandle returns the netlink parent handle for a TC dispatcher type.
-func tcParentHandle(dispType dispatcher.DispatcherType) uint32 {
-	switch dispType {
-	case dispatcher.DispatcherTypeTCIngress:
-		return netlink.HANDLE_MIN_INGRESS
-	case dispatcher.DispatcherTypeTCEgress:
-		return netlink.HANDLE_MIN_EGRESS
-	default:
-		return 0
 	}
 }
 
@@ -215,7 +188,7 @@ func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcH
 		if tcHandle != 0 {
 			actions = append(actions, action.DetachTCFilter{
 				Ifindex:  int(state.Ifindex),
-				Parent:   tcParentHandle(state.Type),
+				Parent:   dispatcher.TCParentHandle(state.Type),
 				Priority: state.Priority,
 				Handle:   tcHandle,
 			})

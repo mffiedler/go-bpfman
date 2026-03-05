@@ -137,7 +137,7 @@ func createTCDispatcherHelper(
 	if err := store.SaveDispatcher(ctx, state); err != nil {
 		logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
 			"ifname", ifname, "error", err)
-		parent := tcParentHandle(dispType)
+		parent := dispatcher.TCParentHandle(dispType)
 		if rbErr := kernel.DetachTCFilter(ctx, int(ifindex), ifname, parent, result.Priority, result.Handle); rbErr != nil {
 			logger.ErrorContext(ctx, "rollback: detach TC filter failed",
 				"ifname", ifname, "error", rbErr)
@@ -162,96 +162,29 @@ func createTCDispatcherHelper(
 	return state, nil
 }
 
-// attachXDPExtensionWithRetry attaches a user program as an extension
-// to an XDP dispatcher slot. If the first attempt fails with
-// os.ErrNotExist (stale dispatcher pin after bpffs remount), the
-// dispatcher is deleted, recreated, and the attach retried once.
-func attachXDPExtensionWithRetry(
-	ctx context.Context,
-	store platform.Store,
-	kernel platform.KernelOperations,
-	bpffs fs.BPFFS,
-	logger *slog.Logger,
-	ds dispatcher.State,
-	netnsPath string,
-	objectPath string,
-	programName string,
-	mapPinDir string,
-) (extensionResult, error) {
-	dispType := dispatcher.DispatcherTypeXDP
-
-	position, err := store.CountDispatcherLinks(ctx, ds.ProgramID)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("count dispatcher links: %w", err)
-	}
-	linkPinPath := bpffs.ExtensionLinkPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
-	progPinPath := bpffs.DispatcherProgPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision)
-
-	out, err := kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
-		DispatcherPinPath: progPinPath,
-		ObjectPath:        objectPath,
-		ProgramName:       programName,
-		Position:          position,
-		LinkPinPath:       linkPinPath,
-		MapPinDir:         mapPinDir,
-	})
-	if err == nil {
-		return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
-	}
-
-	// Stale dispatcher recovery: pin missing after bpffs remount.
-	if !errors.Is(err, os.ErrNotExist) {
-		return extensionResult{}, fmt.Errorf("attach XDP extension slot %d: %w", position, err)
-	}
-
-	logger.WarnContext(ctx, "dispatcher pin missing, recreating",
-		"prog_pin_path", progPinPath,
-		"dispatcher_id", ds.ProgramID,
-		"error", err)
-
-	if delErr := store.DeleteDispatcher(ctx, dispType, ds.Nsid, ds.Ifindex); delErr != nil {
-		return extensionResult{}, fmt.Errorf("delete stale XDP dispatcher: %w", delErr)
-	}
-	ds, err = createXDPDispatcherHelper(ctx, store, kernel, bpffs, logger, ds.Nsid, ds.Ifindex, netnsPath)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("recreate XDP dispatcher: %w", err)
-	}
-
-	position, err = store.CountDispatcherLinks(ctx, ds.ProgramID)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("count dispatcher links after recreate: %w", err)
-	}
-	linkPinPath = bpffs.ExtensionLinkPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
-	progPinPath = bpffs.DispatcherProgPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision)
-
-	out, err = kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
-		DispatcherPinPath: progPinPath,
-		ObjectPath:        objectPath,
-		ProgramName:       programName,
-		Position:          position,
-		LinkPinPath:       linkPinPath,
-		MapPinDir:         mapPinDir,
-	})
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("attach XDP extension slot %d (after recreate): %w", position, err)
-	}
-	return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
+// extensionOps captures the two operations that vary between XDP and
+// TC extension attach: the kernel attach call and the dispatcher
+// recreation call. Everything else (slot counting, pin path
+// construction, stale-dispatcher recovery) is identical.
+type extensionOps struct {
+	label    string
+	dispType dispatcher.DispatcherType
+	attach   func(ctx context.Context, dispatcherPinPath, objectPath, programName string,
+		position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error)
+	recreate func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error)
 }
 
-// attachTCExtensionWithRetry attaches a user program as an extension
-// to a TC dispatcher slot. Same stale-dispatcher recovery pattern as
-// XDP.
-func attachTCExtensionWithRetry(
+// attachExtensionWithRetry attaches a user program as an extension to
+// a dispatcher slot. If the first attempt fails with os.ErrNotExist
+// (stale dispatcher pin after bpffs remount), the dispatcher is
+// deleted, recreated, and the attach retried once.
+func attachExtensionWithRetry(
 	ctx context.Context,
 	store platform.Store,
-	kernel platform.KernelOperations,
 	bpffs fs.BPFFS,
 	logger *slog.Logger,
+	ops extensionOps,
 	ds dispatcher.State,
-	ifname string,
-	direction bpfman.TCDirection,
-	dispType dispatcher.DispatcherType,
-	netnsPath string,
 	objectPath string,
 	programName string,
 	mapPinDir string,
@@ -260,24 +193,17 @@ func attachTCExtensionWithRetry(
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links: %w", err)
 	}
-	linkPinPath := bpffs.ExtensionLinkPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
-	progPinPath := bpffs.DispatcherProgPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision)
+	linkPinPath := bpffs.ExtensionLinkPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
+	progPinPath := bpffs.DispatcherProgPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision)
 
-	out, err := kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
-		DispatcherPinPath: progPinPath,
-		ObjectPath:        objectPath,
-		ProgramName:       programName,
-		Position:          position,
-		LinkPinPath:       linkPinPath,
-		MapPinDir:         mapPinDir,
-	})
+	out, err := ops.attach(ctx, progPinPath, objectPath, programName, position, linkPinPath, mapPinDir)
 	if err == nil {
 		return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
 	}
 
 	// Stale dispatcher recovery: pin missing after bpffs remount.
 	if !errors.Is(err, os.ErrNotExist) {
-		return extensionResult{}, fmt.Errorf("attach TC extension slot %d: %w", position, err)
+		return extensionResult{}, fmt.Errorf("attach %s extension slot %d: %w", ops.label, position, err)
 	}
 
 	logger.WarnContext(ctx, "dispatcher pin missing, recreating",
@@ -285,31 +211,24 @@ func attachTCExtensionWithRetry(
 		"dispatcher_id", ds.ProgramID,
 		"error", err)
 
-	if delErr := store.DeleteDispatcher(ctx, dispType, ds.Nsid, ds.Ifindex); delErr != nil {
-		return extensionResult{}, fmt.Errorf("delete stale TC dispatcher: %w", delErr)
+	if delErr := store.DeleteDispatcher(ctx, ops.dispType, ds.Nsid, ds.Ifindex); delErr != nil {
+		return extensionResult{}, fmt.Errorf("delete stale %s dispatcher: %w", ops.label, delErr)
 	}
-	ds, err = createTCDispatcherHelper(ctx, store, kernel, bpffs, logger, ds.Nsid, ds.Ifindex, ifname, direction, dispType, netnsPath)
+	ds, err = ops.recreate(ctx, ds.Nsid, ds.Ifindex)
 	if err != nil {
-		return extensionResult{}, fmt.Errorf("recreate TC dispatcher: %w", err)
+		return extensionResult{}, fmt.Errorf("recreate %s dispatcher: %w", ops.label, err)
 	}
 
 	position, err = store.CountDispatcherLinks(ctx, ds.ProgramID)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("count dispatcher links after recreate: %w", err)
 	}
-	linkPinPath = bpffs.ExtensionLinkPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
-	progPinPath = bpffs.DispatcherProgPath(dispType, ds.Nsid, ds.Ifindex, ds.Revision)
+	linkPinPath = bpffs.ExtensionLinkPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
+	progPinPath = bpffs.DispatcherProgPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision)
 
-	out, err = kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
-		DispatcherPinPath: progPinPath,
-		ObjectPath:        objectPath,
-		ProgramName:       programName,
-		Position:          position,
-		LinkPinPath:       linkPinPath,
-		MapPinDir:         mapPinDir,
-	})
+	out, err = ops.attach(ctx, progPinPath, objectPath, programName, position, linkPinPath, mapPinDir)
 	if err != nil {
-		return extensionResult{}, fmt.Errorf("attach TC extension slot %d (after recreate): %w", position, err)
+		return extensionResult{}, fmt.Errorf("attach %s extension slot %d (after recreate): %w", ops.label, position, err)
 	}
 	return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
 }

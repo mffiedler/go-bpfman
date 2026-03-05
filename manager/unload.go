@@ -97,51 +97,20 @@ func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPat
 			continue
 		}
 		pinPath := link.PinPath.String()
-		nodes = append(nodes, operation.Do(
-			"detach-link",
-			fmt.Sprintf("%d", link.ID),
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-				return exec.Execute(ctx, action.DetachLink{PinPath: pinPath})
-			},
-		))
+		nodes = append(nodes, operation.DoAction("detach-link", fmt.Sprintf("%d", link.ID), action.DetachLink{PinPath: pinPath}))
 	}
 
-	nodes = append(nodes, operation.Do(
-		"remove-links-dir", linksDir,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.RemovePin{Path: linksDir})
-		},
-	))
-
-	nodes = append(nodes, operation.Do(
-		"unload-prog", programName,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.UnloadProgram{PinPath: progPinPath})
-		},
-	))
-
-	nodes = append(nodes, operation.Do(
-		"unload-maps", programName,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.UnloadProgram{PinPath: mapsDir})
-		},
-	))
+	nodes = append(nodes,
+		operation.DoAction("remove-links-dir", linksDir, action.RemovePin{Path: linksDir}),
+		operation.DoAction("unload-prog", programName, action.UnloadProgram{PinPath: progPinPath}),
+		operation.DoAction("unload-maps", programName, action.UnloadProgram{PinPath: mapsDir}),
+	)
 
 	if persisted {
-		nodes = append(nodes, operation.Do(
-			"delete-program", programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-				return exec.Execute(ctx, action.DeleteProgram{ProgramID: programID})
-			},
-		))
+		nodes = append(nodes, operation.DoAction("delete-program", programName, action.DeleteProgram{ProgramID: programID}))
 	}
 
-	nodes = append(nodes, operation.Try(
-		"fs-remove-program", programName,
-		func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) error {
-			return exec.Execute(ctx, action.RemoveProgramDir{ProgramID: programID})
-		},
-	))
+	nodes = append(nodes, operation.TryAction("fs-remove-program", programName, action.RemoveProgramDir{ProgramID: programID}))
 
 	return operation.Build(nodes...)
 }

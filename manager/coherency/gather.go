@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vishvananda/netlink"
-
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/inspect"
@@ -130,7 +128,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 			continue
 		}
 		key := dispatcherKey(dt, d.Managed.Nsid, d.Managed.Ifindex)
-		parent := tcParentHandle(dt)
+		parent := dispatcher.TCParentHandle(dt)
 		_, err := kops.FindTCFilterHandle(ctx, int(d.Managed.Ifindex), parent, d.Managed.Priority)
 		s.tcFilterOK[key] = (err == nil)
 	}
@@ -411,17 +409,4 @@ func (s *ObservedState) LiveOrphans() int {
 
 func dispatcherKey(dt dispatcher.DispatcherType, nsid uint64, ifindex uint32) string {
 	return fmt.Sprintf("%s/%d/%d", dt, nsid, ifindex)
-}
-
-// tcParentHandle returns the netlink parent handle for a TC
-// dispatcher type.
-func tcParentHandle(dispType dispatcher.DispatcherType) uint32 {
-	switch dispType {
-	case dispatcher.DispatcherTypeTCIngress:
-		return netlink.HANDLE_MIN_INGRESS
-	case dispatcher.DispatcherTypeTCEgress:
-		return netlink.HANDLE_MIN_EGRESS
-	default:
-		return 0
-	}
 }

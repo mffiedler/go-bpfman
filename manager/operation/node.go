@@ -7,26 +7,25 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 )
 
-// nodeFlavour distinguishes the four node types in a plan.
+// nodeFlavour distinguishes the three node types in a plan.
 type nodeFlavour uint8
 
 const (
-	flavourValidate nodeFlavour = iota
-	flavourProduce
+	flavourProduce nodeFlavour = iota
 	flavourDo
 	flavourTry
 )
 
 // node is the internal representation of a plan step. Callers
-// construct nodes via the Validate, Produce, Do, and Try functions;
-// the struct fields are unexported.
+// construct nodes via the Produce, Do, and Try functions; the struct
+// fields are unexported.
 type node struct {
 	label   string
 	flavour nodeFlavour
 	target  string
 
 	// Exactly one of these is set, depending on flavour.
-	// validate/do/try use execFn; produce uses produceFn.
+	// do/try use execFn; produce uses produceFn.
 	execFn    func(context.Context, action.ExecutorWithResult, *Bindings) error
 	produceFn func(context.Context, action.ExecutorWithResult, *Bindings) (any, error)
 
@@ -42,25 +41,6 @@ type node struct {
 // values from the constructor functions but cannot construct the
 // underlying struct directly because its fields are unexported.
 type Node = node
-
-// Validate creates a pure-check node. Validate nodes have no undo
-// capability; if they fail, the operation fails immediately.
-//
-// The closure signature omits the executor because validation is
-// semantically pure (no I/O). The narrower type enforces that
-// constraint at compile time.
-func Validate(label string, target string,
-	fn func(context.Context, *Bindings) error,
-) Node {
-	return node{
-		label:   label,
-		flavour: flavourValidate,
-		target:  target,
-		execFn: func(ctx context.Context, _ action.ExecutorWithResult, b *Bindings) error {
-			return fn(ctx, b)
-		},
-	}
-}
 
 // Produce creates a value-producing node. The returned value is stored
 // under the given key and can be retrieved by later nodes via Get.
@@ -113,6 +93,28 @@ func Try(label string, target string,
 		target:  target,
 		execFn:  fn,
 	}
+}
+
+// DoAction creates a Do node that executes a single action. This is
+// a convenience wrapper around Do for the common case where the
+// closure simply calls exec.Execute with a fixed action value.
+func DoAction(label, target string, a action.Action, opts ...NodeOpt) Node {
+	return Do(label, target,
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *Bindings) error {
+			return exec.Execute(ctx, a)
+		},
+		opts...,
+	)
+}
+
+// TryAction creates a Try node that executes a single action.
+// Convenience wrapper around Try for a fixed action value.
+func TryAction(label, target string, a action.Action) Node {
+	return Try(label, target,
+		func(ctx context.Context, exec action.ExecutorWithResult, _ *Bindings) error {
+			return exec.Execute(ctx, a)
+		},
+	)
 }
 
 // NodeOpt configures optional behaviour on Produce and Do nodes.
