@@ -110,7 +110,7 @@ func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPat
 		nodes = append(nodes, operation.DoAction("delete-program", programName, action.DeleteProgram{ProgramID: programID}))
 	}
 
-	nodes = append(nodes, operation.TryAction("fs-remove-program", programName, action.RemoveProgramDir{ProgramID: programID}))
+	nodes = append(nodes, operation.TryAction("fs-remove-program", programName, action.RemoveProgramDir{Path: m.rt.Bytecode().ProgramDir(programID)}))
 
 	return operation.Build(nodes...)
 }

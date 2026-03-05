@@ -18,8 +18,8 @@
 //     AttachUprobeLocal, AttachUprobeContainer, AttachFentry,
 //     AttachFexit
 //   - Filesystem: PublishBytecode, RemoveProgramDir, RemoveProgPin,
-//     RemoveLinkDir, RemoveMapDir, RemoveProgramDirByPath,
-//     RemoveStagingDir, RemoveDispatcherProgPin,
+//     RemoveLinkDir, RemoveMapDir, RemoveStagingDir,
+//     RemoveDispatcherProgPin,
 //     RemoveDispatcherRevDir, RemoveDispatcherLinkPin
 //   - Deep:       EnsureXDPDispatcher, EnsureTCDispatcher,
 //     AttachXDPExtension, AttachTCExtension,

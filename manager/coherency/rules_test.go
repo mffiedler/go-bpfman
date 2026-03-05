@@ -228,7 +228,7 @@ func TestOrphanProgramDirs(t *testing.T) {
 	violations := rule.Eval(s)
 
 	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgramDirByPath{Path: "/data/programs/42"},
+		action.RemoveProgramDir{Path: "/data/programs/42"},
 	}})
 }
 
@@ -242,7 +242,7 @@ func TestOrphanProgramDirs_Unknown(t *testing.T) {
 	violations := rule.Eval(s)
 
 	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgramDirByPath{Path: "/data/programs/bad-name"},
+		action.RemoveProgramDir{Path: "/data/programs/bad-name"},
 	}})
 }
 

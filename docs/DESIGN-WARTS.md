@@ -1218,35 +1218,21 @@ but unload and detach are perfect candidates.
 
 **File:** `action/action.go`
 
-Two action-level semantic overloads exist.
+**~~`RemoveProgramDir` vs `RemoveProgramDirByPath`.~~** RESOLVED.
+The two action types have been unified into a single
+`RemoveProgramDir{Path string}`. `Bytecode.ProgramDir` was exported
+so forward-path callers (load, unload) resolve the path before
+constructing the action. The executor no longer does path resolution
+inside the interpreter. The GC path (coherency rules) continues to
+pass discovered paths directly. One action type, one executor case.
 
-**`RemoveProgramDir` vs `RemoveProgramDirByPath`.** Both remove a
-bytecode directory. `RemoveProgramDir` (line 217) takes a
-`ProgramID` and the executor resolves the path via
-`bcfs.RemoveProgram(a.ProgramID)`. `RemoveProgramDirByPath` (line
-273) takes a `Path` directly. The duplication exists because the
-forward path (load/unload) knows the program ID while the GC path
-(coherency rules) only knows the path.
+**~~`UnloadProgram` used for two distinct operations.~~** RESOLVED.
+`RemoveMapsPins` action introduced at `action.go:86-91`.
+`load.go:196` now uses `RemoveMapsPins{PinPath: l.MapsDir}` for
+maps directory compensation while `UnloadProgram` is reserved for
+program pin removal. The vocabulary is honest.
 
-Under the Red Book lens, actions should describe effects, not carry
-caller context about how the path was discovered. The clean fix is
-one action type with a resolved path. The forward path resolves via
-`Bytecode.ProgramDir(id)` before constructing the action. This
-eliminates the executor case that does path resolution inside the
-interpreter.
-
-**`UnloadProgram` used for two distinct operations.** `load.go:192`
-uses `UnloadProgram{PinPath: l.PinPath}` to unpin a BPF program and
-`UnloadProgram{PinPath: l.MapsDir}` to remove a maps directory pin.
-These are semantically different effects -- one removes a program
-reference, the other removes a maps directory -- but the action type
-does not distinguish them. A `RemoveMapsPins` action would make the
-vocabulary honest. The executor implementation may remain the same
-`bpffs.RemoveProgram()` call, but the action name documents intent.
-
-Both are low priority. The current code works. The overloads become
-a maintenance hazard only as new operations are added and readers must
-determine which `UnloadProgram` variant is which by context.
+Both semantic overloads from the original assessment are resolved.
 
 ### 13. `Describe()` exhaustiveness is not compile-time enforced
 
@@ -1300,6 +1286,126 @@ function itself could benefit from documenting its phase boundaries
 more explicitly. The current comments partially mark phases, but the
 transitions blur. Numbering the phases and documenting the data each
 one produces would help readers navigate the function.
+
+### 16. `ExecuteGC` discards the computed plan's violations
+
+**Files:** `manager/gc.go`
+
+`ComputeGC` (line 181) gathers coherency state inside a rolled-back
+transaction and populates `GCPlan.Violations`. But `ExecuteGC`
+(line 316) never uses those violations. After executing the store
+actions, it re-gathers coherency state against the real post-deletion
+store (line 344) and evaluates rules afresh. The plan's violations
+are only useful for dry-run reporting; in the execute path they are
+silently ignored.
+
+This is not a bug. Store action execution is best-effort (line
+326-329 logs and continues), so the actual post-deletion state may
+differ from the dry-run projection. Re-evaluation is correct. But
+the `GCPlan` type promises violations that `ExecuteGC` ignores, and
+a reader must trace through both code paths to discover this.
+
+**Ousterhout lens.** The `GCPlan` type's shape implies a
+snap/plan/execute split where the plan is executed as computed. In
+practice the execute phase re-snaps. The API shape over-promises the
+separation.
+
+**Red Book lens.** The domain constraint is genuine: coherency rules
+depend on filesystem state that is only orphaned after store
+mutations run, so a fully pre-computed plan cannot capture the
+complete picture. The re-evaluation is the right behaviour. The
+issue is that the type does not communicate this.
+
+**Possible improvements.** Document the re-evaluation explicitly on
+`ExecuteGC`, or rename `GCPlan.Violations` to something like
+`DryRunViolations` to signal that they are projections, not the
+final set. Alternatively, remove `Violations` from `GCPlan`
+entirely and have `ComputeGC` return store actions only, with a
+separate `DryRunGC` method for reporting that includes the projected
+violations. The current code is correct; the concern is purely about
+API honesty.
+
+### 17. TCX preflight performs a side effect outside the plan
+
+**File:** `manager/attach_tc.go` (line 128)
+
+The `attachTCX` method performs substantial preflight I/O before
+building the plan: store lookup, namespace syscall, link listing,
+and pure priority computation. This is the "observe" phase in
+observe/plan/execute and is structurally correct. However, line 128
+also executes a `RemovePin` action directly via the executor:
+
+```go
+if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {
+    return bpfman.Link{}, fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, err)
+}
+```
+
+This is the only place in the attach paths where a side effect runs
+outside a plan. The stale pin removal is safe -- if it fails no
+rollback is needed, and if it succeeds no compensation is needed.
+But it breaks the expectation that preflight is pure observation.
+
+**Ousterhout lens.** A reader expects preflight to gather data for
+plan construction. Mixing observation with side effects requires the
+reader to reason about which preflight steps are pure and which are
+not.
+
+**Red Book lens.** The effect is outside the plan boundary, so it
+has no compensation and no structured observability. It is a fire-
+and-forget side effect in what is otherwise a disciplined
+effects-as-values architecture.
+
+**Possible improvement.** Move the stale pin removal into the plan
+as a `Try` node at position 0, before the `AttachTCX` Produce node.
+This gives it structured observability (Try node debug logging) and
+aligns with the pattern used everywhere else. The semantic change is
+zero: a Try node that fails does not abort the plan, matching the
+current behaviour where a missing pin is not an error.
+
+### 18. `computeStoreGC` is non-deterministic
+
+**File:** `manager/gc.go` (lines 22-102)
+
+`computeStoreGC` iterates `map[kernel.ProgramID]bpfman.ProgramRecord`
+to find stale programs. Map iteration in Go is non-deterministic.
+The function appends to `dependents` and `owners` slices in whatever
+order the map yields. The resulting action sequence is correct
+(dependents before owners for FK ordering) but non-deterministic
+within each group.
+
+For GC actions executed in a transaction, ordering within a group
+does not matter semantically. But it makes test assertions fragile
+(tests must sort or use set comparison) and makes logs
+non-reproducible across runs.
+
+**Red Book lens.** Pure functions should be deterministic. Sorting
+the program IDs before appending to each slice costs nothing and
+makes the function fully deterministic: same input, same output,
+every time. The same applies to the dispatchers slice in phase 2 and
+the links slice in phase 3, though those are already slices (not
+maps) so their iteration order is stable if the caller provides a
+stable order.
+
+### 19. `verbose` is a required constructor parameter
+
+**File:** `manager/manager.go` (line 74)
+
+The `New` constructor takes `verbose io.Writer` as a required
+parameter. Line 89 wraps the executor with
+`verboseExecutor{real: exec, w: verbose}`. Callers that do not want
+narration must pass `io.Discard`.
+
+**Ousterhout lens.** This is a configuration concern leaking into the
+constructor signature. Every caller must decide what to pass even if
+narration is unwanted. A functional option `WithVerbose(w io.Writer)`
+with `io.Discard` as the default would reduce the required parameter
+surface by one and make the constructor's essential dependencies
+(runtime, store, kernel, discoverer, logger) stand out more clearly.
+
+This is minor. The current code is correct and the parameter count is
+not excessive. But if the constructor ever grows another optional
+capability, the option pattern would become worth the investment.
 
 ## Where to invest effort
 
@@ -1376,13 +1482,19 @@ resolved; remaining items are renumbered.
     single-call thin wrappers in `executor.go`.~~ DONE. File-level
     comment added.
 
-15. **Unify `RemoveProgramDir` / `RemoveProgramDirByPath`.** One
+15. ~~**Unify `RemoveProgramDir` / `RemoveProgramDirByPath`.** One
     action type with a resolved path. Callers resolve paths before
-    constructing the action. (small effort)
+    constructing the action.~~ DONE. `RemoveProgramDirByPath` deleted;
+    `RemoveProgramDir` now takes a `Path string`. `Bytecode.ProgramDir`
+    exported so forward-path callers resolve before constructing the
+    action. One action type, one executor case.
 
-16. **Introduce `RemoveMapsPins` action.** Replace the overloaded
+16. ~~**Introduce `RemoveMapsPins` action.** Replace the overloaded
     `UnloadProgram{PinPath: mapsDir}` with a semantically distinct
-    action for maps directory removal. (small effort)
+    action for maps directory removal.~~ DONE. `RemoveMapsPins`
+    action added at `action.go:86-91`; `load.go:196` uses it for maps
+    directory compensation. `UnloadProgram` now only removes program
+    pins.
 
 17. ~~**Add `TestDescribe_Exhaustive`.** A test that enumerates all
     concrete Action types and asserts `Describe()` returns a
@@ -1399,6 +1511,30 @@ resolved; remaining items are renumbered.
     are numbered and documented with comment separators in
     `gather.go`.
 
+20. **Document `ExecuteGC` re-evaluation.** The `GCPlan.Violations`
+    field is only used for dry-run reporting; `ExecuteGC` always
+    re-gathers coherency state after store mutations. Either document
+    this on `ExecuteGC`, rename the field to `DryRunViolations`, or
+    separate the dry-run and execute APIs so the type does not
+    over-promise. (small effort, API clarity)
+
+21. **Move TCX stale pin removal into the plan.** Replace the direct
+    `m.executor.Execute(ctx, action.RemovePin{...})` call at
+    `attach_tc.go:128` with a `Try` node at position 0 of the TCX
+    plan. Gives structured observability and aligns with the
+    effects-as-values discipline. (small effort)
+
+22. **Make `computeStoreGC` deterministic.** Sort program IDs before
+    appending to `dependents` and `owners` slices. Same input, same
+    output, every time. Makes test assertions stable and logs
+    reproducible. (trivial effort)
+
+23. **Make `verbose` an optional constructor parameter.** Replace the
+    required `verbose io.Writer` parameter in `manager.New` with a
+    `WithVerbose(w io.Writer)` functional option, defaulting to
+    `io.Discard`. Reduces the required parameter surface. (small
+    effort, low priority)
+
 The overall architecture is strong. The SANS-IO discipline, sealed
 type hierarchies, and effects-as-values approach are well-executed.
 The main complexity comes from dispatcher management, which is
@@ -1409,5 +1545,6 @@ The action vocabulary is honest and nearly complete. The plan system
 is a well-realised single-scope saga orchestrator. The dependency
 flow is strictly downward with no violations. The store and CLI
 layers are clean after recent refactoring. The remaining debt is
-small: two action vocabulary overloads and a few documentation
-items. None of these are urgent; all are straightforward to address.
+small: one action vocabulary overload, one plan discipline
+inconsistency, and a few API clarity items. None of these are
+urgent; all are straightforward to address.

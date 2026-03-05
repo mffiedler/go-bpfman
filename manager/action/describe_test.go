@@ -189,19 +189,14 @@ func TestDescribe(t *testing.T) {
 			contains: "remove dispatcher link pin /run/bpfman/fs/dispatcher/link",
 		},
 		{
-			name:     "RemoveProgramDirByPath",
-			action:   RemoveProgramDirByPath{Path: "/var/lib/bpfman/bytecode/42"},
+			name:     "RemoveProgramDir",
+			action:   RemoveProgramDir{Path: "/var/lib/bpfman/bytecode/42"},
 			contains: "remove program directory /var/lib/bpfman/bytecode/42",
 		},
 		{
 			name:     "RemoveStagingDir",
 			action:   RemoveStagingDir{Path: "/var/lib/bpfman/staging/abc"},
 			contains: "remove staging directory /var/lib/bpfman/staging/abc",
-		},
-		{
-			name:     "RemoveProgramDir",
-			action:   RemoveProgramDir{ProgramID: kernel.ProgramID(77)},
-			contains: "remove program directory for 77",
 		},
 		{
 			name:     "DetachTCFilter",
@@ -259,7 +254,6 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		RemoveDispatcherProgPin{},
 		RemoveDispatcherRevDir{},
 		RemoveDispatcherLinkPin{},
-		RemoveProgramDirByPath{},
 		RemoveStagingDir{},
 		CleanupEmptyDispatcher{},
 		EnsureXDPDispatcher{},

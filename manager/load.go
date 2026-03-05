@@ -226,7 +226,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				l := operation.Get(b, loadedKey)
 				return []action.Action{
-					action.RemoveProgramDir{ProgramID: l.Program.ID},
+					action.RemoveProgramDir{Path: rt.ProgramDir(l.Program.ID)},
 				}
 			}),
 		),

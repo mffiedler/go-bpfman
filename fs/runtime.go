@@ -99,8 +99,8 @@ func (rt Bytecode) stagingPath() string {
 	return filepath.Join(rt.layout.base, stagingDir)
 }
 
-// programDir returns <base>/programs/{id}.
-func (rt Bytecode) programDir(id kernel.ProgramID) string {
+// ProgramDir returns <base>/programs/{id}.
+func (rt Bytecode) ProgramDir(id kernel.ProgramID) string {
 	return filepath.Join(rt.layout.base, programsDir, strconv.FormatUint(uint64(id), 10))
 }
 
@@ -129,7 +129,7 @@ func (rt Bytecode) PublishBytecode(id kernel.ProgramID, srcPath string, prov Pro
 		return err
 	}
 
-	finalDir := rt.programDir(id)
+	finalDir := rt.ProgramDir(id)
 	programs := rt.programsPath()
 	staging := rt.stagingPath()
 
@@ -189,7 +189,7 @@ func (rt Bytecode) PublishBytecode(id kernel.ProgramID, srcPath string, prov Pro
 // verify the target is under the programs directory.
 func (rt Bytecode) RemoveProgram(id kernel.ProgramID) error {
 	rt.mustValid()
-	return safeRemoveAll(rt.programsPath(), rt.programDir(id))
+	return safeRemoveAll(rt.programsPath(), rt.ProgramDir(id))
 }
 
 // RemoveProgramDir removes a program directory by path. The path must
@@ -204,7 +204,7 @@ func (rt Bytecode) RemoveProgramDir(path string) error {
 // ProgramExists reports whether <base>/programs/{id}/ exists.
 func (rt Bytecode) ProgramExists(id kernel.ProgramID) bool {
 	rt.mustValid()
-	_, err := os.Stat(rt.programDir(id))
+	_, err := os.Stat(rt.ProgramDir(id))
 	return err == nil
 }
 
@@ -212,7 +212,7 @@ func (rt Bytecode) ProgramExists(id kernel.ProgramID) bool {
 // ObjectPath storage.
 func (rt Bytecode) ProgramBytecodePath(id kernel.ProgramID) string {
 	rt.mustValid()
-	return filepath.Join(rt.programDir(id), bytecodeName)
+	return filepath.Join(rt.ProgramDir(id), bytecodeName)
 }
 
 // CleanStaging removes all entries under <base>/.staging/. Staging is

@@ -125,7 +125,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.bcfs.PublishBytecode(a.ProgramID, a.SourcePath, a.Provenance)
 
 	case action.RemoveProgramDir:
-		return nil, e.bcfs.RemoveProgram(a.ProgramID)
+		return nil, e.bcfs.RemoveProgramDir(a.Path)
 
 	case action.RemoveProgPin:
 		return nil, e.bpffs.RemoveProgPin(a.Path)
@@ -144,9 +144,6 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 
 	case action.RemoveDispatcherLinkPin:
 		return nil, e.bpffs.RemoveDispatcherLinkPin(a.Path)
-
-	case action.RemoveProgramDirByPath:
-		return nil, e.bcfs.RemoveProgramDir(a.Path)
 
 	case action.RemoveStagingDir:
 		return nil, e.bcfs.RemoveStagingDir(a.Path)

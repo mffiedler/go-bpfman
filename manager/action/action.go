@@ -220,9 +220,10 @@ type PublishBytecode struct {
 
 func (PublishBytecode) isAction() {}
 
-// RemoveProgramDir removes the persisted bytecode directory for a program.
+// RemoveProgramDir removes a program bytecode directory by path
+// via Bytecode.RemoveProgramDir.
 type RemoveProgramDir struct {
-	ProgramID kernel.ProgramID
+	Path string
 }
 
 func (RemoveProgramDir) isAction() {}
@@ -274,14 +275,6 @@ type RemoveDispatcherLinkPin struct {
 }
 
 func (RemoveDispatcherLinkPin) isAction() {}
-
-// RemoveProgramDirByPath removes a program bytecode directory by path
-// via Bytecode.RemoveProgramDir.
-type RemoveProgramDirByPath struct {
-	Path string
-}
-
-func (RemoveProgramDirByPath) isAction() {}
 
 // RemoveStagingDir removes a staging directory via
 // Bytecode.RemoveStagingDir.

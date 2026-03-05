@@ -80,12 +80,10 @@ func Describe(a Action) string {
 		return fmt.Sprintf("remove dispatcher revision directory %s", a.Path)
 	case RemoveDispatcherLinkPin:
 		return fmt.Sprintf("remove dispatcher link pin %s", a.Path)
-	case RemoveProgramDirByPath:
+	case RemoveProgramDir:
 		return fmt.Sprintf("remove program directory %s", a.Path)
 	case RemoveStagingDir:
 		return fmt.Sprintf("remove staging directory %s", a.Path)
-	case RemoveProgramDir:
-		return fmt.Sprintf("remove program directory for %d", a.ProgramID)
 	case DetachTCFilter:
 		return fmt.Sprintf("detach TC filter ifindex=%d priority=%d", a.Ifindex, a.Priority)
 	default:

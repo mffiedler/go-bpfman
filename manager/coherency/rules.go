@@ -627,7 +627,7 @@ Category: gc-orphan-pin`,
 		kinds:   []OrphanKind{OrphanProgramDir, OrphanProgramDirUnk},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
 		actionFn: func(o FsOrphan) action.Action {
-			return action.RemoveProgramDirByPath{Path: o.Path}
+			return action.RemoveProgramDir{Path: o.Path}
 		},
 		describeFn: func(o FsOrphan) (string, string) {
 			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
