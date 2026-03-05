@@ -20,6 +20,12 @@
 #define TC_DISPATCHER_RETVAL 30
 #define MAX_DISPATCHER_ACTIONS 10
 
+#ifdef DEBUG
+#define bpf_dbg(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
+#else
+#define bpf_dbg(fmt, ...) ((void)0)
+#endif
+
 // Runtime dispatch configuration, written by the control plane.
 struct dispatcher_runtime {
   __u32 num_progs_enabled;
@@ -162,26 +168,42 @@ SEC("classifier/dispatcher")
 int tc_dispatcher(struct __sk_buff *skb) {
   __u32 key = 0;
   __u32 *gen = bpf_map_lookup_elem(&active_config, &key);
-  if (!gen)
+  if (!gen) {
+    bpf_dbg("tc_dispatcher: active_config lookup failed");
     return TC_ACT_OK;
+  }
+
+  __u32 active_idx = *gen;
+  bpf_dbg("tc_dispatcher: active_idx=%u", active_idx);
 
   struct dispatcher_runtime *cfg =
-      bpf_map_lookup_elem(&dispatcher_config, gen);
-  if (!cfg)
+      bpf_map_lookup_elem(&dispatcher_config, &active_idx);
+  if (!cfg) {
+    bpf_dbg("tc_dispatcher: dispatcher_config[%u] lookup failed", active_idx);
     return TC_ACT_OK;
+  }
+
+  bpf_dbg("tc_dispatcher: num_progs_enabled=%u", cfg->num_progs_enabled);
 
 #pragma unroll
   for (int i = 0; i < MAX_DISPATCHER_ACTIONS; i++) {
     if (i >= cfg->num_progs_enabled)
       break;
     __u32 slot = cfg->run_order[i];
-    if (slot >= MAX_DISPATCHER_ACTIONS)
+    if (slot >= MAX_DISPATCHER_ACTIONS) {
+      bpf_dbg("tc_dispatcher: run_order[%d]=%u exceeds MAX", i, slot);
       break;
+    }
+    bpf_dbg("tc_dispatcher: calling slot %u at position %d", slot, i);
     int ret = call_slot(skb, slot);
-    if (!((1U << (ret + 1)) & cfg->chain_call_actions[slot]))
+    bpf_dbg("tc_dispatcher: slot %u returned %d, chain_call_actions=0x%x", slot, ret, cfg->chain_call_actions[slot]);
+    if (!((1U << (ret + 1)) & cfg->chain_call_actions[slot])) {
+      bpf_dbg("tc_dispatcher: returning %d from slot %u", ret, slot);
       return ret;
+    }
   }
 
+  bpf_dbg("tc_dispatcher: returning TC_ACT_OK");
   return TC_ACT_OK;
 }
 
