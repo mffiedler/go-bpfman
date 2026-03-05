@@ -59,7 +59,7 @@ func FormatProgram(prog bpfman.Program, flags *OutputFlags) (string, error) {
 		return formatProgramTable(prog), nil
 	case OutputFormatJSONPath:
 		return formatProgramJSONPath(prog, flags.JSONPathExpr())
-	case OutputFormatWide, OutputFormatCustomColumns, OutputFormatCustomColumnsFile:
+	case OutputFormatWide:
 		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatProgramTable(prog), nil
@@ -372,10 +372,6 @@ func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, erro
 		return formatLinkListTable(links), nil
 	case OutputFormatWide:
 		return formatLinkListWide(links), nil
-	case OutputFormatCustomColumns:
-		return formatLinkListCustomColumns(links, flags.CustomColumnsSpec())
-	case OutputFormatCustomColumnsFile:
-		return formatLinkListCustomColumnsFile(links, flags.CustomColumnsFile())
 	case OutputFormatJSONPath:
 		return formatLinkListJSONPath(links, flags.JSONPathExpr())
 	default:
@@ -411,28 +407,6 @@ func formatLinkListWide(links []bpfman.LinkRecord) string {
 	return WideLinkColumns().FormatLinkTable(links)
 }
 
-func formatLinkListCustomColumns(links []bpfman.LinkRecord, spec string) (string, error) {
-	columns, err := ParseCustomColumns(spec)
-	if err != nil {
-		return "", err
-	}
-	if err := columns.Validate(); err != nil {
-		return "", err
-	}
-	return columns.FormatLinkTable(links), nil
-}
-
-func formatLinkListCustomColumnsFile(links []bpfman.LinkRecord, path string) (string, error) {
-	columns, err := ParseCustomColumnsFile(path)
-	if err != nil {
-		return "", err
-	}
-	if err := columns.Validate(); err != nil {
-		return "", err
-	}
-	return columns.FormatLinkTable(links), nil
-}
-
 // FormatLinkResult formats a link result (from attach command) according to
 // the specified output flags.
 func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
@@ -451,7 +425,7 @@ func FormatLinkResult(link bpfman.Link, flags *OutputFlags) (string, error) {
 		return formatLinkResultTable(link), nil
 	case OutputFormatJSONPath:
 		return executeJSONPath(link, flags.JSONPathExpr())
-	case OutputFormatWide, OutputFormatCustomColumns, OutputFormatCustomColumnsFile:
+	case OutputFormatWide:
 		return "", fmt.Errorf("output format %q is only supported for list commands", flags.Output.Value)
 	default:
 		return formatLinkResultTable(link), nil
@@ -844,10 +818,6 @@ func FormatProgramsComposite(result bpfman.ProgramListResult, flags *OutputFlags
 		return formatProgramsCompositeTable(result), nil
 	case OutputFormatWide:
 		return formatProgramsCompositeWide(result), nil
-	case OutputFormatCustomColumns:
-		return formatProgramsCompositeCustomColumns(result, flags.CustomColumnsSpec())
-	case OutputFormatCustomColumnsFile:
-		return formatProgramsCompositeCustomColumnsFile(result, flags.CustomColumnsFile())
 	default:
 		return formatProgramsCompositeTable(result), nil
 	}
@@ -877,28 +847,4 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 // formatProgramsCompositeWide formats the program list with wide columns.
 func formatProgramsCompositeWide(result bpfman.ProgramListResult) string {
 	return WideColumns().FormatTable(result.Programs)
-}
-
-// formatProgramsCompositeCustomColumns formats the program list with custom columns.
-func formatProgramsCompositeCustomColumns(result bpfman.ProgramListResult, spec string) (string, error) {
-	columns, err := ParseCustomColumns(spec)
-	if err != nil {
-		return "", err
-	}
-	if err := columns.Validate(); err != nil {
-		return "", err
-	}
-	return columns.FormatTable(result.Programs), nil
-}
-
-// formatProgramsCompositeCustomColumnsFile formats the program list with columns from a file.
-func formatProgramsCompositeCustomColumnsFile(result bpfman.ProgramListResult, path string) (string, error) {
-	columns, err := ParseCustomColumnsFile(path)
-	if err != nil {
-		return "", err
-	}
-	if err := columns.Validate(); err != nil {
-		return "", err
-	}
-	return columns.FormatTable(result.Programs), nil
 }

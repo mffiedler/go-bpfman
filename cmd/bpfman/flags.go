@@ -30,13 +30,11 @@ type GlobalDataFlags struct {
 type OutputFormat string
 
 const (
-	OutputFormatTable             OutputFormat = "table"
-	OutputFormatTree              OutputFormat = "tree"
-	OutputFormatJSON              OutputFormat = "json"
-	OutputFormatJSONPath          OutputFormat = "jsonpath"
-	OutputFormatWide              OutputFormat = "wide"
-	OutputFormatCustomColumns     OutputFormat = "custom-columns"
-	OutputFormatCustomColumnsFile OutputFormat = "custom-columns-file"
+	OutputFormatTable    OutputFormat = "table"
+	OutputFormatTree     OutputFormat = "tree"
+	OutputFormatJSON     OutputFormat = "json"
+	OutputFormatJSONPath OutputFormat = "jsonpath"
+	OutputFormatWide     OutputFormat = "wide"
 )
 
 // OutputValue wraps an output format string and tracks whether it has been set.
@@ -48,7 +46,7 @@ type OutputValue struct {
 
 // OutputFlags provides output formatting flags.
 type OutputFlags struct {
-	Output OutputValue `short:"o" help:"Output format: table, wide, json, tree, jsonpath=EXPR, custom-columns=SPEC, custom-columns-file=FILE." default:"table"`
+	Output OutputValue `short:"o" help:"Output format: table, wide, json, tree, jsonpath=EXPR." default:"table"`
 }
 
 // Format returns the base format type, or an error if the format is unrecognised.
@@ -65,12 +63,8 @@ func (f *OutputFlags) Format() (OutputFormat, error) {
 		return OutputFormatJSON, nil
 	case len(v) > 9 && v[:9] == "jsonpath=":
 		return OutputFormatJSONPath, nil
-	case len(v) > 15 && v[:15] == "custom-columns=":
-		return OutputFormatCustomColumns, nil
-	case len(v) > 20 && v[:20] == "custom-columns-file=":
-		return OutputFormatCustomColumnsFile, nil
 	default:
-		return "", fmt.Errorf("unknown output format %q; valid formats: table, wide, json, tree, jsonpath=EXPR, custom-columns=SPEC, custom-columns-file=FILE", v)
+		return "", fmt.Errorf("unknown output format %q; valid formats: table, wide, json, tree, jsonpath=EXPR", v)
 	}
 }
 
@@ -90,24 +84,6 @@ func (f *OutputFlags) JSONPathExpr() string {
 	v := f.Output.Value
 	if len(v) > 9 && v[:9] == "jsonpath=" {
 		return v[9:]
-	}
-	return ""
-}
-
-// CustomColumnsSpec returns the custom-columns spec if format is custom-columns=SPEC.
-func (f *OutputFlags) CustomColumnsSpec() string {
-	v := f.Output.Value
-	if len(v) > 15 && v[:15] == "custom-columns=" {
-		return v[15:]
-	}
-	return ""
-}
-
-// CustomColumnsFile returns the file path if format is custom-columns-file=FILE.
-func (f *OutputFlags) CustomColumnsFile() string {
-	v := f.Output.Value
-	if len(v) > 20 && v[:20] == "custom-columns-file=" {
-		return v[20:]
 	}
 	return ""
 }

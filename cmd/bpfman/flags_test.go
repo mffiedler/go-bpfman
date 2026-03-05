@@ -37,16 +37,6 @@ func TestOutputFlags_Format(t *testing.T) {
 			want:   OutputFormatJSONPath,
 		},
 		{
-			name:   "custom-columns",
-			output: "custom-columns=ID:.record.program_id",
-			want:   OutputFormatCustomColumns,
-		},
-		{
-			name:   "custom-columns-file",
-			output: "custom-columns-file=/path/to/file.txt",
-			want:   OutputFormatCustomColumnsFile,
-		},
-		{
 			name:    "unknown format",
 			output:  "xml",
 			wantErr: true,
@@ -57,8 +47,13 @@ func TestOutputFlags_Format(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "partial custom-columns",
-			output:  "custom-column",
+			name:    "custom-columns no longer supported",
+			output:  "custom-columns=ID:.record.program_id",
+			wantErr: true,
+		},
+		{
+			name:    "custom-columns-file no longer supported",
+			output:  "custom-columns-file=/path/to/file.txt",
 			wantErr: true,
 		},
 	}
@@ -107,84 +102,6 @@ func TestOutputFlags_JSONPathExpr(t *testing.T) {
 			got := f.JSONPathExpr()
 			if got != tt.want {
 				t.Errorf("JSONPathExpr() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestOutputFlags_CustomColumnsSpec(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{
-			name:   "valid spec",
-			output: "custom-columns=ID:.record.program_id,NAME:.spec.meta.name",
-			want:   "ID:.record.program_id,NAME:.spec.meta.name",
-		},
-		{
-			name:   "not custom-columns",
-			output: "table",
-			want:   "",
-		},
-		{
-			name:   "empty value after equals",
-			output: "custom-columns=",
-			want:   "",
-		},
-		{
-			name:   "custom-columns-file is not custom-columns",
-			output: "custom-columns-file=/path/to/file",
-			want:   "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
-			got := f.CustomColumnsSpec()
-			if got != tt.want {
-				t.Errorf("CustomColumnsSpec() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestOutputFlags_CustomColumnsFile(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		want   string
-	}{
-		{
-			name:   "valid path",
-			output: "custom-columns-file=/path/to/columns.txt",
-			want:   "/path/to/columns.txt",
-		},
-		{
-			name:   "not custom-columns-file",
-			output: "table",
-			want:   "",
-		},
-		{
-			name:   "empty value after equals",
-			output: "custom-columns-file=",
-			want:   "",
-		},
-		{
-			name:   "custom-columns is not custom-columns-file",
-			output: "custom-columns=ID:.record.program_id",
-			want:   "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &OutputFlags{Output: OutputValue{Value: tt.output}}
-			got := f.CustomColumnsFile()
-			if got != tt.want {
-				t.Errorf("CustomColumnsFile() = %q, want %q", got, tt.want)
 			}
 		})
 	}

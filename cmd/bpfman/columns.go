@@ -1,24 +1,21 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
-
-	"k8s.io/client-go/util/jsonpath"
+	"time"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 )
 
-// ColumnSpec defines a single column for custom-columns output.
+// ColumnSpec defines a single column for tabular output.
 type ColumnSpec struct {
-	Name     string // Column header
-	JSONPath string // JSONPath expression (e.g., ".record.program_id")
+	Name        string
+	Extract     func(bpfman.Program) string
+	ExtractLink func(bpfman.LinkRecord) string
 }
 
 // ColumnSet holds multiple column specifications.
@@ -26,34 +23,123 @@ type ColumnSet struct {
 	Columns []ColumnSpec
 }
 
-// ColumnInfo is for documentation/explain output.
-// It extends ColumnSpec with description and computed flag.
+// ColumnInfo describes a column in the registry for documentation
+// and selection purposes.
 type ColumnInfo struct {
-	Name        string // Column name (e.g., "PROGRAM_ID")
-	JSONPath    string // JSONPath expression (empty if Computed)
-	Description string // Human-readable description
-	Computed    bool   // True for special columns that need custom extraction
+	Name        string
+	Description string
+	Extract     func(bpfman.Program) string
+	ExtractLink func(bpfman.LinkRecord) string
 }
 
 // ProgramColumnRegistry returns all available columns for programs.
 // This is the authoritative source - DefaultColumns/WideColumns derive from it.
 func ProgramColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
-		{Name: "PROGRAM_ID", JSONPath: ".record.program_id", Description: "Program ID"},
-		{Name: "TYPE", JSONPath: ".record.load.program_type", Description: "Program type (xdp, tc, etc.)"},
-		{Name: "NAME", JSONPath: ".record.meta.name", Description: "User-defined name"},
-		{Name: "SOURCE", JSONPath: ".record.load.object_path", Description: "BPF object path (source)"},
-		{Name: "MAP_IDS", JSONPath: ".status.kernel.map_ids", Description: "Associated map IDs"},
-		{Name: "TAG", JSONPath: ".status.kernel.tag", Description: "Program tag (hash)"},
-		{Name: "BTF_ID", JSONPath: ".status.kernel.btf_id", Description: "BTF type ID"},
-		{Name: "PIN_PATH", JSONPath: ".record.handles.pin_path", Description: "Pinned path in bpffs"},
-		{Name: "LOADED_AT", JSONPath: ".status.kernel.loaded_at", Description: "Load timestamp"},
-		{Name: "JIT_SIZE", JSONPath: ".status.kernel.jited_size", Description: "JIT-compiled size in bytes"},
-		{Name: "MEMLOCK", JSONPath: ".status.kernel.memlock", Description: "Locked memory in bytes"},
-		{Name: "RUN_COUNT", JSONPath: ".status.stats.run_count", Description: "Number of times program executed"},
-		{Name: "RUNTIME", JSONPath: ".status.stats.runtime", Description: "Total execution time"},
-		{Name: "LINK_IDS", Computed: true, Description: "Comma-separated link IDs"},
-		{Name: "ATTACH", Computed: true, Description: "Attach point descriptions"},
+		{Name: "PROGRAM_ID", Description: "Program ID",
+			Extract: func(p bpfman.Program) string {
+				return strconv.FormatUint(uint64(p.Record.ProgramID), 10)
+			}},
+		{Name: "TYPE", Description: "Program type (xdp, tc, etc.)",
+			Extract: func(p bpfman.Program) string {
+				return p.Record.Load.ProgramType().String()
+			}},
+		{Name: "NAME", Description: "User-defined name",
+			Extract: func(p bpfman.Program) string {
+				return nonEmpty(p.Record.Meta.Name)
+			}},
+		{Name: "SOURCE", Description: "BPF object path (source)",
+			Extract: func(p bpfman.Program) string {
+				return nonEmpty(p.Record.Load.ObjectPath())
+			}},
+		{Name: "MAP_IDS", Description: "Associated map IDs",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil || len(p.Status.Kernel.MapIDs) == 0 {
+					return "<none>"
+				}
+				return formatMapIDs(p.Status.Kernel.MapIDs)
+			}},
+		{Name: "TAG", Description: "Program tag (hash)",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil {
+					return "<none>"
+				}
+				return nonEmpty(p.Status.Kernel.Tag)
+			}},
+		{Name: "BTF_ID", Description: "BTF type ID",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil || p.Status.Kernel.BTFId == 0 {
+					return "<none>"
+				}
+				return strconv.FormatUint(uint64(p.Status.Kernel.BTFId), 10)
+			}},
+		{Name: "PIN_PATH", Description: "Pinned path in bpffs",
+			Extract: func(p bpfman.Program) string {
+				return nonEmpty(p.Record.Handles.PinPath)
+			}},
+		{Name: "LOADED_AT", Description: "Load timestamp",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil || p.Status.Kernel.LoadedAt.IsZero() {
+					return "<none>"
+				}
+				return p.Status.Kernel.LoadedAt.Format(time.RFC3339)
+			}},
+		{Name: "JIT_SIZE", Description: "JIT-compiled size in bytes",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil {
+					return "<none>"
+				}
+				return strconv.FormatUint(uint64(p.Status.Kernel.JitedSize), 10)
+			}},
+		{Name: "MEMLOCK", Description: "Locked memory in bytes",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Kernel == nil || p.Status.Kernel.Memlock == 0 {
+					return "<none>"
+				}
+				return strconv.FormatUint(p.Status.Kernel.Memlock, 10)
+			}},
+		{Name: "RUN_COUNT", Description: "Number of times program executed",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Stats == nil {
+					return "<none>"
+				}
+				return strconv.FormatUint(p.Status.Stats.RunCount, 10)
+			}},
+		{Name: "RUNTIME", Description: "Total execution time",
+			Extract: func(p bpfman.Program) string {
+				if p.Status.Stats == nil {
+					return "<none>"
+				}
+				return p.Status.Stats.Runtime.String()
+			}},
+		{Name: "LINK_IDS", Description: "Comma-separated link IDs",
+			Extract: func(p bpfman.Program) string {
+				if len(p.Status.Links) == 0 {
+					return "<none>"
+				}
+				ids := make([]string, len(p.Status.Links))
+				for i, link := range p.Status.Links {
+					ids[i] = strconv.FormatUint(uint64(link.Record.ID), 10)
+				}
+				return strings.Join(ids, ",")
+			}},
+		{Name: "ATTACH", Description: "Attach point descriptions",
+			Extract: func(p bpfman.Program) string {
+				if len(p.Status.Links) == 0 {
+					return "<none>"
+				}
+				attachments := make([]string, 0, len(p.Status.Links))
+				for _, link := range p.Status.Links {
+					attach := formatAttachDetails(link.Record.Details)
+					if attach != "" {
+						attachments = append(attachments, attach)
+					}
+				}
+				if len(attachments) == 0 {
+					return "<none>"
+				}
+				return strings.Join(attachments, "; ")
+			}},
 	}
 }
 
@@ -87,8 +173,8 @@ func selectProgramColumns(names []string) (ColumnSet, error) {
 			return ColumnSet{}, fmt.Errorf("unknown column %q", name)
 		}
 		columns = append(columns, ColumnSpec{
-			Name:     info.Name,
-			JSONPath: info.JSONPath,
+			Name:    info.Name,
+			Extract: info.Extract,
 		})
 	}
 	return ColumnSet{Columns: columns}, nil
@@ -100,204 +186,9 @@ var (
 	wideColumnNames    = []string{"PROGRAM_ID", "TYPE", "NAME", "MAP_IDS", "LINK_IDS", "ATTACH", "TAG", "SOURCE"}
 )
 
-// ParseCustomColumns parses a custom-columns spec string.
-// Format: NAME:.jsonpath,NAME2:.jsonpath2
-// Example: ID:.record.program_id,NAME:.record.meta.name
-func ParseCustomColumns(spec string) (ColumnSet, error) {
-	if spec == "" {
-		return ColumnSet{}, fmt.Errorf("custom-columns spec cannot be empty")
-	}
-
-	parts := strings.Split(spec, ",")
-	columns := make([]ColumnSpec, 0, len(parts))
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		idx := strings.Index(part, ":")
-		if idx <= 0 {
-			return ColumnSet{}, fmt.Errorf("invalid column spec %q: expected NAME:.jsonpath format", part)
-		}
-
-		name := strings.TrimSpace(part[:idx])
-		path := strings.TrimSpace(part[idx+1:])
-
-		if name == "" {
-			return ColumnSet{}, fmt.Errorf("invalid column spec %q: column name cannot be empty", part)
-		}
-		if path == "" {
-			return ColumnSet{}, fmt.Errorf("invalid column spec %q: jsonpath cannot be empty", part)
-		}
-
-		columns = append(columns, ColumnSpec{
-			Name:     name,
-			JSONPath: path,
-		})
-	}
-
-	if len(columns) == 0 {
-		return ColumnSet{}, fmt.Errorf("custom-columns spec must contain at least one column")
-	}
-
-	return ColumnSet{Columns: columns}, nil
-}
-
-// ParseCustomColumnsFile parses a custom-columns file.
-// Format: Two lines, whitespace-separated
-// Line 1: Column headers (e.g., "ID NAME MAPS")
-// Line 2: JSONPath expressions (e.g., ".record.program_id .record.meta.name .status.kernel.map_ids")
-func ParseCustomColumnsFile(path string) (ColumnSet, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return ColumnSet{}, fmt.Errorf("cannot open custom-columns file: %w", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-
-	// Read header line
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return ColumnSet{}, fmt.Errorf("error reading custom-columns file: %w", err)
-		}
-		return ColumnSet{}, fmt.Errorf("custom-columns file is empty")
-	}
-	headerLine := scanner.Text()
-
-	// Read jsonpath line
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return ColumnSet{}, fmt.Errorf("error reading custom-columns file: %w", err)
-		}
-		return ColumnSet{}, fmt.Errorf("custom-columns file must have two lines (headers and jsonpaths)")
-	}
-	pathLine := scanner.Text()
-
-	if err := scanner.Err(); err != nil {
-		return ColumnSet{}, fmt.Errorf("error reading custom-columns file: %w", err)
-	}
-
-	headers := strings.Fields(headerLine)
-	paths := strings.Fields(pathLine)
-
-	if len(headers) == 0 {
-		return ColumnSet{}, fmt.Errorf("custom-columns file has no column headers")
-	}
-	if len(headers) != len(paths) {
-		return ColumnSet{}, fmt.Errorf("custom-columns file: header count (%d) does not match jsonpath count (%d)", len(headers), len(paths))
-	}
-
-	columns := make([]ColumnSpec, len(headers))
-	for i := range headers {
-		columns[i] = ColumnSpec{
-			Name:     headers[i],
-			JSONPath: paths[i],
-		}
-	}
-
-	return ColumnSet{Columns: columns}, nil
-}
-
-// Validate checks that all JSONPath expressions in the column set are valid.
-func (cs ColumnSet) Validate() error {
-	for _, col := range cs.Columns {
-		jp := jsonpath.New(col.Name)
-		// Wrap in {}{} for k8s jsonpath syntax
-		expr := "{" + col.JSONPath + "}"
-		if err := jp.Parse(expr); err != nil {
-			return fmt.Errorf("invalid jsonpath %q for column %q: %w", col.JSONPath, col.Name, err)
-		}
-	}
-	return nil
-}
-
-// ExtractValue extracts a value from a program using the JSONPath expression.
-// Returns "<none>" if the value is missing or empty.
+// ExtractValue extracts a value from a program using the column's extractor.
 func (cs ColumnSpec) ExtractValue(prog bpfman.Program) string {
-	// Handle special columns that need custom logic
-	switch strings.ToUpper(cs.Name) {
-	case "LINK_IDS":
-		return extractLinkIDs(prog)
-	case "ATTACH":
-		return extractAttach(prog)
-	}
-
-	// Standard JSONPath extraction
-	return extractJSONPath(prog, cs.JSONPath)
-}
-
-// extractJSONPath extracts a value using JSONPath from a program.
-func extractJSONPath(prog bpfman.Program, expr string) string {
-	jp := jsonpath.New("extract")
-	// Wrap in {} for k8s jsonpath syntax
-	if err := jp.Parse("{" + expr + "}"); err != nil {
-		return "<error>"
-	}
-
-	// Marshal program to JSON then decode with UseNumber to
-	// preserve integer formatting (otherwise large IDs render in
-	// scientific notation).
-	jsonBytes, err := json.Marshal(prog)
-	if err != nil {
-		return "<error>"
-	}
-
-	var generic any
-	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
-	dec.UseNumber()
-	if err := dec.Decode(&generic); err != nil {
-		return "<error>"
-	}
-
-	var buf bytes.Buffer
-	if err := jp.Execute(&buf, generic); err != nil {
-		return "<none>"
-	}
-
-	result := strings.TrimSpace(buf.String())
-	if result == "" || result == "<no value>" || result == "null" || result == "[]" {
-		return "<none>"
-	}
-
-	return result
-}
-
-// extractLinkIDs extracts link IDs from a program.
-// This is a special column that requires custom logic.
-func extractLinkIDs(prog bpfman.Program) string {
-	if len(prog.Status.Links) == 0 {
-		return "<none>"
-	}
-
-	ids := make([]string, len(prog.Status.Links))
-	for i, link := range prog.Status.Links {
-		ids[i] = strconv.FormatUint(uint64(link.Record.ID), 10)
-	}
-	return strings.Join(ids, ",")
-}
-
-// extractAttach extracts attach information from a program's links.
-// This is a special column that requires custom logic.
-func extractAttach(prog bpfman.Program) string {
-	if len(prog.Status.Links) == 0 {
-		return "<none>"
-	}
-
-	attachments := make([]string, 0, len(prog.Status.Links))
-	for _, link := range prog.Status.Links {
-		attach := formatAttachDetails(link.Record.Details)
-		if attach != "" {
-			attachments = append(attachments, attach)
-		}
-	}
-
-	if len(attachments) == 0 {
-		return "<none>"
-	}
-	return strings.Join(attachments, "; ")
+	return cs.Extract(prog)
 }
 
 // FormatTable renders a table of programs using the column set.
@@ -341,12 +232,40 @@ func WideColumns() ColumnSet {
 // This is the authoritative source - DefaultLinkColumns/WideLinkColumns derive from it.
 func LinkColumnRegistry() []ColumnInfo {
 	return []ColumnInfo{
-		{Name: "LINK_ID", JSONPath: ".id", Description: "Link ID"},
-		{Name: "PROGRAM_ID", JSONPath: ".program_id", Description: "Associated program ID"},
-		{Name: "KIND", JSONPath: ".kind", Description: "Link type (xdp, tc, kprobe, etc.)"},
-		{Name: "PIN_PATH", JSONPath: ".pin_path", Description: "Pinned path in bpffs"},
-		{Name: "CREATED_AT", JSONPath: ".created_at", Description: "Creation timestamp"},
-		{Name: "ATTACH", Computed: true, Description: "Attach point details"},
+		{Name: "LINK_ID", Description: "Link ID",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				return strconv.FormatUint(uint64(l.ID), 10)
+			}},
+		{Name: "PROGRAM_ID", Description: "Associated program ID",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				return strconv.FormatUint(uint64(l.ProgramID), 10)
+			}},
+		{Name: "KIND", Description: "Link type (xdp, tc, kprobe, etc.)",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				return l.Kind.String()
+			}},
+		{Name: "PIN_PATH", Description: "Pinned path in bpffs",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				if l.PinPath == nil {
+					return "<none>"
+				}
+				return l.PinPath.String()
+			}},
+		{Name: "CREATED_AT", Description: "Creation timestamp",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				if l.CreatedAt.IsZero() {
+					return "<none>"
+				}
+				return l.CreatedAt.Format(time.RFC3339)
+			}},
+		{Name: "ATTACH", Description: "Attach point details",
+			ExtractLink: func(l bpfman.LinkRecord) string {
+				attach := formatAttachDetails(l.Details)
+				if attach == "" {
+					return "<none>"
+				}
+				return attach
+			}},
 	}
 }
 
@@ -380,8 +299,8 @@ func selectLinkColumns(names []string) (ColumnSet, error) {
 			return ColumnSet{}, fmt.Errorf("unknown link column %q", name)
 		}
 		columns = append(columns, ColumnSpec{
-			Name:     info.Name,
-			JSONPath: info.JSONPath,
+			Name:        info.Name,
+			ExtractLink: info.ExtractLink,
 		})
 	}
 	return ColumnSet{Columns: columns}, nil
@@ -403,63 +322,9 @@ func WideLinkColumns() ColumnSet {
 	return MustSelectLinkColumns(wideLinkColumnNames)
 }
 
-// ExtractLinkValue extracts a value from a link using the JSONPath expression.
-// Returns "<none>" if the value is missing or empty.
+// ExtractLinkValue extracts a value from a link using the column's extractor.
 func (cs ColumnSpec) ExtractLinkValue(link bpfman.LinkRecord) string {
-	// Handle special columns that need custom logic
-	switch strings.ToUpper(cs.Name) {
-	case "ATTACH":
-		return extractLinkAttach(link)
-	}
-
-	// Standard JSONPath extraction
-	return extractLinkJSONPath(link, cs.JSONPath)
-}
-
-// extractLinkJSONPath extracts a value using JSONPath from a link.
-func extractLinkJSONPath(link bpfman.LinkRecord, expr string) string {
-	jp := jsonpath.New("extract")
-	// Wrap in {} for k8s jsonpath syntax
-	if err := jp.Parse("{" + expr + "}"); err != nil {
-		return "<error>"
-	}
-
-	// Marshal link to JSON then decode with UseNumber to preserve
-	// integer formatting (otherwise large IDs like synthetic link
-	// IDs render in scientific notation).
-	jsonBytes, err := json.Marshal(link)
-	if err != nil {
-		return "<error>"
-	}
-
-	var generic any
-	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
-	dec.UseNumber()
-	if err := dec.Decode(&generic); err != nil {
-		return "<error>"
-	}
-
-	var buf bytes.Buffer
-	if err := jp.Execute(&buf, generic); err != nil {
-		return "<none>"
-	}
-
-	result := strings.TrimSpace(buf.String())
-	if result == "" || result == "<no value>" || result == "null" {
-		return "<none>"
-	}
-
-	return result
-}
-
-// extractLinkAttach extracts attach details from a link.
-// This is a special column that requires custom logic.
-func extractLinkAttach(link bpfman.LinkRecord) string {
-	attach := formatAttachDetails(link.Details)
-	if attach == "" {
-		return "<none>"
-	}
-	return attach
+	return cs.ExtractLink(link)
 }
 
 // FormatLinkTable renders a table of links using the column set.
@@ -485,4 +350,22 @@ func (cs ColumnSet) FormatLinkTable(links []bpfman.LinkRecord) string {
 
 	w.Flush()
 	return b.String()
+}
+
+// nonEmpty returns s if non-empty, otherwise "<none>".
+func nonEmpty(s string) string {
+	if s == "" {
+		return "<none>"
+	}
+	return s
+}
+
+// formatMapIDs formats a slice of map IDs to match the JSON array format
+// previously produced by JSONPath (e.g., "[1,2,3]").
+func formatMapIDs(ids []kernel.MapID) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
