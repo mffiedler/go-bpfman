@@ -3,16 +3,15 @@
 //
 // # Plans and nodes
 //
-// A Plan is an ordered list of nodes.  Each node is one of four
+// A Plan is an ordered list of nodes.  Each node is one of three
 // flavours:
 //
-//   - Validate: pure-check, no I/O, no undo.
 //   - Produce:  executes an action, stores the result in typed
 //     bindings for later nodes.
 //   - Do:       executes an action for its side effect, with optional
 //     undo.
-//   - Try:      best-effort; errors are logged but do not fail the
-//     operation.
+//   - Try:      best-effort; errors are logged at debug level but do
+//     not fail the operation.
 //
 // The plan interpreter (Run/Run0) walks nodes sequentially, threading
 // an executor through each closure.  On failure it executes

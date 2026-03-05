@@ -17,7 +17,7 @@ func Run(
 ) (*Bindings, error) {
 	bindings := newBindings()
 
-	undos, opErr := interpret(ctx, exec, plan, bindings)
+	undos, opErr := interpret(ctx, logger, exec, plan, bindings)
 
 	if opErr != nil {
 		executeRollback(ctx, logger, exec, undos)
@@ -44,6 +44,7 @@ func Run0(
 // them for rollback).
 func interpret(
 	ctx context.Context,
+	logger *slog.Logger,
 	exec action.ExecutorWithResult,
 	plan Plan,
 	bindings *Bindings,
@@ -72,7 +73,10 @@ func interpret(
 			}
 
 		case flavourTry:
-			_ = n.execFn(ctx, exec, bindings)
+			if err := n.execFn(ctx, exec, bindings); err != nil {
+				logger.DebugContext(ctx, "try node failed (non-fatal)",
+					"label", n.label, "target", n.target, "error", err)
+			}
 		}
 	}
 
