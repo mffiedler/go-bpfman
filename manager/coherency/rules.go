@@ -475,7 +475,7 @@ Category: consistency`,
 
 // GCRules returns rules that detect and plan repairs for stale state.
 func GCRules() []Rule {
-	return []Rule{
+	rules := []Rule{
 		// Dispatchers with zero extension links and missing attachment
 		// mechanism (prog pin or TC filter) are functionally dead.
 		{
@@ -530,11 +530,34 @@ Category: gc-dispatcher`,
 				return out
 			},
 		},
-		// Orphan program pins, link directories, and map directories
-		// with no DB record and no live kernel object.
-		{
-			Name: "orphan-program-artefacts",
-			Description: `Removes orphan filesystem artefacts for programs that are no longer
+	}
+
+	for _, spec := range orphanGCSpecs {
+		rules = append(rules, orphanRule(spec))
+	}
+
+	return rules
+}
+
+// orphanGCSpec describes a table-driven orphan GC rule. Each spec
+// produces a Rule whose Eval iterates OrphanFsEntries, filters by
+// kind and liveness, and emits violations with removal actions.
+type orphanGCSpec struct {
+	name        string
+	description string
+	kinds       []OrphanKind
+	include     func(*ObservedState, FsOrphan) bool
+	actionFn    func(FsOrphan) action.Action
+	describeFn  func(FsOrphan) (violation, opDesc string)
+}
+
+// orphanGCSpecs defines the four orphan GC rules. Each is
+// distinguished by which orphan kinds it handles, its liveness
+// filter, and how it maps an orphan to a removal action.
+var orphanGCSpecs = []orphanGCSpec{
+	{
+		name: "orphan-program-artefacts",
+		description: `Removes orphan filesystem artefacts for programs that are no longer
 alive in the kernel. This includes:
   - prog_* pin files (when the kernel program is dead)
   - link directories under fs/links/
@@ -548,33 +571,19 @@ removed - doing so would unload the program.
 
 Severity: WARNING
 Category: gc-orphan-pin`,
-			Eval: func(s *ObservedState) []Violation {
-				var out []Violation
-				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
-						continue
-					}
-					if o.ProgramID != 0 && s.KernelAlive(o.ProgramID) {
-						continue // kernel object alive; leave it
-					}
-					out = append(out, Violation{
-						Severity:    SeverityWarning,
-						Category:    "gc-orphan-pin",
-						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-						Op: &Operation{
-							Description: fmt.Sprintf("remove %s", o.Path),
-							Actions:     []action.Action{orphanPinAction(o)},
-						},
-					})
-				}
-				return out
-			},
+		kinds: []OrphanKind{OrphanProgPin, OrphanLinkDir, OrphanMapDir},
+		include: func(s *ObservedState, o FsOrphan) bool {
+			return o.ProgramID == 0 || !s.KernelAlive(o.ProgramID)
 		},
-		// Orphan dispatcher directories and link pins with no
-		// corresponding DB dispatcher.
-		{
-			Name: "orphan-dispatcher-artefacts",
-			Description: `Removes orphan dispatcher filesystem artefacts that have no
+		actionFn: orphanPinAction,
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+				fmt.Sprintf("remove %s", o.Path)
+		},
+	},
+	{
+		name: "orphan-dispatcher-artefacts",
+		description: `Removes orphan dispatcher filesystem artefacts that have no
 corresponding database record. This includes:
   - dispatcher_* revision directories
   - dispatcher_*_link pin files
@@ -585,37 +594,26 @@ space and can cause confusion.
 
 Severity: WARNING
 Category: gc-orphan-pin`,
-			Eval: func(s *ObservedState) []Violation {
-				var out []Violation
-				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanDispatcherDir && o.Kind != OrphanDispatcherLink {
-						continue
-					}
-					var a action.Action
-					switch o.Kind { //nolint:exhaustive // pre-filtered above
-					case OrphanDispatcherDir:
-						a = action.RemoveDispatcherRevDir{Path: o.Path}
-					case OrphanDispatcherLink:
-						a = action.RemoveDispatcherLinkPin{Path: o.Path}
-					}
-					out = append(out, Violation{
-						Severity:    SeverityWarning,
-						Category:    "gc-orphan-pin",
-						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-						Op: &Operation{
-							Description: fmt.Sprintf("remove %s", o.Path),
-							Actions:     []action.Action{a},
-						},
-					})
-				}
-				return out
-			},
+		kinds:   []OrphanKind{OrphanDispatcherDir, OrphanDispatcherLink},
+		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
+		actionFn: func(o FsOrphan) action.Action {
+			switch o.Kind {
+			case OrphanDispatcherDir:
+				return action.RemoveDispatcherRevDir{Path: o.Path}
+			case OrphanDispatcherLink:
+				return action.RemoveDispatcherLinkPin{Path: o.Path}
+			default:
+				panic(fmt.Sprintf("orphan-dispatcher-artefacts: unexpected kind %s", o.Kind))
+			}
 		},
-		// Orphan program directories under <base>/programs/ with
-		// no corresponding DB record.
-		{
-			Name: "orphan-program-dirs",
-			Description: `Removes orphan program directories under <base>/programs/ that
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+				fmt.Sprintf("remove %s", o.Path)
+		},
+	},
+	{
+		name: "orphan-program-dirs",
+		description: `Removes orphan program directories under <base>/programs/ that
 have no corresponding database record. These directories contain
 persisted bytecode and provenance from a previous load that was
 either rolled back, crashed, or whose DB row was removed.
@@ -626,53 +624,69 @@ are owned by bpfman and safe to delete when not backed by a DB row.
 
 Severity: WARNING
 Category: gc-orphan-pin`,
-			Eval: func(s *ObservedState) []Violation {
-				var out []Violation
-				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanProgramDir && o.Kind != OrphanProgramDirUnk {
-						continue
-					}
-					out = append(out, Violation{
-						Severity:    SeverityWarning,
-						Category:    "gc-orphan-pin",
-						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-						Op: &Operation{
-							Description: fmt.Sprintf("remove program dir %s", o.Path),
-							Actions:     []action.Action{action.RemoveProgramDirByPath{Path: o.Path}},
-						},
-					})
-				}
-				return out
-			},
+		kinds:   []OrphanKind{OrphanProgramDir, OrphanProgramDirUnk},
+		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
+		actionFn: func(o FsOrphan) action.Action {
+			return action.RemoveProgramDirByPath{Path: o.Path}
 		},
-		// Orphan staging directories under <base>/.staging/.
-		{
-			Name: "orphan-staging-dirs",
-			Description: `Removes orphan staging directories under <base>/.staging/.
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+				fmt.Sprintf("remove program dir %s", o.Path)
+		},
+	},
+	{
+		name: "orphan-staging-dirs",
+		description: `Removes orphan staging directories under <base>/.staging/.
 Staging directories are transient scratch space used during atomic
 publish operations. They are never referenced by DB rows and are
 always safe to delete.
 
 Severity: WARNING
 Category: gc-orphan-pin`,
-			Eval: func(s *ObservedState) []Violation {
-				var out []Violation
-				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanStagingDir {
-						continue
-					}
-					out = append(out, Violation{
-						Severity:    SeverityWarning,
-						Category:    "gc-orphan-pin",
-						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-						Op: &Operation{
-							Description: fmt.Sprintf("remove staging dir %s", o.Path),
-							Actions:     []action.Action{action.RemoveStagingDir{Path: o.Path}},
-						},
-					})
+		kinds:   []OrphanKind{OrphanStagingDir},
+		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
+		actionFn: func(o FsOrphan) action.Action {
+			return action.RemoveStagingDir{Path: o.Path}
+		},
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+				fmt.Sprintf("remove staging dir %s", o.Path)
+		},
+	},
+}
+
+// orphanRule builds a Rule from an orphanGCSpec. The shared
+// evaluation logic iterates OrphanFsEntries, filters by kind set
+// and liveness, and emits violations with removal actions.
+func orphanRule(spec orphanGCSpec) Rule {
+	kindSet := make(map[OrphanKind]bool, len(spec.kinds))
+	for _, k := range spec.kinds {
+		kindSet[k] = true
+	}
+	return Rule{
+		Name:        spec.name,
+		Description: spec.description,
+		Eval: func(s *ObservedState) []Violation {
+			var out []Violation
+			for _, o := range s.OrphanFsEntries() {
+				if !kindSet[o.Kind] {
+					continue
 				}
-				return out
-			},
+				if !spec.include(s, o) {
+					continue
+				}
+				desc, opDesc := spec.describeFn(o)
+				out = append(out, Violation{
+					Severity:    SeverityWarning,
+					Category:    "gc-orphan-pin",
+					Description: desc,
+					Op: &Operation{
+						Description: opDesc,
+						Actions:     []action.Action{spec.actionFn(o)},
+					},
+				})
+			}
+			return out
 		},
 	}
 }
@@ -690,9 +704,9 @@ Category: gc-orphan-pin`,
 // the program when no other references (file descriptors, other pins,
 // links) remain.
 func PruneRule() Rule {
-	return Rule{
-		Name: "prune-live-orphans",
-		Description: `Removes live orphan program pins, link directories, and map
+	return orphanRule(orphanGCSpec{
+		name: "prune-live-orphans",
+		description: `Removes live orphan program pins, link directories, and map
 directories. A live orphan is a program that bpfman originally loaded
 (pinned under bpfman's bpffs root) but no longer tracks in its
 database. This typically occurs when the database is wiped or recreated
@@ -705,28 +719,16 @@ program when no other references remain.
 
 Severity: WARNING
 Category: gc-orphan-pin`,
-		Eval: func(s *ObservedState) []Violation {
-			var out []Violation
-			for _, o := range s.OrphanFsEntries() {
-				if o.Kind != OrphanProgPin && o.Kind != OrphanLinkDir && o.Kind != OrphanMapDir {
-					continue
-				}
-				if o.ProgramID == 0 || !s.KernelAlive(o.ProgramID) {
-					continue // dead orphans handled by orphan-program-artefacts
-				}
-				out = append(out, Violation{
-					Severity:    SeverityWarning,
-					Category:    "gc-orphan-pin",
-					Description: fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.ProgramID),
-					Op: &Operation{
-						Description: fmt.Sprintf("remove %s", o.Path),
-						Actions:     []action.Action{orphanPinAction(o)},
-					},
-				})
-			}
-			return out
+		kinds: []OrphanKind{OrphanProgPin, OrphanLinkDir, OrphanMapDir},
+		include: func(s *ObservedState, o FsOrphan) bool {
+			return o.ProgramID != 0 && s.KernelAlive(o.ProgramID)
 		},
-	}
+		actionFn: orphanPinAction,
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.ProgramID),
+				fmt.Sprintf("remove %s", o.Path)
+		},
+	})
 }
 
 // orphanPinAction maps an orphan's kind to the appropriate removal action.
