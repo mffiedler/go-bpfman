@@ -205,13 +205,24 @@ handles the multi-step transaction.
 
 ## Scope
 
-### In Scope
+### In Scope (Full Rebuild Approach -- Superseded)
+
+The original plan described full dispatcher rebuild on each attach/detach:
 
 - Priority-based position assignment on attach
 - Full dispatcher rebuild (new revision, re-attach all extensions)
 - Atomic swap (XDP link update, TC filter replacement)
 - Dispatcher rebuild on detach (re-sort remaining programs)
 - Store updates for changed positions
+
+### Implemented Scope (Double-Buffered Approach)
+
+The implementation uses the double-buffered approach instead (see "Alternative" section below):
+
+- **Runtime priority ordering** -- Physical slots are stable; execution order is determined by `run_order` array computed from priority at attach/detach time
+- **Slot reuse** -- `findFreeSlot` locates the lowest unoccupied physical slot, enabling slot reuse after detach
+- **Config map updates** -- `UpdateDispatcherConfig` writes new config to inactive buffer and atomically flips `active_config` index
+- **Order field** -- `XDPDetails` and `TCDetails` now include `Order` (execution order) alongside `Position` (physical slot)
 
 ### Out of Scope
 
@@ -220,7 +231,9 @@ handles the multi-step transaction.
 - CLI `--proceed-on` flag
 - Dispatcher config changes without attach/detach (pure reconfig)
 
-## Risks
+## Risks (Full Rebuild Approach -- Superseded)
+
+The full-rebuild approach had these risks, which motivated the switch to double-buffering:
 
 1. **Transient packet loss during rebuild** -- During the window
    between creating the new dispatcher and completing the atomic
@@ -333,3 +346,37 @@ the two maps alongside the dispatcher program and provides an
 inactive buffer and atomically flips the active index. The manager
 calls this method on attach and detach instead of rebuilding the
 dispatcher.
+
+### Key implementation details
+
+**Slot allocation:** `findFreeSlot` scans occupied slots and returns
+the lowest unoccupied physical slot (0-9). Physical slots are stable
+across reorders; they are freed by detach and reused by subsequent
+attaches.
+
+**Runtime config computation:** `computeRuntimeConfig` sorts all
+occupied slots by `(priority, program_name)` and builds `run_order`
+as the sequence of physical slot indices in priority order. The
+`chain_call_actions` array is indexed by physical slot and contains
+the proceed-on bitmask for that slot.
+
+**Execution order visibility:** The `Order` field on `XDPDetails`
+and `TCDetails` is populated at query time by `populateLinkOrders`,
+which reconstructs the execution order from `ListDispatcherSlots`
+results. This is the user-visible ordering (0 = first to execute,
+etc.), distinct from `Position` (the physical slot number).
+
+**Map pinning:** Config and active maps are pinned outside the
+revision directory (`dispatcher_{nsid}_{ifindex}_config_map`,
+`dispatcher_{nsid}_{ifindex}_active_map`) because they are
+long-lived and survive dispatcher recovery. The old revision
+directory is removed on detach if no extensions remain, but the
+maps persist for the dispatcher's lifetime.
+
+**BPF critical section:** The dispatcher reads `active_config[0]`
+to get the current active index (0 or 1), then uses that index to
+look up `dispatcher_config[active_idx]`. **Critical:** The active
+index must be dereferenced before being used as a key to the second
+lookup. The initial implementation passed the pointer directly,
+causing the config lookup to fail silently and packets to drop. The
+fix: dereference the active index and use its address as the key.
