@@ -1,3 +1,10 @@
+// executor_dispatcher.go contains the composite dispatcher actions.
+// Unlike the thin single-call wrappers in executor.go, each operation
+// here is a multi-step transaction with its own rollback: create a
+// kernel object, persist to the store, and undo the kernel operation
+// if persistence fails. Extension attach adds stale-dispatcher
+// recovery on top (detect missing pin, recreate, retry once).
+
 package manager
 
 import (
