@@ -64,7 +64,7 @@ func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) error 
 	// FETCH: Collect dispatcher keys for any TC/XDP links before
 	// the unload actions delete them from the store. We need these
 	// to check whether the dispatchers are now empty afterwards.
-	dispatcherKeys := m.collectDispatcherKeys(ctx, links)
+	dispatcherKeys := collectDispatcherKeys(links)
 
 	m.logger.InfoContext(ctx, "unloading program", "program_id", programID, "links", len(links))
 

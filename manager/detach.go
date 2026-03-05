@@ -124,29 +124,19 @@ func extractDispatcherKey(details bpfman.LinkDetails) (dispType dispatcher.Dispa
 }
 
 // collectDispatcherKeys examines links for dispatcher associations and
-// returns a deduplicated set of dispatcher keys. This must be called
-// before the links are deleted from the store.
-func (m *Manager) collectDispatcherKeys(ctx context.Context, links []bpfman.LinkRecord) map[dispatcher.Key]struct{} {
+// returns a deduplicated set of dispatcher keys. The links must have
+// their Details populated (as returned by ListLinksByProgram).
+func collectDispatcherKeys(links []bpfman.LinkRecord) map[dispatcher.Key]struct{} {
 	keys := make(map[dispatcher.Key]struct{})
 	for _, link := range links {
 		if link.Kind != bpfman.LinkKindTC && link.Kind != bpfman.LinkKindXDP {
 			continue
 		}
-		record, err := m.store.GetLink(ctx, link.ID)
-		if err != nil {
-			m.logger.WarnContext(ctx, "failed to get link details for dispatcher cleanup",
-				"link_id", link.ID, "error", err)
+		dispType, nsid, ifindex, err := extractDispatcherKey(link.Details)
+		if err != nil || dispType == (dispatcher.DispatcherType{}) {
 			continue
 		}
-		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
-		if err != nil {
-			m.logger.WarnContext(ctx, "failed to extract dispatcher key",
-				"link_id", link.ID, "error", err)
-			continue
-		}
-		if dispType != (dispatcher.DispatcherType{}) {
-			keys[dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}] = struct{}{}
-		}
+		keys[dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}] = struct{}{}
 	}
 	return keys
 }
