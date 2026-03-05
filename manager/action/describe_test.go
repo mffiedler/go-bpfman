@@ -1,6 +1,7 @@
 package action
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -216,6 +217,62 @@ func TestDescribe(t *testing.T) {
 				t.Errorf("Describe(%T) = %q, want substring %q", tt.action, got, tt.contains)
 			}
 		})
+	}
+}
+
+// TestDescribe_Exhaustive asserts that every concrete Action type has
+// a Describe case that produces a domain-specific description rather
+// than falling through to the default %T format. If a new action type
+// is added without a corresponding Describe case, this test fails.
+func TestDescribe_Exhaustive(t *testing.T) {
+	// Every concrete type implementing Action must appear here.
+	// The test does not care about the description content (TestDescribe
+	// covers that); it only checks that Describe does not fall through
+	// to the default branch, which formats as "action.<TypeName>".
+	allActions := []Action{
+		SaveProgram{},
+		DeleteProgram{},
+		SaveLink{},
+		DeleteLink{},
+		GetProgramFromStore{},
+		CheckProgramNotInStore{},
+		LoadProgram{},
+		UnloadProgram{},
+		AttachTracepoint{},
+		AttachKprobe{},
+		AttachUprobeLocal{},
+		AttachUprobeContainer{},
+		AttachFentry{},
+		AttachFexit{},
+		AttachTCX{},
+		SaveDispatcher{},
+		DeleteDispatcher{},
+		DetachLink{},
+		RemovePin{},
+		DetachTCFilter{},
+		PublishBytecode{},
+		RemoveProgramDir{},
+		RemoveProgPin{},
+		RemoveLinkDir{},
+		RemoveMapDir{},
+		RemoveDispatcherProgPin{},
+		RemoveDispatcherRevDir{},
+		RemoveDispatcherLinkPin{},
+		RemoveProgramDirByPath{},
+		RemoveStagingDir{},
+		CleanupEmptyDispatcher{},
+		EnsureXDPDispatcher{},
+		EnsureTCDispatcher{},
+		AttachXDPExtension{},
+		AttachTCExtension{},
+	}
+
+	for _, a := range allActions {
+		desc := Describe(a)
+		typeName := fmt.Sprintf("%T", a)
+		if desc == typeName {
+			t.Errorf("Describe(%T) returned default %%T format %q; add a case to Describe", a, desc)
+		}
 	}
 }
 
