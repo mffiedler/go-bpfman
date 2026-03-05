@@ -153,12 +153,7 @@ func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TC attach spec: %v", err)
 	}
 
-	// Use provided priority or default
-	priority := int(info.Priority)
-	if priority == 0 {
-		priority = 50 // Default priority
-	}
-	spec = spec.WithPriority(priority)
+	spec = spec.WithPriority(int(info.Priority))
 
 	// Use provided proceed-on or default
 	proceedOn := info.ProceedOn
@@ -211,12 +206,7 @@ func (s *Server) attachTCX(ctx context.Context, scope lock.WriterScope, programI
 		return nil, status.Errorf(codes.InvalidArgument, "invalid TCX attach spec: %v", err)
 	}
 
-	// Use provided priority or default
-	priority := int(info.Priority)
-	if priority == 0 {
-		priority = 50 // Default priority
-	}
-	spec = spec.WithPriority(priority)
+	spec = spec.WithPriority(int(info.Priority))
 
 	// Apply network namespace if specified
 	if info.GetNetns() != "" {
