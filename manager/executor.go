@@ -286,7 +286,7 @@ func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.
 		if err != nil {
 			return fmt.Errorf("list dispatcher slots for config update: %w", err)
 		}
-		config := computeRuntimeConfig(slots, nil)
+		config := computeRuntimeConfig(slots, nil, state.Type.ChainCallShift())
 		configMapPin := e.bpffs.DispatcherConfigMapPath(state.Type, state.Nsid, state.Ifindex)
 		activeMapPin := e.bpffs.DispatcherActiveMapPath(state.Type, state.Nsid, state.Ifindex)
 		if err := e.kernel.UpdateDispatcherConfig(ctx, configMapPin, activeMapPin, config); err != nil {

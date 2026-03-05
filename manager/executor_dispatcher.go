@@ -358,7 +358,7 @@ func tryAttachExtension(
 			ProgramName: programName,
 			ProceedOn:   ops.proceedOn,
 		}
-		config := computeRuntimeConfig(slots, &newSlot)
+		config := computeRuntimeConfig(slots, &newSlot, ops.dispType.ChainCallShift())
 		configMapPin := bpffs.DispatcherConfigMapPath(ops.dispType, ds.Nsid, ds.Ifindex)
 		activeMapPin := bpffs.DispatcherActiveMapPath(ops.dispType, ds.Nsid, ds.Ifindex)
 		if err := ops.updateConfig(ctx, configMapPin, activeMapPin, config); err != nil {
@@ -387,7 +387,13 @@ func findFreeSlot(occupied []platform.DispatcherSlot) int {
 // computeRuntimeConfig builds a RuntimeConfig from the currently
 // occupied slots plus an optional new slot. Slots are sorted by
 // (priority, program_name) to determine run_order.
-func computeRuntimeConfig(existing []platform.DispatcherSlot, newSlot *platform.DispatcherSlot) dispatcher.RuntimeConfig {
+//
+// chainCallShift adjusts proceed-on bitmasks for the BPF dispatcher's
+// chain_call_actions convention. TC dispatchers check
+// (1 << (ret + 1)) in BPF to handle TC_ACT_UNSPEC = -1, so TC
+// bitmasks must be shifted left by 1. XDP dispatchers use
+// (1 << ret) directly, so the shift is 0.
+func computeRuntimeConfig(existing []platform.DispatcherSlot, newSlot *platform.DispatcherSlot, chainCallShift uint) dispatcher.RuntimeConfig {
 	// Combine existing slots with the new one (if any).
 	all := make([]platform.DispatcherSlot, len(existing))
 	copy(all, existing)
@@ -402,7 +408,7 @@ func computeRuntimeConfig(existing []platform.DispatcherSlot, newSlot *platform.
 	cfg.NumProgsEnabled = uint32(len(all))
 	for i, slot := range all {
 		cfg.RunOrder[i] = uint32(slot.Position)
-		cfg.ChainCallActions[slot.Position] = slot.ProceedOn
+		cfg.ChainCallActions[slot.Position] = slot.ProceedOn << chainCallShift
 	}
 	return cfg
 }

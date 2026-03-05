@@ -67,7 +67,7 @@ func TestComputeRuntimeConfig_NewSlotOnly(t *testing.T) {
 		ProgramName: "prog",
 		ProceedOn:   0x4, // bit 2
 	}
-	cfg := computeRuntimeConfig(nil, newSlot)
+	cfg := computeRuntimeConfig(nil, newSlot, 0)
 	assert.Equal(t, uint32(1), cfg.NumProgsEnabled)
 	assert.Equal(t, uint32(0), cfg.RunOrder[0])
 	assert.Equal(t, uint32(0x4), cfg.ChainCallActions[0])
@@ -84,7 +84,7 @@ func TestComputeRuntimeConfig_PriorityDeterminesRunOrder(t *testing.T) {
 		ProgramName: "mid",
 		ProceedOn:   0x4,
 	}
-	cfg := computeRuntimeConfig(existing, newSlot)
+	cfg := computeRuntimeConfig(existing, newSlot, 0)
 
 	assert.Equal(t, uint32(3), cfg.NumProgsEnabled)
 	// Sorted by priority: low(0) -> mid(500) -> high(1000)
@@ -104,7 +104,7 @@ func TestComputeRuntimeConfig_NilNewSlot(t *testing.T) {
 		{Position: 3, Priority: 10, ProgramName: "a", ProceedOn: 0x8},
 		{Position: 7, Priority: 20, ProgramName: "b", ProceedOn: 0x10},
 	}
-	cfg := computeRuntimeConfig(existing, nil)
+	cfg := computeRuntimeConfig(existing, nil, 0)
 
 	assert.Equal(t, uint32(2), cfg.NumProgsEnabled)
 	assert.Equal(t, uint32(3), cfg.RunOrder[0])
@@ -118,7 +118,7 @@ func TestComputeRuntimeConfig_SamePriorityBreaksByName(t *testing.T) {
 		{Position: 5, Priority: 100, ProgramName: "zebra", ProceedOn: 0x1},
 		{Position: 2, Priority: 100, ProgramName: "apple", ProceedOn: 0x2},
 	}
-	cfg := computeRuntimeConfig(existing, nil)
+	cfg := computeRuntimeConfig(existing, nil, 0)
 
 	assert.Equal(t, uint32(2), cfg.NumProgsEnabled)
 	// apple before zebra at same priority
@@ -140,7 +140,7 @@ func TestComputeRuntimeConfig_AllTenSlots(t *testing.T) {
 			ProceedOn:   1 << uint(i),
 		})
 	}
-	cfg := computeRuntimeConfig(existing, nil)
+	cfg := computeRuntimeConfig(existing, nil, 0)
 
 	assert.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled)
 
@@ -176,7 +176,7 @@ func TestComputeRuntimeConfig_AllTenSlotsSamePriority(t *testing.T) {
 			ProceedOn:   0x1,
 		})
 	}
-	cfg := computeRuntimeConfig(existing, nil)
+	cfg := computeRuntimeConfig(existing, nil, 0)
 
 	assert.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled)
 
@@ -198,9 +198,37 @@ func TestComputeRuntimeConfig_DoesNotMutateExisting(t *testing.T) {
 	origFirst := existing[0]
 	origSecond := existing[1]
 
-	computeRuntimeConfig(existing, nil)
+	computeRuntimeConfig(existing, nil, 0)
 
 	// existing slice should not be reordered
 	assert.Equal(t, origFirst, existing[0])
 	assert.Equal(t, origSecond, existing[1])
+}
+
+func TestComputeRuntimeConfig_TCChainCallShift(t *testing.T) {
+	// TC BPF dispatchers check (1 << (ret + 1)) instead of
+	// (1 << ret) to accommodate TC_ACT_UNSPEC = -1. When the
+	// chainCallShift is 1, proceed-on bitmasks should be shifted
+	// left by 1 in the resulting config.
+	existing := []platform.DispatcherSlot{
+		{Position: 0, Priority: 100, ProgramName: "a", ProceedOn: 0x9},  // bits 0,3 (TC_ACT_OK, TC_ACT_PIPE)
+		{Position: 1, Priority: 200, ProgramName: "b", ProceedOn: 0x40000009}, // bits 0,3,30
+	}
+	cfg := computeRuntimeConfig(existing, nil, 1)
+
+	assert.Equal(t, uint32(2), cfg.NumProgsEnabled)
+	// Bitmasks should be shifted left by 1.
+	assert.Equal(t, uint32(0x12), cfg.ChainCallActions[0], "0x9 << 1 = 0x12")
+	assert.Equal(t, uint32(0x80000012), cfg.ChainCallActions[1], "0x40000009 << 1 = 0x80000012")
+}
+
+func TestComputeRuntimeConfig_XDPNoShift(t *testing.T) {
+	// XDP dispatchers check (1 << ret) directly, so chainCallShift=0
+	// leaves proceed-on bitmasks unchanged.
+	existing := []platform.DispatcherSlot{
+		{Position: 0, Priority: 100, ProgramName: "a", ProceedOn: 0x4}, // XDP_PASS
+	}
+	cfg := computeRuntimeConfig(existing, nil, 0)
+
+	assert.Equal(t, uint32(0x4), cfg.ChainCallActions[0], "no shift applied")
 }
