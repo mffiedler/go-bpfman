@@ -368,6 +368,47 @@ func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context) error) e
 	return err
 }
 
+// runBatchMutation executes mutate for each ID under the global
+// writer lock, collects errors, and prints failures after releasing
+// the lock. Returns a summary error if any mutations failed.
+func runBatchMutation[ID ~uint32](
+	ctx context.Context,
+	cli *CLI,
+	ids []ID,
+	noun string,
+	verb string,
+	mutate func(context.Context, ID) error,
+) error {
+	type result struct {
+		id  ID
+		err error
+	}
+	results := make([]result, 0, len(ids))
+
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+		for _, id := range ids {
+			err := mutate(ctx, id)
+			results = append(results, result{id: id, err: err})
+		}
+		return nil
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	var failCount int
+	for _, r := range results {
+		if r.err != nil {
+			_ = cli.PrintErrf("%s %d: %v\n", noun, r.id, r.err)
+			failCount++
+		}
+	}
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d %s(s) failed to %s", failCount, len(results), noun, verb)
+	}
+	return nil
+}
+
 // RunWithLock executes fn under the global writer lock. Use this pattern
 // to perform mutations that don't return a value.
 func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context) error) error {

@@ -21,38 +21,12 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	// Collect results to print after releasing lock
-	type result struct {
-		id  kernel.LinkID
-		err error
+	ids := make([]kernel.LinkID, len(c.LinkIDs))
+	for i, lid := range c.LinkIDs {
+		ids[i] = lid.Value
 	}
-	results := make([]result, 0, len(c.LinkIDs))
-
-	// Mutation under lock - process all IDs
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
-		for _, lid := range c.LinkIDs {
-			id := lid.Value
-			err := mgr.Detach(ctx, id)
-			results = append(results, result{id: id, err: err})
-		}
-		return nil
-	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	// Print results outside lock
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
-			failCount++
-		}
-	}
-
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d link(s) failed to detach", failCount, len(results))
-	}
-
-	return nil
+	return runBatchMutation(ctx, cli, ids, "link", "detach",
+		func(ctx context.Context, id kernel.LinkID) error {
+			return mgr.Detach(ctx, id)
+		})
 }

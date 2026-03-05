@@ -21,37 +21,12 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	// Collect results to print after releasing lock
-	type result struct {
-		id  kernel.ProgramID
-		err error
+	ids := make([]kernel.ProgramID, len(c.ProgramIDs))
+	for i, pid := range c.ProgramIDs {
+		ids[i] = pid.Value
 	}
-	results := make([]result, 0, len(c.ProgramIDs))
-
-	// Mutation under lock - process all IDs
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
-		for _, pid := range c.ProgramIDs {
-			err := mgr.Unload(ctx, pid.Value)
-			results = append(results, result{id: pid.Value, err: err})
-		}
-		return nil
-	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	// Print results outside lock
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("program %d: %v\n", r.id, r.err)
-			failCount++
-		}
-	}
-
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d program(s) failed to unload", failCount, len(results))
-	}
-
-	return nil
+	return runBatchMutation(ctx, cli, ids, "program", "unload",
+		func(ctx context.Context, id kernel.ProgramID) error {
+			return mgr.Unload(ctx, id)
+		})
 }
