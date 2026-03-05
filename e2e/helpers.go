@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -124,7 +123,7 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	require.NoError(t, err, "failed to create image puller")
 
 	// Create manager
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), io.Discard, logger)
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	require.NoError(t, err, "failed to create manager")
 
 	cleanup := func() error {

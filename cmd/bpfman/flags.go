@@ -11,11 +11,6 @@ import (
 // printing an additional error message.
 var ErrSilent = errors.New("silent error")
 
-// DryRunFlag provides a --dry-run flag for commands that support it.
-type DryRunFlag struct {
-	DryRun bool `help:"Show what would be done without making changes."`
-}
-
 // MetadataFlags provides metadata-related flags.
 type MetadataFlags struct {
 	Metadata []KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata to attach (can be repeated)."`

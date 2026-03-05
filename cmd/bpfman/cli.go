@@ -30,7 +30,6 @@ type CLI struct {
 	Config        string        `name:"config" group:"global" help:"Config file path." default:"${default_config_path}"`
 	Log           string        `name:"log" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
 	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
-	Verbose       bool          `name:"verbose" group:"global" help:"Print each action before it executes."`
 
 	// Out is the writer for command output. Defaults to os.Stdout.
 	// Injected for testability.
@@ -56,16 +55,6 @@ type CLI struct {
 	Serve   ServeCmd   `cmd:"" group:"infra" help:"Start the gRPC daemon."`
 	GC      GCCmd      `cmd:"" group:"diag" help:"Garbage collect stale resources."`
 	Doctor  DoctorCmd  `cmd:"" group:"diag" help:"Check coherency of database, kernel, and filesystem state."`
-}
-
-// verboseWriter returns the writer for verbose action narration.
-// When --verbose is set, actions are narrated to stderr; otherwise
-// output is discarded.
-func (c *CLI) verboseWriter() io.Writer {
-	if c.Verbose {
-		return c.Err
-	}
-	return io.Discard
 }
 
 // Layout returns the filesystem layout for the configured runtime directory.

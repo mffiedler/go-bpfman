@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -54,7 +53,6 @@ type Manager struct {
 //   - store: database for program/link metadata
 //   - kernel: kernel operations adapter
 //   - programDiscoverer: discovers existing kernel programs
-//   - verbose: writer for verbose action narration (use io.Discard for silent operation)
 //   - logger: structured logger (nil uses slog.Default())
 //
 // Optional parameters:
@@ -71,14 +69,11 @@ func New(
 	store platform.Store,
 	kernel platform.KernelOperations,
 	programDiscoverer platform.ProgramDiscoverer,
-	verbose io.Writer,
 	logger *slog.Logger,
 ) (*Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-
-	exec := newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult)
 
 	return &Manager{
 		rt:                rt,
@@ -86,7 +81,7 @@ func New(
 		kernel:            kernel,
 		programDiscoverer: programDiscoverer,
 		imagePuller:       imagePuller,
-		executor:          &verboseExecutor{real: exec, w: verbose},
+		executor:          newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
 		mutatedSinceGC:    true,
 	}, nil

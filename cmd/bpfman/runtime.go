@@ -41,7 +41,7 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	}
 
 	// Create manager (no image puller for file-based CLI operations)
-	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, ebpf.NewProgramDiscoverer(), c.verboseWriter(), logger)
+	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("create manager: %w", err)
@@ -89,7 +89,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 	}
 
 	// Create manager with image puller
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), c.verboseWriter(), logger)
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, ebpf.NewProgramDiscoverer(), logger)
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("create manager: %w", err)

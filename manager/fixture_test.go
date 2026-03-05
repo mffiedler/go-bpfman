@@ -70,7 +70,7 @@ func newTestFixtureWithOptions(t *testing.T, discoverer *fakeDiscoverer, puller 
 	ensuredRuntime, err := runtime.New(layout, runtime.NoOpMounter{}, testLogger())
 	require.NoError(t, err, "failed to ensure runtime")
 
-	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, discoverer, io.Discard, testLogger())
+	mgr, err := manager.New(ensuredRuntime, puller, store, kernel, discoverer, testLogger())
 	require.NoError(t, err, "failed to create manager")
 	bcDir := t.TempDir()
 	return &testFixture{

@@ -1389,23 +1389,16 @@ stable order.
 
 ### 19. `verbose` is a required constructor parameter
 
-**File:** `manager/manager.go` (line 74)
+**RESOLVED.**
 
-The `New` constructor takes `verbose io.Writer` as a required
-parameter. Line 89 wraps the executor with
-`verboseExecutor{real: exec, w: verbose}`. Callers that do not want
-narration must pass `io.Discard`.
-
-**Ousterhout lens.** This is a configuration concern leaking into the
-constructor signature. Every caller must decide what to pass even if
-narration is unwanted. A functional option `WithVerbose(w io.Writer)`
-with `io.Discard` as the default would reduce the required parameter
-surface by one and make the constructor's essential dependencies
-(runtime, store, kernel, discoverer, logger) stand out more clearly.
-
-This is minor. The current code is correct and the parameter count is
-not excessive. But if the constructor ever grows another optional
-capability, the option pattern would become worth the investment.
+The `verbose io.Writer` parameter and `verboseExecutor` decorator
+have been removed from `manager.New`. The decorator wrapped every
+executor call to print `action.Describe(a)` before delegating, but
+four of six call sites passed `io.Discard`. The structured logging
+subsystem (`--log=debug`) already provides the same observability
+with timestamps, context, and filtering. The `--verbose` CLI flag
+and `verboseWriter()` method have been removed. `action.Describe`
+is retained independently for GC dry-run reporting.
 
 ## Where to invest effort
 
@@ -1529,11 +1522,11 @@ resolved; remaining items are renumbered.
     output, every time. Makes test assertions stable and logs
     reproducible. (trivial effort)
 
-23. **Make `verbose` an optional constructor parameter.** Replace the
-    required `verbose io.Writer` parameter in `manager.New` with a
-    `WithVerbose(w io.Writer)` functional option, defaulting to
-    `io.Discard`. Reduces the required parameter surface. (small
-    effort, low priority)
+23. ~~**Make `verbose` an optional constructor parameter.**~~ DONE.
+    Removed entirely rather than making optional. The `verbose
+    io.Writer` parameter, `verboseExecutor` decorator, and `--verbose`
+    CLI flag have been deleted. Structured logging provides the same
+    observability. `action.Describe` is retained for GC dry-run.
 
 The overall architecture is strong. The SANS-IO discipline, sealed
 type hierarchies, and effects-as-values approach are well-executed.
@@ -1541,10 +1534,9 @@ The main complexity comes from dispatcher management, which is
 inherently complex (two subsystems with different kernel APIs sharing
 the same lifecycle pattern).
 
-The action vocabulary is honest and nearly complete. The plan system
-is a well-realised single-scope saga orchestrator. The dependency
-flow is strictly downward with no violations. The store and CLI
-layers are clean after recent refactoring. The remaining debt is
-small: one action vocabulary overload, one plan discipline
-inconsistency, and a few API clarity items. None of these are
-urgent; all are straightforward to address.
+The action vocabulary is honest and complete. The plan system is a
+well-realised single-scope saga orchestrator. The dependency flow is
+strictly downward with no violations. The store and CLI layers are
+clean after recent refactoring. The remaining debt is small: one plan
+discipline inconsistency and a few API clarity items. None of these
+are urgent; all are straightforward to address.
