@@ -16,6 +16,8 @@ import (
 
 // executeJSONPath parses and executes a JSONPath expression against the given data.
 // The data is marshalled to JSON and back to ensure consistent field access.
+// UseNumber is enabled so that large integers (e.g. synthetic link IDs)
+// render as decimal rather than scientific notation.
 func executeJSONPath(data any, expr string) (string, error) {
 	jp := jsonpath.New("output")
 	if err := jp.Parse(expr); err != nil {
@@ -28,7 +30,9 @@ func executeJSONPath(data any, expr string) (string, error) {
 	}
 
 	var generic any
-	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
+	dec.UseNumber()
+	if err := dec.Decode(&generic); err != nil {
 		return "", fmt.Errorf("failed to unmarshal: %w", err)
 	}
 

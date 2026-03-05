@@ -237,14 +237,18 @@ func extractJSONPath(prog bpfman.Program, expr string) string {
 		return "<error>"
 	}
 
-	// Marshal program to JSON then back to generic interface
+	// Marshal program to JSON then decode with UseNumber to
+	// preserve integer formatting (otherwise large IDs render in
+	// scientific notation).
 	jsonBytes, err := json.Marshal(prog)
 	if err != nil {
 		return "<error>"
 	}
 
 	var generic any
-	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
+	dec.UseNumber()
+	if err := dec.Decode(&generic); err != nil {
 		return "<error>"
 	}
 
@@ -420,14 +424,18 @@ func extractLinkJSONPath(link bpfman.LinkRecord, expr string) string {
 		return "<error>"
 	}
 
-	// Marshal link to JSON then back to generic interface
+	// Marshal link to JSON then decode with UseNumber to preserve
+	// integer formatting (otherwise large IDs like synthetic link
+	// IDs render in scientific notation).
 	jsonBytes, err := json.Marshal(link)
 	if err != nil {
 		return "<error>"
 	}
 
 	var generic any
-	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(jsonBytes))
+	dec.UseNumber()
+	if err := dec.Decode(&generic); err != nil {
 		return "<error>"
 	}
 
