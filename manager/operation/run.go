@@ -83,17 +83,14 @@ func interpret(
 	return undos, opErr
 }
 
-// appendUndos evaluates late-bind undo closures or appends static
-// undo actions. Called only on successful execution of a node.
-// Each node's undo actions form a single group (slice).
+// appendUndos evaluates late-bind undo closures. Called only on
+// successful execution of a node. Each node's undo actions form a
+// single group (slice).
 func appendUndos(undos [][]action.Action, n *node, bindings *Bindings) [][]action.Action {
 	if n.undoFn != nil {
 		if actions := n.undoFn(bindings); len(actions) > 0 {
 			return append(undos, actions)
 		}
-	}
-	if len(n.staticUndo) > 0 {
-		return append(undos, n.staticUndo)
 	}
 	return undos
 }

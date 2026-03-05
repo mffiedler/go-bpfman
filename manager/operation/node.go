@@ -33,8 +33,7 @@ type node struct {
 	bindKey string
 
 	// Options (only meaningful for produce/do).
-	undoFn     func(*Bindings) []action.Action
-	staticUndo []action.Action
+	undoFn func(*Bindings) []action.Action
 }
 
 // Node is the public type alias for plan nodes. Callers receive
@@ -64,7 +63,7 @@ func Produce[T any](key Key[T], target string,
 }
 
 // Do creates a side-effecting node. Do nodes support undo via
-// WithUndo or UndoFrom options.
+// UndoFrom.
 func Do(label string, target string,
 	fn func(context.Context, action.ExecutorWithResult, *Bindings) error,
 	opts ...NodeOpt,
@@ -131,14 +130,6 @@ func (f nodeOptFunc) applyNodeOpt(n *node) { f(n) }
 func UndoFrom(fn func(*Bindings) []action.Action) NodeOpt {
 	return nodeOptFunc(func(n *node) {
 		n.undoFn = fn
-	})
-}
-
-// WithUndo declares static undo actions known at plan construction
-// time.
-func WithUndo(actions ...action.Action) NodeOpt {
-	return nodeOptFunc(func(n *node) {
-		n.staticUndo = actions
 	})
 }
 

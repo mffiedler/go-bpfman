@@ -67,6 +67,12 @@ var _ action.ExecutorWithResult = (*fakeExecutor)(nil)
 
 var errTest = errors.New("test error")
 
+// staticUndo is a test helper that wraps fixed actions in an UndoFrom
+// closure, replacing the deleted WithUndo combinator.
+func staticUndo(actions ...action.Action) NodeOpt {
+	return UndoFrom(func(_ *Bindings) []action.Action { return actions })
+}
+
 // ---------- Forward execution ----------
 
 func TestDoSuccess(t *testing.T) {
@@ -318,7 +324,7 @@ func TestDoWithUndoOnSuccess(t *testing.T) {
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
@@ -339,7 +345,7 @@ func TestDoWithUndoOnFailure(t *testing.T) {
 	plan := Build(
 		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 	)
 
 	_, err := Run(context.Background(), slog.Default(), exec, plan)
@@ -448,7 +454,7 @@ func TestRollbackSuccess(t *testing.T) {
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
@@ -469,7 +475,7 @@ func TestRollbackFailure(t *testing.T) {
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 		Do("fail", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
@@ -490,10 +496,10 @@ func TestRollbackReversedOrder(t *testing.T) {
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 		Do("second", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-b"))),
+		}, staticUndo(testAction("undo-b"))),
 		Do("fail", "t3", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),
@@ -518,10 +524,10 @@ func TestRollbackAllAttempted(t *testing.T) {
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-a"))),
+		}, staticUndo(testAction("undo-a"))),
 		Do("second", "t2", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return nil
-		}, WithUndo(testAction("undo-b"))),
+		}, staticUndo(testAction("undo-b"))),
 		Do("fail", "t3", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
 			return errTest
 		}),

@@ -80,10 +80,10 @@
 // Rollback operates at two scopes that compose cleanly.
 //
 // The plan interpreter (operation/run.go) handles rollback across
-// actions.  Each plan node may declare undo actions via UndoFrom or
-// WithUndo.  When a node fails, the interpreter walks previously
+// actions.  Each plan node may declare undo actions via UndoFrom.
+// When a node fails, the interpreter walks previously
 // completed nodes in reverse order and executes their undo actions.
-// This is the coarse-grained scope: it ensures that a multi-step
+// This is the inter-step scope: it ensures that a multi-step
 // operation either completes fully or leaves no partial artefacts
 // from earlier steps.
 //
