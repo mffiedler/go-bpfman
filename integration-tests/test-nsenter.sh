@@ -123,7 +123,7 @@ main() {
         exit 1
     }
 
-    LINK_ID=$(echo "$ATTACH_OUTPUT" | grep -oP 'id=\K[0-9]+' | head -1)
+    LINK_ID=$(echo "$ATTACH_OUTPUT" | grep -oP 'Link ID:\s*\K[0-9]+' | head -1)
     if [[ -z "$LINK_ID" ]]; then
         log_warn "Could not parse link ID from output (may be using fd-based link)"
         echo "$ATTACH_OUTPUT"
