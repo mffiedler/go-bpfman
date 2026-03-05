@@ -123,9 +123,10 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 	var loaded []bpfman.Program
 	cleanupLoaded := func() {
 		for j := len(loaded) - 1; j >= 0; j-- {
-			if uerr := m.Unload(ctx, loaded[j].Record.ProgramID); uerr != nil {
+			r := loaded[j].Record
+			if uerr := m.unload(ctx, r.ProgramID, r.Meta.Name, nil, true); uerr != nil {
 				m.logger.Error("failed to unload during batch rollback",
-					"program_id", loaded[j].Record.ProgramID, "error", uerr)
+					"program_id", r.ProgramID, "error", uerr)
 			}
 		}
 	}
