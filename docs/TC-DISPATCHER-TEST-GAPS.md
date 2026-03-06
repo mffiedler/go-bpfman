@@ -4,16 +4,14 @@ Gaps in e2e coverage for the TC dispatcher, ranked by likelihood of
 catching a real bug. Each entry identifies the untested code path and
 why it matters.
 
-## 1. Egress direction
+## 1. Egress direction -- partially covered
 
-All TC dispatcher tests use `TCDirectionIngress`. Egress uses a
-different netlink parent handle (`HANDLE_MIN_EGRESS`), a different
-dispatcher type (`DispatcherTypeTCEgress`), and different bpffs paths.
-A wiring bug in any of those would be invisible today.
-
-**Test:** Load a program, attach to egress, send outbound traffic
-through a veth pair, verify the program's stats map shows non-zero
-packet counts.
+`TestTC_IngressEgressIndependence` attaches programs to egress and
+verifies the egress dispatcher is created, its config is correct, and
+it tears down independently of ingress. A dedicated test that sends
+outbound traffic through a veth pair and verifies the egress
+program's stats map shows non-zero packet counts would still add
+value.
 
 ## 2. Slot reuse after detach -- DONE
 
@@ -27,15 +25,12 @@ Covered by `TestTC_DispatcherLifecycleAfterLastDetach`, which verifies
 the full teardown path (store deletion, TC filter removal, pin
 cleanup) and confirms a subsequent attach creates a fresh dispatcher.
 
-## 4. Ingress and egress on the same interface
+## 4. Ingress and egress on the same interface -- DONE
 
-Two dispatchers coexist keyed by `(nsid, ifindex, direction)`. No
-test confirms they are independent -- that detaching all egress links
-does not disturb the ingress dispatcher.
-
-**Test:** Attach to both ingress and egress on the same interface.
-Detach all egress links. Verify the ingress dispatcher config is
-unchanged.
+Covered by `TestTC_IngressEgressIndependence`, which attaches
+programs to both ingress and egress on the same interface, detaches
+all egress links, and verifies the ingress dispatcher config
+(program count, run_order, chain_call_actions) is unchanged.
 
 ## 5. Multiple interfaces with the same program
 

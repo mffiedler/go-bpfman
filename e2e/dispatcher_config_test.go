@@ -368,6 +368,119 @@ func TestTC_DispatcherLifecycleAfterLastDetach(t *testing.T) {
 	assert.NotEmpty(t, filters, "TC filter should be present after second attach")
 }
 
+// TestTC_IngressEgressIndependence verifies that ingress and egress
+// dispatchers on the same interface are fully independent. Attaching
+// programs to both directions, then detaching all egress links, must
+// leave the ingress dispatcher config unchanged. This exercises the
+// (nsid, ifindex, direction) keying in the dispatcher store.
+func TestTC_IngressEgressIndependence(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+	ifindex := uint32(iface.Ifindex)
+
+	bpffs := env.Layout.BPFFS()
+
+	// Attach 3 programs to ingress.
+	var ingressLinks []bpfman.LinkRecord
+	for i := range 3 {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "ingress attach %d", i)
+		ingressLinks = append(ingressLinks, link)
+	}
+	t.Cleanup(func() {
+		for _, l := range ingressLinks {
+			env.Detach(context.Background(), l.ID)
+		}
+	})
+
+	// Record ingress config before any egress activity.
+	ingressConfigPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	ingressActivePin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	ingressCfgBefore := readDispatcherConfig(t, ingressConfigPin, ingressActivePin)
+	require.Equal(t, uint32(3), ingressCfgBefore.NumProgsEnabled,
+		"ingress should have 3 programs")
+
+	// Attach 2 programs to egress.
+	var egressLinks []bpfman.LinkRecord
+	for i := range 2 {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+			bpfman.TCDirectionEgress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "egress attach %d", i)
+		egressLinks = append(egressLinks, link)
+	}
+
+	// Verify both dispatchers exist.
+	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	require.NoError(t, err, "ingress dispatcher should exist")
+	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	require.NoError(t, err, "egress dispatcher should exist")
+
+	egressConfigPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	egressActivePin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	egressCfg := readDispatcherConfig(t, egressConfigPin, egressActivePin)
+	require.Equal(t, uint32(2), egressCfg.NumProgsEnabled,
+		"egress should have 2 programs")
+
+	// Detach all egress links.
+	for i, l := range egressLinks {
+		err := env.Detach(ctx, l.ID)
+		require.NoError(t, err, "egress detach %d", i)
+	}
+
+	// Egress dispatcher should be gone.
+	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	require.ErrorIs(t, err, platform.ErrRecordNotFound,
+		"egress dispatcher should be absent after detaching all egress links")
+
+	// Ingress dispatcher should be unaffected.
+	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	require.NoError(t, err, "ingress dispatcher should still exist")
+
+	ingressCfgAfter := readDispatcherConfig(t, ingressConfigPin, ingressActivePin)
+	assert.Equal(t, ingressCfgBefore.NumProgsEnabled, ingressCfgAfter.NumProgsEnabled,
+		"ingress program count should be unchanged")
+	assert.Equal(t, ingressCfgBefore.RunOrder, ingressCfgAfter.RunOrder,
+		"ingress run_order should be unchanged")
+	assert.Equal(t, ingressCfgBefore.ChainCallActions, ingressCfgAfter.ChainCallActions,
+		"ingress chain_call_actions should be unchanged")
+}
+
 // TestTC_DispatcherSineWave exercises repeated fill-drain-refill
 // cycles where the drain boundary shifts each oscillation, verifying
 // that slot reuse, runtime config recomputation, and traffic delivery
