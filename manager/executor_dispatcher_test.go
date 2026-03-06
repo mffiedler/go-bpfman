@@ -211,7 +211,7 @@ func TestComputeRuntimeConfig_TCChainCallShift(t *testing.T) {
 	// chainCallShift is 1, proceed-on bitmasks should be shifted
 	// left by 1 in the resulting config.
 	existing := []platform.DispatcherSlot{
-		{Position: 0, Priority: 100, ProgramName: "a", ProceedOn: 0x9},  // bits 0,3 (TC_ACT_OK, TC_ACT_PIPE)
+		{Position: 0, Priority: 100, ProgramName: "a", ProceedOn: 0x9},        // bits 0,3 (TC_ACT_OK, TC_ACT_PIPE)
 		{Position: 1, Priority: 200, ProgramName: "b", ProceedOn: 0x40000009}, // bits 0,3,30
 	}
 	cfg := computeRuntimeConfig(existing, nil, 1)
