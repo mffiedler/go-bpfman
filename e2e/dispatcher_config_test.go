@@ -113,6 +113,63 @@ func TestTC_DispatcherPriorityOrdering(t *testing.T) {
 	}
 }
 
+// TestTC_AttachExceedsMaxPrograms verifies that attempting to attach
+// more than dispatcher.MaxPrograms extensions to a single TC
+// dispatcher fails with a "no free dispatcher slots" error.
+func TestTC_AttachExceedsMaxPrograms(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	// Fill all dispatcher slots.
+	var links []bpfman.LinkRecord
+	for i := range dispatcher.MaxPrograms {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "attach %d should succeed", i)
+		links = append(links, link)
+	}
+
+	t.Cleanup(func() {
+		for _, link := range links {
+			env.Detach(context.Background(), link.ID)
+		}
+	})
+
+	// The next attach must fail because all slots are occupied.
+	tcSpec, err := bpfman.NewTCAttachSpec(
+		prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcSpec = tcSpec.WithPriority(dispatcher.MaxPrograms * 100)
+	_, err = env.Attach(ctx, tcSpec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no free dispatcher slots")
+}
+
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
 // XDP extension slots then detaching them one at a time correctly
 // updates the BPF runtime config at each step.
