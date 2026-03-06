@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -168,6 +169,362 @@ func TestTC_AttachExceedsMaxPrograms(t *testing.T) {
 	_, err = env.Attach(ctx, tcSpec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no free dispatcher slots")
+}
+
+// TestTC_SlotReusedAfterDetach verifies that detaching a program from
+// the middle of a full dispatcher frees its slot, and that a
+// subsequent attach reclaims that slot with the runtime config
+// reflecting the new program's priority in the correct position.
+func TestTC_SlotReusedAfterDetach(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	// Fill all 10 slots with ascending priorities: slot i gets
+	// priority i*100.
+	links := make([]bpfman.LinkRecord, dispatcher.MaxPrograms)
+	for i := range dispatcher.MaxPrograms {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		links[i], err = env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "attach %d should succeed", i)
+	}
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	configMapPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+	activeMapPin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+
+	// Sanity check: all 10 slots filled, trivial run_order.
+	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
+	require.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled)
+
+	// Detach the program in slot 3 (priority 300).
+	const detachSlot = 3
+	err = env.Detach(ctx, links[detachSlot].ID)
+	require.NoError(t, err)
+
+	cfg = readDispatcherConfig(t, configMapPin, activeMapPin)
+	assert.Equal(t, uint32(dispatcher.MaxPrograms-1), cfg.NumProgsEnabled,
+		"should have 9 programs after detach")
+
+	// Attach a new program at priority 550. findFreeSlot should
+	// assign it to the vacated slot 3.
+	tcSpec, err := bpfman.NewTCAttachSpec(
+		prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcSpec = tcSpec.WithPriority(550)
+	newLink, err := env.Attach(ctx, tcSpec)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		for i, link := range links {
+			if i == detachSlot {
+				continue // already detached
+			}
+			env.Detach(context.Background(), link.ID)
+		}
+		env.Detach(context.Background(), newLink.ID)
+	})
+
+	// Verify 10 programs again, with the new program's priority
+	// (550) slotting between priorities 500 (slot 5) and 600
+	// (slot 6).
+	//
+	// Slot -> priority: 0:0, 1:100, 2:200, 3:550, 4:400, 5:500,
+	//                   6:600, 7:700, 8:800, 9:900
+	// Sorted by priority: 0,100,200,400,500,550,600,700,800,900
+	// Expected run_order: [0,1,2,4,5,3,6,7,8,9]
+	cfg = readDispatcherConfig(t, configMapPin, activeMapPin)
+	assert.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled,
+		"should have 10 programs after reattach")
+
+	expectedOrder := [dispatcher.MaxPrograms]uint32{0, 1, 2, 4, 5, 3, 6, 7, 8, 9}
+	assert.Equal(t, expectedOrder, cfg.RunOrder,
+		"run_order should reflect the new program at slot 3 with priority 550")
+}
+
+// TestTC_DispatcherSineWave exercises repeated fill-drain-refill
+// cycles where the drain boundary shifts each oscillation, verifying
+// that slot reuse, runtime config recomputation, and traffic delivery
+// remain correct throughout.
+//
+// The test performs three oscillations. Each trough drains one more
+// slot than the previous (6, 7, 8) and the drain region alternates
+// between the low and high ends of the slot space:
+//
+//	Peak 0:   fill all 10 slots                     [0-9 occupied]
+//	Trough 1: drain first 6    (slots 0-5 freed)    [6-9 survive]
+//	Peak 1:   refill 6         (slots 0-5 reused)   [0-9 occupied]
+//	Trough 2: drain last 7     (slots 3-9 freed)    [0-2 survive]
+//	Peak 2:   refill 7         (slots 3-9 reused)   [0-9 occupied]
+//	Trough 3: drain first 8    (slots 0-7 freed)    [8-9 survive]
+//	Peak 3:   refill 8         (slots 0-7 reused)   [0-9 occupied]
+//
+// The shifting drain boundary ensures that every physical slot
+// position is both vacated and reused at least once. Each refill
+// wave uses unique priorities that interleave with the surviving
+// programs, producing non-trivial run_order permutations that differ
+// at every peak.
+//
+// At each peak the test asserts:
+//   - NumProgsEnabled equals dispatcher.MaxPrograms (10).
+//   - RunOrder matches the priority-sorted slot positions.
+//   - Every program (including newly attached ones) receives new
+//     traffic: packet counts are recorded before a ping burst and
+//     verified to have increased afterward.
+//
+// At each trough the test asserts:
+//   - NumProgsEnabled equals the surviving program count.
+//   - The first N entries of RunOrder match the expected ordering.
+//
+// Programs are loaded as separate instances (one LoadImage per
+// program) so that each has an independent tc_stats_map for traffic
+// verification. Proceed-on is set to TC_ACT_OK|TC_ACT_PIPE|
+// DispatcherReturn on every attachment so the full chain executes.
+func TestTC_DispatcherSineWave(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
+
+	type prog struct {
+		kernelID   kernel.ProgramID
+		mapPinPath string
+	}
+
+	loadProg := func() prog {
+		programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		p := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
+		return prog{p.Status.Kernel.ID, p.Record.Handles.MapPinPath}
+	}
+
+	attachProg := func(p prog, priority int) bpfman.LinkRecord {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			p.kernelID, veth.A.Name, veth.A.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(priority).WithProceedOn(proceedOn)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "attach at priority %d", priority)
+		return link
+	}
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	configMapPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+	activeMapPin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+
+	// -- Slot tracking --------------------------------------------------
+
+	type slotEntry struct {
+		prog     prog
+		link     bpfman.LinkRecord
+		priority int
+	}
+
+	var slots [dispatcher.MaxPrograms]*slotEntry
+
+	t.Cleanup(func() {
+		for _, s := range slots {
+			if s != nil {
+				env.Detach(context.Background(), s.link.ID)
+			}
+		}
+	})
+
+	// fill loads and attaches len(priorities) new programs into
+	// the first available free slots.
+	fill := func(priorities []int) {
+		t.Helper()
+		j := 0
+		for i := range dispatcher.MaxPrograms {
+			if slots[i] != nil || j >= len(priorities) {
+				continue
+			}
+			p := loadProg()
+			link := attachProg(p, priorities[j])
+			slots[i] = &slotEntry{p, link, priorities[j]}
+			j++
+		}
+		require.Equal(t, len(priorities), j, "fill: not enough free slots")
+	}
+
+	// drain detaches programs in slots [lo, hi).
+	drain := func(lo, hi int) {
+		t.Helper()
+		for i := lo; i < hi; i++ {
+			require.NotNilf(t, slots[i], "drain: slot %d already empty", i)
+			err := env.Detach(ctx, slots[i].link.ID)
+			require.NoError(t, err, "drain: detach slot %d", i)
+			slots[i] = nil
+		}
+	}
+
+	// occupiedCount returns the number of non-nil slots.
+	occupiedCount := func() uint32 {
+		var n uint32
+		for _, s := range slots {
+			if s != nil {
+				n++
+			}
+		}
+		return n
+	}
+
+	// expectedRunOrder computes the expected RunOrder by sorting
+	// occupied slots by priority ascending.
+	expectedRunOrder := func() [dispatcher.MaxPrograms]uint32 {
+		type entry struct {
+			slot     int
+			priority int
+		}
+		var occupied []entry
+		for i, s := range slots {
+			if s != nil {
+				occupied = append(occupied, entry{i, s.priority})
+			}
+		}
+		sort.Slice(occupied, func(i, j int) bool {
+			return occupied[i].priority < occupied[j].priority
+		})
+		var order [dispatcher.MaxPrograms]uint32
+		for i, e := range occupied {
+			order[i] = uint32(e.slot)
+		}
+		return order
+	}
+
+	// verifyConfig reads the dispatcher config and asserts it
+	// matches the expected state derived from the slot array.
+	verifyConfig := func(phase string) {
+		t.Helper()
+		cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
+		count := occupiedCount()
+		assert.Equal(t, count, cfg.NumProgsEnabled,
+			"%s: NumProgsEnabled", phase)
+		expected := expectedRunOrder()
+		if count == uint32(dispatcher.MaxPrograms) {
+			assert.Equal(t, expected, cfg.RunOrder,
+				"%s: RunOrder", phase)
+		} else {
+			assert.Equal(t, expected[:count], cfg.RunOrder[:count],
+				"%s: RunOrder[:%d]", phase, count)
+		}
+	}
+
+	// verifyTraffic sends traffic and asserts every active
+	// program's packet count increased.
+	verifyTraffic := func(phase string) {
+		t.Helper()
+		var active []prog
+		for _, s := range slots {
+			if s != nil {
+				active = append(active, s.prog)
+			}
+		}
+		before := make([]uint64, len(active))
+		for i, p := range active {
+			before[i] = readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
+		}
+		veth.Ping(t, 20)
+		for i, p := range active {
+			after := readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
+			assert.Greater(t, after, before[i],
+				"%s: program %d (kernel_id=%d) should have received new traffic",
+				phase, i, p.kernelID)
+		}
+	}
+
+	// ── Peak 0: fill all 10 slots ──────────────────────────────
+	initialPriorities := make([]int, dispatcher.MaxPrograms)
+	for i := range initialPriorities {
+		initialPriorities[i] = i * 100 // 0, 100, 200, ..., 900
+	}
+	fill(initialPriorities)
+	verifyConfig("peak 0")
+	verifyTraffic("peak 0")
+
+	// ── Trough 1: drain first 6 ────────────────────────────────
+	// Slots 0-5 freed; slots 6-9 survive (priorities 600-900).
+	drain(0, 6)
+	verifyConfig("trough 1")
+
+	// ── Peak 1: refill 6 ──────────────────────────────────────
+	// Priorities interleave with surviving 600, 700, 800, 900.
+	fill([]int{950, 850, 750, 650, 550, 450})
+	verifyConfig("peak 1")
+	verifyTraffic("peak 1")
+
+	// ── Trough 2: drain last 7 ────────────────────────────────
+	// Slots 3-9 freed; slots 0-2 survive (priorities 950, 850,
+	// 750 from wave 1).
+	drain(3, 10)
+	verifyConfig("trough 2")
+
+	// ── Peak 2: refill 7 ──────────────────────────────────────
+	// Priorities interleave with surviving 950, 850, 750.
+	fill([]int{25, 125, 225, 325, 425, 525, 625})
+	verifyConfig("peak 2")
+	verifyTraffic("peak 2")
+
+	// ── Trough 3: drain first 8 ───────────────────────────────
+	// Slots 0-7 freed; slots 8-9 survive (priorities 525, 625
+	// from wave 2).
+	drain(0, 8)
+	verifyConfig("trough 3")
+
+	// ── Peak 3: refill 8 ──────────────────────────────────────
+	// Priorities interleave with surviving 525, 625.
+	fill([]int{62, 162, 262, 362, 462, 562, 662, 762})
+	verifyConfig("peak 3")
+	verifyTraffic("peak 3")
 }
 
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
