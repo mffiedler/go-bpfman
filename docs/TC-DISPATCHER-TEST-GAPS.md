@@ -52,10 +52,10 @@ Covered by `TestTC_DispatcherSineWave`, which drains from both low
 and high ends of the slot range across three oscillations, verifying
 run_order and chain_call_actions after each drain.
 
-## 8. Config map double-buffer flip -- partially covered
+## 8. Config map double-buffer flip -- DONE
 
-`TestTC_DispatcherSineWave` reads and verifies the runtime config
-(including the active buffer contents) after every fill and drain
-cycle, exercising the double-buffer across many transitions. A
-dedicated test that explicitly asserts the active index toggles on
-each operation would still add value.
+Covered by `TestTC_DoubleBufferFlip`, which performs three attaches
+and two detaches, asserting that the active buffer index toggles
+(0->1->0->1->0->1) with each config mutation. Also exercised
+implicitly by `TestTC_DispatcherSineWave`, which reads and verifies
+the active buffer contents after every fill and drain cycle.

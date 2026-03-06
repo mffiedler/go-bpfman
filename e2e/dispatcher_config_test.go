@@ -22,17 +22,25 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// readDispatcherConfig loads the pinned config and active maps, reads
-// the active buffer index, and returns the current RuntimeConfig.
-func readDispatcherConfig(t *testing.T, configMapPin, activeMapPin string) dispatcher.RuntimeConfig {
+// readActiveIndex loads the pinned active map and returns the current
+// active buffer index (0 or 1).
+func readActiveIndex(t *testing.T, activeMapPin string) uint32 {
 	t.Helper()
-
 	activeMap, err := ebpf.LoadPinnedMap(activeMapPin, nil)
 	require.NoError(t, err, "load pinned active map")
 	defer activeMap.Close()
 
 	var active uint32
 	require.NoError(t, activeMap.Lookup(uint32(0), &active), "read active index")
+	return active
+}
+
+// readDispatcherConfig loads the pinned config and active maps, reads
+// the active buffer index, and returns the current RuntimeConfig.
+func readDispatcherConfig(t *testing.T, configMapPin, activeMapPin string) dispatcher.RuntimeConfig {
+	t.Helper()
+
+	active := readActiveIndex(t, activeMapPin)
 
 	configMap, err := ebpf.LoadPinnedMap(configMapPin, nil)
 	require.NoError(t, err, "load pinned config map")
@@ -668,6 +676,83 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 		"run_order[0] should be slot 1 (alpha)")
 	assert.Equal(t, uint32(0), cfg.RunOrder[1],
 		"run_order[1] should be slot 0 (beta)")
+}
+
+// TestTC_DoubleBufferFlip verifies that each dispatcher config
+// mutation (attach or detach) writes to the inactive buffer and then
+// flips the active index. The initial state after dispatcher creation
+// is active=0. Each UpdateDispatcherConfig call toggles the index:
+// attach 1 -> active=1, attach 2 -> active=0, detach -> active=1.
+func TestTC_DoubleBufferFlip(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	activeMapPin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+
+	attach := func(priority int) bpfman.LinkRecord {
+		t.Helper()
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(priority)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err)
+		return link
+	}
+
+	// Attach 1: dispatcher created (active=0), then config
+	// updated (writes buffer 1, flips active to 1).
+	link1 := attach(100)
+	t.Cleanup(func() { env.Detach(context.Background(), link1.ID) })
+	assert.Equal(t, uint32(1), readActiveIndex(t, activeMapPin),
+		"after attach 1: active should be 1")
+
+	// Attach 2: writes buffer 0, flips active to 0.
+	link2 := attach(200)
+	t.Cleanup(func() { env.Detach(context.Background(), link2.ID) })
+	assert.Equal(t, uint32(0), readActiveIndex(t, activeMapPin),
+		"after attach 2: active should be 0")
+
+	// Attach 3: writes buffer 1, flips active to 1.
+	link3 := attach(300)
+	assert.Equal(t, uint32(1), readActiveIndex(t, activeMapPin),
+		"after attach 3: active should be 1")
+
+	// Detach 3: recomputes config with 2 remaining programs,
+	// writes buffer 0, flips active to 0.
+	require.NoError(t, env.Detach(ctx, link3.ID))
+	assert.Equal(t, uint32(0), readActiveIndex(t, activeMapPin),
+		"after detach 3: active should be 0")
+
+	// Detach 2: writes buffer 1, flips active to 1.
+	require.NoError(t, env.Detach(ctx, link2.ID))
+	assert.Equal(t, uint32(1), readActiveIndex(t, activeMapPin),
+		"after detach 2: active should be 1")
 }
 
 // TestTC_DispatcherSineWave exercises repeated fill-drain-refill
