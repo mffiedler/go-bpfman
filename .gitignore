@@ -4,3 +4,4 @@ bpfman/internal/server/pb/
 archive/bpfman-kernel/bpfman-kernel
 .direnv/
 .dispatcher-docker-stamp
+e2e/testdata/*.bpf.o

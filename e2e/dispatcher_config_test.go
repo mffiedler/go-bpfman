@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"context"
-	_ "embed"
 	"os"
 	"path/filepath"
 	"sort"
@@ -64,11 +63,7 @@ func TestTC_DispatcherPriorityOrdering(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -136,11 +131,7 @@ func TestTC_AttachExceedsMaxPrograms(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -194,11 +185,7 @@ func TestTC_SlotReusedAfterDetach(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -295,11 +282,7 @@ func TestTC_DispatcherLifecycleAfterLastDetach(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -391,11 +374,7 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -504,11 +483,7 @@ func TestTC_MultipleInterfacesIndependent(t *testing.T) {
 	ifaceB := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -592,13 +567,6 @@ func TestTC_MultipleInterfacesIndependent(t *testing.T) {
 		"ifaceA chain_call_actions should be unchanged")
 }
 
-// tcPassBytecode is a minimal TC BPF object containing two programs
-// ("alpha" and "beta") that simply return TC_ACT_OK. Used by tests
-// that need distinctly-named programs, e.g. priority tie-breaking.
-//
-//go:embed testdata/tc_pass.bpf.o
-var tcPassBytecode []byte
-
 // TestTC_DispatcherPriorityTieBreakByName verifies that when two
 // programs share the same priority, the dispatcher orders them
 // alphabetically by program name. "beta" is attached first (slot 0),
@@ -613,13 +581,9 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	// Write embedded bytecode to a temp file for LoadFile.
-	objFile := filepath.Join(t.TempDir(), "tc_pass.bpf.o")
-	require.NoError(t, os.WriteFile(objFile, tcPassBytecode, 0644))
-
 	// Load "beta" and "alpha" as separate programs so they have
 	// distinct Meta.Name values in the dispatcher slot records.
-	progsBeta, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+	progsBeta, err := env.LoadFile(ctx, "testdata/tc_pass.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "beta"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -627,7 +591,7 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	beta := progsBeta[0]
 	t.Cleanup(func() { env.Unload(context.Background(), beta.Status.Kernel.ID) })
 
-	progsAlpha, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+	progsAlpha, err := env.LoadFile(ctx, "testdata/tc_pass.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "alpha"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -692,11 +656,7 @@ func TestTC_DoubleBufferFlip(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -802,10 +762,7 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
+	objFile := "testdata/tc_counter.bpf.o"
 	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
 
 	type prog struct {
@@ -814,7 +771,7 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 	}
 
 	loadProg := func() prog {
-		programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
 			{Type: bpfman.ProgramTypeTC, Name: "stats"},
 		}, manager.LoadOpts{})
 		require.NoError(t, err)
@@ -1089,11 +1046,7 @@ func TestTC_DispatcherConfigRecomputedOnDetach(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1197,10 +1150,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
+	objFile := "testdata/tc_counter.bpf.o"
 
 	// Load 5 separate instances so each gets independent maps.
 	type loadedProg struct {
@@ -1210,7 +1160,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 
 	var progs []loadedProg
 	for i := 0; i < 5; i++ {
-		programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
 			{Type: bpfman.ProgramTypeTC, Name: "stats"},
 		}, manager.LoadOpts{})
 		require.NoError(t, err, "load %d", i)
@@ -1328,10 +1278,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
 
-			imageRef := platform.ImageRef{
-				URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-				PullPolicy: bpfman.PullIfNotPresent,
-			}
+			objFile := "testdata/tc_counter.bpf.o"
 
 			type loadedProg struct {
 				kernelID   kernel.ProgramID
@@ -1340,7 +1287,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 
 			var progs []loadedProg
 			for i := 0; i < tt.n; i++ {
-				programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+				programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
 					{Type: bpfman.ProgramTypeTC, Name: "stats"},
 				}, manager.LoadOpts{})
 				require.NoError(t, err, "load %d", i)
@@ -1419,10 +1366,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
+	objFile := "testdata/tc_counter.bpf.o"
 
 	type loadedProg struct {
 		kernelID   kernel.ProgramID
@@ -1432,7 +1376,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	// Load 3 separate instances so each gets independent maps.
 	var progs []loadedProg
 	for i := range 3 {
-		programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
 			{Type: bpfman.ProgramTypeTC, Name: "stats"},
 		}, manager.LoadOpts{})
 		require.NoError(t, err, "load %d", i)

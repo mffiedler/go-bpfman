@@ -106,7 +106,10 @@ coverage-open: coverage-html
 coverage-clean:
 	$(RM) -r $(COVERAGE_DIR)
 
-test-e2e:
+e2e-testdata-bpf:
+	$(MAKE) -C e2e/testdata/bpf
+
+test-e2e: e2e-testdata-bpf
 	@echo "Running e2e tests (requires root)..."
 	go test -race -count=1 -tags=e2e -v $(if $(TEST),-run $(TEST)) ./e2e/...
 
@@ -343,6 +346,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	coverage-open \
 	dispatchers-build \
 	dispatchers-clean \
+	e2e-testdata-bpf \
 	dispatchers-docker-build \
 	dispatchers-docker-extract \
 	dispatchers-docker-test \
