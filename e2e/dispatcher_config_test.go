@@ -50,7 +50,7 @@ func TestTC_DispatcherPriorityOrdering(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "tcpri")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	imageRef := platform.ImageRef{
@@ -121,7 +121,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "xdpdet")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	imageRef := platform.ImageRef{
@@ -188,7 +188,7 @@ func TestTC_DispatcherConfigRecomputedOnDetach(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "tcreco")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	imageRef := platform.ImageRef{
@@ -296,7 +296,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t, "chain")
+	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
 	imageRef := platform.ImageRef{
@@ -386,5 +386,123 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 			i, prog.kernelID, priorities[i], packets)
 		assert.Greater(t, packets, uint64(0),
 			"program %d (priority %d) should have counted packets", i, priorities[i])
+	}
+}
+
+// TestTC_DispatcherChainProceedOn verifies that the TC dispatcher
+// chain-break logic works correctly. When a program's proceed-on
+// configuration excludes the action returned by that program
+// (TC_ACT_OK), the dispatcher must stop the chain: programs after
+// the break point must see exactly zero packets.
+func TestTC_DispatcherChainProceedOn(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	// proceed-on that includes TC_ACT_OK (0): chain continues.
+	proceedOnContinue := []int32{0, 3, 30} // OK, Pipe, DispatcherReturn
+
+	// proceed-on that excludes TC_ACT_OK: chain stops here.
+	// go-tc-counter always returns TC_ACT_OK, so requiring only
+	// TC_ACT_SHOT (2) causes the dispatcher to halt the chain.
+	proceedOnStop := []int32{2} // TC_ACT_SHOT only
+
+	tests := []struct {
+		name    string
+		n       int
+		breakAt int // execution position where chain stops; -1 = all proceed
+	}{
+		{"single program", 1, -1},
+		{"3 programs, all proceed", 3, -1},
+		{"3 programs, break after first", 3, 0},
+		{"3 programs, break after second", 3, 1},
+		{"3 programs, break after third", 3, 2},
+		{"5 programs, all proceed", 5, -1},
+		{"5 programs, break after first", 5, 0},
+		{"5 programs, break after third", 5, 2},
+		{"5 programs, break after fifth", 5, 4},
+	}
+
+	for _, tt := range tests {
+		if t.Failed() {
+			t.Skip("skipping due to earlier subtest failure")
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			env := NewTestEnv(t)
+			veth := NewTestVethPair(t)
+			ctx := context.Background()
+
+			imageRef := platform.ImageRef{
+				URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+				PullPolicy: bpfman.PullIfNotPresent,
+			}
+
+			type loadedProg struct {
+				kernelID   kernel.ProgramID
+				mapPinPath string
+			}
+
+			var progs []loadedProg
+			for i := 0; i < tt.n; i++ {
+				programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+					{Type: bpfman.ProgramTypeTC, Name: "stats"},
+				}, manager.LoadOpts{})
+				require.NoError(t, err, "load %d", i)
+				require.Len(t, programs, 1)
+
+				prog := programs[0]
+				t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+				progs = append(progs, loadedProg{
+					kernelID:   prog.Status.Kernel.ID,
+					mapPinPath: prog.Record.Handles.MapPinPath,
+				})
+			}
+
+			// Attach each program at ascending priorities so
+			// attachment order equals execution order.
+			var linkIDs []bpfman.LinkRecord
+			for i := 0; i < tt.n; i++ {
+				tcSpec, err := bpfman.NewTCAttachSpec(
+					progs[i].kernelID, veth.A.Name, veth.A.Ifindex,
+					bpfman.TCDirectionIngress,
+				)
+				require.NoError(t, err)
+
+				po := proceedOnContinue
+				if tt.breakAt >= 0 && i == tt.breakAt {
+					po = proceedOnStop
+				}
+
+				tcSpec = tcSpec.WithPriority((i + 1) * 100).WithProceedOn(po)
+				link, err := env.Attach(ctx, tcSpec)
+				require.NoError(t, err, "attach %d at priority %d", i, (i+1)*100)
+				linkIDs = append(linkIDs, link)
+			}
+
+			t.Cleanup(func() {
+				for _, link := range linkIDs {
+					env.Detach(context.Background(), link.ID)
+				}
+			})
+
+			// Send traffic through the veth pair.
+			veth.Ping(t, 20)
+
+			// Verify packet counts for each program.
+			for i, prog := range progs {
+				statsPath := filepath.Join(prog.mapPinPath, "tc_stats_map")
+				packets := readStatsMap(t, statsPath)
+				t.Logf("program %d (kernel_id=%d): %d packets", i, prog.kernelID, packets)
+
+				if tt.breakAt == -1 || i <= tt.breakAt {
+					assert.Greater(t, packets, uint64(0),
+						"program %d should have counted packets (at or before break point)", i)
+				} else {
+					assert.Equal(t, uint64(0), packets,
+						"program %d should have zero packets (after break point at position %d)", i, tt.breakAt)
+				}
+			}
+		})
 	}
 }

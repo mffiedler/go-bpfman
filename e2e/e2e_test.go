@@ -840,7 +840,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "tc")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	// Given: clean state
@@ -985,7 +985,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "tcx")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	// Given: clean state
@@ -1099,7 +1099,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t, "xdp")
+	iface := NewTestInterface(t)
 	ctx := context.Background()
 
 	// Given: clean state

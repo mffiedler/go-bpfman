@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -501,18 +503,54 @@ type TestInterface struct {
 	Ifindex int
 }
 
+var testNameSeq atomic.Uint64
+
+// uniqueTestName generates a unique name for test network interfaces
+// and namespaces. The name starts with "b" and ends with "n" (the
+// first and last letters of "bpfman"), with 12 hex characters
+// between them derived from hashing the PID and an atomic counter.
+// The result is 14 characters, leaving room for a single veth
+// suffix within the IFNAMSIZ limit of 15.
+func uniqueTestName() string {
+	n := testNameSeq.Add(1)
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%d:%d", os.Getpid(), n)
+	return fmt.Sprintf("B%012xN", h.Sum64()&0xffffffffffff)
+}
+
+var vethAddrSeq atomic.Uint32
+
+// vethAddrs allocates a unique pair of /32 addresses from the RFC
+// 5737 TEST-NET-2 range (198.51.100.0/24) for a veth pair. Each
+// call returns addresses that won't conflict with other pairs in
+// the root namespace's routing table.
+func vethAddrs() (addrA, addrB, pingTarget string) {
+	return vethAddrsForIndex(vethAddrSeq.Add(1))
+}
+
+// vethAddrsForIndex returns unique /32 addresses for the given pair
+// index. The index must be in [1, 127].
+func vethAddrsForIndex(n uint32) (addrA, addrB, pingTarget string) {
+	if n < 1 || n > 127 {
+		panic(fmt.Sprintf("veth pair index %d out of range [1, 127]", n))
+	}
+	hostA := n*2 + 1 // 3, 5, 7, ...
+	hostB := n * 2    // 2, 4, 6, ...
+	addrA = fmt.Sprintf("198.51.100.%d/32", hostA)
+	addrB = fmt.Sprintf("198.51.100.%d/32", hostB)
+	pingTarget = fmt.Sprintf("198.51.100.%d", hostA)
+	return
+}
+
 // NewTestInterface creates a dummy network interface for testing.
 // The interface is automatically deleted via t.Cleanup().
 // Each test gets a unique interface, enabling parallel execution.
-func NewTestInterface(t *testing.T, id string) TestInterface {
+func NewTestInterface(t *testing.T) TestInterface {
 	t.Helper()
 
-	// Interface name: "bpfman-<id>", max 15 chars (IFNAMSIZ - 1).
-	// The "bpfman-" prefix identifies leaked interfaces.
-	name := "bpfman-" + id
-	if len(name) > 15 {
-		t.Fatalf("interface name %q exceeds 15 chars", name)
-	}
+	name := uniqueTestName()
+
+	t.Logf("creating interface %s", name)
 
 	// Fail if interface already exists - indicates a leak from a previous test.
 	if _, err := netlink.LinkByName(name); err == nil {
@@ -520,7 +558,7 @@ func NewTestInterface(t *testing.T, id string) TestInterface {
 	}
 
 	dummy := &netlink.Dummy{
-		LinkAttrs: netlink.LinkAttrs{Name: name},
+		LinkAttrs: netlink.LinkAttrs{Name: name, TxQLen: 1000},
 	}
 
 	if err := netlink.LinkAdd(dummy); err != nil {
@@ -554,30 +592,29 @@ func NewTestInterface(t *testing.T, id string) TestInterface {
 // Programs are attached to interface A (root namespace); traffic is
 // generated from interface B (test namespace).
 type TestVethPair struct {
-	A     TestInterface // root namespace, attach programs here
-	B     TestInterface // test namespace, generate traffic here
-	Netns string        // network namespace name
+	A          TestInterface // root namespace, attach programs here
+	B          TestInterface // test namespace, generate traffic here
+	Netns      string        // network namespace name
+	PingTarget string        // A's IP address (ping destination from B)
 }
 
 // NewTestVethPair creates a veth pair with one end in a dedicated
 // network namespace for generating real traffic through TC hooks.
 //
-// Interface A (bpfman-{id}a) stays in the root namespace with
-// 198.51.100.1/24. Interface B (bpfman-{id}b) is moved to a new
-// network namespace (bpfman-{id}) with 198.51.100.2/24. Traffic sent
-// from B arrives as real ingress on A, triggering TC hooks.
+// A unique name and unique /32 addresses from RFC 5737 TEST-NET-2
+// (198.51.100.0/24) are generated automatically. Interface A stays
+// in the root namespace; interface B is moved to a new network
+// namespace. Peer routes ensure each pair has its own distinct
+// routing entry, avoiding conflicts when multiple pairs coexist.
 //
 // Both interfaces and the namespace are cleaned up via t.Cleanup().
-func NewTestVethPair(t *testing.T, id string) TestVethPair {
+func NewTestVethPair(t *testing.T) TestVethPair {
 	t.Helper()
 
-	nameA := "bpfman-" + id + "a"
-	nameB := "bpfman-" + id + "b"
-	nsName := "bpfman-" + id
-
-	if len(nameA) > 15 || len(nameB) > 15 {
-		t.Fatalf("interface names %q/%q exceed 15 chars", nameA, nameB)
-	}
+	base := uniqueTestName()
+	nameA := base + "a"
+	nameB := base + "b"
+	nsName := base
 
 	// Fail if interfaces already exist.
 	for _, name := range []string{nameA, nameB} {
@@ -613,9 +650,11 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 		netns.DeleteNamed(nsName)
 	})
 
+	t.Logf("creating veth pair %s/%s in namespace %s", nameA, nameB, nsName)
+
 	// Create veth pair in root namespace.
 	veth := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{Name: nameA},
+		LinkAttrs: netlink.LinkAttrs{Name: nameA, TxQLen: 1000},
 		PeerName:  nameB,
 	}
 	if err := netlink.LinkAdd(veth); err != nil {
@@ -627,11 +666,16 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 		}
 	})
 
-	// Move B into the namespace via netlink.
+	// Set TxQLen on peer before moving it into the namespace.
 	linkB, err := netlink.LinkByName(nameB)
 	if err != nil {
 		t.Fatalf("failed to find interface %s: %v", nameB, err)
 	}
+	if err := netlink.LinkSetTxQLen(linkB, 1000); err != nil {
+		t.Fatalf("failed to set txqlen on %s: %v", nameB, err)
+	}
+
+	// Move B into the namespace via netlink.
 	nsHandleForMove, err := netns.GetFromName(nsName)
 	if err != nil {
 		t.Fatalf("failed to get ns handle for %s: %v", nsName, err)
@@ -642,12 +686,18 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 	}
 	nsHandleForMove.Close()
 
-	// Configure A in root namespace.
+	// Allocate unique /32 addresses from TEST-NET-2 so that
+	// multiple veth pairs in the root namespace never conflict.
+	ipA, ipB, pingTarget := vethAddrs()
+
+	// Configure A in root namespace with a peer route to B.
 	linkA, err := netlink.LinkByName(nameA)
 	if err != nil {
 		t.Fatalf("failed to find interface %s: %v", nameA, err)
 	}
-	addrA, _ := netlink.ParseAddr("198.51.100.1/24")
+	addrA, _ := netlink.ParseAddr(ipA)
+	peerOfA, _ := netlink.ParseAddr(ipB)
+	addrA.Peer = peerOfA.IPNet
 	if err := netlink.AddrAdd(linkA, addrA); err != nil {
 		t.Fatalf("failed to add address to %s: %v", nameA, err)
 	}
@@ -671,7 +721,9 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to find %s in namespace: %v", nameB, err)
 	}
-	addrB, _ := netlink.ParseAddr("198.51.100.2/24")
+	addrB, _ := netlink.ParseAddr(ipB)
+	peerOfB, _ := netlink.ParseAddr(ipA)
+	addrB.Peer = peerOfB.IPNet
 	if err := nlh.AddrAdd(nsLinkB, addrB); err != nil {
 		t.Fatalf("failed to add address to %s: %v", nameB, err)
 	}
@@ -688,6 +740,16 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 		t.Fatalf("failed to bring up lo in namespace: %v", err)
 	}
 
+	// Wait for both veth ends to reach OperUp. Veth interfaces
+	// transition to OperUp once both peers are up, but there can
+	// be a brief kernel event propagation delay under load.
+	waitLinkOperUp(t, nil, nameA, 5*time.Second)
+	waitLinkOperUp(t, nlh, nameB, 5*time.Second)
+
+	// Verify end-to-end connectivity with a warmup ping. Under
+	// heavy parallel load ARP resolution can lag behind link-up.
+	waitConnectivity(t, nsName, pingTarget, 30*time.Second)
+
 	return TestVethPair{
 		A: TestInterface{
 			Name:    nameA,
@@ -696,7 +758,8 @@ func NewTestVethPair(t *testing.T, id string) TestVethPair {
 		B: TestInterface{
 			Name: nameB,
 		},
-		Netns: nsName,
+		Netns:      nsName,
+		PingTarget: pingTarget,
 	}
 }
 
@@ -711,18 +774,70 @@ func (v TestVethPair) Ping(t *testing.T, count int) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns,
-		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", "198.51.100.1")
+		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", v.PingTarget)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("ping failed: %v\n%s", err, out)
 	}
 }
 
-const staleTestDirPrefix = "bpfman-e2e-"
-const staleInterfacePrefix = "bpfman-"
+// waitLinkOperUp polls until the named interface reports OperUp. Pass
+// a nil handle to query the root network namespace.
+func waitLinkOperUp(t *testing.T, h *netlink.Handle, name string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		var link netlink.Link
+		var err error
+		if h != nil {
+			link, err = h.LinkByName(name)
+		} else {
+			link, err = netlink.LinkByName(name)
+		}
+		if err == nil && link.Attrs().OperState == netlink.OperUp {
+			return
+		}
+		if time.Now().After(deadline) {
+			state := "unknown"
+			if err == nil {
+				state = link.Attrs().OperState.String()
+			}
+			t.Fatalf("interface %s did not reach OperUp within %v (current state: %s)", name, timeout, state)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
-// cleanupStaleTestDirs removes leftover test directories and network
-// interfaces from previous runs.
+// waitConnectivity sends single pings with retries until one
+// succeeds, proving the veth path is ready for traffic.
+func waitConnectivity(t *testing.T, nsName, target string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		cmd := exec.CommandContext(ctx, "ip", "netns", "exec", nsName,
+			"ping", "-c", "1", "-W", "1", target)
+		err := cmd.Run()
+		cancel()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("veth pair connectivity not established within %v", timeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+const staleTestDirPrefix = "bpfman-e2e-"
+
+// staleTestIfaceRe matches interface and namespace names generated
+// by uniqueTestName: "B", 12 hex characters, "N", optionally with
+// an "a" or "b" veth suffix.
+var staleTestIfaceRe = regexp.MustCompile(`^B[0-9a-f]{12}N[ab]?$`)
+
+// cleanupStaleTestArtifacts removes leftover test interfaces,
+// namespaces, and directories from previous runs.
 func cleanupStaleTestDirs() error {
 	if err := cleanupStaleInterfaces(); err != nil {
 		return err
@@ -770,25 +885,6 @@ func cleanupStaleTestDirs() error {
 	return nil
 }
 
-// cleanupStaleInterfaces removes leftover bpfman-* network interfaces
-// from crashed test runs.
-func cleanupStaleInterfaces() error {
-	links, err := netlink.LinkList()
-	if err != nil {
-		return fmt.Errorf("list interfaces: %w", err)
-	}
-
-	for _, link := range links {
-		name := link.Attrs().Name
-		if strings.HasPrefix(name, staleInterfacePrefix) {
-			if err := netlink.LinkDel(link); err != nil {
-				return fmt.Errorf("delete interface %s: %w", name, err)
-			}
-		}
-	}
-
-	return nil
-}
 
 // validateStaleTestDir ensures path is safe to remove.
 func validateStaleTestDir(path, tempDir string) error {
@@ -813,6 +909,36 @@ func validateStaleTestDir(path, tempDir string) error {
 	// Must not be a top-level directory (sanity check)
 	if cleanPath == "/" || strings.Count(cleanPath, string(filepath.Separator)) < 2 {
 		return fmt.Errorf("path %q is too short", cleanPath)
+	}
+
+	return nil
+}
+
+// cleanupStaleInterfaces removes leftover test interfaces and
+// namespaces from crashed runs. Names are matched by the specific
+// pattern generated by uniqueTestName (b + 13 hex chars).
+func cleanupStaleInterfaces() error {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return fmt.Errorf("list interfaces: %w", err)
+	}
+	for _, link := range links {
+		if staleTestIfaceRe.MatchString(link.Attrs().Name) {
+			netlink.LinkDel(link)
+		}
+	}
+
+	entries, err := os.ReadDir("/run/netns")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read /run/netns: %w", err)
+	}
+	for _, entry := range entries {
+		if staleTestIfaceRe.MatchString(entry.Name()) {
+			netns.DeleteNamed(entry.Name())
+		}
 	}
 
 	return nil
