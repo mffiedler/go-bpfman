@@ -4,10 +4,12 @@ package e2e
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -505,6 +507,7 @@ type TestInterface struct {
 
 var testNameSeq atomic.Uint64
 
+
 // uniqueTestName generates a unique name for test network interfaces
 // and namespaces. The name starts with "b" and ends with "n" (the
 // first and last letters of "bpfman"), with 12 hex characters
@@ -523,9 +526,14 @@ var vethAddrSeq atomic.Uint32
 // vethAddrs allocates a unique pair of /32 addresses from the RFC
 // 5737 TEST-NET-2 range (198.51.100.0/24) for a veth pair. Each
 // call returns addresses that won't conflict with other pairs in
-// the root namespace's routing table.
-func vethAddrs() (addrA, addrB, pingTarget string) {
-	return vethAddrsForIndex(vethAddrSeq.Add(1))
+// the root namespace's routing table. The returned pairIndex is
+// the allocation index, which callers must use for any derived
+// identifiers (e.g., MAC addresses) to avoid races between the
+// atomic increment and a separate Load.
+func vethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
+	idx := vethAddrSeq.Add(1)
+	addrA, addrB, pingTarget = vethAddrsForIndex(idx)
+	return addrA, addrB, pingTarget, idx
 }
 
 // vethAddrsForIndex returns unique /32 addresses for the given pair
@@ -623,6 +631,11 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 		}
 	}
 
+	// Fail if namespace already exists.
+	if _, err := netns.GetFromName(nsName); err == nil {
+		t.Fatalf("namespace %s already exists (leaked from previous test?)", nsName)
+	}
+
 	// Create named network namespace. NewNamed switches the calling
 	// thread's netns, so we must lock the OS thread and restore.
 	runtime.LockOSThread()
@@ -688,13 +701,114 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 
 	// Allocate unique /32 addresses from TEST-NET-2 so that
 	// multiple veth pairs in the root namespace never conflict.
-	ipA, ipB, pingTarget := vethAddrs()
+	ipA, ipB, pingTarget, pairIdx := vethAddrs()
 
 	// Configure A in root namespace with a peer route to B.
 	linkA, err := netlink.LinkByName(nameA)
 	if err != nil {
 		t.Fatalf("failed to find interface %s: %v", nameA, err)
 	}
+
+	// Set deterministic, locally administered MAC addresses on
+	// both veth ends. This is essential for parallel test
+	// stability.
+	//
+	// The kernel auto-assigns random MACs at veth creation time
+	// and marks them NET_ADDR_RANDOM internally. Under concurrent
+	// veth creation and deletion (as happens with parallel
+	// subtests whose t.Cleanup tears down finished pairs while
+	// other pairs are still live), the kernel can regenerate MACs
+	// marked NET_ADDR_RANDOM on unrelated interfaces. This
+	// invalidates ARP caches and causes 100% ping packet loss.
+	//
+	// Explicitly setting the MAC via LinkSetHardwareAddr changes
+	// the kernel's addr_assign_type to NET_ADDR_SET, which the
+	// kernel treats as sacrosanct and never regenerates.
+	//
+	// We use the IEEE 802 locally administered address space.
+	// The first octet's two least-significant bits control the
+	// address type:
+	//
+	//   First octet: 0x02
+	//
+	//     bit 7   bit 0
+	//      |       |
+	//      v       v
+	//      0 0 0 0 0 0 1 0
+	//                  | |
+	//                  | +-- 0 = unicast (vs 1 = multicast)
+	//                  +---- 1 = locally administered (vs 0 = OUI/global)
+	//
+	// The "locally administered" bit (bit 1) indicates the
+	// address is not from a globally unique OUI allocation but
+	// a locally scoped assignment, analogous to RFC 1918 for IP
+	// addresses. Any MAC with this bit set is guaranteed never
+	// to collide with a manufacturer-assigned address.
+	//
+	// The full format is:
+	//
+	//   02:<pid_hi>:<pid_lo>:00:<pair>:<end>
+	//
+	// where <pid_hi>:<pid_lo> are the two least-significant
+	// bytes of the process ID (ensuring uniqueness across
+	// concurrent stress test processes), <pair> is the veth pair
+	// index returned by vethAddrs (ensuring uniqueness within a
+	// process and avoiding a race between Add and Load on the
+	// atomic counter), and <end> is 01 for the A side (root
+	// namespace) or 02 for the B side (test namespace).
+	//
+	// History: we originally relied on kernel-assigned random
+	// MACs, which worked reliably for sequential tests. When we
+	// made subtests parallel for speed (32s down to ~4s), one
+	// subtest per run would fail intermittently with 100% ping
+	// packet loss.
+	//
+	// Using ip monitor we captured the root cause: a live veth
+	// interface's MAC would change mid-test (same ifindex,
+	// different MAC), immediately followed by the kernel
+	// flushing ARP neighbour entries and regenerating the IPv6
+	// link-local address (derived via EUI-64 from the new MAC).
+	// The MAC change was always correlated with another
+	// subtest's t.Cleanup deleting its own (unrelated) veth
+	// pair. Serialising setup and teardown under a mutex did
+	// not help because the MAC regeneration is kernel-internal
+	// and asynchronous.
+	//
+	// Switching to explicit MACs reduced the failure rate from
+	// ~40% to ~5% but did not eliminate it. Disabling IPv6 on
+	// both veth ends (see disableIPv6/disableIPv6InNs calls
+	// below) eliminated the remaining failures entirely (50/50
+	// under stress).
+	//
+	// Examining the kernel 6.12 source revealed the likely
+	// chain of events: when a veth peer is deleted,
+	// veth_dellink triggers carrier loss on the surviving end
+	// via netif_carrier_off, which fires a NETDEV_CHANGE
+	// notification through the linkwatch subsystem. The IPv6
+	// addrconf_notify handler (net/ipv6/addrconf.c) processes
+	// NETDEV_CHANGE and calls addrconf_dev_config, which
+	// triggers EUI-64 link-local address generation from the
+	// device's MAC. This processing chain appears to cause MAC
+	// regeneration on other veth interfaces as a side effect.
+	// When IPv6 is disabled, addrconf_notify returns early
+	// without processing the event, breaking the chain. We did
+	// not identify the exact kernel function that rewrites the
+	// MAC, but the empirical evidence is unambiguous: disabling
+	// IPv6 prevents it. The tests only need IPv4, so this has
+	// no functional impact. Observed on kernel 6.12.74.
+	pid := os.Getpid()
+	macA, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:01", (pid>>8)&0xff, pid&0xff, pairIdx))
+	macB, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:02", (pid>>8)&0xff, pid&0xff, pairIdx))
+	if err := netlink.LinkSetHardwareAddr(linkA, macA); err != nil {
+		t.Fatalf("failed to set MAC on %s: %v", nameA, err)
+	}
+
+	// Disable IPv6 on A before link-up. We only need IPv4 for
+	// the ping traffic, and IPv6 link-local address generation
+	// triggers kernel code paths that can regenerate MAC
+	// addresses on veth interfaces under concurrent load.
+	disableIPv6(t, nameA)
+
 	addrA, _ := netlink.ParseAddr(ipA)
 	peerOfA, _ := netlink.ParseAddr(ipB)
 	addrA.Peer = peerOfA.IPNet
@@ -721,6 +835,13 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to find %s in namespace: %v", nameB, err)
 	}
+	if err := nlh.LinkSetHardwareAddr(nsLinkB, macB); err != nil {
+		t.Fatalf("failed to set MAC on %s: %v", nameB, err)
+	}
+
+	// Disable IPv6 on B inside the namespace.
+	disableIPv6InNs(t, nsName, nameB)
+
 	addrB, _ := netlink.ParseAddr(ipB)
 	peerOfB, _ := netlink.ParseAddr(ipA)
 	addrB.Peer = peerOfB.IPNet
@@ -750,6 +871,37 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// heavy parallel load ARP resolution can lag behind link-up.
 	waitConnectivity(t, nsName, pingTarget, 30*time.Second)
 
+	// Verify ARP consistency: B's cached MAC for A must match
+	// A's actual MAC. Log both for debugging intermittent failures.
+	linkARefresh, _ := netlink.LinkByName(nameA)
+	aMac := linkARefresh.Attrs().HardwareAddr.String()
+	aIdx := linkARefresh.Attrs().Index
+	arpOut, _ := exec.Command("ip", "netns", "exec", nsName,
+		"ip", "neigh", "show", "dev", nameB, pingTarget).CombinedOutput()
+	t.Logf("post-warmup: A=%s ifindex=%d MAC=%s, B's ARP: %s",
+		nameA, aIdx, aMac, strings.TrimSpace(string(arpOut)))
+
+	// Start ip monitor to capture link state events for this
+	// veth pair. Output is logged on test completion.
+	var monBuf bytes.Buffer
+	monCmd := exec.Command("ip", "monitor", "link", "address", "route", "neigh")
+	monCmd.Stdout = &monBuf
+	monCmd.Stderr = &monBuf
+	if err := monCmd.Start(); err != nil {
+		t.Logf("ip monitor failed to start: %v", err)
+	} else {
+		t.Cleanup(func() {
+			monCmd.Process.Kill()
+			monCmd.Wait()
+			// Filter output to only show events for our interfaces.
+			for _, line := range strings.Split(monBuf.String(), "\n") {
+				if strings.Contains(line, nameA) || strings.Contains(line, nameB) || strings.Contains(line, nsName) {
+					t.Logf("[ip-monitor %s] %s", base, line)
+				}
+			}
+		})
+	}
+
 	return TestVethPair{
 		A: TestInterface{
 			Name:    nameA,
@@ -773,11 +925,66 @@ func (v TestVethPair) Ping(t *testing.T, count int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Pre-ping MAC/ifindex check for debugging.
+	linkA, err := netlink.LinkByName(v.A.Name)
+	if err != nil {
+		t.Fatalf("pre-ping: cannot find %s: %v", v.A.Name, err)
+	}
+	t.Logf("pre-ping: A=%s ifindex=%d MAC=%s (expected ifindex=%d)",
+		v.A.Name, linkA.Attrs().Index, linkA.Attrs().HardwareAddr, v.A.Ifindex)
+	if linkA.Attrs().Index != v.A.Ifindex {
+		t.Errorf("IFINDEX CHANGED: was %d at creation, now %d -- interface was recreated!",
+			v.A.Ifindex, linkA.Attrs().Index)
+	}
+
+	// Re-verify connectivity before the test burst. Under heavy
+	// parallel load, concurrent veth cleanup from other tests
+	// can disrupt link state. This re-establishes ARP entries.
+	waitConnectivity(t, v.Netns, v.PingTarget, 30*time.Second)
+
 	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns,
 		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", v.PingTarget)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		v.dumpNetworkState(t, "ping-failure")
 		t.Fatalf("ping failed: %v\n%s", err, out)
+	}
+}
+
+// dumpNetworkState logs diagnostic information about the veth pair
+// to help debug connectivity failures.
+func (v TestVethPair) dumpNetworkState(t *testing.T, label string) {
+	t.Helper()
+
+	// Root namespace: interface A state, addresses, routes, ARP, TC filters.
+	for _, args := range [][]string{
+		{"ip", "link", "show", v.A.Name},
+		{"ip", "addr", "show", v.A.Name},
+		{"ip", "route", "show", "dev", v.A.Name},
+		{"ip", "neigh", "show", "dev", v.A.Name},
+		{"tc", "filter", "show", "dev", v.A.Name, "ingress"},
+	} {
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		if err != nil {
+			t.Logf("[%s root] %s: error: %v", label, strings.Join(args, " "), err)
+		} else {
+			t.Logf("[%s root] %s:\n%s", label, strings.Join(args, " "), out)
+		}
+	}
+
+	// Test namespace: interface B state, addresses, routes, ARP.
+	for _, args := range [][]string{
+		{"ip", "netns", "exec", v.Netns, "ip", "link", "show", v.B.Name},
+		{"ip", "netns", "exec", v.Netns, "ip", "addr", "show", v.B.Name},
+		{"ip", "netns", "exec", v.Netns, "ip", "route", "show", "dev", v.B.Name},
+		{"ip", "netns", "exec", v.Netns, "ip", "neigh", "show", "dev", v.B.Name},
+	} {
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		if err != nil {
+			t.Logf("[%s ns %s] %s: error: %v", label, v.Netns, strings.Join(args, " "), err)
+		} else {
+			t.Logf("[%s ns %s] %s:\n%s", label, v.Netns, strings.Join(args, " "), out)
+		}
 	}
 }
 
@@ -826,6 +1033,28 @@ func waitConnectivity(t *testing.T, nsName, target string, timeout time.Duration
 			t.Fatalf("veth pair connectivity not established within %v", timeout)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// disableIPv6 disables IPv6 on an interface in the root namespace
+// via sysctl. This must be called before LinkSetUp to prevent the
+// kernel from generating an IPv6 link-local address.
+func disableIPv6(t *testing.T, ifaceName string) {
+	t.Helper()
+	path := fmt.Sprintf("/proc/sys/net/ipv6/conf/%s/disable_ipv6", ifaceName)
+	if err := os.WriteFile(path, []byte("1"), 0644); err != nil {
+		t.Fatalf("failed to disable IPv6 on %s: %v", ifaceName, err)
+	}
+}
+
+// disableIPv6InNs disables IPv6 on an interface inside a named
+// network namespace via ip netns exec.
+func disableIPv6InNs(t *testing.T, nsName, ifaceName string) {
+	t.Helper()
+	sysctl := fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6=1", ifaceName)
+	out, err := exec.Command("ip", "netns", "exec", nsName, "sysctl", "-w", sysctl).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to disable IPv6 on %s in ns %s: %v\n%s", ifaceName, nsName, err, out)
 	}
 }
 

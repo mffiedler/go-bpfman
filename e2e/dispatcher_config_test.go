@@ -424,10 +424,8 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if t.Failed() {
-			t.Skip("skipping due to earlier subtest failure")
-		}
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			env := NewTestEnv(t)
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
