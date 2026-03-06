@@ -46,6 +46,11 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the link.
+	lnk.Close()
+
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
@@ -92,6 +97,11 @@ func (k *kernelAdapter) AttachKprobe(ctx context.Context, progPinPath, fnName st
 		lnk.Close()
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
+
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the link.
+	lnk.Close()
 
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
@@ -143,6 +153,11 @@ func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName, 
 		lnk.Close()
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
+
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the link.
+	lnk.Close()
 
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),

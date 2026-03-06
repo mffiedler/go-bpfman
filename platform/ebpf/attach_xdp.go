@@ -175,6 +175,12 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		}
 		result.LinkPin = spec.LinkPinPath
 
+		// Close the fd now that the link is pinned. The pin
+		// keeps the kernel link alive; leaking the fd would
+		// prevent DetachLink (which only removes the pin) from
+		// fully releasing the link.
+		lnk.Close()
+
 		return nil
 	})
 	if err != nil {

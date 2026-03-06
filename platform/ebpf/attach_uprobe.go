@@ -130,6 +130,11 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		k.logger.Debug("link pinned successfully", "path", linkPinPath)
 	}
 
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the link.
+	lnk.Close()
+
 	return linkID, ToKernelLink(linkInfo), nil
 }
 
