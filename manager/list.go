@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
@@ -154,6 +155,11 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 // ListLinksByProgram returns all links for a given program.
 func (m *Manager) ListLinksByProgram(ctx context.Context, programID kernel.ProgramID) ([]bpfman.LinkRecord, error) {
 	return m.store.ListLinksByProgram(ctx, programID)
+}
+
+// GetDispatcher retrieves a dispatcher by type, namespace ID, and interface index.
+func (m *Manager) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+	return m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.

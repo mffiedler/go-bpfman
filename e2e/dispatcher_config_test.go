@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -269,6 +270,102 @@ func TestTC_SlotReusedAfterDetach(t *testing.T) {
 	expectedOrder := [dispatcher.MaxPrograms]uint32{0, 1, 2, 4, 5, 3, 6, 7, 8, 9}
 	assert.Equal(t, expectedOrder, cfg.RunOrder,
 		"run_order should reflect the new program at slot 3 with priority 550")
+}
+
+// TestTC_DispatcherLifecycleAfterLastDetach verifies that removing the
+// last extension from a TC dispatcher causes the dispatcher to be
+// fully torn down (TC filter removed, pins removed, store entry
+// deleted) and that a subsequent attach creates a fresh dispatcher
+// with a new program ID.
+func TestTC_DispatcherLifecycleAfterLastDetach(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	dispType := dispatcher.DispatcherTypeTCIngress
+	ifindex := uint32(iface.Ifindex)
+
+	// Phase 1: attach a single program. A dispatcher should now exist.
+	tcSpec, err := bpfman.NewTCAttachSpec(
+		prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcSpec = tcSpec.WithPriority(100)
+
+	link, err := env.Attach(ctx, tcSpec)
+	require.NoError(t, err)
+
+	state1, err := env.GetDispatcher(ctx, dispType, nsid, ifindex)
+	require.NoError(t, err, "dispatcher should exist after attach")
+
+	// The TC filter should be present on the interface.
+	filters := tcIngressFilters(t, iface.Name)
+	require.NotEmpty(t, filters, "TC filter should be present after attach")
+
+	// Phase 2: detach the only program. The dispatcher should be
+	// fully cleaned up.
+	err = env.Detach(ctx, link.ID)
+	require.NoError(t, err)
+
+	_, err = env.GetDispatcher(ctx, dispType, nsid, ifindex)
+	require.ErrorIs(t, err, platform.ErrRecordNotFound,
+		"dispatcher should be absent from store after last detach")
+
+	// The TC filter should be gone.
+	filters = tcIngressFilters(t, iface.Name)
+	assert.Empty(t, filters, "TC filter should be removed after last detach")
+
+	// The config and active map pins should be gone.
+	bpffs := env.Layout.BPFFS()
+	configMapPin := bpffs.DispatcherConfigMapPath(dispType, nsid, ifindex)
+	activeMapPin := bpffs.DispatcherActiveMapPath(dispType, nsid, ifindex)
+	_, err = os.Stat(configMapPin)
+	assert.True(t, os.IsNotExist(err), "config map pin should not exist: %s", configMapPin)
+	_, err = os.Stat(activeMapPin)
+	assert.True(t, os.IsNotExist(err), "active map pin should not exist: %s", activeMapPin)
+
+	// Phase 3: attach again. A new dispatcher should be created
+	// with a different program ID.
+	tcSpec2, err := bpfman.NewTCAttachSpec(
+		prog.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcSpec2 = tcSpec2.WithPriority(200)
+
+	link2, err := env.Attach(ctx, tcSpec2)
+	require.NoError(t, err)
+	t.Cleanup(func() { env.Detach(context.Background(), link2.ID) })
+
+	state2, err := env.GetDispatcher(ctx, dispType, nsid, ifindex)
+	require.NoError(t, err, "dispatcher should exist after second attach")
+	assert.NotEqual(t, state1.ProgramID, state2.ProgramID,
+		"second dispatcher should have a different program ID")
+
+	// The TC filter should be back.
+	filters = tcIngressFilters(t, iface.Name)
+	assert.NotEmpty(t, filters, "TC filter should be present after second attach")
 }
 
 // TestTC_DispatcherSineWave exercises repeated fill-drain-refill

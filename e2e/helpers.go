@@ -26,6 +26,7 @@ import (
 	"github.com/vishvananda/netns"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
@@ -274,6 +275,11 @@ func (e *TestEnv) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.Lin
 		return bpfman.LinkRecord{}, nil, err
 	}
 	return record, record.Details, nil
+}
+
+// GetDispatcher retrieves a dispatcher by type, namespace ID, and interface index.
+func (e *TestEnv) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
+	return e.Manager.GetDispatcher(ctx, dispType, nsid, ifindex)
 }
 
 // AssertCleanState verifies that no programs or links are managed.

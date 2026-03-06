@@ -21,17 +21,11 @@ Covered by `TestTC_SlotReusedAfterDetach` (single slot reclaim) and
 `TestTC_DispatcherSineWave` (repeated fill/drain across shifting slot
 boundaries with traffic verification).
 
-## 3. Dispatcher lifecycle after last extension removed
+## 3. Dispatcher lifecycle after last extension removed -- DONE
 
-`cleanupEmptyDispatcher` has a distinct code path: it queries
-`FindTCFilterHandle`, issues `DetachTCFilter`, removes pins, and
-deletes the dispatcher from the store. No test verifies that after
-removing the last extension the dispatcher is actually gone, and that
-a subsequent attach creates a fresh one.
-
-**Test:** Attach one program, detach it, confirm the dispatcher is
-absent from the store. Attach again, confirm a new dispatcher is
-created.
+Covered by `TestTC_DispatcherLifecycleAfterLastDetach`, which verifies
+the full teardown path (store deletion, TC filter removal, pin
+cleanup) and confirms a subsequent attach creates a fresh dispatcher.
 
 ## 4. Ingress and egress on the same interface
 
