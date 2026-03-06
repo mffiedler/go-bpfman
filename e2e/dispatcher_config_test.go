@@ -16,6 +16,7 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/ns/netns"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // readActiveIndex loads the pinned active map and returns the current
@@ -361,9 +362,18 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		links = append(links, link)
 	}
 
+	// Verify all 10 slots filled.
+	cfg := h.readConfig(t)
+	require.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled,
+		"all 10 slots should be occupied")
+
 	// Detach slot 3 (4th attachment).
 	err := h.env.Detach(context.Background(), links[3].ID)
 	require.NoError(t, err, "detach slot 3")
+
+	cfg = h.readConfig(t)
+	assert.Equal(t, uint32(dispatcher.MaxPrograms-1), cfg.NumProgsEnabled,
+		"should have 9 programs after detach")
 
 	// Re-attach: should succeed and reuse the vacated slot.
 	newLink := h.attach(t, progID, 350)
@@ -378,7 +388,7 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), newLink.ID)
 	})
 
-	cfg := h.readConfig(t)
+	cfg = h.readConfig(t)
 	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
 		"all 10 slots should be occupied again")
 
@@ -414,24 +424,52 @@ func TestDispatcher_LifecycleAfterLastDetach(t *testing.T) {
 func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	// Attach a single program.
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+	ifindex := uint32(h.iface.Ifindex)
+
+	// Phase 1: attach a single program. A dispatcher should exist.
 	link := h.attach(t, progID, 100)
+
+	state1, err := h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	require.NoError(t, err, "dispatcher should exist after attach")
 	h.verifyAttachPresent(t)
 
 	cfg := h.readConfig(t)
 	require.Equal(t, uint32(1), cfg.NumProgsEnabled,
 		"should have 1 program")
 
-	// Detach the only program: dispatcher should be torn down.
-	err := h.env.Detach(context.Background(), link.ID)
+	// Phase 2: detach the only program. The dispatcher should be
+	// fully cleaned up.
+	err = h.env.Detach(context.Background(), link.ID)
 	require.NoError(t, err)
+
+	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	require.ErrorIs(t, err, platform.ErrRecordNotFound,
+		"dispatcher should be absent from store after last detach")
+
 	h.verifyAttachAbsent(t)
 
-	// Reattach: a fresh dispatcher should be created.
+	// The config and active map pins should be gone.
+	bpffsLayout := h.env.Layout.BPFFS()
+	configMapPin := bpffsLayout.DispatcherConfigMapPath(h.dispType, nsid, ifindex)
+	activeMapPin := bpffsLayout.DispatcherActiveMapPath(h.dispType, nsid, ifindex)
+	_, err = os.Stat(configMapPin)
+	assert.True(t, os.IsNotExist(err), "config map pin should not exist: %s", configMapPin)
+	_, err = os.Stat(activeMapPin)
+	assert.True(t, os.IsNotExist(err), "active map pin should not exist: %s", activeMapPin)
+
+	// Phase 3: attach again. A new dispatcher should be created
+	// with a different program ID.
 	newLink := h.attach(t, progID, 200)
 	t.Cleanup(func() {
 		h.env.Detach(context.Background(), newLink.ID)
 	})
+
+	state2, err := h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	require.NoError(t, err, "dispatcher should exist after second attach")
+	assert.NotEqual(t, state1.ProgramID, state2.ProgramID,
+		"second dispatcher should have a different program ID")
 
 	h.verifyAttachPresent(t)
 	cfg = h.readConfig(t)
@@ -514,6 +552,13 @@ func testConfigRecomputedOnDetach(t *testing.T, h dispatcherTestHarness) {
 	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
 		"should have 10 programs")
 
+	// Before detach: run_order should be in ascending slot order
+	// since priorities match insertion order (both TC and XDP).
+	for i := 0; i < dispatcher.MaxPrograms; i++ {
+		assert.Equal(t, uint32(i), cfg.RunOrder[i],
+			"before detach: run_order[%d] should be slot %d", i, i)
+	}
+
 	// Detach the first program (lowest priority for TC, first
 	// inserted for XDP).
 	err := h.env.Detach(context.Background(), links[0].ID)
@@ -556,6 +601,9 @@ func TestDispatcher_MultipleInterfacesIndependent(t *testing.T) {
 func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
 	ifaceB := NewTestInterface(t)
 
 	// Attach 3 programs to default interface (A).
@@ -582,11 +630,28 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	require.Equal(t, uint32(3), cfgA.NumProgsEnabled,
 		"interface A should have 3 programs")
 
+	// Verify B's config.
+	bpffsLayout := h.env.Layout.BPFFS()
+	configPinB := bpffsLayout.DispatcherConfigMapPath(h.dispType, nsid, uint32(ifaceB.Ifindex))
+	activePinB := bpffsLayout.DispatcherActiveMapPath(h.dispType, nsid, uint32(ifaceB.Ifindex))
+	cfgB := readDispatcherConfig(t, configPinB, activePinB)
+	require.Equal(t, uint32(2), cfgB.NumProgsEnabled,
+		"interface B should have 2 programs")
+
 	// Detach all programs from B.
-	for _, l := range linksB {
+	for i, l := range linksB {
 		err := h.env.Detach(context.Background(), l.ID)
-		require.NoError(t, err)
+		require.NoError(t, err, "ifaceB detach %d", i)
 	}
+
+	// B's dispatcher should be gone.
+	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, uint32(ifaceB.Ifindex))
+	require.ErrorIs(t, err, platform.ErrRecordNotFound,
+		"interface B dispatcher should be absent after detaching all links")
+
+	// A's dispatcher should still exist.
+	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, uint32(h.iface.Ifindex))
+	require.NoError(t, err, "interface A dispatcher should still exist")
 
 	// A's config should be unchanged.
 	cfgAAfter := h.readConfig(t)
@@ -594,4 +659,6 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 		"A's program count should be unchanged")
 	assert.Equal(t, cfgA.RunOrder, cfgAAfter.RunOrder,
 		"A's run_order should be unchanged")
+	assert.Equal(t, cfgA.ChainCallActions, cfgAAfter.ChainCallActions,
+		"A's chain_call_actions should be unchanged")
 }
