@@ -4,14 +4,14 @@ Gaps in e2e coverage for the TC dispatcher, ranked by likelihood of
 catching a real bug. Each entry identifies the untested code path and
 why it matters.
 
-## 1. Egress direction -- partially covered
+## 1. Egress direction -- DONE
 
-`TestTC_IngressEgressIndependence` attaches programs to egress and
-verifies the egress dispatcher is created, its config is correct, and
-it tears down independently of ingress. A dedicated test that sends
-outbound traffic through a veth pair and verifies the egress
-program's stats map shows non-zero packet counts would still add
-value.
+Covered by `TestTC_EgressTrafficCounting`, which loads three programs
+on egress, sends traffic through a veth pair (pings from the peer
+namespace generate ICMP replies through A's egress), and verifies all
+three programs' stats maps show non-zero packet counts. Also covered
+by `TestTC_IngressEgressIndependence`, which verifies egress
+dispatcher creation, config correctness, and independent teardown.
 
 ## 2. Slot reuse after detach -- DONE
 
