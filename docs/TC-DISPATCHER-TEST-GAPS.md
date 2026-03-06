@@ -32,13 +32,11 @@ programs to both ingress and egress on the same interface, detaches
 all egress links, and verifies the ingress dispatcher config
 (program count, run_order, chain_call_actions) is unchanged.
 
-## 5. Multiple interfaces with the same program
+## 5. Multiple interfaces with the same program -- DONE
 
-Dispatchers are keyed by ifindex. No test attaches the same program
-to two interfaces and verifies independent dispatcher state.
-
-**Test:** Create two dummy interfaces, attach the same program to
-ingress on both, detach from one, verify the other is unaffected.
+Covered by `TestTC_MultipleInterfacesIndependent`, which attaches the
+same program to ingress on two interfaces, detaches all links from
+one, and verifies the other's dispatcher config is unchanged.
 
 ## 6. Priority ties
 

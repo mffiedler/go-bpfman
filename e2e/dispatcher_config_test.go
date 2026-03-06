@@ -481,6 +481,108 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 		"ingress chain_call_actions should be unchanged")
 }
 
+// TestTC_MultipleInterfacesIndependent verifies that dispatchers on
+// different interfaces are fully independent. Attaching the same
+// program to ingress on two interfaces, then detaching from one,
+// must leave the other's dispatcher config unchanged.
+func TestTC_MultipleInterfacesIndependent(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	ifaceA := NewTestInterface(t)
+	ifaceB := NewTestInterface(t)
+	ctx := context.Background()
+
+	imageRef := platform.ImageRef{
+		URL:        "quay.io/bpfman-bytecode/go-tc-counter:latest",
+		PullPolicy: bpfman.PullIfNotPresent,
+	}
+	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "stats"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	dispType := dispatcher.DispatcherTypeTCIngress
+
+	// Attach 3 programs to interface A.
+	var linksA []bpfman.LinkRecord
+	for i := range 3 {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, ifaceA.Name, ifaceA.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "ifaceA attach %d", i)
+		linksA = append(linksA, link)
+	}
+	t.Cleanup(func() {
+		for _, l := range linksA {
+			env.Detach(context.Background(), l.ID)
+		}
+	})
+
+	// Attach 2 programs to interface B.
+	var linksB []bpfman.LinkRecord
+	for i := range 2 {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			prog.Status.Kernel.ID, ifaceB.Name, ifaceB.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority(i * 100)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "ifaceB attach %d", i)
+		linksB = append(linksB, link)
+	}
+
+	// Record interface A's config.
+	configPinA := bpffs.DispatcherConfigMapPath(dispType, nsid, uint32(ifaceA.Ifindex))
+	activePinA := bpffs.DispatcherActiveMapPath(dispType, nsid, uint32(ifaceA.Ifindex))
+	cfgA := readDispatcherConfig(t, configPinA, activePinA)
+	require.Equal(t, uint32(3), cfgA.NumProgsEnabled, "ifaceA should have 3 programs")
+
+	// Verify interface B's config.
+	configPinB := bpffs.DispatcherConfigMapPath(dispType, nsid, uint32(ifaceB.Ifindex))
+	activePinB := bpffs.DispatcherActiveMapPath(dispType, nsid, uint32(ifaceB.Ifindex))
+	cfgB := readDispatcherConfig(t, configPinB, activePinB)
+	require.Equal(t, uint32(2), cfgB.NumProgsEnabled, "ifaceB should have 2 programs")
+
+	// Detach all programs from interface B.
+	for i, l := range linksB {
+		err := env.Detach(ctx, l.ID)
+		require.NoError(t, err, "ifaceB detach %d", i)
+	}
+
+	// Interface B's dispatcher should be gone.
+	_, err = env.GetDispatcher(ctx, dispType, nsid, uint32(ifaceB.Ifindex))
+	require.ErrorIs(t, err, platform.ErrRecordNotFound,
+		"ifaceB dispatcher should be absent after detaching all links")
+
+	// Interface A's dispatcher should be unaffected.
+	_, err = env.GetDispatcher(ctx, dispType, nsid, uint32(ifaceA.Ifindex))
+	require.NoError(t, err, "ifaceA dispatcher should still exist")
+
+	cfgAAfter := readDispatcherConfig(t, configPinA, activePinA)
+	assert.Equal(t, cfgA.NumProgsEnabled, cfgAAfter.NumProgsEnabled,
+		"ifaceA program count should be unchanged")
+	assert.Equal(t, cfgA.RunOrder, cfgAAfter.RunOrder,
+		"ifaceA run_order should be unchanged")
+	assert.Equal(t, cfgA.ChainCallActions, cfgAAfter.ChainCallActions,
+		"ifaceA chain_call_actions should be unchanged")
+}
+
 // TestTC_DispatcherSineWave exercises repeated fill-drain-refill
 // cycles where the drain boundary shifts each oscillation, verifying
 // that slot reuse, runtime config recomputation, and traffic delivery
