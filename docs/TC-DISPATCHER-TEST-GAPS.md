@@ -38,15 +38,13 @@ Covered by `TestTC_MultipleInterfacesIndependent`, which attaches the
 same program to ingress on two interfaces, detaches all links from
 one, and verifies the other's dispatcher config is unchanged.
 
-## 6. Priority ties
+## 6. Priority ties -- DONE
 
-The config sorts slots by `(priority, program_name)` as a secondary
-key. No test exercises the secondary sort or verifies deterministic
-ordering when priorities collide.
-
-**Test:** Load two distinctly-named programs, attach both at the same
-priority, read the runtime config, assert the run_order matches
-alphabetical program-name ordering.
+Covered by `TestTC_DispatcherPriorityTieBreakByName`, which loads two
+distinctly-named TC programs ("alpha" and "beta") from an embedded
+test bytecode object, attaches beta first then alpha at the same
+priority, and asserts the run_order places alpha's slot before beta's
+(alphabetical secondary sort).
 
 ## 7. Detach from the middle of a full dispatcher -- DONE
 

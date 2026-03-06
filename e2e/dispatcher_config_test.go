@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	_ "embed"
 	"os"
 	"path/filepath"
 	"sort"
@@ -581,6 +582,92 @@ func TestTC_MultipleInterfacesIndependent(t *testing.T) {
 		"ifaceA run_order should be unchanged")
 	assert.Equal(t, cfgA.ChainCallActions, cfgAAfter.ChainCallActions,
 		"ifaceA chain_call_actions should be unchanged")
+}
+
+// tcPassBytecode is a minimal TC BPF object containing two programs
+// ("alpha" and "beta") that simply return TC_ACT_OK. Used by tests
+// that need distinctly-named programs, e.g. priority tie-breaking.
+//
+//go:embed testdata/tc_pass.bpf.o
+var tcPassBytecode []byte
+
+// TestTC_DispatcherPriorityTieBreakByName verifies that when two
+// programs share the same priority, the dispatcher orders them
+// alphabetically by program name. "beta" is attached first (slot 0),
+// "alpha" second (slot 1), both at priority 100. The run_order must
+// place alpha's slot before beta's, proving the secondary sort.
+func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	// Write embedded bytecode to a temp file for LoadFile.
+	objFile := filepath.Join(t.TempDir(), "tc_pass.bpf.o")
+	require.NoError(t, os.WriteFile(objFile, tcPassBytecode, 0644))
+
+	// Load "beta" and "alpha" as separate programs so they have
+	// distinct Meta.Name values in the dispatcher slot records.
+	progsBeta, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "beta"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, progsBeta, 1)
+	beta := progsBeta[0]
+	t.Cleanup(func() { env.Unload(context.Background(), beta.Status.Kernel.ID) })
+
+	progsAlpha, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+		{Type: bpfman.ProgramTypeTC, Name: "alpha"},
+	}, manager.LoadOpts{})
+	require.NoError(t, err)
+	require.Len(t, progsAlpha, 1)
+	alpha := progsAlpha[0]
+	t.Cleanup(func() { env.Unload(context.Background(), alpha.Status.Kernel.ID) })
+
+	// Attach beta first (gets slot 0), then alpha (gets slot 1).
+	// Both at the same priority so the tie-break decides ordering.
+	tcBeta, err := bpfman.NewTCAttachSpec(
+		beta.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcBeta = tcBeta.WithPriority(100)
+	linkBeta, err := env.Attach(ctx, tcBeta)
+	require.NoError(t, err)
+	t.Cleanup(func() { env.Detach(context.Background(), linkBeta.ID) })
+
+	tcAlpha, err := bpfman.NewTCAttachSpec(
+		alpha.Status.Kernel.ID, iface.Name, iface.Ifindex,
+		bpfman.TCDirectionIngress,
+	)
+	require.NoError(t, err)
+	tcAlpha = tcAlpha.WithPriority(100)
+	linkAlpha, err := env.Attach(ctx, tcAlpha)
+	require.NoError(t, err)
+	t.Cleanup(func() { env.Detach(context.Background(), linkAlpha.ID) })
+
+	// Read the dispatcher runtime config.
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+
+	bpffs := env.Layout.BPFFS()
+	configMapPin := bpffs.DispatcherConfigMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+	activeMapPin := bpffs.DispatcherActiveMapPath(
+		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+
+	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
+	require.Equal(t, uint32(2), cfg.NumProgsEnabled, "should have 2 programs")
+
+	// beta is in slot 0, alpha in slot 1. Alphabetical ordering
+	// means alpha runs first: run_order = [1, 0].
+	assert.Equal(t, uint32(1), cfg.RunOrder[0],
+		"run_order[0] should be slot 1 (alpha)")
+	assert.Equal(t, uint32(0), cfg.RunOrder[1],
+		"run_order[1] should be slot 0 (beta)")
 }
 
 // TestTC_DispatcherSineWave exercises repeated fill-drain-refill
