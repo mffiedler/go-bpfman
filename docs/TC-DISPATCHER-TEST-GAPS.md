@@ -15,17 +15,11 @@ A wiring bug in any of those would be invisible today.
 through a veth pair, verify the program's stats map shows non-zero
 packet counts.
 
-## 2. Slot reuse after detach
+## 2. Slot reuse after detach -- DONE
 
-We test filling all 10 slots and we test detaching from a full
-dispatcher, but we never detach a slot then attach a new program to
-verify `findFreeSlot` reclaims the gap correctly and the runtime
-config is recomputed with the new occupant in the right priority
-position.
-
-**Test:** Fill slots 0-9, detach the program in slot 3, attach a new
-program. Assert it occupies slot 3 and the runtime config run_order
-reflects its priority relative to the remaining nine.
+Covered by `TestTC_SlotReusedAfterDetach` (single slot reclaim) and
+`TestTC_DispatcherSineWave` (repeated fill/drain across shifting slot
+boundaries with traffic verification).
 
 ## 3. Dispatcher lifecycle after last extension removed
 
@@ -67,22 +61,16 @@ ordering when priorities collide.
 priority, read the runtime config, assert the run_order matches
 alphabetical program-name ordering.
 
-## 7. Detach from the middle of a full dispatcher
+## 7. Detach from the middle of a full dispatcher -- DONE
 
-`TestTC_DispatcherConfigRecomputedOnDetach` detaches only the first
-link (lowest priority). No test detaches from the middle of the
-priority ordering and verifies the remaining programs' run_order is
-correct.
+Covered by `TestTC_DispatcherSineWave`, which drains from both low
+and high ends of the slot range across three oscillations, verifying
+run_order and chain_call_actions after each drain.
 
-**Test:** Fill all 10 slots with ascending priorities, detach the
-program at priority 400 (slot 4), assert the config has 9 programs
-enabled and the run_order skips the vacated slot.
+## 8. Config map double-buffer flip -- partially covered
 
-## 8. Config map double-buffer flip
-
-`UpdateDispatcherConfig` flips the active buffer index on every
-attach or detach. No test reads the active map before and after an
-operation to verify the index actually toggles.
-
-**Test:** Attach one program, read the active index, attach a second
-program, read again, assert the index changed.
+`TestTC_DispatcherSineWave` reads and verifies the runtime config
+(including the active buffer contents) after every fill and drain
+cycle, exercising the double-buffer across many transitions. A
+dedicated test that explicitly asserts the active index toggles on
+each operation would still add value.
