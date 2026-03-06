@@ -368,6 +368,11 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 		return bpfman.AttachOutput{}, fmt.Errorf("get TC link info: %w", err)
 	}
 
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the
+	// freplace trampoline.
+	lnk.Close()
 	success = true
 
 	return bpfman.AttachOutput{
@@ -460,6 +465,11 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 			return fmt.Errorf("get TCX link info: %w", err)
 		}
 
+		// Close the fd now that the link is pinned. The pin
+		// keeps the kernel link alive; leaking the fd would
+		// prevent DetachLink (which only removes the pin) from
+		// fully releasing the link.
+		lnk.Close()
 		success = true
 		result = bpfman.AttachOutput{
 			LinkID:     kernel.LinkID(linkInfo.ID),

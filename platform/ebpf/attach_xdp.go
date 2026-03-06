@@ -60,6 +60,10 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the link.
+	lnk.Close()
 	success = true
 
 	return bpfman.AttachOutput{
@@ -316,6 +320,11 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
+	// Close the fd now that the link is pinned. The pin keeps the
+	// kernel link alive; leaking the fd would prevent DetachLink
+	// (which only removes the pin) from fully releasing the
+	// freplace trampoline.
+	lnk.Close()
 	success = true
 
 	return bpfman.AttachOutput{
