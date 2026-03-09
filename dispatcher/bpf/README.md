@@ -39,15 +39,31 @@ maps. The dispatcher is deleted when its last extension is detached.
 In this model, adding or removing a program is a map write followed
 by a single `uint32` flip, with no dispatcher reload or swap.
 
-A trade-off is that the `.rodata` dispatchers benefit from dead code
-elimination: the kernel verifier knows `num_progs_enabled` at load
-time and can prune unreachable slots entirely. The map-based
-dispatchers cannot -- all 10 slots are present in the verified
-program regardless of how many are actually in use.
+Feedback from Toke Hoiland-Jorgensen (author of xdp-tools/libxdp)
+clarified why the full-rebuild approach is the way it is:
 
-Whether this approach (double-buffering) is sound in the general case
-is an open question -- there may be good reasons for the full-rebuild
-approach that are not yet apparent to me.
+1. **Dead code elimination.** Making the dispatcher immutable
+   (`.rodata` frozen at load time) allows the kernel verifier to
+   prune unused slots entirely. The map-based dispatchers cannot --
+   all 10 slots are present in the verified program regardless of
+   how many are actually in use.
+
+2. **Single-program fast path.** When only one program is attached,
+   libxdp attaches it directly on top of the main dispatcher function
+   rather than into a slot. This completely eliminates the overhead
+   of the dispatcher for the single-program case. A persistent
+   dispatcher cannot do this.
+
+3. **Code path simplicity.** Setup and teardown code is needed
+   regardless. If the dispatcher is disposed of every time, those
+   same code paths handle every change. A persistent dispatcher with
+   map-based updates adds a third code path on top of setup and
+   teardown.
+
+4. **Kernel-provided atomic replace.** The kernel already has logic
+   for atomic replacement of XDP programs (`bpf_link_update`). The
+   double-buffer map flip is reimplementing that atomicity in
+   userspace.
 
 ## How it works
 
