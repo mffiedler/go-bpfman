@@ -2,8 +2,10 @@ package ebpf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -28,6 +30,9 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 		Interface: ifindex,
 	})
 	if err != nil {
+		if errors.Is(err, syscall.EBUSY) {
+			return bpfman.AttachOutput{}, fmt.Errorf("attach XDP to ifindex %d: interface already has an XDP program attached: %w", ifindex, err)
+		}
 		return bpfman.AttachOutput{}, fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 	}
 
@@ -116,7 +121,11 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		if err != nil {
 			k.logger.Debug("XDP dispatcher attach failed",
 				"ifindex", spec.Target.IfIndex,
-				"error", err)
+				"error", err,
+				"is_ebusy", errors.Is(err, syscall.EBUSY))
+			if errors.Is(err, syscall.EBUSY) {
+				return fmt.Errorf("attach XDP dispatcher to ifindex %d: interface already has an XDP program attached: %w", spec.Target.IfIndex, err)
+			}
 			return fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", spec.Target.IfIndex, err)
 		}
 
@@ -275,7 +284,11 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, i
 		if err != nil {
 			k.logger.Debug("XDP link creation failed",
 				"ifindex", ifindex,
-				"error", err)
+				"error", err,
+				"is_ebusy", errors.Is(err, syscall.EBUSY))
+			if errors.Is(err, syscall.EBUSY) {
+				return fmt.Errorf("attach XDP to ifindex %d: interface already has an XDP program attached: %w", ifindex, err)
+			}
 			return fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 		}
 
