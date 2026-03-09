@@ -23,9 +23,8 @@ import (
 
 // rebuildSlot carries per-extension data for the rebuild.
 type rebuildSlot struct {
-	ObjectPath  string
+	ProgPinPath string
 	ProgramName string
-	MapPinDir   string
 	Priority    int
 	ProceedOn   uint32
 	LinkID      kernel.LinkID    // existing synthetic link ID (zero for new)
@@ -57,16 +56,14 @@ type tcRebuildOps struct {
 func (e *executor) rebuildXDPDispatcher(
 	ctx context.Context,
 	ops xdpRebuildOps,
-	objectPath string,
+	progPinPath string,
 	programName string,
-	mapPinDir string,
 	priority int,
 	proceedOn uint32,
 ) (extensionResult, error) {
 	newSlot := rebuildSlot{
-		ObjectPath:  objectPath,
+		ProgPinPath: progPinPath,
 		ProgramName: programName,
-		MapPinDir:   mapPinDir,
 		Priority:    priority,
 		ProceedOn:   proceedOn,
 		Ifname:      ops.ifname,
@@ -102,9 +99,8 @@ func (e *executor) rebuildXDPDispatcher(
 	allSlots := make([]rebuildSlot, 0, len(existingSlots)+1)
 	for _, s := range existingSlots {
 		allSlots = append(allSlots, rebuildSlot{
-			ObjectPath:  s.ObjectPath,
+			ProgPinPath: s.ProgPinPath,
 			ProgramName: s.ProgramName,
-			MapPinDir:   s.MapPinDir,
 			Priority:    s.Priority,
 			ProceedOn:   s.ProceedOn,
 			LinkID:      s.LinkID,
@@ -140,7 +136,7 @@ func (e *executor) rebuildXDPDispatcher(
 		}
 	}
 
-	progPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
+	dispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
 
 	e.logger.InfoContext(ctx, "rebuilding XDP dispatcher",
 		"nsid", nsid,
@@ -150,16 +146,16 @@ func (e *executor) rebuildXDPDispatcher(
 		"first_attach", firstAttach)
 
 	// Load new dispatcher with .rodata config.
-	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
+	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, dispProgPinPath)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("load XDP dispatcher: %w", err)
 	}
 
 	// Track cleanup for rollback on failure.
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed",
-				"path", progPinPath, "error", rbErr)
+				"path", dispProgPinPath, "error", rbErr)
 		}
 	}
 
@@ -188,12 +184,11 @@ func (e *executor) rebuildXDPDispatcher(
 		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
 
 		out, err := e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
-			DispatcherPinPath: progPinPath,
-			ObjectPath:        slot.ObjectPath,
+			DispatcherPinPath: dispProgPinPath,
+			ProgPinPath:       slot.ProgPinPath,
 			ProgramName:       slot.ProgramName,
 			Position:          i,
 			LinkPinPath:       linkPinPath,
-			MapPinDir:         slot.MapPinDir,
 		})
 		if err != nil {
 			cleanupExtensions()
@@ -213,7 +208,7 @@ func (e *executor) rebuildXDPDispatcher(
 	var linkID kernel.LinkID
 
 	if firstAttach {
-		result, err := e.kernel.CreateXDPLink(ctx, progPinPath, int(ops.ifindex), linkPinPath, ops.netnsPath)
+		result, err := e.kernel.CreateXDPLink(ctx, dispProgPinPath, int(ops.ifindex), linkPinPath, ops.netnsPath)
 		if err != nil {
 			cleanupExtensions()
 			cleanupNewDispatcher()
@@ -221,7 +216,7 @@ func (e *executor) rebuildXDPDispatcher(
 		}
 		linkID = result.LinkID
 	} else {
-		if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, progPinPath); err != nil {
+		if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, dispProgPinPath); err != nil {
 			cleanupExtensions()
 			cleanupNewDispatcher()
 			return extensionResult{}, fmt.Errorf("update XDP dispatcher link: %w", err)
@@ -330,16 +325,14 @@ func (e *executor) rebuildXDPDispatcher(
 func (e *executor) rebuildTCDispatcher(
 	ctx context.Context,
 	ops tcRebuildOps,
-	objectPath string,
+	progPinPath string,
 	programName string,
-	mapPinDir string,
 	priority int,
 	proceedOn uint32,
 ) (extensionResult, error) {
 	newSlot := rebuildSlot{
-		ObjectPath:  objectPath,
+		ProgPinPath: progPinPath,
 		ProgramName: programName,
-		MapPinDir:   mapPinDir,
 		Priority:    priority,
 		ProceedOn:   proceedOn,
 		Ifname:      ops.ifname,
@@ -375,9 +368,8 @@ func (e *executor) rebuildTCDispatcher(
 	allSlots := make([]rebuildSlot, 0, len(existingSlots)+1)
 	for _, s := range existingSlots {
 		allSlots = append(allSlots, rebuildSlot{
-			ObjectPath:  s.ObjectPath,
+			ProgPinPath: s.ProgPinPath,
 			ProgramName: s.ProgramName,
-			MapPinDir:   s.MapPinDir,
 			Priority:    s.Priority,
 			ProceedOn:   s.ProceedOn,
 			LinkID:      s.LinkID,
@@ -414,7 +406,7 @@ func (e *executor) rebuildTCDispatcher(
 		}
 	}
 
-	progPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
+	dispProgPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
 
 	e.logger.InfoContext(ctx, "rebuilding TC dispatcher",
 		"nsid", nsid,
@@ -426,15 +418,15 @@ func (e *executor) rebuildTCDispatcher(
 		"first_attach", firstAttach)
 
 	// Load new dispatcher with .rodata config.
-	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
+	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, dispProgPinPath)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("load TC dispatcher: %w", err)
 	}
 
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed",
-				"path", progPinPath, "error", rbErr)
+				"path", dispProgPinPath, "error", rbErr)
 		}
 	}
 
@@ -462,12 +454,11 @@ func (e *executor) rebuildTCDispatcher(
 		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
 
 		out, err := e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
-			DispatcherPinPath: progPinPath,
-			ObjectPath:        slot.ObjectPath,
+			DispatcherPinPath: dispProgPinPath,
+			ProgPinPath:       slot.ProgPinPath,
 			ProgramName:       slot.ProgramName,
 			Position:          i,
 			LinkPinPath:       linkPinPath,
-			MapPinDir:         slot.MapPinDir,
 		})
 		if err != nil {
 			cleanupExtensions()
@@ -497,7 +488,7 @@ func (e *executor) rebuildTCDispatcher(
 		}
 	}
 
-	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath)
+	result, err := e.kernel.CreateTCFilter(ctx, dispProgPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath)
 	if err != nil {
 		cleanupExtensions()
 		cleanupNewDispatcher()
@@ -624,9 +615,8 @@ func (e *executor) rebuildDispatcherForDetach(ctx context.Context, state dispatc
 	rebuildSlots := make([]rebuildSlot, len(slots))
 	for i, s := range slots {
 		rebuildSlots[i] = rebuildSlot{
-			ObjectPath:  s.ObjectPath,
+			ProgPinPath: s.ProgPinPath,
 			ProgramName: s.ProgramName,
-			MapPinDir:   s.MapPinDir,
 			Priority:    s.Priority,
 			ProceedOn:   s.ProceedOn,
 			LinkID:      s.LinkID,
@@ -690,11 +680,10 @@ func (e *executor) rebuildXDPForDetach(
 		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
 		_, err := e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
-			ObjectPath:        slot.ObjectPath,
+			ProgPinPath:       slot.ProgPinPath,
 			ProgramName:       slot.ProgramName,
 			Position:          i,
 			LinkPinPath:       linkPinPath,
-			MapPinDir:         slot.MapPinDir,
 		})
 		if err != nil {
 			return fmt.Errorf("re-attach XDP extension %s at position %d: %w", slot.ProgramName, i, err)
@@ -790,11 +779,10 @@ func (e *executor) rebuildTCForDetach(
 		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
 		_, err := e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
 			DispatcherPinPath: progPinPath,
-			ObjectPath:        slot.ObjectPath,
+			ProgPinPath:       slot.ProgPinPath,
 			ProgramName:       slot.ProgramName,
 			Position:          i,
 			LinkPinPath:       linkPinPath,
-			MapPinDir:         slot.MapPinDir,
 		})
 		if err != nil {
 			return fmt.Errorf("re-attach TC extension %s at position %d: %w", slot.ProgramName, i, err)

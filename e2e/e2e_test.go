@@ -863,7 +863,9 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
 	require.Equal(t, bpfman.ProgramTypeTC, prog.Record.Load.ProgramType())
-	require.Equal(t, kernel.ProgramType("schedcls"), prog.Status.Kernel.ProgramType)
+	// TC programs are loaded as BPF_PROG_TYPE_EXT targeting a test
+	// dispatcher, so the kernel reports "extension" not "schedcls".
+	require.Equal(t, kernel.ProgramType("extension"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
 		env.Unload(context.Background(), prog.Status.Kernel.ID)
@@ -1122,7 +1124,9 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.NotNil(t, prog.Status.Kernel, "kernel info should be present")
 	require.NotZero(t, prog.Status.Kernel.ID, "kernel should assign program ID")
 	require.Equal(t, bpfman.ProgramTypeXDP, prog.Record.Load.ProgramType())
-	require.Equal(t, kernel.ProgramType("xdp"), prog.Status.Kernel.ProgramType)
+	// XDP programs are loaded as BPF_PROG_TYPE_EXT targeting a test
+	// dispatcher, so the kernel reports "extension" not "xdp".
+	require.Equal(t, kernel.ProgramType("extension"), prog.Status.Kernel.ProgramType)
 
 	t.Cleanup(func() {
 		env.Unload(context.Background(), prog.Status.Kernel.ID)

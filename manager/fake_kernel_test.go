@@ -143,11 +143,11 @@ var _ platform.ImagePuller = (*fakeImagePuller)(nil)
 
 // kernelOp records an operation performed on the fake kernel.
 type kernelOp struct {
-	Op        string // "load", "unload", "attach", "detach", "attach-xdp-ext", "attach-tc-ext"
-	Name      string // program or link name
-	ID        uint32 // kernel ID assigned (untyped for recording purposes)
-	Err       error  // error if operation failed
-	MapPinDir string // for XDP/TC extension attachments, the map directory used
+	Op          string // "load", "unload", "attach", "detach", "attach-xdp-ext", "attach-tc-ext"
+	Name        string // program or link name
+	ID          uint32 // kernel ID assigned (untyped for recording purposes)
+	Err         error  // error if operation failed
+	ProgPinPath string // for XDP/TC extension attachments, the extension pin path used
 }
 
 // tcFilterKey identifies a TC filter by its location on an interface.
@@ -256,11 +256,11 @@ func (f *fakeKernel) InjectKernelProgram(id kernel.ProgramID, name string, progT
 	}
 }
 
-// recordExtensionAttach records an XDP/TC extension attachment with the mapPinDir.
-func (f *fakeKernel) recordExtensionAttach(op, programName string, id uint32, mapPinDir string) {
+// recordExtensionAttach records an XDP/TC extension attachment with the progPinPath.
+func (f *fakeKernel) recordExtensionAttach(op, programName string, id uint32, progPinPath string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.ops = append(f.ops, kernelOp{Op: op, Name: programName, ID: id, MapPinDir: mapPinDir})
+	f.ops = append(f.ops, kernelOp{Op: op, Name: programName, ID: id, ProgPinPath: progPinPath})
 }
 
 // ExtensionAttachOps returns all XDP/TC extension attach operations.
@@ -280,7 +280,7 @@ func (f *fakeKernel) ExtensionAttachOps() []kernelOp {
 func (f *fakeKernel) recordTCXAttach(programPinPath string, id uint32) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// Reuse MapPinDir field to store programPinPath for TCX
+	// Reuse ProgPinPath field to store programPinPath for TCX
 	f.ops = append(f.ops, kernelOp{Op: "attach-tcx", Name: programPinPath, ID: id})
 }
 
@@ -817,8 +817,8 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 		},
 	}
 	f.links[linkID] = &link
-	// Record the operation with mapPinDir for test verification
-	f.recordExtensionAttach("attach-xdp-ext", spec.ProgramName, uint32(linkID), spec.MapPinDir)
+	// Record the operation with progPinPath for test verification
+	f.recordExtensionAttach("attach-xdp-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath)
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
@@ -906,8 +906,8 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 		},
 	}
 	f.links[linkID] = &link
-	// Record the operation with mapPinDir for test verification
-	f.recordExtensionAttach("attach-tc-ext", spec.ProgramName, uint32(linkID), spec.MapPinDir)
+	// Record the operation with progPinPath for test verification
+	f.recordExtensionAttach("attach-tc-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath)
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,

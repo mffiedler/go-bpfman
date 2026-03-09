@@ -90,8 +90,7 @@ type DispatcherSlot struct {
 	Priority    int
 	ProgramName string
 	ProceedOn   uint32
-	ObjectPath  string           // ELF path for reloading during rebuild
-	MapPinDir   string           // map pin directory for map replacements
+	ProgPinPath string           // pinned extension program for rebuild
 	LinkID      kernel.LinkID    // existing link record ID (synthetic)
 	ProgramID   kernel.ProgramID // managed program's kernel ID
 	Ifname      string           // interface name from detail record
@@ -245,9 +244,8 @@ type DispatcherAttacher interface {
 	// Uses .rodata-based config baked in at load time.
 	AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*XDPDispatcherResult, error)
 
-	// AttachXDPExtension loads a program from ELF as Extension type and attaches
-	// it to a dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
-	// targeting the dispatcher's slot function.
+	// AttachXDPExtension attaches a pinned Extension program to a
+	// dispatcher slot via freplace link.
 	AttachXDPExtension(ctx context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error)
 
 	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
@@ -256,9 +254,8 @@ type DispatcherAttacher interface {
 	// Uses .rodata-based config baked in at load time.
 	AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*TCDispatcherResult, error)
 
-	// AttachTCExtension loads a program from ELF as Extension type and attaches
-	// it to a TC dispatcher slot. The program is loaded with BPF_PROG_TYPE_EXT
-	// targeting the dispatcher's slot function.
+	// AttachTCExtension attaches a pinned Extension program to a TC
+	// dispatcher slot via freplace link.
 	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error)
 
 	// UpdateXDPDispatcherLink atomically updates an existing XDP

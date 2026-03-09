@@ -350,7 +350,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 
 	const sqlListDispatcherSlots = `
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.object_path, p.map_pin_path, l.link_id,
+		       p.pin_path, l.link_id,
 		       l.kernel_prog_id, d.interface
 		FROM link_xdp_details d
 		JOIN links l ON d.link_id = l.link_id
@@ -358,7 +358,7 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		WHERE d.dispatcher_program_id = ?
 		UNION ALL
 		SELECT d.position, d.priority, p.program_name, d.proceed_on,
-		       p.object_path, p.map_pin_path, l.link_id,
+		       p.pin_path, l.link_id,
 		       l.kernel_prog_id, d.interface
 		FROM link_tc_details d
 		JOIN links l ON d.link_id = l.link_id

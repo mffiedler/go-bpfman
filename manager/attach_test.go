@@ -965,12 +965,12 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 		"single program should have its own maps directory")
 }
 
-// TestMapSharing_XDPAttach_UsesMapPinPath verifies that:
+// TestPinBasedExtension_XDPAttach_UsesProgPinPath verifies that:
 //
 //	Given a loaded XDP program,
 //	When it is attached to an interface,
-//	Then the kernel receives the program's MapPinPath.
-func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
+//	Then the kernel receives the program's PinPath for pin-based extension loading.
+func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -981,8 +981,8 @@ func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedMapPinPath := prog.Record.Handles.MapPinPath
-	require.NotEmpty(t, expectedMapPinPath, "MapPinPath should be set")
+	expectedProgPinPath := prog.Record.Handles.PinPath
+	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
 	attachSpec, err := bpfman.NewXDPAttachSpec(prog.Record.ProgramID, "eth0", 2)
@@ -990,20 +990,20 @@ func TestMapSharing_XDPAttach_UsesMapPinPath(t *testing.T) {
 	_, err = fix.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
-	// Verify the kernel received the correct MapPinDir
+	// Verify the kernel received the correct ProgPinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one XDP extension attach")
 	assert.Equal(t, "attach-xdp-ext", extOps[0].Op)
-	assert.Equal(t, expectedMapPinPath, extOps[0].MapPinDir,
-		"XDP attach should use the program's MapPinPath")
+	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath,
+		"XDP attach should use the program's PinPath")
 }
 
-// TestMapSharing_TCAttach_UsesMapPinPath verifies that:
+// TestPinBasedExtension_TCAttach_UsesProgPinPath verifies that:
 //
 //	Given a loaded TC program,
 //	When it is attached to an interface,
-//	Then the kernel receives the program's MapPinPath.
-func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
+//	Then the kernel receives the program's PinPath for pin-based extension loading.
+func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1014,8 +1014,8 @@ func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedMapPinPath := prog.Record.Handles.MapPinPath
-	require.NotEmpty(t, expectedMapPinPath, "MapPinPath should be set")
+	expectedProgPinPath := prog.Record.Handles.PinPath
+	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
 	attachSpec, err := bpfman.NewTCAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirectionIngress)
@@ -1024,20 +1024,20 @@ func TestMapSharing_TCAttach_UsesMapPinPath(t *testing.T) {
 	_, err = fix.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
-	// Verify the kernel received the correct MapPinDir
+	// Verify the kernel received the correct ProgPinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one TC extension attach")
 	assert.Equal(t, "attach-tc-ext", extOps[0].Op)
-	assert.Equal(t, expectedMapPinPath, extOps[0].MapPinDir,
-		"TC attach should use the program's MapPinPath")
+	assert.Equal(t, expectedProgPinPath, extOps[0].ProgPinPath,
+		"TC attach should use the program's PinPath")
 }
 
-// TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath verifies that:
+// TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath verifies that:
 //
 //	Given a multi-program load where the second program has MapOwnerID set,
 //	When the second (XDP) program is attached,
-//	Then the kernel receives the map owner's MapPinPath.
-func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
+//	Then the kernel receives the XDP program's own PinPath (not the owner's).
+func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1066,19 +1066,19 @@ func TestMapSharing_MultiProgram_XDPAttach_UsesOwnerMapPinPath(t *testing.T) {
 	_, err = fix.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
-	// Verify the kernel received the owner's MapPinPath
+	// Verify the kernel received the XDP program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one XDP extension attach")
-	assert.Equal(t, ownerMapPinPath, extOps[0].MapPinDir,
-		"XDP attach should use the owner's MapPinPath")
+	assert.Equal(t, prog2.Record.Handles.PinPath, extOps[0].ProgPinPath,
+		"XDP attach should use the program's own PinPath")
 }
 
-// TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath verifies that:
+// TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath verifies that:
 //
 //	Given a multi-program load where the second program has MapOwnerID set,
 //	When the second (TC) program is attached,
-//	Then the kernel receives the map owner's MapPinPath.
-func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
+//	Then the kernel receives the TC program's own PinPath (not the owner's).
+func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1108,11 +1108,11 @@ func TestMapSharing_MultiProgram_TCAttach_UsesOwnerMapPinPath(t *testing.T) {
 	_, err = fix.Attach(ctx, nil, attachSpec)
 	require.NoError(t, err, "Attach should succeed")
 
-	// Verify the kernel received the owner's MapPinPath
+	// Verify the kernel received the TC program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one TC extension attach")
-	assert.Equal(t, ownerMapPinPath, extOps[0].MapPinDir,
-		"TC attach should use the owner's MapPinPath")
+	assert.Equal(t, prog2.Record.Handles.PinPath, extOps[0].ProgPinPath,
+		"TC attach should use the program's own PinPath")
 }
 
 // =============================================================================

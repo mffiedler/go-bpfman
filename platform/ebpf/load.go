@@ -74,6 +74,25 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		programType = inferProgramType(progSpec.SectionName)
 	}
 
+	// For XDP/TC programs: load as BPF_PROG_TYPE_EXT targeting a test
+	// dispatcher. This matches Rust bpfman's approach where extension
+	// programs are loaded once and reused from their pin on every
+	// dispatcher rebuild, rather than re-reading the ELF file.
+	if programType == bpfman.ProgramTypeXDP || programType == bpfman.ProgramTypeTC {
+		var testProg *ebpf.Program
+		if programType == bpfman.ProgramTypeXDP {
+			testProg, err = k.testDisp.getXDP()
+		} else {
+			testProg, err = k.testDisp.getTC()
+		}
+		if err != nil {
+			return bpfman.LoadOutput{}, fmt.Errorf("get test dispatcher for %s: %w", programType, err)
+		}
+		progSpec.Type = ebpf.Extension
+		progSpec.AttachTarget = testProg
+		progSpec.AttachTo = "prog0"
+	}
+
 	// Check if we should share maps with another program (map_owner_id).
 	// When set, we load the owner's pinned maps and pass them as replacements
 	// so this program uses the same map instances.

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -348,95 +346,34 @@ func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath string, 
 	return result, nil
 }
 
-// AttachTCExtension loads a program from ELF as Extension type and attaches
-// it to a TC dispatcher slot. This follows the same pattern as XDP extension.
+// AttachTCExtension loads a pinned extension program and attaches it
+// to a TC dispatcher slot via freplace. The extension was already
+// loaded as BPF_PROG_TYPE_EXT during the initial Load, so no ELF
+// re-read or map replacement is needed.
 func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
 
-	// Load the pinned dispatcher to use as attach target
+	// Load the pinned dispatcher to use as attach target.
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned TC dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
-	// Load the collection spec from the ELF file
-	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath)
+	// Load the pinned extension program.
+	extensionProg, err := ebpf.LoadPinnedProgram(spec.ProgPinPath, nil)
 	if err != nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("load collection spec from %s: %w", spec.ObjectPath, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("load pinned TC extension %s: %w", spec.ProgPinPath, err)
 	}
+	defer extensionProg.Close()
 
-	// Verify the program exists in the collection
-	progSpec, ok := collSpec.Programs[spec.ProgramName]
-	if !ok {
-		return bpfman.AttachOutput{}, fmt.Errorf("program %q not found in %s", spec.ProgramName, spec.ObjectPath)
-	}
-
-	// Modify the program spec to be Extension type targeting the dispatcher
-	progSpec.Type = ebpf.Extension
-	progSpec.AttachTarget = dispatcherProg
-	progSpec.AttachTo = dispatcher.SlotName(spec.Position)
-
-	// Load pinned maps from the original program's map directory.
-	// This ensures the extension program uses the same maps that were
-	// created during the initial Load and are exposed via CSI.
-	// We iterate over collSpec.Maps to get the exact ELF map names,
-	// which must match the MapReplacements keys.
-	mapReplacements := make(map[string]*ebpf.Map)
-	if spec.MapPinDir != "" {
-		for name := range collSpec.Maps {
-			// Skip internal maps (same filtering as Load)
-			if strings.HasPrefix(name, ".") {
-				continue
-			}
-			mapPath := filepath.Join(spec.MapPinDir, name)
-			m, err := ebpf.LoadPinnedMap(mapPath, nil)
-			if err != nil {
-				// Close any maps we've already loaded before returning
-				for _, loaded := range mapReplacements {
-					loaded.Close()
-				}
-				return bpfman.AttachOutput{}, fmt.Errorf("load pinned map %s: %w", mapPath, err)
-			}
-			mapReplacements[name] = m
-			k.logger.Debug("loaded pinned map for TC extension", "name", name, "path", mapPath)
-		}
-	}
-
-	// Always close map FDs when done. Closing a pinned map's FD is safe -
-	// it just releases our handle, not the underlying kernel object.
-	defer func() {
-		for _, m := range mapReplacements {
-			m.Close()
-		}
-	}()
-
-	// Clear map pinning flags - maps will come from MapReplacements
-	for _, mapSpec := range collSpec.Maps {
-		mapSpec.Pinning = ebpf.PinNone
-	}
-
-	// Load the collection with map replacements from the original program
-	coll, err := ebpf.NewCollectionWithOptions(collSpec, ebpf.CollectionOptions{
-		MapReplacements: mapReplacements,
-	})
+	// Attach the extension using freplace link.
+	slotName := dispatcher.SlotName(spec.Position)
+	lnk, err := link.AttachFreplace(dispatcherProg, slotName, extensionProg)
 	if err != nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("load TC extension collection: %w", err)
-	}
-	defer coll.Close()
-
-	// Get the loaded extension program
-	extensionProg := coll.Programs[spec.ProgramName]
-	if extensionProg == nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("TC extension program %q not in loaded collection", spec.ProgramName)
-	}
-
-	// Attach the extension using freplace link
-	lnk, err := link.AttachFreplace(dispatcherProg, progSpec.AttachTo, extensionProg)
-	if err != nil {
-		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", progSpec.AttachTo, err)
+		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", slotName, err)
 	}
 
 	success := false
@@ -453,14 +390,14 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	}
 	defer cleanup()
 
-	// Pin the link if path provided
+	// Pin the link if path provided.
 	if spec.LinkPinPath != "" {
 		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
 			return bpfman.AttachOutput{}, fmt.Errorf("pin TC extension link to %s: %w", spec.LinkPinPath, err)
 		}
 	}
 
-	// Get link info
+	// Get link info.
 	linkInfo, err := lnk.Info()
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("get TC link info: %w", err)

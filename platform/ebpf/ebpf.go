@@ -22,6 +22,11 @@ type kernelAdapter struct {
 	// be pinned to bpffs. The uprobe attachment remains active as long as the
 	// fd is open. Key is a unique identifier (e.g., "containerPid:target:fnName").
 	linkFds sync.Map
+
+	// testDisp holds lazily-loaded test dispatchers used as
+	// verification targets when loading XDP/TC programs as
+	// Extension type.
+	testDisp testDispatchers
 }
 
 // Option configures a kernelAdapter.

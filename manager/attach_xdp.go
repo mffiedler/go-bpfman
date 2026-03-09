@@ -39,9 +39,8 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 				Ifindex:     uint32(ifindex),
 				Ifname:      ifname,
 				NetnsPath:   netnsPath,
-				ObjectPath:  prog.Load.ObjectPath(),
+				ProgPinPath: prog.Handles.PinPath,
 				ProgramName: prog.Meta.Name,
-				MapPinDir:   prog.Handles.MapPinPath,
 				Priority:    dispatcher.DefaultPriority,
 				ProceedOn:   xdpProceedOnPass,
 			}

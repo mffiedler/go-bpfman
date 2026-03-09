@@ -81,9 +81,8 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				Direction:   direction,
 				DispType:    dispType,
 				NetnsPath:   netnsPath,
-				ObjectPath:  prog.Load.ObjectPath(),
+				ProgPinPath: prog.Handles.PinPath,
 				ProgramName: prog.Meta.Name,
-				MapPinDir:   prog.Handles.MapPinPath,
 				Priority:    priority,
 				ProceedOn:   tcProceedOnBitmask(proceedOn),
 			}

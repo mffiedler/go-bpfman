@@ -185,17 +185,16 @@ func (s *sqliteStore) ListDispatcherSlots(ctx context.Context, dispatcherProgram
 	for rows.Next() {
 		var slot platform.DispatcherSlot
 		var proceedOnJSON string
-		var objectPath, mapPinDir string
+		var progPinPath string
 		var linkID int64
 		var programID int64
 		var ifname string
 		if err := rows.Scan(&slot.Position, &slot.Priority, &slot.ProgramName, &proceedOnJSON,
-			&objectPath, &mapPinDir, &linkID, &programID, &ifname); err != nil {
+			&progPinPath, &linkID, &programID, &ifname); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, err
 		}
-		slot.ObjectPath = objectPath
-		slot.MapPinDir = mapPinDir
+		slot.ProgPinPath = progPinPath
 		slot.LinkID = kernel.LinkID(linkID)
 		slot.ProgramID = kernel.ProgramID(programID)
 		slot.Ifname = ifname

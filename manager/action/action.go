@@ -321,9 +321,8 @@ type RebuildXDPDispatcher struct {
 	Ifindex     uint32
 	Ifname      string
 	NetnsPath   string
-	ObjectPath  string
+	ProgPinPath string
 	ProgramName string
-	MapPinDir   string
 	Priority    int
 	ProceedOn   uint32
 }
@@ -339,9 +338,8 @@ type RebuildTCDispatcher struct {
 	Direction   bpfman.TCDirection
 	DispType    dispatcher.DispatcherType
 	NetnsPath   string
-	ObjectPath  string
+	ProgPinPath string
 	ProgramName string
-	MapPinDir   string
 	Priority    int
 	ProceedOn   uint32
 }

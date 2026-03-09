@@ -66,14 +66,14 @@ func (s TCDispatcherAttachSpec) Validate() error {
 }
 
 // XDPExtensionAttachSpec contains parameters for attaching an XDP extension
-// program to a dispatcher slot.
+// program to a dispatcher slot. The extension program is loaded from its
+// bpffs pin rather than re-read from the original ELF file.
 type XDPExtensionAttachSpec struct {
 	DispatcherPinPath string `json:"dispatcher_pin_path"`     // pinned dispatcher program
-	ObjectPath        string `json:"object_path"`             // ELF file containing extension
-	ProgramName       string `json:"program_name"`            // program name within ELF
+	ProgPinPath       string `json:"prog_pin_path"`           // pinned extension program
+	ProgramName       string `json:"program_name"`            // program name for slot derivation
 	Position          int    `json:"position"`                // dispatcher slot [0, MaxPrograms)
 	LinkPinPath       string `json:"link_pin_path,omitempty"` // optional - empty for ephemeral
-	MapPinDir         string `json:"map_pin_dir,omitempty"`   // optional - empty if no maps
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -81,8 +81,8 @@ func (s XDPExtensionAttachSpec) Validate() error {
 	if s.DispatcherPinPath == "" {
 		return errors.New("XDP extension: DispatcherPinPath is required")
 	}
-	if s.ObjectPath == "" {
-		return errors.New("XDP extension: ObjectPath is required")
+	if s.ProgPinPath == "" {
+		return errors.New("XDP extension: ProgPinPath is required")
 	}
 	if s.ProgramName == "" {
 		return errors.New("XDP extension: ProgramName is required")
@@ -94,14 +94,14 @@ func (s XDPExtensionAttachSpec) Validate() error {
 }
 
 // TCExtensionAttachSpec contains parameters for attaching a TC extension
-// program to a dispatcher slot.
+// program to a dispatcher slot. The extension program is loaded from its
+// bpffs pin rather than re-read from the original ELF file.
 type TCExtensionAttachSpec struct {
 	DispatcherPinPath string `json:"dispatcher_pin_path"`     // pinned dispatcher program
-	ObjectPath        string `json:"object_path"`             // ELF file containing extension
-	ProgramName       string `json:"program_name"`            // program name within ELF
+	ProgPinPath       string `json:"prog_pin_path"`           // pinned extension program
+	ProgramName       string `json:"program_name"`            // program name for slot derivation
 	Position          int    `json:"position"`                // dispatcher slot [0, MaxPrograms)
 	LinkPinPath       string `json:"link_pin_path,omitempty"` // optional - empty for ephemeral
-	MapPinDir         string `json:"map_pin_dir,omitempty"`   // optional - empty if no maps
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -109,8 +109,8 @@ func (s TCExtensionAttachSpec) Validate() error {
 	if s.DispatcherPinPath == "" {
 		return errors.New("TC extension: DispatcherPinPath is required")
 	}
-	if s.ObjectPath == "" {
-		return errors.New("TC extension: ObjectPath is required")
+	if s.ProgPinPath == "" {
+		return errors.New("TC extension: ProgPinPath is required")
 	}
 	if s.ProgramName == "" {
 		return errors.New("TC extension: ProgramName is required")
