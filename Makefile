@@ -111,7 +111,7 @@ e2e-testdata-bpf:
 
 test-e2e: e2e-testdata-bpf
 	@echo "Running e2e tests (requires root)..."
-	go test -race -count=1 -tags=e2e -v $(if $(TEST),-run $(TEST)) ./e2e/...
+	go test -test.failfast -race -v -count=1 -tags=e2e $(if $(TEST),-run $(TEST)) ./e2e/...
 
 # Documentation
 DOC_PORT ?= 6060

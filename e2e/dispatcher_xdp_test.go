@@ -16,7 +16,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/ns/netns"
-	"github.com/frobware/go-bpfman/platform"
 )
 
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
@@ -30,11 +29,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	imageRef := platform.ImageRef{
-		URL:        "quay.io/bpfman-bytecode/xdp_pass:latest",
-		PullPolicy: bpfman.PullIfNotPresent,
-	}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/xdp_pass.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeXDP, Name: "pass"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)

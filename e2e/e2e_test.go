@@ -6,14 +6,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -46,9 +48,8 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tracepoint-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/tracepoint_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTracepoint,
 			Name: "tracepoint_kill_recorder",
@@ -137,6 +138,15 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: trigger the tracepoint and verify counter
+	for i := 0; i < 5; i++ {
+		syscall.Kill(syscall.Getpid(), syscall.SIGUSR1)
+	}
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "tracepoint_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("tracepoint counter: %d", count)
+	require.Greater(t, count, uint64(0), "tracepoint program should have counted kill signals")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -168,9 +178,8 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-kprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/kprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKprobe,
 			Name: "kprobe_counter",
@@ -247,6 +256,13 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: trigger kprobe via scheduler wake-ups
+	time.Sleep(100 * time.Millisecond)
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "kprobe_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("kprobe counter: %d", count)
+	require.Greater(t, count, uint64(0), "kprobe program should have counted wake-ups")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -278,13 +294,11 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	// Note: kretprobe uses the same image as kprobe but loads the kretprobe program
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-kprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file (same program as kprobe, loaded as kretprobe)
+	programs, err := env.LoadFile(ctx, "testdata/kprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKretprobe,
-			Name: "kprobe_counter", // Same program as kprobe, loaded as kretprobe
+			Name: "kprobe_counter",
 		},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -359,6 +373,13 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindKretprobe, listedLinks[0].Kind, "ListLinks should report kretprobe")
 
+	// Behavioural validation: trigger kretprobe via scheduler wake-ups
+	time.Sleep(100 * time.Millisecond)
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "kprobe_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("kretprobe counter: %d", count)
+	require.Greater(t, count, uint64(0), "kretprobe program should have counted wake-up returns")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -384,9 +405,6 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 
 	target, fnName := uprobeTarget()
-	if target == "" {
-		t.Skip("libc not found at standard paths")
-	}
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -394,9 +412,8 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-uprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/uprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUprobe,
 			Name: "uprobe_counter",
@@ -441,7 +458,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to malloc in libc
+	// When: attach via client to do_work in call_malloc binary
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
@@ -475,6 +492,16 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: trigger the uprobe by running the
+	// call_malloc binary whose do_work function is the attach target.
+	for i := 0; i < 5; i++ {
+		exec.Command("testdata/call_malloc").Run()
+	}
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("uprobe counter: %d", count)
+	require.Greater(t, count, uint64(0), "uprobe program should have counted do_work calls")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -500,9 +527,6 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 
 	target, fnName := uprobeTarget()
-	if target == "" {
-		t.Skip("libc not found at standard paths")
-	}
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -510,12 +534,11 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-uprobe-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file (same program as uprobe, loaded as uretprobe)
+	programs, err := env.LoadFile(ctx, "testdata/uprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUretprobe,
-			Name: "uprobe_counter", // Same program as uprobe, loaded as uretprobe
+			Name: "uprobe_counter",
 		},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -557,7 +580,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to malloc in libc (uretprobe uses AttachUprobe API)
+	// When: attach via client to do_work in call_malloc binary (uretprobe uses AttachUprobe API)
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
@@ -592,6 +615,16 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindUretprobe, listedLinks[0].Kind, "ListLinks should report uretprobe")
 
+	// Behavioural validation: trigger the uretprobe by running the
+	// call_malloc binary whose do_work function is the attach target.
+	for i := 0; i < 5; i++ {
+		exec.Command("testdata/call_malloc").Run()
+	}
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("uretprobe counter: %d", count)
+	require.Greater(t, count, uint64(0), "uretprobe program should have counted do_work returns")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -624,15 +657,8 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// For fentry/fexit, we load from a local bytecode file
-	// The attach function is specified at load time
-	bytecodeFile := findBytecodeFile("fentry.bpf.o")
-	if bytecodeFile == "" {
-		t.Skip("fentry.bpf.o bytecode file not found")
-	}
-
-	// When: load from file via client
-	programs, err := env.LoadFile(ctx, bytecodeFile, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/fentry_counter.bpf.o", []manager.ProgramSpec{
 		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: "do_unlinkat"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -703,6 +729,16 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: trigger do_unlinkat by creating and removing a temp file
+	tmpFile, err := os.CreateTemp("", "bpfman-fentry-test-*")
+	require.NoError(t, err)
+	tmpFile.Close()
+	os.Remove(tmpFile.Name())
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "fentry_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("fentry counter: %d", count)
+	require.Greater(t, count, uint64(0), "fentry program should have counted do_unlinkat calls")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -735,14 +771,8 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	// Given: clean state
 	env.AssertCleanState()
 
-	// For fentry/fexit, we load from a local bytecode file
-	bytecodeFile := findBytecodeFile("fentry.bpf.o")
-	if bytecodeFile == "" {
-		t.Skip("fentry.bpf.o bytecode file not found")
-	}
-
-	// When: load from file via client
-	programs, err := env.LoadFile(ctx, bytecodeFile, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/fentry_counter.bpf.o", []manager.ProgramSpec{
 		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: "do_unlinkat"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -813,6 +843,16 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: trigger do_unlinkat by creating and removing a temp file
+	tmpFile, err := os.CreateTemp("", "bpfman-fexit-test-*")
+	require.NoError(t, err)
+	tmpFile.Close()
+	os.Remove(tmpFile.Name())
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "fentry_stats_map")
+	count := readPerCPUCounter(t, statsPath, 1)
+	t.Logf("fexit counter: %d", count)
+	require.Greater(t, count, uint64(0), "fexit program should have counted do_unlinkat returns")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -840,15 +880,14 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tc-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTC,
 			Name: "stats",
@@ -897,7 +936,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// When: attach via client to test interface
 	// TC uses dispatchers and supports both ingress and egress
-	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
+	tcSpec, err := bpfman.NewTCAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcSpec = tcSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcSpec)
@@ -909,7 +948,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 
 	// Verify tc filter is visible to tc(8) tooling.
 	// The dispatcher is attached as a legacy netlink BPF filter with pref 50.
-	filterCount := tcFilterCount(t, iface.Name, "ingress")
+	filterCount := tcFilterCount(t, veth.A.Name, "ingress")
 	require.GreaterOrEqual(t, filterCount, 1, "tc filter should be visible after attach")
 
 	t.Cleanup(func() {
@@ -925,15 +964,15 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	tcDetails, ok := gotLinkDetails.(bpfman.TCDetails)
 	require.True(t, ok, "expected TCDetails, got %T", gotLinkDetails)
-	require.Equal(t, iface.Name, tcDetails.Interface)
-	require.Equal(t, uint32(iface.Ifindex), tcDetails.Ifindex)
+	require.Equal(t, veth.A.Name, tcDetails.Interface)
+	require.Equal(t, uint32(veth.A.Ifindex), tcDetails.Ifindex)
 	require.Equal(t, bpfman.TCDirectionIngress, tcDetails.Direction)
 	require.Equal(t, int32(50), tcDetails.Priority)
 	require.NotZero(t, tcDetails.DispatcherID, "TC should use dispatcher")
 	require.NotZero(t, tcDetails.Revision, "dispatcher should have revision")
 
 	// Verify TC ingress filters exist on the interface via netlink
-	filters := tcIngressFilters(t, iface.Name)
+	filters := tcIngressFilters(t, veth.A.Name)
 	require.NotEmpty(t, filters, "expected at least one TC ingress filter after attach")
 	foundPriority := false
 	for _, f := range filters {
@@ -952,6 +991,13 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
+	// Behavioural validation: send traffic and verify counter
+	veth.Ping(t, 5)
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "tc_stats_map")
+	packets := readStatsMap(t, statsPath)
+	t.Logf("tc counter: %d packets", packets)
+	require.Greater(t, packets, uint64(0), "tc program should have counted packets")
+
 	// When: detach
 	err = env.Detach(ctx, link.ID)
 	require.NoError(t, err)
@@ -962,7 +1008,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "GetLink should fail after detach")
 
 	// Verify tc filter has been removed by the detach
-	filterCountAfter := tcFilterCount(t, iface.Name, "ingress")
+	filterCountAfter := tcFilterCount(t, veth.A.Name, "ingress")
 	require.Equal(t, 0, filterCountAfter, "tc filter should be removed after detach")
 
 	// When: unload
@@ -975,7 +1021,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	require.Error(t, err, "Get should fail after unload")
 
 	// Verify TC ingress filters are removed after detach/unload
-	filtersAfter := tcIngressFilters(t, iface.Name)
+	filtersAfter := tcIngressFilters(t, veth.A.Name)
 	require.Empty(t, filtersAfter, "expected no TC ingress filters after detach/unload")
 }
 
@@ -987,18 +1033,17 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/go-tc-counter:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/tcx_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTCX,
-			Name: "stats",
+			Name: "tcx_stats",
 		},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -1025,7 +1070,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, gotProg.Status.Kernel.Name)
 	require.NotEmpty(t, gotProg.Status.Kernel.Tag, "kernel should assign tag")
 	require.False(t, gotProg.Status.Kernel.LoadedAt.IsZero(), "kernel should track LoadedAt")
-	require.Equal(t, "stats", gotProg.Record.Meta.Name)
+	require.Equal(t, "tcx_stats", gotProg.Record.Meta.Name)
 	require.NotEmpty(t, gotProg.Record.Handles.PinPath, "program should have pin path")
 
 	// Round-trip: List should include our program
@@ -1037,11 +1082,11 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, prog.Status.Kernel.Name, listedProgs[0].Status.Kernel.Name)
 	require.NotEmpty(t, listedProgs[0].Status.Kernel.Tag)
 	require.False(t, listedProgs[0].Status.Kernel.LoadedAt.IsZero())
-	require.Equal(t, "stats", listedProgs[0].Record.Meta.Name)
+	require.Equal(t, "tcx_stats", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
+	tcxSpec, err := bpfman.NewTCXAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
 	require.NoError(t, err)
 	tcxSpec = tcxSpec.WithPriority(50)
 	link, err := env.Attach(ctx, tcxSpec)
@@ -1062,8 +1107,8 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	tcxDetails, ok := gotLinkDetails.(bpfman.TCXDetails)
 	require.True(t, ok, "expected TCXDetails, got %T", gotLinkDetails)
-	require.Equal(t, iface.Name, tcxDetails.Interface)
-	require.Equal(t, uint32(iface.Ifindex), tcxDetails.Ifindex)
+	require.Equal(t, veth.A.Name, tcxDetails.Interface)
+	require.Equal(t, uint32(veth.A.Ifindex), tcxDetails.Ifindex)
 	require.Equal(t, bpfman.TCDirectionIngress, tcxDetails.Direction)
 	require.Equal(t, int32(50), tcxDetails.Priority)
 	// TCX uses native kernel multi-prog support, not dispatchers
@@ -1074,6 +1119,13 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	require.Len(t, listedLinks, 1)
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
+
+	// Behavioural validation: send traffic and verify counter
+	veth.Ping(t, 5)
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "tcx_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("tcx counter: %d", count)
+	require.Greater(t, count, uint64(0), "tcx program should have counted packets")
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -1101,15 +1153,14 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state
 	env.AssertCleanState()
 
-	// When: load from OCI image via client
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/xdp_pass:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file
+	programs, err := env.LoadFile(ctx, "testdata/xdp_pass.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
@@ -1157,7 +1208,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
 	// When: attach via client to test interface
-	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, iface.Name, iface.Ifindex)
+	xdpSpec, err := bpfman.NewXDPAttachSpec(prog.Status.Kernel.ID, veth.A.Name, veth.A.Ifindex)
 	require.NoError(t, err)
 	link, err := env.Attach(ctx, xdpSpec)
 	require.NoError(t, err)
@@ -1179,8 +1230,8 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, gotLinkSummary.Kind)
 	xdpDetails, ok := gotLinkDetails.(bpfman.XDPDetails)
 	require.True(t, ok, "expected XDPDetails, got %T", gotLinkDetails)
-	require.Equal(t, iface.Name, xdpDetails.Interface)
-	require.Equal(t, uint32(iface.Ifindex), xdpDetails.Ifindex)
+	require.Equal(t, veth.A.Name, xdpDetails.Interface)
+	require.Equal(t, uint32(veth.A.Ifindex), xdpDetails.Ifindex)
 	require.NotZero(t, xdpDetails.DispatcherID, "XDP should use dispatcher")
 	require.NotZero(t, xdpDetails.Revision, "dispatcher should have revision")
 
@@ -1191,6 +1242,13 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	require.Len(t, listedLinks, 1)
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
+
+	// Behavioural validation: send traffic and verify counter
+	veth.Ping(t, 5)
+	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "xdp_pass_stats_map")
+	count := readPerCPUCounter(t, statsPath, 0)
+	t.Logf("xdp counter: %d", count)
+	require.Greater(t, count, uint64(0), "xdp program should have counted packets")
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -1234,9 +1292,8 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 		"config_u32": {0xDE, 0xAD, 0xBE, 0xEF},
 	}
 
-	// When: load from OCI image with metadata and global data
-	imageRef := platform.ImageRef{URL:"quay.io/bpfman-bytecode/xdp_pass:latest", PullPolicy: bpfman.PullIfNotPresent}
-	programs, err := env.LoadImage(ctx, imageRef, []manager.ProgramSpec{
+	// When: load from local file with metadata and global data
+	programs, err := env.LoadFile(ctx, "testdata/xdp_pass.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
@@ -1297,57 +1354,10 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 }
 
 // uprobeTarget returns the path and function name for uprobe tests.
-// Uses libc malloc - works on standard Linux and NixOS.
+// The uprobe is attached directly to the call_malloc test binary's
+// do_work function, avoiding any dependency on locating the correct
+// libc path (which breaks on NixOS, Guix, musl, and other
+// non-standard layouts).
 func uprobeTarget() (target, fnName string) {
-	// Patterns to find libc. Order matters - check direct paths first,
-	// then paths with one subdirectory level (for arch-specific dirs like x86_64-linux-gnu).
-	// Note: filepath.Glob's * doesn't match /, so /lib/*/libc.so.* handles subdirs.
-	patterns := []string{
-		"/lib/libc.so.*",
-		"/lib64/libc.so.*",
-		"/lib/*/libc.so.*",
-		"/usr/lib/libc.so.*",
-		"/usr/lib64/libc.so.*",
-		"/usr/lib/*/libc.so.*",
-		"/nix/store/*glibc*/lib/libc.so.*",
-	}
-
-	for _, pattern := range patterns {
-		matches, _ := filepath.Glob(pattern)
-		for _, path := range matches {
-			// Skip the linker script (libc.so), use the real library (libc.so.6)
-			if filepath.Ext(path) != ".so" {
-				return path, "malloc"
-			}
-		}
-	}
-
-	return "", ""
-}
-
-// findBytecodeFile looks for a bytecode file in the integration-tests/bytecode directory.
-func findBytecodeFile(name string) string {
-	// Try relative to current directory
-	candidates := []string{
-		filepath.Join("integration-tests", "bytecode", name),
-		filepath.Join("..", "integration-tests", "bytecode", name),
-	}
-
-	// Also try from the e2e directory
-	if wd, err := os.Getwd(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(wd, "integration-tests", "bytecode", name),
-			filepath.Join(filepath.Dir(wd), "integration-tests", "bytecode", name),
-		)
-	}
-
-	for _, path := range candidates {
-		if absPath, err := filepath.Abs(path); err == nil {
-			if _, err := os.Stat(absPath); err == nil {
-				return absPath
-			}
-		}
-	}
-
-	return ""
+	return "testdata/call_malloc", "do_work"
 }

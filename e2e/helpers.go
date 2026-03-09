@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	ciliumebpf "github.com/cilium/ebpf"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
@@ -1183,4 +1184,26 @@ func cleanupStaleInterfaces() error {
 	}
 
 	return nil
+}
+
+// readPerCPUCounter loads a pinned BPF_MAP_TYPE_PERCPU_ARRAY map and
+// returns the sum of the uint64 values across all CPUs for the given
+// key. This is used to verify that BPF programs with simple counter
+// maps have actually executed.
+func readPerCPUCounter(t *testing.T, mapPinPath string, key uint32) uint64 {
+	t.Helper()
+
+	m, err := ciliumebpf.LoadPinnedMap(mapPinPath, nil)
+	require.NoError(t, err, "load pinned map at %s", mapPinPath)
+	defer m.Close()
+
+	var perCPU []uint64
+	err = m.Lookup(key, &perCPU)
+	require.NoError(t, err, "lookup key %d in map at %s", key, mapPinPath)
+
+	var total uint64
+	for _, v := range perCPU {
+		total += v
+	}
+	return total
 }
