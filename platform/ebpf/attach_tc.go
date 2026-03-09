@@ -29,10 +29,14 @@ const tcDispatcherPriority = 50
 // the upstream Rust bpfman approach: the dispatcher program is attached
 // as a cls_bpf filter on the clsact qdisc, visible to tc(8) tooling,
 // and works on kernels older than 6.6.
-// Uses the v2 map-based dispatcher with double-buffered runtime config.
+// Uses .rodata-based config baked in at load time (full rebuild approach).
 func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
-	// Load the v2 map-based TC dispatcher (no .rodata injection needed)
-	collSpec, err := dispatcher.LoadTCDispatcherV2()
+	cfg := dispatcher.NewTCConfig(spec.NumProgs)
+	for i := 0; i < dispatcher.MaxPrograms; i++ {
+		cfg.ChainCallActions[i] = spec.ProceedOn
+	}
+
+	collSpec, err := dispatcher.LoadTCDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load TC dispatcher spec: %w", err)
 	}
@@ -46,25 +50,6 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 	dispatcherProg := coll.Programs["tc_dispatcher"]
 	if dispatcherProg == nil {
 		return nil, fmt.Errorf("tc_dispatcher program not found in collection")
-	}
-
-	// Get map handles for pinning
-	configMap := coll.Maps[dispatcher.ConfigMapName]
-	if configMap == nil {
-		return nil, fmt.Errorf("dispatcher_config map not found in collection")
-	}
-	activeMap := coll.Maps[dispatcher.ActiveMapName]
-	if activeMap == nil {
-		return nil, fmt.Errorf("active_config map not found in collection")
-	}
-
-	// Initialise the maps: empty config in buffer 0, active index = 0
-	zeroConfig := dispatcher.RuntimeConfig{}
-	if err := configMap.Put(uint32(0), &zeroConfig); err != nil {
-		return nil, fmt.Errorf("initialise dispatcher_config[0]: %w", err)
-	}
-	if err := activeMap.Put(uint32(0), uint32(0)); err != nil {
-		return nil, fmt.Errorf("initialise active_config[0]: %w", err)
 	}
 
 	// Determine the parent handle based on direction
@@ -182,18 +167,6 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 		return nil, err
 	}
 
-	// Pin config and active maps outside the revision directory.
-	if spec.ConfigMapPinPath != "" {
-		if err := pinWithRetry(configMap, spec.ConfigMapPinPath); err != nil {
-			return nil, fmt.Errorf("pin dispatcher_config map to %s: %w", spec.ConfigMapPinPath, err)
-		}
-	}
-	if spec.ActiveMapPinPath != "" {
-		if err := pinWithRetry(activeMap, spec.ActiveMapPinPath); err != nil {
-			return nil, fmt.Errorf("pin active_config map to %s: %w", spec.ActiveMapPinPath, err)
-		}
-	}
-
 	return result, nil
 }
 
@@ -248,6 +221,131 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 		"priority", priority,
 		"handle", fmt.Sprintf("%x", handle))
 	return nil
+}
+
+// LoadAndPinTCDispatcher loads a TC dispatcher program with .rodata config
+// and pins it at progPinPath without creating a TC filter. Used during
+// rebuild to prepare a new dispatcher before atomically swapping.
+func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+	collSpec, err := dispatcher.LoadTCDispatcher(cfg)
+	if err != nil {
+		return 0, fmt.Errorf("load TC dispatcher spec: %w", err)
+	}
+
+	coll, err := ebpf.NewCollection(collSpec)
+	if err != nil {
+		return 0, fmt.Errorf("create TC dispatcher collection: %w", err)
+	}
+	defer coll.Close()
+
+	dispatcherProg := coll.Programs["tc_dispatcher"]
+	if dispatcherProg == nil {
+		return 0, fmt.Errorf("tc_dispatcher program not found in collection")
+	}
+
+	progInfo, err := dispatcherProg.Info()
+	if err != nil {
+		return 0, fmt.Errorf("get TC dispatcher program info: %w", err)
+	}
+	progID, ok := progInfo.ID()
+	if !ok {
+		return 0, fmt.Errorf("failed to get TC dispatcher program ID from kernel")
+	}
+
+	if err := pinWithRetry(dispatcherProg, progPinPath); err != nil {
+		return 0, fmt.Errorf("pin TC dispatcher program to %s: %w", progPinPath, err)
+	}
+
+	k.logger.Debug("loaded and pinned TC dispatcher",
+		"program_id", progID,
+		"prog_pin_path", progPinPath,
+		"num_progs", cfg.NumProgsEnabled)
+	return kernel.ProgramID(progID), nil
+}
+
+// CreateTCFilter creates a TC filter from a pinned dispatcher program
+// on a network interface, optionally in a specific network namespace.
+// Creates the clsact qdisc if needed.
+func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+	}
+	defer prog.Close()
+
+	var parent uint32
+	switch direction {
+	case bpfman.TCDirectionIngress:
+		parent = netlink.HANDLE_MIN_INGRESS
+	case bpfman.TCDirectionEgress:
+		parent = netlink.HANDLE_MIN_EGRESS
+	default:
+		return nil, fmt.Errorf("invalid TC direction %q: must be ingress or egress", direction)
+	}
+
+	if netnsPath != "" {
+		k.logger.Debug("entering network namespace for TC filter creation",
+			"netns", netnsPath, "ifname", ifname, "ifindex", ifindex, "direction", direction)
+	}
+
+	var result *platform.TCDispatcherResult
+	err = netns.Run(netnsPath, func() error {
+		qdisc := &netlink.Clsact{
+			QdiscAttrs: netlink.QdiscAttrs{
+				LinkIndex: ifindex,
+				Handle:    netlink.MakeHandle(0xffff, 0),
+				Parent:    netlink.HANDLE_INGRESS,
+			},
+		}
+		if err := netlink.QdiscAdd(qdisc); err != nil {
+			if !errors.Is(err, unix.EEXIST) {
+				return fmt.Errorf("add clsact qdisc to %s (ifindex %d): %w", ifname, ifindex, err)
+			}
+		}
+
+		filter := &netlink.BpfFilter{
+			FilterAttrs: netlink.FilterAttrs{
+				LinkIndex: ifindex,
+				Parent:    parent,
+				Priority:  tcDispatcherPriority,
+				Protocol:  unix.ETH_P_ALL,
+			},
+			Fd:           prog.FD(),
+			Name:         "tc_dispatcher",
+			DirectAction: true,
+		}
+		if err := netlink.FilterAdd(filter); err != nil {
+			return fmt.Errorf("add TC BPF filter to %s (ifindex %d) %s: %w",
+				ifname, ifindex, direction, err)
+		}
+
+		handle, err := readBackTCFilterHandle(ifindex, parent, tcDispatcherPriority)
+		if err != nil {
+			return fmt.Errorf("read back TC filter handle: %w", err)
+		}
+
+		progInfo, err := prog.Info()
+		if err != nil {
+			return fmt.Errorf("get TC dispatcher program info: %w", err)
+		}
+		progID, ok := progInfo.ID()
+		if !ok {
+			return fmt.Errorf("failed to get TC dispatcher program ID from kernel")
+		}
+
+		result = &platform.TCDispatcherResult{
+			DispatcherID:  kernel.ProgramID(progID),
+			DispatcherPin: progPinPath,
+			Handle:        handle,
+			Priority:      tcDispatcherPriority,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // AttachTCExtension loads a program from ELF as Extension type and attaches

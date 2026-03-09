@@ -181,32 +181,6 @@ func (b BPFFS) ExtensionLinkPath(dispType dispatcher.DispatcherType, nsid uint64
 	return filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), fmt.Sprintf("link_%d", position))
 }
 
-// DispatcherConfigMapPath returns the pin path for the double-buffer
-// config map. This map lives outside the revision directory because
-// it is long-lived and survives dispatcher recovery.
-//
-// Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_config_map
-func (b BPFFS) DispatcherConfigMapPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) string {
-	b.mustValid()
-	return filepath.Join(
-		b.dispatcherTypeDir(dispType),
-		fmt.Sprintf("dispatcher_%d_%d_config_map", nsid, ifindex),
-	)
-}
-
-// DispatcherActiveMapPath returns the pin path for the active buffer
-// index map. This map lives outside the revision directory because
-// it is long-lived and survives dispatcher recovery.
-//
-// Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_active_map
-func (b BPFFS) DispatcherActiveMapPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) string {
-	b.mustValid()
-	return filepath.Join(
-		b.dispatcherTypeDir(dispType),
-		fmt.Sprintf("dispatcher_%d_%d_active_map", nsid, ifindex),
-	)
-}
-
 // TCXLinkPath returns the path for a TCX link pin.
 //
 // Format: {bpffs}/tcx-{direction}/link_{nsid}_{ifindex}_{programID}

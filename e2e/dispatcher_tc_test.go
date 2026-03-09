@@ -5,7 +5,6 @@ package e2e
 import (
 	"context"
 	"path/filepath"
-	"sort"
 	"testing"
 
 	"github.com/cilium/ebpf"
@@ -23,7 +22,7 @@ import (
 // TestTC_IngressEgressIndependence verifies that ingress and egress
 // dispatchers on the same interface are fully independent. Attaching
 // programs to both directions, then detaching all egress links, must
-// leave the ingress dispatcher config unchanged. This exercises the
+// leave the ingress dispatcher unchanged. This exercises the
 // (nsid, ifindex, direction) keying in the dispatcher store.
 func TestTC_IngressEgressIndependence(t *testing.T) {
 	t.Parallel()
@@ -47,8 +46,6 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	require.NoError(t, err)
 	ifindex := uint32(iface.Ifindex)
 
-	bpffsLayout := env.Layout.BPFFS()
-
 	// Attach 3 programs to ingress.
 	var ingressLinks []bpfman.LinkRecord
 	for i := range 3 {
@@ -68,14 +65,10 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 		}
 	})
 
-	// Record ingress config before any egress activity.
-	ingressConfigPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
-	ingressActivePin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
-	ingressCfgBefore := readDispatcherConfig(t, ingressConfigPin, ingressActivePin)
-	require.Equal(t, uint32(3), ingressCfgBefore.NumProgsEnabled,
-		"ingress should have 3 programs")
+	// Verify ingress has 3 extensions.
+	ingressCount, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	require.NoError(t, err)
+	require.Equal(t, 3, ingressCount, "ingress should have 3 programs")
 
 	// Attach 2 programs to egress.
 	var egressLinks []bpfman.LinkRecord
@@ -97,13 +90,9 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
 	require.NoError(t, err, "egress dispatcher should exist")
 
-	egressConfigPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
-	egressActivePin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
-	egressCfg := readDispatcherConfig(t, egressConfigPin, egressActivePin)
-	require.Equal(t, uint32(2), egressCfg.NumProgsEnabled,
-		"egress should have 2 programs")
+	egressCount, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	require.NoError(t, err)
+	require.Equal(t, 2, egressCount, "egress should have 2 programs")
 
 	// Detach all egress links.
 	for i, l := range egressLinks {
@@ -120,20 +109,17 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
 	require.NoError(t, err, "ingress dispatcher should still exist")
 
-	ingressCfgAfter := readDispatcherConfig(t, ingressConfigPin, ingressActivePin)
-	assert.Equal(t, ingressCfgBefore.NumProgsEnabled, ingressCfgAfter.NumProgsEnabled,
+	ingressCountAfter, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	require.NoError(t, err)
+	assert.Equal(t, ingressCount, ingressCountAfter,
 		"ingress program count should be unchanged")
-	assert.Equal(t, ingressCfgBefore.RunOrder, ingressCfgAfter.RunOrder,
-		"ingress run_order should be unchanged")
-	assert.Equal(t, ingressCfgBefore.ChainCallActions, ingressCfgAfter.ChainCallActions,
-		"ingress chain_call_actions should be unchanged")
 }
 
 // TestTC_DispatcherPriorityTieBreakByName verifies that when two
 // programs share the same priority, the dispatcher orders them
 // alphabetically by program name. "beta" is attached first (slot 0),
-// "alpha" second (slot 1), both at priority 100. The run_order must
-// place alpha's slot before beta's, proving the secondary sort.
+// "alpha" second (slot 1), both at priority 100. Alpha should have a
+// lower position than beta, proving the secondary sort.
 func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
@@ -183,30 +169,28 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { env.Detach(context.Background(), linkAlpha.ID) })
 
-	// Read the dispatcher runtime config.
-	nsid, err := netns.GetCurrentNsid()
+	// Verify via link details that alpha has a lower position than
+	// beta, proving the alphabetical tie-break. Position reflects
+	// the sorted execution order (priority ASC, name ASC) and is
+	// recomputed on each dispatcher rebuild.
+	_, alphaDetails, err := env.GetLink(ctx, linkAlpha.ID)
 	require.NoError(t, err)
+	alphaTCDetails, ok := alphaDetails.(bpfman.TCDetails)
+	require.True(t, ok, "alpha link should have TC details")
 
-	bpffsLayout := env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(iface.Ifindex))
+	_, betaDetails, err := env.GetLink(ctx, linkBeta.ID)
+	require.NoError(t, err)
+	betaTCDetails, ok := betaDetails.(bpfman.TCDetails)
+	require.True(t, ok, "beta link should have TC details")
 
-	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-	require.Equal(t, uint32(2), cfg.NumProgsEnabled, "should have 2 programs")
-
-	// beta is in slot 0, alpha in slot 1. Alphabetical ordering
-	// means alpha runs first: run_order = [1, 0].
-	assert.Equal(t, uint32(1), cfg.RunOrder[0],
-		"run_order[0] should be slot 1 (alpha)")
-	assert.Equal(t, uint32(0), cfg.RunOrder[1],
-		"run_order[1] should be slot 0 (beta)")
+	assert.Less(t, alphaTCDetails.Position, betaTCDetails.Position,
+		"alpha (position=%d) should precede beta (position=%d)",
+		alphaTCDetails.Position, betaTCDetails.Position)
 }
 
-// TestTC_DispatcherSineWave exercises repeated fill-drain-refill
+// TestTC_DispatcherFillDrainRefill exercises repeated fill-drain-refill
 // cycles where the drain boundary shifts each oscillation, verifying
-// that slot reuse, runtime config recomputation, and traffic delivery
+// that slot reuse, extension count tracking, and traffic delivery
 // remain correct throughout.
 //
 // The test performs three oscillations. Each trough drains one more
@@ -222,27 +206,22 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 //	Peak 3:   refill 8         (slots 0-7 reused)   [0-9 occupied]
 //
 // The shifting drain boundary ensures that every physical slot
-// position is both vacated and reused at least once. Each refill
-// wave uses unique priorities that interleave with the surviving
-// programs, producing non-trivial run_order permutations that differ
-// at every peak.
+// position is both vacated and reused at least once.
 //
 // At each peak the test asserts:
-//   - NumProgsEnabled equals dispatcher.MaxPrograms (10).
-//   - RunOrder matches the priority-sorted slot positions.
+//   - Extension count equals dispatcher.MaxPrograms (10).
 //   - Every program (including newly attached ones) receives new
 //     traffic: packet counts are recorded before a ping burst and
 //     verified to have increased afterward.
 //
 // At each trough the test asserts:
-//   - NumProgsEnabled equals the surviving program count.
-//   - The first N entries of RunOrder match the expected ordering.
+//   - Extension count equals the surviving program count.
 //
 // Programs are loaded as separate instances (one LoadImage per
 // program) so that each has an independent tc_stats_map for traffic
 // verification. Proceed-on is set to TC_ACT_OK|TC_ACT_PIPE|
 // DispatcherReturn on every attachment so the full chain executes.
-func TestTC_DispatcherSineWave(t *testing.T) {
+func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireTC(t)
@@ -284,12 +263,6 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
-
-	bpffsLayout := env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
 
 	type slotEntry struct {
 		prog     prog
@@ -336,8 +309,8 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 	}
 
 	// occupiedCount returns the number of non-nil slots.
-	occupiedCount := func() uint32 {
-		var n uint32
+	occupiedCount := func() int {
+		var n int
 		for _, s := range slots {
 			if s != nil {
 				n++
@@ -346,45 +319,16 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 		return n
 	}
 
-	// expectedRunOrder computes the expected RunOrder by sorting
-	// occupied slots by priority ascending.
-	expectedRunOrder := func() [dispatcher.MaxPrograms]uint32 {
-		type entry struct {
-			slot     int
-			priority int
-		}
-		var occupied []entry
-		for i, s := range slots {
-			if s != nil {
-				occupied = append(occupied, entry{i, s.priority})
-			}
-		}
-		sort.Slice(occupied, func(i, j int) bool {
-			return occupied[i].priority < occupied[j].priority
-		})
-		var order [dispatcher.MaxPrograms]uint32
-		for i, e := range occupied {
-			order[i] = uint32(e.slot)
-		}
-		return order
-	}
-
-	// verifyConfig reads the dispatcher config and asserts it
-	// matches the expected state derived from the slot array.
-	verifyConfig := func(phase string) {
+	// verifyExtensionCount reads the dispatcher extension count
+	// and asserts it matches the expected state derived from the
+	// slot array.
+	verifyExtensionCount := func(phase string) {
 		t.Helper()
-		cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-		count := occupiedCount()
-		assert.Equal(t, count, cfg.NumProgsEnabled,
-			"%s: NumProgsEnabled", phase)
-		expected := expectedRunOrder()
-		if count == uint32(dispatcher.MaxPrograms) {
-			assert.Equal(t, expected, cfg.RunOrder,
-				"%s: RunOrder", phase)
-		} else {
-			assert.Equal(t, expected[:count], cfg.RunOrder[:count],
-				"%s: RunOrder[:%d]", phase, count)
-		}
+		count, err := env.CountDispatcherExtensions(ctx,
+			dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+		require.NoError(t, err)
+		expected := occupiedCount()
+		assert.Equal(t, expected, count, "%s: extension count", phase)
 	}
 
 	// verifyTraffic sends traffic and asserts every active
@@ -416,42 +360,42 @@ func TestTC_DispatcherSineWave(t *testing.T) {
 		initialPriorities[i] = i * 100 // 0, 100, 200, ..., 900
 	}
 	fill(initialPriorities)
-	verifyConfig("peak 0")
+	verifyExtensionCount("peak 0")
 	verifyTraffic("peak 0")
 
 	// -- Trough 1: drain first 6
 	// Slots 0-5 freed; slots 6-9 survive (priorities 600-900).
 	drain(0, 6)
-	verifyConfig("trough 1")
+	verifyExtensionCount("trough 1")
 
 	// -- Peak 1: refill 6
 	// Priorities interleave with surviving 600, 700, 800, 900.
 	fill([]int{950, 850, 750, 650, 550, 450})
-	verifyConfig("peak 1")
+	verifyExtensionCount("peak 1")
 	verifyTraffic("peak 1")
 
 	// -- Trough 2: drain last 7
 	// Slots 3-9 freed; slots 0-2 survive (priorities 950, 850,
 	// 750 from wave 1).
 	drain(3, 10)
-	verifyConfig("trough 2")
+	verifyExtensionCount("trough 2")
 
 	// -- Peak 2: refill 7
 	// Priorities interleave with surviving 950, 850, 750.
 	fill([]int{25, 125, 225, 325, 425, 525, 625})
-	verifyConfig("peak 2")
+	verifyExtensionCount("peak 2")
 	verifyTraffic("peak 2")
 
 	// -- Trough 3: drain first 8
 	// Slots 0-7 freed; slots 8-9 survive (priorities 525, 625
 	// from wave 2).
 	drain(0, 8)
-	verifyConfig("trough 3")
+	verifyExtensionCount("trough 3")
 
 	// -- Peak 3: refill 8
 	// Priorities interleave with surviving 525, 625.
 	fill([]int{62, 162, 262, 362, 462, 562, 662, 762})
-	verifyConfig("peak 3")
+	verifyExtensionCount("peak 3")
 	verifyTraffic("peak 3")
 }
 
@@ -546,29 +490,6 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 			env.Detach(context.Background(), link.ID)
 		}
 	})
-
-	// Verify the runtime config has all 5 programs in priority order.
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
-
-	bpffsLayout := env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
-
-	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-	assert.Equal(t, uint32(5), cfg.NumProgsEnabled,
-		"should have 5 programs enabled")
-
-	// Expected run_order by priority ascending:
-	// priority 100 -> slot 1, 200 -> slot 3, 300 -> slot 2,
-	// 400 -> slot 4, 500 -> slot 0
-	expectedOrder := []uint32{1, 3, 2, 4, 0}
-	for i, expected := range expectedOrder {
-		assert.Equal(t, expected, cfg.RunOrder[i],
-			"run_order[%d] should be slot %d", i, expected)
-	}
 
 	// Send traffic through the veth pair.
 	veth.Ping(t, 20)
@@ -760,20 +681,6 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 			env.Detach(context.Background(), link.ID)
 		}
 	})
-
-	// Verify the egress dispatcher has all 3 programs.
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
-
-	bpffsLayout := env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeTCEgress, nsid, uint32(veth.A.Ifindex))
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeTCEgress, nsid, uint32(veth.A.Ifindex))
-
-	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-	require.Equal(t, uint32(3), cfg.NumProgsEnabled,
-		"egress dispatcher should have 3 programs")
 
 	// Send traffic: ping from B to A. The ICMP replies leave
 	// through A's egress, where the programs are attached.

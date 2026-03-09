@@ -5,9 +5,9 @@ package e2e
 import (
 	"context"
 	"os"
+	"sort"
 	"testing"
 
-	"github.com/cilium/ebpf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,35 +18,6 @@ import (
 	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
-
-// readActiveIndex loads the pinned active map and returns the current
-// active buffer index (0 or 1).
-func readActiveIndex(t *testing.T, activeMapPin string) uint32 {
-	t.Helper()
-	activeMap, err := ebpf.LoadPinnedMap(activeMapPin, nil)
-	require.NoError(t, err, "load pinned active map")
-	defer activeMap.Close()
-
-	var active uint32
-	require.NoError(t, activeMap.Lookup(uint32(0), &active), "read active index")
-	return active
-}
-
-// readDispatcherConfig loads the pinned config and active maps, reads
-// the active buffer index, and returns the current RuntimeConfig.
-func readDispatcherConfig(t *testing.T, configMapPin, activeMapPin string) dispatcher.RuntimeConfig {
-	t.Helper()
-
-	active := readActiveIndex(t, activeMapPin)
-
-	configMap, err := ebpf.LoadPinnedMap(configMapPin, nil)
-	require.NoError(t, err, "load pinned config map")
-	defer configMap.Close()
-
-	var cfg dispatcher.RuntimeConfig
-	require.NoError(t, configMap.Lookup(active, &cfg), "read active config")
-	return cfg
-}
 
 // dispatcherTestHarness encapsulates TC-vs-XDP differences behind a
 // uniform interface so that tests exercising the shared dispatcher
@@ -98,38 +69,32 @@ func (h *dispatcherTestHarness) tryAttach(t *testing.T, progID kernel.ProgramID,
 	return h.env.Attach(context.Background(), spec)
 }
 
-// configMapPin returns the pinned config map path for the harness's
-// default interface.
-func (h *dispatcherTestHarness) configMapPin(t *testing.T) string {
+// extensionCount returns the number of extension links attached to
+// the dispatcher for the harness's default interface.
+func (h *dispatcherTestHarness) extensionCount(t *testing.T) int {
 	t.Helper()
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
-	return h.env.Layout.BPFFS().DispatcherConfigMapPath(
-		h.dispType, nsid, uint32(h.iface.Ifindex))
+	count, err := h.env.CountDispatcherExtensions(context.Background(), h.dispType, nsid, uint32(h.iface.Ifindex))
+	require.NoError(t, err, "dispatcher should exist")
+	return count
 }
 
-// activeMapPin returns the pinned active map path for the harness's
-// default interface.
-func (h *dispatcherTestHarness) activeMapPin(t *testing.T) string {
+// linkPosition returns the dispatcher position stored in the link
+// details for the given link ID.
+func (h *dispatcherTestHarness) linkPosition(t *testing.T, linkID kernel.LinkID) int32 {
 	t.Helper()
-	nsid, err := netns.GetCurrentNsid()
+	_, details, err := h.env.GetLink(context.Background(), linkID)
 	require.NoError(t, err)
-	return h.env.Layout.BPFFS().DispatcherActiveMapPath(
-		h.dispType, nsid, uint32(h.iface.Ifindex))
-}
-
-// readConfig reads the dispatcher runtime config for the harness's
-// default interface.
-func (h *dispatcherTestHarness) readConfig(t *testing.T) dispatcher.RuntimeConfig {
-	t.Helper()
-	return readDispatcherConfig(t, h.configMapPin(t), h.activeMapPin(t))
-}
-
-// readActiveIdx returns the current active buffer index for the
-// harness's default interface.
-func (h *dispatcherTestHarness) readActiveIdx(t *testing.T) uint32 {
-	t.Helper()
-	return readActiveIndex(t, h.activeMapPin(t))
+	switch d := details.(type) {
+	case bpfman.XDPDetails:
+		return d.Position
+	case bpfman.TCDetails:
+		return d.Position
+	default:
+		t.Fatalf("unexpected link details type %T", details)
+		return -1
+	}
 }
 
 // newTCIngressHarness creates a harness for TC ingress dispatcher
@@ -254,11 +219,12 @@ func eachDispatcherType(t *testing.T) []dispatcherTestHarness {
 }
 
 // TestDispatcher_PriorityOrdering verifies that filling all 10
-// dispatcher slots with different priorities produces a BPF runtime
-// config whose run_order reflects priority ordering (lowest priority
-// first). For XDP, which has no priority support, all attachments
-// store priority 0 and the run_order follows insertion order.
+// dispatcher slots with scrambled priorities produces positions that
+// reflect the correct sorted order. For TC, extensions are sorted by
+// priority ascending; for XDP (where priority is always 0), positions
+// follow insertion order.
 func TestDispatcher_PriorityOrdering(t *testing.T) {
+	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
@@ -271,8 +237,8 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
 	// Attach all 10 slots with scrambled priorities so the
-	// run_order must differ from the insertion order (TC) or
-	// confirm insertion-order stability (XDP).
+	// dispatcher must reorder them (TC) or preserve insertion
+	// order (XDP).
 	priorities := []int{500, 100, 800, 300, 900, 200, 700, 400, 600, 0}
 	var links []bpfman.LinkRecord
 	for _, prio := range priorities {
@@ -286,32 +252,45 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 		}
 	})
 
-	cfg := h.readConfig(t)
-	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
+	require.Equal(t, 10, h.extensionCount(t),
 		"all 10 slots should be occupied")
 
 	switch h.dispType {
 	case dispatcher.DispatcherTypeTCIngress:
-		// TC: run_order follows priority ascending.
-		// priorities = [500,100,800,300,900,200,700,400,600,0]
-		// sorted indices by priority ascending:
-		// prio 0->slot9, 100->slot1, 200->slot5, 300->slot3,
-		// 400->slot7, 500->slot0, 600->slot8, 700->slot6,
-		// 800->slot2, 900->slot4
-		expected := [dispatcher.MaxPrograms]uint32{9, 1, 5, 3, 7, 0, 8, 6, 2, 4}
-		assert.Equal(t, expected, cfg.RunOrder, "TC run_order should follow priority")
+		// TC: positions reflect priority ascending. Build the
+		// expected position for each link by sorting priorities.
+		sorted := make([]int, len(priorities))
+		copy(sorted, priorities)
+		sort.Ints(sorted)
+
+		rankByPriority := make(map[int]int32, len(sorted))
+		for i, p := range sorted {
+			rankByPriority[p] = int32(i)
+		}
+
+		for i, link := range links {
+			pos := h.linkPosition(t, link.ID)
+			expected := rankByPriority[priorities[i]]
+			assert.Equal(t, expected, pos,
+				"link %d (priority %d): position should be %d, got %d",
+				i, priorities[i], expected, pos)
+		}
 
 	case dispatcher.DispatcherTypeXDP:
-		// XDP: all priority 0, run_order follows insertion
-		// order (stable sort preserves append order).
-		expected := [dispatcher.MaxPrograms]uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
-		assert.Equal(t, expected, cfg.RunOrder, "XDP run_order should follow insertion order")
+		// XDP: all priority 0, same program name. Stable sort
+		// preserves insertion order, so position == attach index.
+		for i, link := range links {
+			pos := h.linkPosition(t, link.ID)
+			assert.Equal(t, int32(i), pos,
+				"link %d: position should follow insertion order", i)
+		}
 	}
 }
 
 // TestDispatcher_AttachExceedsMaxPrograms verifies that attempting to
 // attach an 11th program fails with a "no free slots" error.
 func TestDispatcher_AttachExceedsMaxPrograms(t *testing.T) {
+	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
@@ -341,9 +320,10 @@ func testAttachExceedsMaxPrograms(t *testing.T, h dispatcherTestHarness) {
 }
 
 // TestDispatcher_SlotReusedAfterDetach verifies that detaching a
-// program from a dispatcher slot allows that slot to be reused by a
-// subsequent attachment.
+// program frees a slot that can be reused, and that the reattached
+// program lands at the correct position in the sorted order.
 func TestDispatcher_SlotReusedAfterDetach(t *testing.T) {
+	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
@@ -355,57 +335,56 @@ func TestDispatcher_SlotReusedAfterDetach(t *testing.T) {
 func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	// Fill all 10 slots.
+	// Fill all 10 slots with ascending priorities.
+	// links[i] has priority (i+1)*100: 100, 200, ..., 1000.
 	var links []bpfman.LinkRecord
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
 		link := h.attach(t, progID, (i+1)*100)
 		links = append(links, link)
 	}
 
-	// Verify all 10 slots filled.
-	cfg := h.readConfig(t)
-	require.Equal(t, uint32(dispatcher.MaxPrograms), cfg.NumProgsEnabled,
+	require.Equal(t, dispatcher.MaxPrograms, h.extensionCount(t),
 		"all 10 slots should be occupied")
 
-	// Detach slot 3 (4th attachment).
+	// Detach the 4th attachment (priority 400).
 	err := h.env.Detach(context.Background(), links[3].ID)
-	require.NoError(t, err, "detach slot 3")
+	require.NoError(t, err, "detach link at priority 400")
 
-	cfg = h.readConfig(t)
-	assert.Equal(t, uint32(dispatcher.MaxPrograms-1), cfg.NumProgsEnabled,
+	assert.Equal(t, dispatcher.MaxPrograms-1, h.extensionCount(t),
 		"should have 9 programs after detach")
 
-	// Re-attach: should succeed and reuse the vacated slot.
+	// Re-attach at priority 350. For TC, this should slot between
+	// priorities 300 (position 2) and 500 (position 4), landing
+	// at position 3. For XDP, it appends last (position 9).
 	newLink := h.attach(t, progID, 350)
 
 	t.Cleanup(func() {
 		for i, link := range links {
 			if i == 3 {
-				continue // already detached
+				continue
 			}
 			h.env.Detach(context.Background(), link.ID)
 		}
 		h.env.Detach(context.Background(), newLink.ID)
 	})
 
-	cfg = h.readConfig(t)
-	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
+	require.Equal(t, 10, h.extensionCount(t),
 		"all 10 slots should be occupied again")
+
+	newPos := h.linkPosition(t, newLink.ID)
 
 	switch h.dispType {
 	case dispatcher.DispatcherTypeTCIngress:
-		// The new program at priority 350 should appear between
-		// slot 2 (priority 300) and slot 4 (priority 400) in
-		// run_order.
-		expected := [dispatcher.MaxPrograms]uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
-		assert.Equal(t, expected, cfg.RunOrder, "TC run_order after slot reuse")
+		// Sorted: [100,200,300,350,500,600,700,800,900,1000]
+		// The new link at priority 350 should have position 3.
+		assert.Equal(t, int32(3), newPos,
+			"TC: reattached link (priority 350) should have position 3")
 
 	case dispatcher.DispatcherTypeXDP:
-		// XDP: all priority 0. The reattached program goes into
-		// slot 3 but is appended last in computeRuntimeConfig,
-		// so stable sort places it after the other 9 slots.
-		expected := [dispatcher.MaxPrograms]uint32{0, 1, 2, 4, 5, 6, 7, 8, 9, 3}
-		assert.Equal(t, expected, cfg.RunOrder, "XDP run_order after slot reuse")
+		// XDP: all priority 0, same name. The reattached link
+		// is the newest and sorts last in a stable sort.
+		assert.Equal(t, int32(9), newPos,
+			"XDP: reattached link should be at position 9")
 	}
 }
 
@@ -413,6 +392,7 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 // last attached program tears down the dispatcher entirely (pins
 // removed), and that a fresh attachment creates a new dispatcher.
 func TestDispatcher_LifecycleAfterLastDetach(t *testing.T) {
+	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
@@ -435,9 +415,8 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 	require.NoError(t, err, "dispatcher should exist after attach")
 	h.verifyAttachPresent(t)
 
-	cfg := h.readConfig(t)
-	require.Equal(t, uint32(1), cfg.NumProgsEnabled,
-		"should have 1 program")
+	count := h.extensionCount(t)
+	require.Equal(t, 1, count, "should have 1 program")
 
 	// Phase 2: detach the only program. The dispatcher should be
 	// fully cleaned up.
@@ -449,15 +428,6 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 		"dispatcher should be absent from store after last detach")
 
 	h.verifyAttachAbsent(t)
-
-	// The config and active map pins should be gone.
-	bpffsLayout := h.env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(h.dispType, nsid, ifindex)
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(h.dispType, nsid, ifindex)
-	_, err = os.Stat(configMapPin)
-	assert.True(t, os.IsNotExist(err), "config map pin should not exist: %s", configMapPin)
-	_, err = os.Stat(activeMapPin)
-	assert.True(t, os.IsNotExist(err), "active map pin should not exist: %s", activeMapPin)
 
 	// Phase 3: attach again. A new dispatcher should be created
 	// with a different program ID.
@@ -472,124 +442,15 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 		"second dispatcher should have a different program ID")
 
 	h.verifyAttachPresent(t)
-	cfg = h.readConfig(t)
-	require.Equal(t, uint32(1), cfg.NumProgsEnabled,
-		"should have 1 program after reattach")
-}
-
-// TestDispatcher_DoubleBufferFlip verifies that each dispatcher
-// mutation alternates the active buffer index. Starting from 0, the
-// first attach should flip to 1, the second back to 0, and so on.
-// This is a fundamental property of the double-buffer scheme.
-func TestDispatcher_DoubleBufferFlip(t *testing.T) {
-	for _, h := range eachDispatcherType(t) {
-		t.Run(h.name, func(t *testing.T) {
-			t.Parallel()
-			testDoubleBufferFlip(t, h)
-		})
-	}
-}
-
-func testDoubleBufferFlip(t *testing.T, h dispatcherTestHarness) {
-	progID := h.loadProg(t)
-
-	// Attach 5 programs, checking the active index after each.
-	var links []bpfman.LinkRecord
-	for i := 0; i < 5; i++ {
-		link := h.attach(t, progID, (i+1)*100)
-		links = append(links, link)
-
-		active := h.readActiveIdx(t)
-		// First attach creates the dispatcher (index starts
-		// at 0, then the update flips to 1). Each subsequent
-		// attach flips again.
-		expected := uint32((i + 1) % 2)
-		assert.Equal(t, expected, active,
-			"active index after attach %d", i)
-	}
-
-	// Detach the first 3 and verify flips continue.
-	for i := 0; i < 3; i++ {
-		err := h.env.Detach(context.Background(), links[i].ID)
-		require.NoError(t, err)
-
-		active := h.readActiveIdx(t)
-		expected := uint32((5 + i + 1) % 2)
-		assert.Equal(t, expected, active,
-			"active index after detach %d", i)
-	}
-
-	t.Cleanup(func() {
-		for i := 3; i < 5; i++ {
-			h.env.Detach(context.Background(), links[i].ID)
-		}
-	})
-}
-
-// TestDispatcher_ConfigRecomputedOnDetach verifies that filling all
-// 10 slots then detaching the lowest-priority program correctly
-// updates the runtime config to reflect 9 remaining programs.
-func TestDispatcher_ConfigRecomputedOnDetach(t *testing.T) {
-	for _, h := range eachDispatcherType(t) {
-		t.Run(h.name, func(t *testing.T) {
-			t.Parallel()
-			testConfigRecomputedOnDetach(t, h)
-		})
-	}
-}
-
-func testConfigRecomputedOnDetach(t *testing.T, h dispatcherTestHarness) {
-	progID := h.loadProg(t)
-
-	// Fill all 10 slots.
-	var links []bpfman.LinkRecord
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		link := h.attach(t, progID, (i+1)*100)
-		links = append(links, link)
-	}
-
-	cfg := h.readConfig(t)
-	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
-		"should have 10 programs")
-
-	// Before detach: run_order should be in ascending slot order
-	// since priorities match insertion order (both TC and XDP).
-	for i := 0; i < dispatcher.MaxPrograms; i++ {
-		assert.Equal(t, uint32(i), cfg.RunOrder[i],
-			"before detach: run_order[%d] should be slot %d", i, i)
-	}
-
-	// Detach the first program (lowest priority for TC, first
-	// inserted for XDP).
-	err := h.env.Detach(context.Background(), links[0].ID)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		for i := 1; i < dispatcher.MaxPrograms; i++ {
-			h.env.Detach(context.Background(), links[i].ID)
-		}
-	})
-
-	cfg = h.readConfig(t)
-	require.Equal(t, uint32(9), cfg.NumProgsEnabled,
-		"should have 9 programs after detach")
-
-	// Verify the run_order contains the remaining 9 slots.
-	var runOrder []uint32
-	for i := 0; i < 9; i++ {
-		runOrder = append(runOrder, cfg.RunOrder[i])
-	}
-
-	// Slot 0 was detached; slots 1-9 should remain.
-	expected := []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	assert.Equal(t, expected, runOrder,
-		"run_order should contain slots 1-9")
+	count = h.extensionCount(t)
+	require.Equal(t, 1, count, "should have 1 program after reattach")
 }
 
 // TestDispatcher_MultipleInterfacesIndependent verifies that
 // dispatcher state on one interface is independent of another.
-// Detaching from interface B must not affect interface A's config.
+// Detaching from interface B must not affect interface A's extension count.
 func TestDispatcher_MultipleInterfacesIndependent(t *testing.T) {
+	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
@@ -625,18 +486,14 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 		linksB = append(linksB, link)
 	}
 
-	// Record A's config before any B mutations.
-	cfgA := h.readConfig(t)
-	require.Equal(t, uint32(3), cfgA.NumProgsEnabled,
-		"interface A should have 3 programs")
+	// Verify A has 3 extensions.
+	countA := h.extensionCount(t)
+	require.Equal(t, 3, countA, "interface A should have 3 programs")
 
-	// Verify B's config.
-	bpffsLayout := h.env.Layout.BPFFS()
-	configPinB := bpffsLayout.DispatcherConfigMapPath(h.dispType, nsid, uint32(ifaceB.Ifindex))
-	activePinB := bpffsLayout.DispatcherActiveMapPath(h.dispType, nsid, uint32(ifaceB.Ifindex))
-	cfgB := readDispatcherConfig(t, configPinB, activePinB)
-	require.Equal(t, uint32(2), cfgB.NumProgsEnabled,
-		"interface B should have 2 programs")
+	// Verify B has 2 extensions.
+	countB, err := h.env.CountDispatcherExtensions(context.Background(), h.dispType, nsid, uint32(ifaceB.Ifindex))
+	require.NoError(t, err)
+	require.Equal(t, 2, countB, "interface B should have 2 programs")
 
 	// Detach all programs from B.
 	for i, l := range linksB {
@@ -649,16 +506,11 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	require.ErrorIs(t, err, platform.ErrRecordNotFound,
 		"interface B dispatcher should be absent after detaching all links")
 
-	// A's dispatcher should still exist.
+	// A's dispatcher should still exist with 3 extensions.
 	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, uint32(h.iface.Ifindex))
 	require.NoError(t, err, "interface A dispatcher should still exist")
 
-	// A's config should be unchanged.
-	cfgAAfter := h.readConfig(t)
-	assert.Equal(t, cfgA.NumProgsEnabled, cfgAAfter.NumProgsEnabled,
+	countAAfter := h.extensionCount(t)
+	assert.Equal(t, countA, countAAfter,
 		"A's program count should be unchanged")
-	assert.Equal(t, cfgA.RunOrder, cfgAAfter.RunOrder,
-		"A's run_order should be unchanged")
-	assert.Equal(t, cfgA.ChainCallActions, cfgAAfter.ChainCallActions,
-		"A's chain_call_actions should be unchanged")
 }

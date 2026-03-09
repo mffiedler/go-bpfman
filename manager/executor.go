@@ -7,10 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -148,68 +146,27 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RemoveStagingDir:
 		return nil, e.bcfs.RemoveStagingDir(a.Path)
 
-	case action.EnsureXDPDispatcher:
-		return e.ensureDispatcher(ctx, dispatcher.DispatcherTypeXDP, a.Ifindex, a.NetnsPath,
-			func(nsid uint64) (dispatcher.State, error) {
-				return e.createDispatcher(ctx, e.xdpDispatcherCreateOps(nsid, a.Ifindex, a.NetnsPath))
-			})
+	case action.RebuildXDPDispatcher:
+		return e.rebuildXDPDispatcher(ctx,
+			xdpRebuildOps{ifindex: a.Ifindex, ifname: a.Ifname, netnsPath: a.NetnsPath},
+			a.ObjectPath, a.ProgramName, a.MapPinDir, a.Priority, a.ProceedOn)
 
-	case action.EnsureTCDispatcher:
-		return e.ensureDispatcher(ctx, a.DispType, a.Ifindex, a.NetnsPath,
-			func(nsid uint64) (dispatcher.State, error) {
-				return e.createDispatcher(ctx, e.tcDispatcherCreateOps(nsid, a.Ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath))
-			})
-
-	case action.AttachXDPExtension:
-		return attachExtensionWithRetry(ctx, e.store, e.bpffs, e.logger,
-			extensionOps{
-				label:    "XDP",
-				dispType: dispatcher.DispatcherTypeXDP,
-				attach: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
-					return e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
-						DispatcherPinPath: dispatcherPinPath,
-						ObjectPath:        objectPath,
-						ProgramName:       programName,
-						Position:          position,
-						LinkPinPath:       linkPinPath,
-						MapPinDir:         mapPinDir,
-					})
-				},
-				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-					return e.createDispatcher(ctx, e.xdpDispatcherCreateOps(nsid, ifindex, a.NetnsPath))
-				},
-				updateConfig: e.kernel.UpdateDispatcherConfig,
-				priority:     a.Priority,
-				proceedOn:    a.ProceedOn,
+	case action.RebuildTCDispatcher:
+		return e.rebuildTCDispatcher(ctx,
+			tcRebuildOps{
+				ifindex:   a.Ifindex,
+				ifname:    a.Ifname,
+				direction: a.Direction,
+				dispType:  a.DispType,
+				netnsPath: a.NetnsPath,
 			},
-			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
+			a.ObjectPath, a.ProgramName, a.MapPinDir, a.Priority, a.ProceedOn)
 
-	case action.AttachTCExtension:
-		return attachExtensionWithRetry(ctx, e.store, e.bpffs, e.logger,
-			extensionOps{
-				label:    "TC",
-				dispType: a.DispType,
-				attach: func(ctx context.Context, dispatcherPinPath, objectPath, programName string, position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error) {
-					return e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
-						DispatcherPinPath: dispatcherPinPath,
-						ObjectPath:        objectPath,
-						ProgramName:       programName,
-						Position:          position,
-						LinkPinPath:       linkPinPath,
-						MapPinDir:         mapPinDir,
-					})
-				},
-				recreate: func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-					return e.createDispatcher(ctx, e.tcDispatcherCreateOps(nsid, ifindex, a.Ifname, a.Direction, a.DispType, a.NetnsPath))
-				},
-				updateConfig: e.kernel.UpdateDispatcherConfig,
-				priority:     a.Priority,
-				proceedOn:    a.ProceedOn,
-			},
-			a.DispState, a.ObjectPath, a.ProgramName, a.MapPinDir)
+	case action.RebuildDispatcherForDetach:
+		return nil, e.rebuildDispatcherForDetach(ctx, a.State)
 
 	case action.CleanupEmptyDispatcher:
-		return nil, e.cleanupEmptyDispatcher(ctx, a.State)
+		return nil, e.rebuildDispatcherForDetach(ctx, a.State)
 
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", a)
@@ -241,78 +198,6 @@ func (e *executor) ExecuteAllWithResult(ctx context.Context, actions []action.Ac
 	}
 
 	return res
-}
-
-// ensureDispatcher looks up an existing dispatcher by type, namespace,
-// and interface index. If none exists, it calls create to provision a
-// new one. The nsid is resolved from netnsPath before the lookup.
-func (e *executor) ensureDispatcher(
-	ctx context.Context,
-	dispType dispatcher.DispatcherType,
-	ifindex uint32,
-	netnsPath string,
-	create func(nsid uint64) (dispatcher.State, error),
-) (dispatcher.State, error) {
-	nsid, err := netns.GetNsid(netnsPath)
-	if err != nil {
-		return dispatcher.State{}, fmt.Errorf("get nsid: %w", err)
-	}
-	state, err := e.store.GetDispatcher(ctx, dispType, nsid, ifindex)
-	if err == nil {
-		return state, nil
-	}
-	if !errors.Is(err, platform.ErrRecordNotFound) {
-		return dispatcher.State{}, fmt.Errorf("get dispatcher: %w", err)
-	}
-	return create(nsid)
-}
-
-// cleanupEmptyDispatcher checks whether a dispatcher has any
-// remaining extension links. If extensions remain, it recomputes
-// the runtime config (run_order and chain_call_actions) from the
-// remaining slots and flips the double-buffer. If no extensions
-// remain, the dispatcher is removed from both the kernel and the
-// store.
-func (e *executor) cleanupEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
-	remaining, err := e.store.CountDispatcherLinks(ctx, state.ProgramID)
-	if err != nil {
-		return fmt.Errorf("count dispatcher links: %w", err)
-	}
-	if remaining > 0 {
-		// Extensions still attached: recompute the runtime
-		// config from the remaining slots and update the BPF
-		// maps via double-buffer flip.
-		slots, err := e.store.ListDispatcherSlots(ctx, state.ProgramID)
-		if err != nil {
-			return fmt.Errorf("list dispatcher slots for config update: %w", err)
-		}
-		config := computeRuntimeConfig(slots, nil, state.Type.ChainCallShift())
-		configMapPin := e.bpffs.DispatcherConfigMapPath(state.Type, state.Nsid, state.Ifindex)
-		activeMapPin := e.bpffs.DispatcherActiveMapPath(state.Type, state.Nsid, state.Ifindex)
-		if err := e.kernel.UpdateDispatcherConfig(ctx, configMapPin, activeMapPin, config); err != nil {
-			return fmt.Errorf("update dispatcher config after detach: %w", err)
-		}
-		return nil
-	}
-
-	// For TC dispatchers, query the kernel for the filter handle
-	// since it is no longer stored.
-	var tcHandle uint32
-	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
-		parent := dispatcher.TCParentHandle(state.Type)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(state.Ifindex), parent, state.Priority)
-		if err != nil {
-			e.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)
-		} else {
-			tcHandle = handle
-		}
-	}
-
-	cleanupActions := computeDispatcherCleanupActions(e.bpffs, state, tcHandle)
-	if err := e.ExecuteAll(ctx, cleanupActions); err != nil {
-		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
-	}
-	return nil
 }
 
 // Ensure executor implements action.ExecutorWithResult.

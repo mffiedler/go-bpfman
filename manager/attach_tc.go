@@ -45,12 +45,11 @@ func tcProceedOnBitmask(actions []int32) uint32 {
 // attachTC attaches a TC program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
-// The dispatcher is created automatically if it doesn't exist for the interface
-// and direction combination. Programs are attached as extensions (freplace) to
-// dispatcher slots.
+// Every attach triggers a full dispatcher rebuild: a new dispatcher
+// is loaded with updated .rodata config, all extensions are re-attached,
+// and the TC filter is atomically swapped (or created for first attach).
 //
 // Pin paths follow the Rust bpfman convention:
-//   - Dispatcher link: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_link
 //   - Dispatcher prog: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
 //   - Extension links: /sys/fs/bpf/bpfman/tc-{direction}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfman.Link, error) {
@@ -75,18 +74,9 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		netnsPath: netnsPath,
 		target:    ifname + ":" + direction.String(),
 		dispType:  dispType,
-		ensureAction: func() action.Action {
-			return action.EnsureTCDispatcher{
-				Ifindex:   uint32(ifindex),
-				Ifname:    ifname,
-				Direction: direction,
-				DispType:  dispType,
-				NetnsPath: netnsPath,
-			}
-		},
-		extensionAction: func(ds dispatcher.State, prog bpfman.ProgramRecord) action.Action {
-			return action.AttachTCExtension{
-				DispState:   ds,
+		rebuildAction: func(prog bpfman.ProgramRecord) action.Action {
+			return action.RebuildTCDispatcher{
+				Ifindex:     uint32(ifindex),
 				Ifname:      ifname,
 				Direction:   direction,
 				DispType:    dispType,

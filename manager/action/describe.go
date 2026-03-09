@@ -56,14 +56,12 @@ func Describe(a Action) string {
 		return fmt.Sprintf("save %s dispatcher nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
 	case DeleteDispatcher:
 		return fmt.Sprintf("delete %s dispatcher nsid=%d ifindex=%d from store", a.Type, a.Nsid, a.Ifindex)
-	case EnsureXDPDispatcher:
-		return fmt.Sprintf("ensure XDP dispatcher ifindex=%d", a.Ifindex)
-	case EnsureTCDispatcher:
-		return fmt.Sprintf("ensure TC dispatcher ifindex=%d %s", a.Ifindex, a.Direction)
-	case AttachXDPExtension:
-		return fmt.Sprintf("attach XDP extension %s", a.ProgramName)
-	case AttachTCExtension:
-		return fmt.Sprintf("attach TC extension %s", a.ProgramName)
+	case RebuildXDPDispatcher:
+		return fmt.Sprintf("rebuild XDP dispatcher ifindex=%d", a.Ifindex)
+	case RebuildTCDispatcher:
+		return fmt.Sprintf("rebuild TC dispatcher ifindex=%d %s", a.Ifindex, a.Direction)
+	case RebuildDispatcherForDetach:
+		return fmt.Sprintf("rebuild %s dispatcher for detach nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
 	case CleanupEmptyDispatcher:
 		return fmt.Sprintf("cleanup empty %s dispatcher nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
 

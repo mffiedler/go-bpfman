@@ -21,18 +21,6 @@ var xdpDispatcherBytes []byte
 //go:embed tc_dispatcher.bpf.o
 var tcDispatcherBytes []byte
 
-// XDP dispatcher v3 bytecode - compiled from xdp_dispatcher_v3.bpf.c
-// Uses double-buffered BPF maps for runtime dispatch configuration.
-//
-//go:embed xdp_dispatcher_v3.bpf.o
-var xdpDispatcherV3Bytes []byte
-
-// TC dispatcher v2 bytecode - compiled from tc_dispatcher_v2.bpf.c
-// Uses double-buffered BPF maps for runtime dispatch configuration.
-//
-//go:embed tc_dispatcher_v2.bpf.o
-var tcDispatcherV2Bytes []byte
-
 // XDPConfig configures the XDP dispatcher.
 // This must match struct xdp_dispatcher_conf in xdp_dispatcher_v2.bpf.c.
 type XDPConfig struct {
@@ -142,54 +130,6 @@ func LoadTCDispatcher(cfg TCConfig) (*ebpf.CollectionSpec, error) {
 		return nil, fmt.Errorf("set TC dispatcher config: %w", err)
 	}
 
-	return spec, nil
-}
-
-// RuntimeConfig is the Go representation of the BPF
-// dispatcher_runtime struct used by the v3/v2 map-based dispatchers.
-// It is written to the dispatcher_config BPF map to control the
-// execution order at runtime.
-type RuntimeConfig struct {
-	NumProgsEnabled  uint32
-	RunOrder         [MaxPrograms]uint32
-	ChainCallActions [MaxPrograms]uint32
-}
-
-// ConfigMapName is the BPF map name for the double-buffer config.
-const ConfigMapName = "dispatcher_config"
-
-// ActiveMapName is the BPF map name for the active buffer index.
-const ActiveMapName = "active_config"
-
-// LoadXDPDispatcherV3 loads the map-based XDP dispatcher spec.
-// The .rodata config is still injected for XDP metadata compatibility
-// (magic, version, is_xdp_frags, program_flags, run_prios). The
-// dispatch loop reads from BPF maps instead of .rodata.
-func LoadXDPDispatcherV3(cfg XDPConfig) (*ebpf.CollectionSpec, error) {
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(xdpDispatcherV3Bytes))
-	if err != nil {
-		return nil, fmt.Errorf("load XDP v3 dispatcher spec: %w", err)
-	}
-
-	confVar, ok := spec.Variables["conf"]
-	if !ok {
-		return nil, fmt.Errorf("XDP v3 dispatcher missing 'conf' variable")
-	}
-	if err := confVar.Set(cfg); err != nil {
-		return nil, fmt.Errorf("set XDP v3 dispatcher config: %w", err)
-	}
-
-	return spec, nil
-}
-
-// LoadTCDispatcherV2 loads the map-based TC dispatcher spec.
-// No .rodata injection is needed -- TC v2 has no metadata to
-// preserve. The dispatch loop is entirely map-driven.
-func LoadTCDispatcherV2() (*ebpf.CollectionSpec, error) {
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(tcDispatcherV2Bytes))
-	if err != nil {
-		return nil, fmt.Errorf("load TC v2 dispatcher spec: %w", err)
-	}
 	return spec, nil
 }
 

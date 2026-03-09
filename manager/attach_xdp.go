@@ -14,9 +14,9 @@ var xdpProceedOnPass = dispatcher.ProceedOnMask(dispatcher.XDPPass)
 // attachXDP attaches an XDP program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
-// The dispatcher is created automatically if it doesn't exist for the interface.
-// Programs are attached as extensions (freplace) to dispatcher slots.
-// The program is reloaded from its original ObjectPath as Extension type.
+// Every attach triggers a full dispatcher rebuild: a new dispatcher
+// is loaded with updated .rodata config, all extensions are re-attached,
+// and the XDP link is atomically swapped (or created for first attach).
 //
 // Pin paths follow the Rust bpfman convention:
 //   - Dispatcher link: /sys/fs/bpf/bpfman/xdp/dispatcher_{nsid}_{ifindex}_link
@@ -34,15 +34,10 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 		netnsPath: netnsPath,
 		target:    ifname + ":xdp",
 		dispType:  dispatcher.DispatcherTypeXDP,
-		ensureAction: func() action.Action {
-			return action.EnsureXDPDispatcher{
-				Ifindex:   uint32(ifindex),
-				NetnsPath: netnsPath,
-			}
-		},
-		extensionAction: func(ds dispatcher.State, prog bpfman.ProgramRecord) action.Action {
-			return action.AttachXDPExtension{
-				DispState:   ds,
+		rebuildAction: func(prog bpfman.ProgramRecord) action.Action {
+			return action.RebuildXDPDispatcher{
+				Ifindex:     uint32(ifindex),
+				Ifname:      ifname,
 				NetnsPath:   netnsPath,
 				ObjectPath:  prog.Load.ObjectPath(),
 				ProgramName: prog.Meta.Name,

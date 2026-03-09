@@ -101,16 +101,6 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 		kernelMaps = append(kernelMaps, km)
 	}
 
-	// Populate execution order for dispatcher-based links.
-	records := make([]bpfman.LinkRecord, len(links))
-	for i := range links {
-		records[i] = links[i].Record
-	}
-	m.populateLinkOrders(ctx, records)
-	for i := range links {
-		links[i].Record = records[i]
-	}
-
 	// Fetch stats (best-effort, don't fail if unavailable)
 	var stats *kernel.ProgramStats
 	if s, err := m.kernel.GetProgramStatsByID(ctx, programID); err == nil {
@@ -138,8 +128,6 @@ func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) 
 		return nil, err
 	}
 
-	m.populateLinkOrders(ctx, links)
-
 	filter := bpfman.ApplyLinkListOptions(opts...)
 
 	var result []bpfman.LinkRecord
@@ -162,6 +150,16 @@ func (m *Manager) GetDispatcher(ctx context.Context, dispType dispatcher.Dispatc
 	return m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
 }
 
+// CountDispatcherExtensions returns the number of extension links attached
+// to the dispatcher for the given type, namespace, and interface.
+func (m *Manager) CountDispatcherExtensions(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (int, error) {
+	state, err := m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
+	if err != nil {
+		return 0, err
+	}
+	return m.store.CountDispatcherLinks(ctx, state.ProgramID)
+}
+
 // GetLink retrieves a link by link ID, returning the full record with details.
 func (m *Manager) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.LinkRecord, error) {
 	record, err := m.getLink(ctx, linkID)
@@ -178,9 +176,6 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspec
 	if err != nil {
 		return info, err
 	}
-	records := []bpfman.LinkRecord{info.Record}
-	m.populateLinkOrders(ctx, records)
-	info.Record = records[0]
 	return info, nil
 }
 
@@ -299,57 +294,4 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		Host:       GetHostInfo(),
 		Programs:   programs,
 	}, nil
-}
-
-// populateLinkOrders computes the execution order for
-// dispatcher-based links (XDP and TC) and sets the Order field on
-// their details. Order is derived from the dispatcher's slot list
-// sorted by (priority, program_name), which is the same ordering
-// used to build the BPF map's run_order. Links are batched by
-// dispatcher to avoid redundant queries.
-func (m *Manager) populateLinkOrders(ctx context.Context, links []bpfman.LinkRecord) {
-	// Group link indices by dispatcher program ID.
-	type linkRef struct {
-		index    int
-		position int32
-	}
-	groups := make(map[kernel.ProgramID][]linkRef)
-
-	for i, r := range links {
-		switch d := r.Details.(type) {
-		case bpfman.XDPDetails:
-			groups[d.DispatcherID] = append(groups[d.DispatcherID], linkRef{i, d.Position})
-		case bpfman.TCDetails:
-			groups[d.DispatcherID] = append(groups[d.DispatcherID], linkRef{i, d.Position})
-		}
-	}
-
-	for dispID, refs := range groups {
-		slots, err := m.store.ListDispatcherSlots(ctx, dispID)
-		if err != nil {
-			continue
-		}
-
-		// Build position → execution order map. Slots are
-		// already sorted by (priority, program_name).
-		orderByPosition := make(map[int]int32, len(slots))
-		for order, slot := range slots {
-			orderByPosition[slot.Position] = int32(order)
-		}
-
-		for _, ref := range refs {
-			order, ok := orderByPosition[int(ref.position)]
-			if !ok {
-				continue
-			}
-			switch d := links[ref.index].Details.(type) {
-			case bpfman.XDPDetails:
-				d.Order = order
-				links[ref.index].Details = d
-			case bpfman.TCDetails:
-				d.Order = order
-				links[ref.index].Details = d
-			}
-		}
-	}
 }

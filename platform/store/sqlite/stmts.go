@@ -113,7 +113,8 @@ func (s *sqliteStore) prepareLinkRegistryStatements(ctx context.Context) error {
 	// Caller provides the ID explicitly
 	const sqlInsertLinkRegistry = `
 		INSERT INTO links (link_id, kind, kernel_prog_id, pin_path, is_synthetic, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(link_id) DO UPDATE SET pin_path = excluded.pin_path`
 	if s.stmtInsertLinkRegistry, err = s.db.PrepareContext(ctx, sqlInsertLinkRegistry); err != nil {
 		return fmt.Errorf("prepare InsertLinkRegistry: %w", err)
 	}
@@ -348,13 +349,17 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 	}
 
 	const sqlListDispatcherSlots = `
-		SELECT d.position, d.priority, p.program_name, d.proceed_on
+		SELECT d.position, d.priority, p.program_name, d.proceed_on,
+		       p.object_path, p.map_pin_path, l.link_id,
+		       l.kernel_prog_id, d.interface
 		FROM link_xdp_details d
 		JOIN links l ON d.link_id = l.link_id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
 		WHERE d.dispatcher_program_id = ?
 		UNION ALL
-		SELECT d.position, d.priority, p.program_name, d.proceed_on
+		SELECT d.position, d.priority, p.program_name, d.proceed_on,
+		       p.object_path, p.map_pin_path, l.link_id,
+		       l.kernel_prog_id, d.interface
 		FROM link_tc_details d
 		JOIN links l ON d.link_id = l.link_id
 		JOIN managed_programs p ON l.kernel_prog_id = p.program_id
@@ -362,6 +367,18 @@ func (s *sqliteStore) prepareDispatcherStatements(ctx context.Context) error {
 		ORDER BY priority ASC, program_name ASC`
 	if s.stmtListDispatcherSlots, err = s.db.PrepareContext(ctx, sqlListDispatcherSlots); err != nil {
 		return fmt.Errorf("prepare ListDispatcherSlots: %w", err)
+	}
+
+	const sqlDeleteDispatcherLinkDetails = `
+		DELETE FROM link_xdp_details WHERE dispatcher_program_id = ?;`
+	if s.stmtDeleteXDPDispatcherLinkDetails, err = s.db.PrepareContext(ctx, sqlDeleteDispatcherLinkDetails); err != nil {
+		return fmt.Errorf("prepare DeleteXDPDispatcherLinkDetails: %w", err)
+	}
+
+	const sqlDeleteTCDispatcherLinkDetails = `
+		DELETE FROM link_tc_details WHERE dispatcher_program_id = ?;`
+	if s.stmtDeleteTCDispatcherLinkDetails, err = s.db.PrepareContext(ctx, sqlDeleteTCDispatcherLinkDetails); err != nil {
+		return fmt.Errorf("prepare DeleteTCDispatcherLinkDetails: %w", err)
 	}
 
 	return nil

@@ -1,9 +1,10 @@
-// executor_dispatcher.go contains the composite dispatcher actions.
-// Unlike the thin single-call wrappers in executor.go, each operation
-// here is a multi-step transaction with its own rollback: create a
-// kernel object, persist to the store, and undo the kernel operation
-// if persistence fails. Extension attach adds stale-dispatcher
-// recovery on top (detect missing pin, recreate, retry once).
+// executor_dispatcher.go contains the full-rebuild dispatcher logic.
+//
+// Every XDP/TC attach or detach that changes the set of extensions
+// triggers a full dispatcher rebuild: a new dispatcher program is
+// loaded with updated .rodata config, all extensions are re-attached
+// to it, and the link (XDP) or filter (TC) is atomically swapped.
+// This matches the upstream Rust bpfman approach.
 
 package manager
 
@@ -11,244 +12,830 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
+	"time"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// dispatcherCreateOps captures the type-specific operations for
-// dispatcher creation. The shared skeleton in createDispatcher handles
-// revision initialisation, path computation, logging, store
-// persistence, and rollback on persist failure.
-type dispatcherCreateOps struct {
-	label    string
-	dispType dispatcher.DispatcherType
-	nsid     uint64
-	ifindex  uint32
-
-	// kernelCreate builds the type-specific spec, validates it,
-	// calls the kernel attach method, and computes the resulting
-	// dispatcher state. On success it returns a rollback closure
-	// and extra log attributes for the success message.
-	kernelCreate func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error)
-
-	// creatingAttrs holds extra slog attributes appended to the
-	// "creating dispatcher" log message.
-	creatingAttrs []any
+// rebuildSlot carries per-extension data for the rebuild.
+type rebuildSlot struct {
+	ObjectPath  string
+	ProgramName string
+	MapPinDir   string
+	Priority    int
+	ProceedOn   uint32
+	LinkID      kernel.LinkID    // existing synthetic link ID (zero for new)
+	ProgramID   kernel.ProgramID // managed program's kernel ID
+	Ifname      string           // interface name from detail record
 }
 
-// dispatcherKernelResult bundles the output of a type-specific kernel
-// attach: the computed state, a rollback closure for persist failure,
-// and extra log attributes for the success message.
-type dispatcherKernelResult struct {
-	state        dispatcher.State
-	rollback     func(ctx context.Context)
-	createdAttrs []any
+// xdpRebuildOps returns the type-specific operations for XDP
+// dispatcher rebuild.
+type xdpRebuildOps struct {
+	ifindex   uint32
+	ifname    string
+	netnsPath string
 }
 
-// createDispatcher is the shared skeleton for creating a new
-// dispatcher. It computes the initial revision and program pin path,
-// delegates the kernel attach to ops.kernelCreate, persists the
-// resulting state to the store, and rolls back on persist failure.
-func (e *executor) createDispatcher(
+// tcRebuildOps returns the type-specific operations for TC
+// dispatcher rebuild.
+type tcRebuildOps struct {
+	ifindex   uint32
+	ifname    string
+	direction bpfman.TCDirection
+	dispType  dispatcher.DispatcherType
+	netnsPath string
+}
+
+// rebuildXDPDispatcher performs a full XDP dispatcher rebuild.
+// It handles both first-attach (no dispatcher exists) and
+// subsequent-attach (dispatcher exists, rebuild all extensions).
+func (e *executor) rebuildXDPDispatcher(
 	ctx context.Context,
-	ops dispatcherCreateOps,
-) (dispatcher.State, error) {
-	progPinPath := e.bpffs.DispatcherProgPath(ops.dispType, ops.nsid, ops.ifindex, 1)
-
-	attrs := []any{
-		"nsid", ops.nsid,
-		"ifindex", ops.ifindex,
-		"revision", uint32(1),
-		"prog_pin_path", progPinPath,
+	ops xdpRebuildOps,
+	objectPath string,
+	programName string,
+	mapPinDir string,
+	priority int,
+	proceedOn uint32,
+) (extensionResult, error) {
+	newSlot := rebuildSlot{
+		ObjectPath:  objectPath,
+		ProgramName: programName,
+		MapPinDir:   mapPinDir,
+		Priority:    priority,
+		ProceedOn:   proceedOn,
+		Ifname:      ops.ifname,
 	}
-	attrs = append(attrs, ops.creatingAttrs...)
-	e.logger.InfoContext(ctx, "creating "+ops.label+" dispatcher", attrs...)
 
-	result, err := ops.kernelCreate(ctx, progPinPath)
+	nsid, err := netns.GetNsid(ops.netnsPath)
 	if err != nil {
-		return dispatcher.State{}, err
+		return extensionResult{}, fmt.Errorf("get nsid: %w", err)
 	}
 
-	if err := e.store.SaveDispatcher(ctx, result.state); err != nil {
-		e.logger.ErrorContext(ctx, "persist failed, rolling back "+ops.label+" dispatcher",
-			"ifindex", ops.ifindex, "error", err)
-		result.rollback(ctx)
-		return dispatcher.State{}, fmt.Errorf("save %s dispatcher: %w", ops.label, err)
+	dispType := dispatcher.DispatcherTypeXDP
+
+	// Query existing dispatcher state (may not exist).
+	existingState, err := e.store.GetDispatcher(ctx, dispType, nsid, ops.ifindex)
+	firstAttach := false
+	if err != nil {
+		if !isNotFound(err) {
+			return extensionResult{}, fmt.Errorf("get dispatcher: %w", err)
+		}
+		firstAttach = true
 	}
 
-	attrs = []any{
-		"nsid", ops.nsid,
+	// Query existing extension slots.
+	var existingSlots []platform.DispatcherSlot
+	if !firstAttach {
+		existingSlots, err = e.store.ListDispatcherSlots(ctx, existingState.ProgramID)
+		if err != nil {
+			return extensionResult{}, fmt.Errorf("list dispatcher slots: %w", err)
+		}
+	}
+
+	// Build the full set of extensions (existing + new).
+	allSlots := make([]rebuildSlot, 0, len(existingSlots)+1)
+	for _, s := range existingSlots {
+		allSlots = append(allSlots, rebuildSlot{
+			ObjectPath:  s.ObjectPath,
+			ProgramName: s.ProgramName,
+			MapPinDir:   s.MapPinDir,
+			Priority:    s.Priority,
+			ProceedOn:   s.ProceedOn,
+			LinkID:      s.LinkID,
+			ProgramID:   s.ProgramID,
+			Ifname:      s.Ifname,
+		})
+	}
+	allSlots = append(allSlots, newSlot)
+
+	if len(allSlots) > dispatcher.MaxPrograms {
+		return extensionResult{}, fmt.Errorf("no free dispatcher slots (all %d occupied)", dispatcher.MaxPrograms)
+	}
+
+	// Sort by (priority, programName) to determine positions.
+	sortRebuildSlots(allSlots)
+
+	// Compute .rodata config.
+	const xdpDispatcherRetval = 31
+	cfg := dispatcher.NewXDPConfig(len(allSlots))
+	for i, slot := range allSlots {
+		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
+		cfg.RunPrios[i] = uint32(slot.Priority)
+	}
+
+	// Compute new revision.
+	var revision uint32
+	if firstAttach {
+		revision = 1
+	} else {
+		revision, err = e.store.IncrementRevision(ctx, dispType, nsid, ops.ifindex)
+		if err != nil {
+			return extensionResult{}, fmt.Errorf("increment revision: %w", err)
+		}
+	}
+
+	progPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
+
+	e.logger.InfoContext(ctx, "rebuilding XDP dispatcher",
+		"nsid", nsid,
 		"ifindex", ops.ifindex,
-		"dispatcher_id", result.state.ProgramID,
-		"prog_pin_path", progPinPath,
-	}
-	attrs = append(attrs, result.createdAttrs...)
-	e.logger.InfoContext(ctx, "created "+ops.label+" dispatcher", attrs...)
+		"revision", revision,
+		"num_extensions", len(allSlots),
+		"first_attach", firstAttach)
 
-	return result.state, nil
+	// Load new dispatcher with .rodata config.
+	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("load XDP dispatcher: %w", err)
+	}
+
+	// Track cleanup for rollback on failure.
+	cleanupNewDispatcher := func() {
+		if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed",
+				"path", progPinPath, "error", rbErr)
+		}
+	}
+
+	// Attach all extensions to the new dispatcher.
+	type attachedExt struct {
+		out      bpfman.AttachOutput
+		position int
+		pinPath  string
+	}
+	attached := make([]attachedExt, 0, len(allSlots))
+
+	cleanupExtensions := func() {
+		for _, ext := range attached {
+			if ext.pinPath != "" {
+				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
+					e.logger.ErrorContext(ctx, "rollback: detach extension link failed",
+						"path", ext.pinPath, "error", rbErr)
+				}
+			}
+		}
+	}
+
+	// Find which slot is the new one (the one we're adding).
+	newSlotPosition := -1
+	for i, slot := range allSlots {
+		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+
+		out, err := e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        slot.ObjectPath,
+			ProgramName:       slot.ProgramName,
+			Position:          i,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         slot.MapPinDir,
+		})
+		if err != nil {
+			cleanupExtensions()
+			cleanupNewDispatcher()
+			return extensionResult{}, fmt.Errorf("attach XDP extension %s at position %d: %w", slot.ProgramName, i, err)
+		}
+
+		attached = append(attached, attachedExt{out: out, position: i, pinPath: linkPinPath})
+
+		if slot.LinkID == 0 {
+			newSlotPosition = i
+		}
+	}
+
+	// Atomic swap: create link (first-attach) or update existing link.
+	linkPinPath := e.bpffs.DispatcherLinkPath(dispType, nsid, ops.ifindex)
+	var linkID kernel.LinkID
+
+	if firstAttach {
+		result, err := e.kernel.CreateXDPLink(ctx, progPinPath, int(ops.ifindex), linkPinPath, ops.netnsPath)
+		if err != nil {
+			cleanupExtensions()
+			cleanupNewDispatcher()
+			return extensionResult{}, fmt.Errorf("create XDP link: %w", err)
+		}
+		linkID = result.LinkID
+	} else {
+		if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, progPinPath); err != nil {
+			cleanupExtensions()
+			cleanupNewDispatcher()
+			return extensionResult{}, fmt.Errorf("update XDP dispatcher link: %w", err)
+		}
+		linkID = existingState.LinkID
+	}
+
+	// Save dispatcher state to store.
+	newState := dispatcher.State{
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ops.ifindex,
+		Revision:  revision,
+		ProgramID: dispatcherID,
+		LinkID:    linkID,
+	}
+	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
+			"ifindex", ops.ifindex, "error", err)
+		cleanupExtensions()
+		if firstAttach {
+			if rbErr := e.kernel.DetachLink(ctx, linkPinPath); rbErr != nil {
+				e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
+					"path", linkPinPath, "error", rbErr)
+			}
+		}
+		cleanupNewDispatcher()
+		return extensionResult{}, fmt.Errorf("save XDP dispatcher: %w", err)
+	}
+
+	// Update existing extension link detail records.
+	// The ON UPDATE CASCADE already updated dispatcher_program_id,
+	// but positions and revision are stale. Delete old details and
+	// re-insert with correct values.
+	if !firstAttach {
+		if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+			e.logger.WarnContext(ctx, "failed to delete stale link details", "error", err)
+		}
+
+		for i, slot := range allSlots {
+			if slot.LinkID == 0 {
+				continue // new extension, saved by saveLinkNode
+			}
+			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+			if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+				slot.LinkID,
+				slot.ProgramID,
+				bpfman.XDPDetails{
+					Interface:    slot.Ifname,
+					Ifindex:      ops.ifindex,
+					Priority:     int32(slot.Priority),
+					Position:     int32(i),
+					ProceedOn:    bitmaskToActions(slot.ProceedOn),
+					Nsid:         nsid,
+					DispatcherID: dispatcherID,
+					Revision:     revision,
+				},
+				bpfman.LinkPath(pinPath),
+				time.Now(),
+			)); err != nil {
+				e.logger.WarnContext(ctx, "failed to re-insert link detail",
+					"link_id", slot.LinkID, "position", i, "error", err)
+			}
+		}
+	}
+
+	// Clean up old revision directory (if not first-attach).
+	if !firstAttach {
+		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
+		if rbErr := e.kernel.RemovePin(ctx, oldRevDir); rbErr != nil {
+			e.logger.WarnContext(ctx, "failed to remove old revision directory",
+				"path", oldRevDir, "error", rbErr)
+		}
+		oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, existingState.Revision)
+		if rbErr := e.kernel.RemovePin(ctx, oldProgPin); rbErr != nil {
+			e.logger.WarnContext(ctx, "failed to remove old dispatcher program pin",
+				"path", oldProgPin, "error", rbErr)
+		}
+	}
+
+	// Find the new extension's attach output.
+	if newSlotPosition < 0 {
+		// Shouldn't happen, but be defensive.
+		newSlotPosition = len(attached) - 1
+	}
+	newExt := attached[newSlotPosition]
+
+	e.logger.InfoContext(ctx, "rebuilt XDP dispatcher",
+		"nsid", nsid,
+		"ifindex", ops.ifindex,
+		"revision", revision,
+		"dispatcher_id", dispatcherID,
+		"num_extensions", len(allSlots),
+		"new_position", newSlotPosition)
+
+	return extensionResult{
+		out:      newExt.out,
+		disp:     newState,
+		position: newSlotPosition,
+		pinPath:  newExt.pinPath,
+	}, nil
 }
 
-// xdpDispatcherCreateOps returns the type-specific operations for
-// creating an XDP dispatcher.
-func (e *executor) xdpDispatcherCreateOps(
-	nsid uint64,
-	ifindex uint32,
-	netnsPath string,
-) dispatcherCreateOps {
-	linkPinPath := e.bpffs.DispatcherLinkPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	configMapPinPath := e.bpffs.DispatcherConfigMapPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	activeMapPinPath := e.bpffs.DispatcherActiveMapPath(dispatcher.DispatcherTypeXDP, nsid, ifindex)
-	return dispatcherCreateOps{
-		label:    "XDP",
-		dispType: dispatcher.DispatcherTypeXDP,
-		nsid:     nsid,
-		ifindex:  ifindex,
-		creatingAttrs: []any{
-			"netns", netnsPath,
-			"link_pin_path", linkPinPath,
-		},
-		kernelCreate: func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error) {
-			spec := dispatcher.XDPDispatcherAttachSpec{
-				Target: bpfman.AttachTarget{
-					IfIndex: int(ifindex),
-					NetNS:   netnsPath,
-				},
-				ProgPinPath:      progPinPath,
-				LinkPinPath:      linkPinPath,
-				ConfigMapPinPath: configMapPinPath,
-				ActiveMapPinPath: activeMapPinPath,
-				NumProgs:         dispatcher.MaxPrograms,
-				ProceedOn:        xdpProceedOnPass,
-			}
-			if err := spec.Validate(); err != nil {
-				return dispatcherKernelResult{}, fmt.Errorf("invalid XDP dispatcher spec: %w", err)
-			}
-			result, err := e.kernel.AttachXDPDispatcher(ctx, spec)
-			if err != nil {
-				return dispatcherKernelResult{}, err
-			}
-			state := computeXDPDispatcherState(dispatcher.DispatcherTypeXDP, nsid, ifindex, 1, result)
-			return dispatcherKernelResult{
-				state: state,
-				rollback: func(ctx context.Context) {
-					if rbErr := e.kernel.DetachLink(ctx, linkPinPath); rbErr != nil {
-						e.logger.ErrorContext(ctx, "rollback: detach dispatcher link failed",
-							"path", linkPinPath, "error", rbErr)
-					}
-					if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
-						e.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-							"path", progPinPath, "error", rbErr)
-					}
-				},
-				createdAttrs: []any{
-					"link_id", result.LinkID,
-					"link_pin_path", linkPinPath,
-				},
-			}, nil
-		},
+// rebuildTCDispatcher performs a full TC dispatcher rebuild.
+// Same semantics as rebuildXDPDispatcher but for TC dispatchers.
+func (e *executor) rebuildTCDispatcher(
+	ctx context.Context,
+	ops tcRebuildOps,
+	objectPath string,
+	programName string,
+	mapPinDir string,
+	priority int,
+	proceedOn uint32,
+) (extensionResult, error) {
+	newSlot := rebuildSlot{
+		ObjectPath:  objectPath,
+		ProgramName: programName,
+		MapPinDir:   mapPinDir,
+		Priority:    priority,
+		ProceedOn:   proceedOn,
+		Ifname:      ops.ifname,
 	}
+
+	nsid, err := netns.GetNsid(ops.netnsPath)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("get nsid: %w", err)
+	}
+
+	dispType := ops.dispType
+
+	// Query existing dispatcher state (may not exist).
+	existingState, err := e.store.GetDispatcher(ctx, dispType, nsid, ops.ifindex)
+	firstAttach := false
+	if err != nil {
+		if !isNotFound(err) {
+			return extensionResult{}, fmt.Errorf("get dispatcher: %w", err)
+		}
+		firstAttach = true
+	}
+
+	// Query existing extension slots.
+	var existingSlots []platform.DispatcherSlot
+	if !firstAttach {
+		existingSlots, err = e.store.ListDispatcherSlots(ctx, existingState.ProgramID)
+		if err != nil {
+			return extensionResult{}, fmt.Errorf("list dispatcher slots: %w", err)
+		}
+	}
+
+	// Build the full set of extensions (existing + new).
+	allSlots := make([]rebuildSlot, 0, len(existingSlots)+1)
+	for _, s := range existingSlots {
+		allSlots = append(allSlots, rebuildSlot{
+			ObjectPath:  s.ObjectPath,
+			ProgramName: s.ProgramName,
+			MapPinDir:   s.MapPinDir,
+			Priority:    s.Priority,
+			ProceedOn:   s.ProceedOn,
+			LinkID:      s.LinkID,
+			ProgramID:   s.ProgramID,
+			Ifname:      s.Ifname,
+		})
+	}
+	allSlots = append(allSlots, newSlot)
+
+	if len(allSlots) > dispatcher.MaxPrograms {
+		return extensionResult{}, fmt.Errorf("no free dispatcher slots (all %d occupied)", dispatcher.MaxPrograms)
+	}
+
+	// Sort by (priority, programName) to determine positions.
+	sortRebuildSlots(allSlots)
+
+	// Compute .rodata config.
+	cfg := dispatcher.NewTCConfig(len(allSlots))
+	for i, slot := range allSlots {
+		// TC dispatchers check (1 << (ret + 1)) for chain_call_actions
+		// to handle TC_ACT_UNSPEC = -1.
+		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
+		cfg.RunPrios[i] = uint32(slot.Priority)
+	}
+
+	// Compute new revision.
+	var revision uint32
+	if firstAttach {
+		revision = 1
+	} else {
+		revision, err = e.store.IncrementRevision(ctx, dispType, nsid, ops.ifindex)
+		if err != nil {
+			return extensionResult{}, fmt.Errorf("increment revision: %w", err)
+		}
+	}
+
+	progPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, revision)
+
+	e.logger.InfoContext(ctx, "rebuilding TC dispatcher",
+		"nsid", nsid,
+		"ifindex", ops.ifindex,
+		"ifname", ops.ifname,
+		"direction", ops.direction,
+		"revision", revision,
+		"num_extensions", len(allSlots),
+		"first_attach", firstAttach)
+
+	// Load new dispatcher with .rodata config.
+	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("load TC dispatcher: %w", err)
+	}
+
+	cleanupNewDispatcher := func() {
+		if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
+			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed",
+				"path", progPinPath, "error", rbErr)
+		}
+	}
+
+	// Attach all extensions to the new dispatcher.
+	type attachedExt struct {
+		out      bpfman.AttachOutput
+		position int
+		pinPath  string
+	}
+	attached := make([]attachedExt, 0, len(allSlots))
+
+	cleanupExtensions := func() {
+		for _, ext := range attached {
+			if ext.pinPath != "" {
+				if rbErr := e.kernel.DetachLink(ctx, ext.pinPath); rbErr != nil {
+					e.logger.ErrorContext(ctx, "rollback: detach TC extension link failed",
+						"path", ext.pinPath, "error", rbErr)
+				}
+			}
+		}
+	}
+
+	newSlotPosition := -1
+	for i, slot := range allSlots {
+		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+
+		out, err := e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        slot.ObjectPath,
+			ProgramName:       slot.ProgramName,
+			Position:          i,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         slot.MapPinDir,
+		})
+		if err != nil {
+			cleanupExtensions()
+			cleanupNewDispatcher()
+			return extensionResult{}, fmt.Errorf("attach TC extension %s at position %d: %w", slot.ProgramName, i, err)
+		}
+
+		attached = append(attached, attachedExt{out: out, position: i, pinPath: linkPinPath})
+
+		if slot.LinkID == 0 {
+			newSlotPosition = i
+		}
+	}
+
+	// Atomic swap: create filter (first-attach) or swap (add new, remove old).
+	// For TC, record the old handle before creating the new filter so we can
+	// remove the old one after the new one is in place.
+	var oldHandle uint32
+	if !firstAttach {
+		parent := dispatcher.TCParentHandle(dispType)
+		handle, err := e.kernel.FindTCFilterHandle(ctx, int(ops.ifindex), parent, existingState.Priority)
+		if err != nil {
+			e.logger.WarnContext(ctx, "failed to find old TC filter handle",
+				"error", err)
+		} else {
+			oldHandle = handle
+		}
+	}
+
+	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(ops.ifindex), ops.ifname, ops.direction, ops.netnsPath)
+	if err != nil {
+		cleanupExtensions()
+		cleanupNewDispatcher()
+		return extensionResult{}, fmt.Errorf("create TC filter: %w", err)
+	}
+
+	// Remove old filter after new one is in place.
+	if !firstAttach && oldHandle != 0 {
+		parent := dispatcher.TCParentHandle(dispType)
+		if err := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, existingState.Priority, oldHandle); err != nil {
+			e.logger.WarnContext(ctx, "failed to remove old TC filter",
+				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
+		}
+	}
+
+	// Save dispatcher state to store.
+	newState := dispatcher.State{
+		Type:      dispType,
+		Nsid:      nsid,
+		Ifindex:   ops.ifindex,
+		Revision:  revision,
+		ProgramID: dispatcherID,
+		Priority:  result.Priority,
+	}
+	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
+			"ifindex", ops.ifindex, "error", err)
+		cleanupExtensions()
+		cleanupNewDispatcher()
+		return extensionResult{}, fmt.Errorf("save TC dispatcher: %w", err)
+	}
+
+	// Update existing extension link detail records.
+	if !firstAttach {
+		if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+			e.logger.WarnContext(ctx, "failed to delete stale TC link details", "error", err)
+		}
+
+		for i, slot := range allSlots {
+			if slot.LinkID == 0 {
+				continue // new extension, saved by saveLinkNode
+			}
+			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+			if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+				slot.LinkID,
+				slot.ProgramID,
+				bpfman.TCDetails{
+					Interface:    slot.Ifname,
+					Ifindex:      ops.ifindex,
+					Direction:    ops.direction,
+					Priority:     int32(slot.Priority),
+					Position:     int32(i),
+					ProceedOn:    bitmaskToActions(slot.ProceedOn),
+					Nsid:         nsid,
+					DispatcherID: dispatcherID,
+					Revision:     revision,
+				},
+				bpfman.LinkPath(pinPath),
+				time.Now(),
+			)); err != nil {
+				e.logger.WarnContext(ctx, "failed to re-insert TC link detail",
+					"link_id", slot.LinkID, "position", i, "error", err)
+			}
+		}
+	}
+
+	// Clean up old revision directory.
+	if !firstAttach {
+		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
+		if rbErr := e.kernel.RemovePin(ctx, oldRevDir); rbErr != nil {
+			e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
+				"path", oldRevDir, "error", rbErr)
+		}
+		oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, existingState.Revision)
+		if rbErr := e.kernel.RemovePin(ctx, oldProgPin); rbErr != nil {
+			e.logger.WarnContext(ctx, "failed to remove old TC dispatcher program pin",
+				"path", oldProgPin, "error", rbErr)
+		}
+	}
+
+	if newSlotPosition < 0 {
+		newSlotPosition = len(attached) - 1
+	}
+	newExt := attached[newSlotPosition]
+
+	e.logger.InfoContext(ctx, "rebuilt TC dispatcher",
+		"nsid", nsid,
+		"ifindex", ops.ifindex,
+		"ifname", ops.ifname,
+		"direction", ops.direction,
+		"revision", revision,
+		"dispatcher_id", dispatcherID,
+		"num_extensions", len(allSlots),
+		"new_position", newSlotPosition)
+
+	return extensionResult{
+		out:      newExt.out,
+		disp:     newState,
+		position: newSlotPosition,
+		pinPath:  newExt.pinPath,
+	}, nil
 }
 
-// tcDispatcherCreateOps returns the type-specific operations for
-// creating a TC dispatcher.
-func (e *executor) tcDispatcherCreateOps(
-	nsid uint64,
-	ifindex uint32,
-	ifname string,
-	direction bpfman.TCDirection,
-	dispType dispatcher.DispatcherType,
-	netnsPath string,
-) dispatcherCreateOps {
-	configMapPinPath := e.bpffs.DispatcherConfigMapPath(dispType, nsid, ifindex)
-	activeMapPinPath := e.bpffs.DispatcherActiveMapPath(dispType, nsid, ifindex)
-	return dispatcherCreateOps{
-		label:    "TC",
-		dispType: dispType,
-		nsid:     nsid,
-		ifindex:  ifindex,
-		creatingAttrs: []any{
-			"direction", direction,
-			"ifname", ifname,
-			"netns", netnsPath,
-		},
-		kernelCreate: func(ctx context.Context, progPinPath string) (dispatcherKernelResult, error) {
-			spec := dispatcher.TCDispatcherAttachSpec{
-				Target: bpfman.AttachTarget{
-					IfIndex: int(ifindex),
-					NetNS:   netnsPath,
-				},
-				IfName:           ifname,
-				ProgPinPath:      progPinPath,
-				ConfigMapPinPath: configMapPinPath,
-				ActiveMapPinPath: activeMapPinPath,
-				Direction:        direction,
-				NumProgs:         dispatcher.MaxPrograms,
-				ProceedOn:        uint32(DefaultTCProceedOn),
-			}
-			if err := spec.Validate(); err != nil {
-				return dispatcherKernelResult{}, fmt.Errorf("invalid TC dispatcher spec: %w", err)
-			}
-			result, err := e.kernel.AttachTCDispatcher(ctx, spec)
-			if err != nil {
-				return dispatcherKernelResult{}, err
-			}
-			state := computeTCDispatcherState(dispType, nsid, ifindex, 1, result)
-			return dispatcherKernelResult{
-				state: state,
-				rollback: func(ctx context.Context) {
-					parent := dispatcher.TCParentHandle(dispType)
-					if rbErr := e.kernel.DetachTCFilter(ctx, int(ifindex), ifname, parent, result.Priority, result.Handle); rbErr != nil {
-						e.logger.ErrorContext(ctx, "rollback: detach TC filter failed",
-							"ifname", ifname, "error", rbErr)
-					}
-					if rbErr := e.kernel.RemovePin(ctx, progPinPath); rbErr != nil {
-						e.logger.ErrorContext(ctx, "rollback: remove prog pin failed",
-							"path", progPinPath, "error", rbErr)
-					}
-				},
-				createdAttrs: []any{
-					"direction", direction,
-					"ifname", ifname,
-					"handle", fmt.Sprintf("%x", result.Handle),
-					"priority", result.Priority,
-				},
-			}, nil
-		},
+// rebuildDispatcherForDetach rebuilds the dispatcher after an
+// extension has been detached. If no extensions remain, the
+// dispatcher is removed entirely.
+func (e *executor) rebuildDispatcherForDetach(ctx context.Context, state dispatcher.State) error {
+	remaining, err := e.store.CountDispatcherLinks(ctx, state.ProgramID)
+	if err != nil {
+		return fmt.Errorf("count dispatcher links: %w", err)
 	}
+
+	if remaining == 0 {
+		return e.removeEmptyDispatcher(ctx, state)
+	}
+
+	// Extensions remain: rebuild the dispatcher with the remaining slots.
+	slots, err := e.store.ListDispatcherSlots(ctx, state.ProgramID)
+	if err != nil {
+		return fmt.Errorf("list dispatcher slots for rebuild: %w", err)
+	}
+
+	// Sort by (priority, programName) for position assignment.
+	rebuildSlots := make([]rebuildSlot, len(slots))
+	for i, s := range slots {
+		rebuildSlots[i] = rebuildSlot{
+			ObjectPath:  s.ObjectPath,
+			ProgramName: s.ProgramName,
+			MapPinDir:   s.MapPinDir,
+			Priority:    s.Priority,
+			ProceedOn:   s.ProceedOn,
+			LinkID:      s.LinkID,
+			ProgramID:   s.ProgramID,
+			Ifname:      s.Ifname,
+		}
+	}
+	sortRebuildSlots(rebuildSlots)
+
+	nsid := state.Nsid
+	ifindex := state.Ifindex
+	dispType := state.Type
+
+	// Compute new revision.
+	revision, err := e.store.IncrementRevision(ctx, dispType, nsid, ifindex)
+	if err != nil {
+		return fmt.Errorf("increment revision: %w", err)
+	}
+
+	progPinPath := e.bpffs.DispatcherProgPath(dispType, nsid, ifindex, revision)
+
+	e.logger.InfoContext(ctx, "rebuilding dispatcher for detach",
+		"type", dispType,
+		"nsid", nsid,
+		"ifindex", ifindex,
+		"revision", revision,
+		"remaining", len(rebuildSlots))
+
+	if dispType == dispatcher.DispatcherTypeXDP {
+		return e.rebuildXDPForDetach(ctx, state, rebuildSlots, revision, progPinPath)
+	}
+	return e.rebuildTCForDetach(ctx, state, rebuildSlots, revision, progPinPath)
 }
 
-// computeXDPDispatcherState is a pure function that builds a
-// dispatcher.State from kernel attach results.
-func computeXDPDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.XDPDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
+// rebuildXDPForDetach handles the XDP-specific rebuild after detach.
+func (e *executor) rebuildXDPForDetach(
+	ctx context.Context,
+	state dispatcher.State,
+	slots []rebuildSlot,
+	revision uint32,
+	progPinPath string,
+) error {
+	dispType := state.Type
+	nsid := state.Nsid
+	ifindex := state.Ifindex
+
+	const xdpDispatcherRetval = 31
+	cfg := dispatcher.NewXDPConfig(len(slots))
+	for i, slot := range slots {
+		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
+		cfg.RunPrios[i] = uint32(slot.Priority)
+	}
+
+	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
+	if err != nil {
+		return fmt.Errorf("load XDP dispatcher for detach rebuild: %w", err)
+	}
+
+	// Attach remaining extensions.
+	for i, slot := range slots {
+		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+		_, err := e.kernel.AttachXDPExtension(ctx, dispatcher.XDPExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        slot.ObjectPath,
+			ProgramName:       slot.ProgramName,
+			Position:          i,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         slot.MapPinDir,
+		})
+		if err != nil {
+			return fmt.Errorf("re-attach XDP extension %s at position %d: %w", slot.ProgramName, i, err)
+		}
+	}
+
+	// Swap link.
+	linkPinPath := e.bpffs.DispatcherLinkPath(dispType, nsid, ifindex)
+	if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, progPinPath); err != nil {
+		return fmt.Errorf("update XDP dispatcher link: %w", err)
+	}
+
+	// Update store.
+	newState := dispatcher.State{
 		Type:      dispType,
 		Nsid:      nsid,
 		Ifindex:   ifindex,
 		Revision:  revision,
-		ProgramID: result.DispatcherID,
-		LinkID:    result.LinkID,
+		ProgramID: dispatcherID,
+		LinkID:    state.LinkID,
 	}
+	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+		return fmt.Errorf("save dispatcher after detach rebuild: %w", err)
+	}
+
+	// Update remaining extension link detail records.
+	if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+		e.logger.WarnContext(ctx, "failed to delete stale XDP link details for detach rebuild", "error", err)
+	}
+	for i, slot := range slots {
+		pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+		if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+			slot.LinkID,
+			slot.ProgramID,
+			bpfman.XDPDetails{
+				Interface:    slot.Ifname,
+				Ifindex:      ifindex,
+				Priority:     int32(slot.Priority),
+				Position:     int32(i),
+				ProceedOn:    bitmaskToActions(slot.ProceedOn),
+				Nsid:         nsid,
+				DispatcherID: dispatcherID,
+				Revision:     revision,
+			},
+			bpfman.LinkPath(pinPath),
+			time.Now(),
+		)); err != nil {
+			e.logger.WarnContext(ctx, "failed to re-insert XDP link detail for detach rebuild",
+				"link_id", slot.LinkID, "position", i, "error", err)
+		}
+	}
+
+	// Clean up old revision.
+	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
+	if err := e.kernel.RemovePin(ctx, oldRevDir); err != nil {
+		e.logger.WarnContext(ctx, "failed to remove old revision directory",
+			"path", oldRevDir, "error", err)
+	}
+	oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ifindex, state.Revision)
+	if err := e.kernel.RemovePin(ctx, oldProgPin); err != nil {
+		e.logger.WarnContext(ctx, "failed to remove old dispatcher program pin",
+			"path", oldProgPin, "error", err)
+	}
+
+	return nil
 }
 
-// computeTCDispatcherState is a pure function that builds a
-// dispatcher.State from TC kernel attach results.
-func computeTCDispatcherState(
-	dispType dispatcher.DispatcherType,
-	nsid uint64,
-	ifindex, revision uint32,
-	result *platform.TCDispatcherResult,
-) dispatcher.State {
-	return dispatcher.State{
+// rebuildTCForDetach handles the TC-specific rebuild after detach.
+func (e *executor) rebuildTCForDetach(
+	ctx context.Context,
+	state dispatcher.State,
+	slots []rebuildSlot,
+	revision uint32,
+	progPinPath string,
+) error {
+	dispType := state.Type
+	nsid := state.Nsid
+	ifindex := state.Ifindex
+
+	cfg := dispatcher.NewTCConfig(len(slots))
+	for i, slot := range slots {
+		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
+		cfg.RunPrios[i] = uint32(slot.Priority)
+	}
+
+	_, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
+	if err != nil {
+		return fmt.Errorf("load TC dispatcher for detach rebuild: %w", err)
+	}
+
+	// Attach remaining extensions.
+	for i, slot := range slots {
+		linkPinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+		_, err := e.kernel.AttachTCExtension(ctx, dispatcher.TCExtensionAttachSpec{
+			DispatcherPinPath: progPinPath,
+			ObjectPath:        slot.ObjectPath,
+			ProgramName:       slot.ProgramName,
+			Position:          i,
+			LinkPinPath:       linkPinPath,
+			MapPinDir:         slot.MapPinDir,
+		})
+		if err != nil {
+			return fmt.Errorf("re-attach TC extension %s at position %d: %w", slot.ProgramName, i, err)
+		}
+	}
+
+	// Record old handle before swap.
+	var oldHandle uint32
+	parent := dispatcher.TCParentHandle(dispType)
+	handle, err := e.kernel.FindTCFilterHandle(ctx, int(ifindex), parent, state.Priority)
+	if err != nil {
+		e.logger.WarnContext(ctx, "failed to find old TC filter handle for detach rebuild",
+			"error", err)
+	} else {
+		oldHandle = handle
+	}
+
+	// Determine direction from dispatcher type.
+	var direction bpfman.TCDirection
+	if dispType == dispatcher.DispatcherTypeTCIngress {
+		direction = bpfman.TCDirectionIngress
+	} else {
+		direction = bpfman.TCDirectionEgress
+	}
+
+	// Create new filter.
+	result, err := e.kernel.CreateTCFilter(ctx, progPinPath, int(ifindex), "", direction, "")
+	if err != nil {
+		return fmt.Errorf("create TC filter for detach rebuild: %w", err)
+	}
+
+	// Remove old filter.
+	if oldHandle != 0 {
+		if err := e.kernel.DetachTCFilter(ctx, int(ifindex), "", parent, state.Priority, oldHandle); err != nil {
+			e.logger.WarnContext(ctx, "failed to remove old TC filter after detach rebuild",
+				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
+		}
+	}
+
+	// Update store.
+	newState := dispatcher.State{
 		Type:      dispType,
 		Nsid:      nsid,
 		Ifindex:   ifindex,
@@ -256,161 +843,105 @@ func computeTCDispatcherState(
 		ProgramID: result.DispatcherID,
 		Priority:  result.Priority,
 	}
-}
-
-// extensionOps captures the type-specific operations for extension
-// attach. The shared skeleton handles slot allocation, pin path
-// construction, stale-dispatcher recovery, and runtime config update.
-type extensionOps struct {
-	label    string
-	dispType dispatcher.DispatcherType
-	attach   func(ctx context.Context, dispatcherPinPath, objectPath, programName string,
-		position int, linkPinPath, mapPinDir string) (bpfman.AttachOutput, error)
-	recreate     func(ctx context.Context, nsid uint64, ifindex uint32) (dispatcher.State, error)
-	updateConfig func(ctx context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error
-	priority     int
-	proceedOn    uint32
-}
-
-// attachExtensionWithRetry attaches a user program as an extension to
-// a dispatcher slot. It finds the next free physical slot, attaches
-// the extension, then computes the priority-based run_order and
-// updates the dispatcher's runtime config via double-buffer flip.
-//
-// If the first attempt fails with os.ErrNotExist (stale dispatcher
-// pin after bpffs remount), the dispatcher is deleted, recreated,
-// and the attach retried once.
-func attachExtensionWithRetry(
-	ctx context.Context,
-	store platform.Store,
-	bpffs fs.BPFFS,
-	logger *slog.Logger,
-	ops extensionOps,
-	ds dispatcher.State,
-	objectPath string,
-	programName string,
-	mapPinDir string,
-) (extensionResult, error) {
-	result, err := tryAttachExtension(ctx, store, bpffs, logger, ops, ds, objectPath, programName, mapPinDir)
-	if err == nil {
-		return result, nil
+	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+		return fmt.Errorf("save dispatcher after TC detach rebuild: %w", err)
 	}
 
-	// Stale dispatcher recovery: pin missing after bpffs remount.
-	if !errors.Is(err, os.ErrNotExist) {
-		return extensionResult{}, err
+	// Update remaining extension link detail records.
+	if err := e.store.DeleteDispatcherLinkDetails(ctx, result.DispatcherID); err != nil {
+		e.logger.WarnContext(ctx, "failed to delete stale TC link details for detach rebuild", "error", err)
 	}
-
-	progPinPath := bpffs.DispatcherProgPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision)
-	logger.WarnContext(ctx, "dispatcher pin missing, recreating",
-		"prog_pin_path", progPinPath,
-		"dispatcher_id", ds.ProgramID,
-		"error", err)
-
-	if delErr := store.DeleteDispatcher(ctx, ops.dispType, ds.Nsid, ds.Ifindex); delErr != nil {
-		return extensionResult{}, fmt.Errorf("delete stale %s dispatcher: %w", ops.label, delErr)
-	}
-	ds, err = ops.recreate(ctx, ds.Nsid, ds.Ifindex)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("recreate %s dispatcher: %w", ops.label, err)
-	}
-
-	return tryAttachExtension(ctx, store, bpffs, logger, ops, ds, objectPath, programName, mapPinDir)
-}
-
-// tryAttachExtension performs a single attempt at extension attach:
-// find free slot, attach, update runtime config.
-func tryAttachExtension(
-	ctx context.Context,
-	store platform.Store,
-	bpffs fs.BPFFS,
-	_ *slog.Logger,
-	ops extensionOps,
-	ds dispatcher.State,
-	objectPath string,
-	programName string,
-	mapPinDir string,
-) (extensionResult, error) {
-	// Find the next free physical slot by querying occupied slots.
-	slots, err := store.ListDispatcherSlots(ctx, ds.ProgramID)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("list dispatcher slots: %w", err)
-	}
-	position := findFreeSlot(slots)
-	if position < 0 {
-		return extensionResult{}, fmt.Errorf("no free dispatcher slots (all %d occupied)", dispatcher.MaxPrograms)
-	}
-
-	linkPinPath := bpffs.ExtensionLinkPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision, position)
-	progPinPath := bpffs.DispatcherProgPath(ops.dispType, ds.Nsid, ds.Ifindex, ds.Revision)
-
-	out, err := ops.attach(ctx, progPinPath, objectPath, programName, position, linkPinPath, mapPinDir)
-	if err != nil {
-		return extensionResult{}, fmt.Errorf("attach %s extension slot %d: %w", ops.label, position, err)
-	}
-
-	// After successful attach, compute the new runtime config
-	// including the just-attached slot and update the BPF maps.
-	if ops.updateConfig != nil {
-		newSlot := platform.DispatcherSlot{
-			Position:    position,
-			Priority:    ops.priority,
-			ProgramName: programName,
-			ProceedOn:   ops.proceedOn,
-		}
-		config := computeRuntimeConfig(slots, &newSlot, ops.dispType.ChainCallShift())
-		configMapPin := bpffs.DispatcherConfigMapPath(ops.dispType, ds.Nsid, ds.Ifindex)
-		activeMapPin := bpffs.DispatcherActiveMapPath(ops.dispType, ds.Nsid, ds.Ifindex)
-		if err := ops.updateConfig(ctx, configMapPin, activeMapPin, config); err != nil {
-			return extensionResult{}, fmt.Errorf("update dispatcher config after attach (slot %d): %w", position, err)
+	for i, slot := range slots {
+		pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+		if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+			slot.LinkID,
+			slot.ProgramID,
+			bpfman.TCDetails{
+				Interface:    slot.Ifname,
+				Ifindex:      ifindex,
+				Direction:    direction,
+				Priority:     int32(slot.Priority),
+				Position:     int32(i),
+				ProceedOn:    bitmaskToActions(slot.ProceedOn),
+				Nsid:         nsid,
+				DispatcherID: result.DispatcherID,
+				Revision:     revision,
+			},
+			bpfman.LinkPath(pinPath),
+			time.Now(),
+		)); err != nil {
+			e.logger.WarnContext(ctx, "failed to re-insert TC link detail for detach rebuild",
+				"link_id", slot.LinkID, "position", i, "error", err)
 		}
 	}
 
-	return extensionResult{out: out, disp: ds, position: position, pinPath: linkPinPath}, nil
+	// Clean up old revision.
+	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
+	if err := e.kernel.RemovePin(ctx, oldRevDir); err != nil {
+		e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
+			"path", oldRevDir, "error", err)
+	}
+	oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ifindex, state.Revision)
+	if err := e.kernel.RemovePin(ctx, oldProgPin); err != nil {
+		e.logger.WarnContext(ctx, "failed to remove old TC dispatcher program pin",
+			"path", oldProgPin, "error", err)
+	}
+
+	return nil
 }
 
-// findFreeSlot returns the lowest unoccupied slot index [0, MaxPrograms).
-// Returns -1 if all slots are occupied.
-func findFreeSlot(occupied []platform.DispatcherSlot) int {
-	used := make(map[int]bool, len(occupied))
-	for _, s := range occupied {
-		used[s.Position] = true
-	}
-	for i := range dispatcher.MaxPrograms {
-		if !used[i] {
-			return i
+// removeEmptyDispatcher removes a dispatcher when no extensions remain.
+func (e *executor) removeEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
+	// For TC dispatchers, query the kernel for the filter handle.
+	var tcHandle uint32
+	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
+		parent := dispatcher.TCParentHandle(state.Type)
+		handle, err := e.kernel.FindTCFilterHandle(ctx, int(state.Ifindex), parent, state.Priority)
+		if err != nil {
+			e.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)
+		} else {
+			tcHandle = handle
 		}
 	}
-	return -1
+
+	cleanupActions := computeDispatcherCleanupActions(e.bpffs, state, tcHandle)
+	if err := e.ExecuteAll(ctx, cleanupActions); err != nil {
+		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
+	}
+	return nil
 }
 
-// computeRuntimeConfig builds a RuntimeConfig from the currently
-// occupied slots plus an optional new slot. Slots are sorted by
-// (priority, program_name) to determine run_order.
-//
-// chainCallShift adjusts proceed-on bitmasks for the BPF dispatcher's
-// chain_call_actions convention. TC dispatchers check
-// (1 << (ret + 1)) in BPF to handle TC_ACT_UNSPEC = -1, so TC
-// bitmasks must be shifted left by 1. XDP dispatchers use
-// (1 << ret) directly, so the shift is 0.
-func computeRuntimeConfig(existing []platform.DispatcherSlot, newSlot *platform.DispatcherSlot, chainCallShift uint) dispatcher.RuntimeConfig {
-	// Combine existing slots with the new one (if any).
-	all := make([]platform.DispatcherSlot, len(existing))
-	copy(all, existing)
-	if newSlot != nil {
-		all = append(all, *newSlot)
-	}
+// isNotFound returns true if the error wraps platform.ErrRecordNotFound.
+func isNotFound(err error) bool {
+	return errors.Is(err, platform.ErrRecordNotFound)
+}
 
-	// Sort by (priority, program_name) to match Rust bpfman ordering.
-	sortSlotsByPriority(all)
-
-	var cfg dispatcher.RuntimeConfig
-	cfg.NumProgsEnabled = uint32(len(all))
-	for i, slot := range all {
-		cfg.RunOrder[i] = uint32(slot.Position)
-		cfg.ChainCallActions[slot.Position] = slot.ProceedOn << chainCallShift
+// sortRebuildSlots sorts rebuild slots by (priority ASC, programName ASC).
+func sortRebuildSlots(slots []rebuildSlot) {
+	for i := 1; i < len(slots); i++ {
+		for j := i; j > 0; j-- {
+			if slots[j].Priority < slots[j-1].Priority ||
+				(slots[j].Priority == slots[j-1].Priority &&
+					slots[j].ProgramName < slots[j-1].ProgramName) {
+				slots[j], slots[j-1] = slots[j-1], slots[j]
+			} else {
+				break
+			}
+		}
 	}
-	return cfg
+}
+
+// bitmaskToActions converts a proceed-on bitmask back to a slice of
+// action codes. This is the inverse of the bitmask computation in
+// attach_tc.go and attach_xdp.go.
+func bitmaskToActions(mask uint32) []int32 {
+	var actions []int32
+	for i := 0; i < 32; i++ {
+		if mask&(1<<uint(i)) != 0 {
+			actions = append(actions, int32(i))
+		}
+	}
+	return actions
 }
 
 // sortSlotsByPriority sorts slots by (priority ASC, program_name ASC).

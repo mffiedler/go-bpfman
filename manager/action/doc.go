@@ -21,14 +21,13 @@
 //     RemoveLinkDir, RemoveMapDir, RemoveStagingDir,
 //     RemoveDispatcherProgPin,
 //     RemoveDispatcherRevDir, RemoveDispatcherLinkPin
-//   - Deep:       EnsureXDPDispatcher, EnsureTCDispatcher,
-//     AttachXDPExtension, AttachTCExtension,
-//     CleanupEmptyDispatcher
+//   - Rebuild:    RebuildXDPDispatcher, RebuildTCDispatcher,
+//     RebuildDispatcherForDetach, CleanupEmptyDispatcher
 //
-// Deep actions are cross-subsystem operations that the executor
+// Rebuild actions are cross-subsystem operations that the executor
 // handles internally (kernel + store with inline rollback).  They
-// encapsulate a mini-transaction so the plan interpreter sees a
-// single atomic action rather than multiple steps.
+// encapsulate a full dispatcher rebuild so the plan interpreter sees
+// a single atomic action rather than multiple steps.
 //
 // Execute runs an instruction for its side effect. ExecuteResult
 // runs it and returns a typed value (used by LoadProgram and the

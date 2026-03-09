@@ -313,36 +313,13 @@ func (CleanupEmptyDispatcher) isAction() {}
 // attach, moving all cross-subsystem complexity behind the opcode
 // boundary.
 
-// EnsureXDPDispatcher looks up an existing XDP dispatcher for the
-// given interface, or creates one if none exists. Returns
-// dispatcher.State via ExecuteResult.
-type EnsureXDPDispatcher struct {
-	Ifindex   uint32
-	NetnsPath string
-}
-
-func (EnsureXDPDispatcher) isAction() {}
-
-// EnsureTCDispatcher looks up an existing TC dispatcher for the given
-// interface and direction, or creates one if none exists. Returns
-// dispatcher.State via ExecuteResult.
-type EnsureTCDispatcher struct {
-	Ifindex   uint32
-	Ifname    string
-	Direction bpfman.TCDirection
-	DispType  dispatcher.DispatcherType
-	NetnsPath string
-}
-
-func (EnsureTCDispatcher) isAction() {}
-
-// AttachXDPExtension attaches a user program as an extension to an
-// XDP dispatcher slot. Includes stale-dispatcher recovery: if the
-// first attempt fails with os.ErrNotExist, the dispatcher is
-// recreated and the attach retried once. Returns extensionResult via
-// ExecuteResult (package-internal type; callers use action.Produce).
-type AttachXDPExtension struct {
-	DispState   dispatcher.State
+// RebuildXDPDispatcher triggers a full dispatcher rebuild for XDP.
+// This handles both first-attach (no dispatcher exists) and
+// subsequent-attach (dispatcher exists, rebuild all extensions).
+// Returns extensionResult via ExecuteResult.
+type RebuildXDPDispatcher struct {
+	Ifindex     uint32
+	Ifname      string
 	NetnsPath   string
 	ObjectPath  string
 	ProgramName string
@@ -351,13 +328,13 @@ type AttachXDPExtension struct {
 	ProceedOn   uint32
 }
 
-func (AttachXDPExtension) isAction() {}
+func (RebuildXDPDispatcher) isAction() {}
 
-// AttachTCExtension attaches a user program as an extension to a TC
-// dispatcher slot. Same stale-dispatcher recovery as XDP. Returns
-// extensionResult via ExecuteResult.
-type AttachTCExtension struct {
-	DispState   dispatcher.State
+// RebuildTCDispatcher triggers a full dispatcher rebuild for TC.
+// Same semantics as RebuildXDPDispatcher but for TC dispatchers.
+// Returns extensionResult via ExecuteResult.
+type RebuildTCDispatcher struct {
+	Ifindex     uint32
 	Ifname      string
 	Direction   bpfman.TCDirection
 	DispType    dispatcher.DispatcherType
@@ -369,4 +346,13 @@ type AttachTCExtension struct {
 	ProceedOn   uint32
 }
 
-func (AttachTCExtension) isAction() {}
+func (RebuildTCDispatcher) isAction() {}
+
+// RebuildDispatcherForDetach triggers a full dispatcher rebuild after
+// an extension has been detached. If no extensions remain, the
+// dispatcher is removed entirely.
+type RebuildDispatcherForDetach struct {
+	State dispatcher.State
+}
+
+func (RebuildDispatcherForDetach) isAction() {}

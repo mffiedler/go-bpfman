@@ -6,6 +6,7 @@ import (
 	"iter"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -167,11 +168,10 @@ type fakeKernel struct {
 	tcFilters map[tcFilterKey]uint32
 
 	// Operation recording for verification
-	ops           []kernelOp
-	removePins    []string                 // paths passed to RemovePin
-	tcDetaches    []tcFilterKey            // TC filters detached
-	configUpdates []dispatcherConfigUpdate // dispatcher config updates
-	mu            sync.Mutex
+	ops        []kernelOp
+	removePins []string      // paths passed to RemovePin
+	tcDetaches []tcFilterKey // TC filters detached
+	mu         sync.Mutex
 
 	// Error injection - set these to control behaviour
 	failOnProgram map[string]error // fail Load if program name matches
@@ -347,7 +347,6 @@ func (f *fakeKernel) Reset() {
 	f.ops = nil
 	f.removePins = nil
 	f.tcDetaches = nil
-	f.configUpdates = nil
 	f.tcFilters = make(map[tcFilterKey]uint32)
 	f.failOnProgram = make(map[string]error)
 	f.failOnAttach = make(map[string]error)
@@ -956,11 +955,23 @@ func (f *fakeKernel) RemovePin(_ context.Context, path string) error {
 	f.removePins = append(f.removePins, path)
 	f.mu.Unlock()
 
-	// Remove programs matching this pin path (for dispatcher cleanup)
+	// Remove programs matching this pin path (for dispatcher cleanup).
 	for id, prog := range f.programs {
 		if prog.pinPath == path {
 			delete(f.programs, id)
 			break
+		}
+	}
+
+	// Remove links whose pin paths are under this directory. This
+	// simulates bpffs directory removal releasing pinned links.
+	dirPrefix := path + "/"
+	for id, link := range f.links {
+		if link.Record.PinPath != nil {
+			pinStr := link.Record.PinPath.String()
+			if pinStr == path || strings.HasPrefix(pinStr, dirPrefix) {
+				delete(f.links, id)
+			}
 		}
 	}
 	return nil
@@ -995,29 +1006,84 @@ func (f *fakeKernel) RepinMap(_ context.Context, srcPath, dstPath string) error 
 	return nil // Fake implementation - no-op
 }
 
-// dispatcherConfigUpdate records a single UpdateDispatcherConfig call.
-type dispatcherConfigUpdate struct {
-	ConfigMapPin string
-	ActiveMapPin string
-	Config       dispatcher.RuntimeConfig
-}
-
-func (f *fakeKernel) UpdateDispatcherConfig(_ context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.configUpdates = append(f.configUpdates, dispatcherConfigUpdate{
-		ConfigMapPin: configMapPin,
-		ActiveMapPin: activeMapPin,
-		Config:       config,
-	})
+func (f *fakeKernel) UpdateXDPDispatcherLink(_ context.Context, linkPinPath, newProgPinPath string) error {
+	f.recordOp("update-xdp-link", linkPinPath+" -> "+newProgPinPath, 0, nil)
 	return nil
 }
 
-// ConfigUpdates returns a copy of all dispatcher config update operations.
-func (f *fakeKernel) ConfigUpdates() []dispatcherConfigUpdate {
+func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
+	f.programs[dispatcherID] = fakeProgram{
+		id:          dispatcherID,
+		name:        "xdp_dispatcher",
+		programType: bpfman.ProgramTypeXDP,
+		pinPath:     progPinPath,
+	}
+	f.recordOp("load-pin-xdp-dispatcher", progPinPath, uint32(dispatcherID), nil)
+	return dispatcherID, nil
+}
+
+func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
+	f.programs[dispatcherID] = fakeProgram{
+		id:          dispatcherID,
+		name:        "tc_dispatcher",
+		programType: bpfman.ProgramTypeTC,
+		pinPath:     progPinPath,
+	}
+	f.recordOp("load-pin-tc-dispatcher", progPinPath, uint32(dispatcherID), nil)
+	return dispatcherID, nil
+}
+
+func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*platform.XDPDispatcherResult, error) {
+	// Check for interface-specific failure injection
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	result := make([]dispatcherConfigUpdate, len(f.configUpdates))
-	copy(result, f.configUpdates)
-	return result
+	if err, ok := f.failOnIfindex[ifindex]; ok {
+		f.mu.Unlock()
+		return nil, err
+	}
+	f.mu.Unlock()
+
+	dispatcherID := kernel.ProgramID(0) // Not easily available from pin
+	linkID := kernel.LinkID(f.nextID.Add(1))
+	f.recordOp("create-xdp-link", linkPinPath, uint32(linkID), nil)
+	return &platform.XDPDispatcherResult{
+		DispatcherID:  dispatcherID,
+		LinkID:        linkID,
+		DispatcherPin: progPinPath,
+		LinkPin:       linkPinPath,
+	}, nil
+}
+
+func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+	// Check for interface-specific failure injection
+	f.mu.Lock()
+	if err, ok := f.failOnIfname[ifname]; ok {
+		f.mu.Unlock()
+		return nil, err
+	}
+	f.mu.Unlock()
+
+	dispatcherID := kernel.ProgramID(0)
+	handle := f.nextID.Add(1)
+
+	var parent uint32
+	switch direction {
+	case bpfman.TCDirectionIngress:
+		parent = 0xFFFFFFF2
+	case bpfman.TCDirectionEgress:
+		parent = 0xFFFFFFF3
+	}
+
+	f.mu.Lock()
+	f.tcFilters[tcFilterKey{ifindex: ifindex, parent: parent, priority: 50}] = handle
+	f.mu.Unlock()
+
+	f.recordOp("create-tc-filter", progPinPath, handle, nil)
+	return &platform.TCDispatcherResult{
+		DispatcherID:  dispatcherID,
+		DispatcherPin: progPinPath,
+		Handle:        handle,
+		Priority:      50,
+	}, nil
 }

@@ -252,33 +252,64 @@ func TestLinkRegistry_TracepointRoundTrip(t *testing.T) {
 	assert.Equal(t, details.Name, tpDetails.Name)
 }
 
-func TestLinkRegistry_LinkIDUniqueness(t *testing.T) {
+func TestLinkRegistry_UpsertUpdatesPinPath(t *testing.T) {
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")
 	defer store.Close()
 
 	ctx := context.Background()
 
-	// Create a program first
+	// Create a program and dispatcher for XDP link details.
 	prog := testProgram()
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
-	// Create first link
-	linkID := kernel.LinkID(100)
-	details := bpfman.TracepointDetails{Group: "syscalls", Name: "sys_enter_openat"}
-	spec := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), details, time.Now())
+	require.NoError(t, store.SaveDispatcher(ctx, dispatcher.State{
+		Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2,
+		Revision: 1, ProgramID: kernel.ProgramID(900),
+		LinkID: kernel.LinkID(500),
+	}), "SaveDispatcher failed")
+
+	// Create first link with a pin path and XDP details.
+	linkID := kernel.LinkID(0x80000001)
+	xdpDetails := bpfman.XDPDetails{
+		Interface: "eth0", Ifindex: 2, Priority: 50,
+		Position: 0, ProceedOn: []int32{2},
+		Nsid: 0, DispatcherID: kernel.ProgramID(900), Revision: 1,
+	}
+	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), xdpDetails,
+		bpfman.LinkPath("/old/rev/link_0"), time.Now())
 
 	err = store.SaveLink(ctx, spec)
 	require.NoError(t, err, "first SaveLink failed")
 
-	// Try to create another link with same link_id (primary key violation)
-	kprobeDetails := bpfman.KprobeDetails{FnName: "test_fn"}
-	spec2 := bpfman.NewEphemeralLinkRecord(linkID, kernel.ProgramID(42), kprobeDetails, time.Now())
+	// Simulate dispatcher rebuild: delete detail records, then
+	// re-save with updated pin path and position.
+	require.NoError(t, store.DeleteDispatcherLinkDetails(ctx, kernel.ProgramID(900)),
+		"DeleteDispatcherLinkDetails failed")
 
-	err = store.SaveLink(ctx, spec2) // same link_id
-	require.Error(t, err, "expected link_id uniqueness violation")
-	assert.True(t, strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "PRIMARY KEY"),
-		"expected uniqueness error, got: %v", err)
+	xdpDetails2 := bpfman.XDPDetails{
+		Interface: "eth0", Ifindex: 2, Priority: 50,
+		Position: 1, ProceedOn: []int32{2},
+		Nsid: 0, DispatcherID: kernel.ProgramID(900), Revision: 2,
+	}
+	spec2 := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), xdpDetails2,
+		bpfman.LinkPath("/new/rev/link_1"), time.Now())
+
+	err = store.SaveLink(ctx, spec2)
+	require.NoError(t, err, "upsert SaveLink should succeed")
+
+	// Verify pin path was updated in registry.
+	record, err := store.GetLink(ctx, linkID)
+	require.NoError(t, err, "GetLink failed")
+	require.NotNil(t, record.PinPath, "pin path should not be nil")
+	assert.Equal(t, "/new/rev/link_1", record.PinPath.String(),
+		"pin path should be updated to new value")
+
+	// Verify detail record has new position and revision.
+	xdp, ok := record.Details.(bpfman.XDPDetails)
+	require.True(t, ok, "expected XDPDetails")
+	assert.Equal(t, int32(1), xdp.Position, "position should be updated")
+	assert.Equal(t, uint32(2), xdp.Revision, "revision should be updated")
 }
 
 func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {

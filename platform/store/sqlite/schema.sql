@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface in namespace
@@ -214,6 +215,7 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface + direction in namespace

@@ -185,10 +185,20 @@ func (s *sqliteStore) ListDispatcherSlots(ctx context.Context, dispatcherProgram
 	for rows.Next() {
 		var slot platform.DispatcherSlot
 		var proceedOnJSON string
-		if err := rows.Scan(&slot.Position, &slot.Priority, &slot.ProgramName, &proceedOnJSON); err != nil {
+		var objectPath, mapPinDir string
+		var linkID int64
+		var programID int64
+		var ifname string
+		if err := rows.Scan(&slot.Position, &slot.Priority, &slot.ProgramName, &proceedOnJSON,
+			&objectPath, &mapPinDir, &linkID, &programID, &ifname); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
 			return nil, err
 		}
+		slot.ObjectPath = objectPath
+		slot.MapPinDir = mapPinDir
+		slot.LinkID = kernel.LinkID(linkID)
+		slot.ProgramID = kernel.ProgramID(programID)
+		slot.Ifname = ifname
 		// proceed_on is stored as a JSON array of action codes
 		// (e.g., [2,31] for XDP_PASS and XDP_DISPATCHER_RETURN).
 		// Reconstruct the bitmask: bit v is set for each code v.
@@ -213,4 +223,25 @@ func (s *sqliteStore) ListDispatcherSlots(ctx context.Context, dispatcherProgram
 
 	s.logger.Debug("sql", "stmt", "ListDispatcherSlots", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "rows", len(result))
 	return result, nil
+}
+
+// DeleteDispatcherLinkDetails deletes all link detail records for a
+// dispatcher. This removes entries from both link_xdp_details and
+// link_tc_details where dispatcher_program_id matches. The parent
+// links table entries are not affected.
+func (s *sqliteStore) DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error {
+	start := time.Now()
+
+	if _, err := s.stmtDeleteXDPDispatcherLinkDetails.ExecContext(ctx, dispatcherProgramID); err != nil {
+		s.logger.Debug("sql", "stmt", "DeleteXDPDispatcherLinkDetails", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return fmt.Errorf("delete XDP dispatcher link details: %w", err)
+	}
+
+	if _, err := s.stmtDeleteTCDispatcherLinkDetails.ExecContext(ctx, dispatcherProgramID); err != nil {
+		s.logger.Debug("sql", "stmt", "DeleteTCDispatcherLinkDetails", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)), "error", err)
+		return fmt.Errorf("delete TC dispatcher link details: %w", err)
+	}
+
+	s.logger.Debug("sql", "stmt", "DeleteDispatcherLinkDetails", "args", []any{dispatcherProgramID}, "duration_ms", msec(time.Since(start)))
+	return nil
 }

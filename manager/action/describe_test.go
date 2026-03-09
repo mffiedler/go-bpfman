@@ -130,24 +130,21 @@ func TestDescribe(t *testing.T) {
 			contains: "delete xdp dispatcher nsid=4026531840 ifindex=2 from store",
 		},
 		{
-			name:     "EnsureXDPDispatcher",
-			action:   EnsureXDPDispatcher{Ifindex: 3},
-			contains: "ensure XDP dispatcher ifindex=3",
+			name:     "RebuildXDPDispatcher",
+			action:   RebuildXDPDispatcher{Ifindex: 3},
+			contains: "rebuild XDP dispatcher ifindex=3",
 		},
 		{
-			name:     "EnsureTCDispatcher",
-			action:   EnsureTCDispatcher{Ifindex: 5, Direction: bpfman.TCDirectionIngress},
-			contains: "ensure TC dispatcher ifindex=5 ingress",
+			name:     "RebuildTCDispatcher",
+			action:   RebuildTCDispatcher{Ifindex: 5, Direction: bpfman.TCDirectionIngress},
+			contains: "rebuild TC dispatcher ifindex=5 ingress",
 		},
 		{
-			name:     "AttachXDPExtension",
-			action:   AttachXDPExtension{ProgramName: "my_xdp_prog"},
-			contains: "attach XDP extension my_xdp_prog",
-		},
-		{
-			name:     "AttachTCExtension",
-			action:   AttachTCExtension{ProgramName: "my_tc_prog"},
-			contains: "attach TC extension my_tc_prog",
+			name: "RebuildDispatcherForDetach",
+			action: RebuildDispatcherForDetach{State: dispatcher.State{
+				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
+			}},
+			contains: "rebuild xdp dispatcher for detach nsid=1 ifindex=2",
 		},
 		{
 			name: "CleanupEmptyDispatcher",
@@ -256,10 +253,9 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		RemoveDispatcherLinkPin{},
 		RemoveStagingDir{},
 		CleanupEmptyDispatcher{},
-		EnsureXDPDispatcher{},
-		EnsureTCDispatcher{},
-		AttachXDPExtension{},
-		AttachTCExtension{},
+		RebuildXDPDispatcher{},
+		RebuildTCDispatcher{},
+		RebuildDispatcherForDetach{},
 	}
 
 	for _, a := range allActions {

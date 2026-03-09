@@ -76,6 +76,12 @@ type DispatcherStore interface {
 	// dispatcher, including each slot's position, priority, and
 	// program name. Results are ordered by (priority, program_name).
 	ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]DispatcherSlot, error)
+
+	// DeleteDispatcherLinkDetails deletes all link detail records
+	// (from link_xdp_details and link_tc_details) for a given
+	// dispatcher program ID. The parent links table entries are
+	// not affected.
+	DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error
 }
 
 // DispatcherSlot describes an occupied extension slot in a dispatcher.
@@ -84,6 +90,11 @@ type DispatcherSlot struct {
 	Priority    int
 	ProgramName string
 	ProceedOn   uint32
+	ObjectPath  string           // ELF path for reloading during rebuild
+	MapPinDir   string           // map pin directory for map replacements
+	LinkID      kernel.LinkID    // existing link record ID (synthetic)
+	ProgramID   kernel.ProgramID // managed program's kernel ID
+	Ifname      string           // interface name from detail record
 }
 
 // Store combines program, link, and dispatcher store operations.
@@ -231,6 +242,7 @@ type TCDispatcherResult struct {
 type DispatcherAttacher interface {
 	// AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 	// The dispatcher allows multiple XDP programs to be chained together.
+	// Uses .rodata-based config baked in at load time.
 	AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*XDPDispatcherResult, error)
 
 	// AttachXDPExtension loads a program from ELF as Extension type and attaches
@@ -241,6 +253,7 @@ type DispatcherAttacher interface {
 	// AttachTCDispatcher loads and attaches a TC dispatcher to an interface
 	// using legacy netlink TC (clsact qdisc + BPF tc filter). This matches
 	// the upstream Rust bpfman approach and is visible to tc(8) tooling.
+	// Uses .rodata-based config baked in at load time.
 	AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*TCDispatcherResult, error)
 
 	// AttachTCExtension loads a program from ELF as Extension type and attaches
@@ -248,10 +261,30 @@ type DispatcherAttacher interface {
 	// targeting the dispatcher's slot function.
 	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error)
 
-	// UpdateDispatcherConfig atomically updates the dispatcher runtime
-	// configuration using the double-buffer mechanism. It writes the
-	// new config to the inactive buffer and flips the active index.
-	UpdateDispatcherConfig(ctx context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error
+	// UpdateXDPDispatcherLink atomically updates an existing XDP
+	// dispatcher BPF link to point to a new dispatcher program.
+	// Used during rebuild to swap from old to new dispatcher.
+	UpdateXDPDispatcherLink(ctx context.Context, linkPinPath, newProgPinPath string) error
+
+	// LoadAndPinXDPDispatcher loads an XDP dispatcher program with
+	// the given .rodata config and pins it at progPinPath. Does not
+	// create an XDP link. Returns the kernel program ID.
+	LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error)
+
+	// LoadAndPinTCDispatcher loads a TC dispatcher program with
+	// the given .rodata config and pins it at progPinPath. Does not
+	// create a TC filter. Returns the kernel program ID.
+	LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error)
+
+	// CreateXDPLink creates an XDP link from a pinned dispatcher
+	// program to a network interface, optionally in a specific
+	// network namespace. Returns the link info.
+	CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*XDPDispatcherResult, error)
+
+	// CreateTCFilter creates a TC filter from a pinned dispatcher
+	// program on a network interface, optionally in a specific
+	// network namespace. Creates the clsact qdisc if needed.
+	CreateTCFilter(ctx context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*TCDispatcherResult, error)
 
 	// AttachTCX attaches a loaded program directly to an interface using TCX link.
 	// Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.

@@ -119,6 +119,10 @@ func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherProgramI
 	panic("stubStore.CountDispatcherLinks not implemented")
 }
 
+func (s *stubStore) DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error {
+	panic("stubStore.DeleteDispatcherLinkDetails not implemented")
+}
+
 // Transactional
 func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
 	return fn(s)
@@ -256,8 +260,24 @@ func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent
 	panic("stubKernel.FindTCFilterHandle not implemented")
 }
 
-func (k *stubKernel) UpdateDispatcherConfig(ctx context.Context, configMapPin, activeMapPin string, config dispatcher.RuntimeConfig) error {
-	panic("stubKernel.UpdateDispatcherConfig not implemented")
+func (k *stubKernel) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath, newProgPinPath string) error {
+	panic("stubKernel.UpdateXDPDispatcherLink not implemented")
+}
+
+func (k *stubKernel) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+	panic("stubKernel.LoadAndPinXDPDispatcher not implemented")
+}
+
+func (k *stubKernel) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+	panic("stubKernel.LoadAndPinTCDispatcher not implemented")
+}
+
+func (k *stubKernel) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*platform.XDPDispatcherResult, error) {
+	panic("stubKernel.CreateXDPLink not implemented")
+}
+
+func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+	panic("stubKernel.CreateTCFilter not implemented")
 }
 
 // The remaining methods panic if called - tests should only use store actions.

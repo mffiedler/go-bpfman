@@ -21,7 +21,7 @@ import (
 
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
 // XDP extension slots then detaching them one at a time correctly
-// updates the BPF runtime config at each step.
+// updates the extension count at each step.
 func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
@@ -62,24 +62,19 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
 
-	bpffsLayout := env.Layout.BPFFS()
-	configMapPin := bpffsLayout.DispatcherConfigMapPath(
-		dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
-	activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-		dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
+	// Verify 10 extensions before detach.
+	count, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
+	require.NoError(t, err)
+	require.Equal(t, 10, count, "should have 10 programs before detach")
 
-	// Verify 10 programs enabled before detach
-	cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-	require.Equal(t, uint32(10), cfg.NumProgsEnabled,
-		"should have 10 programs before detach")
-
-	// Detach first 9 links one at a time, verifying count decreases
+	// Detach first 9 links one at a time, verifying count decreases.
 	for i := 0; i < 9; i++ {
 		err = env.Detach(ctx, linkIDs[i].ID)
 		require.NoError(t, err, "detach %d should succeed", i)
 
-		cfg = readDispatcherConfig(t, configMapPin, activeMapPin)
-		assert.Equal(t, uint32(9-i), cfg.NumProgsEnabled,
+		count, err = env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
+		require.NoError(t, err, "dispatcher should still exist after detach %d", i)
+		assert.Equal(t, 9-i, count,
 			"should have %d programs after detaching %d", 9-i, i+1)
 	}
 }
@@ -184,20 +179,6 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 					env.Detach(context.Background(), link.ID)
 				}
 			})
-
-			// Verify the runtime config has all programs.
-			nsid, err := netns.GetCurrentNsid()
-			require.NoError(t, err)
-
-			bpffsLayout := env.Layout.BPFFS()
-			configMapPin := bpffsLayout.DispatcherConfigMapPath(
-				dispatcher.DispatcherTypeXDP, nsid, uint32(veth.A.Ifindex))
-			activeMapPin := bpffsLayout.DispatcherActiveMapPath(
-				dispatcher.DispatcherTypeXDP, nsid, uint32(veth.A.Ifindex))
-
-			cfg := readDispatcherConfig(t, configMapPin, activeMapPin)
-			assert.Equal(t, uint32(tt.n), cfg.NumProgsEnabled,
-				"should have %d programs enabled", tt.n)
 
 			// Send traffic through the veth pair.
 			veth.Ping(t, 20)

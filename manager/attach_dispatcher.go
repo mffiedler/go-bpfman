@@ -11,9 +11,9 @@ import (
 )
 
 // dispatcherAttachParams describes a dispatcher-based attach operation
-// (XDP or TC). The closures construct the type-specific deep actions
-// while the shared skeleton handles the plan structure and result
-// extraction.
+// (XDP or TC). The closures construct the type-specific rebuild
+// actions while the shared skeleton handles the plan structure and
+// result extraction.
 type dispatcherAttachParams struct {
 	programID kernel.ProgramID
 	ifindex   int
@@ -22,13 +22,9 @@ type dispatcherAttachParams struct {
 	target    string // target (e.g., "eth0:xdp", "eth0:ingress")
 	dispType  dispatcher.DispatcherType
 
-	// ensureAction constructs the Ensure action for this
-	// dispatcher type.
-	ensureAction func() action.Action
-
-	// extensionAction constructs the Attach action given the
-	// dispatcher state and program record.
-	extensionAction func(ds dispatcher.State, prog bpfman.ProgramRecord) action.Action
+	// rebuildAction constructs the Rebuild action given the
+	// program record.
+	rebuildAction func(prog bpfman.ProgramRecord) action.Action
 
 	// buildLinkDetails constructs the sealed LinkDetails value for
 	// the link record.
@@ -49,7 +45,6 @@ type extensionResult struct {
 // Binding keys for dispatcherAttach plan nodes.
 var (
 	dispPreparedKey = operation.NewKey[dispPrepared]("disp-prepared")
-	dispStateKey    = operation.NewKey[dispatcher.State]("dispatcher-state")
 	extResultKey    = operation.NewKey[extensionResult]("extension-result")
 )
 
@@ -62,10 +57,10 @@ type dispPrepared struct {
 // dispatcherAttach implements the common skeleton for dispatcher-based
 // attach types (XDP, TC).
 //
-// The operation creates a dispatcher if none exists, attaches the user
-// program as an extension to a dispatcher slot, and persists the link
-// metadata. All cross-subsystem complexity (stale dispatcher recovery,
-// kernel+store transactions) lives behind the deep executor actions.
+// The operation triggers a full dispatcher rebuild (creating the
+// dispatcher if none exists), attaches the user program as an
+// extension, and persists the link metadata. All cross-subsystem
+// complexity lives behind the rebuild executor action.
 func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams) (bpfman.Link, error) {
 	plan := m.dispatcherAttachPlan(p)
 	b, err := operation.Run(ctx, m.logger, m.executor, plan)
@@ -94,12 +89,10 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 //
 // Nodes:
 //  1. Produce dispPreparedKey -- fetch program record via executor.
-//  2. Produce dispStateKey -- EnsureXDPDispatcher or
-//     EnsureTCDispatcher via executor.
-//  3. Produce extResultKey -- AttachXDPExtension or
-//     AttachTCExtension via executor, with undo that detaches the
+//  2. Produce extResultKey -- RebuildXDPDispatcher or
+//     RebuildTCDispatcher via executor, with undo that detaches the
 //     link on failure.
-//  4. Produce linkKey -- construct link record, save to store.
+//  3. Produce linkKey -- construct link record, save to store.
 func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan {
 	return operation.Build(
 		// Node 1: Fetch program record.
@@ -113,19 +106,11 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 			},
 		),
 
-		// Node 2: Ensure dispatcher exists.
-		operation.Produce(dispStateKey, p.target,
-			func(ctx context.Context, exec action.ExecutorWithResult, _ *operation.Bindings) (dispatcher.State, error) {
-				return action.Produce[dispatcher.State](ctx, exec, p.ensureAction())
-			},
-		),
-
-		// Node 3: Attach extension (with stale-dispatcher retry inside the executor).
+		// Node 2: Rebuild dispatcher (creates if needed, attaches extension).
 		operation.Produce(extResultKey, p.target,
 			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (extensionResult, error) {
 				dp := operation.Get(b, dispPreparedKey)
-				ds := operation.Get(b, dispStateKey)
-				return action.Produce[extensionResult](ctx, exec, p.extensionAction(ds, dp.prog))
+				return action.Produce[extensionResult](ctx, exec, p.rebuildAction(dp.prog))
 			},
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				r := operation.Get(b, extResultKey)
@@ -135,7 +120,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 			}),
 		),
 
-		// Node 4: Construct link record + save to store.
+		// Node 3: Construct link record + save to store.
 		saveLinkNode(p.programID, p.target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
 			r := operation.Get(b, extResultKey)
 			return r.out.LinkID, p.buildLinkDetails(r.disp.Nsid, r.position, r.disp), r.pinPath, r.out

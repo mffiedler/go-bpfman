@@ -282,6 +282,12 @@ func (e *TestEnv) GetDispatcher(ctx context.Context, dispType dispatcher.Dispatc
 	return e.Manager.GetDispatcher(ctx, dispType, nsid, ifindex)
 }
 
+// CountDispatcherExtensions returns the number of extension links
+// attached to the dispatcher for the given type, namespace, and interface.
+func (e *TestEnv) CountDispatcherExtensions(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (int, error) {
+	return e.Manager.CountDispatcherExtensions(ctx, dispType, nsid, ifindex)
+}
+
 // AssertCleanState verifies that no programs or links are managed.
 func (e *TestEnv) AssertCleanState() {
 	e.T.Helper()

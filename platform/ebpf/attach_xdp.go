@@ -75,18 +75,16 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 
 // AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
 // The dispatcher allows multiple XDP programs to be chained together.
-// Uses the v3 map-based dispatcher with double-buffered runtime config.
+// Uses .rodata-based config baked in at load time (full rebuild approach).
 func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
-	// Configure the dispatcher .rodata metadata for xdp-tools compatibility.
-	// The dispatch loop itself reads from BPF maps, not .rodata.
+	// Configure the dispatcher .rodata for xdp-tools compatibility.
 	const xdpDispatcherRetval = 31
 	cfg := dispatcher.NewXDPConfig(spec.NumProgs)
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
 		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << xdpDispatcherRetval)
 	}
 
-	// Load the v3 map-based dispatcher
-	collSpec, err := dispatcher.LoadXDPDispatcherV3(cfg)
+	collSpec, err := dispatcher.LoadXDPDispatcher(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load XDP dispatcher spec: %w", err)
 	}
@@ -100,25 +98,6 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 	dispatcherProg := coll.Programs["xdp_dispatcher"]
 	if dispatcherProg == nil {
 		return nil, fmt.Errorf("xdp_dispatcher program not found in collection")
-	}
-
-	// Get map handles for pinning
-	configMap := coll.Maps[dispatcher.ConfigMapName]
-	if configMap == nil {
-		return nil, fmt.Errorf("dispatcher_config map not found in collection")
-	}
-	activeMap := coll.Maps[dispatcher.ActiveMapName]
-	if activeMap == nil {
-		return nil, fmt.Errorf("active_config map not found in collection")
-	}
-
-	// Initialise the maps: empty config in buffer 0, active index = 0
-	zeroConfig := dispatcher.RuntimeConfig{}
-	if err := configMap.Put(uint32(0), &zeroConfig); err != nil {
-		return nil, fmt.Errorf("initialise dispatcher_config[0]: %w", err)
-	}
-	if err := activeMap.Put(uint32(0), uint32(0)); err != nil {
-		return nil, fmt.Errorf("initialise active_config[0]: %w", err)
 	}
 
 	if spec.Target.NetNS != "" {
@@ -175,10 +154,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		}
 		result.LinkPin = spec.LinkPinPath
 
-		// Close the fd now that the link is pinned. The pin
-		// keeps the kernel link alive; leaking the fd would
-		// prevent DetachLink (which only removes the pin) from
-		// fully releasing the link.
+		// Close the fd now that the link is pinned.
 		lnk.Close()
 
 		return nil
@@ -187,16 +163,131 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		return nil, err
 	}
 
-	// Pin config and active maps outside the revision directory.
-	if spec.ConfigMapPinPath != "" {
-		if err := pinWithRetry(configMap, spec.ConfigMapPinPath); err != nil {
-			return nil, fmt.Errorf("pin dispatcher_config map to %s: %w", spec.ConfigMapPinPath, err)
-		}
+	return result, nil
+}
+
+// UpdateXDPDispatcherLink atomically updates an existing XDP
+// dispatcher's BPF link to point to a new dispatcher program.
+// This is used during rebuild to swap from old to new dispatcher.
+func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath, newProgPinPath string) error {
+	lnk, err := link.LoadPinnedLink(linkPinPath, nil)
+	if err != nil {
+		return fmt.Errorf("load pinned link %s: %w", linkPinPath, err)
 	}
-	if spec.ActiveMapPinPath != "" {
-		if err := pinWithRetry(activeMap, spec.ActiveMapPinPath); err != nil {
-			return nil, fmt.Errorf("pin active_config map to %s: %w", spec.ActiveMapPinPath, err)
+	defer lnk.Close()
+
+	newProg, err := ebpf.LoadPinnedProgram(newProgPinPath, nil)
+	if err != nil {
+		return fmt.Errorf("load pinned program %s: %w", newProgPinPath, err)
+	}
+	defer newProg.Close()
+
+	if err := lnk.Update(newProg); err != nil {
+		return fmt.Errorf("update XDP link to new dispatcher: %w", err)
+	}
+
+	k.logger.Debug("updated XDP dispatcher link",
+		"link_pin", linkPinPath,
+		"new_prog_pin", newProgPinPath)
+	return nil
+}
+
+// LoadAndPinXDPDispatcher loads an XDP dispatcher program with .rodata
+// config and pins it at progPinPath without creating an XDP link.
+// Used during rebuild to prepare a new dispatcher before atomically
+// swapping the link.
+func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+	collSpec, err := dispatcher.LoadXDPDispatcher(cfg)
+	if err != nil {
+		return 0, fmt.Errorf("load XDP dispatcher spec: %w", err)
+	}
+
+	coll, err := ebpf.NewCollection(collSpec)
+	if err != nil {
+		return 0, fmt.Errorf("create XDP dispatcher collection: %w", err)
+	}
+	defer coll.Close()
+
+	dispatcherProg := coll.Programs["xdp_dispatcher"]
+	if dispatcherProg == nil {
+		return 0, fmt.Errorf("xdp_dispatcher program not found in collection")
+	}
+
+	progInfo, err := dispatcherProg.Info()
+	if err != nil {
+		return 0, fmt.Errorf("get dispatcher program info: %w", err)
+	}
+	progID, ok := progInfo.ID()
+	if !ok {
+		return 0, fmt.Errorf("failed to get dispatcher program ID from kernel")
+	}
+
+	if err := pinWithRetry(dispatcherProg, progPinPath); err != nil {
+		return 0, fmt.Errorf("pin dispatcher program to %s: %w", progPinPath, err)
+	}
+
+	k.logger.Debug("loaded and pinned XDP dispatcher",
+		"program_id", progID,
+		"prog_pin_path", progPinPath,
+		"num_progs", cfg.NumProgsEnabled)
+	return kernel.ProgramID(progID), nil
+}
+
+// CreateXDPLink creates an XDP link from a pinned dispatcher program
+// to a network interface, optionally in a specific network namespace.
+func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*platform.XDPDispatcherResult, error) {
+	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
+	}
+	defer prog.Close()
+
+	progInfo, err := prog.Info()
+	if err != nil {
+		return nil, fmt.Errorf("get program info: %w", err)
+	}
+	progID, ok := progInfo.ID()
+	if !ok {
+		return nil, fmt.Errorf("failed to get program ID from kernel")
+	}
+
+	if netnsPath != "" {
+		k.logger.Debug("entering network namespace for XDP link creation",
+			"netns", netnsPath, "ifindex", ifindex)
+	}
+
+	var result *platform.XDPDispatcherResult
+	err = netns.Run(netnsPath, func() error {
+		lnk, err := link.AttachXDP(link.XDPOptions{
+			Program:   prog,
+			Interface: ifindex,
+		})
+		if err != nil {
+			return fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 		}
+
+		linkInfo, err := lnk.Info()
+		if err != nil {
+			lnk.Close()
+			return fmt.Errorf("get link info: %w", err)
+		}
+
+		if err := pinWithRetry(lnk, linkPinPath); err != nil {
+			lnk.Close()
+			return fmt.Errorf("pin link to %s: %w", linkPinPath, err)
+		}
+
+		lnk.Close()
+		result = &platform.XDPDispatcherResult{
+			DispatcherID:  kernel.ProgramID(progID),
+			LinkID:        kernel.LinkID(linkInfo.ID),
+			DispatcherPin: progPinPath,
+			LinkPin:       linkPinPath,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return result, nil
