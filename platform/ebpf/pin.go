@@ -167,12 +167,15 @@ func (k *kernelAdapter) Unpin(pinDir string) (int, error) {
 // DetachLink removes a pinned link by deleting its pin from bpffs.
 // This releases the kernel link if it was the last reference.
 func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath string) error {
+	k.logger.Debug("detaching link by removing pin", "link_pin_path", linkPinPath)
 	if err := os.Remove(linkPinPath); err != nil {
 		if os.IsNotExist(err) {
+			k.logger.Debug("link pin already gone", "link_pin_path", linkPinPath)
 			return nil // Already gone
 		}
 		return fmt.Errorf("remove link pin %s: %w", linkPinPath, err)
 	}
+	k.logger.Debug("link pin removed", "link_pin_path", linkPinPath)
 	// Best-effort removal of the parent directory. This races
 	// with concurrent attach in non-daemon mode (no global lock),
 	// but attach calls MkdirAll before pinning, so it recovers
@@ -213,11 +216,14 @@ func pinWithRetry(obj pinnable, path string) error {
 // RemovePin removes a pin or empty directory from bpffs.
 // Returns nil if the path does not exist.
 func (k *kernelAdapter) RemovePin(ctx context.Context, path string) error {
+	k.logger.Debug("removing pin", "path", path)
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
+			k.logger.Debug("pin already gone", "path", path)
 			return nil // Already gone
 		}
 		return fmt.Errorf("remove pin %s: %w", path, err)
 	}
+	k.logger.Debug("pin removed", "path", path)
 	return nil
 }

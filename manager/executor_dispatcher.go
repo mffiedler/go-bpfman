@@ -880,6 +880,13 @@ func (e *executor) rebuildTCForDetach(
 
 // removeEmptyDispatcher removes a dispatcher when no extensions remain.
 func (e *executor) removeEmptyDispatcher(ctx context.Context, state dispatcher.State) error {
+	e.logger.DebugContext(ctx, "removing empty dispatcher",
+		"type", state.Type,
+		"nsid", state.Nsid,
+		"ifindex", state.Ifindex,
+		"program_id", state.ProgramID,
+		"link_id", state.LinkID)
+
 	// For TC dispatchers, query the kernel for the filter handle.
 	var tcHandle uint32
 	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {

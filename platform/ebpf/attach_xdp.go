@@ -105,11 +105,18 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 
 	var result *platform.XDPDispatcherResult
 	err = netns.Run(spec.Target.NetNS, func() error {
+		k.logger.Debug("attaching XDP dispatcher to interface",
+			"ifindex", spec.Target.IfIndex,
+			"netns", spec.Target.NetNS,
+			"prog_pin_path", spec.ProgPinPath)
 		lnk, err := link.AttachXDP(link.XDPOptions{
 			Program:   dispatcherProg,
 			Interface: spec.Target.IfIndex,
 		})
 		if err != nil {
+			k.logger.Debug("XDP dispatcher attach failed",
+				"ifindex", spec.Target.IfIndex,
+				"error", err)
 			return fmt.Errorf("attach XDP dispatcher to ifindex %d: %w", spec.Target.IfIndex, err)
 		}
 
@@ -256,11 +263,19 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, i
 
 	var result *platform.XDPDispatcherResult
 	err = netns.Run(netnsPath, func() error {
+		k.logger.Debug("creating XDP link",
+			"ifindex", ifindex,
+			"prog_pin_path", progPinPath,
+			"link_pin_path", linkPinPath,
+			"netns", netnsPath)
 		lnk, err := link.AttachXDP(link.XDPOptions{
 			Program:   prog,
 			Interface: ifindex,
 		})
 		if err != nil {
+			k.logger.Debug("XDP link creation failed",
+				"ifindex", ifindex,
+				"error", err)
 			return fmt.Errorf("attach XDP to ifindex %d: %w", ifindex, err)
 		}
 
