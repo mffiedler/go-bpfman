@@ -65,7 +65,7 @@ bpfman link attach xdp --iface lo "$BPFMAN_PROG_ID"
   --image-url quay.io/bpfman-bytecode/go-tc-counter:latest \
   -o 'jsonpath={[0].record.program_id}')
 
-bpfman link attach tc --iface lo --direction ingress --priority 50 "$BPFMAN_PROG_ID"
+bpfman link attach tc --iface lo --direction ingress "$BPFMAN_PROG_ID"
 `,
 
 	"link attach tcx": `BPFMAN_PROG_ID=$(bpfman program load image \
@@ -73,7 +73,7 @@ bpfman link attach tc --iface lo --direction ingress --priority 50 "$BPFMAN_PROG
   --image-url quay.io/bpfman-bytecode/go-tc-counter:latest \
   -o 'jsonpath={[0].record.program_id}')
 
-bpfman link attach tcx --iface lo --direction ingress --priority 50 "$BPFMAN_PROG_ID"
+bpfman link attach tcx --iface lo --direction ingress "$BPFMAN_PROG_ID"
 `,
 
 	"link attach tracepoint": `BPFMAN_PROG_ID=$(bpfman program load image \

@@ -55,7 +55,7 @@ type AttachXDPCmd struct {
 	OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
-	Priority  int         `short:"p" name:"priority" default:"50" help:"Priority in chain (lower runs first)."`
+	Priority  int         `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
 	ProceedOn []string    `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
 	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
@@ -97,7 +97,7 @@ type AttachTCCmd struct {
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int         `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
+	Priority  int         `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
 	ProceedOn []string    `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"ok,pipe,dispatcher_return"`
 	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
@@ -106,8 +106,8 @@ type AttachTCCmd struct {
 
 func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
-		if c.Priority < 1 || c.Priority > 1000 {
-			return attachResult{}, fmt.Errorf("--priority must be 1-1000, got %d", c.Priority)
+		if c.Priority < 0 || c.Priority > 1000 {
+			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
 		}
 
 		direction, err := bpfman.ParseTCDirection(c.Direction)
@@ -148,7 +148,7 @@ type AttachTCXCmd struct {
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int         `short:"p" name:"priority" required:"" help:"Priority in chain (1-1000, lower runs first)."`
+	Priority  int         `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
 	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -156,8 +156,8 @@ type AttachTCXCmd struct {
 
 func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
-		if c.Priority < 1 || c.Priority > 1000 {
-			return attachResult{}, fmt.Errorf("--priority must be 1-1000, got %d", c.Priority)
+		if c.Priority < 0 || c.Priority > 1000 {
+			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
 		}
 
 		direction, err := bpfman.ParseTCDirection(c.Direction)
