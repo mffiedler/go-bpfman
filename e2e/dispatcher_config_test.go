@@ -75,9 +75,11 @@ func (h *dispatcherTestHarness) extensionCount(t *testing.T) int {
 	t.Helper()
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
-	count, err := h.env.CountDispatcherExtensions(context.Background(), h.dispType, nsid, uint32(h.iface.Ifindex))
+	snap, err := h.env.GetDispatcherSnapshot(context.Background(), dispatcher.Key{
+		Type: h.dispType, Nsid: nsid, Ifindex: uint32(h.iface.Ifindex),
+	})
 	require.NoError(t, err, "dispatcher should exist")
-	return count
+	return len(snap.Members)
 }
 
 // linkPosition returns the dispatcher position stored in the link
@@ -458,22 +460,23 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 	require.NoError(t, err)
 	ifindex := uint32(h.iface.Ifindex)
 
+	dispKey := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: ifindex}
+
 	// Phase 1: attach a single program. A dispatcher should exist.
 	link := h.attach(t, progID, 100)
 
-	state1, err := h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	snap1, err := h.env.GetDispatcherSnapshot(context.Background(), dispKey)
 	require.NoError(t, err, "dispatcher should exist after attach")
 	h.verifyAttachPresent(t)
 
-	count := h.extensionCount(t)
-	require.Equal(t, 1, count, "should have 1 program")
+	require.Len(t, snap1.Members, 1, "should have 1 program")
 
 	// Phase 2: detach the only program. The dispatcher should be
 	// fully cleaned up.
 	err = h.env.Detach(context.Background(), link.ID)
 	require.NoError(t, err)
 
-	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	_, err = h.env.GetDispatcherSnapshot(context.Background(), dispKey)
 	require.ErrorIs(t, err, platform.ErrRecordNotFound,
 		"dispatcher should be absent from store after last detach")
 
@@ -486,14 +489,13 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), newLink.ID)
 	})
 
-	state2, err := h.env.GetDispatcher(context.Background(), h.dispType, nsid, ifindex)
+	snap2, err := h.env.GetDispatcherSnapshot(context.Background(), dispKey)
 	require.NoError(t, err, "dispatcher should exist after second attach")
-	assert.NotEqual(t, state1.ProgramID, state2.ProgramID,
+	assert.NotEqual(t, snap1.Runtime.ProgramID, snap2.Runtime.ProgramID,
 		"second dispatcher should have a different program ID")
 
 	h.verifyAttachPresent(t)
-	count = h.extensionCount(t)
-	require.Equal(t, 1, count, "should have 1 program after reattach")
+	require.Len(t, snap2.Members, 1, "should have 1 program after reattach")
 }
 
 // TestDispatcher_MultipleInterfacesIndependent verifies that
@@ -536,14 +538,18 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 		linksB = append(linksB, link)
 	}
 
+	keyA := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(h.iface.Ifindex)}
+	keyB := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(ifaceB.Ifindex)}
+
 	// Verify A has 3 extensions.
-	countA := h.extensionCount(t)
-	require.Equal(t, 3, countA, "interface A should have 3 programs")
+	snapA, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
+	require.NoError(t, err)
+	require.Len(t, snapA.Members, 3, "interface A should have 3 programs")
 
 	// Verify B has 2 extensions.
-	countB, err := h.env.CountDispatcherExtensions(context.Background(), h.dispType, nsid, uint32(ifaceB.Ifindex))
+	snapB, err := h.env.GetDispatcherSnapshot(context.Background(), keyB)
 	require.NoError(t, err)
-	require.Equal(t, 2, countB, "interface B should have 2 programs")
+	require.Len(t, snapB.Members, 2, "interface B should have 2 programs")
 
 	// Detach all programs from B.
 	for i, l := range linksB {
@@ -552,16 +558,15 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	}
 
 	// B's dispatcher should be gone.
-	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, uint32(ifaceB.Ifindex))
+	_, err = h.env.GetDispatcherSnapshot(context.Background(), keyB)
 	require.ErrorIs(t, err, platform.ErrRecordNotFound,
 		"interface B dispatcher should be absent after detaching all links")
 
 	// A's dispatcher should still exist with 3 extensions.
-	_, err = h.env.GetDispatcher(context.Background(), h.dispType, nsid, uint32(h.iface.Ifindex))
+	snapAAfter, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
 	require.NoError(t, err, "interface A dispatcher should still exist")
 
-	countAAfter := h.extensionCount(t)
-	assert.Equal(t, countA, countAAfter,
+	assert.Len(t, snapAAfter.Members, len(snapA.Members),
 		"A's program count should be unchanged")
 }
 
@@ -649,7 +654,9 @@ func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 		"extension count should be 3 after third GC")
 
 	// Verify the dispatcher itself is still present.
-	_, err = h.env.GetDispatcher(ctx, h.dispType, nsid, ifindex)
+	_, err = h.env.GetDispatcherSnapshot(ctx, dispatcher.Key{
+		Type: h.dispType, Nsid: nsid, Ifindex: ifindex,
+	})
 	require.NoError(t, err, "dispatcher should still exist after GC")
 
 	// Verify positions are correctly ordered.

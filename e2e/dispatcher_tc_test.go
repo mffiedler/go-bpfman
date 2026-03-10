@@ -65,10 +65,13 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 		}
 	})
 
+	ingressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: ifindex}
+	egressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCEgress, Nsid: nsid, Ifindex: ifindex}
+
 	// Verify ingress has 3 extensions.
-	ingressCount, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	ingressSnap, err := env.GetDispatcherSnapshot(ctx, ingressKey)
 	require.NoError(t, err)
-	require.Equal(t, 3, ingressCount, "ingress should have 3 programs")
+	require.Len(t, ingressSnap.Members, 3, "ingress should have 3 programs")
 
 	// Attach 2 programs to egress.
 	var egressLinks []bpfman.LinkRecord
@@ -85,14 +88,12 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	}
 
 	// Verify both dispatchers exist.
-	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	_, err = env.GetDispatcherSnapshot(ctx, ingressKey)
 	require.NoError(t, err, "ingress dispatcher should exist")
-	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	egressSnap, err := env.GetDispatcherSnapshot(ctx, egressKey)
 	require.NoError(t, err, "egress dispatcher should exist")
 
-	egressCount, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
-	require.NoError(t, err)
-	require.Equal(t, 2, egressCount, "egress should have 2 programs")
+	require.Len(t, egressSnap.Members, 2, "egress should have 2 programs")
 
 	// Detach all egress links.
 	for i, l := range egressLinks {
@@ -101,17 +102,15 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	}
 
 	// Egress dispatcher should be gone.
-	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCEgress, nsid, ifindex)
+	_, err = env.GetDispatcherSnapshot(ctx, egressKey)
 	require.ErrorIs(t, err, platform.ErrRecordNotFound,
 		"egress dispatcher should be absent after detaching all egress links")
 
 	// Ingress dispatcher should be unaffected.
-	_, err = env.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
+	ingressSnapAfter, err := env.GetDispatcherSnapshot(ctx, ingressKey)
 	require.NoError(t, err, "ingress dispatcher should still exist")
 
-	ingressCountAfter, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeTCIngress, nsid, ifindex)
-	require.NoError(t, err)
-	assert.Equal(t, ingressCount, ingressCountAfter,
+	assert.Len(t, ingressSnapAfter.Members, len(ingressSnap.Members),
 		"ingress program count should be unchanged")
 }
 
@@ -324,11 +323,12 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	// slot array.
 	verifyExtensionCount := func(phase string) {
 		t.Helper()
-		count, err := env.CountDispatcherExtensions(ctx,
-			dispatcher.DispatcherTypeTCIngress, nsid, uint32(veth.A.Ifindex))
+		snap, err := env.GetDispatcherSnapshot(ctx, dispatcher.Key{
+			Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: uint32(veth.A.Ifindex),
+		})
 		require.NoError(t, err)
 		expected := occupiedCount()
-		assert.Equal(t, expected, count, "%s: extension count", phase)
+		assert.Equal(t, expected, len(snap.Members), "%s: extension count", phase)
 	}
 
 	// verifyTraffic sends traffic and asserts every active

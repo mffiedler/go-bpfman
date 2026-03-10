@@ -145,38 +145,10 @@ func (m *Manager) ListLinksByProgram(ctx context.Context, programID kernel.Progr
 	return m.store.ListLinksByProgram(ctx, programID)
 }
 
-// GetDispatcher retrieves a dispatcher by type, namespace ID, and interface index.
-func (m *Manager) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-	snap, err := m.store.GetDispatcherSnapshot(ctx, dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex})
-	if err != nil {
-		return dispatcher.State{}, err
-	}
-	state := dispatcher.State{
-		Type:      snap.Key.Type,
-		Nsid:      snap.Key.Nsid,
-		Ifindex:   snap.Key.Ifindex,
-		Revision:  snap.Revision,
-		ProgramID: snap.Runtime.ProgramID,
-	}
-	if snap.Runtime.LinkID != nil {
-		state.LinkID = *snap.Runtime.LinkID
-	}
-	if snap.Runtime.FilterPriority != nil {
-		state.Priority = *snap.Runtime.FilterPriority
-	}
-	return state, nil
-}
-
-// CountDispatcherExtensions returns the number of extension links attached
-// to the dispatcher for the given type, namespace, and interface.
-func (m *Manager) CountDispatcherExtensions(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (int, error) {
-	snap, err := m.store.GetDispatcherSnapshot(ctx, dispatcher.Key{
-		Type: dispType, Nsid: nsid, Ifindex: ifindex,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(snap.Members), nil
+// GetDispatcherSnapshot retrieves the full dispatcher snapshot for the
+// given key.
+func (m *Manager) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (platform.DispatcherSnapshot, error) {
+	return m.store.GetDispatcherSnapshot(ctx, key)
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.

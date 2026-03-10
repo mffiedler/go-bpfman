@@ -303,10 +303,3 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 
 	return nil
 }
-
-// prepareDispatcherStatements is a no-op. The snapshot-based
-// dispatcher API uses inline SQL via s.conn, so no prepared
-// statements are needed.
-func (s *sqliteStore) prepareDispatcherStatements(_ context.Context) error {
-	return nil
-}

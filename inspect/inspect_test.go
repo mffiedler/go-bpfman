@@ -54,28 +54,6 @@ func (s *fakeStore) ListDispatcherSummaries(ctx context.Context) ([]platform.Dis
 	return s.dispatchers, nil
 }
 
-func (s *fakeStore) GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-	for _, d := range s.dispatchers {
-		if d.Key.Type.String() == dispType && d.Key.Nsid == nsid && d.Key.Ifindex == ifindex {
-			state := dispatcher.State{
-				Type:      d.Key.Type,
-				Nsid:      d.Key.Nsid,
-				Ifindex:   d.Key.Ifindex,
-				Revision:  d.Revision,
-				ProgramID: d.Runtime.ProgramID,
-			}
-			if d.Runtime.LinkID != nil {
-				state.LinkID = *d.Runtime.LinkID
-			}
-			if d.Runtime.FilterPriority != nil {
-				state.Priority = *d.Runtime.FilterPriority
-			}
-			return state, nil
-		}
-	}
-	return dispatcher.State{}, platform.ErrRecordNotFound
-}
-
 // fakeKernelSource implements KernelLister for testing.
 type fakeKernelSource struct {
 	programs []kernel.Program
@@ -191,7 +169,7 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 	assert.Equal(t, kernel.ProgramID(100), managed[0].ProgramID)
 
 	// Find kernel-only
-	var kernelOnly *inspect.ProgramRow
+	var kernelOnly *inspect.ProgramView
 	for i := range w.Programs {
 		if w.Programs[i].Presence.KernelOnly() {
 			kernelOnly = &w.Programs[i]
@@ -572,90 +550,6 @@ func TestGetLink_NotFound(t *testing.T) {
 	kern := &fakeKernelSource{}
 
 	_, err := inspect.GetLink(context.Background(), store, kern, scanner, 12345)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, inspect.ErrNotFound)
-}
-
-func TestGetDispatcher_FullyPresent(t *testing.T) {
-	bpfFS := testBPFFS(t)
-	require.NoError(t, os.MkdirAll(bpfFS.XDP(), 0755))
-
-	// Create dispatcher dir on FS
-	dispDir := filepath.Join(bpfFS.XDP(), "dispatcher_1_2_5")
-	require.NoError(t, os.Mkdir(dispDir, 0755))
-
-	// Create dispatcher link pin
-	linkPin := filepath.Join(bpfFS.XDP(), "dispatcher_1_2_link")
-	require.NoError(t, os.WriteFile(linkPin, nil, 0644))
-
-	scanner := bpfFS.Scanner()
-
-	dispLinkID := kernel.LinkID(50)
-	store := &fakeStore{
-		dispatchers: []platform.DispatcherSummary{
-			{
-				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
-				Revision: 5,
-				Runtime: platform.DispatcherRuntime{
-					ProgramID: 500,
-					LinkID:    &dispLinkID,
-				},
-			},
-		},
-	}
-
-	kern := &fakeKernelSource{
-		programs: []kernel.Program{{ID: 500}},
-		links:    []kernel.Link{{ID: 50}},
-	}
-
-	info, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
-	require.NoError(t, err)
-
-	assert.Equal(t, kernel.ProgramID(500), info.State.ProgramID)
-	assert.Equal(t, kernel.LinkID(50), info.State.LinkID)
-	assert.True(t, info.ProgPresence.InStore)
-	assert.True(t, info.ProgPresence.InKernel)
-	assert.True(t, info.ProgPresence.InFS)
-	assert.True(t, info.LinkPresence.InStore)
-	assert.True(t, info.LinkPresence.InKernel)
-	assert.True(t, info.LinkPresence.InFS)
-}
-
-func TestGetDispatcher_StoreOnly(t *testing.T) {
-	bpfFS := testBPFFS(t)
-	scanner := bpfFS.Scanner()
-
-	store := &fakeStore{
-		dispatchers: []platform.DispatcherSummary{
-			{
-				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
-				Revision: 3,
-				Runtime: platform.DispatcherRuntime{
-					ProgramID: 500,
-				},
-			},
-		},
-	}
-
-	kern := &fakeKernelSource{} // Not in kernel
-
-	info, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 1, 2)
-	require.NoError(t, err)
-
-	assert.True(t, info.ProgPresence.InStore)
-	assert.False(t, info.ProgPresence.InKernel)
-	assert.False(t, info.ProgPresence.InFS)
-}
-
-func TestGetDispatcher_NotFound(t *testing.T) {
-	bpfFS := testBPFFS(t)
-	scanner := bpfFS.Scanner()
-
-	store := &fakeStore{}
-	kern := &fakeKernelSource{}
-
-	_, err := inspect.GetDispatcher(context.Background(), store, kern, kern, scanner, "xdp", 99, 99)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, inspect.ErrNotFound)
 }

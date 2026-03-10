@@ -57,19 +57,21 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
 
+	dispKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: nsid, Ifindex: uint32(iface.Ifindex)}
+
 	// Verify 10 extensions before detach.
-	count, err := env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
+	snap, err := env.GetDispatcherSnapshot(ctx, dispKey)
 	require.NoError(t, err)
-	require.Equal(t, 10, count, "should have 10 programs before detach")
+	require.Len(t, snap.Members, 10, "should have 10 programs before detach")
 
 	// Detach first 9 links one at a time, verifying count decreases.
 	for i := 0; i < 9; i++ {
 		err = env.Detach(ctx, linkIDs[i].ID)
 		require.NoError(t, err, "detach %d should succeed", i)
 
-		count, err = env.CountDispatcherExtensions(ctx, dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
+		snap, err = env.GetDispatcherSnapshot(ctx, dispKey)
 		require.NoError(t, err, "dispatcher should still exist after detach %d", i)
-		assert.Equal(t, 9-i, count,
+		assert.Len(t, snap.Members, 9-i,
 			"should have %d programs after detaching %d", 9-i, i+1)
 	}
 }

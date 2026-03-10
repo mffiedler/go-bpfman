@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
@@ -58,18 +57,6 @@ type LinkInfo struct {
 	Presence Presence          `json:"presence"`
 }
 
-// DispatcherGetter is the subset of platform.Store needed by GetDispatcher.
-type DispatcherGetter interface {
-	GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error)
-}
-
-// DispatcherInfo is the result of GetDispatcher, containing state and presence.
-type DispatcherInfo struct {
-	State        dispatcher.State `json:"state"`
-	ProgPresence Presence         `json:"prog_presence"` // dispatcher program presence
-	LinkPresence Presence         `json:"link_presence"` // XDP link presence (for XDP dispatchers)
-}
-
 // Presence indicates where an object exists across the three sources.
 type Presence struct {
 	InStore  bool `json:"in_store"`
@@ -87,7 +74,7 @@ func (p Presence) OrphanFS() bool { return p.InFS && !p.InStore && !p.InKernel }
 func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 
 // ProgramView is a correlation view of a program across store, kernel, and FS.
-// Renamed from ProgramRow.
+// Renamed from ProgramView.
 type ProgramView struct {
 	ProgramID kernel.ProgramID `json:"program_id"`
 
@@ -133,10 +120,6 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 		},
 	}, true
 }
-
-// ProgramRow is an alias for ProgramView for backwards compatibility.
-// Deprecated: Use ProgramView instead.
-type ProgramRow = ProgramView
 
 // Name returns the program name (from store if available, else kernel).
 func (v ProgramView) Name() string {
@@ -285,15 +268,15 @@ type SnapshotMeta struct {
 
 // World is a point-in-time snapshot of bpfman's state across all sources.
 type World struct {
-	Programs    []ProgramRow    `json:"programs"`
+	Programs    []ProgramView   `json:"programs"`
 	Links       []LinkRow       `json:"links"`
 	Dispatchers []DispatcherRow `json:"dispatchers"`
 	Meta        SnapshotMeta    `json:"meta"`
 }
 
 // ManagedPrograms returns only store-managed programs.
-func (w *World) ManagedPrograms() []ProgramRow {
-	var out []ProgramRow
+func (w *World) ManagedPrograms() []ProgramView {
+	var out []ProgramView
 	for _, r := range w.Programs {
 		if r.Presence.InStore {
 			out = append(out, r)
@@ -753,90 +736,6 @@ func GetLink(
 	// If not found in store, return error (links are store-first)
 	if !info.Presence.InStore {
 		return LinkInfo{}, ErrNotFound
-	}
-
-	return info, nil
-}
-
-// GetDispatcher retrieves a single dispatcher by its key (type, nsid, ifindex),
-// correlating state from store, kernel, and filesystem. This is more efficient
-// than Snapshot for single-dispatcher lookups.
-//
-// Returns ErrNotFound if the dispatcher does not exist in any source.
-func GetDispatcher(
-	ctx context.Context,
-	dispGetter DispatcherGetter,
-	kern KernelGetter,
-	kernLinkGetter KernelLinkGetter,
-	scanner *fs.Scanner,
-	dispType string,
-	nsid uint64,
-	ifindex uint32,
-) (DispatcherInfo, error) {
-	info := DispatcherInfo{}
-
-	// Try store
-	state, err := dispGetter.GetDispatcher(ctx, dispType, nsid, ifindex)
-	if err == nil {
-		info.State = state
-		info.ProgPresence.InStore = true
-		if state.LinkID != 0 {
-			info.LinkPresence.InStore = true
-		}
-	} else if !errors.Is(err, platform.ErrRecordNotFound) {
-		// Real error (not just "not found")
-		return DispatcherInfo{}, err
-	}
-
-	// Try kernel for dispatcher program
-	if info.ProgPresence.InStore && info.State.ProgramID != 0 {
-		_, err := kern.GetProgramByID(ctx, info.State.ProgramID)
-		if err == nil {
-			info.ProgPresence.InKernel = true
-		}
-	}
-
-	// Try kernel for dispatcher link (XDP only)
-	if info.LinkPresence.InStore && info.State.LinkID != 0 {
-		_, err := kernLinkGetter.GetLinkByID(ctx, info.State.LinkID)
-		if err == nil {
-			info.LinkPresence.InKernel = true
-		}
-	}
-
-	// Try filesystem for dispatcher directory
-	// Dispatcher dirs follow pattern: {dispType}/dispatcher_{nsid}_{ifindex}_{revision}
-	if info.ProgPresence.InStore {
-		// Check if the dispatcher directory exists
-		key := dispatcherKey(dispType, nsid, ifindex)
-		for dir, err := range scanner.DispatcherDirs(ctx) {
-			if err != nil {
-				continue
-			}
-			dirKey := dispatcherKey(dir.DispType, dir.Nsid, dir.Ifindex)
-			if dirKey == key {
-				info.ProgPresence.InFS = true
-				break
-			}
-		}
-	}
-
-	// Try filesystem for dispatcher link pin (XDP only)
-	if info.LinkPresence.InStore {
-		for pin, err := range scanner.DispatcherLinkPins(ctx) {
-			if err != nil {
-				continue
-			}
-			if pin.DispType == dispType && pin.Nsid == nsid && pin.Ifindex == ifindex {
-				info.LinkPresence.InFS = true
-				break
-			}
-		}
-	}
-
-	// If not found in store, return error (dispatchers are always store-first)
-	if !info.ProgPresence.InStore {
-		return DispatcherInfo{}, ErrNotFound
 	}
 
 	return info, nil

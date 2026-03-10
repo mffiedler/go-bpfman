@@ -317,10 +317,7 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 	if err := s.prepareLinkRegistryStatements(ctx); err != nil {
 		return err
 	}
-	if err := s.prepareLinkDetailStatements(ctx); err != nil {
-		return err
-	}
-	return s.prepareDispatcherStatements(ctx)
+	return s.prepareLinkDetailStatements(ctx)
 }
 
 // RunInTransaction executes the callback within a database transaction.
