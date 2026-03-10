@@ -284,7 +284,8 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 	return nil
 }
 
-// Delete removes program metadata.
+// Delete removes program metadata. Returns ErrRecordNotFound if the
+// program does not exist.
 func (s *sqliteStore) Delete(ctx context.Context, programID kernel.ProgramID) error {
 	start := time.Now()
 	result, err := s.stmtDeleteProgram.ExecContext(ctx, programID)
@@ -292,8 +293,14 @@ func (s *sqliteStore) Delete(ctx context.Context, programID kernel.ProgramID) er
 		s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "error", err)
 		return err
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
 	s.logger.Debug("sql", "stmt", "DeleteProgram", "args", []any{programID}, "duration_ms", msec(time.Since(start)), "rows_affected", rows)
+	if rows == 0 {
+		return fmt.Errorf("program %d: %w", programID, platform.ErrRecordNotFound)
+	}
 	return nil
 }
 

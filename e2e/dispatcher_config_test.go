@@ -69,9 +69,9 @@ func (h *dispatcherTestHarness) tryAttach(t *testing.T, progID kernel.ProgramID,
 	return h.env.Attach(context.Background(), spec)
 }
 
-// extensionCount returns the number of extension links attached to
-// the dispatcher for the harness's default interface.
-func (h *dispatcherTestHarness) extensionCount(t *testing.T) int {
+// memberCount returns the number of members attached to the
+// dispatcher for the harness's default interface.
+func (h *dispatcherTestHarness) memberCount(t *testing.T) int {
 	t.Helper()
 	nsid, err := netns.GetCurrentNsid()
 	require.NoError(t, err)
@@ -239,7 +239,7 @@ func eachDispatcherType(t *testing.T) []dispatcherTestHarness {
 
 // TestDispatcher_PriorityOrdering verifies that filling all 10
 // dispatcher slots with scrambled priorities produces positions that
-// reflect the correct sorted order. Extensions are sorted by priority
+// reflect the correct sorted order. Members are sorted by priority
 // ascending for both TC and XDP; when priorities collide, the
 // secondary sort is by program name.
 func TestDispatcher_PriorityOrdering(t *testing.T) {
@@ -270,7 +270,7 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 		}
 	})
 
-	require.Equal(t, 10, h.extensionCount(t),
+	require.Equal(t, 10, h.memberCount(t),
 		"all 10 slots should be occupied")
 
 	// Positions reflect priority ascending. Build the expected
@@ -404,14 +404,14 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		links = append(links, link)
 	}
 
-	require.Equal(t, dispatcher.MaxPrograms, h.extensionCount(t),
+	require.Equal(t, dispatcher.MaxPrograms, h.memberCount(t),
 		"all 10 slots should be occupied")
 
 	// Detach the 4th attachment (priority 400).
 	err := h.env.Detach(context.Background(), links[3].ID)
 	require.NoError(t, err, "detach link at priority 400")
 
-	assert.Equal(t, dispatcher.MaxPrograms-1, h.extensionCount(t),
+	assert.Equal(t, dispatcher.MaxPrograms-1, h.memberCount(t),
 		"should have 9 programs after detach")
 
 	// Re-attach at priority 350. This should slot between
@@ -429,7 +429,7 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 		h.env.Detach(context.Background(), newLink.ID)
 	})
 
-	require.Equal(t, 10, h.extensionCount(t),
+	require.Equal(t, 10, h.memberCount(t),
 		"all 10 slots should be occupied again")
 
 	newPos := h.linkPosition(t, newLink.ID)
@@ -500,7 +500,7 @@ func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 
 // TestDispatcher_MultipleInterfacesIndependent verifies that
 // dispatcher state on one interface is independent of another.
-// Detaching from interface B must not affect interface A's extension count.
+// Detaching from interface B must not affect interface A's member count.
 func TestDispatcher_MultipleInterfacesIndependent(t *testing.T) {
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
@@ -541,12 +541,12 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	keyA := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(h.iface.Ifindex)}
 	keyB := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(ifaceB.Ifindex)}
 
-	// Verify A has 3 extensions.
+	// Verify A has 3 members.
 	snapA, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
 	require.NoError(t, err)
 	require.Len(t, snapA.Members, 3, "interface A should have 3 programs")
 
-	// Verify B has 2 extensions.
+	// Verify B has 2 members.
 	snapB, err := h.env.GetDispatcherSnapshot(context.Background(), keyB)
 	require.NoError(t, err)
 	require.Len(t, snapB.Members, 2, "interface B should have 2 programs")
@@ -562,7 +562,7 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	require.ErrorIs(t, err, platform.ErrRecordNotFound,
 		"interface B dispatcher should be absent after detaching all links")
 
-	// A's dispatcher should still exist with 3 extensions.
+	// A's dispatcher should still exist with 3 members.
 	snapAAfter, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
 	require.NoError(t, err, "interface A dispatcher should still exist")
 
@@ -570,28 +570,28 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 		"A's program count should be unchanged")
 }
 
-// TestDispatcher_ExtensionLinksSurviveGC verifies that extension links
-// are not deleted by garbage collection when their dispatcher is alive.
+// TestDispatcher_MemberLinksSurviveGC verifies that member links are
+// not deleted by garbage collection when their dispatcher is alive.
 //
-// Every dispatcher rebuild re-attaches all extensions, creating new
+// Every dispatcher rebuild re-attaches all members, creating new
 // kernel links with new IDs. The stored link IDs become stale, but the
-// extensions are still active via the dispatcher. GC must not delete
+// members are still active via the dispatcher. GC must not delete
 // them.
 //
 // This test reproduces the daemon-mode bug where GC ran between gRPC
-// RPCs and deleted extension links whose kernel IDs had been superseded
+// RPCs and deleted member links whose kernel IDs had been superseded
 // by a rebuild, causing links to vanish from the store.
-func TestDispatcher_ExtensionLinksSurviveGC(t *testing.T) {
+func TestDispatcher_MemberLinksSurviveGC(t *testing.T) {
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
 			t.Parallel()
-			testExtensionLinksSurviveGC(t, h)
+			testMemberLinksSurviveGC(t, h)
 		})
 	}
 }
 
-func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
+func testMemberLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 	ctx := context.Background()
 	progID := h.loadProg(t)
 
@@ -603,7 +603,7 @@ func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 	link1 := h.attach(t, progID, 100)
 	t.Cleanup(func() { h.env.Detach(ctx, link1.ID) })
 
-	require.Equal(t, 1, h.extensionCount(t))
+	require.Equal(t, 1, h.memberCount(t))
 
 	// Run GC. Link 1's kernel ID may already be stale from the
 	// initial dispatcher build. It must survive.
@@ -613,15 +613,15 @@ func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 	// Verify the link still exists and is retrievable.
 	_, _, err = h.env.GetLink(ctx, link1.ID)
 	require.NoError(t, err, "link 1 should survive GC")
-	require.Equal(t, 1, h.extensionCount(t),
-		"extension count should be 1 after GC")
+	require.Equal(t, 1, h.memberCount(t),
+		"member count should be 1 after GC")
 
 	// Attach second program. This triggers a dispatcher rebuild,
 	// which re-attaches link 1 with a new kernel link ID.
 	link2 := h.attach(t, progID, 200)
 	t.Cleanup(func() { h.env.Detach(ctx, link2.ID) })
 
-	require.Equal(t, 2, h.extensionCount(t))
+	require.Equal(t, 2, h.memberCount(t))
 
 	// Run GC again. Both links have been through at least one
 	// rebuild. Their stored kernel IDs are stale, but their
@@ -633,14 +633,14 @@ func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 	require.NoError(t, err, "link 1 should survive second GC")
 	_, _, err = h.env.GetLink(ctx, link2.ID)
 	require.NoError(t, err, "link 2 should survive second GC")
-	require.Equal(t, 2, h.extensionCount(t),
-		"extension count should be 2 after second GC")
+	require.Equal(t, 2, h.memberCount(t),
+		"member count should be 2 after second GC")
 
 	// Attach a third program and GC once more.
 	link3 := h.attach(t, progID, 300)
 	t.Cleanup(func() { h.env.Detach(ctx, link3.ID) })
 
-	require.Equal(t, 3, h.extensionCount(t))
+	require.Equal(t, 3, h.memberCount(t))
 
 	_, err = h.env.GC(ctx)
 	require.NoError(t, err, "GC after third attach")
@@ -650,8 +650,8 @@ func testExtensionLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 		_, _, err = h.env.GetLink(ctx, linkID)
 		require.NoError(t, err, "link %d should survive third GC", i+1)
 	}
-	require.Equal(t, 3, h.extensionCount(t),
-		"extension count should be 3 after third GC")
+	require.Equal(t, 3, h.memberCount(t),
+		"member count should be 3 after third GC")
 
 	// Verify the dispatcher itself is still present.
 	_, err = h.env.GetDispatcherSnapshot(ctx, dispatcher.Key{

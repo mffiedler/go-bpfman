@@ -68,7 +68,7 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	ingressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: ifindex}
 	egressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCEgress, Nsid: nsid, Ifindex: ifindex}
 
-	// Verify ingress has 3 extensions.
+	// Verify ingress has 3 members.
 	ingressSnap, err := env.GetDispatcherSnapshot(ctx, ingressKey)
 	require.NoError(t, err)
 	require.Len(t, ingressSnap.Members, 3, "ingress should have 3 programs")
@@ -189,7 +189,7 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 
 // TestTC_DispatcherFillDrainRefill exercises repeated fill-drain-refill
 // cycles where the drain boundary shifts each oscillation, verifying
-// that slot reuse, extension count tracking, and traffic delivery
+// that slot reuse, member count tracking, and traffic delivery
 // remain correct throughout.
 //
 // The test performs three oscillations. Each trough drains one more
@@ -208,13 +208,13 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 // position is both vacated and reused at least once.
 //
 // At each peak the test asserts:
-//   - Extension count equals dispatcher.MaxPrograms (10).
+//   - Member count equals dispatcher.MaxPrograms (10).
 //   - Every program (including newly attached ones) receives new
 //     traffic: packet counts are recorded before a ping burst and
 //     verified to have increased afterward.
 //
 // At each trough the test asserts:
-//   - Extension count equals the surviving program count.
+//   - Member count equals the surviving program count.
 //
 // Programs are loaded as separate instances (one LoadImage per
 // program) so that each has an independent tc_stats_map for traffic
@@ -318,17 +318,17 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 		return n
 	}
 
-	// verifyExtensionCount reads the dispatcher extension count
-	// and asserts it matches the expected state derived from the
-	// slot array.
-	verifyExtensionCount := func(phase string) {
+	// verifyMemberCount reads the dispatcher member count and
+	// asserts it matches the expected state derived from the slot
+	// array.
+	verifyMemberCount := func(phase string) {
 		t.Helper()
 		snap, err := env.GetDispatcherSnapshot(ctx, dispatcher.Key{
 			Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: uint32(veth.A.Ifindex),
 		})
 		require.NoError(t, err)
 		expected := occupiedCount()
-		assert.Equal(t, expected, len(snap.Members), "%s: extension count", phase)
+		assert.Equal(t, expected, len(snap.Members), "%s: member count", phase)
 	}
 
 	// verifyTraffic sends traffic and asserts every active
@@ -360,42 +360,42 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 		initialPriorities[i] = i * 100 // 0, 100, 200, ..., 900
 	}
 	fill(initialPriorities)
-	verifyExtensionCount("peak 0")
+	verifyMemberCount("peak 0")
 	verifyTraffic("peak 0")
 
 	// -- Trough 1: drain first 6
 	// Slots 0-5 freed; slots 6-9 survive (priorities 600-900).
 	drain(0, 6)
-	verifyExtensionCount("trough 1")
+	verifyMemberCount("trough 1")
 
 	// -- Peak 1: refill 6
 	// Priorities interleave with surviving 600, 700, 800, 900.
 	fill([]int{950, 850, 750, 650, 550, 450})
-	verifyExtensionCount("peak 1")
+	verifyMemberCount("peak 1")
 	verifyTraffic("peak 1")
 
 	// -- Trough 2: drain last 7
 	// Slots 3-9 freed; slots 0-2 survive (priorities 950, 850,
 	// 750 from wave 1).
 	drain(3, 10)
-	verifyExtensionCount("trough 2")
+	verifyMemberCount("trough 2")
 
 	// -- Peak 2: refill 7
 	// Priorities interleave with surviving 950, 850, 750.
 	fill([]int{25, 125, 225, 325, 425, 525, 625})
-	verifyExtensionCount("peak 2")
+	verifyMemberCount("peak 2")
 	verifyTraffic("peak 2")
 
 	// -- Trough 3: drain first 8
 	// Slots 0-7 freed; slots 8-9 survive (priorities 525, 625
 	// from wave 2).
 	drain(0, 8)
-	verifyExtensionCount("trough 3")
+	verifyMemberCount("trough 3")
 
 	// -- Peak 3: refill 8
 	// Priorities interleave with surviving 525, 625.
 	fill([]int{62, 162, 262, 362, 462, 562, 662, 762})
-	verifyExtensionCount("peak 3")
+	verifyMemberCount("peak 3")
 	verifyTraffic("peak 3")
 }
 

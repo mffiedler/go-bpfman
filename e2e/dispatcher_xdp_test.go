@@ -19,8 +19,8 @@ import (
 )
 
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
-// XDP extension slots then detaching them one at a time correctly
-// updates the extension count at each step.
+// XDP dispatcher slots then detaching them one at a time correctly
+// updates the member count at each step.
 func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
@@ -59,7 +59,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 
 	dispKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: nsid, Ifindex: uint32(iface.Ifindex)}
 
-	// Verify 10 extensions before detach.
+	// Verify 10 members before detach.
 	snap, err := env.GetDispatcherSnapshot(ctx, dispKey)
 	require.NoError(t, err)
 	require.Len(t, snap.Members, 10, "should have 10 programs before detach")
