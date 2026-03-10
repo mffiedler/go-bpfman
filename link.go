@@ -217,6 +217,7 @@ type TCXDetails struct {
 	Ifindex   uint32      `json:"ifindex"`
 	Direction TCDirection `json:"direction"`
 	Priority  int32       `json:"priority"`
+	Position  int32       `json:"position"`
 	Netns     string      `json:"netns,omitempty"`
 	Nsid      uint64      `json:"nsid,omitempty"`
 }

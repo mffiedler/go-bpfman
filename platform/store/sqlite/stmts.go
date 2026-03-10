@@ -177,7 +177,14 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlGetTCXDetails = `
-		SELECT interface, ifindex, direction, priority, netns, nsid
+		SELECT interface, ifindex, direction, priority, netns, nsid,
+			(SELECT COUNT(*) FROM link_tcx_details t2
+			 WHERE t2.nsid = link_tcx_details.nsid
+			 AND t2.ifindex = link_tcx_details.ifindex
+			 AND t2.direction = link_tcx_details.direction
+			 AND (t2.priority < link_tcx_details.priority
+			      OR (t2.priority = link_tcx_details.priority AND t2.link_id < link_tcx_details.link_id))
+			) AS position
 		FROM link_tcx_details WHERE link_id = ?`
 	if s.stmtGetTCXDetails, err = s.db.PrepareContext(ctx, sqlGetTCXDetails); err != nil {
 		return fmt.Errorf("prepare GetTCXDetails: %w", err)
@@ -281,7 +288,14 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlListAllTCXDetails = `
-		SELECT link_id, interface, ifindex, direction, priority, netns, nsid
+		SELECT link_id, interface, ifindex, direction, priority, netns, nsid,
+			(SELECT COUNT(*) FROM link_tcx_details t2
+			 WHERE t2.nsid = link_tcx_details.nsid
+			 AND t2.ifindex = link_tcx_details.ifindex
+			 AND t2.direction = link_tcx_details.direction
+			 AND (t2.priority < link_tcx_details.priority
+			      OR (t2.priority = link_tcx_details.priority AND t2.link_id < link_tcx_details.link_id))
+			) AS position
 		FROM link_tcx_details`
 	if s.stmtListAllTCXDetails, err = s.db.PrepareContext(ctx, sqlListAllTCXDetails); err != nil {
 		return fmt.Errorf("prepare ListAllTCXDetails: %w", err)

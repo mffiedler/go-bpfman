@@ -296,6 +296,56 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	}
 }
 
+// TestDispatcher_ZeroPriorityDefaultOrdering verifies that attaching
+// a program with priority=0 stores 0 in the link details (not the
+// default value 50) and that the dispatcher correctly orders the
+// program as if its effective priority were 50.
+func TestDispatcher_ZeroPriorityDefaultOrdering(t *testing.T) {
+	t.Parallel()
+	for _, h := range eachDispatcherType(t) {
+		t.Run(h.name, func(t *testing.T) {
+			t.Parallel()
+			testZeroPriorityDefaultOrdering(t, h)
+		})
+	}
+}
+
+func testZeroPriorityDefaultOrdering(t *testing.T, h dispatcherTestHarness) {
+	progID := h.loadProg(t)
+
+	// Attach three programs: priority 25 (runs first), priority 0
+	// (should behave as effective priority 50), and priority 75
+	// (runs last).
+	link25 := h.attach(t, progID, 25)
+	link0 := h.attach(t, progID, 0)
+	link75 := h.attach(t, progID, 75)
+
+	t.Cleanup(func() {
+		h.env.Detach(context.Background(), link25.ID)
+		h.env.Detach(context.Background(), link0.ID)
+		h.env.Detach(context.Background(), link75.ID)
+	})
+
+	// The stored priority should be exactly what was requested.
+	assert.Equal(t, int32(25), h.linkPriority(t, link25.ID),
+		"priority=25 should be stored as 25")
+	assert.Equal(t, int32(0), h.linkPriority(t, link0.ID),
+		"priority=0 should be stored as 0, not defaulted to 50")
+	assert.Equal(t, int32(75), h.linkPriority(t, link75.ID),
+		"priority=75 should be stored as 75")
+
+	// The effective ordering should treat priority=0 as 50:
+	// position 0: priority 25
+	// position 1: priority 0 (effective 50)
+	// position 2: priority 75
+	assert.Equal(t, int32(0), h.linkPosition(t, link25.ID),
+		"priority=25 should be at position 0")
+	assert.Equal(t, int32(1), h.linkPosition(t, link0.ID),
+		"priority=0 (effective 50) should be at position 1")
+	assert.Equal(t, int32(2), h.linkPosition(t, link75.ID),
+		"priority=75 should be at position 2")
+}
+
 // TestDispatcher_AttachExceedsMaxPrograms verifies that attempting to
 // attach an 11th program fails with a "no free slots" error.
 func TestDispatcher_AttachExceedsMaxPrograms(t *testing.T) {

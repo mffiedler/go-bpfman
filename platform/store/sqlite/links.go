@@ -290,7 +290,7 @@ func (s *sqliteStore) populateLinkDetails(ctx context.Context, links []bpfman.Li
 			var dirStr string
 			var netns sql.NullString
 			var nsid sql.NullInt64
-			if err := rows.Scan(&linkID, &d.Interface, &d.Ifindex, &dirStr, &d.Priority, &netns, &nsid); err != nil {
+			if err := rows.Scan(&linkID, &d.Interface, &d.Ifindex, &dirStr, &d.Priority, &netns, &nsid, &d.Position); err != nil {
 				return 0, nil, err
 			}
 			dir, err := bpfman.ParseTCDirection(dirStr)
@@ -649,7 +649,7 @@ func (s *sqliteStore) getLinkDetails(ctx context.Context, kind bpfman.LinkKind, 
 			var dirStr string
 			var netns sql.NullString
 			var nsid sql.NullInt64
-			if err := row.Scan(&d.Interface, &d.Ifindex, &dirStr, &d.Priority, &netns, &nsid); err != nil {
+			if err := row.Scan(&d.Interface, &d.Ifindex, &dirStr, &d.Priority, &netns, &nsid, &d.Position); err != nil {
 				return d, err
 			}
 			dir, err := bpfman.ParseTCDirection(dirStr)

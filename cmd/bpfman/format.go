@@ -485,6 +485,7 @@ func formatLinkResultTable(link bpfman.Link) string {
 		if d.Netns != "" {
 			specFields = append(specFields, fmt.Sprintf("    Network Namespace:\t%s", d.Netns))
 		}
+		specFields = append(specFields, fmt.Sprintf("    Position:\t%d", d.Position))
 		specFields = append(specFields, fmt.Sprintf("    Priority:\t%d", d.Priority))
 	case bpfman.TracepointDetails:
 		specFields = append(specFields, fmt.Sprintf("    Tracepoint:\t%s/%s", d.Group, d.Name))
@@ -610,7 +611,7 @@ func formatAttachDetails(details bpfman.LinkDetails) string {
 	case bpfman.TCDetails:
 		return fmt.Sprintf("%s/%s (ifindex=%d, pos=%d)", d.Interface, d.Direction, d.Ifindex, d.Position)
 	case bpfman.TCXDetails:
-		return fmt.Sprintf("%s/%s (ifindex=%d)", d.Interface, d.Direction, d.Ifindex)
+		return fmt.Sprintf("%s/%s (ifindex=%d, pos=%d)", d.Interface, d.Direction, d.Ifindex, d.Position)
 	default:
 		return ""
 	}

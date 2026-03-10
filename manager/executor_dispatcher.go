@@ -25,7 +25,7 @@ import (
 type rebuildSlot struct {
 	ProgPinPath string
 	ProgramName string
-	Priority    int
+	Priority    int // user-specified priority (may be 0 for unspecified)
 	ProceedOn   uint32
 	LinkID      kernel.LinkID    // existing synthetic link ID (zero for new)
 	ProgramID   kernel.ProgramID // managed program's kernel ID
@@ -122,7 +122,7 @@ func (e *executor) rebuildXDPDispatcher(
 	cfg := dispatcher.NewXDPConfig(len(allSlots))
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
-		cfg.RunPrios[i] = uint32(slot.Priority)
+		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
 	// Compute new revision.
@@ -392,7 +392,7 @@ func (e *executor) rebuildTCDispatcher(
 		// TC dispatchers check (1 << (ret + 1)) for chain_call_actions
 		// to handle TC_ACT_UNSPEC = -1.
 		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
-		cfg.RunPrios[i] = uint32(slot.Priority)
+		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
 	// Compute new revision.
@@ -667,7 +667,7 @@ func (e *executor) rebuildXDPForDetach(
 	cfg := dispatcher.NewXDPConfig(len(slots))
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
-		cfg.RunPrios[i] = uint32(slot.Priority)
+		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
 	dispatcherID, err := e.kernel.LoadAndPinXDPDispatcher(ctx, cfg, progPinPath)
@@ -766,7 +766,7 @@ func (e *executor) rebuildTCForDetach(
 	cfg := dispatcher.NewTCConfig(len(slots))
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
-		cfg.RunPrios[i] = uint32(slot.Priority)
+		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
 	_, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
@@ -911,13 +911,24 @@ func isNotFound(err error) bool {
 	return errors.Is(err, platform.ErrRecordNotFound)
 }
 
-// sortRebuildSlots sorts rebuild slots by (priority ASC, programName ASC).
+// effectivePriority returns the priority used for dispatcher slot
+// ordering and .rodata configuration. Zero (unspecified) defaults
+// to DefaultPriority (50).
+func effectivePriority(p int) int {
+	if p == 0 {
+		return int(dispatcher.DefaultPriority)
+	}
+	return p
+}
+
+// sortRebuildSlots sorts rebuild slots by (effectivePriority ASC, programName ASC).
 func sortRebuildSlots(slots []rebuildSlot) {
 	for i := 1; i < len(slots); i++ {
 		for j := i; j > 0; j-- {
-			if slots[j].Priority < slots[j-1].Priority ||
-				(slots[j].Priority == slots[j-1].Priority &&
-					slots[j].ProgramName < slots[j-1].ProgramName) {
+			pi := effectivePriority(slots[j].Priority)
+			pj := effectivePriority(slots[j-1].Priority)
+			if pi < pj || (pi == pj &&
+				slots[j].ProgramName < slots[j-1].ProgramName) {
 				slots[j], slots[j-1] = slots[j-1], slots[j]
 			} else {
 				break

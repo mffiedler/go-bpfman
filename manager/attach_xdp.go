@@ -25,10 +25,6 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 	netnsPath := spec.Netns()
 
 	priority := spec.Priority()
-	if priority == 0 {
-		priority = int(dispatcher.DefaultPriority)
-	}
-
 	proceedOn := spec.ProceedOn()
 	if len(proceedOn) == 0 {
 		proceedOn = []int32{int32(dispatcher.XDPPass)}
