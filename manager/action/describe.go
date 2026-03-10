@@ -52,8 +52,6 @@ func Describe(a Action) string {
 		return fmt.Sprintf("publish bytecode for program %d", a.ProgramID)
 
 	// Dispatcher actions
-	case SaveDispatcher:
-		return fmt.Sprintf("save %s dispatcher nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
 	case DeleteDispatcher:
 		return fmt.Sprintf("delete %s dispatcher nsid=%d ifindex=%d from store", a.Type, a.Nsid, a.Ifindex)
 	case RebuildXDPDispatcher:
@@ -61,9 +59,9 @@ func Describe(a Action) string {
 	case RebuildTCDispatcher:
 		return fmt.Sprintf("rebuild TC dispatcher ifindex=%d %s", a.Ifindex, a.Direction)
 	case RebuildDispatcherForDetach:
-		return fmt.Sprintf("rebuild %s dispatcher for detach nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
+		return fmt.Sprintf("rebuild %s dispatcher for detach nsid=%d ifindex=%d", a.Key.Type, a.Key.Nsid, a.Key.Ifindex)
 	case CleanupEmptyDispatcher:
-		return fmt.Sprintf("cleanup empty %s dispatcher nsid=%d ifindex=%d", a.State.Type, a.State.Nsid, a.State.Ifindex)
+		return fmt.Sprintf("cleanup empty %s dispatcher nsid=%d ifindex=%d", a.Key.Type, a.Key.Nsid, a.Key.Ifindex)
 
 	// GC filesystem cleanup
 	case RemoveProgPin:

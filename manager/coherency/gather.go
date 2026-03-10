@@ -107,9 +107,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 		if d.Managed == nil {
 			continue
 		}
-		if count, err := store.CountDispatcherLinks(ctx, d.Managed.ProgramID); err == nil {
-			s.dbDispatcherExtCount[d.Managed.ProgramID] = count
-		}
+		s.dbDispatcherExtCount[d.Managed.Runtime.ProgramID] = d.Managed.MemberCount
 	}
 
 	// ----------------------------------------------------------------
@@ -120,16 +118,16 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 		if d.Managed == nil {
 			continue
 		}
-		dt := d.Managed.Type
+		dt := d.Managed.Key.Type
 		if dt != dispatcher.DispatcherTypeTCIngress && dt != dispatcher.DispatcherTypeTCEgress {
 			continue
 		}
-		if d.Managed.Priority == 0 {
+		if d.Managed.Runtime.FilterPriority == nil || *d.Managed.Runtime.FilterPriority == 0 {
 			continue
 		}
-		key := dispatcherKey(dt, d.Managed.Nsid, d.Managed.Ifindex)
+		key := dispatcherKey(dt, d.Managed.Key.Nsid, d.Managed.Key.Ifindex)
 		parent := dispatcher.TCParentHandle(dt)
-		_, err := kops.FindTCFilterHandle(ctx, int(d.Managed.Ifindex), parent, d.Managed.Priority)
+		_, err := kops.FindTCFilterHandle(ctx, int(d.Managed.Key.Ifindex), parent, *d.Managed.Runtime.FilterPriority)
 		s.tcFilterOK[key] = (err == nil)
 	}
 
@@ -321,13 +319,34 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		if dr.Managed == nil {
 			continue
 		}
-		d := dr.Managed
-		key := dispatcherKey(d.Type, d.Nsid, d.Ifindex)
-		revDir := bpffs.DispatcherRevisionDir(d.Type, d.Nsid, d.Ifindex, d.Revision)
-		progPin := bpffs.DispatcherProgPath(d.Type, d.Nsid, d.Ifindex, d.Revision)
+		summary := dr.Managed
+		dt := summary.Key.Type
+		nsid := summary.Key.Nsid
+		ifindex := summary.Key.Ifindex
+
+		// Convert summary to dispatcher.State for rules
+		// compatibility. Rules access d.DB.Type, d.DB.Nsid,
+		// etc. directly.
+		state := &dispatcher.State{
+			Type:      dt,
+			Nsid:      nsid,
+			Ifindex:   ifindex,
+			Revision:  summary.Revision,
+			ProgramID: summary.Runtime.ProgramID,
+		}
+		if summary.Runtime.LinkID != nil {
+			state.LinkID = *summary.Runtime.LinkID
+		}
+		if summary.Runtime.FilterPriority != nil {
+			state.Priority = *summary.Runtime.FilterPriority
+		}
+
+		key := dispatcherKey(dt, nsid, ifindex)
+		revDir := bpffs.DispatcherRevisionDir(dt, nsid, ifindex, summary.Revision)
+		progPin := bpffs.DispatcherProgPath(dt, nsid, ifindex, summary.Revision)
 
 		ds := DispatcherState{
-			DB:         d,
+			DB:         state,
 			KernelProg: dr.ProgPresence.InKernel,
 			RevDir:     revDir,
 			ProgPin:    progPin,
@@ -339,16 +358,16 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		ds.ProgPinExist = &exists
 
 		// XDP link checks from World presence.
-		if d.Type == dispatcher.DispatcherTypeXDP {
+		if dt == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
 			ds.LinkPinExist = &linkExists
-			ds.LinkPin = bpffs.DispatcherLinkPath(d.Type, d.Nsid, d.Ifindex)
+			ds.LinkPin = bpffs.DispatcherLinkPath(dt, nsid, ifindex)
 		}
 
 		// TC filter check from gathered facts.
-		if d.Type == dispatcher.DispatcherTypeTCIngress || d.Type == dispatcher.DispatcherTypeTCEgress {
-			if d.Priority > 0 {
+		if dt == dispatcher.DispatcherTypeTCIngress || dt == dispatcher.DispatcherTypeTCEgress {
+			if state.Priority > 0 {
 				if ok, found := s.tcFilterOK[key]; found {
 					ds.TCFilterOK = &ok
 				}
@@ -356,7 +375,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 		}
 
 		// Extension link count from gathered facts.
-		if count, found := s.dbDispatcherExtCount[d.ProgramID]; found {
+		if count, found := s.dbDispatcherExtCount[state.ProgramID]; found {
 			ds.LinkCount = count
 		}
 

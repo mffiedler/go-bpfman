@@ -22,7 +22,7 @@ var ErrNotFound = errors.New("not found")
 type StoreLister interface {
 	List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error)
 	ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error)
-	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
+	ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error)
 }
 
 // StoreGetter is the subset of platform.Store needed by GetProgram.
@@ -257,11 +257,11 @@ type DispatcherRow struct {
 	Ifindex  uint32 `json:"ifindex"`
 
 	// Store fields (valid when ProgPresence.InStore is true)
-	Managed   *dispatcher.State `json:"managed,omitempty"`
-	Revision  uint32            `json:"revision"`
-	ProgramID kernel.ProgramID  `json:"program_id"`
-	LinkID    kernel.LinkID     `json:"link_id"`
-	Priority  uint32            `json:"priority"`
+	Managed   *platform.DispatcherSummary `json:"managed,omitempty"`
+	Revision  uint32                      `json:"revision"`
+	ProgramID kernel.ProgramID            `json:"program_id"`
+	LinkID    kernel.LinkID               `json:"link_id"`
+	Priority  uint32                      `json:"priority"`
 
 	// Presence tracks where the dispatcher's components exist
 	ProgPresence Presence `json:"prog_presence"` // dispatcher program
@@ -542,14 +542,14 @@ func Snapshot(
 	}
 
 	// Phase 4: Build dispatcher rows (store-first)
-	storeDisps, err := store.ListDispatchers(ctx)
+	storeDisps, err := store.ListDispatcherSummaries(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	seenDispKeys := make(map[string]bool)
 	for _, disp := range storeDisps {
-		key := dispatcherKey(disp.Type.String(), disp.Nsid, disp.Ifindex)
+		key := dispatcherKey(disp.Key.Type.String(), disp.Key.Nsid, disp.Key.Ifindex)
 		seenDispKeys[key] = true
 
 		fsDir := fsDispDirs[key]
@@ -562,16 +562,26 @@ func Snapshot(
 			progInFS = true
 		}
 
-		_, progInKernel := kernelProgs[disp.ProgramID]
+		var linkID kernel.LinkID
+		if disp.Runtime.LinkID != nil {
+			linkID = *disp.Runtime.LinkID
+		}
+		var priority uint32
+		if disp.Runtime.FilterPriority != nil {
+			priority = uint32(*disp.Runtime.FilterPriority)
+		}
+
+		_, progInKernel := kernelProgs[disp.Runtime.ProgramID]
+		d := disp // copy for pointer
 		row := DispatcherRow{
-			DispType:    disp.Type.String(),
-			Nsid:        disp.Nsid,
-			Ifindex:     disp.Ifindex,
-			Managed:     &disp,
+			DispType:    disp.Key.Type.String(),
+			Nsid:        disp.Key.Nsid,
+			Ifindex:     disp.Key.Ifindex,
+			Managed:     &d,
 			Revision:    disp.Revision,
-			ProgramID:   disp.ProgramID,
-			LinkID:      disp.LinkID,
-			Priority:    uint32(disp.Priority),
+			ProgramID:   disp.Runtime.ProgramID,
+			LinkID:      linkID,
+			Priority:    priority,
 			FSLinkCount: fsLinkCount,
 			ProgPresence: Presence{
 				InStore:  true,
@@ -579,8 +589,8 @@ func Snapshot(
 				InFS:     progInFS,
 			},
 			LinkPresence: Presence{
-				InStore:  disp.LinkID != 0,
-				InKernel: disp.LinkID != 0 && kernelLinks[disp.LinkID],
+				InStore:  linkID != 0,
+				InKernel: linkID != 0 && kernelLinks[linkID],
 				InFS:     linkPinExists,
 			},
 		}

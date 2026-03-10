@@ -76,6 +76,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 		dispType:  dispType,
 		rebuildAction: func(prog bpfman.ProgramRecord) action.Action {
 			return action.RebuildTCDispatcher{
+				ProgramID:   spec.ProgramID(),
 				Ifindex:     uint32(ifindex),
 				Ifname:      ifname,
 				Direction:   direction,
@@ -85,19 +86,6 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 				ProgramName: prog.Meta.Name,
 				Priority:    priority,
 				ProceedOn:   tcProceedOnBitmask(proceedOn),
-			}
-		},
-		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {
-			return bpfman.TCDetails{
-				Interface:    ifname,
-				Ifindex:      uint32(ifindex),
-				Direction:    direction,
-				Priority:     int32(priority),
-				Position:     int32(position),
-				ProceedOn:    proceedOn,
-				Nsid:         nsid,
-				DispatcherID: dispState.ProgramID,
-				Revision:     dispState.Revision,
 			}
 		},
 	})

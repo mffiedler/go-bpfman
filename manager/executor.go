@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
@@ -104,11 +105,10 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.AttachTCX:
 		return e.kernel.AttachTCX(ctx, a.Ifindex, a.Direction, a.ProgPinPath, a.LinkPinPath, a.NetnsPath, a.Order)
 
-	case action.SaveDispatcher:
-		return nil, e.store.SaveDispatcher(ctx, a.State)
-
 	case action.DeleteDispatcher:
-		return nil, e.store.DeleteDispatcher(ctx, a.Type, a.Nsid, a.Ifindex)
+		return nil, e.store.DeleteDispatcherSnapshot(ctx, dispatcher.Key{
+			Type: a.Type, Nsid: a.Nsid, Ifindex: a.Ifindex,
+		})
 
 	case action.DetachLink:
 		return nil, e.kernel.DetachLink(ctx, a.PinPath)
@@ -147,12 +147,12 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.bcfs.RemoveStagingDir(a.Path)
 
 	case action.RebuildXDPDispatcher:
-		return e.rebuildXDPDispatcher(ctx,
+		return e.rebuildXDPDispatcher(ctx, a.ProgramID,
 			xdpRebuildOps{ifindex: a.Ifindex, ifname: a.Ifname, netnsPath: a.NetnsPath},
 			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn)
 
 	case action.RebuildTCDispatcher:
-		return e.rebuildTCDispatcher(ctx,
+		return e.rebuildTCDispatcher(ctx, a.ProgramID,
 			tcRebuildOps{
 				ifindex:   a.Ifindex,
 				ifname:    a.Ifname,
@@ -163,10 +163,10 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 			a.ProgPinPath, a.ProgramName, a.Priority, a.ProceedOn)
 
 	case action.RebuildDispatcherForDetach:
-		return nil, e.rebuildDispatcherForDetach(ctx, a.State)
+		return nil, e.rebuildDispatcherForDetach(ctx, a.Key)
 
 	case action.CleanupEmptyDispatcher:
-		return nil, e.rebuildDispatcherForDetach(ctx, a.State)
+		return nil, e.rebuildDispatcherForDetach(ctx, a.Key)
 
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", a)

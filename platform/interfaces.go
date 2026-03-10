@@ -82,6 +82,27 @@ type DispatcherStore interface {
 	// dispatcher program ID. The parent links table entries are
 	// not affected.
 	DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error
+
+	// GetDispatcherSnapshot retrieves a complete snapshot of a
+	// dispatcher and all its extension members, identified by key.
+	// Returns ErrRecordNotFound if the dispatcher does not exist.
+	GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (DispatcherSnapshot, error)
+
+	// ListDispatcherSummaries returns lightweight summaries of all
+	// dispatchers, including member counts. This replaces the N+1
+	// pattern of ListDispatchers + CountDispatcherLinks per dispatcher.
+	ListDispatcherSummaries(ctx context.Context) ([]DispatcherSummary, error)
+
+	// ReplaceDispatcherSnapshot atomically replaces all persisted
+	// state for a dispatcher's attach point. The snapshot must
+	// contain all members (existing and new). Old extension link
+	// records for the attach point are removed and replaced with
+	// the snapshot's members in a single transaction.
+	ReplaceDispatcherSnapshot(ctx context.Context, snap DispatcherSnapshot) error
+
+	// DeleteDispatcherSnapshot removes a dispatcher and all its
+	// extension link records by attach point key.
+	DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error
 }
 
 // DispatcherSlot describes an occupied extension slot in a dispatcher.

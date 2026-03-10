@@ -153,11 +153,13 @@ func (m *Manager) GetDispatcher(ctx context.Context, dispType dispatcher.Dispatc
 // CountDispatcherExtensions returns the number of extension links attached
 // to the dispatcher for the given type, namespace, and interface.
 func (m *Manager) CountDispatcherExtensions(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (int, error) {
-	state, err := m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
+	snap, err := m.store.GetDispatcherSnapshot(ctx, dispatcher.Key{
+		Type: dispType, Nsid: nsid, Ifindex: ifindex,
+	})
 	if err != nil {
 		return 0, err
 	}
-	return m.store.CountDispatcherLinks(ctx, state.ProgramID)
+	return len(snap.Members), nil
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.

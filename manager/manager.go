@@ -217,7 +217,7 @@ func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error)
 	}
 
 	// Phase 1: compute which store entries are stale.
-	dispatchers, err := m.store.ListDispatchers(ctx)
+	dispatchers, err := m.store.ListDispatcherSummaries(ctx)
 	if err != nil {
 		return plan, fmt.Errorf("list dispatchers: %w", err)
 	}

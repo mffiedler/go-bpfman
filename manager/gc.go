@@ -5,7 +5,15 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/platform"
 )
+
+// dispKey identifies a dispatcher for deduplication in GC.
+type dispKey struct {
+	Type    dispatcher.DispatcherType
+	Nsid    uint64
+	Ifindex uint32
+}
 
 // computeStoreGC is a pure function that decides which store entries
 // to delete based on a snapshot of the database and the set of
@@ -21,7 +29,7 @@ import (
 //     extension links after phase 3).
 func computeStoreGC(
 	programs map[kernel.ProgramID]bpfman.ProgramRecord,
-	dispatchers []dispatcher.State,
+	dispatchers []platform.DispatcherSummary,
 	links []bpfman.LinkRecord,
 	kernelPrograms map[kernel.ProgramID]bool,
 	kernelLinks map[kernel.LinkID]bool,
@@ -50,20 +58,15 @@ func computeStoreGC(
 
 	// Phase 2: stale dispatchers. Track which dispatcher keys were
 	// deleted so phase 4 can skip them.
-	type dispKey struct {
-		Type    dispatcher.DispatcherType
-		Nsid    uint64
-		Ifindex uint32
-	}
 	deletedDispatchers := make(map[dispKey]bool)
 	for _, disp := range dispatchers {
-		if !kernelPrograms[disp.ProgramID] {
+		if !kernelPrograms[disp.Runtime.ProgramID] {
 			actions = append(actions, action.DeleteDispatcher{
-				Type:    disp.Type,
-				Nsid:    disp.Nsid,
-				Ifindex: disp.Ifindex,
+				Type:    disp.Key.Type,
+				Nsid:    disp.Key.Nsid,
+				Ifindex: disp.Key.Ifindex,
 			})
-			deletedDispatchers[dispKey{disp.Type, disp.Nsid, disp.Ifindex}] = true
+			deletedDispatchers[dispKey{disp.Key.Type, disp.Key.Nsid, disp.Key.Ifindex}] = true
 		}
 	}
 
@@ -74,8 +77,8 @@ func computeStoreGC(
 	// link IDs become stale but the extensions are still active.
 	liveDispatchers := make(map[kernel.ProgramID]bool)
 	for _, disp := range dispatchers {
-		if kernelPrograms[disp.ProgramID] {
-			liveDispatchers[disp.ProgramID] = true
+		if kernelPrograms[disp.Runtime.ProgramID] {
+			liveDispatchers[disp.Runtime.ProgramID] = true
 		}
 	}
 
@@ -99,15 +102,15 @@ func computeStoreGC(
 	// its last extension link.
 	if len(deletedLinks) > 0 {
 		for _, disp := range dispatchers {
-			dk := dispKey{disp.Type, disp.Nsid, disp.Ifindex}
+			dk := dispKey{disp.Key.Type, disp.Key.Nsid, disp.Key.Ifindex}
 			if deletedDispatchers[dk] {
 				continue // already deleted in phase 2
 			}
-			if countExtensionLinks(links, deletedLinks, disp.ProgramID) == 0 {
+			if countExtensionLinks(links, deletedLinks, disp.Runtime.ProgramID) == 0 {
 				actions = append(actions, action.DeleteDispatcher{
-					Type:    disp.Type,
-					Nsid:    disp.Nsid,
-					Ifindex: disp.Ifindex,
+					Type:    disp.Key.Type,
+					Nsid:    disp.Key.Nsid,
+					Ifindex: disp.Key.Ifindex,
 				})
 			}
 		}

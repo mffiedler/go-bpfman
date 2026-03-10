@@ -118,13 +118,6 @@ func TestDescribe(t *testing.T) {
 
 		// Dispatcher actions
 		{
-			name: "SaveDispatcher",
-			action: SaveDispatcher{State: dispatcher.State{
-				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
-			}},
-			contains: "save xdp dispatcher nsid=1 ifindex=2",
-		},
-		{
 			name:     "DeleteDispatcher",
 			action:   DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2},
 			contains: "delete xdp dispatcher nsid=4026531840 ifindex=2 from store",
@@ -141,14 +134,14 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name: "RebuildDispatcherForDetach",
-			action: RebuildDispatcherForDetach{State: dispatcher.State{
+			action: RebuildDispatcherForDetach{Key: dispatcher.Key{
 				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
 			}},
 			contains: "rebuild xdp dispatcher for detach nsid=1 ifindex=2",
 		},
 		{
 			name: "CleanupEmptyDispatcher",
-			action: CleanupEmptyDispatcher{State: dispatcher.State{
+			action: CleanupEmptyDispatcher{Key: dispatcher.Key{
 				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
 			}},
 			contains: "cleanup empty xdp dispatcher nsid=1 ifindex=2",
@@ -238,7 +231,6 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		AttachFentry{},
 		AttachFexit{},
 		AttachTCX{},
-		SaveDispatcher{},
 		DeleteDispatcher{},
 		DetachLink{},
 		RemovePin{},

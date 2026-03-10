@@ -123,6 +123,22 @@ func (s *stubStore) DeleteDispatcherLinkDetails(ctx context.Context, dispatcherP
 	panic("stubStore.DeleteDispatcherLinkDetails not implemented")
 }
 
+func (s *stubStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (platform.DispatcherSnapshot, error) {
+	panic("stubStore.GetDispatcherSnapshot not implemented")
+}
+
+func (s *stubStore) ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error) {
+	panic("stubStore.ListDispatcherSummaries not implemented")
+}
+
+func (s *stubStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platform.DispatcherSnapshot) error {
+	panic("stubStore.ReplaceDispatcherSnapshot not implemented")
+}
+
+func (s *stubStore) DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
+	panic("stubStore.DeleteDispatcherSnapshot not implemented")
+}
+
 // Transactional
 func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
 	return fn(s)

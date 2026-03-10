@@ -11,8 +11,8 @@ import (
 )
 
 // dispatcherAttachParams describes a dispatcher-based attach operation
-// (XDP or TC). The closures construct the type-specific rebuild
-// actions while the shared skeleton handles the plan structure and
+// (XDP or TC). The closure constructs the type-specific rebuild
+// action while the shared skeleton handles the plan structure and
 // result extraction.
 type dispatcherAttachParams struct {
 	programID kernel.ProgramID
@@ -25,19 +25,15 @@ type dispatcherAttachParams struct {
 	// rebuildAction constructs the Rebuild action given the
 	// program record.
 	rebuildAction func(prog bpfman.ProgramRecord) action.Action
-
-	// buildLinkDetails constructs the sealed LinkDetails value for
-	// the link record.
-	buildLinkDetails func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails
 }
 
-// extensionResult bundles the kernel attach output with the
-// dispatcher state and position that were current at attach time.
-// The dispatcher state may differ from the originally looked-up
-// state if stale-dispatcher recovery ran.
+// extensionResult bundles the completed link with dispatcher
+// metadata from the rebuild that produced it. The link record has
+// already been persisted by ReplaceDispatcherSnapshot.
 type extensionResult struct {
-	out      bpfman.AttachOutput
-	disp     dispatcher.State
+	link     bpfman.Link
+	key      dispatcher.Key
+	revision uint32
 	position int
 	pinPath  string
 }
@@ -68,20 +64,19 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 		return bpfman.Link{}, err
 	}
 
-	link := operation.Get(b, linkKey)
 	r := operation.Get(b, extResultKey)
 	m.logger.InfoContext(ctx, "attached via dispatcher",
 		"type", p.dispType,
-		"link_id", link.Record.ID,
+		"link_id", r.link.Record.ID,
 		"program_id", p.programID,
 		"interface", p.ifname,
 		"ifindex", p.ifindex,
-		"nsid", r.disp.Nsid,
+		"nsid", r.key.Nsid,
 		"position", r.position,
-		"revision", r.disp.Revision,
+		"revision", r.revision,
 		"pin_path", r.pinPath)
 
-	return link, nil
+	return r.link, nil
 }
 
 // dispatcherAttachPlan builds the operation plan for a
@@ -91,8 +86,9 @@ func (m *Manager) dispatcherAttach(ctx context.Context, p dispatcherAttachParams
 //  1. Produce dispPreparedKey -- fetch program record via executor.
 //  2. Produce extResultKey -- RebuildXDPDispatcher or
 //     RebuildTCDispatcher via executor, with undo that detaches the
-//     link on failure.
-//  3. Produce linkKey -- construct link record, save to store.
+//     link on failure. The rebuild saves all member links (including
+//     the new extension) via ReplaceDispatcherSnapshot, so no
+//     separate saveLinkNode is needed.
 func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan {
 	return operation.Build(
 		// Node 1: Fetch program record.
@@ -119,11 +115,5 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 				}
 			}),
 		),
-
-		// Node 3: Construct link record + save to store.
-		saveLinkNode(p.programID, p.target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
-			r := operation.Get(b, extResultKey)
-			return r.out.LinkID, p.buildLinkDetails(r.disp.Nsid, r.position, r.disp), r.pinPath, r.out
-		}),
 	)
 }

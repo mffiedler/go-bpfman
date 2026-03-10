@@ -163,14 +163,8 @@ func (AttachFexit) isAction() {}
 
 // Dispatcher actions - operations on dispatcher state
 
-// SaveDispatcher creates or updates a dispatcher in the store.
-type SaveDispatcher struct {
-	State dispatcher.State
-}
-
-func (SaveDispatcher) isAction() {}
-
-// DeleteDispatcher removes a dispatcher from the store.
+// DeleteDispatcher removes a dispatcher and all its extension link
+// records from the store by attach point key.
 type DeleteDispatcher struct {
 	Type    dispatcher.DispatcherType
 	Nsid    uint64
@@ -302,7 +296,7 @@ func (AttachTCX) isAction() {}
 // remaining extension links and, if empty, removes it from both the
 // kernel and the store. A no-op when extensions remain.
 type CleanupEmptyDispatcher struct {
-	State dispatcher.State
+	Key dispatcher.Key
 }
 
 func (CleanupEmptyDispatcher) isAction() {}
@@ -318,6 +312,7 @@ func (CleanupEmptyDispatcher) isAction() {}
 // subsequent-attach (dispatcher exists, rebuild all extensions).
 // Returns extensionResult via ExecuteResult.
 type RebuildXDPDispatcher struct {
+	ProgramID   kernel.ProgramID
 	Ifindex     uint32
 	Ifname      string
 	NetnsPath   string
@@ -333,6 +328,7 @@ func (RebuildXDPDispatcher) isAction() {}
 // Same semantics as RebuildXDPDispatcher but for TC dispatchers.
 // Returns extensionResult via ExecuteResult.
 type RebuildTCDispatcher struct {
+	ProgramID   kernel.ProgramID
 	Ifindex     uint32
 	Ifname      string
 	Direction   bpfman.TCDirection
@@ -350,7 +346,7 @@ func (RebuildTCDispatcher) isAction() {}
 // an extension has been detached. If no extensions remain, the
 // dispatcher is removed entirely.
 type RebuildDispatcherForDetach struct {
-	State dispatcher.State
+	Key dispatcher.Key
 }
 
 func (RebuildDispatcherForDetach) isAction() {}

@@ -8,7 +8,16 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/platform"
 )
+
+// testDispSummary creates a DispatcherSummary for testing.
+func testDispSummary(dt dispatcher.DispatcherType, nsid uint64, ifindex uint32, programID kernel.ProgramID) platform.DispatcherSummary {
+	return platform.DispatcherSummary{
+		Key:     dispatcher.Key{Type: dt, Nsid: nsid, Ifindex: ifindex},
+		Runtime: platform.DispatcherRuntime{ProgramID: programID},
+	}
+}
 
 // testProgramRecord returns a minimal ProgramRecord for testing.
 func testProgramRecord() bpfman.ProgramRecord {
@@ -97,13 +106,8 @@ func TestComputeStoreGC_StaleDependentBeforeOwner(t *testing.T) {
 }
 
 func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 100,
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 100),
 	}
 	actions := computeStoreGC(
 		nil,
@@ -126,13 +130,8 @@ func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
 }
 
 func TestComputeStoreGC_LiveDispatcherNotDeleted(t *testing.T) {
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 100,
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 100),
 	}
 	actions := computeStoreGC(
 		nil,
@@ -201,13 +200,8 @@ func TestComputeStoreGC_ExtensionLinkSurvivesWithLiveDispatcher(t *testing.T) {
 	// is stale (destroyed by a rebuild), but the dispatcher is
 	// alive. Both should survive: the extension is still active
 	// via the dispatcher.
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 500, // alive in kernel
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
 	}
 	links := []bpfman.LinkRecord{
 		{
@@ -239,13 +233,8 @@ func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
 	// IDs (destroyed by a rebuild), but the dispatcher is alive.
 	// Both links should survive because they are managed by the
 	// dispatcher lifecycle, not by GC.
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 500,
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
 	}
 	links := []bpfman.LinkRecord{
 		{
@@ -296,19 +285,9 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 		200: testProgramRecord(), // alive
 	}
 
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeTCIngress,
-			Nsid:      4026531840,
-			Ifindex:   3,
-			ProgramID: 100, // stale (program 100 is dead)
-		},
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 500, // alive
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeTCIngress, 4026531840, 3, 100),
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
 	}
 
 	links := []bpfman.LinkRecord{
@@ -394,13 +373,8 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 // links are gone), but the extension is still active via the
 // dispatcher. GC must not delete these links.
 func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeTCIngress,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 500, // alive in kernel
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeTCIngress, 4026531840, 2, 500),
 	}
 	links := []bpfman.LinkRecord{
 		{
@@ -433,13 +407,8 @@ func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
 // TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted
 // verifies that extension links whose dispatcher is dead ARE deleted.
 func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   2,
-			ProgramID: 500, // dead (not in kernelPrograms)
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
 	}
 	links := []bpfman.LinkRecord{
 		{
@@ -484,13 +453,8 @@ func TestComputeStoreGC_TCExtensionSurvivesWithLiveDispatcher(t *testing.T) {
 	// TC dispatcher is alive; its extension link has a stale kernel
 	// ID (destroyed by a rebuild). The link should survive because
 	// the dispatcher is alive. The dispatcher is not orphaned.
-	dispatchers := []dispatcher.State{
-		{
-			Type:      dispatcher.DispatcherTypeTCIngress,
-			Nsid:      4026531840,
-			Ifindex:   3,
-			ProgramID: 600,
-		},
+	dispatchers := []platform.DispatcherSummary{
+		testDispSummary(dispatcher.DispatcherTypeTCIngress, 4026531840, 3, 600),
 	}
 	links := []bpfman.LinkRecord{
 		{

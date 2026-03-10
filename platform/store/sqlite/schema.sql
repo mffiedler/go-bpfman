@@ -80,12 +80,12 @@
 --   program_id. Without this, every extension link row would need
 --   manual updating after a dispatcher recompile.
 --
--- DELETE: Removing a dispatcher cascades to the extension link detail
---   rows (link_xdp_details, link_tc_details) that reference it, via
---   ON DELETE CASCADE on the dispatcher_program_id FK. Those
---   extensions cannot run without their dispatcher, so cleanup is
---   appropriate. Note that this cascade removes only the detail rows;
---   the parent links and managed_programs rows are unaffected.
+-- DELETE: Removing a dispatcher does not automatically cascade to
+--   extension link detail rows. The snapshot-based store methods
+--   (DeleteDispatcherSnapshot, ReplaceDispatcherSnapshot) explicitly
+--   delete extension link records by attach point before removing
+--   the dispatcher row. This gives the store full control over
+--   cleanup ordering.
 --
 -- TCX (link_tcx_details)
 -- ----------------------
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     ifindex INTEGER NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     program_id INTEGER NOT NULL UNIQUE,
-    link_id INTEGER NOT NULL DEFAULT 0,
+    link_id INTEGER,
     priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -307,9 +307,9 @@ CREATE TABLE IF NOT EXISTS dispatchers (
 
     -- XDP dispatchers have a link; TC dispatchers do not (uses netlink filters)
     CHECK (
-        (type = 'xdp' AND link_id != 0)
+        (type = 'xdp' AND link_id IS NOT NULL)
         OR
-        (type IN ('tc-ingress', 'tc-egress') AND link_id = 0)
+        (type IN ('tc-ingress', 'tc-egress') AND link_id IS NULL)
     )
 ) STRICT;
 
@@ -333,21 +333,21 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    -- ON DELETE CASCADE: removing a dispatcher removes extension link
-    -- detail rows that reference it; without the dispatcher those
-    -- extensions cannot run.
     -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
     -- new kernel program_id, this FK is automatically updated so that
     -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
-        ON DELETE CASCADE
         ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface in namespace
 CREATE UNIQUE INDEX IF NOT EXISTS uq_xdp_dispatcher_position
     ON link_xdp_details(nsid, ifindex, position);
+
+-- Attach-point index for snapshot queries
+CREATE INDEX IF NOT EXISTS idx_link_xdp_by_attach_point
+    ON link_xdp_details(nsid, ifindex);
 
 -- TC links (dispatcher-based)
 CREATE TABLE IF NOT EXISTS link_tc_details (
@@ -366,21 +366,21 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    -- ON DELETE CASCADE: removing a dispatcher removes extension link
-    -- detail rows that reference it; without the dispatcher those
-    -- extensions cannot run.
     -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
     -- new kernel program_id, this FK is automatically updated so that
     -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
-        ON DELETE CASCADE
         ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface + direction in namespace
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tc_dispatcher_position
     ON link_tc_details(nsid, ifindex, direction, position);
+
+-- Attach-point index for snapshot queries
+CREATE INDEX IF NOT EXISTS idx_link_tc_by_attach_point
+    ON link_tc_details(nsid, ifindex, direction);
 
 -- TCX links (kernel multi-attach)
 -- The kernel handles multi-program ordering natively for TCX, so no

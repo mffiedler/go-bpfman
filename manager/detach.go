@@ -38,27 +38,22 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 		return err
 	}
 
-	// Preflight: get dispatcher state for post-detach cleanup.
-	var dispState *dispatcher.State
+	// Preflight: extract dispatcher key for post-detach cleanup.
+	var dispKey *dispatcher.Key
 	if record.Kind == bpfman.LinkKindXDP || record.Kind == bpfman.LinkKindTC {
 		dispType, nsid, ifindex, err := extractDispatcherKey(record.Details)
 		if err != nil {
 			return fmt.Errorf("extract dispatcher key: %w", err)
 		}
 		if dispType != (dispatcher.DispatcherType{}) {
-			state, err := m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
-			if err != nil {
-				m.logger.WarnContext(ctx, "failed to get dispatcher for cleanup", "error", err)
-			} else {
-				dispState = &state
-			}
+			dispKey = &dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex}
 		}
 	}
 
 	m.logger.InfoContext(ctx, "detaching link",
 		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
-	plan := m.detachPlan(record, dispState)
+	plan := m.detachPlan(record, dispKey)
 	if err := operation.Run0(ctx, m.logger, m.executor, plan); err != nil {
 		return err
 	}
@@ -80,7 +75,7 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 // No undo entries on any node. Detach is destructive and
 // non-reversible.
 func (m *Manager) detachPlan(
-	record bpfman.LinkRecord, dispState *dispatcher.State,
+	record bpfman.LinkRecord, dispKey *dispatcher.Key,
 ) operation.Plan {
 	var nodes []operation.Node
 	target := fmt.Sprintf("%d", record.ID)
@@ -91,12 +86,11 @@ func (m *Manager) detachPlan(
 
 	nodes = append(nodes, operation.DoAction("delete-link", target, action.DeleteLink{LinkID: record.ID}))
 
-	if dispState != nil {
-		ds := *dispState
+	if dispKey != nil {
 		nodes = append(nodes, operation.DoAction(
 			"dispatcher-cleanup",
-			fmt.Sprintf("%s:%d:%d", ds.Type, ds.Nsid, ds.Ifindex),
-			action.CleanupEmptyDispatcher{State: ds},
+			fmt.Sprintf("%s:%d:%d", dispKey.Type, dispKey.Nsid, dispKey.Ifindex),
+			action.CleanupEmptyDispatcher{Key: *dispKey},
 		))
 	}
 
@@ -146,13 +140,7 @@ func collectDispatcherKeys(links []bpfman.LinkRecord) map[dispatcher.Key]struct{
 // but do not prevent cleanup of remaining dispatchers.
 func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[dispatcher.Key]struct{}) {
 	for key := range dispatchers {
-		state, err := m.store.GetDispatcher(ctx, key.Type, key.Nsid, key.Ifindex)
-		if err != nil {
-			// Already gone (e.g., cleaned up by a concurrent
-			// Detach call or GC). Nothing to do.
-			continue
-		}
-		if err := m.executor.Execute(ctx, action.CleanupEmptyDispatcher{State: state}); err != nil {
+		if err := m.executor.Execute(ctx, action.CleanupEmptyDispatcher{Key: key}); err != nil {
 			m.logger.WarnContext(ctx, "dispatcher cleanup failed",
 				"type", key.Type,
 				"nsid", key.Nsid,

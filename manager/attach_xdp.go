@@ -45,6 +45,7 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 		dispType:  dispatcher.DispatcherTypeXDP,
 		rebuildAction: func(prog bpfman.ProgramRecord) action.Action {
 			return action.RebuildXDPDispatcher{
+				ProgramID:   spec.ProgramID(),
 				Ifindex:     uint32(ifindex),
 				Ifname:      ifname,
 				NetnsPath:   netnsPath,
@@ -52,18 +53,6 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 				ProgramName: prog.Meta.Name,
 				Priority:    priority,
 				ProceedOn:   proceedOnMask,
-			}
-		},
-		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {
-			return bpfman.XDPDetails{
-				Interface:    ifname,
-				Ifindex:      uint32(ifindex),
-				Priority:     int32(priority),
-				Position:     int32(position),
-				ProceedOn:    proceedOn,
-				Nsid:         nsid,
-				DispatcherID: dispState.ProgramID,
-				Revision:     dispState.Revision,
 			}
 		},
 	})

@@ -23,7 +23,7 @@ import (
 type fakeStore struct {
 	programs    map[kernel.ProgramID]bpfman.ProgramRecord
 	links       []bpfman.LinkRecord
-	dispatchers []dispatcher.State
+	dispatchers []platform.DispatcherSummary
 }
 
 func (s *fakeStore) List(ctx context.Context) (map[kernel.ProgramID]bpfman.ProgramRecord, error) {
@@ -50,14 +50,27 @@ func (s *fakeStore) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.L
 	return bpfman.LinkRecord{}, platform.ErrRecordNotFound
 }
 
-func (s *fakeStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, error) {
+func (s *fakeStore) ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error) {
 	return s.dispatchers, nil
 }
 
 func (s *fakeStore) GetDispatcher(ctx context.Context, dispType string, nsid uint64, ifindex uint32) (dispatcher.State, error) {
 	for _, d := range s.dispatchers {
-		if d.Type.String() == dispType && d.Nsid == nsid && d.Ifindex == ifindex {
-			return d, nil
+		if d.Key.Type.String() == dispType && d.Key.Nsid == nsid && d.Key.Ifindex == ifindex {
+			state := dispatcher.State{
+				Type:      d.Key.Type,
+				Nsid:      d.Key.Nsid,
+				Ifindex:   d.Key.Ifindex,
+				Revision:  d.Revision,
+				ProgramID: d.Runtime.ProgramID,
+			}
+			if d.Runtime.LinkID != nil {
+				state.LinkID = *d.Runtime.LinkID
+			}
+			if d.Runtime.FilterPriority != nil {
+				state.Priority = *d.Runtime.FilterPriority
+			}
+			return state, nil
 		}
 	}
 	return dispatcher.State{}, platform.ErrRecordNotFound
@@ -266,15 +279,16 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 
 	scanner := bpfFS.Scanner()
 
+	linkID := kernel.LinkID(50)
 	store := &fakeStore{
-		dispatchers: []dispatcher.State{
+		dispatchers: []platform.DispatcherSummary{
 			{
-				Type:      dispatcher.DispatcherTypeXDP,
-				Nsid:      1,
-				Ifindex:   1,
-				Revision:  5,
-				ProgramID: 500,
-				LinkID:    50,
+				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 1},
+				Revision: 5,
+				Runtime: platform.DispatcherRuntime{
+					ProgramID: 500,
+					LinkID:    &linkID,
+				},
 			},
 		},
 	}
@@ -299,7 +313,7 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 	assert.True(t, d.ProgPresence.InKernel)
 	assert.True(t, d.ProgPresence.InFS)
 	require.NotNil(t, d.Managed, "store dispatcher should have Managed set")
-	assert.Equal(t, kernel.ProgramID(500), d.Managed.ProgramID)
+	assert.Equal(t, kernel.ProgramID(500), d.Managed.Runtime.ProgramID)
 }
 
 func TestSnapshot_OrphanDispatcher(t *testing.T) {
@@ -576,15 +590,16 @@ func TestGetDispatcher_FullyPresent(t *testing.T) {
 
 	scanner := bpfFS.Scanner()
 
+	dispLinkID := kernel.LinkID(50)
 	store := &fakeStore{
-		dispatchers: []dispatcher.State{
+		dispatchers: []platform.DispatcherSummary{
 			{
-				Type:      dispatcher.DispatcherTypeXDP,
-				Nsid:      1,
-				Ifindex:   2,
-				Revision:  5,
-				ProgramID: 500,
-				LinkID:    50,
+				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
+				Revision: 5,
+				Runtime: platform.DispatcherRuntime{
+					ProgramID: 500,
+					LinkID:    &dispLinkID,
+				},
 			},
 		},
 	}
@@ -612,13 +627,13 @@ func TestGetDispatcher_StoreOnly(t *testing.T) {
 	scanner := bpfFS.Scanner()
 
 	store := &fakeStore{
-		dispatchers: []dispatcher.State{
+		dispatchers: []platform.DispatcherSummary{
 			{
-				Type:      dispatcher.DispatcherTypeXDP,
-				Nsid:      1,
-				Ifindex:   2,
-				Revision:  3,
-				ProgramID: 500,
+				Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
+				Revision: 3,
+				Runtime: platform.DispatcherRuntime{
+					ProgramID: 500,
+				},
 			},
 		},
 	}
