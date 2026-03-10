@@ -19,8 +19,25 @@ import (
 
 // DeleteLink removes link metadata by link ID.
 // Due to CASCADE, this also removes the corresponding detail table entry.
+// Dispatcher-backed links (xdp, tc) cannot be deleted through this
+// method; they must be removed via DispatcherStore snapshot operations.
 func (s *sqliteStore) DeleteLink(ctx context.Context, linkID kernel.LinkID) error {
 	start := time.Now()
+
+	// Check if this is a dispatcher-backed link.
+	var kind string
+	err := s.stmtGetLinkRegistry.QueryRowContext(ctx, linkID).Scan(
+		new(int64), &kind, new(int64), new(sql.NullString), new(int), new(string))
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("link %d: %w", linkID, platform.ErrRecordNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("check link kind: %w", err)
+	}
+	if kind == "xdp" || kind == "tc" {
+		return fmt.Errorf("link %d is dispatcher-backed (%s): must be removed via DispatcherStore", linkID, kind)
+	}
+
 	result, err := s.stmtDeleteLink.ExecContext(ctx, linkID)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "DeleteLink", "args", []any{linkID}, "duration_ms", msec(time.Since(start)), "error", err)
@@ -370,7 +387,7 @@ func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkRecord) erro
 				return nil, fmt.Errorf("failed to marshal proceed_on: %w", err)
 			}
 			return []any{id, d.Interface, d.Ifindex, d.Priority, d.Position,
-				string(proceedOnJSON), d.Netns, d.Nsid, d.DispatcherID, d.Revision}, nil
+				string(proceedOnJSON), d.Netns, d.Nsid, d.DispatcherID}, nil
 		})
 	case bpfman.TCDetails:
 		return s.saveDetails(ctx, s.stmtSaveTCDetails, "TC", func() ([]any, error) {
@@ -379,7 +396,7 @@ func (s *sqliteStore) SaveLink(ctx context.Context, spec bpfman.LinkRecord) erro
 				return nil, fmt.Errorf("failed to marshal proceed_on: %w", err)
 			}
 			return []any{id, d.Interface, d.Ifindex, d.Direction.String(), d.Priority, d.Position,
-				string(proceedOnJSON), d.Netns, d.Nsid, d.DispatcherID, d.Revision}, nil
+				string(proceedOnJSON), d.Netns, d.Nsid, d.DispatcherID}, nil
 		})
 	case bpfman.TCXDetails:
 		return s.saveDetails(ctx, s.stmtSaveTCXDetails, "TCX", func() ([]any, error) {

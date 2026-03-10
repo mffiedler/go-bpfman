@@ -343,10 +343,12 @@ type RebuildTCDispatcher struct {
 func (RebuildTCDispatcher) isAction() {}
 
 // RebuildDispatcherForDetach triggers a full dispatcher rebuild after
-// an extension has been detached. If no extensions remain, the
-// dispatcher is removed entirely.
+// an extension has been detached. ExcludeLinkID identifies the member
+// being detached; the rebuild filters it out before deciding whether
+// to rebuild with remaining members or remove the empty dispatcher.
 type RebuildDispatcherForDetach struct {
-	Key dispatcher.Key
+	Key           dispatcher.Key
+	ExcludeLinkID kernel.LinkID
 }
 
 func (RebuildDispatcherForDetach) isAction() {}

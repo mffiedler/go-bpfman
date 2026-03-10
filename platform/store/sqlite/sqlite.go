@@ -221,7 +221,7 @@ func (s *sqliteStore) closeStatements() {
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards.
-const schemaVersion = 8
+const schemaVersion = 9
 
 func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Check current schema version

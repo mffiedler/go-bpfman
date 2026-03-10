@@ -70,25 +70,16 @@ func computeStoreGC(
 		}
 	}
 
-	// Build the set of dispatchers whose program is still alive
-	// in the kernel. Extension links referencing a live dispatcher
-	// must not be deleted: every dispatcher rebuild re-attaches
-	// all extensions, creating new kernel links. The stored kernel
-	// link IDs become stale but the extensions are still active.
-	liveDispatchers := make(map[kernel.ProgramID]bool)
-	for _, disp := range dispatchers {
-		if kernelPrograms[disp.Runtime.ProgramID] {
-			liveDispatchers[disp.Runtime.ProgramID] = true
-		}
-	}
-
-	// Phase 3: stale non-synthetic links.
+	// Phase 3: stale non-synthetic, non-dispatcher-backed links.
+	// Dispatcher-backed links (XDP/TC) are not deleted here; their
+	// lifecycle is owned by DispatcherStore operations (phase 2
+	// handles dead dispatchers, phase 4 handles orphaned ones).
 	deletedLinks := make(map[kernel.LinkID]bool)
 	for _, link := range links {
 		if link.IsSynthetic() {
 			continue
 		}
-		if isLiveExtensionLink(link, liveDispatchers) {
+		if link.Kind == bpfman.LinkKindXDP || link.Kind == bpfman.LinkKindTC {
 			continue
 		}
 		if !kernelLinks[link.ID] {
@@ -98,21 +89,24 @@ func computeStoreGC(
 	}
 
 	// Phase 4: orphaned dispatchers. Only needed if links were
-	// deleted, because that is the only way a dispatcher can lose
-	// its last extension link.
-	if len(deletedLinks) > 0 {
-		for _, disp := range dispatchers {
-			dk := dispKey{disp.Key.Type, disp.Key.Nsid, disp.Key.Ifindex}
-			if deletedDispatchers[dk] {
-				continue // already deleted in phase 2
-			}
-			if countExtensionLinks(links, deletedLinks, disp.Runtime.ProgramID) == 0 {
-				actions = append(actions, action.DeleteDispatcher{
-					Type:    disp.Key.Type,
-					Nsid:    disp.Key.Nsid,
-					Ifindex: disp.Key.Ifindex,
-				})
-			}
+	// deleted in phase 3, because that is the only way a
+	// dispatcher can lose its last extension link within a single
+	// GC pass. Extension links deleted by phase 2 (dead
+	// dispatchers) are handled by DeleteDispatcherSnapshot.
+	if len(deletedLinks) == 0 {
+		return actions
+	}
+	for _, disp := range dispatchers {
+		dk := dispKey{disp.Key.Type, disp.Key.Nsid, disp.Key.Ifindex}
+		if deletedDispatchers[dk] {
+			continue // already deleted in phase 2
+		}
+		if countExtensionLinks(links, deletedLinks, disp.Runtime.ProgramID) == 0 {
+			actions = append(actions, action.DeleteDispatcher{
+				Type:    disp.Key.Type,
+				Nsid:    disp.Key.Nsid,
+				Ifindex: disp.Key.Ifindex,
+			})
 		}
 	}
 
@@ -129,18 +123,6 @@ func countByType[T action.Action](actions []action.Action) int {
 		}
 	}
 	return n
-}
-
-// isLiveExtensionLink returns true if the link is a dispatcher
-// extension (XDP or TC) whose dispatcher program is still alive.
-func isLiveExtensionLink(link bpfman.LinkRecord, liveDispatchers map[kernel.ProgramID]bool) bool {
-	switch d := link.Details.(type) {
-	case bpfman.XDPDetails:
-		return liveDispatchers[d.DispatcherID]
-	case bpfman.TCDetails:
-		return liveDispatchers[d.DispatcherID]
-	}
-	return false
 }
 
 // countExtensionLinks counts the non-deleted extension links that

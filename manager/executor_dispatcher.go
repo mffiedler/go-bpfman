@@ -598,10 +598,21 @@ func (e *executor) rebuildTCDispatcher(
 // rebuildDispatcherForDetach rebuilds the dispatcher after an
 // extension has been detached. If no extensions remain, the
 // dispatcher is removed entirely.
-func (e *executor) rebuildDispatcherForDetach(ctx context.Context, key dispatcher.Key) error {
+func (e *executor) rebuildDispatcherForDetach(ctx context.Context, key dispatcher.Key, excludeLinkID kernel.LinkID) error {
 	snap, err := e.store.GetDispatcherSnapshot(ctx, key)
 	if err != nil {
 		return fmt.Errorf("get dispatcher snapshot: %w", err)
+	}
+
+	// Filter out the excluded member.
+	if excludeLinkID != 0 {
+		filtered := snap.Members[:0]
+		for _, m := range snap.Members {
+			if m.LinkID != excludeLinkID {
+				filtered = append(filtered, m)
+			}
+		}
+		snap.Members = filtered
 	}
 
 	if len(snap.Members) == 0 {

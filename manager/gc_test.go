@@ -405,7 +405,11 @@ func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
 }
 
 // TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted
-// verifies that extension links whose dispatcher is dead ARE deleted.
+// verifies that when a dispatcher is dead, phase 2 deletes it via
+// DeleteDispatcher (which calls DeleteDispatcherSnapshot, cleaning up
+// extension links at the DB level). Phase 3 does not emit DeleteLink
+// for dispatcher-backed links; their lifecycle is owned by
+// DispatcherStore.
 func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
 	dispatchers := []platform.DispatcherSummary{
 		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
@@ -430,8 +434,9 @@ func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
 		map[kernel.LinkID]bool{},    // link 300 also dead
 	)
 
-	// Dispatcher is dead: Phase 2 deletes it.
-	// Extension link's dispatcher is dead: Phase 3 deletes the link.
+	// Dispatcher is dead: Phase 2 deletes it. Extension links are
+	// cleaned up by DeleteDispatcherSnapshot at the DB level, not
+	// by a separate DeleteLink action.
 	var delLinks, delDispatchers int
 	for _, a := range actions {
 		switch a.(type) {
@@ -444,8 +449,8 @@ func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
 	if delDispatchers != 1 {
 		t.Errorf("expected 1 dispatcher deletion, got %d", delDispatchers)
 	}
-	if delLinks != 1 {
-		t.Errorf("expected 1 link deletion, got %d", delLinks)
+	if delLinks != 0 {
+		t.Errorf("expected 0 link deletions (dispatcher-backed links cleaned up by DeleteDispatcherSnapshot), got %d", delLinks)
 	}
 }
 

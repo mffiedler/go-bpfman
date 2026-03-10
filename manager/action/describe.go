@@ -59,7 +59,7 @@ func Describe(a Action) string {
 	case RebuildTCDispatcher:
 		return fmt.Sprintf("rebuild TC dispatcher ifindex=%d %s", a.Ifindex, a.Direction)
 	case RebuildDispatcherForDetach:
-		return fmt.Sprintf("rebuild %s dispatcher for detach nsid=%d ifindex=%d", a.Key.Type, a.Key.Nsid, a.Key.Ifindex)
+		return fmt.Sprintf("rebuild %s dispatcher for detach nsid=%d ifindex=%d excluding link %d", a.Key.Type, a.Key.Nsid, a.Key.Ifindex, a.ExcludeLinkID)
 	case CleanupEmptyDispatcher:
 		return fmt.Sprintf("cleanup empty %s dispatcher nsid=%d ifindex=%d", a.Key.Type, a.Key.Nsid, a.Key.Ifindex)
 

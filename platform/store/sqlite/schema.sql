@@ -49,9 +49,11 @@
 --   attach types like perf_event where the kernel does not provide a
 --   link FD/ID.
 --
--- UPDATE: Detail rows may be updated (e.g., to change dispatcher
---   position or revision during a dispatcher recompile). The base
---   links row is generally immutable after creation.
+-- UPDATE: Non-dispatcher detail rows are generally stable after
+--   creation. Dispatcher-backed link rows are replaced as part of
+--   whole-snapshot dispatcher updates rather than being mutated
+--   individually. The base links row is generally immutable after
+--   creation.
 --
 -- DELETE: Deleting a link row cascades to its detail table row.
 --   Links are also deleted automatically when their parent program is
@@ -71,14 +73,10 @@
 --   flexibility in lifecycle ordering (the dispatcher row may be
 --   created before or after the corresponding managed_programs row).
 --
--- UPDATE: When a dispatcher is recompiled (e.g., extensions
---   added/removed), its revision is incremented and its program_id
---   may change to reflect the new kernel program. Because
---   link_xdp_details and link_tc_details reference
---   dispatchers(program_id) with ON UPDATE CASCADE, all extension
---   link rows are automatically updated to track the new
---   program_id. Without this, every extension link row would need
---   manual updating after a dispatcher recompile.
+-- UPDATE: When a dispatcher is recompiled, the store replaces the
+--   entire snapshot: old extension link rows are deleted, the
+--   dispatcher row is upserted with a new revision and program_id,
+--   and new extension link rows are inserted.
 --
 -- DELETE: Removing a dispatcher does not automatically cascade to
 --   extension link detail rows. The snapshot-based store methods
@@ -112,9 +110,7 @@
 --
 -- ON UPDATE CASCADE: when the referenced column value in the parent
 --   row changes, automatically update the FK column in all
---   referencing rows to match. Used on dispatcher_program_id so that
---   when a dispatcher is recompiled and receives a new program_id,
---   all extension link rows are updated without manual intervention.
+--   referencing rows to match.
 --
 -- STRICT: a SQLite table mode that enforces column types. Without
 --   it, SQLite allows any value in any column regardless of declared
@@ -299,17 +295,18 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     program_id INTEGER NOT NULL UNIQUE,
     link_id INTEGER,
-    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
+    priority INTEGER CHECK (priority >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
     PRIMARY KEY (type, nsid, ifindex),
 
-    -- XDP dispatchers have a link; TC dispatchers do not (uses netlink filters)
+    -- XDP dispatchers have a link but no filter priority.
+    -- TC dispatchers have a filter priority but no link (uses netlink filters).
     CHECK (
-        (type = 'xdp' AND link_id IS NOT NULL)
+        (type = 'xdp' AND link_id IS NOT NULL AND priority IS NULL)
         OR
-        (type IN ('tc-ingress', 'tc-egress') AND link_id IS NULL)
+        (type IN ('tc-ingress', 'tc-egress') AND link_id IS NULL AND priority IS NOT NULL)
     )
 ) STRICT;
 
@@ -318,6 +315,8 @@ CREATE TABLE IF NOT EXISTS dispatchers (
 --------------------------------------------------------------------------------
 
 -- XDP links (dispatcher-based)
+-- Revision is not stored here; it is a snapshot-header fact owned by
+-- the dispatchers table. Read paths JOIN to dispatchers to derive it.
 CREATE TABLE IF NOT EXISTS link_xdp_details (
     link_id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
@@ -328,17 +327,12 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     netns TEXT,
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
-    revision INTEGER NOT NULL CHECK (revision >= 1),
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
-    -- new kernel program_id, this FK is automatically updated so that
-    -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
-        ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface in namespace
@@ -350,6 +344,8 @@ CREATE INDEX IF NOT EXISTS idx_link_xdp_by_attach_point
     ON link_xdp_details(nsid, ifindex);
 
 -- TC links (dispatcher-based)
+-- Revision is not stored here; it is a snapshot-header fact owned by
+-- the dispatchers table. Read paths JOIN to dispatchers to derive it.
 CREATE TABLE IF NOT EXISTS link_tc_details (
     link_id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
@@ -361,17 +357,12 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     netns TEXT,
     nsid INTEGER NOT NULL,
     dispatcher_program_id INTEGER NOT NULL,
-    revision INTEGER NOT NULL CHECK (revision >= 1),
 
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
-    -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
-    -- new kernel program_id, this FK is automatically updated so that
-    -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
-        ON UPDATE CASCADE
 ) STRICT;
 
 -- Enforce unique position per interface + direction in namespace

@@ -349,6 +349,52 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 	require.Error(t, err, "expected link to be deleted")
 }
 
+func TestDeleteLink_RejectsDispatcherBackedLinks(t *testing.T) {
+	store, err := sqlite.NewInMemory(context.Background(), testLogger())
+	require.NoError(t, err, "failed to create store")
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Create a managed program for the extension.
+	prog := testProgram()
+	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
+
+	// Create an XDP dispatcher with one member.
+	dispLinkID := kernel.LinkID(500)
+	memberLinkID := kernel.LinkID(0x80000001)
+	snap := platform.DispatcherSnapshot{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2},
+		Revision: 1,
+		Runtime: platform.DispatcherRuntime{
+			ProgramID: kernel.ProgramID(900),
+			LinkID:    &dispLinkID,
+		},
+		Members: []platform.DispatcherMember{
+			{
+				ProgramID:   kernel.ProgramID(42),
+				ProgramName: "test_program",
+				ProgPinPath: "/sys/fs/bpf/test",
+				LinkID:      memberLinkID,
+				Position:    0,
+				Priority:    50,
+				ProceedOn:   0x04,
+				Ifname:      "eth0",
+			},
+		},
+	}
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap), "ReplaceDispatcherSnapshot failed")
+
+	// Attempting to delete the dispatcher-backed XDP link should fail.
+	err = store.DeleteLink(ctx, memberLinkID)
+	require.Error(t, err, "expected DeleteLink to reject dispatcher-backed link")
+	assert.Contains(t, err.Error(), "dispatcher-backed")
+
+	// The link should still exist.
+	_, err = store.GetLink(ctx, memberLinkID)
+	require.NoError(t, err, "link should still exist after rejected delete")
+}
+
 // ----------------------------------------------------------------------------
 // Map Ownership Tests
 // ----------------------------------------------------------------------------
@@ -757,9 +803,10 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 	}))
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	tcPri := uint16(50)
 	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
 	}))
 
 	// Delete the TC dispatcher, keep the XDP one.
@@ -867,9 +914,10 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), prog))
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	tcPri := uint16(50)
 	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
 	}))
 
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
@@ -944,9 +992,10 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	}))
 
 	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	tcPri := uint16(50)
 	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
 		Key: tcKey, Revision: 1,
-		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+		Runtime: platform.DispatcherRuntime{ProgramID: 101, FilterPriority: &tcPri},
 	}))
 
 	// Links (tracepoints, not XDP extensions -- so the XDP
@@ -1071,10 +1120,11 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 		Runtime:  platform.DispatcherRuntime{ProgramID: 500, LinkID: &xdpLinkID},
 	}), "ReplaceDispatcherSnapshot XDP failed")
 
+	tcFilterPriority := uint16(50)
 	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
 		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3},
 		Revision: 1,
-		Runtime:  platform.DispatcherRuntime{ProgramID: 502},
+		Runtime:  platform.DispatcherRuntime{ProgramID: 502, FilterPriority: &tcFilterPriority},
 	}), "ReplaceDispatcherSnapshot TC failed")
 
 	// Create links with ALL detail types

@@ -64,13 +64,15 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 
 // detachPlan builds the operation plan for detaching a single link.
 //
-// Nodes:
+// For non-dispatcher links:
 //  1. (conditional) Do "detach-link" -- kernel detach via DetachLink.
-//     Only included when the link has a pin path.
 //  2. Do "delete-link" -- store delete via DeleteLink.
-//  3. (conditional) Do "dispatcher-cleanup" -- executes
-//     CleanupEmptyDispatcher via executor. Only included when the
-//     link uses a dispatcher (XDP/TC).
+//
+// For dispatcher-backed links (XDP/TC):
+//  1. (conditional) Do "detach-link" -- kernel detach via DetachLink.
+//  2. Do "dispatcher-rebuild" -- rebuild dispatcher membership
+//     excluding the detached link. The rebuild atomically replaces the
+//     snapshot, which removes the old member rows as a side effect.
 //
 // No undo entries on any node. Detach is destructive and
 // non-reversible.
@@ -84,14 +86,17 @@ func (m *Manager) detachPlan(
 		nodes = append(nodes, operation.DoAction("detach-link", target, action.DetachLink{PinPath: record.PinPath.String()}))
 	}
 
-	nodes = append(nodes, operation.DoAction("delete-link", target, action.DeleteLink{LinkID: record.ID}))
-
 	if dispKey != nil {
+		// Dispatcher-backed link: route through dispatcher
+		// rebuild which handles member removal atomically.
 		nodes = append(nodes, operation.DoAction(
-			"dispatcher-cleanup",
+			"dispatcher-rebuild",
 			fmt.Sprintf("%s:%d:%d", dispKey.Type, dispKey.Nsid, dispKey.Ifindex),
-			action.CleanupEmptyDispatcher{Key: *dispKey},
+			action.RebuildDispatcherForDetach{Key: *dispKey, ExcludeLinkID: record.ID},
 		))
+	} else {
+		// Non-dispatcher link: generic store deletion.
+		nodes = append(nodes, operation.DoAction("delete-link", target, action.DeleteLink{LinkID: record.ID}))
 	}
 
 	return operation.Build(nodes...)

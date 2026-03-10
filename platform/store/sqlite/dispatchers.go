@@ -33,14 +33,14 @@ func dispatcherDirection(dt dispatcher.DispatcherType) string {
 // scanDispatcherRuntime scans the dispatcher row fields (program_id,
 // link_id, priority) into a DispatcherRuntime, handling nullable
 // link_id and priority.
-func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority int) platform.DispatcherRuntime {
+func scanDispatcherRuntime(programID kernel.ProgramID, nullLinkID sql.NullInt64, priority sql.NullInt64) platform.DispatcherRuntime {
 	rt := platform.DispatcherRuntime{ProgramID: programID}
 	if nullLinkID.Valid {
 		lid := kernel.LinkID(nullLinkID.Int64)
 		rt.LinkID = &lid
 	}
-	if priority > 0 {
-		p := uint16(priority)
+	if priority.Valid {
+		p := uint16(priority.Int64)
 		rt.FilterPriority = &p
 	}
 	return rt
@@ -56,7 +56,7 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 	var revision uint32
 	var programID kernel.ProgramID
 	var nullLinkID sql.NullInt64
-	var priority int
+	var priority sql.NullInt64
 
 	err := s.conn.QueryRowContext(ctx,
 		`SELECT revision, program_id, link_id, priority
@@ -176,7 +176,7 @@ func (s *sqliteStore) ListDispatcherSummaries(ctx context.Context) ([]platform.D
 		var summary platform.DispatcherSummary
 		var programID kernel.ProgramID
 		var nullLinkID sql.NullInt64
-		var priority int
+		var priority sql.NullInt64
 		if err := rows.Scan(&dispTypeStr, &summary.Key.Nsid, &summary.Key.Ifindex,
 			&summary.Revision, &programID, &nullLinkID, &priority, &summary.MemberCount); err != nil {
 			s.logger.Debug("sql", "stmt", "ListDispatcherSummaries", "duration_ms", msec(time.Since(start)), "error", err)
@@ -231,7 +231,7 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 	if snap.Runtime.LinkID != nil {
 		linkID = *snap.Runtime.LinkID
 	}
-	var priority int
+	var priority any
 	if snap.Runtime.FilterPriority != nil {
 		priority = int(*snap.Runtime.FilterPriority)
 	}
@@ -282,20 +282,20 @@ func (s *sqliteStore) ReplaceDispatcherSnapshot(ctx context.Context, snap platfo
 		if snap.Key.Type == dispatcher.DispatcherTypeXDP {
 			if _, err := s.conn.ExecContext(ctx,
 				`INSERT INTO link_xdp_details
-				 (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
-				 VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+				 (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+				 VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, m.Priority, m.Position,
-				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID, snap.Revision); err != nil {
+				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
 				return fmt.Errorf("insert XDP detail for link %d: %w", m.LinkID, err)
 			}
 		} else {
 			dir := dispatcherDirection(snap.Key.Type)
 			if _, err := s.conn.ExecContext(ctx,
 				`INSERT INTO link_tc_details
-				 (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+				 (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
 				m.LinkID, m.Ifname, snap.Key.Ifindex, dir, m.Priority, m.Position,
-				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID, snap.Revision); err != nil {
+				proceedOnJSON, snap.Key.Nsid, snap.Runtime.ProgramID); err != nil {
 				return fmt.Errorf("insert TC detail for link %d: %w", m.LinkID, err)
 			}
 		}

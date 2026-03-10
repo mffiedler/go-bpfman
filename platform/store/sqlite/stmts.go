@@ -163,15 +163,19 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlGetXDPDetails = `
-		SELECT interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
-		FROM link_xdp_details WHERE link_id = ?`
+		SELECT d.interface, d.ifindex, d.priority, d.position, d.proceed_on, d.netns, d.nsid, d.dispatcher_program_id, disp.revision
+		FROM link_xdp_details d
+		JOIN dispatchers disp ON d.dispatcher_program_id = disp.program_id
+		WHERE d.link_id = ?`
 	if s.stmtGetXDPDetails, err = s.db.PrepareContext(ctx, sqlGetXDPDetails); err != nil {
 		return fmt.Errorf("prepare GetXDPDetails: %w", err)
 	}
 
 	const sqlGetTCDetails = `
-		SELECT interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
-		FROM link_tc_details WHERE link_id = ?`
+		SELECT d.interface, d.ifindex, d.direction, d.priority, d.position, d.proceed_on, d.netns, d.nsid, d.dispatcher_program_id, disp.revision
+		FROM link_tc_details d
+		JOIN dispatchers disp ON d.dispatcher_program_id = disp.program_id
+		WHERE d.link_id = ?`
 	if s.stmtGetTCDetails, err = s.db.PrepareContext(ctx, sqlGetTCDetails); err != nil {
 		return fmt.Errorf("prepare GetTCDetails: %w", err)
 	}
@@ -227,15 +231,15 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlSaveXDPDetails = `
-		INSERT INTO link_xdp_details (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO link_xdp_details (link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if s.stmtSaveXDPDetails, err = s.db.PrepareContext(ctx, sqlSaveXDPDetails); err != nil {
 		return fmt.Errorf("prepare SaveXDPDetails: %w", err)
 	}
 
 	const sqlSaveTCDetails = `
-		INSERT INTO link_tc_details (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO link_tc_details (link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if s.stmtSaveTCDetails, err = s.db.PrepareContext(ctx, sqlSaveTCDetails); err != nil {
 		return fmt.Errorf("prepare SaveTCDetails: %w", err)
 	}
@@ -274,15 +278,17 @@ func (s *sqliteStore) prepareLinkDetailStatements(ctx context.Context) error {
 	}
 
 	const sqlListAllXDPDetails = `
-		SELECT link_id, interface, ifindex, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
-		FROM link_xdp_details`
+		SELECT d.link_id, d.interface, d.ifindex, d.priority, d.position, d.proceed_on, d.netns, d.nsid, d.dispatcher_program_id, disp.revision
+		FROM link_xdp_details d
+		JOIN dispatchers disp ON d.dispatcher_program_id = disp.program_id`
 	if s.stmtListAllXDPDetails, err = s.db.PrepareContext(ctx, sqlListAllXDPDetails); err != nil {
 		return fmt.Errorf("prepare ListAllXDPDetails: %w", err)
 	}
 
 	const sqlListAllTCDetails = `
-		SELECT link_id, interface, ifindex, direction, priority, position, proceed_on, netns, nsid, dispatcher_program_id, revision
-		FROM link_tc_details`
+		SELECT d.link_id, d.interface, d.ifindex, d.direction, d.priority, d.position, d.proceed_on, d.netns, d.nsid, d.dispatcher_program_id, disp.revision
+		FROM link_tc_details d
+		JOIN dispatchers disp ON d.dispatcher_program_id = disp.program_id`
 	if s.stmtListAllTCDetails, err = s.db.PrepareContext(ctx, sqlListAllTCDetails); err != nil {
 		return fmt.Errorf("prepare ListAllTCDetails: %w", err)
 	}

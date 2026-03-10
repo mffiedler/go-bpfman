@@ -134,10 +134,11 @@ func TestDescribe(t *testing.T) {
 		},
 		{
 			name: "RebuildDispatcherForDetach",
-			action: RebuildDispatcherForDetach{Key: dispatcher.Key{
-				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
-			}},
-			contains: "rebuild xdp dispatcher for detach nsid=1 ifindex=2",
+			action: RebuildDispatcherForDetach{
+				Key:           dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
+				ExcludeLinkID: 99,
+			},
+			contains: "rebuild xdp dispatcher for detach nsid=1 ifindex=2 excluding link 99",
 		},
 		{
 			name: "CleanupEmptyDispatcher",
