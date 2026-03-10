@@ -152,7 +152,7 @@ load_program() {
 
     local kernel_type
     kernel_type=$(echo "$output" | jq -r '.[0].status.kernel.program_type')
-    assert_eq "schedcls" "$kernel_type" "Kernel program type should be schedcls"
+    assert_eq "extension" "$kernel_type" "Kernel program type should be extension"
 
     local prog_name
     prog_name=$(echo "$output" | jq -r '.[0].status.kernel.name')
