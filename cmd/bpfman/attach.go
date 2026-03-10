@@ -98,7 +98,7 @@ type AttachTCCmd struct {
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
 	Priority  int         `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
-	ProceedOn []string    `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"ok,pipe,dispatcher_return"`
+	ProceedOn []string    `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
 	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`

@@ -20,11 +20,15 @@ const (
 )
 
 // DefaultTCProceedOn is the default bitmask for TC proceed-on actions.
-var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcherReturn
+// This matches the Rust bpfman default: Pipe and DispatcherReturn.
+// TC_ACT_OK is deliberately excluded because it means "accept and
+// stop" in standard TC semantics; programs that want chain
+// continuation should return TC_ACT_PIPE.
+var DefaultTCProceedOn = tcProceedOnPipe | tcProceedOnDispatcherReturn
 
 // tcProceedOnBitmask converts a list of TC action codes to a bitmask.
 // Each action code a produces bit (1 << a). If the list is empty, the
-// default bitmask (OK|Pipe|DispatcherReturn) is returned.
+// default bitmask (Pipe|DispatcherReturn) is returned.
 //
 // This must match the reconstruction in GetDispatcherSnapshot so that
 // the BPF map written at initial attach is identical to the one

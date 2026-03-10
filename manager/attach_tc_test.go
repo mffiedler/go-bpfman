@@ -39,6 +39,6 @@ func TestTcProceedOnBitmask_IgnoresOutOfRange(t *testing.T) {
 
 func TestTcProceedOnBitmask_MatchesDefaultConstant(t *testing.T) {
 	// Actions that produce the same bitmask as DefaultTCProceedOn.
-	got := tcProceedOnBitmask([]int32{0, 3, 30})
+	got := tcProceedOnBitmask([]int32{3, 30})
 	assert.Equal(t, uint32(DefaultTCProceedOn), got)
 }
