@@ -227,3 +227,14 @@ func (k *kernelAdapter) RemovePin(ctx context.Context, path string) error {
 	k.logger.Debug("pin removed", "path", path)
 	return nil
 }
+
+// RemovePinAll removes a directory and all its contents from bpffs.
+// Returns nil if the path does not exist.
+func (k *kernelAdapter) RemovePinAll(ctx context.Context, path string) error {
+	k.logger.Debug("removing pin directory", "path", path)
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove pin directory %s: %w", path, err)
+	}
+	k.logger.Debug("pin directory removed", "path", path)
+	return nil
+}

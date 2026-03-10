@@ -286,14 +286,9 @@ func (e *executor) rebuildXDPDispatcher(
 	// Clean up old revision directory (if not first-attach).
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
-		if rbErr := e.kernel.RemovePin(ctx, oldRevDir); rbErr != nil {
+		if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old revision directory",
-				"path", oldRevDir, "error", rbErr)
-		}
-		oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, existingState.Revision)
-		if rbErr := e.kernel.RemovePin(ctx, oldProgPin); rbErr != nil {
-			e.logger.WarnContext(ctx, "failed to remove old dispatcher program pin",
-				"path", oldProgPin, "error", rbErr)
+				"path", oldRevDir, "error", err)
 		}
 	}
 
@@ -558,14 +553,9 @@ func (e *executor) rebuildTCDispatcher(
 	// Clean up old revision directory.
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
-		if rbErr := e.kernel.RemovePin(ctx, oldRevDir); rbErr != nil {
+		if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
-				"path", oldRevDir, "error", rbErr)
-		}
-		oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ops.ifindex, existingState.Revision)
-		if rbErr := e.kernel.RemovePin(ctx, oldProgPin); rbErr != nil {
-			e.logger.WarnContext(ctx, "failed to remove old TC dispatcher program pin",
-				"path", oldProgPin, "error", rbErr)
+				"path", oldRevDir, "error", err)
 		}
 	}
 
@@ -738,14 +728,9 @@ func (e *executor) rebuildXDPForDetach(
 
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePin(ctx, oldRevDir); err != nil {
+	if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
 		e.logger.WarnContext(ctx, "failed to remove old revision directory",
 			"path", oldRevDir, "error", err)
-	}
-	oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePin(ctx, oldProgPin); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove old dispatcher program pin",
-			"path", oldProgPin, "error", err)
 	}
 
 	return nil
@@ -865,14 +850,9 @@ func (e *executor) rebuildTCForDetach(
 
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePin(ctx, oldRevDir); err != nil {
+	if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
 		e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
 			"path", oldRevDir, "error", err)
-	}
-	oldProgPin := e.bpffs.DispatcherProgPath(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePin(ctx, oldProgPin); err != nil {
-		e.logger.WarnContext(ctx, "failed to remove old TC dispatcher program pin",
-			"path", oldProgPin, "error", err)
 	}
 
 	return nil

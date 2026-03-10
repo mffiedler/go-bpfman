@@ -977,6 +977,32 @@ func (f *fakeKernel) RemovePin(_ context.Context, path string) error {
 	return nil
 }
 
+func (f *fakeKernel) RemovePinAll(_ context.Context, path string) error {
+	f.mu.Lock()
+	f.removePins = append(f.removePins, path)
+	f.mu.Unlock()
+
+	dirPrefix := path + "/"
+
+	// Remove programs whose pin path is at or under this directory.
+	for id, prog := range f.programs {
+		if prog.pinPath == path || strings.HasPrefix(prog.pinPath, dirPrefix) {
+			delete(f.programs, id)
+		}
+	}
+
+	// Remove links whose pin paths are at or under this directory.
+	for id, link := range f.links {
+		if link.Record.PinPath != nil {
+			pinStr := link.Record.PinPath.String()
+			if pinStr == path || strings.HasPrefix(pinStr, dirPrefix) {
+				delete(f.links, id)
+			}
+		}
+	}
+	return nil
+}
+
 // RemovedPins returns a copy of all paths passed to RemovePin.
 func (f *fakeKernel) RemovedPins() []string {
 	f.mu.Lock()
