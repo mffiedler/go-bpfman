@@ -37,7 +37,7 @@ is explanation.
    this to all extension detail rows. GC uses this to determine
    liveness (see [dispatcher-gc.md](dispatcher-gc.md)). The
    dispatchers table and extension detail rows are only guaranteed
-   consistent at stable observation points -- outside the rebuild
+   consistent at stable observation points, outside the rebuild
    transaction window. The writer lock ensures GC never
    observes the mid-rebuild state.
 
@@ -50,6 +50,21 @@ The kernel allows only one XDP program per interface and one TC
 classifier per (interface, direction). Dispatchers multiplex up to
 10 user programs through a single attachment, giving the appearance
 of independent concurrent attachments on the same hook.
+
+## Limits
+
+Each network interface can have up to three dispatchers, one per hook:
+
+| Dispatcher type | Hook          |
+|-----------------|---------------|
+| XDP             | XDP (ingress) |
+| TC ingress      | TC ingress    |
+| TC egress       | TC egress     |
+
+Each dispatcher chains up to 10 programs (positions 0--9), so a
+single interface can host at most 30 dispatched programs: 10 XDP, 10
+TC ingress, 10 TC egress. The system-wide limit is bounded by the
+number of network namespaces and interfaces.
 
 ## Kernel mechanism
 
@@ -102,6 +117,17 @@ If all enabled slots run without terminating the chain, the
 dispatcher returns the default: `XDP_PASS` for XDP, `TC_ACT_OK` for
 TC.
 
+### Why extensions are loaded as BPF_PROG_TYPE_EXT
+
+The kernel's freplace mechanism requires `BPF_PROG_TYPE_EXT`. A
+program's type is fixed at load time and cannot be changed
+afterwards, so an already-loaded XDP program (type `BPF_PROG_TYPE_XDP`)
+cannot be used as a freplace target. The same ELF bytecode must be
+loaded a second time with type `Extension`, `AttachTarget` set to the
+dispatcher program, and `AttachTo` set to the slot name (e.g.
+`prog0`). The instructions are valid for both XDP and Extension
+contexts when the target is an XDP function.
+
 ## Dispatcher types
 
 | Type       | Attachment mechanism    | Stable reference      |
@@ -133,10 +159,16 @@ directory named after the type (`xdp`, `tc-ingress`, `tc-egress`).
         link_9                                     # extension link at position 9
 ```
 
-The stable link pin sits outside the revision directory. Updating an
-XDP link to point to a new dispatcher program does not require
-unpinning or re-pinning the link. After a successful swap the old
-revision directory is removed.
+The stable link pin sits outside the revision directory so that
+rebuilds can swap the underlying program without unpinning or
+re-pinning the link -- the link object stays in place and only its
+target changes. The revision directory is disposable: after a
+successful swap the old one is removed, taking the previous
+dispatcher program pin and extension link pins with it.
+
+The `nsid` component ensures dispatchers in different network
+namespaces do not collide even when they share the same `ifindex`
+(e.g. two containers each with an `eth0` at ifindex 2).
 
 ### Example
 

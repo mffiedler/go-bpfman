@@ -82,7 +82,10 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
 	// Configure the dispatcher .rodata for xdp-tools compatibility.
 	const xdpDispatcherRetval = 31
-	cfg := dispatcher.NewXDPConfig(spec.NumProgs)
+	cfg, err := dispatcher.NewXDPConfig(spec.NumProgs)
+	if err != nil {
+		return nil, fmt.Errorf("create XDP dispatcher config: %w", err)
+	}
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
 		cfg.ChainCallActions[i] = spec.ProceedOn | (1 << xdpDispatcherRetval)
 	}
@@ -343,7 +346,10 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	defer extensionProg.Close()
 
 	// Attach the extension using freplace link.
-	slotName := dispatcher.SlotName(spec.Position)
+	slotName, err := dispatcher.SlotName(spec.Position)
+	if err != nil {
+		return bpfman.AttachOutput{}, fmt.Errorf("slot name for position %d: %w", spec.Position, err)
+	}
 	lnk, err := link.AttachFreplace(dispatcherProg, slotName, extensionProg)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("attach freplace to %s: %w", slotName, err)

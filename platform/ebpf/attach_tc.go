@@ -29,7 +29,10 @@ const tcDispatcherPriority = 50
 // and works on kernels older than 6.6.
 // Uses .rodata-based config baked in at load time (full rebuild approach).
 func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.TCDispatcherAttachSpec) (*platform.TCDispatcherResult, error) {
-	cfg := dispatcher.NewTCConfig(spec.NumProgs)
+	cfg, err := dispatcher.NewTCConfig(spec.NumProgs)
+	if err != nil {
+		return nil, fmt.Errorf("create TC dispatcher config: %w", err)
+	}
 	for i := 0; i < dispatcher.MaxPrograms; i++ {
 		cfg.ChainCallActions[i] = spec.ProceedOn
 	}
@@ -370,7 +373,10 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	defer extensionProg.Close()
 
 	// Attach the extension using freplace link.
-	slotName := dispatcher.SlotName(spec.Position)
+	slotName, err := dispatcher.SlotName(spec.Position)
+	if err != nil {
+		return bpfman.AttachOutput{}, fmt.Errorf("slot name for position %d: %w", spec.Position, err)
+	}
 	lnk, err := link.AttachFreplace(dispatcherProg, slotName, extensionProg)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("attach TC freplace to %s: %w", slotName, err)

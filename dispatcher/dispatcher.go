@@ -73,8 +73,12 @@ func ProceedOnMask(actions ...XDPAction) uint32 {
 	return mask
 }
 
-// NewXDPConfig creates a default XDP dispatcher config.
-func NewXDPConfig(numProgs int) XDPConfig {
+// NewXDPConfig creates a default XDP dispatcher config. numProgs
+// must be in the range [1, MaxPrograms].
+func NewXDPConfig(numProgs int) (XDPConfig, error) {
+	if numProgs < 1 || numProgs > MaxPrograms {
+		return XDPConfig{}, fmt.Errorf("numProgs %d out of range [1, %d]", numProgs, MaxPrograms)
+	}
 	cfg := XDPConfig{
 		Magic:             xdpDispatcherMagic,
 		DispatcherVersion: xdpDispatcherVersion,
@@ -83,18 +87,22 @@ func NewXDPConfig(numProgs int) XDPConfig {
 	for i := 0; i < MaxPrograms; i++ {
 		cfg.RunPrios[i] = DefaultPriority
 	}
-	return cfg
+	return cfg, nil
 }
 
-// NewTCConfig creates a default TC dispatcher config.
-func NewTCConfig(numProgs int) TCConfig {
+// NewTCConfig creates a default TC dispatcher config. numProgs must
+// be in the range [1, MaxPrograms].
+func NewTCConfig(numProgs int) (TCConfig, error) {
+	if numProgs < 1 || numProgs > MaxPrograms {
+		return TCConfig{}, fmt.Errorf("numProgs %d out of range [1, %d]", numProgs, MaxPrograms)
+	}
 	cfg := TCConfig{
 		NumProgsEnabled: uint8(numProgs),
 	}
 	for i := 0; i < MaxPrograms; i++ {
 		cfg.RunPrios[i] = DefaultPriority
 	}
-	return cfg
+	return cfg, nil
 }
 
 // LoadXDPDispatcher loads the XDP dispatcher with the given config.
@@ -133,8 +141,12 @@ func LoadTCDispatcher(cfg TCConfig) (*ebpf.CollectionSpec, error) {
 	return spec, nil
 }
 
-// SlotName returns the function name for a dispatcher slot (0-9).
-// This is the target function name used for BPF extension attachment.
-func SlotName(position int) string {
-	return fmt.Sprintf("prog%d", position)
+// SlotName returns the function name for a dispatcher slot. Position
+// must be in the range [0, MaxPrograms). This is the target function
+// name used for BPF extension attachment.
+func SlotName(position int) (string, error) {
+	if position < 0 || position >= MaxPrograms {
+		return "", fmt.Errorf("position %d out of range [0, %d)", position, MaxPrograms)
+	}
+	return fmt.Sprintf("prog%d", position), nil
 }

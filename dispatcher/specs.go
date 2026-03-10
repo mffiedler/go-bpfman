@@ -27,8 +27,8 @@ func (s XDPDispatcherAttachSpec) Validate() error {
 	if s.LinkPinPath == "" {
 		return errors.New("LinkPinPath is required")
 	}
-	if s.NumProgs <= 0 {
-		return errors.New("NumProgs must be positive")
+	if s.NumProgs < 1 || s.NumProgs > MaxPrograms {
+		return fmt.Errorf("NumProgs %d out of range [1, %d]", s.NumProgs, MaxPrograms)
 	}
 	return nil
 }
@@ -59,8 +59,8 @@ func (s TCDispatcherAttachSpec) Validate() error {
 	if s.Direction == (bpfman.TCDirection{}) {
 		return errors.New("direction is required")
 	}
-	if s.NumProgs <= 0 {
-		return errors.New("NumProgs must be positive")
+	if s.NumProgs < 1 || s.NumProgs > MaxPrograms {
+		return fmt.Errorf("NumProgs %d out of range [1, %d]", s.NumProgs, MaxPrograms)
 	}
 	return nil
 }

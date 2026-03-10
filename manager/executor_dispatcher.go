@@ -120,7 +120,10 @@ func (e *executor) rebuildXDPDispatcher(
 
 	// Compute .rodata config.
 	const xdpDispatcherRetval = 31
-	cfg := dispatcher.NewXDPConfig(len(allSlots))
+	cfg, err := dispatcher.NewXDPConfig(len(allSlots))
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("create XDP dispatcher config: %w", err)
+	}
 	for i, slot := range allSlots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
 		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
@@ -397,7 +400,10 @@ func (e *executor) rebuildTCDispatcher(
 	sortRebuildSlots(allSlots)
 
 	// Compute .rodata config.
-	cfg := dispatcher.NewTCConfig(len(allSlots))
+	cfg, err := dispatcher.NewTCConfig(len(allSlots))
+	if err != nil {
+		return extensionResult{}, fmt.Errorf("create TC dispatcher config: %w", err)
+	}
 	for i, slot := range allSlots {
 		// TC dispatchers check (1 << (ret + 1)) for chain_call_actions
 		// to handle TC_ACT_UNSPEC = -1.
@@ -672,7 +678,10 @@ func (e *executor) rebuildXDPForDetach(
 	ifindex := state.Ifindex
 
 	const xdpDispatcherRetval = 31
-	cfg := dispatcher.NewXDPConfig(len(slots))
+	cfg, err := dispatcher.NewXDPConfig(len(slots))
+	if err != nil {
+		return fmt.Errorf("create XDP dispatcher config for detach rebuild: %w", err)
+	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn | (1 << xdpDispatcherRetval)
 		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
@@ -768,13 +777,16 @@ func (e *executor) rebuildTCForDetach(
 	nsid := state.Nsid
 	ifindex := state.Ifindex
 
-	cfg := dispatcher.NewTCConfig(len(slots))
+	cfg, err := dispatcher.NewTCConfig(len(slots))
+	if err != nil {
+		return fmt.Errorf("create TC dispatcher config for detach rebuild: %w", err)
+	}
 	for i, slot := range slots {
 		cfg.ChainCallActions[i] = slot.ProceedOn << dispType.ChainCallShift()
 		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
-	_, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
+	_, err = e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
 	if err != nil {
 		return fmt.Errorf("load TC dispatcher for detach rebuild: %w", err)
 	}
