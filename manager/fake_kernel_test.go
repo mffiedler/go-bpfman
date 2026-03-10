@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -196,6 +197,19 @@ type fakeProgram struct {
 	programType bpfman.ProgramType
 	pinPath     string
 	pinDir      string
+}
+
+// createPinFile creates a zero-byte file at path, simulating a
+// kernel BPF object being pinned to bpffs. When the pin file is
+// later removed (e.g. by os.RemoveAll on a revision directory),
+// ProgramCount/LinkCount will detect the absence and garbage-collect
+// the stale entry — mirroring the real kernel's refcount semantics.
+func createPinFile(path string) {
+	if path == "" {
+		return
+	}
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, nil, 0644)
 }
 
 func newFakeKernel() *fakeKernel {
@@ -454,11 +468,33 @@ func (f *fakeKernel) UnloadProgram(_ context.Context, progPinPath, mapsDir strin
 }
 
 // ProgramCount returns the number of programs currently loaded.
+// Programs whose pin files have been removed from disk (e.g. by
+// RemoveDispatcherRevDir) are garbage-collected, mirroring the
+// kernel's behaviour of releasing objects when pins are removed.
 func (f *fakeKernel) ProgramCount() int {
+	for id, prog := range f.programs {
+		if prog.pinPath != "" {
+			if _, err := os.Stat(prog.pinPath); os.IsNotExist(err) {
+				delete(f.programs, id)
+			}
+		}
+	}
 	return len(f.programs)
 }
 
+// LinkCount returns the number of links currently tracked. Links
+// whose pin files have been removed are garbage-collected.
 func (f *fakeKernel) LinkCount() int {
+	for id, link := range f.links {
+		if link.Record.PinPath != nil {
+			pinStr := link.Record.PinPath.String()
+			if pinStr != "" {
+				if _, err := os.Stat(pinStr); os.IsNotExist(err) {
+					delete(f.links, id)
+				}
+			}
+		}
+	}
 	return len(f.links)
 }
 
@@ -549,6 +585,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 	}
 
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "tracepoint"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -576,6 +613,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 
 func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "xdp"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -602,6 +640,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 
 func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	linkKind := bpfman.LinkKindKprobe
 	kernelLinkType := "kprobe"
 	if retprobe {
@@ -634,6 +673,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 
 func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	linkKind := bpfman.LinkKindUprobe
 	kernelLinkType := "uprobe"
 	if retprobe {
@@ -697,6 +737,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 
 func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "fentry"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -723,6 +764,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName, linkPi
 
 func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "fexit"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -800,6 +842,7 @@ func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPD
 
 func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(spec.LinkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "xdp"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -889,6 +932,7 @@ func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent u
 
 func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(spec.LinkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "tc"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -925,6 +969,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 	f.mu.Unlock()
 
 	linkID := kernel.LinkID(f.nextID.Add(1))
+	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "tcx"}
 	// Store for DetachLink lookup and kernel iteration
 	link := bpfman.Link{
@@ -977,32 +1022,6 @@ func (f *fakeKernel) RemovePin(_ context.Context, path string) error {
 	return nil
 }
 
-func (f *fakeKernel) RemovePinAll(_ context.Context, path string) error {
-	f.mu.Lock()
-	f.removePins = append(f.removePins, path)
-	f.mu.Unlock()
-
-	dirPrefix := path + "/"
-
-	// Remove programs whose pin path is at or under this directory.
-	for id, prog := range f.programs {
-		if prog.pinPath == path || strings.HasPrefix(prog.pinPath, dirPrefix) {
-			delete(f.programs, id)
-		}
-	}
-
-	// Remove links whose pin paths are at or under this directory.
-	for id, link := range f.links {
-		if link.Record.PinPath != nil {
-			pinStr := link.Record.PinPath.String()
-			if pinStr == path || strings.HasPrefix(pinStr, dirPrefix) {
-				delete(f.links, id)
-			}
-		}
-	}
-	return nil
-}
-
 // RemovedPins returns a copy of all paths passed to RemovePin.
 func (f *fakeKernel) RemovedPins() []string {
 	f.mu.Lock()
@@ -1039,6 +1058,7 @@ func (f *fakeKernel) UpdateXDPDispatcherLink(_ context.Context, linkPinPath, new
 
 func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
+	createPinFile(progPinPath)
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "xdp_dispatcher",
@@ -1051,6 +1071,7 @@ func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.X
 
 func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
+	createPinFile(progPinPath)
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "tc_dispatcher",
@@ -1070,6 +1091,7 @@ func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath string, ifinde
 	}
 	f.mu.Unlock()
 
+	createPinFile(linkPinPath)
 	dispatcherID := kernel.ProgramID(0) // Not easily available from pin
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	f.recordOp("create-xdp-link", linkPinPath, uint32(linkID), nil)

@@ -246,10 +246,6 @@ func (k *stubKernel) RemovePin(ctx context.Context, path string) error {
 	panic("stubKernel.RemovePin not implemented")
 }
 
-func (k *stubKernel) RemovePinAll(ctx context.Context, path string) error {
-	panic("stubKernel.RemovePinAll not implemented")
-}
-
 // MapRepinner
 func (k *stubKernel) RepinMap(ctx context.Context, srcPath, dstPath string) error {
 	panic("stubKernel.RepinMap not implemented")

@@ -309,10 +309,6 @@ type PinRemover interface {
 	// RemovePin removes a pin or empty directory from bpffs.
 	// Returns nil if the path does not exist.
 	RemovePin(ctx context.Context, path string) error
-
-	// RemovePinAll removes a directory and all its contents from
-	// bpffs. Returns nil if the path does not exist.
-	RemovePinAll(ctx context.Context, path string) error
 }
 
 // TCFilterDetacher removes legacy TC BPF filters via netlink.

@@ -17,6 +17,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -224,7 +225,11 @@ func (e *executor) rebuildXDPDispatcher(
 		linkID = existingState.LinkID
 	}
 
-	// Save dispatcher state to store.
+	// Save dispatcher state and update existing extension link
+	// detail records atomically. Without a transaction, a
+	// concurrent reader (e.g., CLI "link get") can observe the
+	// intermediate state where old details have been deleted but
+	// new details have not yet been inserted.
 	newState := dispatcher.State{
 		Type:      dispType,
 		Nsid:      nsid,
@@ -233,7 +238,41 @@ func (e *executor) rebuildXDPDispatcher(
 		ProgramID: dispatcherID,
 		LinkID:    linkID,
 	}
-	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.SaveDispatcher(ctx, newState); err != nil {
+			return fmt.Errorf("save XDP dispatcher: %w", err)
+		}
+		if !firstAttach {
+			if err := tx.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+				return fmt.Errorf("delete stale XDP link details: %w", err)
+			}
+			for i, slot := range allSlots {
+				if slot.LinkID == 0 {
+					continue // new extension, saved by saveLinkNode
+				}
+				pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+				if err := tx.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+					slot.LinkID,
+					slot.ProgramID,
+					bpfman.XDPDetails{
+						Interface:    slot.Ifname,
+						Ifindex:      ops.ifindex,
+						Priority:     int32(slot.Priority),
+						Position:     int32(i),
+						ProceedOn:    bitmaskToActions(slot.ProceedOn),
+						Nsid:         nsid,
+						DispatcherID: dispatcherID,
+						Revision:     revision,
+					},
+					bpfman.LinkPath(pinPath),
+					time.Now(),
+				)); err != nil {
+					return fmt.Errorf("re-insert XDP link detail for link %d at position %d: %w", slot.LinkID, i, err)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
 			"ifindex", ops.ifindex, "error", err)
 		cleanupExtensions()
@@ -244,49 +283,13 @@ func (e *executor) rebuildXDPDispatcher(
 			}
 		}
 		cleanupNewDispatcher()
-		return extensionResult{}, fmt.Errorf("save XDP dispatcher: %w", err)
-	}
-
-	// Update existing extension link detail records.
-	// The ON UPDATE CASCADE already updated dispatcher_program_id,
-	// but positions and revision are stale. Delete old details and
-	// re-insert with correct values.
-	if !firstAttach {
-		if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
-			e.logger.WarnContext(ctx, "failed to delete stale link details", "error", err)
-		}
-
-		for i, slot := range allSlots {
-			if slot.LinkID == 0 {
-				continue // new extension, saved by saveLinkNode
-			}
-			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
-			if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
-				slot.LinkID,
-				slot.ProgramID,
-				bpfman.XDPDetails{
-					Interface:    slot.Ifname,
-					Ifindex:      ops.ifindex,
-					Priority:     int32(slot.Priority),
-					Position:     int32(i),
-					ProceedOn:    bitmaskToActions(slot.ProceedOn),
-					Nsid:         nsid,
-					DispatcherID: dispatcherID,
-					Revision:     revision,
-				},
-				bpfman.LinkPath(pinPath),
-				time.Now(),
-			)); err != nil {
-				e.logger.WarnContext(ctx, "failed to re-insert link detail",
-					"link_id", slot.LinkID, "position", i, "error", err)
-			}
-		}
+		return extensionResult{}, err
 	}
 
 	// Clean up old revision directory (if not first-attach).
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
-		if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
+		if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old revision directory",
 				"path", oldRevDir, "error", err)
 		}
@@ -356,6 +359,18 @@ func (e *executor) rebuildTCDispatcher(
 		existingSlots, err = e.store.ListDispatcherSlots(ctx, existingState.ProgramID)
 		if err != nil {
 			return extensionResult{}, fmt.Errorf("list dispatcher slots: %w", err)
+		}
+		e.logger.InfoContext(ctx, "TC rebuild: existing slots",
+			"dispatcher_program_id", existingState.ProgramID,
+			"num_existing", len(existingSlots),
+			"new_program_id", newSlot.ProgramID,
+			"new_priority", newSlot.Priority)
+		for i, s := range existingSlots {
+			e.logger.InfoContext(ctx, "TC rebuild: existing slot",
+				"index", i,
+				"link_id", s.LinkID,
+				"program_id", s.ProgramID,
+				"priority", s.Priority)
 		}
 	}
 
@@ -499,7 +514,9 @@ func (e *executor) rebuildTCDispatcher(
 		}
 	}
 
-	// Save dispatcher state to store.
+	// Save dispatcher state and update existing extension link
+	// detail records atomically. See rebuildXDPDispatcher for
+	// rationale.
 	newState := dispatcher.State{
 		Type:      dispType,
 		Nsid:      nsid,
@@ -508,52 +525,53 @@ func (e *executor) rebuildTCDispatcher(
 		ProgramID: dispatcherID,
 		Priority:  result.Priority,
 	}
-	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
+	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.SaveDispatcher(ctx, newState); err != nil {
+			return fmt.Errorf("save TC dispatcher: %w", err)
+		}
+		if !firstAttach {
+			if err := tx.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+				return fmt.Errorf("delete stale TC link details: %w", err)
+			}
+			for i, slot := range allSlots {
+				if slot.LinkID == 0 {
+					continue // new extension, saved by saveLinkNode
+				}
+				pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
+				if err := tx.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+					slot.LinkID,
+					slot.ProgramID,
+					bpfman.TCDetails{
+						Interface:    slot.Ifname,
+						Ifindex:      ops.ifindex,
+						Direction:    ops.direction,
+						Priority:     int32(slot.Priority),
+						Position:     int32(i),
+						ProceedOn:    bitmaskToActions(slot.ProceedOn),
+						Nsid:         nsid,
+						DispatcherID: dispatcherID,
+						Revision:     revision,
+					},
+					bpfman.LinkPath(pinPath),
+					time.Now(),
+				)); err != nil {
+					return fmt.Errorf("re-insert TC link detail for link %d at position %d: %w", slot.LinkID, i, err)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
 			"ifindex", ops.ifindex, "error", err)
 		cleanupExtensions()
 		cleanupNewDispatcher()
-		return extensionResult{}, fmt.Errorf("save TC dispatcher: %w", err)
-	}
-
-	// Update existing extension link detail records.
-	if !firstAttach {
-		if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
-			e.logger.WarnContext(ctx, "failed to delete stale TC link details", "error", err)
-		}
-
-		for i, slot := range allSlots {
-			if slot.LinkID == 0 {
-				continue // new extension, saved by saveLinkNode
-			}
-			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ops.ifindex, revision, i)
-			if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
-				slot.LinkID,
-				slot.ProgramID,
-				bpfman.TCDetails{
-					Interface:    slot.Ifname,
-					Ifindex:      ops.ifindex,
-					Direction:    ops.direction,
-					Priority:     int32(slot.Priority),
-					Position:     int32(i),
-					ProceedOn:    bitmaskToActions(slot.ProceedOn),
-					Nsid:         nsid,
-					DispatcherID: dispatcherID,
-					Revision:     revision,
-				},
-				bpfman.LinkPath(pinPath),
-				time.Now(),
-			)); err != nil {
-				e.logger.WarnContext(ctx, "failed to re-insert TC link detail",
-					"link_id", slot.LinkID, "position", i, "error", err)
-			}
-		}
+		return extensionResult{}, err
 	}
 
 	// Clean up old revision directory.
 	if !firstAttach {
 		oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ops.ifindex, existingState.Revision)
-		if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
+		if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
 				"path", oldRevDir, "error", err)
 		}
@@ -695,40 +713,42 @@ func (e *executor) rebuildXDPForDetach(
 		ProgramID: dispatcherID,
 		LinkID:    state.LinkID,
 	}
-	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
-		return fmt.Errorf("save dispatcher after detach rebuild: %w", err)
-	}
-
-	// Update remaining extension link detail records.
-	if err := e.store.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
-		e.logger.WarnContext(ctx, "failed to delete stale XDP link details for detach rebuild", "error", err)
-	}
-	for i, slot := range slots {
-		pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
-		if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
-			slot.LinkID,
-			slot.ProgramID,
-			bpfman.XDPDetails{
-				Interface:    slot.Ifname,
-				Ifindex:      ifindex,
-				Priority:     int32(slot.Priority),
-				Position:     int32(i),
-				ProceedOn:    bitmaskToActions(slot.ProceedOn),
-				Nsid:         nsid,
-				DispatcherID: dispatcherID,
-				Revision:     revision,
-			},
-			bpfman.LinkPath(pinPath),
-			time.Now(),
-		)); err != nil {
-			e.logger.WarnContext(ctx, "failed to re-insert XDP link detail for detach rebuild",
-				"link_id", slot.LinkID, "position", i, "error", err)
+	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.SaveDispatcher(ctx, newState); err != nil {
+			return fmt.Errorf("save dispatcher after detach rebuild: %w", err)
 		}
+		if err := tx.DeleteDispatcherLinkDetails(ctx, dispatcherID); err != nil {
+			return fmt.Errorf("delete stale XDP link details for detach rebuild: %w", err)
+		}
+		for i, slot := range slots {
+			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+			if err := tx.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+				slot.LinkID,
+				slot.ProgramID,
+				bpfman.XDPDetails{
+					Interface:    slot.Ifname,
+					Ifindex:      ifindex,
+					Priority:     int32(slot.Priority),
+					Position:     int32(i),
+					ProceedOn:    bitmaskToActions(slot.ProceedOn),
+					Nsid:         nsid,
+					DispatcherID: dispatcherID,
+					Revision:     revision,
+				},
+				bpfman.LinkPath(pinPath),
+				time.Now(),
+			)); err != nil {
+				return fmt.Errorf("re-insert XDP link detail for link %d at position %d: %w", slot.LinkID, i, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
+	if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
 		e.logger.WarnContext(ctx, "failed to remove old revision directory",
 			"path", oldRevDir, "error", err)
 	}
@@ -816,41 +836,43 @@ func (e *executor) rebuildTCForDetach(
 		ProgramID: result.DispatcherID,
 		Priority:  result.Priority,
 	}
-	if err := e.store.SaveDispatcher(ctx, newState); err != nil {
-		return fmt.Errorf("save dispatcher after TC detach rebuild: %w", err)
-	}
-
-	// Update remaining extension link detail records.
-	if err := e.store.DeleteDispatcherLinkDetails(ctx, result.DispatcherID); err != nil {
-		e.logger.WarnContext(ctx, "failed to delete stale TC link details for detach rebuild", "error", err)
-	}
-	for i, slot := range slots {
-		pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
-		if err := e.store.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
-			slot.LinkID,
-			slot.ProgramID,
-			bpfman.TCDetails{
-				Interface:    slot.Ifname,
-				Ifindex:      ifindex,
-				Direction:    direction,
-				Priority:     int32(slot.Priority),
-				Position:     int32(i),
-				ProceedOn:    bitmaskToActions(slot.ProceedOn),
-				Nsid:         nsid,
-				DispatcherID: result.DispatcherID,
-				Revision:     revision,
-			},
-			bpfman.LinkPath(pinPath),
-			time.Now(),
-		)); err != nil {
-			e.logger.WarnContext(ctx, "failed to re-insert TC link detail for detach rebuild",
-				"link_id", slot.LinkID, "position", i, "error", err)
+	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := tx.SaveDispatcher(ctx, newState); err != nil {
+			return fmt.Errorf("save dispatcher after TC detach rebuild: %w", err)
 		}
+		if err := tx.DeleteDispatcherLinkDetails(ctx, result.DispatcherID); err != nil {
+			return fmt.Errorf("delete stale TC link details for detach rebuild: %w", err)
+		}
+		for i, slot := range slots {
+			pinPath := e.bpffs.ExtensionLinkPath(dispType, nsid, ifindex, revision, i)
+			if err := tx.SaveLink(ctx, bpfman.NewPinnedLinkRecord(
+				slot.LinkID,
+				slot.ProgramID,
+				bpfman.TCDetails{
+					Interface:    slot.Ifname,
+					Ifindex:      ifindex,
+					Direction:    direction,
+					Priority:     int32(slot.Priority),
+					Position:     int32(i),
+					ProceedOn:    bitmaskToActions(slot.ProceedOn),
+					Nsid:         nsid,
+					DispatcherID: result.DispatcherID,
+					Revision:     revision,
+				},
+				bpfman.LinkPath(pinPath),
+				time.Now(),
+			)); err != nil {
+				return fmt.Errorf("re-insert TC link detail for link %d at position %d: %w", slot.LinkID, i, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Clean up old revision.
 	oldRevDir := e.bpffs.DispatcherRevisionDir(dispType, nsid, ifindex, state.Revision)
-	if err := e.kernel.RemovePinAll(ctx, oldRevDir); err != nil {
+	if err := e.Execute(ctx, action.RemoveDispatcherRevDir{Path: oldRevDir}); err != nil {
 		e.logger.WarnContext(ctx, "failed to remove old TC revision directory",
 			"path", oldRevDir, "error", err)
 	}
