@@ -289,6 +289,13 @@ func (e *TestEnv) CountDispatcherExtensions(ctx context.Context, dispType dispat
 	return e.Manager.CountDispatcherExtensions(ctx, dispType, nsid, ifindex)
 }
 
+// GC runs garbage collection, removing stale store entries that no
+// longer correspond to kernel objects. This mirrors the GC that the
+// daemon runs before each gRPC RPC.
+func (e *TestEnv) GC(ctx context.Context) (manager.GCResult, error) {
+	return e.Manager.GC(ctx)
+}
+
 // AssertCleanState verifies that no programs or links are managed.
 func (e *TestEnv) AssertCleanState() {
 	e.T.Helper()
