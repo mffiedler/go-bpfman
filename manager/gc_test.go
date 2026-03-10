@@ -196,9 +196,11 @@ func TestComputeStoreGC_SyntheticLinkSkipped(t *testing.T) {
 	}
 }
 
-func TestComputeStoreGC_OrphanedDispatcherAfterLinkGC(t *testing.T) {
-	// Dispatcher has one XDP extension link. That link is stale.
-	// After link GC, dispatcher has zero extensions and should be deleted.
+func TestComputeStoreGC_ExtensionLinkSurvivesWithLiveDispatcher(t *testing.T) {
+	// Dispatcher has one XDP extension link. The link's kernel ID
+	// is stale (destroyed by a rebuild), but the dispatcher is
+	// alive. Both should survive: the extension is still active
+	// via the dispatcher.
 	dispatchers := []dispatcher.State{
 		{
 			Type:      dispatcher.DispatcherTypeXDP,
@@ -224,25 +226,19 @@ func TestComputeStoreGC_OrphanedDispatcherAfterLinkGC(t *testing.T) {
 		dispatchers,
 		links,
 		map[kernel.ProgramID]bool{500: true}, // dispatcher alive
-		map[kernel.LinkID]bool{},             // link 300 dead
+		map[kernel.LinkID]bool{},             // link 300 stale (rebuilt)
 	)
 
-	// Expect: DeleteLink{300}, DeleteDispatcher{xdp, ...}
-	if len(actions) != 2 {
-		t.Fatalf("expected 2 actions, got %d: %+v", len(actions), actions)
-	}
-
-	if _, ok := actions[0].(action.DeleteLink); !ok {
-		t.Errorf("expected DeleteLink first, got %T", actions[0])
-	}
-	if _, ok := actions[1].(action.DeleteDispatcher); !ok {
-		t.Errorf("expected DeleteDispatcher second, got %T", actions[1])
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions (extension link survives with live dispatcher), got %d: %+v", len(actions), actions)
 	}
 }
 
 func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
-	// Dispatcher has two extension links. One is stale, one survives.
-	// Dispatcher should NOT be deleted.
+	// Dispatcher has two extension links. Both have stale kernel
+	// IDs (destroyed by a rebuild), but the dispatcher is alive.
+	// Both links should survive because they are managed by the
+	// dispatcher lifecycle, not by GC.
 	dispatchers := []dispatcher.State{
 		{
 			Type:      dispatcher.DispatcherTypeXDP,
@@ -277,19 +273,13 @@ func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
 		dispatchers,
 		links,
 		map[kernel.ProgramID]bool{500: true},
-		map[kernel.LinkID]bool{301: true}, // 300 dead, 301 alive
+		map[kernel.LinkID]bool{301: true}, // 300 stale, 301 alive
 	)
 
-	// Expect: only DeleteLink{300}, no dispatcher deletion
-	if len(actions) != 1 {
-		t.Fatalf("expected 1 action, got %d: %+v", len(actions), actions)
-	}
-	dl, ok := actions[0].(action.DeleteLink)
-	if !ok {
-		t.Fatalf("expected DeleteLink, got %T", actions[0])
-	}
-	if dl.LinkID != 300 {
-		t.Errorf("expected link 300, got %d", dl.LinkID)
+	// Both extension links reference live dispatcher 500; neither
+	// should be deleted. The dispatcher is also not orphaned.
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions (extension links survive with live dispatcher), got %d: %+v", len(actions), actions)
 	}
 }
 
@@ -363,12 +353,17 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 	if delPrograms != 2 {
 		t.Errorf("expected 2 program deletions, got %d", delPrograms)
 	}
-	if delDispatchers != 2 {
-		// 1 for stale (kernel 100 dead) + 1 orphaned (kernel 500 has 0 remaining links)
-		t.Errorf("expected 2 dispatcher deletions, got %d", delDispatchers)
+	if delDispatchers != 1 {
+		// Only the stale TC-ingress dispatcher (program 100 dead).
+		// XDP dispatcher 500 is alive and its extension link 401
+		// survives (live dispatcher), so it is not orphaned.
+		t.Errorf("expected 1 dispatcher deletion, got %d", delDispatchers)
 	}
-	if delLinks != 1 {
-		t.Errorf("expected 1 link deletion, got %d", delLinks)
+	if delLinks != 0 {
+		// Link 400 (tracepoint) is alive. Link 401 (XDP extension)
+		// has a stale kernel ID but its dispatcher 500 is alive,
+		// so it survives.
+		t.Errorf("expected 0 link deletions, got %d", delLinks)
 	}
 
 	// Verify dependent before owner ordering.
@@ -390,8 +385,105 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 	}
 }
 
-func TestComputeStoreGC_TCDispatcherOrphaned(t *testing.T) {
-	// TC dispatcher whose only extension link dies.
+// TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives
+// verifies that extension links whose dispatcher is alive are not
+// deleted by GC, even when their kernel link ID is stale.
+//
+// Every dispatcher rebuild re-attaches all extensions, creating new
+// kernel links. The stored kernel link IDs become stale (the old
+// links are gone), but the extension is still active via the
+// dispatcher. GC must not delete these links.
+func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
+	dispatchers := []dispatcher.State{
+		{
+			Type:      dispatcher.DispatcherTypeTCIngress,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 500, // alive in kernel
+		},
+	}
+	links := []bpfman.LinkRecord{
+		{
+			ID:        300, // stale kernel link ID (destroyed by rebuild)
+			ProgramID: 100,
+			Kind:      bpfman.LinkKindTC,
+			Details: bpfman.TCDetails{
+				DispatcherID: 500, // references the live dispatcher
+				Direction:    bpfman.TCDirectionIngress,
+				Ifindex:      2,
+			},
+		},
+	}
+
+	actions := computeStoreGC(
+		nil,
+		dispatchers,
+		links,
+		map[kernel.ProgramID]bool{500: true}, // dispatcher alive
+		map[kernel.LinkID]bool{},             // link 300 NOT in kernel (stale after rebuild)
+	)
+
+	// The extension link should survive because its dispatcher is alive.
+	// Before the fix, GC would delete link 300 and then orphan the dispatcher.
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions (extension link should survive), got %d: %+v", len(actions), actions)
+	}
+}
+
+// TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted
+// verifies that extension links whose dispatcher is dead ARE deleted.
+func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
+	dispatchers := []dispatcher.State{
+		{
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      4026531840,
+			Ifindex:   2,
+			ProgramID: 500, // dead (not in kernelPrograms)
+		},
+	}
+	links := []bpfman.LinkRecord{
+		{
+			ID:        300,
+			ProgramID: 100,
+			Kind:      bpfman.LinkKindXDP,
+			Details: bpfman.XDPDetails{
+				DispatcherID: 500,
+				Ifindex:      2,
+			},
+		},
+	}
+
+	actions := computeStoreGC(
+		nil,
+		dispatchers,
+		links,
+		map[kernel.ProgramID]bool{}, // dispatcher 500 is dead
+		map[kernel.LinkID]bool{},    // link 300 also dead
+	)
+
+	// Dispatcher is dead: Phase 2 deletes it.
+	// Extension link's dispatcher is dead: Phase 3 deletes the link.
+	var delLinks, delDispatchers int
+	for _, a := range actions {
+		switch a.(type) {
+		case action.DeleteLink:
+			delLinks++
+		case action.DeleteDispatcher:
+			delDispatchers++
+		}
+	}
+	if delDispatchers != 1 {
+		t.Errorf("expected 1 dispatcher deletion, got %d", delDispatchers)
+	}
+	if delLinks != 1 {
+		t.Errorf("expected 1 link deletion, got %d", delLinks)
+	}
+}
+
+func TestComputeStoreGC_TCExtensionSurvivesWithLiveDispatcher(t *testing.T) {
+	// TC dispatcher is alive; its extension link has a stale kernel
+	// ID (destroyed by a rebuild). The link should survive because
+	// the dispatcher is alive. The dispatcher is not orphaned.
 	dispatchers := []dispatcher.State{
 		{
 			Type:      dispatcher.DispatcherTypeTCIngress,
@@ -418,20 +510,10 @@ func TestComputeStoreGC_TCDispatcherOrphaned(t *testing.T) {
 		dispatchers,
 		links,
 		map[kernel.ProgramID]bool{600: true},
-		map[kernel.LinkID]bool{}, // link 500 dead
+		map[kernel.LinkID]bool{}, // link 500 stale (rebuilt)
 	)
 
-	if len(actions) != 2 {
-		t.Fatalf("expected 2 actions, got %d: %+v", len(actions), actions)
-	}
-	if _, ok := actions[0].(action.DeleteLink); !ok {
-		t.Errorf("expected DeleteLink first, got %T", actions[0])
-	}
-	dd, ok := actions[1].(action.DeleteDispatcher)
-	if !ok {
-		t.Fatalf("expected DeleteDispatcher second, got %T", actions[1])
-	}
-	if dd.Type != dispatcher.DispatcherTypeTCIngress {
-		t.Errorf("expected tc-ingress, got %s", dd.Type)
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions (TC extension survives with live dispatcher), got %d: %+v", len(actions), actions)
 	}
 }

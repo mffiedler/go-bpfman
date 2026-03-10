@@ -67,10 +67,25 @@ func computeStoreGC(
 		}
 	}
 
+	// Build the set of dispatchers whose program is still alive
+	// in the kernel. Extension links referencing a live dispatcher
+	// must not be deleted: every dispatcher rebuild re-attaches
+	// all extensions, creating new kernel links. The stored kernel
+	// link IDs become stale but the extensions are still active.
+	liveDispatchers := make(map[kernel.ProgramID]bool)
+	for _, disp := range dispatchers {
+		if kernelPrograms[disp.ProgramID] {
+			liveDispatchers[disp.ProgramID] = true
+		}
+	}
+
 	// Phase 3: stale non-synthetic links.
 	deletedLinks := make(map[kernel.LinkID]bool)
 	for _, link := range links {
 		if link.IsSynthetic() {
+			continue
+		}
+		if isLiveExtensionLink(link, liveDispatchers) {
 			continue
 		}
 		if !kernelLinks[link.ID] {
@@ -111,6 +126,18 @@ func countByType[T action.Action](actions []action.Action) int {
 		}
 	}
 	return n
+}
+
+// isLiveExtensionLink returns true if the link is a dispatcher
+// extension (XDP or TC) whose dispatcher program is still alive.
+func isLiveExtensionLink(link bpfman.LinkRecord, liveDispatchers map[kernel.ProgramID]bool) bool {
+	switch d := link.Details.(type) {
+	case bpfman.XDPDetails:
+		return liveDispatchers[d.DispatcherID]
+	case bpfman.TCDetails:
+		return liveDispatchers[d.DispatcherID]
+	}
+	return false
 }
 
 // countExtensionLinks counts the non-deleted extension links that
