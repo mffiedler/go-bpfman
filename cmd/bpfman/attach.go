@@ -55,6 +55,8 @@ type AttachXDPCmd struct {
 	OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
+	Priority  int         `short:"p" name:"priority" default:"50" help:"Priority in chain (lower runs first)."`
+	ProceedOn []string    `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
 	Netns     string      `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -67,10 +69,16 @@ func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
 			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
 		}
 
+		proceedOn, err := bpfman.ParseXDPActions(c.ProceedOn)
+		if err != nil {
+			return attachResult{}, fmt.Errorf("invalid proceed-on value: %w", err)
+		}
+
 		spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, iface.Index)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid XDP spec: %w", err)
 		}
+		spec = spec.WithPriority(c.Priority).WithProceedOn(proceedOn)
 		if c.Netns != "" {
 			spec = spec.WithNetns(c.Netns)
 		}

@@ -113,6 +113,13 @@ func (s *Server) attachXDP(ctx context.Context, scope lock.WriterScope, programI
 		return nil, status.Errorf(codes.InvalidArgument, "invalid XDP attach spec: %v", err)
 	}
 
+	spec = spec.WithPriority(int(info.Priority))
+
+	// Use provided proceed-on or default
+	if len(info.ProceedOn) > 0 {
+		spec = spec.WithProceedOn(info.ProceedOn)
+	}
+
 	// Apply network namespace if specified
 	if info.GetNetns() != "" {
 		spec = spec.WithNetns(info.GetNetns())

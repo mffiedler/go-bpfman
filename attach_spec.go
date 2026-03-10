@@ -157,6 +157,8 @@ type XDPAttachSpec struct {
 	programID kernel.ProgramID
 	ifname    string
 	ifindex   int
+	priority  int
+	proceedOn []int32
 	netns     string // optional network namespace path
 }
 
@@ -178,7 +180,21 @@ func (XDPAttachSpec) attachSpec()                   {}
 func (s XDPAttachSpec) ProgramID() kernel.ProgramID { return s.programID }
 func (s XDPAttachSpec) Ifname() string              { return s.ifname }
 func (s XDPAttachSpec) Ifindex() int                { return s.ifindex }
+func (s XDPAttachSpec) Priority() int               { return s.priority }
+func (s XDPAttachSpec) ProceedOn() []int32          { return s.proceedOn }
 func (s XDPAttachSpec) Netns() string               { return s.netns }
+
+// WithPriority returns a new XDPAttachSpec with the priority set.
+func (s XDPAttachSpec) WithPriority(p int) XDPAttachSpec {
+	s.priority = p
+	return s
+}
+
+// WithProceedOn returns a new XDPAttachSpec with the proceed-on actions set.
+func (s XDPAttachSpec) WithProceedOn(po []int32) XDPAttachSpec {
+	s.proceedOn = po
+	return s
+}
 
 // WithNetns returns a new XDPAttachSpec with the network namespace path set.
 // If non-empty, attachment is performed in that network namespace.

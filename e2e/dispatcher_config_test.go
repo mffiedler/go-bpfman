@@ -97,6 +97,23 @@ func (h *dispatcherTestHarness) linkPosition(t *testing.T, linkID kernel.LinkID)
 	}
 }
 
+// linkPriority returns the priority stored in the link details for the
+// given link ID.
+func (h *dispatcherTestHarness) linkPriority(t *testing.T, linkID kernel.LinkID) int32 {
+	t.Helper()
+	_, details, err := h.env.GetLink(context.Background(), linkID)
+	require.NoError(t, err)
+	switch d := details.(type) {
+	case bpfman.XDPDetails:
+		return d.Priority
+	case bpfman.TCDetails:
+		return d.Priority
+	default:
+		t.Fatalf("unexpected link details type %T", details)
+		return -1
+	}
+}
+
 // newTCIngressHarness creates a harness for TC ingress dispatcher
 // tests. It creates its own TestEnv and TestInterface for isolation.
 func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
@@ -182,7 +199,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 			t.Helper()
 			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name, iface.Ifindex)
 			require.NoError(t, err)
-			return xdpSpec
+			return xdpSpec.WithPriority(priority)
 		},
 
 		verifyAttachPresent: func(t *testing.T) {
@@ -220,9 +237,9 @@ func eachDispatcherType(t *testing.T) []dispatcherTestHarness {
 
 // TestDispatcher_PriorityOrdering verifies that filling all 10
 // dispatcher slots with scrambled priorities produces positions that
-// reflect the correct sorted order. For TC, extensions are sorted by
-// priority ascending; for XDP (where priority is always 0), positions
-// follow insertion order.
+// reflect the correct sorted order. Extensions are sorted by priority
+// ascending for both TC and XDP; when priorities collide, the
+// secondary sort is by program name.
 func TestDispatcher_PriorityOrdering(t *testing.T) {
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
@@ -237,9 +254,8 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
 	// Attach all 10 slots with scrambled priorities so the
-	// dispatcher must reorder them (TC) or preserve insertion
-	// order (XDP).
-	priorities := []int{500, 100, 800, 300, 900, 200, 700, 400, 600, 0}
+	// dispatcher must reorder them.
+	priorities := []int{500, 100, 800, 300, 900, 200, 700, 400, 600, 50}
 	var links []bpfman.LinkRecord
 	for _, prio := range priorities {
 		link := h.attach(t, progID, prio)
@@ -255,35 +271,28 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 	require.Equal(t, 10, h.extensionCount(t),
 		"all 10 slots should be occupied")
 
-	switch h.dispType {
-	case dispatcher.DispatcherTypeTCIngress:
-		// TC: positions reflect priority ascending. Build the
-		// expected position for each link by sorting priorities.
-		sorted := make([]int, len(priorities))
-		copy(sorted, priorities)
-		sort.Ints(sorted)
+	// Positions reflect priority ascending. Build the expected
+	// position for each link by sorting priorities.
+	sorted := make([]int, len(priorities))
+	copy(sorted, priorities)
+	sort.Ints(sorted)
 
-		rankByPriority := make(map[int]int32, len(sorted))
-		for i, p := range sorted {
-			rankByPriority[p] = int32(i)
-		}
+	rankByPriority := make(map[int]int32, len(sorted))
+	for i, p := range sorted {
+		rankByPriority[p] = int32(i)
+	}
 
-		for i, link := range links {
-			pos := h.linkPosition(t, link.ID)
-			expected := rankByPriority[priorities[i]]
-			assert.Equal(t, expected, pos,
-				"link %d (priority %d): position should be %d, got %d",
-				i, priorities[i], expected, pos)
-		}
+	for i, link := range links {
+		pos := h.linkPosition(t, link.ID)
+		expected := rankByPriority[priorities[i]]
+		assert.Equal(t, expected, pos,
+			"link %d (priority %d): position should be %d, got %d",
+			i, priorities[i], expected, pos)
 
-	case dispatcher.DispatcherTypeXDP:
-		// XDP: all priority 0, same program name. Stable sort
-		// preserves insertion order, so position == attach index.
-		for i, link := range links {
-			pos := h.linkPosition(t, link.ID)
-			assert.Equal(t, int32(i), pos,
-				"link %d: position should follow insertion order", i)
-		}
+		prio := h.linkPriority(t, link.ID)
+		assert.Equal(t, int32(priorities[i]), prio,
+			"link %d: stored priority should match requested priority %d, got %d",
+			i, priorities[i], prio)
 	}
 }
 
@@ -353,9 +362,9 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 	assert.Equal(t, dispatcher.MaxPrograms-1, h.extensionCount(t),
 		"should have 9 programs after detach")
 
-	// Re-attach at priority 350. For TC, this should slot between
+	// Re-attach at priority 350. This should slot between
 	// priorities 300 (position 2) and 500 (position 4), landing
-	// at position 3. For XDP, it appends last (position 9).
+	// at position 3.
 	newLink := h.attach(t, progID, 350)
 
 	t.Cleanup(func() {
@@ -373,19 +382,10 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 
 	newPos := h.linkPosition(t, newLink.ID)
 
-	switch h.dispType {
-	case dispatcher.DispatcherTypeTCIngress:
-		// Sorted: [100,200,300,350,500,600,700,800,900,1000]
-		// The new link at priority 350 should have position 3.
-		assert.Equal(t, int32(3), newPos,
-			"TC: reattached link (priority 350) should have position 3")
-
-	case dispatcher.DispatcherTypeXDP:
-		// XDP: all priority 0, same name. The reattached link
-		// is the newest and sorts last in a stable sort.
-		assert.Equal(t, int32(9), newPos,
-			"XDP: reattached link should be at position 9")
-	}
+	// Sorted: [100,200,300,350,500,600,700,800,900,1000]
+	// The new link at priority 350 should have position 3.
+	assert.Equal(t, int32(3), newPos,
+		"reattached link (priority 350) should have position 3")
 }
 
 // TestDispatcher_LifecycleAfterLastDetach verifies that removing the

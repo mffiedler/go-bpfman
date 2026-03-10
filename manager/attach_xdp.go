@@ -8,9 +8,6 @@ import (
 	"github.com/frobware/go-bpfman/manager/action"
 )
 
-// xdpProceedOnPass is the proceed-on bitmask for XDP_PASS.
-var xdpProceedOnPass = dispatcher.ProceedOnMask(dispatcher.XDPPass)
-
 // attachXDP attaches an XDP program to a network interface using the
 // dispatcher model for multi-program chaining.
 //
@@ -27,6 +24,22 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 	ifindex := spec.Ifindex()
 	netnsPath := spec.Netns()
 
+	priority := spec.Priority()
+	if priority == 0 {
+		priority = int(dispatcher.DefaultPriority)
+	}
+
+	proceedOn := spec.ProceedOn()
+	if len(proceedOn) == 0 {
+		proceedOn = []int32{int32(dispatcher.XDPPass)}
+	}
+
+	var proceedOnActions []dispatcher.XDPAction
+	for _, v := range proceedOn {
+		proceedOnActions = append(proceedOnActions, dispatcher.XDPAction(v))
+	}
+	proceedOnMask := dispatcher.ProceedOnMask(proceedOnActions...)
+
 	return m.dispatcherAttach(ctx, dispatcherAttachParams{
 		programID: spec.ProgramID(),
 		ifindex:   ifindex,
@@ -41,17 +54,17 @@ func (m *Manager) attachXDP(ctx context.Context, spec bpfman.XDPAttachSpec) (bpf
 				NetnsPath:   netnsPath,
 				ProgPinPath: prog.Handles.PinPath,
 				ProgramName: prog.Meta.Name,
-				Priority:    dispatcher.DefaultPriority,
-				ProceedOn:   xdpProceedOnPass,
+				Priority:    priority,
+				ProceedOn:   proceedOnMask,
 			}
 		},
 		buildLinkDetails: func(nsid uint64, position int, dispState dispatcher.State) bpfman.LinkDetails {
 			return bpfman.XDPDetails{
 				Interface:    ifname,
 				Ifindex:      uint32(ifindex),
-				Priority:     dispatcher.DefaultPriority,
+				Priority:     int32(priority),
 				Position:     int32(position),
-				ProceedOn:    []int32{int32(dispatcher.XDPPass)},
+				ProceedOn:    proceedOn,
 				Nsid:         nsid,
 				DispatcherID: dispState.ProgramID,
 				Revision:     dispState.Revision,
