@@ -81,18 +81,6 @@ type sqliteStore struct {
 	stmtListAllXDPDetails        *sql.Stmt
 	stmtListAllTCDetails         *sql.Stmt
 	stmtListAllTCXDetails        *sql.Stmt
-
-	// Prepared statements for dispatcher operations
-	stmtGetDispatcher                  *sql.Stmt
-	stmtListDispatchers                *sql.Stmt
-	stmtSaveDispatcher                 *sql.Stmt
-	stmtDeleteDispatcher               *sql.Stmt
-	stmtIncrementRevision              *sql.Stmt
-	stmtGetDispatcherByType            *sql.Stmt
-	stmtCountDispatcherLinks           *sql.Stmt
-	stmtListDispatcherSlots            *sql.Stmt
-	stmtDeleteXDPDispatcherLinkDetails *sql.Stmt
-	stmtDeleteTCDispatcherLinkDetails  *sql.Stmt
 }
 
 // New creates a new SQLite store at the given path.
@@ -223,16 +211,6 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtListAllXDPDetails,
 		s.stmtListAllTCDetails,
 		s.stmtListAllTCXDetails,
-		s.stmtGetDispatcher,
-		s.stmtListDispatchers,
-		s.stmtSaveDispatcher,
-		s.stmtDeleteDispatcher,
-		s.stmtIncrementRevision,
-		s.stmtGetDispatcherByType,
-		s.stmtCountDispatcherLinks,
-		s.stmtListDispatcherSlots,
-		s.stmtDeleteXDPDispatcherLinkDetails,
-		s.stmtDeleteTCDispatcherLinkDetails,
 	}
 	for _, stmt := range stmts {
 		if stmt != nil {
@@ -414,17 +392,6 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Sto
 		stmtListAllXDPDetails:        tx.StmtContext(ctx, s.stmtListAllXDPDetails),
 		stmtListAllTCDetails:         tx.StmtContext(ctx, s.stmtListAllTCDetails),
 		stmtListAllTCXDetails:        tx.StmtContext(ctx, s.stmtListAllTCXDetails),
-		// Dispatcher statements
-		stmtGetDispatcher:                  tx.StmtContext(ctx, s.stmtGetDispatcher),
-		stmtListDispatchers:                tx.StmtContext(ctx, s.stmtListDispatchers),
-		stmtSaveDispatcher:                 tx.StmtContext(ctx, s.stmtSaveDispatcher),
-		stmtDeleteDispatcher:               tx.StmtContext(ctx, s.stmtDeleteDispatcher),
-		stmtIncrementRevision:              tx.StmtContext(ctx, s.stmtIncrementRevision),
-		stmtGetDispatcherByType:            tx.StmtContext(ctx, s.stmtGetDispatcherByType),
-		stmtCountDispatcherLinks:           tx.StmtContext(ctx, s.stmtCountDispatcherLinks),
-		stmtListDispatcherSlots:            tx.StmtContext(ctx, s.stmtListDispatcherSlots),
-		stmtDeleteXDPDispatcherLinkDetails: tx.StmtContext(ctx, s.stmtDeleteXDPDispatcherLinkDetails),
-		stmtDeleteTCDispatcherLinkDetails:  tx.StmtContext(ctx, s.stmtDeleteTCDispatcherLinkDetails),
 	}
 
 	if err := fn(txStore); err != nil {

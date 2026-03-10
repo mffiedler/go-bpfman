@@ -259,44 +259,54 @@ func TestLinkRegistry_UpsertUpdatesPinPath(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create a program and dispatcher for XDP link details.
+	// Create a program for XDP link details.
 	prog := testProgram()
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(42), prog), "Save failed")
 
-	require.NoError(t, store.SaveDispatcher(ctx, dispatcher.State{
-		Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2,
-		Revision: 1, ProgramID: kernel.ProgramID(900),
-		LinkID: kernel.LinkID(500),
-	}), "SaveDispatcher failed")
-
-	// Create first link with a pin path and XDP details.
+	// Create dispatcher via snapshot API.
 	linkID := kernel.LinkID(0x80000001)
-	xdpDetails := bpfman.XDPDetails{
-		Interface: "eth0", Ifindex: 2, Priority: 50,
-		Position: 0, ProceedOn: []int32{2},
-		Nsid: 0, DispatcherID: kernel.ProgramID(900), Revision: 1,
+	dispLinkID := kernel.LinkID(500)
+	snap := platform.DispatcherSnapshot{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 0, Ifindex: 2},
+		Revision: 1,
+		Runtime: platform.DispatcherRuntime{
+			ProgramID: kernel.ProgramID(900),
+			LinkID:    &dispLinkID,
+		},
+		Members: []platform.DispatcherMember{
+			{
+				ProgramID:   kernel.ProgramID(42),
+				ProgramName: "test_prog",
+				ProgPinPath: "/sys/fs/bpf/test_prog",
+				LinkID:      linkID,
+				LinkPinPath: "/old/rev/link_0",
+				Position:    0,
+				Priority:    50,
+				ProceedOn:   0x04,
+				Ifname:      "eth0",
+			},
+		},
 	}
-	spec := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), xdpDetails,
-		bpfman.LinkPath("/old/rev/link_0"), time.Now())
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap), "ReplaceDispatcherSnapshot failed")
 
-	err = store.SaveLink(ctx, spec)
-	require.NoError(t, err, "first SaveLink failed")
-
-	// Simulate dispatcher rebuild: delete detail records, then
-	// re-save with updated pin path and position.
-	require.NoError(t, store.DeleteDispatcherLinkDetails(ctx, kernel.ProgramID(900)),
-		"DeleteDispatcherLinkDetails failed")
-
-	xdpDetails2 := bpfman.XDPDetails{
-		Interface: "eth0", Ifindex: 2, Priority: 50,
-		Position: 1, ProceedOn: []int32{2},
-		Nsid: 0, DispatcherID: kernel.ProgramID(900), Revision: 2,
+	// Simulate dispatcher rebuild: replace snapshot with updated
+	// pin path and position.
+	snap2 := snap
+	snap2.Revision = 2
+	snap2.Members = []platform.DispatcherMember{
+		{
+			ProgramID:   kernel.ProgramID(42),
+			ProgramName: "test_prog",
+			ProgPinPath: "/sys/fs/bpf/test_prog",
+			LinkID:      linkID,
+			LinkPinPath: "/new/rev/link_1",
+			Position:    1,
+			Priority:    50,
+			ProceedOn:   0x04,
+			Ifname:      "eth0",
+		},
 	}
-	spec2 := bpfman.NewPinnedLinkRecord(linkID, kernel.ProgramID(42), xdpDetails2,
-		bpfman.LinkPath("/new/rev/link_1"), time.Now())
-
-	err = store.SaveLink(ctx, spec2)
-	require.NoError(t, err, "upsert SaveLink should succeed")
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, snap2), "ReplaceDispatcherSnapshot (rebuild) failed")
 
 	// Verify pin path was updated in registry.
 	record, err := store.GetLink(ctx, linkID)
@@ -337,216 +347,6 @@ func TestLinkRegistry_CascadeDeleteFromRegistry(t *testing.T) {
 	// Verify link is gone
 	_, err = store.GetLink(ctx, linkID)
 	require.Error(t, err, "expected link to be deleted")
-}
-
-// ----------------------------------------------------------------------------
-// Dispatcher Store Tests
-// ----------------------------------------------------------------------------
-
-func TestDispatcherStore_SaveAndGet(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create a dispatcher
-	state := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    101,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
-
-	// Retrieve and verify
-	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher failed")
-
-	assert.Equal(t, state.Type, got.Type)
-	assert.Equal(t, state.Nsid, got.Nsid)
-	assert.Equal(t, state.Ifindex, got.Ifindex)
-	assert.Equal(t, state.Revision, got.Revision)
-	assert.Equal(t, state.ProgramID, got.ProgramID)
-	assert.Equal(t, state.LinkID, got.LinkID)
-}
-
-func TestDispatcherStore_Update(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create a dispatcher
-	state := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    101,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
-
-	// Update it
-	state.Revision = 2
-
-	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher (update) failed")
-
-	// Verify the update
-	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher failed")
-
-	assert.Equal(t, uint32(2), got.Revision)
-}
-
-func TestDispatcherStore_Delete(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create a dispatcher
-	state := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    101,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
-
-	// Delete it
-	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1), "DeleteDispatcher failed")
-
-	// Verify it's gone
-	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.Error(t, err, "expected dispatcher to be deleted")
-}
-
-func TestDispatcherStore_DeleteNonExistent(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Try to delete a non-existent dispatcher
-	err = store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 99)
-	require.Error(t, err, "expected error for non-existent dispatcher")
-}
-
-func TestDispatcherStore_IncrementRevision(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create a dispatcher with revision 1
-	state := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    101,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher failed")
-
-	// Increment revision
-	newRev, err := store.IncrementRevision(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "IncrementRevision failed")
-	assert.Equal(t, uint32(2), newRev, "expected revision 2")
-
-	// Increment again
-	newRev, err = store.IncrementRevision(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "IncrementRevision (2nd) failed")
-	assert.Equal(t, uint32(3), newRev, "expected revision 3")
-
-	// Verify via Get
-	got, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher failed")
-	assert.Equal(t, uint32(3), got.Revision, "revision mismatch")
-}
-
-func TestDispatcherStore_UniqueConstraint(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create an XDP dispatcher
-	xdpState := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    101,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, xdpState), "SaveDispatcher (xdp) failed")
-
-	// Create a TC-ingress dispatcher on same nsid/ifindex - should work (different type)
-	// TC dispatchers have LinkID=0 (they use netlink filters, not BPF links)
-	tcState := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeTCIngress,
-		Nsid:      4026531840,
-		Ifindex:   1,
-		Revision:  1,
-		ProgramID: 200,
-		LinkID:    0,
-	}
-
-	require.NoError(t, store.SaveDispatcher(ctx, tcState), "SaveDispatcher (tc-ingress) failed")
-
-	// Verify both exist
-	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher (xdp) failed")
-
-	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher (tc-ingress) failed")
-}
-
-func TestDispatcherStore_DifferentInterfaces(t *testing.T) {
-	store, err := sqlite.NewInMemory(context.Background(), testLogger())
-	require.NoError(t, err, "failed to create store")
-	defer store.Close()
-
-	ctx := context.Background()
-
-	// Create dispatchers for ifindex 1 and 2
-	for ifindex := uint32(1); ifindex <= 2; ifindex++ {
-		state := dispatcher.State{
-			Type:      dispatcher.DispatcherTypeXDP,
-			Nsid:      4026531840,
-			Ifindex:   ifindex,
-			Revision:  1,
-			ProgramID: kernel.ProgramID(100 + ifindex),
-			LinkID:    kernel.LinkID(200 + ifindex),
-		}
-		require.NoError(t, store.SaveDispatcher(ctx, state), "SaveDispatcher (ifindex %d) failed", ifindex)
-	}
-
-	// Verify both exist independently
-	got1, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 1)
-	require.NoError(t, err, "GetDispatcher (ifindex 1) failed")
-	assert.Equal(t, kernel.ProgramID(101), got1.ProgramID)
-
-	got2, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2)
-	require.NoError(t, err, "GetDispatcher (ifindex 2) failed")
-	assert.Equal(t, kernel.ProgramID(102), got2.ProgramID)
 }
 
 // ----------------------------------------------------------------------------
@@ -949,33 +749,26 @@ func TestStoreGC_StaleDispatcherDeletion(t *testing.T) {
 
 	ctx := context.Background()
 
-	disp1 := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   2,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    200,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, disp1))
+	xdpKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
+	xdpLinkID := kernel.LinkID(200)
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: xdpKey, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 100, LinkID: &xdpLinkID},
+	}))
 
-	disp2 := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeTCIngress,
-		Nsid:      4026531840,
-		Ifindex:   3,
-		Revision:  1,
-		ProgramID: 101,
-		LinkID:    0,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, disp2))
+	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: tcKey, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+	}))
 
 	// Delete the TC dispatcher, keep the XDP one.
-	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3))
+	require.NoError(t, store.DeleteDispatcherSnapshot(ctx, tcKey))
 
-	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2)
+	_, err = store.GetDispatcherSnapshot(ctx, xdpKey)
 	require.NoError(t, err, "XDP dispatcher should survive")
 
-	_, err = store.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3)
+	_, err = store.GetDispatcherSnapshot(ctx, tcKey)
 	require.Error(t, err, "TC dispatcher should be deleted")
 }
 
@@ -1007,8 +800,8 @@ func TestStoreGC_StaleLinkDeletion(t *testing.T) {
 }
 
 func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
-	// After deleting extension links, CountDispatcherLinks should
-	// return zero, signalling the dispatcher is orphaned.
+	// After deleting extension links via snapshot replace with no
+	// members, the dispatcher should have zero members.
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -1018,48 +811,47 @@ func TestStoreGC_OrphanedDispatcherAfterLinkDeletion(t *testing.T) {
 	prog := testProgram()
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 
-	disp := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   2,
-		Revision:  1,
-		ProgramID: 500,
-		LinkID:    501,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, disp))
-
-	xdpLink := bpfman.NewEphemeralLinkRecord(
-		kernel.LinkID(300), kernel.ProgramID(100),
-		bpfman.XDPDetails{
-			Interface:    "eth0",
-			Ifindex:      2,
-			DispatcherID: 500,
-			Nsid:         4026531840,
-			Revision:     1,
+	key := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
+	dispLinkID := kernel.LinkID(501)
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: key, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 500, LinkID: &dispLinkID},
+		Members: []platform.DispatcherMember{
+			{
+				ProgramID:   kernel.ProgramID(100),
+				ProgramName: "test_prog",
+				ProgPinPath: "/sys/fs/bpf/test_prog",
+				LinkID:      kernel.LinkID(0x80000001),
+				Position:    0,
+				Priority:    50,
+				ProceedOn:   0x04,
+				Ifname:      "eth0",
+			},
 		},
-		time.Now(),
-	)
-	require.NoError(t, store.SaveLink(ctx, xdpLink))
+	}))
 
-	// Before deletion, dispatcher has one extension link.
-	count, err := store.CountDispatcherLinks(ctx, kernel.ProgramID(500))
+	// Before removal, dispatcher has one member.
+	snap, err := store.GetDispatcherSnapshot(ctx, key)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count)
+	assert.Equal(t, 1, len(snap.Members))
 
-	// Delete the extension link.
-	require.NoError(t, store.DeleteLink(ctx, kernel.LinkID(300)))
+	// Replace with zero members (simulating detach of last extension).
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: key, Revision: 2,
+		Runtime: platform.DispatcherRuntime{ProgramID: 500, LinkID: &dispLinkID},
+	}))
 
-	// After deletion, dispatcher has zero extension links.
-	count, err = store.CountDispatcherLinks(ctx, kernel.ProgramID(500))
+	// After replacement, dispatcher has zero members.
+	snap, err = store.GetDispatcherSnapshot(ctx, key)
 	require.NoError(t, err)
-	assert.Equal(t, 0, count, "dispatcher should have no remaining links")
+	assert.Empty(t, snap.Members, "dispatcher should have no remaining members")
 
 	// Deleting the now-orphaned dispatcher should succeed.
-	require.NoError(t, store.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2))
+	require.NoError(t, store.DeleteDispatcherSnapshot(ctx, key))
 
-	dispatchers, err := store.ListDispatchers(ctx)
+	summaries, err := store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, dispatchers)
+	assert.Empty(t, summaries)
 }
 
 func TestStoreGC_TransactionalAtomicity(t *testing.T) {
@@ -1074,14 +866,11 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog))
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), prog))
 
-	disp := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeTCIngress,
-		Nsid:      4026531840,
-		Ifindex:   3,
-		Revision:  1,
-		ProgramID: 101,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, disp))
+	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: tcKey, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+	}))
 
 	details := bpfman.TracepointDetails{Group: "syscalls", Name: "test"}
 	spec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(400), kernel.ProgramID(100), details, time.Now())
@@ -1091,7 +880,7 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
 			return err
 		}
-		if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3); err != nil {
+		if err := tx.DeleteDispatcherSnapshot(ctx, tcKey); err != nil {
 			return err
 		}
 		return tx.DeleteLink(ctx, kernel.LinkID(400))
@@ -1102,9 +891,9 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, programs, 1, "program 100 should survive")
 
-	dispatchers, err := store.ListDispatchers(ctx)
+	summaries, err := store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, dispatchers)
+	assert.Empty(t, summaries)
 
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
@@ -1147,25 +936,18 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(102), depProg))
 
 	// Dispatchers.
-	xdpDisp := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   2,
-		Revision:  1,
-		ProgramID: 100,
-		LinkID:    300,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, xdpDisp))
+	xdpKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2}
+	xdpLinkID := kernel.LinkID(300)
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: xdpKey, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 100, LinkID: &xdpLinkID},
+	}))
 
-	tcDisp := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeTCIngress,
-		Nsid:      4026531840,
-		Ifindex:   3,
-		Revision:  1,
-		ProgramID: 101,
-		LinkID:    0,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, tcDisp))
+	tcKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3}
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key: tcKey, Revision: 1,
+		Runtime: platform.DispatcherRuntime{ProgramID: 101},
+	}))
 
 	// Links (tracepoints, not XDP extensions -- so the XDP
 	// dispatcher has zero extension links from the start).
@@ -1194,7 +976,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 		}
 
 		// Phase 2: delete stale dispatcher.
-		if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, 4026531840, 3); err != nil {
+		if err := tx.DeleteDispatcherSnapshot(ctx, tcKey); err != nil {
 			return err
 		}
 
@@ -1204,12 +986,12 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 		}
 
 		// Phase 4: check for orphaned dispatchers.
-		count, err := tx.CountDispatcherLinks(ctx, kernel.ProgramID(100))
+		snap, err := tx.GetDispatcherSnapshot(ctx, xdpKey)
 		if err != nil {
 			return err
 		}
-		if count == 0 {
-			if err := tx.DeleteDispatcher(ctx, dispatcher.DispatcherTypeXDP, 4026531840, 2); err != nil {
+		if len(snap.Members) == 0 {
+			if err := tx.DeleteDispatcherSnapshot(ctx, xdpKey); err != nil {
 				return err
 			}
 		}
@@ -1225,9 +1007,9 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	_, exists := programs[100]
 	assert.True(t, exists, "program 100 should exist")
 
-	dispatchers, err := store.ListDispatchers(ctx)
+	summaries, err := store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, dispatchers, "all dispatchers should be removed")
+	assert.Empty(t, summaries, "all dispatchers should be removed")
 
 	links, err := store.ListLinks(ctx)
 	require.NoError(t, err)
@@ -1282,25 +1064,18 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(100), prog), "Save program failed")
 
 	// Create dispatchers for XDP and TC links (FK requirement for their details)
-	xdpDispatcher := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeXDP,
-		Nsid:      4026531840,
-		Ifindex:   2,
-		Revision:  1,
-		ProgramID: 500,
-		LinkID:    501,
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, xdpDispatcher), "SaveDispatcher XDP failed")
+	xdpLinkID := kernel.LinkID(501)
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: 4026531840, Ifindex: 2},
+		Revision: 1,
+		Runtime:  platform.DispatcherRuntime{ProgramID: 500, LinkID: &xdpLinkID},
+	}), "ReplaceDispatcherSnapshot XDP failed")
 
-	tcDispatcher := dispatcher.State{
-		Type:      dispatcher.DispatcherTypeTCIngress,
-		Nsid:      4026531840,
-		Ifindex:   3,
-		Revision:  1,
-		ProgramID: 502,
-		LinkID:    0, // TC dispatchers don't have links
-	}
-	require.NoError(t, store.SaveDispatcher(ctx, tcDispatcher), "SaveDispatcher TC failed")
+	require.NoError(t, store.ReplaceDispatcherSnapshot(ctx, platform.DispatcherSnapshot{
+		Key:      dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 4026531840, Ifindex: 3},
+		Revision: 1,
+		Runtime:  platform.DispatcherRuntime{ProgramID: 502},
+	}), "ReplaceDispatcherSnapshot TC failed")
 
 	// Create links with ALL detail types
 	testCases := []struct {

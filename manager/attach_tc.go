@@ -26,7 +26,7 @@ var DefaultTCProceedOn = tcProceedOnOK | tcProceedOnPipe | tcProceedOnDispatcher
 // Each action code a produces bit (1 << a). If the list is empty, the
 // default bitmask (OK|Pipe|DispatcherReturn) is returned.
 //
-// This must match the reconstruction in ListDispatcherSlots so that
+// This must match the reconstruction in GetDispatcherSnapshot so that
 // the BPF map written at initial attach is identical to the one
 // produced when recomputing after detach.
 func tcProceedOnBitmask(actions []int32) uint32 {

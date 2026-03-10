@@ -91,38 +91,6 @@ func (s *stubStore) ListTCXLinksByInterface(ctx context.Context, nsid uint64, if
 }
 
 // DispatcherStore
-func (s *stubStore) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-	panic("stubStore.GetDispatcher not implemented")
-}
-
-func (s *stubStore) ListDispatchers(ctx context.Context) ([]dispatcher.State, error) {
-	panic("stubStore.ListDispatchers not implemented")
-}
-
-func (s *stubStore) SaveDispatcher(ctx context.Context, state dispatcher.State) error {
-	panic("stubStore.SaveDispatcher not implemented")
-}
-
-func (s *stubStore) DeleteDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) error {
-	panic("stubStore.DeleteDispatcher not implemented")
-}
-
-func (s *stubStore) IncrementRevision(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (uint32, error) {
-	panic("stubStore.IncrementRevision not implemented")
-}
-
-func (s *stubStore) ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]platform.DispatcherSlot, error) {
-	panic("stubStore.ListDispatcherSlots not implemented")
-}
-
-func (s *stubStore) CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error) {
-	panic("stubStore.CountDispatcherLinks not implemented")
-}
-
-func (s *stubStore) DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error {
-	panic("stubStore.DeleteDispatcherLinkDetails not implemented")
-}
-
 func (s *stubStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (platform.DispatcherSnapshot, error) {
 	panic("stubStore.GetDispatcherSnapshot not implemented")
 }

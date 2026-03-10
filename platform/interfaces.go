@@ -51,38 +51,6 @@ type LinkStore interface {
 
 // DispatcherStore manages dispatcher state.
 type DispatcherStore interface {
-	// GetDispatcher retrieves a dispatcher by type, nsid, and ifindex.
-	// Returns ErrRecordNotFound if the dispatcher does not exist.
-	GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error)
-
-	// ListDispatchers returns all dispatchers.
-	ListDispatchers(ctx context.Context) ([]dispatcher.State, error)
-
-	// SaveDispatcher creates or updates a dispatcher.
-	SaveDispatcher(ctx context.Context, state dispatcher.State) error
-
-	// DeleteDispatcher removes a dispatcher by type, nsid, and ifindex.
-	DeleteDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) error
-
-	// IncrementRevision atomically increments the dispatcher revision.
-	// Returns the new revision number. Wraps from MaxUint32 to 1.
-	IncrementRevision(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (uint32, error)
-
-	// CountDispatcherLinks returns the number of extension links
-	// attached to the dispatcher identified by its program ID.
-	CountDispatcherLinks(ctx context.Context, dispatcherProgramID kernel.ProgramID) (int, error)
-
-	// ListDispatcherSlots returns the occupied extension slots for a
-	// dispatcher, including each slot's position, priority, and
-	// program name. Results are ordered by (priority, program_name).
-	ListDispatcherSlots(ctx context.Context, dispatcherProgramID kernel.ProgramID) ([]DispatcherSlot, error)
-
-	// DeleteDispatcherLinkDetails deletes all link detail records
-	// (from link_xdp_details and link_tc_details) for a given
-	// dispatcher program ID. The parent links table entries are
-	// not affected.
-	DeleteDispatcherLinkDetails(ctx context.Context, dispatcherProgramID kernel.ProgramID) error
-
 	// GetDispatcherSnapshot retrieves a complete snapshot of a
 	// dispatcher and all its extension members, identified by key.
 	// Returns ErrRecordNotFound if the dispatcher does not exist.
@@ -103,18 +71,6 @@ type DispatcherStore interface {
 	// DeleteDispatcherSnapshot removes a dispatcher and all its
 	// extension link records by attach point key.
 	DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error
-}
-
-// DispatcherSlot describes an occupied extension slot in a dispatcher.
-type DispatcherSlot struct {
-	Position    int
-	Priority    int
-	ProgramName string
-	ProceedOn   uint32
-	ProgPinPath string           // pinned extension program for rebuild
-	LinkID      kernel.LinkID    // existing link record ID (synthetic)
-	ProgramID   kernel.ProgramID // managed program's kernel ID
-	Ifname      string           // interface name from detail record
 }
 
 // Store combines program, link, and dispatcher store operations.

@@ -432,11 +432,6 @@ func TestSnapshotStore_TC_NullLinkID(t *testing.T) {
 	assert.Equal(t, uint16(50), *got.Runtime.FilterPriority)
 	require.Len(t, got.Members, 1)
 
-	// Verify via old API (backwards compatibility).
-	oldState, err := store.GetDispatcher(ctx, dispatcher.DispatcherTypeTCIngress, testNsid, testIfindex)
-	require.NoError(t, err)
-	assert.Equal(t, kernel.LinkID(0), oldState.LinkID, "old API should see LinkID == 0 for TC")
-	assert.Equal(t, uint16(50), oldState.Priority)
 }
 
 func TestSnapshotStore_EmptyMembers(t *testing.T) {

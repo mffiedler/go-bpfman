@@ -942,18 +942,3 @@ func bitmaskToActions(mask uint32) []int32 {
 	}
 	return actions
 }
-
-// sortSlotsByPriority sorts slots by (priority ASC, program_name ASC).
-func sortSlotsByPriority(slots []platform.DispatcherSlot) {
-	for i := 1; i < len(slots); i++ {
-		for j := i; j > 0; j-- {
-			if slots[j].Priority < slots[j-1].Priority ||
-				(slots[j].Priority == slots[j-1].Priority &&
-					slots[j].ProgramName < slots[j-1].ProgramName) {
-				slots[j], slots[j-1] = slots[j-1], slots[j]
-			} else {
-				break
-			}
-		}
-	}
-}

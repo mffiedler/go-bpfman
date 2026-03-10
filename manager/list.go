@@ -147,7 +147,24 @@ func (m *Manager) ListLinksByProgram(ctx context.Context, programID kernel.Progr
 
 // GetDispatcher retrieves a dispatcher by type, namespace ID, and interface index.
 func (m *Manager) GetDispatcher(ctx context.Context, dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) (dispatcher.State, error) {
-	return m.store.GetDispatcher(ctx, dispType, nsid, ifindex)
+	snap, err := m.store.GetDispatcherSnapshot(ctx, dispatcher.Key{Type: dispType, Nsid: nsid, Ifindex: ifindex})
+	if err != nil {
+		return dispatcher.State{}, err
+	}
+	state := dispatcher.State{
+		Type:      snap.Key.Type,
+		Nsid:      snap.Key.Nsid,
+		Ifindex:   snap.Key.Ifindex,
+		Revision:  snap.Revision,
+		ProgramID: snap.Runtime.ProgramID,
+	}
+	if snap.Runtime.LinkID != nil {
+		state.LinkID = *snap.Runtime.LinkID
+	}
+	if snap.Runtime.FilterPriority != nil {
+		state.Priority = *snap.Runtime.FilterPriority
+	}
+	return state, nil
 }
 
 // CountDispatcherExtensions returns the number of extension links attached

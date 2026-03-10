@@ -1141,29 +1141,29 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 	}
 
 	// Verify dispatcher state
-	dispatchers, err := fix.Store.ListDispatchers(ctx)
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	require.Len(t, dispatchers, 1)
+	require.Len(t, summaries, 1)
 
-	count, err := fix.Store.CountDispatcherLinks(ctx, dispatchers[0].ProgramID)
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
 	require.NoError(t, err)
-	assert.Equal(t, 2, count)
+	assert.Equal(t, 2, len(snap.Members))
 
 	// Detach first - dispatcher should still exist
 	err = fix.Detach(ctx, linkIDs[0])
 	require.NoError(t, err)
 
-	dispatchers, err = fix.Store.ListDispatchers(ctx)
+	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Len(t, dispatchers, 1, "dispatcher should still exist with 1 extension")
+	assert.Len(t, summaries, 1, "dispatcher should still exist with 1 extension")
 
 	// Detach second - dispatcher should be cleaned up
 	err = fix.Detach(ctx, linkIDs[1])
 	require.NoError(t, err)
 
-	dispatchers, err = fix.Store.ListDispatchers(ctx)
+	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, dispatchers, "dispatcher should be removed after last extension detached")
+	assert.Empty(t, summaries, "dispatcher should be removed after last extension detached")
 }
 
 // TestTC_DispatcherStateInStore verifies that the store correctly
@@ -1186,24 +1186,24 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify dispatcher exists in store
-	dispatchers, err := fix.Store.ListDispatchers(ctx)
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	require.Len(t, dispatchers, 1, "should have 1 dispatcher")
-	assert.Equal(t, uint32(2), dispatchers[0].Ifindex) // eth0 = ifindex 2
+	require.Len(t, summaries, 1, "should have 1 dispatcher")
+	assert.Equal(t, uint32(2), summaries[0].Key.Ifindex) // eth0 = ifindex 2
 
-	// Verify CountDispatcherLinks returns 1
-	count, err := fix.Store.CountDispatcherLinks(ctx, dispatchers[0].ProgramID)
+	// Verify snapshot has 1 member
+	snap, err := fix.Store.GetDispatcherSnapshot(ctx, summaries[0].Key)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count, "should have 1 extension link")
+	assert.Equal(t, 1, len(snap.Members), "should have 1 extension link")
 
 	// Detach the extension
 	err = fix.Detach(ctx, link.Record.ID)
 	require.NoError(t, err)
 
 	// Dispatcher should be cleaned up
-	dispatchers, err = fix.Store.ListDispatchers(ctx)
+	summaries, err = fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, dispatchers, "dispatcher should be removed after last extension detached")
+	assert.Empty(t, summaries, "dispatcher should be removed after last extension detached")
 }
 
 // =============================================================================
@@ -1294,9 +1294,9 @@ func TestXDP_PinPathConventions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Capture dispatcher state before cleanup
-	dispatchers, err := fix.Store.ListDispatchers(ctx)
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	require.Len(t, dispatchers, 1)
+	require.Len(t, summaries, 1)
 
 	// Detach (triggers full dispatcher cleanup)
 	err = fix.Detach(ctx, link.Record.ID)
@@ -1325,9 +1325,9 @@ func TestTC_PinPathConventions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get dispatcher state before detaching
-	dispatchers, err := fix.Store.ListDispatchers(ctx)
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	require.Len(t, dispatchers, 1)
+	require.Len(t, summaries, 1)
 
 	// Detach (triggers full dispatcher cleanup)
 	err = fix.Detach(ctx, link.Record.ID)
@@ -1540,9 +1540,9 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 	require.NotZero(t, link.Record.ID, "link ID should be non-zero")
 
 	// Verify dispatcher was created
-	dispatchers, err := fix.Store.ListDispatchers(ctx)
+	summaries, err := fix.Store.ListDispatcherSummaries(ctx)
 	require.NoError(t, err)
-	assert.Len(t, dispatchers, 1, "should have 1 dispatcher")
+	assert.Len(t, summaries, 1, "should have 1 dispatcher")
 }
 
 // TestXDPDispatcher_MultipleAttachesCreateMultipleLinks verifies that:
