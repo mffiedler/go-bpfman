@@ -17,13 +17,19 @@ import (
 // matching row.
 var ErrRecordNotFound = errors.New("record not found")
 
-// LinkWriter writes link metadata to the store.
-// SaveLink dispatches to the appropriate detail table based on record.Details.Kind().
+// LinkWriter writes standalone link metadata to the store.
+// Dispatcher-backed XDP/TC member links are persisted and removed
+// through DispatcherStore snapshot operations, not through LinkWriter.
 type LinkWriter interface {
-	// SaveLink saves a link record with its details.
-	// record.ID is the primary key (kernel-assigned for real BPF links,
-	// or bpfman-assigned synthetic ID for perf_event-based links).
+	// SaveLink persists a standalone link record and its
+	// type-specific details. Dispatcher-backed XDP/TC member links
+	// are persisted through DispatcherStore.ReplaceDispatcherSnapshot,
+	// not through SaveLink.
 	SaveLink(ctx context.Context, record bpfman.LinkRecord) error
+
+	// DeleteLink removes a standalone link record. Returns an
+	// error if the link is dispatcher-backed (XDP/TC); those must
+	// be removed via DispatcherStore lifecycle operations.
 	DeleteLink(ctx context.Context, linkID kernel.LinkID) error
 }
 
