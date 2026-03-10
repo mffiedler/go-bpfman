@@ -1,6 +1,131 @@
 -- Schema for bpfman SQLite database
+--
 -- This schema uses the registry + detail tables pattern for links,
 -- providing both polymorphic access and type-specific constraints.
+--
+-- Entity lifecycle
+-- ================
+--
+-- Programs (managed_programs)
+-- ---------------------------
+--
+-- CREATE: A row is inserted only after a BPF program has been
+--   successfully loaded into the kernel. There are no intermediate
+--   reservation or loading states. The program_id is the
+--   kernel-assigned BPF program ID.
+--
+-- UPDATE: Programs may be updated to change metadata, ownership, or
+--   map relationships. The map_owner_id self-reference allows
+--   multiple programs to share BPF maps with one designated owner.
+--
+-- DELETE: Deleting a program cascades through the entire link
+--   hierarchy:
+--
+--     DELETE managed_programs
+--       -> CASCADE to links (via kernel_prog_id FK)
+--         -> CASCADE to link_*_details (via link_id FK)
+--
+--   A single DELETE on managed_programs cleans up the base link row
+--   and its type-specific detail row automatically.
+--
+--   Exception: if the program is a map owner (another program's
+--   map_owner_id points to it), the delete is RESTRICTED. You must
+--   delete the dependent programs first.
+--
+-- Links (links + link_*_details)
+-- ------------------------------
+--
+-- The links table is a polymorphic registry. Every link gets a row
+-- here regardless of type, with a "kind" discriminator column that
+-- indicates which detail table holds the type-specific data. Each
+-- detail table has a 1:1 relationship with links, joined on link_id.
+-- This avoids a single wide nullable table and lets each type enforce
+-- its own constraints.
+--
+-- CREATE: A link row is inserted into both the base links table and
+--   the appropriate detail table in a single transaction. The link_id
+--   is either kernel-assigned (for real BPF links) or
+--   bpfman-assigned in the synthetic range (>= 0x80000000) for
+--   attach types like perf_event where the kernel does not provide a
+--   link FD/ID.
+--
+-- UPDATE: Detail rows may be updated (e.g., to change dispatcher
+--   position or revision during a dispatcher recompile). The base
+--   links row is generally immutable after creation.
+--
+-- DELETE: Deleting a link row cascades to its detail table row.
+--   Links are also deleted automatically when their parent program is
+--   deleted (see program deletion above).
+--
+-- Dispatchers (dispatchers)
+-- -------------------------
+--
+-- XDP and TC do not natively support multiple programs on one
+-- interface, so bpfman uses dispatcher BPF programs to chain them.
+-- There is exactly one dispatcher per (type, nsid, ifindex) tuple.
+--
+-- CREATE: A dispatcher row is inserted when the first extension
+--   program is attached to an interface. The dispatcher's program_id
+--   is the kernel-assigned ID of the dispatcher BPF program itself.
+--   There is deliberately no FK back to managed_programs, giving
+--   flexibility in lifecycle ordering (the dispatcher row may be
+--   created before or after the corresponding managed_programs row).
+--
+-- UPDATE: When a dispatcher is recompiled (e.g., extensions
+--   added/removed), its revision is incremented and its program_id
+--   may change to reflect the new kernel program. Because
+--   link_xdp_details and link_tc_details reference
+--   dispatchers(program_id) with ON UPDATE CASCADE, all extension
+--   link rows are automatically updated to track the new
+--   program_id. Without this, every extension link row would need
+--   manual updating after a dispatcher recompile.
+--
+-- DELETE: Removing a dispatcher cascades to the extension link detail
+--   rows (link_xdp_details, link_tc_details) that reference it, via
+--   ON DELETE CASCADE on the dispatcher_program_id FK. Those
+--   extensions cannot run without their dispatcher, so cleanup is
+--   appropriate. Note that this cascade removes only the detail rows;
+--   the parent links and managed_programs rows are unaffected.
+--
+-- TCX (link_tcx_details)
+-- ----------------------
+--
+-- TCX is a special case: the kernel handles multi-program ordering
+-- natively, so no dispatcher is needed. TCX detail rows have no
+-- dispatcher_program_id, no position column, and no dispatcher
+-- cascade behaviour. They are cleaned up solely by the links cascade.
+--
+-- Foreign key actions reference
+-- =============================
+--
+-- ON DELETE CASCADE: when the referenced (parent) row is deleted,
+--   automatically delete all rows that reference it. Used here so
+--   that deleting a program removes its links, and deleting a link
+--   removes its detail row. The cascade can chain: deleting a
+--   managed_programs row cascades to links, which cascades to
+--   link_*_details.
+--
+-- ON DELETE RESTRICT: prevent the delete entirely if any row still
+--   references the target. The delete statement fails with an error.
+--   Used on map_owner_id so that a map-owning program cannot be
+--   removed while dependent programs still exist.
+--
+-- ON UPDATE CASCADE: when the referenced column value in the parent
+--   row changes, automatically update the FK column in all
+--   referencing rows to match. Used on dispatcher_program_id so that
+--   when a dispatcher is recompiled and receives a new program_id,
+--   all extension link rows are updated without manual intervention.
+--
+-- STRICT: a SQLite table mode that enforces column types. Without
+--   it, SQLite allows any value in any column regardless of declared
+--   type. With STRICT, inserting a TEXT into an INTEGER column (or
+--   vice versa) is an error. Every table in this schema uses STRICT.
+--
+-- CHECK: an inline constraint that validates a value at
+--   insert/update time. Used throughout for enum-style columns
+--   (program_type, kind, direction), range constraints (offset >= 0,
+--   position BETWEEN 0 AND 9), boolean columns (IN (0, 1)), and
+--   JSON validation (json_valid).
 
 -- Programs table for managed BPF programs
 -- A row exists only after successful load - no reservation/loading states.
@@ -39,9 +164,12 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
 
+    -- Self-referential: when multiple programs share BPF maps, one is
+    -- designated the owner. RESTRICT prevents deleting the owner
+    -- while any dependent program still references it.
     FOREIGN KEY (map_owner_id)
         REFERENCES managed_programs(program_id)
-        ON DELETE RESTRICT       -- Prevent deleting owner while dependents exist
+        ON DELETE RESTRICT
 ) STRICT;
 
 -- Note: No uniqueness constraint on bpfman.io/ProgramName.
@@ -74,6 +202,8 @@ CREATE TABLE IF NOT EXISTS links (
         (is_synthetic = 0 AND link_id < 2147483648)
     ),
 
+    -- Deleting a program cascades here, removing all its links.
+    -- This in turn cascades to the type-specific detail tables.
     FOREIGN KEY (kernel_prog_id)
         REFERENCES managed_programs(program_id)
         ON DELETE CASCADE
@@ -86,6 +216,10 @@ CREATE INDEX IF NOT EXISTS idx_links_by_pin ON links(pin_path);
 --------------------------------------------------------------------------------
 -- Type-Specific Detail Tables
 --------------------------------------------------------------------------------
+-- Each link kind has a 1:1 detail table joined on link_id. This avoids a
+-- single wide nullable table; each detail table contains only the columns
+-- relevant to its type. All detail tables cascade on delete from links,
+-- which in turn cascades from managed_programs.
 
 -- Tracepoint links
 CREATE TABLE IF NOT EXISTS link_tracepoint_details (
@@ -144,10 +278,20 @@ CREATE TABLE IF NOT EXISTS link_fexit_details (
         ON DELETE CASCADE
 ) STRICT;
 
--- Dispatchers table for XDP/TC multi-program chaining
+--------------------------------------------------------------------------------
+-- Dispatchers
+--------------------------------------------------------------------------------
+
+-- Dispatchers for XDP/TC multi-program chaining.
+--
 -- Natural key (type, nsid, ifindex) is the primary key - this is how
--- the system identifies a dispatcher ("the XDP dispatcher for this interface").
--- program_id is the program ID for the dispatcher program.
+-- the system identifies a dispatcher ("the XDP dispatcher for this
+-- interface"). program_id has a UNIQUE constraint so that
+-- link_xdp_details and link_tc_details can use it as a FK target.
+--
+-- No FK back to managed_programs: this is deliberate, giving
+-- flexibility in lifecycle ordering (the dispatcher row may be
+-- created before or after the corresponding managed_programs row).
 CREATE TABLE IF NOT EXISTS dispatchers (
     type TEXT NOT NULL CHECK (type IN ('xdp', 'tc-ingress', 'tc-egress')),
     nsid INTEGER NOT NULL,
@@ -169,6 +313,10 @@ CREATE TABLE IF NOT EXISTS dispatchers (
     )
 ) STRICT;
 
+--------------------------------------------------------------------------------
+-- Dispatcher Extension Detail Tables
+--------------------------------------------------------------------------------
+
 -- XDP links (dispatcher-based)
 CREATE TABLE IF NOT EXISTS link_xdp_details (
     link_id INTEGER PRIMARY KEY,
@@ -185,6 +333,12 @@ CREATE TABLE IF NOT EXISTS link_xdp_details (
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
+    -- ON DELETE CASCADE: removing a dispatcher removes extension link
+    -- detail rows that reference it; without the dispatcher those
+    -- extensions cannot run.
+    -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
+    -- new kernel program_id, this FK is automatically updated so that
+    -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
@@ -212,6 +366,12 @@ CREATE TABLE IF NOT EXISTS link_tc_details (
     FOREIGN KEY (link_id)
         REFERENCES links(link_id)
         ON DELETE CASCADE,
+    -- ON DELETE CASCADE: removing a dispatcher removes extension link
+    -- detail rows that reference it; without the dispatcher those
+    -- extensions cannot run.
+    -- ON UPDATE CASCADE: when a dispatcher is recompiled and gets a
+    -- new kernel program_id, this FK is automatically updated so that
+    -- every extension link row tracks the new ID.
     FOREIGN KEY (dispatcher_program_id)
         REFERENCES dispatchers(program_id)
         ON DELETE CASCADE
@@ -223,6 +383,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_tc_dispatcher_position
     ON link_tc_details(nsid, ifindex, direction, position);
 
 -- TCX links (kernel multi-attach)
+-- The kernel handles multi-program ordering natively for TCX, so no
+-- dispatcher is needed. No dispatcher_program_id, no position column,
+-- no dispatcher cascade behaviour. Cleaned up solely by the links
+-- cascade from managed_programs.
 CREATE TABLE IF NOT EXISTS link_tcx_details (
     link_id INTEGER PRIMARY KEY,
     interface TEXT NOT NULL,
