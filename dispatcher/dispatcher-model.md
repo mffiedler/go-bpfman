@@ -269,4 +269,6 @@ No rebuild. The dispatcher is torn down entirely.
 
 - [dispatcher-gc.md](dispatcher-gc.md) -- GC behaviour and the
   extension link staleness problem
+- [dispatcher-scenarios.md](dispatcher-scenarios.md) -- concrete
+  walkthroughs of attach, detach, rebuild, and GC operations
 - Package documentation: `go doc ./dispatcher/`

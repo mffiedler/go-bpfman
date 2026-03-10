@@ -188,4 +188,6 @@ dispatcher implies live extensions, by construction.**
 
 - [dispatcher-model.md](dispatcher-model.md) -- dispatcher
   architecture, rebuild cycle, store schema
+- [dispatcher-scenarios.md](dispatcher-scenarios.md) -- concrete
+  walkthroughs of attach, detach, rebuild, and GC operations
 - Package documentation: `go doc ./dispatcher/`
