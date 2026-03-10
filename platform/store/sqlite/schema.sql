@@ -282,8 +282,11 @@ CREATE TABLE IF NOT EXISTS link_fexit_details (
 --
 -- Natural key (type, nsid, ifindex) is the primary key - this is how
 -- the system identifies a dispatcher ("the XDP dispatcher for this
--- interface"). program_id has a UNIQUE constraint so that
--- link_xdp_details and link_tc_details can use it as a FK target.
+-- interface"). program_id is a runtime fact that changes on every
+-- rebuild; it has a UNIQUE constraint solely so that member detail
+-- rows (link_xdp_details, link_tc_details) can reference the
+-- currently persisted dispatcher revision via FK. It is not the
+-- logical identity of the dispatcher.
 --
 -- No FK back to managed_programs: this is deliberate, giving
 -- flexibility in lifecycle ordering (the dispatcher row may be
