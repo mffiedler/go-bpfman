@@ -162,16 +162,11 @@ func (s *Server) attachTC(ctx context.Context, scope lock.WriterScope, programID
 
 	spec = spec.WithPriority(int(info.Priority))
 
-	// Use provided proceed-on or default
-	proceedOn := info.ProceedOn
-	if len(proceedOn) == 0 {
-		proceedOn = []int32{
-			bpfman.TCActionOK.Int32(),
-			bpfman.TCActionPipe.Int32(),
-			bpfman.TCActionDispatcherReturn.Int32(),
-		}
+	// Use provided proceed-on if any; otherwise the manager default
+	// (Pipe|DispatcherReturn) applies, matching Rust bpfman.
+	if len(info.ProceedOn) > 0 {
+		spec = spec.WithProceedOn(info.ProceedOn)
 	}
-	spec = spec.WithProceedOn(proceedOn)
 
 	// Apply network namespace if specified
 	if info.GetNetns() != "" {
