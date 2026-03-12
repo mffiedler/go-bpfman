@@ -696,3 +696,245 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 			"egress program %d should have counted packets", i)
 	}
 }
+
+// TestTC_DefaultProceedOnRebuild reproduces the operator integration
+// test failure. Two TC programs with the same priority and default
+// proceed-on (Pipe|DispatcherReturn, no TC_ACT_OK) share a
+// dispatcher. The BPF program returns TC_ACT_OK, so the chain stops
+// after position 0.
+//
+// Rust bpfman sorts new (unattached) programs before existing ones
+// at the same priority, giving the newly-added program position 0.
+// The sort here must match so the newly-attached program executes.
+func TestTC_DefaultProceedOnRebuild(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t)
+	ctx := context.Background()
+
+	objFile := "testdata/tc_counter.bpf.o"
+
+	// Default proceed-on matching the operator CRD default.
+	defaultProceedOn := []int32{3, 30} // Pipe, DispatcherReturn
+
+	type prog struct {
+		id         kernel.ProgramID
+		mapPinPath string
+	}
+
+	load := func() prog {
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		p := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+	}
+
+	attach := func(p prog, priority int) {
+		spec, err := bpfman.NewTCAttachSpec(p.id, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		spec = spec.WithPriority(priority).WithProceedOn(defaultProceedOn)
+		link, err := env.Attach(ctx, spec)
+		require.NoError(t, err)
+		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+	}
+
+	packets := func(p prog) uint64 {
+		return readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
+	}
+
+	existing := load()
+	incoming := load()
+
+	// Attach existing program first (simulates the app-counter
+	// that is already on eth0 from a prior test).
+	attach(existing, 55)
+
+	// Attach incoming program at the same priority (simulates the
+	// tc-counter being deployed by the operator). This triggers a
+	// dispatcher rebuild.
+	attach(incoming, 55)
+
+	// Dump snapshot for diagnostics.
+	nsid, err := netns.GetCurrentNsid()
+	require.NoError(t, err)
+	snap, err := env.GetDispatcherSnapshot(ctx, dispatcher.Key{
+		Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: uint32(veth.A.Ifindex),
+	})
+	require.NoError(t, err)
+	for _, m := range snap.Members {
+		t.Logf("position=%d program_id=%d name=%q priority=%d proceed_on=%#x",
+			m.Position, m.ProgramID, m.ProgramName, m.Priority, m.ProceedOn)
+	}
+
+	// The newly-attached program must be at position 0, matching
+	// Rust bpfman behaviour. When two programs have the same
+	// priority and name, the new (unattached) program sorts before
+	// the existing one.
+	require.Len(t, snap.Members, 2)
+	memberByPos := make(map[int]platform.DispatcherMember)
+	for _, m := range snap.Members {
+		memberByPos[m.Position] = m
+	}
+	assert.Equal(t, incoming.id, memberByPos[0].ProgramID,
+		"newly-attached program should be at position 0")
+	assert.Equal(t, existing.id, memberByPos[1].ProgramID,
+		"previously-attached program should be at position 1")
+
+	// With the incoming program at position 0, it must see traffic.
+	veth.Ping(t, 20)
+	t.Logf("existing=%d packets, incoming=%d packets", packets(existing), packets(incoming))
+	assert.Greater(t, packets(incoming), uint64(0),
+		"incoming program at position 0 should count packets")
+}
+
+// TestTC_MultiPriorityChainDefaultProceedOn verifies that the default
+// TC proceed-on (Pipe|DispatcherReturn, matching Rust bpfman) stops
+// the chain when a program returns TC_ACT_OK. Only position 0
+// executes; programs at higher positions see zero packets.
+//
+// This matches the behaviour observed in the operator integration
+// test TestTcGoCounterLinkPriority, where Rust appears to pass only
+// because the counter pod carries cumulative counts from the
+// preceding TestTcGoCounter test.
+func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t)
+	ctx := context.Background()
+
+	objFile := "testdata/tc_counter.bpf.o"
+
+	type prog struct {
+		id         kernel.ProgramID
+		mapPinPath string
+	}
+
+	load := func() prog {
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		p := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+	}
+
+	// Attach WITHOUT specifying proceed-on, relying on the manager
+	// default (DefaultTCProceedOn = Pipe|DispatcherReturn).
+	attach := func(p prog, priority int) {
+		spec, err := bpfman.NewTCAttachSpec(p.id, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		spec = spec.WithPriority(priority)
+		link, err := env.Attach(ctx, spec)
+		require.NoError(t, err)
+		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+	}
+
+	packets := func(p prog) uint64 {
+		return readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
+	}
+
+	// Three programs at different priorities. All return TC_ACT_OK.
+	progs := make([]prog, 3)
+	priorities := []int{0, 55, 100}
+	for i := range progs {
+		progs[i] = load()
+	}
+	for i, p := range progs {
+		attach(p, priorities[i])
+	}
+
+	veth.Ping(t, 20)
+
+	// Default proceed-on excludes TC_ACT_OK, so the chain stops
+	// after position 0. Only the lowest-priority program counts.
+	for i, p := range progs {
+		count := packets(p)
+		t.Logf("priority=%d program_id=%d packets=%d", priorities[i], p.id, count)
+		if i == 0 {
+			assert.Greater(t, count, uint64(0),
+				"position 0 (priority %d) should count packets", priorities[i])
+		} else {
+			assert.Equal(t, uint64(0), count,
+				"position %d (priority %d) should NOT count packets with default proceed-on",
+				i, priorities[i])
+		}
+	}
+}
+
+// TestTC_MultiPriorityChainWithOKProceedOn verifies that when
+// TC_ACT_OK is explicitly included in proceed-on, the chain
+// continues past each position and all programs count packets.
+func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t)
+	ctx := context.Background()
+
+	objFile := "testdata/tc_counter.bpf.o"
+
+	// Proceed-on including TC_ACT_OK so the chain continues.
+	proceedOn := []int32{0, 3, 30} // OK, Pipe, DispatcherReturn
+
+	type prog struct {
+		id         kernel.ProgramID
+		mapPinPath string
+	}
+
+	load := func() prog {
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		p := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+	}
+
+	attach := func(p prog, priority int) {
+		spec, err := bpfman.NewTCAttachSpec(p.id, veth.A.Name, veth.A.Ifindex, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		spec = spec.WithPriority(priority).WithProceedOn(proceedOn)
+		link, err := env.Attach(ctx, spec)
+		require.NoError(t, err)
+		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+	}
+
+	packets := func(p prog) uint64 {
+		return readStatsMap(t, filepath.Join(p.mapPinPath, "tc_stats_map"))
+	}
+
+	progs := make([]prog, 3)
+	priorities := []int{0, 55, 100}
+	for i := range progs {
+		progs[i] = load()
+	}
+	for i, p := range progs {
+		attach(p, priorities[i])
+	}
+
+	veth.Ping(t, 20)
+
+	// With TC_ACT_OK in proceed-on, every program counts packets.
+	for i, p := range progs {
+		count := packets(p)
+		t.Logf("priority=%d program_id=%d packets=%d", priorities[i], p.id, count)
+		assert.Greater(t, count, uint64(0),
+			"program at priority %d should count packets", priorities[i])
+	}
+}
