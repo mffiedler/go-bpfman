@@ -480,6 +480,9 @@ func (e *executor) rebuildTCDispatcher(
 				"error", err)
 		} else {
 			oldHandle = handle
+			e.logger.InfoContext(ctx, "TC filter swap: found old filter",
+				"old_handle", fmt.Sprintf("%x", oldHandle),
+				"old_priority", oldPriority)
 		}
 	}
 
@@ -490,12 +493,22 @@ func (e *executor) rebuildTCDispatcher(
 		return extensionResult{}, fmt.Errorf("create TC filter: %w", err)
 	}
 
+	e.logger.InfoContext(ctx, "TC filter swap: new filter created",
+		"new_handle", fmt.Sprintf("%x", result.Handle),
+		"new_priority", result.Priority,
+		"new_dispatcher_id", result.DispatcherID,
+		"old_handle", fmt.Sprintf("%x", oldHandle),
+		"handles_match", result.Handle == oldHandle)
+
 	// Remove old filter after new one is in place.
 	if !firstAttach && oldHandle != 0 {
 		parent := dispatcher.TCParentHandle(dispType)
 		if err := e.kernel.DetachTCFilter(ctx, int(ops.ifindex), ops.ifname, parent, oldPriority, oldHandle); err != nil {
 			e.logger.WarnContext(ctx, "failed to remove old TC filter",
 				"handle", fmt.Sprintf("%x", oldHandle), "error", err)
+		} else {
+			e.logger.InfoContext(ctx, "TC filter swap: removed old filter",
+				"removed_handle", fmt.Sprintf("%x", oldHandle))
 		}
 	}
 
