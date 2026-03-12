@@ -1230,14 +1230,30 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 		linkIDs = append(linkIDs, link.Record.ID)
 	}
 
-	for i, linkID := range linkIDs {
+	// Verify all positions are assigned and the last-attached
+	// (newest) program is at position 0 — matching Rust bpfman
+	// behaviour where new programs sort before existing ones at
+	// the same priority.
+	positions := make(map[int32]bool)
+	for _, linkID := range linkIDs {
 		record, err := fix.Store.GetLink(ctx, linkID)
 		require.NoError(t, err)
 		xdpDetails, ok := record.Details.(bpfman.XDPDetails)
 		require.True(t, ok, "expected XDPDetails, got %T", record.Details)
-		assert.Equal(t, int32(i), xdpDetails.Position,
-			"link %d should have position %d", linkID, i)
+		positions[xdpDetails.Position] = true
 	}
+	assert.Len(t, positions, 3, "should have 3 unique positions")
+	for i := int32(0); i < 3; i++ {
+		assert.True(t, positions[i], "position %d should be assigned", i)
+	}
+
+	// The last-attached program should be at position 0.
+	lastRecord, err := fix.Store.GetLink(ctx, linkIDs[2])
+	require.NoError(t, err)
+	lastXDP, ok := lastRecord.Details.(bpfman.XDPDetails)
+	require.True(t, ok)
+	assert.Equal(t, int32(0), lastXDP.Position,
+		"last-attached link should be at position 0")
 }
 
 // TestTC_ExtensionPositionsAreSequential verifies that multiple TC
@@ -1262,15 +1278,27 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 		linkIDs = append(linkIDs, link.Record.ID)
 	}
 
-	// Verify positions are 0, 1, 2 via store
-	for i, linkID := range linkIDs {
+	// Verify all three positions are assigned and unique.
+	positions := make(map[int32]bool)
+	for _, linkID := range linkIDs {
 		record, err := fix.Store.GetLink(ctx, linkID)
-		require.NoError(t, err, "GetLink for link %d", linkID)
+		require.NoError(t, err)
 		tcDetails, ok := record.Details.(bpfman.TCDetails)
 		require.True(t, ok, "expected TCDetails, got %T", record.Details)
-		assert.Equal(t, int32(i), tcDetails.Position,
-			"link %d should have position %d", linkID, i)
+		positions[tcDetails.Position] = true
 	}
+	assert.Len(t, positions, 3, "should have 3 unique positions")
+	for i := int32(0); i < 3; i++ {
+		assert.True(t, positions[i], "position %d should be assigned", i)
+	}
+
+	// The last-attached program should be at position 0.
+	lastRecord, err := fix.Store.GetLink(ctx, linkIDs[2])
+	require.NoError(t, err)
+	lastTC, ok := lastRecord.Details.(bpfman.TCDetails)
+	require.True(t, ok)
+	assert.Equal(t, int32(0), lastTC.Position,
+		"last-attached link should be at position 0")
 }
 
 // =============================================================================

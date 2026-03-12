@@ -925,14 +925,24 @@ func effectivePriority(p int) int {
 	return p
 }
 
-// sortRebuildSlots sorts rebuild slots by (effectivePriority ASC, programName ASC).
+// sortRebuildSlots sorts rebuild slots by
+// (effectivePriority ASC, attached ASC, programName ASC).
+//
+// The attached tie-breaker matches Rust bpfman: new (unattached,
+// LinkID==0) programs sort before existing (attached) ones at the
+// same priority. This matters when the default proceed-on excludes
+// TC_ACT_OK — only position 0 executes, so the newly-added program
+// must land there.
 func sortRebuildSlots(slots []rebuildSlot) {
 	for i := 1; i < len(slots); i++ {
 		for j := i; j > 0; j-- {
 			pi := effectivePriority(slots[j].Priority)
 			pj := effectivePriority(slots[j-1].Priority)
-			if pi < pj || (pi == pj &&
-				slots[j].ProgramName < slots[j-1].ProgramName) {
+			ai := slots[j].LinkID != 0   // attached = true
+			aj := slots[j-1].LinkID != 0 // attached = true
+			if pi < pj ||
+				(pi == pj && !ai && aj) ||
+				(pi == pj && ai == aj && slots[j].ProgramName < slots[j-1].ProgramName) {
 				slots[j], slots[j-1] = slots[j-1], slots[j]
 			} else {
 				break
