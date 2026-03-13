@@ -146,6 +146,12 @@ func NewCLI() (*CLI, error) {
 		os.Args = append([]string{os.Args[0], "serve"}, os.Args[1:]...)
 	}
 
+	// No subcommand: default to the interactive REPL, matching
+	// the convention of tools like python and sqlite3.
+	if len(os.Args) == 1 {
+		os.Args = append(os.Args, "repl")
+	}
+
 	// Rewrite "help [cmd...]" to "[cmd...] --help" so that
 	// "bpfman help link attach xdp" works like most CLI tools.
 	if len(os.Args) >= 2 && os.Args[1] == "help" {

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -128,6 +131,54 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScannerReader(t *testing.T) {
+	input := "line one\nline two\n"
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	defer lr.Close()
+
+	s, err := lr.Readline()
+	require.NoError(t, err)
+	assert.Equal(t, "line one", s)
+
+	s, err = lr.Readline()
+	require.NoError(t, err)
+	assert.Equal(t, "line two", s)
+
+	_, err = lr.Readline()
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestReplLoop_CommentsAndBlanks(t *testing.T) {
+	// Feed the loop lines that include comments, blank lines, and
+	// an unknown command so we can verify only real commands are
+	// dispatched. The only side effect we can easily observe
+	// without a real manager is the error output for unknown
+	// commands.
+	input := strings.Join([]string{
+		"# full line comment",
+		"",
+		"   ",
+		"bogus # inline comment stripped",
+		"  # indented comment",
+		"also-bogus",
+	}, "\n")
+
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+
+	// We expect exactly two error lines: one for "bogus", one for
+	// "also-bogus".
+	lines := strings.Split(strings.TrimSpace(errBuf.String()), "\n")
+	require.Len(t, lines, 2)
+	assert.True(t, strings.HasPrefix(lines[0], "[repl] "), "expected [repl] prefix: %s", lines[0])
+	assert.Contains(t, lines[0], "bogus")
+	assert.Contains(t, lines[1], "also-bogus")
 }
 
 func TestReplComplete_CommandCompletion(t *testing.T) {

@@ -10,13 +10,19 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"golang.org/x/term"
 
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
 
 // ReplCmd starts an interactive shell for inspecting BPF state.
-type ReplCmd struct{}
+// When --file is given, commands are read from the named file. When
+// stdin is not a terminal, commands are read from stdin. Otherwise an
+// interactive readline prompt is started.
+type ReplCmd struct {
+	File string `name:"file" short:"f" help:"Read commands from a file (use '-' for stdin)."`
+}
 
 // replCommandNames lists the top-level command tokens for completion.
 var replCommandNames = []string{"help", "list", "load", "program", "programs"}
@@ -38,17 +44,48 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	historyPath, err := replHistoryPath()
+	lr, err := c.newReader(ctx, mgr)
 	if err != nil {
-		return fmt.Errorf("history path: %w", err)
-	}
-
-	lr, err := NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr))
-	if err != nil {
-		return fmt.Errorf("create line reader: %w", err)
+		return err
 	}
 	defer lr.Close()
 
+	return replLoop(ctx, cli, mgr, lr)
+}
+
+// newReader selects the appropriate LineReader: file, pipe, or
+// interactive readline.
+func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager) (LineReader, error) {
+	if c.File != "" {
+		return openScriptReader(c.File)
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return NewScannerReader(os.Stdin, nil), nil
+	}
+	historyPath, err := replHistoryPath()
+	if err != nil {
+		return nil, fmt.Errorf("history path: %w", err)
+	}
+	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr))
+}
+
+// openScriptReader opens a file for reading commands. Use "-" to
+// read from stdin.
+func openScriptReader(path string) (LineReader, error) {
+	if path == "-" {
+		return NewScannerReader(os.Stdin, nil), nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open script: %w", err)
+	}
+	return NewScannerReader(f, f), nil
+}
+
+// replLoop reads lines from lr and dispatches them until EOF or
+// interrupt. Blank lines are skipped. A '#' and everything after it
+// is treated as a comment and stripped, following shell conventions.
+func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader) error {
 	for {
 		input, err := lr.Readline()
 		if err != nil {
@@ -58,13 +95,16 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 			return err
 		}
 
+		if i := strings.IndexByte(input, '#'); i >= 0 {
+			input = input[:i]
+		}
 		input = strings.TrimSpace(input)
 		if input == "" {
 			continue
 		}
 
 		if err := replDispatch(ctx, cli, mgr, input); err != nil {
-			_ = cli.PrintErrf("error: %v\n", err)
+			_ = cli.PrintErrf("[repl] error: %v\n", err)
 		}
 	}
 }
