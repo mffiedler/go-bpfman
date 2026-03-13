@@ -35,17 +35,24 @@ type loadFileResult struct {
 
 // Run executes the load file command.
 func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
-	// Validate object file exists (before acquiring lock)
-	objPath, err := ParseObjectPath(c.Path)
-	if err != nil {
-		return err
-	}
-
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
+
+	return executeLoadFile(ctx, cli, mgr, c)
+}
+
+// executeLoadFile is the shared implementation for loading a BPF
+// program from a local object file. Both the CLI command and the REPL
+// call this function.
+func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) error {
+	// Validate object file exists (before acquiring lock)
+	objPath, err := ParseObjectPath(c.Path)
+	if err != nil {
+		return err
+	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
 		// Convert global data

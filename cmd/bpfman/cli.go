@@ -56,6 +56,7 @@ type CLI struct {
 	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
 	GC         GCCmd         `cmd:"" group:"diag" help:"Garbage collect stale resources."`
 	Doctor     DoctorCmd     `cmd:"" group:"diag" help:"Check coherency of database, kernel, and filesystem state."`
+	Repl       ReplCmd       `cmd:"" group:"diag" help:"Start an interactive inspection shell."`
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
 }
 

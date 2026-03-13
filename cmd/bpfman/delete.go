@@ -26,16 +26,27 @@ func (c *ProgramDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
+	ids := make([]kernel.ProgramID, len(c.ProgramIDs))
+	for i, pid := range c.ProgramIDs {
+		ids[i] = pid.Value
+	}
+	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive)
+}
+
+// executeDeletePrograms is the shared implementation for deleting
+// programs with cascading cleanup. Both the CLI command and the REPL
+// call this function. Locking is handled internally.
+func executeDeletePrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, ids []kernel.ProgramID, recursive bool) error {
 	type result struct {
 		id  kernel.ProgramID
 		err error
 	}
-	results := make([]result, 0, len(c.ProgramIDs))
+	results := make([]result, 0, len(ids))
 
 	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
-		for _, pid := range c.ProgramIDs {
-			err := deleteProgram(ctx, mgr, pid.Value, c.Recursive)
-			results = append(results, result{id: pid.Value, err: err})
+		for _, id := range ids {
+			err := deleteProgram(ctx, mgr, id, recursive)
+			results = append(results, result{id: id, err: err})
 		}
 		return nil
 	})

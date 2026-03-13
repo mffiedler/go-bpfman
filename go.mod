@@ -7,6 +7,7 @@ require (
 	github.com/alecthomas/kong v1.13.0
 	github.com/cilium/ebpf v0.20.0
 	github.com/container-storage-interface/spec v1.12.0
+	github.com/ergochat/readline v0.1.3
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-containerregistry v0.20.7
 	github.com/mattn/go-sqlite3 v1.14.33
