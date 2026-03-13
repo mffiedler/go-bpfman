@@ -383,16 +383,15 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, 
 	return m.ExecuteGC(ctx, plan, opts)
 }
 
-// GCIfNeeded runs GC if required, with its own mutex for coordination.
-// For mutating operations, always runs GC. For read operations, only runs
-// GC if a mutating operation occurred since the last GC.
-// This allows concurrent readers at the server level while serialising GC.
-func (m *Manager) GCIfNeeded(ctx context.Context, mutating bool) error {
+// GCIfNeeded runs GC only when a mutation has occurred since the last
+// collection. This avoids redundant GC cycles on consecutive reads or
+// when back-to-back mutations have not yet dirtied state.
+func (m *Manager) GCIfNeeded(ctx context.Context) error {
 	m.gcMu.Lock()
 	defer m.gcMu.Unlock()
 
-	if !mutating && !m.mutatedSinceGC {
-		return nil // Read op and no mutations since last GC - skip
+	if !m.mutatedSinceGC {
+		return nil
 	}
 
 	if _, err := m.GC(ctx); err != nil {

@@ -106,8 +106,7 @@
 // GC reconciles the store against kernel and filesystem state. It runs:
 //
 //   - At startup before accepting requests
-//   - Before mutating operations (via GCIfNeeded)
-//   - On read operations if mutations occurred since the last GC
+//   - Before the next operation when a mutation has occurred (via GCIfNeeded)
 //
 // GC removes:
 //

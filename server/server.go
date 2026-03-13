@@ -325,11 +325,12 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 // per-request coordination: operation ID assignment, error logging,
 // GC, locking, and mutation tracking.
 //
-// Every request runs GC before dispatch. Mutating RPCs (Load, Unload,
-// Attach, Detach) then acquire the cross-process flock and the
-// in-process write mutex, and mark state as mutated on return. All
-// other RPCs acquire the in-process read mutex. The flock scope is
-// stored in context for handlers that need it (container uprobes).
+// GC runs before dispatch only when a prior mutation dirtied state.
+// Mutating RPCs (Load, Unload, Attach, Detach) acquire the
+// cross-process flock and the in-process write mutex, and mark state
+// as mutated on return. All other RPCs acquire the in-process read
+// mutex. The flock scope is stored in context for handlers that need
+// it (container uprobes).
 func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	mutatingMethods := map[string]bool{
 		"/bpfman.v1.Bpfman/Load":   true,
@@ -343,15 +344,14 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 		opID := s.opCounter.Add(1)
 		ctx = manager.ContextWithOpID(ctx, opID)
 
-		mutating := mutatingMethods[info.FullMethod]
-		if err := s.mgr.GCIfNeeded(ctx, mutating); err != nil {
+		if err := s.mgr.GCIfNeeded(ctx); err != nil {
 			return nil, status.Errorf(codes.Internal, "gc: %v", err)
 		}
 
 		var resp any
 		var err error
 
-		if mutating {
+		if mutatingMethods[info.FullMethod] {
 			resp, err = s.handleMutating(ctx, req, handler)
 		} else {
 			resp, err = s.handleRead(ctx, req, handler)
