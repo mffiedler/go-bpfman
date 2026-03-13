@@ -731,6 +731,26 @@ in the kernel, returning:
 
 That would further reduce manager complexity.
 
+The main value of a future runtime module is not merely to wrap
+kernel attachment calls, but to hide the ordering constraints of
+replacing one live dispatcher revision with another. That includes:
+loading the new dispatcher before dropping the old one, attaching
+new members in the right order, switching the live attach point
+safely, deciding what old kernel objects must survive until after
+cutover, and producing a cleanup description for whatever is now
+obsolete. It would own the kernel-side transition from old revision
+to new revision, return the realised current runtime state, and
+describe any old kernel objects that still require cleanup. The
+module probably needs old-state input in some form, because cleanup
+planning depends on what currently exists. That old state might come
+from the persisted dispatcher snapshot, kernel discovery, filesystem
+pin discovery, or a combination. That choice is itself part of the
+design.
+
+The runtime module should describe cleanup, not execute it. That
+keeps the shape consistent with the broader architecture: compute
+first, execute at the boundary.
+
 However, that is a second step. This document focuses first on
 fixing the persistence boundary. Resist the temptation to invent
 the runtime module during the store rework. Fix the persistence
