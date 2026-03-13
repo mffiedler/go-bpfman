@@ -145,10 +145,21 @@ func (m *Manager) ListLinksByProgram(ctx context.Context, programID kernel.Progr
 	return m.store.ListLinksByProgram(ctx, programID)
 }
 
+// ListDispatcherSummaries returns lightweight summaries of all dispatchers.
+func (m *Manager) ListDispatcherSummaries(ctx context.Context) ([]platform.DispatcherSummary, error) {
+	return m.store.ListDispatcherSummaries(ctx)
+}
+
 // GetDispatcherSnapshot retrieves the full dispatcher snapshot for the
 // given key.
 func (m *Manager) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (platform.DispatcherSnapshot, error) {
 	return m.store.GetDispatcherSnapshot(ctx, key)
+}
+
+// DeleteDispatcherSnapshot removes a dispatcher and all its extension
+// link records by attach point key.
+func (m *Manager) DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
+	return m.store.DeleteDispatcherSnapshot(ctx, key)
 }
 
 // GetLink retrieves a link by link ID, returning the full record with details.

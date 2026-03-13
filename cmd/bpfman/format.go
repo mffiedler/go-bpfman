@@ -12,6 +12,8 @@ import (
 	"k8s.io/client-go/util/jsonpath"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // executeJSONPath parses and executes a JSONPath expression against the given data.
@@ -848,4 +850,149 @@ func formatProgramsCompositeTable(result bpfman.ProgramListResult) string {
 // formatProgramsCompositeWide formats the program list with wide columns.
 func formatProgramsCompositeWide(result bpfman.ProgramListResult) string {
 	return WideColumns().FormatTable(result.Programs)
+}
+
+// FormatDispatcherList formats a list of dispatcher summaries.
+func FormatDispatcherList(summaries []platform.DispatcherSummary, flags *OutputFlags) (string, error) {
+	format, err := flags.Format()
+	if err != nil {
+		return "", err
+	}
+	switch format {
+	case OutputFormatJSON:
+		if summaries == nil {
+			summaries = []platform.DispatcherSummary{}
+		}
+		output, err := json.MarshalIndent(summaries, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal: %w", err)
+		}
+		return string(output) + "\n", nil
+	case OutputFormatJSONPath:
+		if summaries == nil {
+			summaries = []platform.DispatcherSummary{}
+		}
+		return executeJSONPath(summaries, flags.JSONPathExpr())
+	case OutputFormatTable:
+		return formatDispatcherListTable(summaries), nil
+	default:
+		return formatDispatcherListTable(summaries), nil
+	}
+}
+
+func formatDispatcherListTable(summaries []platform.DispatcherSummary) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintln(w, "TYPE\tNSID\tIFINDEX\tREVISION\tPROGRAM_ID\tLINK_ID\tPRIORITY\tMEMBERS")
+
+	for _, s := range summaries {
+		linkID := "-"
+		if s.Runtime.LinkID != nil {
+			linkID = fmt.Sprintf("%d", *s.Runtime.LinkID)
+		}
+		priority := "-"
+		if s.Runtime.FilterPriority != nil {
+			priority = fmt.Sprintf("%d", *s.Runtime.FilterPriority)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%d\n",
+			s.Key.Type, s.Key.Nsid, s.Key.Ifindex,
+			s.Revision, s.Runtime.ProgramID,
+			linkID, priority, s.MemberCount)
+	}
+
+	w.Flush()
+	return b.String()
+}
+
+// FormatDispatcherSnapshot formats a single dispatcher snapshot.
+func FormatDispatcherSnapshot(snap platform.DispatcherSnapshot, flags *OutputFlags) (string, error) {
+	format, err := flags.Format()
+	if err != nil {
+		return "", err
+	}
+	switch format {
+	case OutputFormatJSON:
+		output, err := json.MarshalIndent(snap, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal: %w", err)
+		}
+		return string(output) + "\n", nil
+	case OutputFormatJSONPath:
+		return executeJSONPath(snap, flags.JSONPathExpr())
+	case OutputFormatTable:
+		return formatDispatcherSnapshotTable(snap), nil
+	default:
+		return formatDispatcherSnapshotTable(snap), nil
+	}
+}
+
+func formatDispatcherSnapshotTable(snap platform.DispatcherSnapshot) string {
+	var b strings.Builder
+
+	// Header section
+	fmt.Fprintf(&b, "Dispatcher: %s nsid=%d ifindex=%d\n", snap.Key.Type, snap.Key.Nsid, snap.Key.Ifindex)
+	fmt.Fprintf(&b, "  Revision:    %d\n", snap.Revision)
+	fmt.Fprintf(&b, "  Program ID:  %d\n", snap.Runtime.ProgramID)
+	if snap.Runtime.LinkID != nil {
+		fmt.Fprintf(&b, "  Link ID:     %d\n", *snap.Runtime.LinkID)
+	}
+	if snap.Runtime.FilterPriority != nil {
+		fmt.Fprintf(&b, "  Priority:    %d\n", *snap.Runtime.FilterPriority)
+	}
+
+	// Members table
+	fmt.Fprintf(&b, "\nMembers (%d/%d):\n", len(snap.Members), dispatcher.MaxPrograms)
+
+	if len(snap.Members) == 0 {
+		b.WriteString("  (none)\n")
+		return b.String()
+	}
+
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "  POS\tPRIORITY\tPROGRAM_ID\tNAME\tLINK_ID\tPROCEED_ON")
+	for _, m := range snap.Members {
+		proceedOn := formatProceedOnMask(m.ProceedOn, snap.Key.Type)
+		fmt.Fprintf(w, "  %d\t%d\t%d\t%s\t%d\t%s\n",
+			m.Position, m.Priority, m.ProgramID,
+			m.ProgramName, m.LinkID, proceedOn)
+	}
+	w.Flush()
+
+	return b.String()
+}
+
+// formatProceedOnMask decodes a proceed-on bitmask into named actions.
+// For XDP, bit N maps directly to XDP action N. For TC, bit N maps to
+// TC action with int32 code N. The chain-call shift is only applied at
+// BPF map write time, so stored bitmasks use unshifted bit positions.
+func formatProceedOnMask(mask uint32, dispType dispatcher.DispatcherType) string {
+	if mask == 0 {
+		return "none"
+	}
+
+	xdpNames := map[uint]string{
+		0: "aborted", 1: "drop", 2: "pass", 3: "tx", 4: "redirect",
+		31: "dispatcher_return",
+	}
+
+	isXDP := dispType == dispatcher.DispatcherTypeXDP
+
+	var names []string
+	for bit := uint(0); bit < 32; bit++ {
+		if mask&(1<<bit) == 0 {
+			continue
+		}
+		if isXDP {
+			if name, ok := xdpNames[bit]; ok {
+				names = append(names, name)
+			} else {
+				names = append(names, fmt.Sprintf("unknown(%d)", bit))
+			}
+		} else {
+			names = append(names, bpfman.TCActionToString(int32(bit)))
+		}
+	}
+
+	return strings.Join(names, ", ")
 }
