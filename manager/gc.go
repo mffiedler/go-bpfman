@@ -3,6 +3,7 @@ package manager
 import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/platform"
@@ -123,6 +124,63 @@ func countByType[T action.Action](actions []action.Action) int {
 		}
 	}
 	return n
+}
+
+// storeGCInputs holds the data extracted from an inspect.World that
+// computeStoreGC needs to decide which store entries are stale.
+type storeGCInputs struct {
+	programs       map[kernel.ProgramID]bpfman.ProgramRecord
+	dispatchers    []platform.DispatcherSummary
+	links          []bpfman.LinkRecord
+	kernelPrograms map[kernel.ProgramID]bool
+	kernelLinks    map[kernel.LinkID]bool
+}
+
+// deriveStoreGCInputs extracts the inputs for computeStoreGC from
+// an inspect.World snapshot. For store-managed programs with a live
+// kernel ID but a missing pin, the kernel ID is excluded from the
+// alive set; the ID may have been recycled to a program we do not
+// own.
+func deriveStoreGCInputs(world *inspect.World) storeGCInputs {
+	in := storeGCInputs{
+		kernelPrograms: make(map[kernel.ProgramID]bool),
+		programs:       make(map[kernel.ProgramID]bpfman.ProgramRecord),
+		kernelLinks:    make(map[kernel.LinkID]bool),
+	}
+
+	for _, p := range world.Programs {
+		if p.Presence.InStore && p.Managed != nil {
+			in.programs[p.ProgramID] = *p.Managed
+		}
+		if p.Presence.InKernel {
+			// For store-managed programs, a missing pin means
+			// the kernel ID may have been recycled. Exclude it
+			// from the alive set so the store entry is reaped.
+			if p.Presence.InStore && !p.Presence.InFS {
+				continue
+			}
+			in.kernelPrograms[p.ProgramID] = true
+		}
+	}
+
+	for _, d := range world.ManagedDispatchers() {
+		if d.Managed != nil {
+			in.dispatchers = append(in.dispatchers, *d.Managed)
+		}
+	}
+
+	for _, l := range world.Links {
+		if l.Presence.InKernel {
+			if id := l.KernelLinkID(); id != nil {
+				in.kernelLinks[*id] = true
+			}
+		}
+		if l.Presence.InStore && l.Managed != nil {
+			in.links = append(in.links, *l.Managed)
+		}
+	}
+
+	return in
 }
 
 // countExtensionLinks counts the non-deleted extension links that

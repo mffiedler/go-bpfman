@@ -322,9 +322,11 @@ func Snapshot(
 		},
 	}
 
-	// Phase 1: Build indexes from kernel and filesystem
+	// Phase 1: Build indexes from kernel and filesystem.
+	// We store full kernel.Link objects so that Phase 3 (link
+	// correlation) can reuse them without a second enumeration.
 	kernelProgs := make(map[kernel.ProgramID]kernel.Program)
-	kernelLinks := make(map[kernel.LinkID]bool)
+	kernelLinks := make(map[kernel.LinkID]kernel.Link)
 
 	for kp, err := range kern.Programs(ctx) {
 		if err != nil {
@@ -341,7 +343,7 @@ func Snapshot(
 			w.Meta.LinkEnumErrors++
 			continue
 		}
-		kernelLinks[kl.ID] = true
+		kernelLinks[kl.ID] = kl
 	}
 
 	// FS indexes
@@ -461,16 +463,9 @@ func Snapshot(
 		w.Programs = append(w.Programs, row)
 	}
 
-	// Phase 3: Build link rows (store-first)
-	// Also build kernel link map for correlation
-	kernelLinkMap := make(map[kernel.LinkID]kernel.Link)
-	for kl, err := range kern.Links(ctx) {
-		if err != nil {
-			continue
-		}
-		kernelLinkMap[kl.ID] = kl
-	}
-
+	// Phase 3: Build link rows (store-first).
+	// kernelLinks (built in Phase 1) already contains full
+	// kernel.Link objects, so no second enumeration is needed.
 	storeLinks, err := store.ListLinks(ctx)
 	if err != nil {
 		return nil, err
@@ -487,7 +482,7 @@ func Snapshot(
 		// Check kernel presence
 		var kernelLink *kernel.Link
 		if !link.IsSynthetic() {
-			if kl, ok := kernelLinkMap[link.ID]; ok {
+			if kl, ok := kernelLinks[link.ID]; ok {
 				kernelLink = &kl
 			}
 		}
@@ -509,7 +504,7 @@ func Snapshot(
 	}
 
 	// Add kernel-only links (not in store)
-	for kernelLinkID, kl := range kernelLinkMap {
+	for kernelLinkID, kl := range kernelLinks {
 		if seenKernelLinkIDs[kernelLinkID] {
 			continue
 		}
@@ -555,6 +550,7 @@ func Snapshot(
 		}
 
 		_, progInKernel := kernelProgs[disp.Runtime.ProgramID]
+		_, linkInKernel := kernelLinks[linkID]
 		d := disp // copy for pointer
 		row := DispatcherRow{
 			DispType:    disp.Key.Type.String(),
@@ -573,7 +569,7 @@ func Snapshot(
 			},
 			LinkPresence: Presence{
 				InStore:  linkID != 0,
-				InKernel: linkID != 0 && kernelLinks[linkID],
+				InKernel: linkID != 0 && linkInKernel,
 				InFS:     linkPinExists,
 			},
 		}

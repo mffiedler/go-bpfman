@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/fs"
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
@@ -169,6 +168,12 @@ var errRollback = errors.New("rollback")
 // executing any actions. The returned GCPlan can be inspected for
 // dry-run reporting or passed to ExecuteGC for execution.
 //
+// State is gathered once via GatherState (which includes a full
+// inspect.Snapshot). The store GC inputs are derived from the
+// resulting World, avoiding the redundant kernel and store
+// enumeration that previously occurred between ComputeGC's direct
+// queries and the Snapshot inside evaluateCoherency.
+//
 // When there are store actions, they are applied inside a transaction
 // that is then rolled back, so that coherency rules evaluate against
 // the post-deletion state and the plan reflects the full set of
@@ -176,64 +181,32 @@ var errRollback = errors.New("rollback")
 func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error) {
 	var plan GCPlan
 
-	// Gather kernel state.
-	kernelProgramIDs := make(map[kernel.ProgramID]bool)
-	for kp, err := range m.kernel.Programs(ctx) {
-		if err != nil {
-			m.logger.WarnContext(ctx, "error iterating kernel programs", "error", err)
-			continue
-		}
-		kernelProgramIDs[kp.ID] = true
+	// Single gather pass for both store GC and coherency.
+	state, err := coherency.GatherState(ctx, m.store, m.kernel, m.Layout())
+	if err != nil {
+		return plan, fmt.Errorf("gather state: %w", err)
 	}
 
-	// For any DB program whose kernel ID is still live, verify
-	// that our bpffs pin exists. If the pin is gone the kernel
-	// ID may have been recycled to a program that is not ours;
-	// remove it from the live set so the store GC reaps the row.
-	dbPrograms, err := m.store.List(ctx)
-	if err != nil {
-		return plan, fmt.Errorf("list programs: %w", err)
-	}
-	scanner := m.rt.BPFFS().Scanner()
-	for id := range dbPrograms {
-		if !kernelProgramIDs[id] {
-			continue // already absent; store GC will reap
-		}
-		pinPath := m.rt.BPFFS().ProgPinPath(id)
-		if !scanner.PathExists(pinPath) {
+	// Derive store GC inputs from the correlated world.
+	world := state.World()
+	in := deriveStoreGCInputs(world)
+
+	// Log pin-missing programs for visibility. A store-managed
+	// program with a live kernel ID but no pin suggests the ID
+	// was recycled; the program will be reaped.
+	for _, p := range world.Programs {
+		if p.Presence.InStore && p.Presence.InKernel && !in.kernelPrograms[p.ProgramID] {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
-				"program_id", id, "pin_path", pinPath)
-			delete(kernelProgramIDs, id)
+				"program_id", p.ProgramID, "pin_path", p.PinPath())
 		}
 	}
 
-	kernelLinkIDs := make(map[kernel.LinkID]bool)
-	for kl, err := range m.kernel.Links(ctx) {
-		if err != nil {
-			m.logger.WarnContext(ctx, "error iterating kernel links", "error", err)
-			continue
-		}
-		kernelLinkIDs[kl.ID] = true
-	}
+	plan.StoreActions = computeStoreGC(in.programs, in.dispatchers, in.links, in.kernelPrograms, in.kernelLinks)
 
-	// Phase 1: compute which store entries are stale.
-	dispatchers, err := m.store.ListDispatcherSummaries(ctx)
-	if err != nil {
-		return plan, fmt.Errorf("list dispatchers: %w", err)
-	}
-	links, err := m.store.ListLinks(ctx)
-	if err != nil {
-		return plan, fmt.Errorf("list links: %w", err)
-	}
-
-	plan.StoreActions = computeStoreGC(dbPrograms, dispatchers, links, kernelProgramIDs, kernelLinkIDs)
-
-	// Phase 2: coherency rule engine. When there are store
-	// actions, apply them inside a transaction and gather
-	// coherency state against the tx store so the rules see the
-	// post-deletion world. The transaction is rolled back so
-	// nothing is persisted.
-	coherencyStore := m.store
+	// Coherency rule engine. When there are store actions, apply
+	// them inside a rolled-back transaction and re-gather coherency
+	// state so the rules see the post-deletion world. When there
+	// are no store actions, reuse the state we already gathered.
 	if len(plan.StoreActions) > 0 {
 		txErr := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
 			txExec := newExecutor(tx, m.kernel, m.rt.Bytecode(), m.rt.BPFFS(), m.logger)
@@ -250,7 +223,7 @@ func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error)
 			return plan, fmt.Errorf("dry-run store gc: %w", txErr)
 		}
 	} else {
-		plan.Violations, plan.LiveOrphans = m.evaluateCoherency(ctx, coherencyStore, opts)
+		plan.Violations, plan.LiveOrphans = evaluateCoherencyFromState(state, opts)
 	}
 
 	return plan, nil
@@ -265,6 +238,27 @@ func (m *Manager) evaluateCoherency(ctx context.Context, store platform.Store, o
 		return nil, 0
 	}
 
+	gcRules := buildGCRules(opts)
+	var violations []coherency.Violation
+	for _, v := range coherency.Evaluate(state, gcRules) {
+		if v.Op != nil {
+			violations = append(violations, v)
+		}
+	}
+
+	var liveOrphans int
+	if !opts.Prune {
+		liveOrphans = state.LiveOrphans()
+	}
+
+	return violations, liveOrphans
+}
+
+// evaluateCoherencyFromState runs the coherency rules against an
+// already-gathered ObservedState, avoiding a redundant GatherState
+// call. Used when no store actions were computed and the existing
+// state is still valid.
+func evaluateCoherencyFromState(state *coherency.ObservedState, opts GCOptions) ([]coherency.Violation, int) {
 	gcRules := buildGCRules(opts)
 	var violations []coherency.Violation
 	for _, v := range coherency.Evaluate(state, gcRules) {
@@ -333,11 +327,20 @@ func (m *Manager) ExecuteGC(ctx context.Context, plan GCPlan, opts GCOptions) (r
 		result.DispatchersRemoved = countByType[action.DeleteDispatcher](executed)
 	}
 
-	// Phase 2: re-gather coherency state against the updated
-	// store and evaluate rules afresh. This ensures the coherency
-	// rules see artefacts orphaned by the store deletions above.
-	violations, liveOrphans := m.evaluateCoherency(ctx, m.store, opts)
-	result.LiveOrphans = liveOrphans
+	// Phase 2: coherency violations. When store actions were
+	// executed, re-gather state to see the post-deletion world
+	// (artefacts may have become orphaned by store deletions).
+	// When no store actions exist, the plan's violations from
+	// ComputeGC are already current; reuse them.
+	var violations []coherency.Violation
+	if len(plan.StoreActions) > 0 {
+		var liveOrphans int
+		violations, liveOrphans = m.evaluateCoherency(ctx, m.store, opts)
+		result.LiveOrphans = liveOrphans
+	} else {
+		violations = plan.Violations
+		result.LiveOrphans = plan.LiveOrphans
+	}
 
 	for _, v := range violations {
 		if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {

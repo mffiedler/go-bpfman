@@ -405,6 +405,13 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	return s.dispatchers
 }
 
+// World returns the underlying inspect.World snapshot. This provides
+// access to the full correlated state for callers that need to derive
+// additional views (e.g. store GC inputs) without re-enumerating.
+func (s *ObservedState) World() *inspect.World {
+	return s.world
+}
+
 // OrphanFsEntries returns filesystem entries under the bpffs tree
 // that have no corresponding DB record. The list is pre-built during
 // GatherState; this method is a pure accessor.
