@@ -383,10 +383,10 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, 
 	return m.ExecuteGC(ctx, plan, opts)
 }
 
-// GCIfNeeded runs GC only when a mutation has occurred since the last
-// collection. This avoids redundant GC cycles on consecutive reads or
-// when back-to-back mutations have not yet dirtied state.
-func (m *Manager) GCIfNeeded(ctx context.Context) error {
+// gcIfNeeded runs GC only when a mutation has occurred since the last
+// collection. Mutating methods call this internally so that callers
+// never need to coordinate GC themselves.
+func (m *Manager) gcIfNeeded(ctx context.Context) error {
 	m.gcMu.Lock()
 	defer m.gcMu.Unlock()
 
@@ -401,9 +401,9 @@ func (m *Manager) GCIfNeeded(ctx context.Context) error {
 	return nil
 }
 
-// MarkMutated records that a mutating operation occurred.
-// Call this after successful mutating operations (Load, Unload, Attach, Detach).
-func (m *Manager) MarkMutated() {
+// markMutated records that a mutating operation occurred. Mutating
+// methods defer this so that subsequent operations trigger GC.
+func (m *Manager) markMutated() {
 	m.gcMu.Lock()
 	m.mutatedSinceGC = true
 	m.gcMu.Unlock()

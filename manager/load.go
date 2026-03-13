@@ -99,6 +99,11 @@ type LoadOpts struct {
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
 func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
+	if err := m.gcIfNeeded(ctx); err != nil {
+		return nil, err
+	}
+	defer m.markMutated()
+
 	objectPath, pulled, err := m.resolveBatchSource(ctx, source)
 	if err != nil {
 		return nil, err

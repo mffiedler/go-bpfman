@@ -26,6 +26,11 @@ import (
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
 func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
+	if err := m.gcIfNeeded(ctx); err != nil {
+		return err
+	}
+	defer m.markMutated()
+
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
 	if err != nil {

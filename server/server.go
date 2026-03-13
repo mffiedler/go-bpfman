@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
@@ -241,15 +239,6 @@ func New(layout fs.Layout, netIface NetIfaceResolver, mgr *manager.Manager, logg
 
 // serve starts the gRPC server on the given socket path and optionally on TCP.
 func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
-	// GC stale DB entries before accepting requests.
-	// This cleans up entries from previous runs that no longer exist in kernel.
-	s.mu.Lock()
-	_, err := s.mgr.GC(ctx)
-	s.mu.Unlock()
-	if err != nil {
-		return fmt.Errorf("gc: %w", err)
-	}
-
 	// Ensure socket directory exists
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
@@ -321,16 +310,16 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 	}
 }
 
-// rpcInterceptor returns a gRPC unary interceptor that handles all
+// rpcInterceptor returns a gRPC unary interceptor that handles
 // per-request coordination: operation ID assignment, error logging,
-// GC, locking, and mutation tracking.
+// locking, and dispatch.
 //
-// GC runs before dispatch only when a prior mutation dirtied state.
+// GC is handled internally by the manager's mutating methods, so the
+// interceptor no longer needs to call GCIfNeeded or MarkMutated.
 // Mutating RPCs (Load, Unload, Attach, Detach) acquire the
-// cross-process flock and the in-process write mutex, and mark state
-// as mutated on return. All other RPCs acquire the in-process read
-// mutex. The flock scope is stored in context for handlers that need
-// it (container uprobes).
+// cross-process flock and the in-process write mutex. All other RPCs
+// acquire the in-process read mutex. The flock scope is stored in
+// context for handlers that need it (container uprobes).
 func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	mutatingMethods := map[string]bool{
 		"/bpfman.v1.Bpfman/Load":   true,
@@ -343,10 +332,6 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler) (any, error) {
 		opID := s.opCounter.Add(1)
 		ctx = manager.ContextWithOpID(ctx, opID)
-
-		if err := s.mgr.GCIfNeeded(ctx); err != nil {
-			return nil, status.Errorf(codes.Internal, "gc: %v", err)
-		}
 
 		var resp any
 		var err error
@@ -366,16 +351,16 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // handleMutating runs a mutating RPC under the cross-process flock
-// and in-process write mutex, marking state as mutated on return.
-// The flock scope is stored in context for handlers that need it
-// (container uprobes pass the lock fd to the bpfman-ns helper).
+// and in-process write mutex. The flock scope is stored in context
+// for handlers that need it (container uprobes pass the lock fd to
+// the bpfman-ns helper). GC and mutation tracking are handled by the
+// manager's mutating methods themselves.
 func (s *Server) handleMutating(ctx context.Context, req any, handler grpc.UnaryHandler) (any, error) {
 	var resp any
 	err := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger, func(ctx context.Context, scope lock.WriterScope) error {
 		ctx = contextWithScope(ctx, scope)
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		defer s.mgr.MarkMutated()
 		var handlerErr error
 		resp, handlerErr = handler(ctx, req)
 		return handlerErr

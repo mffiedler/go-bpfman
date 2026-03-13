@@ -17,6 +17,11 @@ import (
 // On failure, returns a plain error. Completed steps are rolled back
 // automatically by the plan interpreter.
 func (m *Manager) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
+	if err := m.gcIfNeeded(ctx); err != nil {
+		return bpfman.Link{}, err
+	}
+	defer m.markMutated()
+
 	switch s := spec.(type) {
 	case bpfman.TracepointAttachSpec:
 		return m.attachTracepoint(ctx, s)
