@@ -17,6 +17,11 @@ import (
 // opIDKey is the context key for operation IDs.
 type opIDKey struct{}
 
+// opActiveKey is the context key that marks a manager operation as
+// active. When present, beginOp skips GC because coherence was
+// already established by the outermost caller.
+type opActiveKey struct{}
+
 // ContextWithOpID returns a new context with the given operation ID.
 func ContextWithOpID(ctx context.Context, opID uint64) context.Context {
 	return context.WithValue(ctx, opIDKey{}, opID)
@@ -386,28 +391,41 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, 
 	return m.ExecuteGC(ctx, plan, opts)
 }
 
-// gcIfNeeded runs GC only when a mutation has occurred since the last
-// collection. Mutating methods call this internally so that callers
-// never need to coordinate GC themselves.
-func (m *Manager) gcIfNeeded(ctx context.Context) error {
+// beginOp prepares a mutating manager operation. If the context
+// already carries the opActiveKey marker (re-entry from an outer
+// operation), it returns immediately. Otherwise it runs GC when
+// the mutatedSinceGC flag is set, clears the flag, and returns a
+// context with the marker so that nested calls skip GC.
+func (m *Manager) beginOp(ctx context.Context) (context.Context, error) {
+	if ctx.Value(opActiveKey{}) != nil {
+		return ctx, nil
+	}
+
 	m.gcMu.Lock()
-	defer m.gcMu.Unlock()
+	needsGC := m.mutatedSinceGC
+	m.gcMu.Unlock()
 
-	if !m.mutatedSinceGC {
-		return nil
+	if needsGC {
+		if _, err := m.GC(ctx); err != nil {
+			return ctx, err
+		}
+		m.gcMu.Lock()
+		m.mutatedSinceGC = false
+		m.gcMu.Unlock()
 	}
 
-	if _, err := m.GC(ctx); err != nil {
-		return err
-	}
-	m.mutatedSinceGC = false
-	return nil
+	return context.WithValue(ctx, opActiveKey{}, true), nil
 }
 
-// markMutated records that a mutating operation occurred. Mutating
-// methods defer this so that subsequent operations trigger GC.
-func (m *Manager) markMutated() {
-	m.gcMu.Lock()
-	m.mutatedSinceGC = true
-	m.gcMu.Unlock()
+// endOp completes a mutating manager operation. If the operation
+// failed, the mutatedSinceGC flag is set so that the next operation
+// runs GC to clean up any partial side effects. Successful
+// operations leave the flag clear because well-formed mutations do
+// not produce garbage.
+func (m *Manager) endOp(err error) {
+	if err != nil {
+		m.gcMu.Lock()
+		m.mutatedSinceGC = true
+		m.gcMu.Unlock()
+	}
 }

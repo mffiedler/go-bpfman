@@ -30,11 +30,17 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 //
 // Preflight failures (store lookup, dependency check) return plain
 // errors. Execution failures return plain errors.
-func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) error {
-	if err := m.gcIfNeeded(ctx); err != nil {
+func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) (retErr error) {
+	ctx, err := m.beginOp(ctx)
+	if err != nil {
 		return err
 	}
-	defer m.markMutated()
+	executed := false
+	defer func() {
+		if executed {
+			m.endOp(retErr)
+		}
+	}()
 
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.getProgram(ctx, programID)
@@ -73,6 +79,7 @@ func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) error 
 
 	m.logger.InfoContext(ctx, "unloading program", "program_id", programID, "links", len(links))
 
+	executed = true
 	if err := m.unload(ctx, programID, programName, links, true); err != nil {
 		return err
 	}

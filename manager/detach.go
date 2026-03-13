@@ -25,11 +25,17 @@ import (
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
-func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
-	if err := m.gcIfNeeded(ctx); err != nil {
+func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) (retErr error) {
+	ctx, err := m.beginOp(ctx)
+	if err != nil {
 		return err
 	}
-	defer m.markMutated()
+	executed := false
+	defer func() {
+		if executed {
+			m.endOp(retErr)
+		}
+	}()
 
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
@@ -58,6 +64,7 @@ func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) error {
 	m.logger.InfoContext(ctx, "detaching link",
 		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
+	executed = true
 	plan := m.detachPlan(record, dispKey)
 	if err := operation.Run0(ctx, m.logger, m.executor, plan); err != nil {
 		return err
