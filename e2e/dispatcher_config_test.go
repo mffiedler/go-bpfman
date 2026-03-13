@@ -237,19 +237,22 @@ func eachDispatcherType(t *testing.T) []dispatcherTestHarness {
 	}
 }
 
-// TestDispatcher_PriorityOrdering verifies that filling all 10
+// TestDispatcher_PriorityOrderingTC verifies that filling all 10
 // dispatcher slots with scrambled priorities produces positions that
-// reflect the correct sorted order. Members are sorted by priority
-// ascending for both TC and XDP; when priorities collide, the
-// secondary sort is by program name.
-func TestDispatcher_PriorityOrdering(t *testing.T) {
+// reflect the correct sorted order for TC ingress. Members are sorted
+// by priority ascending; when priorities collide, the secondary sort
+// is by program name.
+func TestDispatcher_PriorityOrderingTC(t *testing.T) {
 	t.Parallel()
-	for _, h := range eachDispatcherType(t) {
-		t.Run(h.name, func(t *testing.T) {
-			t.Parallel()
-			testPriorityOrdering(t, h)
-		})
-	}
+	testPriorityOrdering(t, newTCIngressHarness(t))
+}
+
+// TestDispatcher_PriorityOrderingXDP verifies that filling all 10
+// dispatcher slots with scrambled priorities produces positions that
+// reflect the correct sorted order for XDP.
+func TestDispatcher_PriorityOrderingXDP(t *testing.T) {
+	t.Parallel()
+	testPriorityOrdering(t, newXDPHarness(t))
 }
 
 func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
@@ -295,6 +298,84 @@ func testPriorityOrdering(t *testing.T, h dispatcherTestHarness) {
 		assert.Equal(t, int32(priorities[i]), prio,
 			"link %d: stored priority should match requested priority %d, got %d",
 			i, priorities[i], prio)
+	}
+}
+
+// TestTCX_PriorityOrdering verifies that attaching multiple TCX
+// programs with scrambled priorities produces positions that reflect
+// the correct sorted order. TCX uses native kernel multi-program
+// support rather than dispatchers, so this exercises a different code
+// path from the TC/XDP dispatcher tests. Each program must be a
+// distinct kernel instance because TCX does not allow the same
+// program to be attached to the same interface+direction twice.
+func TestTCX_PriorityOrdering(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireKernelVersion(t, 6, 6)
+
+	env := NewTestEnv(t)
+	iface := NewTestInterface(t)
+	ctx := context.Background()
+
+	// Scrambled priorities matching the operator test pattern.
+	priorities := []int{500, 100, 800, 300, 55}
+
+	// Load a separate program instance for each priority. TCX
+	// requires distinct kernel program IDs per attachment.
+	type loaded struct {
+		progID kernel.ProgramID
+		link   bpfman.LinkRecord
+	}
+	var entries []loaded
+
+	for _, prio := range priorities {
+		programs, err := env.LoadFile(ctx, "testdata/tcx_counter_nopin.bpf.o", []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTCX, Name: "tcx_stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		progID := programs[0].Status.Kernel.ID
+
+		tcxSpec, err := bpfman.NewTCXAttachSpec(progID, iface.Name, iface.Ifindex, bpfman.TCDirectionIngress)
+		require.NoError(t, err)
+		tcxSpec = tcxSpec.WithPriority(prio)
+		link, err := env.Attach(ctx, tcxSpec)
+		require.NoError(t, err)
+
+		entries = append(entries, loaded{progID: progID, link: link})
+	}
+
+	t.Cleanup(func() {
+		for i := len(entries) - 1; i >= 0; i-- {
+			env.Detach(context.Background(), entries[i].link.ID)
+			env.Unload(context.Background(), entries[i].progID)
+		}
+	})
+
+	// Verify that positions reflect priority ascending.
+	sorted := make([]int, len(priorities))
+	copy(sorted, priorities)
+	sort.Ints(sorted)
+
+	rankByPriority := make(map[int]int32, len(sorted))
+	for i, p := range sorted {
+		rankByPriority[p] = int32(i)
+	}
+
+	for i, entry := range entries {
+		_, details, err := env.GetLink(ctx, entry.link.ID)
+		require.NoError(t, err)
+		tcxDetails, ok := details.(bpfman.TCXDetails)
+		require.True(t, ok, "expected TCXDetails, got %T", details)
+
+		expected := rankByPriority[priorities[i]]
+		assert.Equal(t, expected, tcxDetails.Position,
+			"link %d (priority %d): position should be %d, got %d",
+			i, priorities[i], expected, tcxDetails.Position)
+
+		assert.Equal(t, int32(priorities[i]), tcxDetails.Priority,
+			"link %d: stored priority should match requested priority %d, got %d",
+			i, priorities[i], tcxDetails.Priority)
 	}
 }
 
