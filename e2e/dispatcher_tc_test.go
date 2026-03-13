@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/stretchr/testify/assert"
@@ -284,6 +285,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	// the first available free slots.
 	fill := func(priorities []int) {
 		t.Helper()
+		start := time.Now()
 		j := 0
 		for i := range dispatcher.MaxPrograms {
 			if slots[i] != nil || j >= len(priorities) {
@@ -295,17 +297,22 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 			j++
 		}
 		require.Equal(t, len(priorities), j, "fill: not enough free slots")
+		t.Logf("fill %d programs: %v", len(priorities), time.Since(start))
 	}
 
 	// drain detaches programs in slots [lo, hi).
 	drain := func(lo, hi int) {
 		t.Helper()
+		start := time.Now()
 		for i := lo; i < hi; i++ {
 			require.NotNilf(t, slots[i], "drain: slot %d already empty", i)
+			detachStart := time.Now()
 			err := env.Detach(ctx, slots[i].link.ID)
 			require.NoError(t, err, "drain: detach slot %d", i)
+			t.Logf("drain: detach slot %d: %v", i, time.Since(detachStart))
 			slots[i] = nil
 		}
+		t.Logf("drain %d programs [%d,%d): %v", hi-lo, lo, hi, time.Since(start))
 	}
 
 	// occupiedCount returns the number of non-nil slots.
