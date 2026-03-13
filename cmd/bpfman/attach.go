@@ -29,15 +29,15 @@ type attachResult struct {
 }
 
 // runAttach is the common attach pattern: create manager, run under lock, format output.
-func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error)) error {
+func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
 
-	result, err := RunWithLockValueAndScope(ctx, cli, func(ctx context.Context, scope lock.WriterScope) (attachResult, error) {
-		return fn(ctx, mgr, scope)
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
+		return fn(ctx, mgr, writeLock)
 	})
 	if err != nil {
 		return err
@@ -63,7 +63,7 @@ type AttachXDPCmd struct {
 }
 
 func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		iface, err := net.InterfaceByName(c.Iface)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
@@ -83,7 +83,7 @@ func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -105,7 +105,7 @@ type AttachTCCmd struct {
 }
 
 func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 || c.Priority > 1000 {
 			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
 		}
@@ -134,7 +134,7 @@ func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -155,7 +155,7 @@ type AttachTCXCmd struct {
 }
 
 func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 || c.Priority > 1000 {
 			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
 		}
@@ -179,7 +179,7 @@ func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
 			spec = spec.WithNetns(c.Netns)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -197,7 +197,7 @@ type AttachTracepointCmd struct {
 }
 
 func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		parts := strings.SplitN(c.Tracepoint, "/", 2)
 		if len(parts) != 2 {
 			return attachResult{}, fmt.Errorf("tracepoint must be in 'group/name' format, got %q", c.Tracepoint)
@@ -209,7 +209,7 @@ func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
 			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -228,7 +228,7 @@ type AttachKprobeCmd struct {
 }
 
 func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid kprobe spec: %w", err)
@@ -237,7 +237,7 @@ func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
 			spec = spec.WithOffset(c.Offset)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -258,7 +258,7 @@ type AttachUprobeCmd struct {
 }
 
 func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid uprobe spec: %w", err)
@@ -273,7 +273,7 @@ func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
 			spec = spec.WithContainerPid(c.ContainerPid)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -290,13 +290,13 @@ type AttachFentryCmd struct {
 }
 
 func (c *AttachFentryCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fentry spec: %w", err)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}
@@ -313,13 +313,13 @@ type AttachFexitCmd struct {
 }
 
 func (c *AttachFexitCmd) Run(cli *CLI, ctx context.Context) error {
-	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, scope lock.WriterScope) (attachResult, error) {
+	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid fexit spec: %w", err)
 		}
 
-		link, err := mgr.Attach(ctx, scope, spec)
+		link, err := mgr.Attach(ctx, writeLock, spec)
 		if err != nil {
 			return attachResult{}, err
 		}

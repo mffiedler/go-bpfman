@@ -30,7 +30,7 @@ func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -52,7 +52,7 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -74,7 +74,7 @@ func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 	puller.SetObjectPath(objPath)
 	// Don't set any programs - empty object file
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -95,7 +95,7 @@ func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
 	})
 
 	// Request only prog_b
-	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "prog_b", Type: bpfman.ProgramTypeXDP},
@@ -118,7 +118,7 @@ func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
 	})
 
 	// Request non-existent program
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "nonexistent", Type: bpfman.ProgramTypeXDP},
@@ -143,7 +143,7 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 	// Make second program fail to load
 	f.Kernel.FailOnProgram("prog_b", fmt.Errorf("injected load failure"))
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -190,7 +190,7 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 	// Make third program fail to load
 	f.Kernel.FailOnProgram("prog_c", fmt.Errorf("injected load failure"))
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -209,7 +209,7 @@ func TestLoad_PullError(t *testing.T) {
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -226,7 +226,7 @@ func TestLoad_DiscoverError(t *testing.T) {
 	objPath := f.BytecodeFile("object.o")
 	puller.SetObjectPath(objPath)
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -246,7 +246,7 @@ func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
 		{Name: "trace_vfs_write", SectionName: "fexit/vfs_write", Type: bpfman.ProgramTypeFexit, AttachFunc: "vfs_write"},
 	})
 
-	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -273,7 +273,7 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 	// Make second program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -316,7 +316,7 @@ func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 	// Make first program (fentry) fail to load - no cleanup needed
 	f.Kernel.FailOnProgram("trace_vfs_read", fmt.Errorf("injected fentry load failure"))
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -356,7 +356,7 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 	// Make third program (fexit) fail to load
 	f.Kernel.FailOnProgram("trace_vfs_write", fmt.Errorf("injected fexit load failure"))
 
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, nil, manager.LoadOpts{})
 
@@ -405,7 +405,7 @@ func TestLoad_ValidationError(t *testing.T) {
 	discoverer.SetValidateError(fmt.Errorf("custom validation error"))
 
 	// Request explicit programs to trigger validation
-	_, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	_, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		Image: newTestImageRef(),
 	}, []manager.ProgramSpec{
 		{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
@@ -424,7 +424,7 @@ func TestLoad_FileSource(t *testing.T) {
 		{Name: "test_prog", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
 	})
 
-	programs, err := f.Manager.Load(context.Background(), manager.LoadSource{
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
 		FilePath: objPath,
 	}, nil, manager.LoadOpts{})
 

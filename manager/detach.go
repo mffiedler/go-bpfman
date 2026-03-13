@@ -9,6 +9,7 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -25,8 +26,8 @@ import (
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
-func (m *Manager) Detach(ctx context.Context, linkID kernel.LinkID) (retErr error) {
-	ctx, err := m.beginOp(ctx)
+func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID) (retErr error) {
+	ctx, err := m.beginOp(ctx, writeLock)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 )
 
 // UnloadCmd unloads managed BPF programs by program ID.
@@ -26,7 +27,7 @@ func (c *UnloadCmd) Run(cli *CLI, ctx context.Context) error {
 		ids[i] = pid.Value
 	}
 	return runBatchMutation(ctx, cli, ids, "program", "unload",
-		func(ctx context.Context, id kernel.ProgramID) error {
-			return mgr.Unload(ctx, id)
+		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
+			return mgr.Unload(ctx, writeLock, id)
 		})
 }

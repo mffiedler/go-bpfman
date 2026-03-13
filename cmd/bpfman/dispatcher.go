@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/lock"
 )
 
 // DispatcherCmd groups dispatcher management subcommands.
@@ -124,7 +125,7 @@ func (c *DeleteDispatcherCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	return cli.RunWithLock(ctx, func(ctx context.Context) error {
-		return mgr.DeleteDispatcherSnapshot(ctx, key)
+	return cli.RunWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, key)
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
@@ -28,7 +29,7 @@ func (m *Manager) Doctor(ctx context.Context) (coherency.DoctorReport, error) {
 // This handles stale dispatchers and orphan filesystem artefacts.
 // Store-level GC (structural cleanup) is handled separately by
 // computeStoreGC called from Manager.GC().
-func (m *Manager) CoherencyGC(ctx context.Context) (int, error) {
+func (m *Manager) CoherencyGC(ctx context.Context, writeLock lock.WriterScope) (int, error) {
 	state, err := coherency.GatherState(ctx, m.store, m.kernel, m.Layout())
 	if err != nil {
 		return 0, fmt.Errorf("gather state: %w", err)

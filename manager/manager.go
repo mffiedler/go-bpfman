@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
@@ -141,15 +142,15 @@ type GCOptions struct {
 // bpffs pin path exists. This prevents stale DB rows from surviving
 // when the kernel reuses an ID that now belongs to a different program.
 // GC runs garbage collection with all rules.
-func (m *Manager) GC(ctx context.Context) (GCResult, error) {
-	return m.GCWithOptions(ctx, GCOptions{})
+func (m *Manager) GC(ctx context.Context, writeLock lock.WriterScope) (GCResult, error) {
+	return m.GCWithOptions(ctx, writeLock, GCOptions{})
 }
 
 // GCWithRules runs garbage collection. If rules is non-empty, only the
 // specified GC rules are run; otherwise all rules are run. Store-level
 // GC always runs regardless of the rules filter.
-func (m *Manager) GCWithRules(ctx context.Context, rules []string) (GCResult, error) {
-	return m.GCWithOptions(ctx, GCOptions{Rules: rules})
+func (m *Manager) GCWithRules(ctx context.Context, writeLock lock.WriterScope, rules []string) (GCResult, error) {
+	return m.GCWithOptions(ctx, writeLock, GCOptions{Rules: rules})
 }
 
 // GCPlan holds the computed GC actions before execution. In dry-run
@@ -183,7 +184,7 @@ var errRollback = errors.New("rollback")
 // that is then rolled back, so that coherency rules evaluate against
 // the post-deletion state and the plan reflects the full set of
 // operations that ExecuteGC would perform.
-func (m *Manager) ComputeGC(ctx context.Context, opts GCOptions) (GCPlan, error) {
+func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCPlan, error) {
 	var plan GCPlan
 
 	// Single gather pass for both store GC and coherency.
@@ -307,7 +308,7 @@ func buildGCRules(opts GCOptions) []coherency.Rule {
 // re-gathered after store actions execute so that the coherency
 // rules see the post-deletion state (e.g. orphan filesystem
 // artefacts left behind by deleted DB rows).
-func (m *Manager) ExecuteGC(ctx context.Context, plan GCPlan, opts GCOptions) (result GCResult, retErr error) {
+func (m *Manager) ExecuteGC(ctx context.Context, writeLock lock.WriterScope, plan GCPlan, opts GCOptions) (result GCResult, retErr error) {
 	start := time.Now()
 
 	// Phase 1: execute store-level actions within a single
@@ -383,12 +384,12 @@ func (m *Manager) ExecuteGC(ctx context.Context, plan GCPlan, opts GCOptions) (r
 }
 
 // GCWithOptions runs garbage collection with the given options.
-func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, error) {
-	plan, err := m.ComputeGC(ctx, opts)
+func (m *Manager) GCWithOptions(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCResult, error) {
+	plan, err := m.ComputeGC(ctx, writeLock, opts)
 	if err != nil {
 		return GCResult{}, err
 	}
-	return m.ExecuteGC(ctx, plan, opts)
+	return m.ExecuteGC(ctx, writeLock, plan, opts)
 }
 
 // beginOp prepares a mutating manager operation. If the context
@@ -396,7 +397,7 @@ func (m *Manager) GCWithOptions(ctx context.Context, opts GCOptions) (GCResult, 
 // operation), it returns immediately. Otherwise it runs GC when
 // the mutatedSinceGC flag is set, clears the flag, and returns a
 // context with the marker so that nested calls skip GC.
-func (m *Manager) beginOp(ctx context.Context) (context.Context, error) {
+func (m *Manager) beginOp(ctx context.Context, writeLock lock.WriterScope) (context.Context, error) {
 	if ctx.Value(opActiveKey{}) != nil {
 		return ctx, nil
 	}
@@ -406,7 +407,7 @@ func (m *Manager) beginOp(ctx context.Context) (context.Context, error) {
 	m.gcMu.Unlock()
 
 	if needsGC {
-		if _, err := m.GC(ctx); err != nil {
+		if _, err := m.GC(ctx, writeLock); err != nil {
 			return ctx, err
 		}
 		m.gcMu.Lock()

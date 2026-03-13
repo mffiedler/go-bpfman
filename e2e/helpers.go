@@ -180,23 +180,16 @@ func (e *TestEnv) cleanup() {
 }
 
 // runWithLock executes a function under the writer lock.
-func (e *TestEnv) runWithLock(ctx context.Context, fn func(context.Context) error) error {
-	return lock.Run(ctx, e.Layout.LockPath(), func(ctx context.Context, _ lock.WriterScope) error {
-		return fn(ctx)
-	})
-}
-
-// runWithLockAndScope executes a function under the writer lock with scope access.
-func (e *TestEnv) runWithLockAndScope(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
+func (e *TestEnv) runWithLock(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
 	return lock.Run(ctx, e.Layout.LockPath(), fn)
 }
 
 // LoadImage loads BPF programs from an OCI image.
 func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, manager.LoadSource{
+		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
 			Image: &ref,
 		}, programs, opts)
 		return loadErr
@@ -207,9 +200,9 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 // LoadFile loads BPF programs from a local object file.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context) error {
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, manager.LoadSource{
+		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
 			FilePath: filePath,
 		}, programs, opts)
 		return loadErr
@@ -219,8 +212,8 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 
 // Unload unloads a BPF program.
 func (e *TestEnv) Unload(ctx context.Context, programID kernel.ProgramID) error {
-	return e.runWithLock(ctx, func(ctx context.Context) error {
-		return e.Manager.Unload(ctx, programID)
+	return e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+		return e.Manager.Unload(ctx, writeLock, programID)
 	})
 }
 
@@ -238,12 +231,12 @@ func (e *TestEnv) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	return e.Manager.Get(ctx, programID)
 }
 
-// Attach attaches a program using the given spec.  The lock scope is
+// Attach attaches a program using the given spec.  The writer lock is
 // acquired automatically and passed to the manager.
 func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.LinkRecord, error) {
 	var result bpfman.Link
-	err := e.runWithLockAndScope(ctx, func(ctx context.Context, scope lock.WriterScope) error {
-		link, attachErr := e.Manager.Attach(ctx, scope, spec)
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+		link, attachErr := e.Manager.Attach(ctx, writeLock, spec)
 		result = link
 		return attachErr
 	})
@@ -259,8 +252,8 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 
 // Detach detaches a link.
 func (e *TestEnv) Detach(ctx context.Context, linkID kernel.LinkID) error {
-	return e.runWithLock(ctx, func(ctx context.Context) error {
-		return e.Manager.Detach(ctx, linkID)
+	return e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+		return e.Manager.Detach(ctx, writeLock, linkID)
 	})
 }
 
@@ -288,7 +281,13 @@ func (e *TestEnv) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key)
 // longer correspond to kernel objects. This mirrors the GC that the
 // daemon runs before each gRPC RPC.
 func (e *TestEnv) GC(ctx context.Context) (manager.GCResult, error) {
-	return e.Manager.GC(ctx)
+	var result manager.GCResult
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+		var gcErr error
+		result, gcErr = e.Manager.GC(ctx, writeLock)
+		return gcErr
+	})
+	return result, err
 }
 
 // AssertCleanState verifies that no programs or links are managed.

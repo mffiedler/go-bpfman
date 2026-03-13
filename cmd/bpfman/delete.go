@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -43,9 +44,9 @@ func executeDeletePrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 	}
 	results := make([]result, 0, len(ids))
 
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range ids {
-			err := deleteProgram(ctx, mgr, id, recursive)
+			err := deleteProgram(ctx, writeLock, mgr, id, recursive)
 			results = append(results, result{id: id, err: err})
 		}
 		return nil
@@ -93,9 +94,9 @@ func (c *LinkDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	results := make([]result, 0, len(c.LinkIDs))
 
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, lid := range c.LinkIDs {
-			err := deleteLink(ctx, mgr, lid.Value, c.Recursive)
+			err := deleteLink(ctx, writeLock, mgr, lid.Value, c.Recursive)
 			results = append(results, result{id: lid.Value, err: err})
 		}
 		return nil
@@ -120,7 +121,7 @@ func (c *LinkDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 }
 
 // deleteLink detaches the link, then deletes the program if it has no remaining links.
-func deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID, recursive bool) error {
+func deleteLink(ctx context.Context, writeLock lock.WriterScope, mgr *manager.Manager, linkID kernel.LinkID, recursive bool) error {
 	link, err := mgr.GetLink(ctx, linkID)
 	if err != nil {
 		return fmt.Errorf("get link: %w", err)
@@ -128,7 +129,7 @@ func deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID,
 
 	programID := link.ProgramID
 
-	if err := mgr.Detach(ctx, linkID); err != nil {
+	if err := mgr.Detach(ctx, writeLock, linkID); err != nil {
 		return fmt.Errorf("detach: %w", err)
 	}
 
@@ -138,7 +139,7 @@ func deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID,
 	}
 
 	if len(links) == 0 {
-		if err := deleteProgram(ctx, mgr, programID, recursive); err != nil {
+		if err := deleteProgram(ctx, writeLock, mgr, programID, recursive); err != nil {
 			return fmt.Errorf("delete orphaned program %d: %w", programID, err)
 		}
 	}
@@ -149,9 +150,9 @@ func deleteLink(ctx context.Context, mgr *manager.Manager, linkID kernel.LinkID,
 // deleteProgram detaches all links for the program, then unloads it.
 // With recursive, also deletes dependent programs (those sharing maps
 // via map_owner_id) before unloading the target.
-func deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.ProgramID, recursive bool) error {
+func deleteProgram(ctx context.Context, writeLock lock.WriterScope, mgr *manager.Manager, programID kernel.ProgramID, recursive bool) error {
 	if recursive {
-		if err := deleteDependents(ctx, mgr, programID); err != nil {
+		if err := deleteDependents(ctx, writeLock, mgr, programID); err != nil {
 			return err
 		}
 	}
@@ -162,12 +163,12 @@ func deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.P
 	}
 
 	for _, link := range links {
-		if err := mgr.Detach(ctx, link.ID); err != nil {
+		if err := mgr.Detach(ctx, writeLock, link.ID); err != nil {
 			return fmt.Errorf("detach link %d: %w", link.ID, err)
 		}
 	}
 
-	if err := mgr.Unload(ctx, programID); err != nil {
+	if err := mgr.Unload(ctx, writeLock, programID); err != nil {
 		return fmt.Errorf("unload: %w", err)
 	}
 
@@ -176,7 +177,7 @@ func deleteProgram(ctx context.Context, mgr *manager.Manager, programID kernel.P
 
 // deleteDependents finds programs that share maps with the target
 // (map_owner_id = programID) and deletes them first.
-func deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID kernel.ProgramID) error {
+func deleteDependents(ctx context.Context, writeLock lock.WriterScope, mgr *manager.Manager, ownerID kernel.ProgramID) error {
 	result, err := mgr.ListPrograms(ctx)
 	if err != nil {
 		return fmt.Errorf("list programs: %w", err)
@@ -184,7 +185,7 @@ func deleteDependents(ctx context.Context, mgr *manager.Manager, ownerID kernel.
 
 	for _, prog := range result.Programs {
 		if prog.Record.Handles.MapOwnerID != nil && *prog.Record.Handles.MapOwnerID == ownerID {
-			if err := deleteProgram(ctx, mgr, prog.Record.ProgramID, true); err != nil {
+			if err := deleteProgram(ctx, writeLock, mgr, prog.Record.ProgramID, true); err != nil {
 				return fmt.Errorf("delete dependent program %d: %w", prog.Record.ProgramID, err)
 			}
 		}

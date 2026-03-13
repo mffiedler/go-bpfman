@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 )
 
 // DetachCmd detaches links.
@@ -26,7 +27,7 @@ func (c *DetachCmd) Run(cli *CLI, ctx context.Context) error {
 		ids[i] = lid.Value
 	}
 	return runBatchMutation(ctx, cli, ids, "link", "detach",
-		func(ctx context.Context, id kernel.LinkID) error {
-			return mgr.Detach(ctx, id)
+		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
+			return mgr.Detach(ctx, writeLock, id)
 		})
 }

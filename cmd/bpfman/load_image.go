@@ -8,6 +8,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -55,7 +56,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		Programs []bpfman.Program
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadImageResult, error) {
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var res loadImageResult
 
 		// Parse auth config from base64-encoded registry-auth
@@ -105,7 +106,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			})
 		}
 
-		loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
+		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
 			Image: &ref,
 		}, programs, manager.LoadOpts{
 			UserMetadata: metadata,

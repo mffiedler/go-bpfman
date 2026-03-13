@@ -469,7 +469,7 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 	// Attempt attach - should fail
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
-	_, err = fix.Manager.Attach(ctx, nil, attachSpec)
+	_, err = fix.Attach(ctx, attachSpec)
 	require.Error(t, err, "attach should fail")
 	assert.Contains(t, err.Error(), "injected attach failure")
 
@@ -498,7 +498,7 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_write")
 	require.NoError(t, err, "failed to create attach spec")
-	link, err := fix.Attach(ctx, nil, attachSpec)
+	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
 
 	// Detach
@@ -542,7 +542,7 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 	for _, tp := range tracepoints {
 		attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, tp.group, tp.name)
 		require.NoError(t, err, "failed to create attach spec")
-		link, err := fix.Attach(ctx, nil, attachSpec)
+		link, err := fix.Attach(ctx, attachSpec)
 		require.NoError(t, err, "Attach failed for %s/%s", tp.group, tp.name)
 		linkIDs = append(linkIDs, link.Record.ID)
 	}
@@ -587,7 +587,7 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_read")
 	require.NoError(t, err, "failed to create attach spec")
-	_, err = fix.Attach(ctx, nil, attachSpec)
+	_, err = fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
 
 	// Verify we have 1 program and 1 link
@@ -641,14 +641,14 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 	// Attach to a tracepoint
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_close")
 	require.NoError(t, err, "failed to create attach spec")
-	link, err := fix.Attach(ctx, nil, attachSpec)
+	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err, "Attach failed")
 
 	// Configure kernel to fail on detach for this link ID
 	fix.Kernel.FailOnDetach(link.Record.ID, fmt.Errorf("injected detach failure"))
 
 	// Attempt to detach - should fail
-	err = fix.Manager.Detach(ctx, link.Record.ID)
+	err = fix.Detach(ctx, link.Record.ID)
 	require.Error(t, err, "Detach should fail due to kernel error")
 	assert.Contains(t, err.Error(), "injected detach failure", "error should mention injected failure")
 

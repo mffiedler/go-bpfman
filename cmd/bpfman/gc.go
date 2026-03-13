@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/coherency"
@@ -73,8 +74,8 @@ func (c *GCCmd) Run(cli *CLI, ctx context.Context) error {
 // runDryRun computes the GC plan under lock and displays what would
 // be executed without performing any mutations.
 func (c *GCCmd) runDryRun(cli *CLI, ctx context.Context, mgr *manager.Manager, opts manager.GCOptions) error {
-	plan, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCPlan, error) {
-		p, pErr := mgr.ComputeGC(ctx, opts)
+	plan, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCPlan, error) {
+		p, pErr := mgr.ComputeGC(ctx, writeLock, opts)
 		if pErr != nil {
 			return p, fmt.Errorf("gc compute failed: %w", pErr)
 		}
@@ -126,8 +127,8 @@ func (c *GCCmd) runDryRun(cli *CLI, ctx context.Context, mgr *manager.Manager, o
 
 // runExecute performs the full GC under lock and reports results.
 func (c *GCCmd) runExecute(cli *CLI, ctx context.Context, mgr *manager.Manager, opts manager.GCOptions) error {
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (manager.GCResult, error) {
-		gcResult, gcErr := mgr.GCWithOptions(ctx, opts)
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCResult, error) {
+		gcResult, gcErr := mgr.GCWithOptions(ctx, writeLock, opts)
 		if gcErr != nil {
 			return gcResult, fmt.Errorf("gc failed: %w", gcErr)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/inspect"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -158,7 +159,7 @@ func (m *Manager) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key)
 
 // DeleteDispatcherSnapshot removes a dispatcher and all its extension
 // link records by attach point key.
-func (m *Manager) DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
+func (m *Manager) DeleteDispatcherSnapshot(ctx context.Context, writeLock lock.WriterScope, key dispatcher.Key) error {
 	return m.store.DeleteDispatcherSnapshot(ctx, key)
 }
 

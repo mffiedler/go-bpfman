@@ -7,6 +7,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 )
@@ -30,8 +31,8 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 //
 // Preflight failures (store lookup, dependency check) return plain
 // errors. Execution failures return plain errors.
-func (m *Manager) Unload(ctx context.Context, programID kernel.ProgramID) (retErr error) {
-	ctx, err := m.beginOp(ctx)
+func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID) (retErr error) {
+	ctx, err := m.beginOp(ctx, writeLock)
 	if err != nil {
 		return err
 	}

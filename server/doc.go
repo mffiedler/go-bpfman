@@ -40,7 +40,7 @@
 //  2. Lock interceptor: acquires the global file-based writer lock
 //     (lock/) for mutating methods (Load, Unload, Attach, Detach).
 //     Read-only methods (List, Get, PullBytecode) bypass the lock.
-//     The lock scope is stashed in context so handlers can pass it to
+//     The writer lock is stashed in context so handlers can pass it to
 //     manager methods that need it.
 //
 // Handlers also hold a sync.RWMutex (mu) for in-process serialisation

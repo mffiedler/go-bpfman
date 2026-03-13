@@ -45,7 +45,7 @@ func TestUnload_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now unload it
-	err = fix.Manager.Unload(ctx, prog.Record.ProgramID)
+	err = fix.Unload(ctx, prog.Record.ProgramID)
 	require.NoError(t, err)
 
 	// Verify state is clean
@@ -59,7 +59,7 @@ func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Detach(ctx, kernel.LinkID(999))
+	err := fix.Detach(ctx, kernel.LinkID(999))
 	require.Error(t, err)
 
 	var notFound bpfman.ErrLinkNotFound
@@ -73,7 +73,7 @@ func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Unload(ctx, 999)
+	err := fix.Unload(ctx, 999)
 	require.Error(t, err)
 
 	var notFound bpfman.ErrProgramNotFound
@@ -97,7 +97,7 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "sched", "sched_switch")
 	require.NoError(t, err)
 
-	link, err := fix.Manager.Attach(ctx, nil, attachSpec)
+	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
 	// Verify link was created
@@ -111,7 +111,7 @@ func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	result, err := fix.Manager.GC(ctx)
+	result, err := fix.GC(ctx)
 	require.NoError(t, err)
 
 	// On an empty manager, GC should remove nothing.
@@ -135,7 +135,7 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err)
 
-	err = fix.Manager.Unload(ctx, prog.Record.ProgramID)
+	err = fix.Unload(ctx, prog.Record.ProgramID)
 	require.NoError(t, err)
 
 	// Verify actual state is clean
@@ -156,13 +156,13 @@ func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
 
 	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_close")
 	require.NoError(t, err)
-	link, err := fix.Attach(ctx, nil, attachSpec)
+	link, err := fix.Attach(ctx, attachSpec)
 	require.NoError(t, err)
 
 	// Inject a kernel failure on detach so the plan fails mid-execution.
 	fix.Kernel.FailOnDetach(link.Record.ID, fmt.Errorf("injected failure"))
 
-	err = fix.Manager.Detach(ctx, link.Record.ID)
+	err = fix.Detach(ctx, link.Record.ID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "injected failure")
 }

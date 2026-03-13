@@ -6,6 +6,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -54,7 +55,7 @@ func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *Loa
 		return err
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context) (loadFileResult, error) {
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
@@ -81,7 +82,7 @@ func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *Loa
 			})
 		}
 
-		loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
+		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
 			FilePath: objPath.Path,
 		}, programs, manager.LoadOpts{
 			UserMetadata: metadata,

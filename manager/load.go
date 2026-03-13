@@ -9,6 +9,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/platform"
@@ -98,8 +99,8 @@ type LoadOpts struct {
 //
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
-func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) (_ []bpfman.Program, retErr error) {
-	ctx, err := m.beginOp(ctx)
+func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source LoadSource, programs []ProgramSpec, opts LoadOpts) (_ []bpfman.Program, retErr error) {
+	ctx, err := m.beginOp(ctx, writeLock)
 	if err != nil {
 		return nil, err
 	}

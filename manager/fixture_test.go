@@ -138,18 +138,13 @@ func (f *testFixture) AssertKernelOps(expected []string) {
 	assert.Equal(f.t, expected, actual, "kernel operations mismatch")
 }
 
-// RunWithLock executes fn while holding the global writer lock.
-// Use this for operations that require a WriterScope (e.g., AttachUprobe).
-func (f *testFixture) RunWithLock(ctx context.Context, fn func(ctx context.Context, scope lock.WriterScope) error) error {
-	f.t.Helper()
-	return lock.Run(ctx, f.Layout.LockPath(), fn)
-}
-
 // Load is a convenience wrapper that loads a single program from a LoadSpec.
 // It translates the LoadSpec into the LoadSource/ProgramSpec form expected
 // by Manager.Load, ensures the fake discoverer knows about the program,
-// and returns the single loaded program.
+// acquires a real lock for compile-time safety, and returns the single
+// loaded program.
 func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manager.LoadOpts) (bpfman.Program, error) {
+	f.t.Helper()
 	source := manager.LoadSource{FilePath: spec.ObjectPath()}
 	programs := []manager.ProgramSpec{{
 		Name:       spec.ProgramName(),
@@ -168,25 +163,72 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 		Type:       spec.ProgramType(),
 		AttachFunc: spec.AttachFunc(),
 	})
-	result, err := f.Manager.Load(ctx, source, programs, opts)
-	if err != nil {
-		return bpfman.Program{}, err
-	}
-	return result[0], nil
+	var prog bpfman.Program
+	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		result, loadErr := f.Manager.Load(ctx, writeLock, source, programs, opts)
+		if loadErr != nil {
+			return loadErr
+		}
+		prog = result[0]
+		return nil
+	})
+	return prog, err
 }
 
-// Unload is a convenience wrapper that calls Manager.Unload directly.
+// Unload is a convenience wrapper that acquires the lock and calls
+// Manager.Unload.
 func (f *testFixture) Unload(ctx context.Context, programID kernel.ProgramID) error {
-	return f.Manager.Unload(ctx, programID)
+	f.t.Helper()
+	return lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		return f.Manager.Unload(ctx, writeLock, programID)
+	})
 }
 
-// Attach is a convenience wrapper that calls Manager.Attach directly.
-// For non-uprobe types, scope may be nil.
-func (f *testFixture) Attach(ctx context.Context, scope lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
-	return f.Manager.Attach(ctx, scope, spec)
+// Attach is a convenience wrapper that acquires the lock and calls
+// Manager.Attach.
+func (f *testFixture) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Link, error) {
+	f.t.Helper()
+	var link bpfman.Link
+	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		var attachErr error
+		link, attachErr = f.Manager.Attach(ctx, writeLock, spec)
+		return attachErr
+	})
+	return link, err
 }
 
-// Detach is a convenience wrapper that calls Manager.Detach directly.
+// Detach is a convenience wrapper that acquires the lock and calls
+// Manager.Detach.
 func (f *testFixture) Detach(ctx context.Context, linkID kernel.LinkID) error {
-	return f.Manager.Detach(ctx, linkID)
+	f.t.Helper()
+	return lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		return f.Manager.Detach(ctx, writeLock, linkID)
+	})
+}
+
+// LoadDirect is a convenience wrapper that acquires the lock and calls
+// Manager.Load with raw LoadSource and ProgramSpec arguments. Use this
+// for tests that bypass LoadSpec (e.g., auto-discovery tests).
+func (f *testFixture) LoadDirect(ctx context.Context, source manager.LoadSource, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
+	f.t.Helper()
+	var result []bpfman.Program
+	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		var loadErr error
+		result, loadErr = f.Manager.Load(ctx, writeLock, source, programs, opts)
+		return loadErr
+	})
+	return result, err
+}
+
+// GC is a convenience wrapper that acquires the lock and calls
+// Manager.GC.
+func (f *testFixture) GC(ctx context.Context) (manager.GCResult, error) {
+	f.t.Helper()
+	var result manager.GCResult
+	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
+		var gcErr error
+		result, gcErr = f.Manager.GC(ctx, writeLock)
+		return gcErr
+	})
+	return result, err
 }

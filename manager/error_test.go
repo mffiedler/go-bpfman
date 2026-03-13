@@ -24,7 +24,7 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Detach(ctx, kernel.LinkID(999))
+	err := fix.Detach(ctx, kernel.LinkID(999))
 	require.Error(t, err, "Detach of non-existent link should fail")
 
 	var notFound bpfman.ErrLinkNotFound
@@ -48,7 +48,7 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyLinkID = 42
 	fix.Kernel.InjectKernelLink(kernelOnlyLinkID, bpfman.LinkKindTracepoint)
 
-	err := fix.Manager.Detach(ctx, kernel.LinkID(kernelOnlyLinkID))
+	err := fix.Detach(ctx, kernel.LinkID(kernelOnlyLinkID))
 	require.Error(t, err, "Detach of kernel-only link should fail")
 
 	var notManaged bpfman.ErrLinkNotManaged
@@ -68,7 +68,7 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
-	err := fix.Manager.Unload(ctx, 999)
+	err := fix.Unload(ctx, 999)
 	require.Error(t, err, "Unload of non-existent program should fail")
 
 	var notFound bpfman.ErrProgramNotFound
@@ -92,7 +92,7 @@ func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
 	const kernelOnlyProgID = 42
 	fix.Kernel.InjectKernelProgram(kernelOnlyProgID, "orphan_prog", bpfman.ProgramTypeTracepoint)
 
-	err := fix.Manager.Unload(ctx, kernelOnlyProgID)
+	err := fix.Unload(ctx, kernelOnlyProgID)
 	require.Error(t, err, "Unload of kernel-only program should fail")
 
 	var notManaged bpfman.ErrProgramNotManaged

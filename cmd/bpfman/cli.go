@@ -353,11 +353,8 @@ func (c *CLI) LoggerFromConfig() (*slog.Logger, error) {
 // RunWithLock wraps mutating CLI operations with the global writer lock.
 // The lock ensures serialised access to BPF state across concurrent CLI
 // invocations.
-func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context) error) error {
-	_, err := RunWithLockValue(ctx, c, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, fn(ctx)
-	})
-	return err
+func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
+	return RunWithLock(ctx, c, fn)
 }
 
 // runBatchMutation executes mutate for each ID under the global
@@ -369,7 +366,7 @@ func runBatchMutation[ID ~uint32](
 	ids []ID,
 	noun string,
 	verb string,
-	mutate func(context.Context, ID) error,
+	mutate func(context.Context, lock.WriterScope, ID) error,
 ) error {
 	type result struct {
 		id  ID
@@ -377,9 +374,9 @@ func runBatchMutation[ID ~uint32](
 	}
 	results := make([]result, 0, len(ids))
 
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context) error {
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range ids {
-			err := mutate(ctx, id)
+			err := mutate(ctx, writeLock, id)
 			results = append(results, result{id: id, err: err})
 		}
 		return nil
@@ -403,9 +400,9 @@ func runBatchMutation[ID ~uint32](
 
 // RunWithLock executes fn under the global writer lock. Use this pattern
 // to perform mutations that don't return a value.
-func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context) error) error {
-	_, err := RunWithLockValue(ctx, c, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, fn(ctx)
+func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) error) error {
+	_, err := RunWithLockValue(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) (struct{}, error) {
+		return struct{}{}, fn(ctx, writeLock)
 	})
 	return err
 }
@@ -413,7 +410,7 @@ func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context) error) er
 // RunWithLockValue is like RunWithLock but returns a value from the locked
 // section. Use this pattern to perform mutations under lock, then format and
 // emit output outside the lock to minimise critical section duration.
-func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Context) (T, error)) (T, error) {
+func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
 	var result T
 
 	// Apply lock timeout if set (0 means indefinite)
@@ -428,42 +425,9 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 		return result, fmt.Errorf("invalid runtime directory: %w", err)
 	}
 
-	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, _ lock.WriterScope) error {
+	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, writeLock lock.WriterScope) error {
 		var fnErr error
-		result, fnErr = fn(ctx)
-		return fnErr
-	})
-
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", layout.LockPath(), c.LockTimeout)
-		}
-		return result, err
-	}
-	return result, nil
-}
-
-// RunWithLockValueAndScope is like RunWithLockValue but provides the
-// WriterScope to the callback. This is needed for operations like uprobe
-// attachment that may spawn subprocesses requiring lock inheritance.
-func RunWithLockValueAndScope[T any](ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
-	var result T
-
-	// Apply lock timeout if set (0 means indefinite)
-	if c.LockTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.LockTimeout)
-		defer cancel()
-	}
-
-	layout, err := c.Layout()
-	if err != nil {
-		return result, fmt.Errorf("invalid runtime directory: %w", err)
-	}
-
-	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, scope lock.WriterScope) error {
-		var fnErr error
-		result, fnErr = fn(ctx, scope)
+		result, fnErr = fn(ctx, writeLock)
 		return fnErr
 	})
 
