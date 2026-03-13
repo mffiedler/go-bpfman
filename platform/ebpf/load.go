@@ -46,6 +46,16 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 	}
 
+	// Record which maps declare PinByName before clearing the flag.
+	// These maps will be shared across programs via a shared pin
+	// directory, matching aya's LIBBPF_PIN_BY_NAME behaviour.
+	pinByNameMaps := make(map[string]bool)
+	for name, mapSpec := range collSpec.Maps {
+		if mapSpec.Pinning == ebpf.PinByName && !strings.HasPrefix(name, ".") {
+			pinByNameMaps[name] = true
+		}
+	}
+
 	// Clear map pinning flags - we'll pin manually after getting the kernel ID.
 	// Some BPF programs have maps annotated with PIN_BY_NAME which requires
 	// a pin path at load time, but we need the kernel ID first.
@@ -129,6 +139,25 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 	}
 
+	// For PinByName maps without an explicit owner, check the shared
+	// pin directory for existing maps. If found, use them as
+	// replacements so this program shares the same kernel map
+	// instances as previous loads.
+	if len(pinByNameMaps) > 0 && mapOwnerID == 0 {
+		for name := range pinByNameMaps {
+			sharedPath := bpffs.SharedMapPin(name)
+			m, err := ebpf.LoadPinnedMap(sharedPath, nil)
+			if err != nil {
+				continue // not yet pinned; will create after load
+			}
+			if mapReplacements == nil {
+				mapReplacements = make(map[string]*ebpf.Map)
+			}
+			mapReplacements[name] = m
+			k.logger.Debug("loaded shared PinByName map", "name", name, "path", sharedPath)
+		}
+	}
+
 	// Load collection - use map replacements if sharing with owner
 	var coll *ebpf.Collection
 	if len(mapReplacements) > 0 {
@@ -200,18 +229,70 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 			return bpfman.LoadOutput{}, fmt.Errorf("failed to create maps directory: %w", err)
 		}
 
-		// Pin all maps (skip internal maps like .rodata, .bss, .data)
+		// Pin PinByName maps to the shared directory (first load
+		// creates the pin; subsequent loads reused it above via
+		// mapReplacements).
+		if len(pinByNameMaps) > 0 {
+			if err := bpffs.EnsureSharedMapPinDir(); err != nil {
+				cleanup()
+				return bpfman.LoadOutput{}, fmt.Errorf("failed to create shared map pin directory: %w", err)
+			}
+			for name := range pinByNameMaps {
+				if mapReplacements[name] != nil {
+					continue // already pinned at shared location
+				}
+				m := coll.Maps[name]
+				if m == nil {
+					continue
+				}
+				sharedPath := bpffs.SharedMapPin(name)
+				if err := m.Pin(sharedPath); err != nil {
+					cleanup()
+					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
+					}
+					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin shared map %q: %w", name, err)
+				}
+				pinnedPaths = append(pinnedPaths, sharedPath)
+				k.logger.Debug("pinned PinByName map to shared directory", "name", name, "path", sharedPath)
+			}
+		}
+
+		// Pin all maps to the per-program directory. Maps that
+		// are already pinned (at the shared location) need to be
+		// cloned first, since Clone() produces an unpinned
+		// duplicate that can be pinned to a second path.
 		for name, m := range coll.Maps {
 			if strings.HasPrefix(name, ".") {
 				continue
 			}
 			mapPinPath := bpffs.MapPinPath(programID, name)
-			if err := m.Pin(mapPinPath); err != nil {
-				cleanup()
-				if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
-					k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
+			if m.IsPinned() {
+				clone, cloneErr := m.Clone()
+				if cloneErr != nil {
+					cleanup()
+					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
+					}
+					return bpfman.LoadOutput{}, fmt.Errorf("failed to clone map %q for per-program pin: %w", name, cloneErr)
 				}
-				return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
+				if err := clone.Pin(mapPinPath); err != nil {
+					clone.Close()
+					cleanup()
+					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
+					}
+					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
+				}
+				clone.Close()
+			} else {
+				if err := m.Pin(mapPinPath); err != nil {
+					cleanup()
+					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
+					}
+					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
+				}
 			}
 			pinnedPaths = append(pinnedPaths, mapPinPath)
 		}

@@ -11,6 +11,10 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
+#ifndef BPF_MAP_PINNING
+#define BPF_MAP_PINNING LIBBPF_PIN_BY_NAME
+#endif
+
 #define XDP_ACTION_MAX (XDP_REDIRECT + 1)
 
 struct datarec {
@@ -23,7 +27,7 @@ struct {
   __type(key, __u32);
   __type(value, datarec);
   __uint(max_entries, XDP_ACTION_MAX);
-  __uint(pinning, LIBBPF_PIN_BY_NAME);
+  __uint(pinning, BPF_MAP_PINNING);
 } xdp_stats_map SEC(".maps");
 
 static __always_inline __u32 xdp_stats_record_action(struct xdp_md *ctx,

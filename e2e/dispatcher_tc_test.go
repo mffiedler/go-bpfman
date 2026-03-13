@@ -229,7 +229,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
 
 	type prog struct {
@@ -441,7 +441,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 
 	// Load 5 separate instances so each gets independent maps.
 	type loadedProg struct {
@@ -546,7 +546,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
 
-			objFile := "testdata/tc_counter.bpf.o"
+			objFile := "testdata/tc_counter_nopin.bpf.o"
 
 			type loadedProg struct {
 				kernelID   kernel.ProgramID
@@ -634,7 +634,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 
 	type loadedProg struct {
 		kernelID   kernel.ProgramID
@@ -715,7 +715,7 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 
 	// Default proceed-on matching the operator CRD default.
 	defaultProceedOn := []int32{3, 30} // Pipe, DispatcherReturn
@@ -812,7 +812,7 @@ func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 
 	type prog struct {
 		id         kernel.ProgramID
@@ -885,7 +885,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/tc_counter.bpf.o"
+	objFile := "testdata/tc_counter_nopin.bpf.o"
 
 	// Proceed-on including TC_ACT_OK so the chain continues.
 	proceedOn := []int32{0, 3, 30} // OK, Pipe, DispatcherReturn
@@ -937,4 +937,110 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 		assert.Greater(t, count, uint64(0),
 			"program at priority %d should count packets", priorities[i])
 	}
+}
+
+// TestTC_PinByNameMapSharing verifies that loading the same BPF
+// object file twice (without explicit MapOwnerID or ShareMaps)
+// produces programs that share kernel maps declared with
+// LIBBPF_PIN_BY_NAME. This matches aya/Rust-bpfman behaviour where
+// PinByName maps are implicitly shared via a well-known pin path.
+//
+// The test:
+//  1. Loads tc_counter.bpf.o twice as separate LoadFile calls.
+//  2. Verifies both programs reference the same kernel map ID for
+//     tc_stats_map (proving the map is shared, not duplicated).
+//  3. Attaches both programs with proceed-on including TC_ACT_OK so
+//     both execute in the dispatch chain.
+//  4. Sends traffic and verifies both per-program map pins report
+//     the same non-zero packet count (proving writes go to the same
+//     underlying kernel map).
+func TestTC_PinByNameMapSharing(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireTC(t)
+
+	env := NewTestEnv(t)
+	veth := NewTestVethPair(t)
+	ctx := context.Background()
+
+	objFile := "testdata/tc_counter.bpf.o"
+
+	type prog struct {
+		kernelID   kernel.ProgramID
+		mapPinPath string
+	}
+
+	load := func() prog {
+		programs, err := env.LoadFile(ctx, objFile, []manager.ProgramSpec{
+			{Type: bpfman.ProgramTypeTC, Name: "stats"},
+		}, manager.LoadOpts{})
+		require.NoError(t, err)
+		require.Len(t, programs, 1)
+		p := programs[0]
+		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
+		return prog{p.Status.Kernel.ID, p.Record.Handles.MapPinPath}
+	}
+
+	progA := load()
+	progB := load()
+
+	// Each program should have a distinct kernel ID (they are
+	// separate program loads).
+	require.NotEqual(t, progA.kernelID, progB.kernelID,
+		"programs should have distinct kernel IDs")
+
+	// Verify map sharing: load the pinned tc_stats_map from each
+	// program's per-program directory and compare kernel map IDs.
+	mapIDFor := func(p prog) ebpf.MapID {
+		t.Helper()
+		statsPath := filepath.Join(p.mapPinPath, "tc_stats_map")
+		m, err := ebpf.LoadPinnedMap(statsPath, nil)
+		require.NoError(t, err, "load pinned tc_stats_map for program %d", p.kernelID)
+		defer m.Close()
+		info, err := m.Info()
+		require.NoError(t, err, "get map info for program %d", p.kernelID)
+		id, ok := info.ID()
+		require.True(t, ok, "map ID should be available")
+		return id
+	}
+
+	mapIDA := mapIDFor(progA)
+	mapIDB := mapIDFor(progB)
+
+	t.Logf("program A (kernel_id=%d): tc_stats_map ID=%d", progA.kernelID, mapIDA)
+	t.Logf("program B (kernel_id=%d): tc_stats_map ID=%d", progB.kernelID, mapIDB)
+
+	require.Equal(t, mapIDA, mapIDB,
+		"both programs should share the same kernel map for tc_stats_map (PinByName sharing)")
+
+	// Attach both programs at different priorities with
+	// proceed-on including TC_ACT_OK so both execute.
+	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
+
+	for i, p := range []prog{progA, progB} {
+		tcSpec, err := bpfman.NewTCAttachSpec(
+			p.kernelID, veth.A.Name, veth.A.Ifindex,
+			bpfman.TCDirectionIngress,
+		)
+		require.NoError(t, err)
+		tcSpec = tcSpec.WithPriority((i + 1) * 100).WithProceedOn(proceedOn)
+		link, err := env.Attach(ctx, tcSpec)
+		require.NoError(t, err, "attach program %d", i)
+		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+	}
+
+	// Send traffic through the veth pair.
+	veth.Ping(t, 20)
+
+	// Both per-program map pins reference the same kernel map, so
+	// both must report the same non-zero packet count.
+	countA := readStatsMap(t, filepath.Join(progA.mapPinPath, "tc_stats_map"))
+	countB := readStatsMap(t, filepath.Join(progB.mapPinPath, "tc_stats_map"))
+
+	t.Logf("program A packets=%d, program B packets=%d", countA, countB)
+
+	assert.Greater(t, countA, uint64(0),
+		"program A should have counted packets")
+	assert.Equal(t, countA, countB,
+		"both programs should report the same packet count (shared map)")
 }

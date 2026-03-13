@@ -12,6 +12,10 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
+#ifndef BPF_MAP_PINNING
+#define BPF_MAP_PINNING LIBBPF_PIN_BY_NAME
+#endif
+
 volatile const __u8 config_u8 = 0;
 volatile const __u32 config_u32 = 0;
 
@@ -20,7 +24,7 @@ struct {
 	__type(key, __u32);
 	__type(value, __u64);
 	__uint(max_entries, 1);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(pinning, BPF_MAP_PINNING);
 } xdp_pass_stats_map SEC(".maps");
 
 SEC("xdp")

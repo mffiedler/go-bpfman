@@ -91,6 +91,31 @@ func (b BPFFS) Links() string {
 	return b.linksDir()
 }
 
+// SharedMapPinDir returns the directory for shared PinByName map pins.
+// Format: {base}/fs/shared/
+func (b BPFFS) SharedMapPinDir() string {
+	b.mustValid()
+	return filepath.Join(b.mountPoint(), "shared")
+}
+
+// SharedMapPin returns the pin path for a shared PinByName map.
+// Format: {base}/fs/shared/{map_name}
+func (b BPFFS) SharedMapPin(mapName string) string {
+	b.mustValid()
+	return filepath.Join(b.mountPoint(), "shared", mapName)
+}
+
+// EnsureSharedMapPinDir creates the shared map pin directory if it
+// doesn't exist.
+func (b BPFFS) EnsureSharedMapPinDir() error {
+	b.mustValid()
+	dir := b.SharedMapPinDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return &PathError{Op: "ensure_shared_map_pin_dir", Path: dir, Err: err}
+	}
+	return nil
+}
+
 // ProgPinPath returns the pin path for a program.
 // Format: {base}/fs/prog_{id}
 func (b BPFFS) ProgPinPath(programID kernel.ProgramID) string {

@@ -132,7 +132,7 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
 
-			objFile := "testdata/xdp_counter.bpf.o"
+			objFile := "testdata/xdp_counter_nopin.bpf.o"
 
 			type loadedProg struct {
 				kernelID   kernel.ProgramID
