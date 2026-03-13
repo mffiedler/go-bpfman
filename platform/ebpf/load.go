@@ -310,12 +310,20 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	}
 	_ = ebpfMapIDs // MapIDs now accessed via kernel.Program
 
+	// Collect PinByName map names for reference counting.
+	var sharedMapNames []string
+	for name := range pinByNameMaps {
+		sharedMapNames = append(sharedMapNames, name)
+	}
+	sort.Strings(sharedMapNames)
+
 	return bpfman.LoadOutput{
-		PinPath:      progPinPath,
-		MapsDir:      mapsDir,
-		Program:      ToKernelProgram(info, license),
-		License:      license,
-		InferredType: programType,
+		PinPath:        progPinPath,
+		MapsDir:        mapsDir,
+		Program:        ToKernelProgram(info, license),
+		License:        license,
+		InferredType:   programType,
+		SharedMapNames: sharedMapNames,
 	}, nil
 }
 

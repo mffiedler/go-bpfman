@@ -104,6 +104,7 @@ func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPat
 		operation.DoAction("remove-links-dir", linksDir, action.RemovePin{Path: linksDir}),
 		operation.DoAction("unload-prog", programName, action.UnloadProgram{PinPath: progPinPath}),
 		operation.DoAction("unload-maps", programName, action.RemoveMapsPins{PinPath: mapsDir}),
+		operation.TryAction("cleanup-shared-maps", programName, action.CleanupSharedMapPins{ProgramID: programID}),
 	)
 
 	if persisted {

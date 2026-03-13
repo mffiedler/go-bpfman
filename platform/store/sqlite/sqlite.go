@@ -81,6 +81,13 @@ type sqliteStore struct {
 	stmtListAllXDPDetails        *sql.Stmt
 	stmtListAllTCDetails         *sql.Stmt
 	stmtListAllTCXDetails        *sql.Stmt
+
+	// Prepared statements for shared map pin operations
+	stmtSaveSharedMapPin         *sql.Stmt
+	stmtDeleteSharedMapPins      *sql.Stmt
+	stmtListSharedMapsByProgram  *sql.Stmt
+	stmtCountSharedMapRefs       *sql.Stmt
+	stmtListReferencedSharedMaps *sql.Stmt
 }
 
 // New creates a new SQLite store at the given path.
@@ -211,6 +218,11 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtListAllXDPDetails,
 		s.stmtListAllTCDetails,
 		s.stmtListAllTCXDetails,
+		s.stmtSaveSharedMapPin,
+		s.stmtDeleteSharedMapPins,
+		s.stmtListSharedMapsByProgram,
+		s.stmtCountSharedMapRefs,
+		s.stmtListReferencedSharedMaps,
 	}
 	for _, stmt := range stmts {
 		if stmt != nil {
@@ -221,7 +233,7 @@ func (s *sqliteStore) closeStatements() {
 
 // schemaVersion is the current schema version. Increment this when the schema changes.
 // Migrations are supported from version 2 onwards.
-const schemaVersion = 9
+const schemaVersion = 10
 
 func (s *sqliteStore) migrate(ctx context.Context) error {
 	// Check current schema version
@@ -317,7 +329,10 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 	if err := s.prepareLinkRegistryStatements(ctx); err != nil {
 		return err
 	}
-	return s.prepareLinkDetailStatements(ctx)
+	if err := s.prepareLinkDetailStatements(ctx); err != nil {
+		return err
+	}
+	return s.prepareSharedMapPinStatements(ctx)
 }
 
 // RunInTransaction executes the callback within a database transaction.
@@ -389,6 +404,12 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Sto
 		stmtListAllXDPDetails:        tx.StmtContext(ctx, s.stmtListAllXDPDetails),
 		stmtListAllTCDetails:         tx.StmtContext(ctx, s.stmtListAllTCDetails),
 		stmtListAllTCXDetails:        tx.StmtContext(ctx, s.stmtListAllTCXDetails),
+		// Shared map pin statements
+		stmtSaveSharedMapPin:         tx.StmtContext(ctx, s.stmtSaveSharedMapPin),
+		stmtDeleteSharedMapPins:      tx.StmtContext(ctx, s.stmtDeleteSharedMapPins),
+		stmtListSharedMapsByProgram:  tx.StmtContext(ctx, s.stmtListSharedMapsByProgram),
+		stmtCountSharedMapRefs:       tx.StmtContext(ctx, s.stmtCountSharedMapRefs),
+		stmtListReferencedSharedMaps: tx.StmtContext(ctx, s.stmtListReferencedSharedMaps),
 	}
 
 	if err := fn(txStore); err != nil {

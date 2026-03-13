@@ -80,6 +80,12 @@ type DispatcherLinkPin struct {
 	Ifindex  uint32 `json:"ifindex"`
 }
 
+// SharedMapPin represents a shared PinByName map pin: {fs}/shared/{map_name}
+type SharedMapPin struct {
+	Path    string `json:"path"`
+	MapName string `json:"map_name"`
+}
+
 // FSState is a materialised snapshot of the filesystem.
 // Use Scanner.Scan() to create, or construct directly in tests.
 type FSState struct {
@@ -88,6 +94,7 @@ type FSState struct {
 	MapDirs            []MapDir            `json:"map_dirs"`
 	DispatcherDirs     []DispatcherDir     `json:"dispatcher_dirs"`
 	DispatcherLinkPins []DispatcherLinkPin `json:"dispatcher_link_pins"`
+	SharedMapPins      []SharedMapPin      `json:"shared_map_pins"`
 }
 
 // fs returns the bpffs mount point path.
@@ -407,6 +414,41 @@ func (s *Scanner) DispatcherLinkPins(ctx context.Context) iter.Seq2[DispatcherLi
 	}
 }
 
+// SharedMapPins returns an iterator over shared map pins in {fs}/shared/.
+// Errors are yielded only for failures that prevent enumeration.
+func (s *Scanner) SharedMapPins(ctx context.Context) iter.Seq2[SharedMapPin, error] {
+	return func(yield func(SharedMapPin, error) bool) {
+		sharedDir := s.b.SharedMapPinDir()
+		entries, err := os.ReadDir(sharedDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return // directory doesn't exist: no shared pins
+			}
+			yield(SharedMapPin{}, fmt.Errorf("read dir %s: %w", sharedDir, err))
+			return
+		}
+
+		for _, entry := range entries {
+			if ctx.Err() != nil {
+				yield(SharedMapPin{}, ctx.Err())
+				return
+			}
+
+			if entry.IsDir() {
+				continue
+			}
+
+			pin := SharedMapPin{
+				Path:    filepath.Join(sharedDir, entry.Name()),
+				MapName: entry.Name(),
+			}
+			if !yield(pin, nil) {
+				return
+			}
+		}
+	}
+}
+
 // PathExists checks if a path exists on the filesystem.
 // Used to verify store-recorded pin paths actually exist.
 func (s *Scanner) PathExists(path string) bool {
@@ -495,6 +537,13 @@ func (s *Scanner) Scan(ctx context.Context) (*FSState, error) {
 			return nil, fmt.Errorf("scan dispatcher link pins: %w", err)
 		}
 		state.DispatcherLinkPins = append(state.DispatcherLinkPins, pin)
+	}
+
+	for pin, err := range s.SharedMapPins(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("scan shared map pins: %w", err)
+		}
+		state.SharedMapPins = append(state.SharedMapPins, pin)
 	}
 
 	return state, nil

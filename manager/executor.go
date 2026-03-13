@@ -146,6 +146,32 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RemoveStagingDir:
 		return nil, e.bcfs.RemoveStagingDir(a.Path)
 
+	case action.SaveSharedMapPins:
+		return nil, e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+			return tx.SaveSharedMapPins(ctx, a.ProgramID, a.MapNames)
+		})
+
+	case action.CleanupSharedMapPins:
+		var orphaned []string
+		if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+			var txErr error
+			orphaned, txErr = tx.DeleteSharedMapPins(ctx, a.ProgramID)
+			return txErr
+		}); err != nil {
+			return nil, err
+		}
+		for _, mapName := range orphaned {
+			path := e.bpffs.SharedMapPin(mapName)
+			if rmErr := e.bpffs.RemoveSharedMapPin(path); rmErr != nil {
+				e.logger.Warn("failed to remove orphaned shared map pin",
+					"path", path, "error", rmErr)
+			}
+		}
+		return nil, nil
+
+	case action.RemoveSharedMapPin:
+		return nil, e.bpffs.RemoveSharedMapPin(a.Path)
+
 	case action.RebuildXDPDispatcher:
 		return e.rebuildXDPDispatcher(ctx, a.ProgramID,
 			xdpRebuildOps{ifindex: a.Ifindex, ifname: a.Ifname, netnsPath: a.NetnsPath},

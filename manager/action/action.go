@@ -301,6 +301,33 @@ type CleanupEmptyDispatcher struct {
 
 func (CleanupEmptyDispatcher) isAction() {}
 
+// Shared map pin actions - reference-counted cleanup for PinByName maps
+
+// SaveSharedMapPins records that a program uses the named shared maps.
+type SaveSharedMapPins struct {
+	ProgramID kernel.ProgramID
+	MapNames  []string
+}
+
+func (SaveSharedMapPins) isAction() {}
+
+// CleanupSharedMapPins removes a program's shared map pin entries
+// from the store and deletes the filesystem pins for any maps that
+// are no longer referenced by other programs.
+type CleanupSharedMapPins struct {
+	ProgramID kernel.ProgramID
+}
+
+func (CleanupSharedMapPins) isAction() {}
+
+// RemoveSharedMapPin removes a shared map pin file from the
+// filesystem. Used by GC rules for orphan cleanup.
+type RemoveSharedMapPin struct {
+	Path string
+}
+
+func (RemoveSharedMapPin) isAction() {}
+
 // Deep dispatcher actions - cross-subsystem operations that the
 // executor handles internally (kernel + store transactions with
 // rollback). These replace direct manager method calls for dispatcher

@@ -394,3 +394,21 @@ CREATE TABLE IF NOT EXISTS link_tcx_details (
         REFERENCES links(link_id)
         ON DELETE CASCADE
 ) STRICT;
+
+--------------------------------------------------------------------------------
+-- Shared Map Pins (reference counting for PinByName maps)
+--------------------------------------------------------------------------------
+
+-- Tracks which programs use shared PinByName map pins. When the last
+-- program referencing a shared map is unloaded, the shared pin under
+-- {bpffs}/shared/{map_name} is removed. ON DELETE CASCADE ensures
+-- entries are cleaned up if a program is deleted from managed_programs
+-- without an explicit cleanup step (e.g., during GC after a crash).
+CREATE TABLE IF NOT EXISTS shared_map_pins (
+    map_name TEXT NOT NULL,
+    program_id INTEGER NOT NULL,
+    PRIMARY KEY (map_name, program_id),
+    FOREIGN KEY (program_id)
+        REFERENCES managed_programs(program_id)
+        ON DELETE CASCADE
+) STRICT;

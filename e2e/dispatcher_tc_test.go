@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -977,7 +978,6 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, programs, 1)
 		p := programs[0]
-		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
 		return prog{p.Status.Kernel.ID, p.Record.Handles.MapPinPath}
 	}
 
@@ -1017,6 +1017,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	// proceed-on including TC_ACT_OK so both execute.
 	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
 
+	var linkIDs []kernel.LinkID
 	for i, p := range []prog{progA, progB} {
 		tcSpec, err := bpfman.NewTCAttachSpec(
 			p.kernelID, veth.A.Name, veth.A.Ifindex,
@@ -1026,7 +1027,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 		tcSpec = tcSpec.WithPriority((i + 1) * 100).WithProceedOn(proceedOn)
 		link, err := env.Attach(ctx, tcSpec)
 		require.NoError(t, err, "attach program %d", i)
-		t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+		linkIDs = append(linkIDs, link.ID)
 	}
 
 	// Send traffic through the veth pair.
@@ -1043,4 +1044,28 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 		"program A should have counted packets")
 	assert.Equal(t, countA, countB,
 		"both programs should report the same packet count (shared map)")
+
+	// Verify shared pin cleanup on unload.
+	sharedPinPath := env.Layout.BPFFS().SharedMapPin("tc_stats_map")
+
+	// The shared pin should exist while both programs are loaded.
+	_, err := os.Stat(sharedPinPath)
+	require.NoError(t, err, "shared map pin should exist while programs are loaded")
+
+	// Detach links before unloading (unload requires no active links
+	// for dispatcher-backed programs, but the Unload path handles
+	// link cleanup internally).
+	// Unload program A. The shared pin should still exist because
+	// program B still references it.
+	require.NoError(t, env.Unload(ctx, progA.kernelID), "unload program A")
+
+	_, err = os.Stat(sharedPinPath)
+	require.NoError(t, err, "shared map pin should still exist after unloading A (B still uses it)")
+
+	// Unload program B (last user). The shared pin should now be
+	// removed.
+	require.NoError(t, env.Unload(ctx, progB.kernelID), "unload program B")
+
+	_, err = os.Stat(sharedPinPath)
+	require.True(t, os.IsNotExist(err), "shared map pin should be removed after last user unloads: %v", err)
 }

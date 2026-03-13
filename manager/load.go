@@ -241,6 +241,19 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				})
 			},
 		),
+
+		operation.Do("save-shared-maps", programName,
+			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
+				l := operation.Get(b, loadedKey)
+				if len(l.SharedMapNames) == 0 {
+					return nil
+				}
+				return exec.Execute(ctx, action.SaveSharedMapPins{
+					ProgramID: l.Program.ID,
+					MapNames:  l.SharedMapNames,
+				})
+			},
+		),
 	)
 }
 

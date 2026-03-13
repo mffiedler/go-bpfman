@@ -107,6 +107,19 @@ func (s *stubStore) DeleteDispatcherSnapshot(ctx context.Context, key dispatcher
 	panic("stubStore.DeleteDispatcherSnapshot not implemented")
 }
 
+// SharedMapPinStore
+func (s *stubStore) SaveSharedMapPins(ctx context.Context, programID kernel.ProgramID, mapNames []string) error {
+	panic("stubStore.SaveSharedMapPins not implemented")
+}
+
+func (s *stubStore) DeleteSharedMapPins(ctx context.Context, programID kernel.ProgramID) ([]string, error) {
+	panic("stubStore.DeleteSharedMapPins not implemented")
+}
+
+func (s *stubStore) ListReferencedSharedMaps(ctx context.Context) ([]string, error) {
+	panic("stubStore.ListReferencedSharedMaps not implemented")
+}
+
 // Transactional
 func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
 	return fn(s)

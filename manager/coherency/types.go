@@ -109,6 +109,7 @@ const (
 	OrphanProgramDir     OrphanKind = "program-dir"
 	OrphanProgramDirUnk  OrphanKind = "program-dir-unknown"
 	OrphanStagingDir     OrphanKind = "staging-dir"
+	OrphanSharedMapPin   OrphanKind = "shared-map-pin"
 )
 
 // FsOrphan represents a filesystem entry with no matching DB record.

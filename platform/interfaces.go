@@ -79,12 +79,32 @@ type DispatcherStore interface {
 	DeleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error
 }
 
-// Store combines program, link, and dispatcher store operations.
+// SharedMapPinStore tracks which programs reference shared PinByName
+// map pins, enabling reference-counted cleanup on unload.
+type SharedMapPinStore interface {
+	// SaveSharedMapPins records that the given program uses the
+	// named shared maps. Duplicate entries are silently ignored.
+	SaveSharedMapPins(ctx context.Context, programID kernel.ProgramID, mapNames []string) error
+
+	// DeleteSharedMapPins removes a program's shared map pin
+	// entries and returns the map names that are no longer
+	// referenced by any program (orphaned). The caller is
+	// responsible for removing the corresponding filesystem pins.
+	DeleteSharedMapPins(ctx context.Context, programID kernel.ProgramID) (orphanedMaps []string, err error)
+
+	// ListReferencedSharedMaps returns all shared map names that
+	// are still referenced by at least one program. Used by the
+	// GC gather phase to detect filesystem orphans.
+	ListReferencedSharedMaps(ctx context.Context) ([]string, error)
+}
+
+// Store combines program, link, dispatcher, and shared map pin store operations.
 type Store interface {
 	io.Closer
 	ProgramStore
 	LinkStore
 	DispatcherStore
+	SharedMapPinStore
 	Transactional
 }
 

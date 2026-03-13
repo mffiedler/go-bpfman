@@ -153,6 +153,19 @@ func (b BPFFS) RemoveDispatcherLinkPin(path string) error {
 	return b.removePinFile(path)
 }
 
+// RemoveSharedMapPin removes a shared map pin file under the
+// {bpffs}/shared/ directory.
+func (b BPFFS) RemoveSharedMapPin(path string) error {
+	path, err := b.cleanUnderMount(path)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(path) != b.SharedMapPinDir() {
+		return fmt.Errorf("shared map pin not inside shared directory: %s", path)
+	}
+	return b.removePinFile(path)
+}
+
 // removeNumericChildDir removes a directory that is a direct child of
 // parent and has a numeric name.
 func (b BPFFS) removeNumericChildDir(parent, path, what string) error {

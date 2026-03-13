@@ -213,6 +213,27 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 
 	// ----------------------------------------------------------------
+	// Phase 5c: Scan {bpffs}/shared/ for orphan shared map pins
+	// ----------------------------------------------------------------
+
+	referencedMaps, err := store.ListReferencedSharedMaps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list referenced shared maps: %w", err)
+	}
+	referencedMapSet := make(map[string]bool, len(referencedMaps))
+	for _, name := range referencedMaps {
+		referencedMapSet[name] = true
+	}
+	for _, pin := range fsState.SharedMapPins {
+		if !referencedMapSet[pin.MapName] {
+			s.orphans = append(s.orphans, FsOrphan{
+				Path: pin.Path,
+				Kind: OrphanSharedMapPin,
+			})
+		}
+	}
+
+	// ----------------------------------------------------------------
 	// Phase 5a: Scan <base>/programs/ for orphan program dirs
 	// ----------------------------------------------------------------
 

@@ -179,11 +179,12 @@ func cloneMap[K comparable, V any](m map[K]V) map[K]V {
 // LoadOutput is the raw result of kernel.Load().
 // This is transient I/O boundary data, not stored in the DB.
 type LoadOutput struct {
-	PinPath      string          // where program was pinned
-	MapsDir      string          // where maps were pinned
-	Program      *kernel.Program // kernel info (ID, MapIDs, etc)
-	License      string          // from ELF, for GPL check
-	InferredType ProgramType     // inferred from ELF if user didn't specify
+	PinPath        string          // where program was pinned
+	MapsDir        string          // where maps were pinned
+	Program        *kernel.Program // kernel info (ID, MapIDs, etc)
+	License        string          // from ELF, for GPL check
+	InferredType   ProgramType     // inferred from ELF if user didn't specify
+	SharedMapNames []string        // PinByName map names (for reference counting)
 }
 
 // IsGPLCompatible checks if a license string is GPL compatible.

@@ -635,6 +635,26 @@ Category: gc-orphan-pin`,
 		},
 	},
 	{
+		name: "orphan-shared-map-pins",
+		description: `Removes orphan shared map pin files under {bpffs}/shared/ that
+have no corresponding entry in the shared_map_pins table. These pins
+reference kernel maps that will be garbage-collected once no FD or pin
+holds them. They indicate incomplete cleanup from a crash or database
+wipe.
+
+Severity: WARNING
+Category: gc-orphan-pin`,
+		kinds:   []OrphanKind{OrphanSharedMapPin},
+		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
+		actionFn: func(o FsOrphan) action.Action {
+			return action.RemoveSharedMapPin{Path: o.Path}
+		},
+		describeFn: func(o FsOrphan) (string, string) {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
+				fmt.Sprintf("remove shared map pin %s", o.Path)
+		},
+	},
+	{
 		name: "orphan-staging-dirs",
 		description: `Removes orphan staging directories under <base>/.staging/.
 Staging directories are transient scratch space used during atomic
