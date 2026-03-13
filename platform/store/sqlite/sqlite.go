@@ -88,6 +88,19 @@ type sqliteStore struct {
 	stmtListSharedMapsByProgram  *sql.Stmt
 	stmtCountSharedMapRefs       *sql.Stmt
 	stmtListReferencedSharedMaps *sql.Stmt
+
+	// Prepared statements for dispatcher operations
+	stmtGetDispatcher           *sql.Stmt
+	stmtGetXDPMembers           *sql.Stmt
+	stmtGetTCMembers            *sql.Stmt
+	stmtListDispatcherSummaries *sql.Stmt
+	stmtDeleteXDPExtLinks       *sql.Stmt
+	stmtDeleteTCExtLinks        *sql.Stmt
+	stmtUpsertDispatcher        *sql.Stmt
+	stmtUpsertExtLink           *sql.Stmt
+	stmtInsertXDPDetail         *sql.Stmt
+	stmtInsertTCDetail          *sql.Stmt
+	stmtDeleteDispatcher        *sql.Stmt
 }
 
 // New creates a new SQLite store at the given path.
@@ -223,6 +236,17 @@ func (s *sqliteStore) closeStatements() {
 		s.stmtListSharedMapsByProgram,
 		s.stmtCountSharedMapRefs,
 		s.stmtListReferencedSharedMaps,
+		s.stmtGetDispatcher,
+		s.stmtGetXDPMembers,
+		s.stmtGetTCMembers,
+		s.stmtListDispatcherSummaries,
+		s.stmtDeleteXDPExtLinks,
+		s.stmtDeleteTCExtLinks,
+		s.stmtUpsertDispatcher,
+		s.stmtUpsertExtLink,
+		s.stmtInsertXDPDetail,
+		s.stmtInsertTCDetail,
+		s.stmtDeleteDispatcher,
 	}
 	for _, stmt := range stmts {
 		if stmt != nil {
@@ -332,7 +356,10 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 	if err := s.prepareLinkDetailStatements(ctx); err != nil {
 		return err
 	}
-	return s.prepareSharedMapPinStatements(ctx)
+	if err := s.prepareSharedMapPinStatements(ctx); err != nil {
+		return err
+	}
+	return s.prepareDispatcherStatements(ctx)
 }
 
 // RunInTransaction executes the callback within a database transaction.
@@ -410,6 +437,18 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Sto
 		stmtListSharedMapsByProgram:  tx.StmtContext(ctx, s.stmtListSharedMapsByProgram),
 		stmtCountSharedMapRefs:       tx.StmtContext(ctx, s.stmtCountSharedMapRefs),
 		stmtListReferencedSharedMaps: tx.StmtContext(ctx, s.stmtListReferencedSharedMaps),
+		// Dispatcher statements
+		stmtGetDispatcher:           tx.StmtContext(ctx, s.stmtGetDispatcher),
+		stmtGetXDPMembers:           tx.StmtContext(ctx, s.stmtGetXDPMembers),
+		stmtGetTCMembers:            tx.StmtContext(ctx, s.stmtGetTCMembers),
+		stmtListDispatcherSummaries: tx.StmtContext(ctx, s.stmtListDispatcherSummaries),
+		stmtDeleteXDPExtLinks:       tx.StmtContext(ctx, s.stmtDeleteXDPExtLinks),
+		stmtDeleteTCExtLinks:        tx.StmtContext(ctx, s.stmtDeleteTCExtLinks),
+		stmtUpsertDispatcher:        tx.StmtContext(ctx, s.stmtUpsertDispatcher),
+		stmtUpsertExtLink:           tx.StmtContext(ctx, s.stmtUpsertExtLink),
+		stmtInsertXDPDetail:         tx.StmtContext(ctx, s.stmtInsertXDPDetail),
+		stmtInsertTCDetail:          tx.StmtContext(ctx, s.stmtInsertTCDetail),
+		stmtDeleteDispatcher:        tx.StmtContext(ctx, s.stmtDeleteDispatcher),
 	}
 
 	if err := fn(txStore); err != nil {
