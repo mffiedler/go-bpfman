@@ -103,20 +103,11 @@ func (v Value) Scalar() (string, error) {
 	}
 }
 
-// Lookup walks a dotted field path (with optional [n] indexing) into
-// the value. The varName parameter is used only for error messages.
-// An empty path returns the value itself.
-func (v Value) Lookup(varName, path string) (Value, error) {
-	if path == "" {
-		return v, nil
-	}
-
-	steps, err := parsePath(path)
-	if err != nil {
-		return Value{}, err
-	}
-
-	current := v.v
+// walkPath walks the parsed path steps into the raw value, returning
+// the value at the end of the path and the human-readable traversed
+// path for error messages. varName seeds the traversed path.
+func walkPath(raw any, varName string, steps []pathStep) (any, string, error) {
+	current := raw
 	traversed := varName
 
 	for _, step := range steps {
@@ -125,13 +116,13 @@ func (v Value) Lookup(varName, path string) (Value, error) {
 			m, ok := current.(map[string]any)
 			if !ok {
 				if current == nil {
-					return Value{}, fmt.Errorf("variable %s is null", traversed)
+					return nil, traversed, fmt.Errorf("variable %s is null", traversed)
 				}
-				return Value{}, fmt.Errorf("cannot access field %s on non-object in variable %s", s.name, traversed)
+				return nil, traversed, fmt.Errorf("cannot access field %s on non-object in variable %s", s.name, traversed)
 			}
 			val, exists := m[s.name]
 			if !exists {
-				return Value{}, fmt.Errorf("field %s not found in variable %s", s.name, traversed)
+				return nil, traversed, fmt.Errorf("field %s not found in variable %s", s.name, traversed)
 			}
 			current = val
 			if traversed == varName {
@@ -143,14 +134,58 @@ func (v Value) Lookup(varName, path string) (Value, error) {
 		case indexStep:
 			arr, ok := current.([]any)
 			if !ok {
-				return Value{}, fmt.Errorf("cannot index non-array in variable %s", traversed)
+				return nil, traversed, fmt.Errorf("cannot index non-array in variable %s", traversed)
 			}
 			if s.index < 0 || s.index >= len(arr) {
-				return Value{}, fmt.Errorf("index %d out of range for variable %s (length %d)", s.index, traversed, len(arr))
+				return nil, traversed, fmt.Errorf("index %d out of range for variable %s (length %d)", s.index, traversed, len(arr))
 			}
 			current = arr[s.index]
 			traversed = fmt.Sprintf("%s[%d]", traversed, s.index)
 		}
+	}
+
+	return current, traversed, nil
+}
+
+// LookupValue walks a dotted field path (with optional [n] indexing)
+// into the value and returns whatever is found, including structured
+// types and nil. The varName parameter is used only for error
+// messages. An empty path returns the value itself.
+func (v Value) LookupValue(varName, path string) (Value, error) {
+	if path == "" {
+		return v, nil
+	}
+
+	steps, err := parsePath(path)
+	if err != nil {
+		return Value{}, err
+	}
+
+	current, _, err := walkPath(v.v, varName, steps)
+	if err != nil {
+		return Value{}, err
+	}
+
+	return Value{v: current}, nil
+}
+
+// Lookup walks a dotted field path (with optional [n] indexing) into
+// the value. The varName parameter is used only for error messages.
+// An empty path returns the value itself. Unlike LookupValue, Lookup
+// rejects structured and nil results, enforcing scalar access.
+func (v Value) Lookup(varName, path string) (Value, error) {
+	if path == "" {
+		return v, nil
+	}
+
+	steps, err := parsePath(path)
+	if err != nil {
+		return Value{}, err
+	}
+
+	current, traversed, err := walkPath(v.v, varName, steps)
+	if err != nil {
+		return Value{}, err
 	}
 
 	if current == nil {

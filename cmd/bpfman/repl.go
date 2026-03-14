@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,7 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"help", "list", "load", "program", "programs", "show", "source", "vars"}
+var replCommandNames = []string{"dump", "help", "list", "load", "program", "programs", "show", "source", "vars"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
@@ -410,6 +411,8 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	}
 
 	switch {
+	case args[0] == "dump":
+		return replang.Value{}, replDump(cli, session, args[1:])
 	case args[0] == "help":
 		return replang.Value{}, replHelp(cli)
 	case args[0] == "source":
@@ -436,6 +439,7 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 func replHelp(cli *CLI) error {
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
+	b.WriteString("  dump <variable>[.path]        Display variable contents\n")
 	b.WriteString("  help                          Show this help\n")
 	b.WriteString("  list programs                 List managed BPF programs\n")
 	b.WriteString("  load file [flags]             Load a BPF program from a local object file\n")
@@ -496,6 +500,59 @@ func replVars(cli *CLI, session *replang.Session) error {
 		fmt.Fprintf(&b, "  %s (%s)\n", name, kind)
 	}
 	return cli.PrintOut(b.String())
+}
+
+// replDump displays the contents of a session variable. The argument
+// is a bare variable name with an optional dotted/indexed path (no $
+// prefix). Scalars are printed as plain text, structured values as
+// indented JSON, and nil as "null".
+func replDump(cli *CLI, session *replang.Session, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path]")
+	}
+
+	arg := args[0]
+
+	// Split on the first '.' or '[' to separate variable name from path.
+	varName := arg
+	path := ""
+	if i := strings.IndexAny(arg, ".["); i >= 0 {
+		varName = arg[:i]
+		path = arg[i:]
+		// Strip leading dot so the path parser sees "field" not ".field".
+		path = strings.TrimPrefix(path, ".")
+	}
+
+	v, ok := session.Get(varName)
+	if !ok {
+		return fmt.Errorf("undefined variable %q", varName)
+	}
+
+	if path != "" {
+		var err error
+		v, err = v.LookupValue(varName, path)
+		if err != nil {
+			return err
+		}
+	}
+
+	if v.IsNil() {
+		return cli.PrintOut("null\n")
+	}
+
+	if v.IsScalar() {
+		s, err := v.Scalar()
+		if err != nil {
+			return err
+		}
+		return cli.PrintOut(s + "\n")
+	}
+
+	b, err := json.MarshalIndent(v.Raw(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal value: %w", err)
+	}
+	return cli.PrintOut(string(b) + "\n")
 }
 
 func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager) error {

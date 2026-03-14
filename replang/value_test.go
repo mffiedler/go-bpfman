@@ -311,6 +311,83 @@ func TestValuePrecision(t *testing.T) {
 	})
 }
 
+func TestValueLookupValue(t *testing.T) {
+	data := map[string]any{
+		"id":   json.Number("42"),
+		"name": "test_prog",
+		"maps": []any{
+			map[string]any{"name": "counts", "pin": "/sys/fs/bpf/counts"},
+			map[string]any{"name": "events", "pin": "/sys/fs/bpf/events"},
+		},
+		"details": map[string]any{
+			"kernel_id": json.Number("99"),
+			"type":      "tracepoint",
+		},
+		"nullable": nil,
+	}
+	v := ValueFromMap(data)
+
+	t.Run("returns structured map", func(t *testing.T) {
+		got, err := v.LookupValue("v", "details")
+		require.NoError(t, err)
+		assert.True(t, got.IsStructured())
+		m, ok := got.Raw().(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "tracepoint", m["type"])
+	})
+
+	t.Run("returns structured array", func(t *testing.T) {
+		got, err := v.LookupValue("v", "maps")
+		require.NoError(t, err)
+		assert.True(t, got.IsStructured())
+		arr, ok := got.Raw().([]any)
+		require.True(t, ok)
+		assert.Len(t, arr, 2)
+	})
+
+	t.Run("returns nil value", func(t *testing.T) {
+		got, err := v.LookupValue("v", "nullable")
+		require.NoError(t, err)
+		assert.True(t, got.IsNil())
+	})
+
+	t.Run("returns scalar", func(t *testing.T) {
+		got, err := v.LookupValue("v", "name")
+		require.NoError(t, err)
+		assert.True(t, got.IsScalar())
+		s, err := got.Scalar()
+		require.NoError(t, err)
+		assert.Equal(t, "test_prog", s)
+	})
+
+	t.Run("nested array element", func(t *testing.T) {
+		got, err := v.LookupValue("v", "maps[0]")
+		require.NoError(t, err)
+		assert.True(t, got.IsStructured())
+		m, ok := got.Raw().(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "counts", m["name"])
+	})
+
+	t.Run("empty path returns whole value", func(t *testing.T) {
+		got, err := v.LookupValue("v", "")
+		require.NoError(t, err)
+		assert.True(t, got.IsStructured())
+	})
+
+	t.Run("missing field errors", func(t *testing.T) {
+		_, err := v.LookupValue("v", "nonexistent")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "field nonexistent not found")
+	})
+
+	t.Run("index out of range errors", func(t *testing.T) {
+		_, err := v.LookupValue("v", "maps[5]")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "index 5 out of range")
+	})
+}
+
 func TestValueIsPredicates(t *testing.T) {
 	assert.True(t, Value{}.IsNil())
 	assert.False(t, Value{}.IsScalar())
