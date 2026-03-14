@@ -312,6 +312,121 @@ func TestReplComplete_VarsCommand(t *testing.T) {
 	assert.Contains(t, candidates, "vars ")
 }
 
+func TestReplLoop_Unset(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("foo", replang.StringValue("42"))
+	session.Set("bar", replang.StringValue("99"))
+
+	input := "unset foo\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session)
+	require.NoError(t, err)
+	_, ok := session.Get("foo")
+	assert.False(t, ok, "foo should be unset")
+	_, ok = session.Get("bar")
+	assert.True(t, ok, "bar should still be set")
+}
+
+func TestReplLoop_UnsetMultiple(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("a", replang.StringValue("1"))
+	session.Set("b", replang.StringValue("2"))
+	session.Set("c", replang.StringValue("3"))
+
+	input := "unset a b\n"
+	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session)
+	require.NoError(t, err)
+	_, ok := session.Get("a")
+	assert.False(t, ok)
+	_, ok = session.Get("b")
+	assert.False(t, ok)
+	_, ok = session.Get("c")
+	assert.True(t, ok, "c should still be set")
+}
+
+func TestReplLoop_UnsetUndefined(t *testing.T) {
+	input := "unset nosuch\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "undefined variable")
+}
+
+func TestReplLoop_UnsetNoArgs(t *testing.T) {
+	input := "unset\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "requires at least one variable name")
+}
+
+func TestReplComplete_UnsetCompletion(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("prog", replang.StringValue("42"))
+	session.Set("prog2", replang.StringValue("99"))
+	session.Set("other", replang.StringValue("1"))
+
+	tests := []struct {
+		name        string
+		line        string
+		wantAny     []string
+		wantNone    []string
+		wantReplace int
+	}{
+		{
+			name:        "unset with space lists all vars",
+			line:        "unset ",
+			wantAny:     []string{"other ", "prog ", "prog2 "},
+			wantReplace: 0,
+		},
+		{
+			name:        "unset with partial name",
+			line:        "unset pro",
+			wantAny:     []string{"prog ", "prog2 "},
+			wantNone:    []string{"other "},
+			wantReplace: 3,
+		},
+		{
+			name:        "unset third token lists all vars",
+			line:        "unset prog ",
+			wantAny:     []string{"other ", "prog ", "prog2 "},
+			wantReplace: 0,
+		},
+		{
+			name:        "unset third token with partial",
+			line:        "unset prog ot",
+			wantAny:     []string{"other "},
+			wantNone:    []string{"prog "},
+			wantReplace: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want)
+			}
+			for _, unwanted := range tt.wantNone {
+				assert.NotContains(t, candidates, unwanted)
+			}
+		})
+	}
+}
+
 func TestReplLoop_Source(t *testing.T) {
 	// Write a temp file containing "help" and source it.
 	tmp := filepath.Join(t.TempDir(), "script.bpfman")
@@ -579,6 +694,289 @@ func TestResolveProgramIDArgs_DeleteProgram(t *testing.T) {
 			got, err := resolveProgramIDArgs(session, tt.args)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReplCompleteVarPath(t *testing.T) {
+	session := replang.NewSession()
+
+	// Structured variable mimicking a loaded program.
+	progVal, err := replang.ValueFromJSON([]byte(`{
+		"record": {
+			"program_id": 42,
+			"name": "my_prog",
+			"type": "tracepoint"
+		},
+		"maps": [
+			{"name": "counts", "pin": "/sys/fs/bpf/counts"},
+			{"name": "events"}
+		],
+		"name": "top_name"
+	}`))
+	require.NoError(t, err)
+	session.Set("prog", progVal)
+
+	// Scalar variable.
+	session.Set("pid", replang.StringValue("99"))
+
+	// Second structured variable for name-matching tests.
+	prog2Val, err := replang.ValueFromJSON([]byte(`{"id": 7}`))
+	require.NoError(t, err)
+	session.Set("prog2", prog2Val)
+
+	tests := []struct {
+		name        string
+		token       string
+		sigil       bool
+		wantAny     []string // candidates must contain all of these
+		wantNone    []string // candidates must contain none of these
+		wantReplace int
+	}{
+		{
+			name:        "empty token dump lists all vars",
+			token:       "",
+			sigil:       false,
+			wantAny:     []string{"pid ", "prog.", "prog2."},
+			wantReplace: 0,
+		},
+		{
+			name:        "empty $ sigil lists all $vars",
+			token:       "$",
+			sigil:       true,
+			wantAny:     []string{"$pid ", "$prog.", "$prog2."},
+			wantReplace: 1,
+		},
+		{
+			name:        "partial variable name bare",
+			token:       "pro",
+			sigil:       false,
+			wantAny:     []string{"prog.", "prog2."},
+			wantNone:    []string{"pid "},
+			wantReplace: 3,
+		},
+		{
+			name:        "partial variable name sigil",
+			token:       "$pro",
+			sigil:       true,
+			wantAny:     []string{"$prog.", "$prog2."},
+			wantNone:    []string{"$pid "},
+			wantReplace: 4,
+		},
+		{
+			name:        "exact variable name bare structured",
+			token:       "prog",
+			sigil:       false,
+			wantAny:     []string{"prog."},
+			wantReplace: 4,
+		},
+		{
+			name:        "top-level fields of structured var",
+			token:       "prog.",
+			sigil:       false,
+			wantAny:     []string{"prog.record.", "prog.name ", "prog.maps["},
+			wantReplace: 5,
+		},
+		{
+			name:        "top-level fields with sigil",
+			token:       "$prog.",
+			sigil:       true,
+			wantAny:     []string{"$prog.record.", "$prog.name ", "$prog.maps["},
+			wantReplace: 6,
+		},
+		{
+			name:        "partial top-level field",
+			token:       "prog.re",
+			sigil:       false,
+			wantAny:     []string{"prog.record."},
+			wantNone:    []string{"prog.name ", "prog.maps["},
+			wantReplace: 7,
+		},
+		{
+			name:        "nested fields",
+			token:       "prog.record.",
+			sigil:       false,
+			wantAny:     []string{"prog.record.program_id ", "prog.record.name ", "prog.record.type "},
+			wantReplace: 12,
+		},
+		{
+			name:        "nested fields with sigil",
+			token:       "$prog.record.",
+			sigil:       true,
+			wantAny:     []string{"$prog.record.program_id ", "$prog.record.name ", "$prog.record.type "},
+			wantReplace: 13,
+		},
+		{
+			name:        "partial nested field",
+			token:       "$prog.record.prog",
+			sigil:       true,
+			wantAny:     []string{"$prog.record.program_id "},
+			wantNone:    []string{"$prog.record.name ", "$prog.record.type "},
+			wantReplace: 17,
+		},
+		{
+			name:        "array index completion",
+			token:       "prog.maps[",
+			sigil:       false,
+			wantAny:     []string{"prog.maps[0].", "prog.maps[1]."},
+			wantReplace: 10,
+		},
+		{
+			name:        "array index completion with sigil",
+			token:       "$prog.maps[",
+			sigil:       true,
+			wantAny:     []string{"$prog.maps[0].", "$prog.maps[1]."},
+			wantReplace: 11,
+		},
+		{
+			name:        "array element fields",
+			token:       "prog.maps[0].",
+			sigil:       false,
+			wantAny:     []string{"prog.maps[0].name ", "prog.maps[0].pin "},
+			wantReplace: 13,
+		},
+		{
+			name:        "scalar variable no path completions",
+			token:       "pid.",
+			sigil:       false,
+			wantReplace: 4,
+		},
+		{
+			name:        "nonexistent variable returns nothing",
+			token:       "nosuch.",
+			sigil:       false,
+			wantReplace: 7,
+		},
+		{
+			name:        "nonexistent variable with sigil returns nothing",
+			token:       "$nosuch.",
+			sigil:       true,
+			wantReplace: 8,
+		},
+		{
+			name:        "scalar variable bare lists as terminal",
+			token:       "pi",
+			sigil:       false,
+			wantAny:     []string{"pid "},
+			wantReplace: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidates, replace := replCompleteVarPath(session, tt.token, tt.sigil)
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
+
+			for _, unwanted := range tt.wantNone {
+				assert.NotContains(t, candidates, unwanted, "unexpected candidate %q", unwanted)
+			}
+
+			if tt.wantAny == nil && tt.wantNone == nil {
+				assert.Empty(t, candidates, "expected no candidates")
+			}
+		})
+	}
+}
+
+func TestReplCompleteVarPath_NilSession(t *testing.T) {
+	candidates, replace := replCompleteVarPath(nil, "$prog.", true)
+	assert.Empty(t, candidates)
+	assert.Equal(t, 0, replace)
+}
+
+func TestReplComplete_DumpCompletion(t *testing.T) {
+	session := replang.NewSession()
+	v, err := replang.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
+	require.NoError(t, err)
+	session.Set("prog", v)
+	session.Set("pid", replang.StringValue("99"))
+
+	tests := []struct {
+		name        string
+		line        string
+		wantAny     []string
+		wantReplace int
+	}{
+		{
+			name:        "dump with space lists all vars",
+			line:        "dump ",
+			wantAny:     []string{"pid ", "prog."},
+			wantReplace: 0,
+		},
+		{
+			name:        "dump with partial var name",
+			line:        "dump pro",
+			wantAny:     []string{"prog."},
+			wantReplace: 3,
+		},
+		{
+			name:        "dump with dotted path",
+			line:        "dump prog.",
+			wantAny:     []string{"prog.record.", "prog.name "},
+			wantReplace: 5,
+		},
+		{
+			name:        "dump with nested path",
+			line:        "dump prog.record.",
+			wantAny:     []string{"prog.record.program_id "},
+			wantReplace: 12,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
+		})
+	}
+}
+
+func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
+	session := replang.NewSession()
+	v, err := replang.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
+	require.NoError(t, err)
+	session.Set("prog", v)
+
+	tests := []struct {
+		name        string
+		line        string
+		wantAny     []string
+		wantReplace int
+	}{
+		{
+			name:        "show program $prog. completes fields",
+			line:        "show program $prog.",
+			wantAny:     []string{"$prog.record.", "$prog.name "},
+			wantReplace: 6,
+		},
+		{
+			name:        "show program $prog.record. completes nested",
+			line:        "show program $prog.record.",
+			wantAny:     []string{"$prog.record.program_id "},
+			wantReplace: 13,
+		},
+		{
+			name:        "program delete $prog. completes fields",
+			line:        "program delete $prog.",
+			wantAny:     []string{"$prog.record.", "$prog.name "},
+			wantReplace: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
 		})
 	}
 }

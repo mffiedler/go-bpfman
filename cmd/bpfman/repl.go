@@ -27,7 +27,7 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"dump", "help", "list", "load", "program", "programs", "show", "source", "vars"}
+var replCommandNames = []string{"dump", "help", "list", "load", "program", "programs", "show", "source", "unset", "vars"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
@@ -223,6 +223,24 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *replang.Se
 			}
 			return
 		}
+		// "dump" takes a variable path (bare, no $ prefix).
+		if tokens[0] == "dump" {
+			prefix := ""
+			if len(tokens) == 2 {
+				prefix = tokens[1]
+			}
+			candidates, replace = replCompleteVarPath(session, prefix, false)
+			return
+		}
+		// "unset" takes bare variable names.
+		if tokens[0] == "unset" {
+			prefix := ""
+			if len(tokens) == 2 {
+				prefix = tokens[1]
+			}
+			candidates, replace = replCompleteVarNames(session, prefix)
+			return
+		}
 		// Completing the second token (subcommand).
 		subs := replSubcommands[tokens[0]]
 		prefix := ""
@@ -248,6 +266,13 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *replang.Se
 func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *replang.Session, tokens []string, trailingSpace bool) (candidates []string, replace int) {
 	if len(tokens) < 2 {
 		return
+	}
+	if tokens[0] == "unset" {
+		prefix := ""
+		if !trailingSpace {
+			prefix = tokens[len(tokens)-1]
+		}
+		return replCompleteVarNames(session, prefix)
 	}
 	if tokens[0] == "program" && tokens[1] == "delete" {
 		return replCompleteProgramIDs(ctx, mgr, session, tokens[2:], trailingSpace)
@@ -293,9 +318,10 @@ func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session 
 }
 
 // replCompleteProgramIDs offers program ID completions, excluding IDs
-// that have already been specified on the command line. Session
-// variables that resolve to a program ID are also offered with a '$'
-// prefix.
+// that have already been specified on the command line. When the
+// prefix starts with '$', completion is delegated to
+// replCompleteVarPath for dotted path support. Otherwise, numeric IDs
+// and top-level $variable names are offered.
 func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	// Collect IDs already on the line so we don't offer them again.
 	specified := make(map[string]struct{}, len(args))
@@ -308,6 +334,12 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 		// The last token is a partial ID being typed.
 		prefix = args[len(args)-1]
 		delete(specified, prefix)
+	}
+
+	// When the prefix starts with '$', delegate to path completion.
+	if strings.HasPrefix(prefix, "$") {
+		candidates, replace = replCompleteVarPath(session, prefix, true)
+		return
 	}
 
 	if mgr != nil {
@@ -325,7 +357,8 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 		}
 	}
 
-	// Offer $variable completions from the session.
+	// Offer $variable completions from the session when no prefix
+	// or a non-$ prefix is being typed.
 	if session != nil {
 		for _, name := range session.Names() {
 			candidate := "$" + name
@@ -360,6 +393,196 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 
 	replace = len(prefix)
 	return
+}
+
+// replCompleteVarPath completes dotted variable paths. The token is
+// the partial text (e.g. "$prog.rec" or "prog.record."). When sigil
+// is true, variable names carry a '$' prefix (program ID contexts);
+// when false they are bare (dump context). Returns candidates and the
+// number of characters to replace (the full token length).
+func replCompleteVarPath(session *replang.Session, token string, sigil bool) (candidates []string, replace int) {
+	if session == nil {
+		return
+	}
+
+	replace = len(token)
+
+	// Strip the '$' prefix when present.
+	stripped := token
+	if sigil && strings.HasPrefix(stripped, "$") {
+		stripped = stripped[1:]
+	}
+
+	// Empty remainder: list all variable names.
+	if stripped == "" {
+		for _, name := range session.Names() {
+			v, ok := session.Get(name)
+			if !ok {
+				continue
+			}
+			candidate := name
+			if sigil {
+				candidate = "$" + name
+			}
+			// Append trailing character based on value type.
+			candidate += varPathSuffix(v)
+			candidates = append(candidates, candidate)
+		}
+		return
+	}
+
+	// Find the split point: first '.' or '['.
+	sepIdx := strings.IndexAny(stripped, ".[")
+
+	// No separator and token does not end with '.' -- partial variable name.
+	if sepIdx < 0 {
+		for _, name := range session.Names() {
+			if !strings.HasPrefix(name, stripped) {
+				continue
+			}
+			v, ok := session.Get(name)
+			if !ok {
+				continue
+			}
+			candidate := name
+			if sigil {
+				candidate = "$" + name
+			}
+			candidate += varPathSuffix(v)
+			candidates = append(candidates, candidate)
+		}
+		return
+	}
+
+	varName := stripped[:sepIdx]
+	v, ok := session.Get(varName)
+	if !ok {
+		return
+	}
+
+	pathPart := stripped[sepIdx:]
+
+	// Determine the resolved prefix (complete segments) and the
+	// tail (partial last segment after the final '.' or '[').
+	var resolvedPath, tail string
+	if strings.HasSuffix(pathPart, ".") {
+		// e.g. "record." -- walk to "record", enumerate keys
+		resolvedPath = strings.TrimPrefix(pathPart, ".")
+		resolvedPath = strings.TrimSuffix(resolvedPath, ".")
+		tail = ""
+	} else if strings.HasSuffix(pathPart, "[") {
+		// e.g. "maps[" -- walk to "maps", enumerate indices
+		resolvedPath = strings.TrimPrefix(pathPart, ".")
+		resolvedPath = strings.TrimSuffix(resolvedPath, "[")
+		tail = "["
+	} else {
+		// e.g. "record.prog" -- walk to "record", match "prog"
+		lastDot := strings.LastIndex(pathPart, ".")
+		lastBracket := strings.LastIndex(pathPart, "[")
+		if lastDot >= lastBracket {
+			resolvedPath = strings.TrimPrefix(pathPart[:lastDot], ".")
+			tail = pathPart[lastDot+1:]
+		} else {
+			// Partial array index like "maps[1" -- not useful to complete
+			return
+		}
+	}
+
+	// Walk to the resolved prefix.
+	target, err := v.LookupValue(varName, resolvedPath)
+	if err != nil {
+		return
+	}
+
+	// Build the candidate prefix: everything before the tail.
+	var candidatePrefix string
+	if sigil {
+		candidatePrefix = "$"
+	}
+	candidatePrefix += varName
+	if resolvedPath != "" {
+		candidatePrefix += "." + resolvedPath
+	}
+
+	keys := target.Keys()
+	if keys == nil {
+		return
+	}
+
+	if tail == "[" {
+		// Array index completion.
+		for _, key := range keys {
+			if !strings.HasPrefix(key, "[") {
+				continue
+			}
+			// Walk to the element to determine its trailing character.
+			elemPath := resolvedPath
+			if elemPath != "" {
+				elemPath += key
+			} else {
+				elemPath = key
+			}
+			elem, err := v.LookupValue(varName, elemPath)
+			if err != nil {
+				continue
+			}
+			candidate := candidatePrefix + key + varPathSuffix(elem)
+			candidates = append(candidates, candidate)
+		}
+		return
+	}
+
+	// Map field completion: match keys against tail prefix.
+	for _, key := range keys {
+		if !strings.HasPrefix(key, tail) {
+			continue
+		}
+		// Walk to the field to determine its trailing character.
+		fieldPath := resolvedPath
+		if fieldPath != "" {
+			fieldPath += "." + key
+		} else {
+			fieldPath = key
+		}
+		child, err := v.LookupValue(varName, fieldPath)
+		if err != nil {
+			continue
+		}
+		candidate := candidatePrefix + "." + key + varPathSuffix(child)
+		candidates = append(candidates, candidate)
+	}
+	return
+}
+
+// replCompleteVarNames offers bare variable name completions with a
+// trailing space. Used by commands like unset that take whole variable
+// names rather than dotted paths.
+func replCompleteVarNames(session *replang.Session, prefix string) (candidates []string, replace int) {
+	if session == nil {
+		return
+	}
+	replace = len(prefix)
+	for _, name := range session.Names() {
+		if strings.HasPrefix(name, prefix) {
+			candidates = append(candidates, name+" ")
+		}
+	}
+	return
+}
+
+// varPathSuffix returns the trailing character for a completion
+// candidate based on the value type: "." for maps (invites deeper
+// traversal), "[" for arrays (invites indexing), " " for scalars
+// and nil (terminal).
+func varPathSuffix(v replang.Value) string {
+	switch v.Raw().(type) {
+	case map[string]any:
+		return "."
+	case []any:
+		return "["
+	default:
+		return " "
+	}
 }
 
 // replFileCompletions returns filesystem path completions for the
@@ -454,6 +677,8 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return replang.Value{}, replHelp(cli)
 	case args[0] == "source":
 		return replang.Value{}, replSource(ctx, cli, mgr, session, args[1:])
+	case args[0] == "unset":
+		return replang.Value{}, replUnset(cli, session, args[1:])
 	case args[0] == "vars":
 		return replang.Value{}, replVars(cli, session)
 	case len(args) >= 2 && args[0] == "list" && args[1] == "programs":
@@ -484,6 +709,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  program list                  Alias for list programs\n")
 	b.WriteString("  show program <id> [view] [-o]  Inspect program (views: links, maps, paths)\n")
 	b.WriteString("  source <file>                 Execute commands from a file\n")
+	b.WriteString("  unset <var>...                Remove variable bindings\n")
 	b.WriteString("  vars                          List session variables\n")
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
@@ -538,6 +764,20 @@ func replVars(cli *CLI, session *replang.Session) error {
 		fmt.Fprintf(&b, "  %s (%s)\n", name, kind)
 	}
 	return cli.PrintOut(b.String())
+}
+
+// replUnset removes one or more variable bindings from the session.
+func replUnset(cli *CLI, session *replang.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("unset requires at least one variable name")
+	}
+	for _, name := range args {
+		if _, ok := session.Get(name); !ok {
+			return fmt.Errorf("undefined variable %q", name)
+		}
+		session.Delete(name)
+	}
+	return nil
 }
 
 // replDump displays the contents of a session variable. The argument

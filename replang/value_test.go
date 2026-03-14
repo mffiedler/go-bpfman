@@ -388,6 +388,49 @@ func TestValueLookupValue(t *testing.T) {
 	})
 }
 
+func TestValueKeys(t *testing.T) {
+	t.Run("map returns sorted keys", func(t *testing.T) {
+		v := ValueFromMap(map[string]any{
+			"zebra": "z",
+			"alpha": "a",
+			"mid":   "m",
+		})
+		assert.Equal(t, []string{"alpha", "mid", "zebra"}, v.Keys())
+	})
+
+	t.Run("array returns index strings", func(t *testing.T) {
+		v := Value{v: []any{"a", "b", "c"}}
+		assert.Equal(t, []string{"[0]", "[1]", "[2]"}, v.Keys())
+	})
+
+	t.Run("empty map returns empty slice", func(t *testing.T) {
+		v := ValueFromMap(map[string]any{})
+		assert.Equal(t, []string{}, v.Keys())
+	})
+
+	t.Run("empty array returns empty slice", func(t *testing.T) {
+		v := Value{v: []any{}}
+		assert.Equal(t, []string{}, v.Keys())
+	})
+
+	t.Run("scalar returns nil", func(t *testing.T) {
+		assert.Nil(t, StringValue("hello").Keys())
+	})
+
+	t.Run("nil returns nil", func(t *testing.T) {
+		assert.Nil(t, Value{}.Keys())
+	})
+
+	t.Run("number returns nil", func(t *testing.T) {
+		v := Value{v: json.Number("42")}
+		assert.Nil(t, v.Keys())
+	})
+
+	t.Run("bool returns nil", func(t *testing.T) {
+		assert.Nil(t, BoolValue(true).Keys())
+	})
+}
+
 func TestValueIsPredicates(t *testing.T) {
 	assert.True(t, Value{}.IsNil())
 	assert.False(t, Value{}.IsScalar())

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -81,6 +82,29 @@ func (v Value) IsStructured() bool {
 // Raw returns the underlying dynamic value.
 func (v Value) Raw() any {
 	return v.v
+}
+
+// Keys returns the navigable children of the value. For maps it
+// returns sorted field names; for arrays it returns index strings
+// ("[0]", "[1]", ...); for scalars and nil it returns nil.
+func (v Value) Keys() []string {
+	switch x := v.v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return keys
+	case []any:
+		keys := make([]string, len(x))
+		for i := range x {
+			keys[i] = fmt.Sprintf("[%d]", i)
+		}
+		return keys
+	default:
+		return nil
+	}
 }
 
 // Scalar converts a scalar value to its string representation.
