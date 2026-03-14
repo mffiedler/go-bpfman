@@ -1299,7 +1299,11 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 	var output string
 	switch cmd.View {
 	case "summary":
-		output = formatShowSummary(detail)
+		var fmtErr error
+		output, fmtErr = FormatProgram(detail.Program, &cmd.Output)
+		if fmtErr != nil {
+			return fmtErr
+		}
 	case "links":
 		output = formatShowLinks(detail)
 	case "maps":

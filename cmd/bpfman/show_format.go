@@ -6,79 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
-	"time"
 )
-
-// formatShowSummary renders a compact overview of the program.
-func formatShowSummary(d ProgramDetail) string {
-	var b strings.Builder
-	prog := d.Program
-
-	// Header line
-	name := prog.Record.Meta.Name
-	progType := prog.Record.Load.ProgramType()
-	fmt.Fprintf(&b, "Program %d: %s (%s)\n", prog.Record.ProgramID, name, progType)
-
-	// Source and timestamps
-	fmt.Fprintf(&b, "  Source:     %s\n", prog.Record.Load.ObjectPath())
-	if prog.Status.Kernel != nil && !prog.Status.Kernel.LoadedAt.IsZero() {
-		fmt.Fprintf(&b, "  Loaded:     %s\n", prog.Status.Kernel.LoadedAt.Format(time.RFC3339))
-	}
-
-	// Kernel details
-	if kp := prog.Status.Kernel; kp != nil {
-		if kp.Tag != "" {
-			fmt.Fprintf(&b, "  Tag:        %s\n", kp.Tag)
-		}
-		var sizes []string
-		if kp.JitedSize != 0 {
-			sizes = append(sizes, fmt.Sprintf("JIT: %dB", kp.JitedSize))
-		}
-		if kp.XlatedSize != 0 {
-			sizes = append(sizes, fmt.Sprintf("Xlated: %dB", kp.XlatedSize))
-		}
-		if kp.Memlock != 0 {
-			sizes = append(sizes, fmt.Sprintf("Memlock: %dB", kp.Memlock))
-		}
-		if len(sizes) > 0 {
-			fmt.Fprintf(&b, "  Size:       %s\n", strings.Join(sizes, "  "))
-		}
-	}
-
-	// Presence
-	storeYN := "yes"
-	kernelYN := presenceYN(prog.Status.Kernel != nil)
-	fsYN := presenceYN(d.ProgPin.Present)
-	fmt.Fprintf(&b, "  Presence:   store=%s  kernel=%s  fs=%s\n", storeYN, kernelYN, fsYN)
-
-	// Summary counts
-	b.WriteString("\n")
-	if len(d.Maps) > 0 {
-		names := make([]string, len(d.Maps))
-		for i, m := range d.Maps {
-			names[i] = mapDisplayName(m)
-		}
-		fmt.Fprintf(&b, "  Maps (%d):   %s\n", len(d.Maps), strings.Join(names, ", "))
-	} else {
-		b.WriteString("  Maps:       none\n")
-	}
-
-	if len(d.Links) > 0 {
-		var parts []string
-		for _, l := range d.Links {
-			s := fmt.Sprintf("%d", l.Record.ID)
-			if l.Record.Details != nil {
-				s += " (" + formatAttachDetails(l.Record.Details) + ")"
-			}
-			parts = append(parts, s)
-		}
-		fmt.Fprintf(&b, "  Links (%d):  %s\n", len(d.Links), strings.Join(parts, ", "))
-	} else {
-		b.WriteString("  Links:      none\n")
-	}
-
-	return b.String()
-}
 
 // formatShowLinks renders a tabwriter table of link details.
 func formatShowLinks(d ProgramDetail) string {
