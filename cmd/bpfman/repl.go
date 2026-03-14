@@ -13,7 +13,6 @@ import (
 	"github.com/alecthomas/kong"
 	"golang.org/x/term"
 
-	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/replang"
 )
@@ -334,6 +333,13 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 		// The last token is a partial ID being typed.
 		prefix = args[len(args)-1]
 		delete(specified, prefix)
+	}
+
+	// Offer --all when the prefix matches.
+	if strings.HasPrefix("--all", prefix) {
+		if _, already := specified["--all"]; !already {
+			candidates = append(candidates, "--all ")
+		}
 	}
 
 	// When the prefix starts with '$', delegate to path completion.
@@ -689,7 +695,7 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return replLoadFile(ctx, cli, mgr, args[2:])
 	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "file":
 		return replLoadFile(ctx, cli, mgr, args[3:])
-	case len(args) >= 3 && args[0] == "program" && args[1] == "delete":
+	case len(args) >= 2 && args[0] == "program" && args[1] == "delete":
 		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, session, args[2:])
 	case len(args) >= 3 && args[0] == "show" && args[1] == "program":
 		return replang.Value{}, replShowProgram(ctx, cli, mgr, session, args[2:])
@@ -705,7 +711,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  help                          Show this help\n")
 	b.WriteString("  list programs                 List managed BPF programs\n")
 	b.WriteString("  load file [flags]             Load a BPF program from a local object file\n")
-	b.WriteString("  program delete <id>... [-r]   Delete programs with cascading cleanup\n")
+	b.WriteString("  program delete (<id>... | --all) [-r]  Delete programs with cascading cleanup\n")
 	b.WriteString("  program list                  Alias for list programs\n")
 	b.WriteString("  show program <id> [view] [-o]  Inspect program (views: links, maps, paths)\n")
 	b.WriteString("  source <file>                 Execute commands from a file\n")
@@ -1088,9 +1094,21 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 
 // replDeleteProgram handles the "program delete" REPL command.
 func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
-	args, err := resolveProgramIDArgs(session, args)
-	if err != nil {
-		return err
+	// Only resolve positional args when --all is not present;
+	// with --all there are no program ID arguments to resolve.
+	hasAll := false
+	for _, a := range args {
+		if a == "--all" {
+			hasAll = true
+			break
+		}
+	}
+	if !hasAll {
+		var err error
+		args, err = resolveProgramIDArgs(session, args)
+		if err != nil {
+			return err
+		}
 	}
 
 	cmd, err := replParseDeleteProgram(args)
@@ -1098,9 +1116,9 @@ func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		return err
 	}
 
-	ids := make([]kernel.ProgramID, len(cmd.ProgramIDs))
-	for i, pid := range cmd.ProgramIDs {
-		ids[i] = pid.Value
+	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, cmd.ProgramIDs)
+	if err != nil {
+		return err
 	}
 	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive)
 }

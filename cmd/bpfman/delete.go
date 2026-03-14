@@ -12,11 +12,25 @@ import (
 // ProgramDeleteCmd deletes BPF programs with cascading cleanup.
 // For each program: detaches all links, then unloads the program.
 // With --recursive, also removes programs that depend on the target
-// through map ownership (map_owner_id).
+// through map ownership (map_owner_id). With --all, every managed
+// program is deleted.
 type ProgramDeleteCmd struct {
 	OutputFlags
 	Recursive  bool        `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
-	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Program IDs to delete." required:""`
+	All        bool        `name:"all" help:"Delete all managed programs."`
+	ProgramIDs []ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
+}
+
+// Validate ensures exactly one of --all or explicit program IDs is
+// provided.
+func (c *ProgramDeleteCmd) Validate() error {
+	if c.All && len(c.ProgramIDs) > 0 {
+		return fmt.Errorf("--all and explicit program IDs are mutually exclusive")
+	}
+	if !c.All && len(c.ProgramIDs) == 0 {
+		return fmt.Errorf("provide at least one program ID or use --all")
+	}
+	return nil
 }
 
 // Run executes the program delete command with cascading cleanup.
@@ -27,11 +41,33 @@ func (c *ProgramDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	ids := make([]kernel.ProgramID, len(c.ProgramIDs))
-	for i, pid := range c.ProgramIDs {
-		ids[i] = pid.Value
+	ids, err := collectDeleteIDs(ctx, mgr, c.All, c.ProgramIDs)
+	if err != nil {
+		return err
 	}
 	return executeDeletePrograms(ctx, cli, mgr, ids, c.Recursive)
+}
+
+// collectDeleteIDs resolves the set of program IDs to delete. When
+// all is true, every managed program ID is returned via
+// ListPrograms. Otherwise the explicit IDs are extracted.
+func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []ProgramID) ([]kernel.ProgramID, error) {
+	if all {
+		result, err := mgr.ListPrograms(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list programs: %w", err)
+		}
+		ids := make([]kernel.ProgramID, len(result.Programs))
+		for i, prog := range result.Programs {
+			ids[i] = prog.Record.ProgramID
+		}
+		return ids, nil
+	}
+	ids := make([]kernel.ProgramID, len(explicit))
+	for i, pid := range explicit {
+		ids[i] = pid.Value
+	}
+	return ids, nil
 }
 
 // executeDeletePrograms is the shared implementation for deleting

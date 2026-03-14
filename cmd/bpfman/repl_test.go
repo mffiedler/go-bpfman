@@ -981,6 +981,86 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 	}
 }
 
+func TestProgramDeleteCmd_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     ProgramDeleteCmd
+		wantErr string
+	}{
+		{
+			name:    "neither --all nor IDs",
+			cmd:     ProgramDeleteCmd{},
+			wantErr: "provide at least one program ID or use --all",
+		},
+		{
+			name: "both --all and IDs",
+			cmd: ProgramDeleteCmd{
+				All:        true,
+				ProgramIDs: []ProgramID{{Value: 1}},
+			},
+			wantErr: "--all and explicit program IDs are mutually exclusive",
+		},
+		{
+			name: "--all alone is valid",
+			cmd:  ProgramDeleteCmd{All: true},
+		},
+		{
+			name: "IDs alone is valid",
+			cmd:  ProgramDeleteCmd{ProgramIDs: []ProgramID{{Value: 1}}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestReplComplete_ProgramDeleteAll(t *testing.T) {
+	tests := []struct {
+		name        string
+		line        string
+		wantAny     []string
+		wantReplace int
+	}{
+		{
+			name:        "program delete offers --all",
+			line:        "program delete ",
+			wantAny:     []string{"--all "},
+			wantReplace: 0,
+		},
+		{
+			name:        "program delete partial --a",
+			line:        "program delete --a",
+			wantAny:     []string{"--all "},
+			wantReplace: 3,
+		},
+		{
+			name:        "program delete partial --al",
+			line:        "program delete --al",
+			wantAny:     []string{"--all "},
+			wantReplace: 4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, len(tt.line))
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
+		})
+	}
+}
+
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))
