@@ -14,6 +14,7 @@ import (
 
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/replang"
 )
 
 // ReplCmd starts an interactive shell for inspecting BPF state.
@@ -25,7 +26,7 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"help", "list", "load", "program", "programs"}
+var replCommandNames = []string{"help", "list", "load", "program", "programs", "show", "source", "vars"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
@@ -33,6 +34,7 @@ var replSubcommands = map[string][]string{
 	"load":     {"file"},
 	"program":  {"delete", "list", "load"},
 	"programs": {"list"},
+	"show":     {"program"},
 }
 
 // Run starts the read-eval-print loop. A single manager is held open
@@ -83,9 +85,12 @@ func openScriptReader(path string) (LineReader, error) {
 }
 
 // replLoop reads lines from lr and dispatches them until EOF or
-// interrupt. Blank lines are skipped. A '#' and everything after it
-// is treated as a comment and stripped, following shell conventions.
+// interrupt. Blank lines and comments are handled by
+// replang.Tokenise. Variable assignment and expansion use the
+// replang.Session.
 func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader) error {
+	session := replang.NewSession()
+
 	for {
 		input, err := lr.Readline()
 		if err != nil {
@@ -95,18 +100,66 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 			return err
 		}
 
-		if i := strings.IndexByte(input, '#'); i >= 0 {
-			input = input[:i]
-		}
-		input = strings.TrimSpace(input)
-		if input == "" {
-			continue
-		}
-
-		if err := replDispatch(ctx, cli, mgr, input); err != nil {
-			_ = cli.PrintErrf("[repl] error: %v\n", err)
+		if err := replEval(ctx, cli, mgr, session, input); err != nil {
+			return err
 		}
 	}
+}
+
+// replEval processes a single input line: tokenise, parse, expand
+// variables, dispatch, and optionally bind the result. Non-fatal
+// errors (unknown command, undefined variable, failed assignment) are
+// printed to cli.Err and return nil, matching the interactive
+// continue behaviour. Only unexpected errors are returned.
+func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, input string) error {
+	tokens, err := replang.Tokenise(input)
+	if err != nil {
+		_ = cli.PrintErrf("[repl] error: %v\n", err)
+		return nil
+	}
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	line, err := replang.ParseLine(tokens)
+	if err != nil {
+		_ = cli.PrintErrf("[repl] error: %v\n", err)
+		return nil
+	}
+
+	expanded, err := session.Expand(line.Command)
+	if err != nil {
+		_ = cli.PrintErrf("[repl] error: %v\n", err)
+		return nil
+	}
+
+	args := tokenTexts(expanded)
+	val, err := replDispatch(ctx, cli, mgr, session, args)
+	if err != nil {
+		_ = cli.PrintErrf("[repl] error: %v\n", err)
+		return nil
+	}
+
+	if line.VarName != "" {
+		if val.IsNil() {
+			_ = cli.PrintErrf("[repl] error: command produced no result to assign\n")
+			return nil
+		}
+		session.Set(line.VarName, val)
+	}
+
+	return nil
+}
+
+// tokenTexts extracts the text of each token into a plain string
+// slice. This bridges replang.Token to the []string that Kong parsers
+// and command handlers expect.
+func tokenTexts(tokens []replang.Token) []string {
+	ss := make([]string, len(tokens))
+	for i, t := range tokens {
+		ss[i] = t.Text
+	}
+	return ss
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager
@@ -158,6 +211,16 @@ func replComplete(ctx context.Context, mgr *manager.Manager, line string, pos in
 		}
 		replace = len(prefix)
 	case (len(tokens) == 1 && trailingSpace) || (len(tokens) == 2 && !trailingSpace):
+		// "source" takes a file path as its argument.
+		if tokens[0] == "source" {
+			if len(tokens) == 2 {
+				candidates = replFileCompletions(tokens[1])
+				replace = len(tokens[1])
+			} else {
+				candidates = replFileCompletions("")
+			}
+			return
+		}
 		// Completing the second token (subcommand).
 		subs := replSubcommands[tokens[0]]
 		prefix := ""
@@ -186,6 +249,43 @@ func replCompleteArgs(ctx context.Context, mgr *manager.Manager, tokens []string
 	}
 	if tokens[0] == "program" && tokens[1] == "delete" {
 		return replCompleteProgramIDs(ctx, mgr, tokens[2:], trailingSpace)
+	}
+	if tokens[0] == "show" && tokens[1] == "program" {
+		return replCompleteShowProgram(ctx, mgr, tokens[2:], trailingSpace)
+	}
+	return
+}
+
+// showProgramViews lists the valid sub-view names for "show program <id>".
+var showProgramViews = []string{"links", "maps", "paths"}
+
+// replCompleteShowProgram handles completion for "show program ..."
+// arguments. The first argument is a program ID; the second is a
+// sub-view name.
+func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, args []string, trailingSpace bool) (candidates []string, replace int) {
+	switch {
+	case len(args) == 0 && trailingSpace:
+		// "show program " -- complete program IDs
+		return replCompleteProgramIDs(ctx, mgr, args, trailingSpace)
+	case len(args) == 1 && !trailingSpace:
+		// "show program 12" -- partial program ID
+		return replCompleteProgramIDs(ctx, mgr, args, trailingSpace)
+	case len(args) == 1 && trailingSpace:
+		// "show program 123 " -- complete sub-view
+		for _, v := range showProgramViews {
+			candidates = append(candidates, v+" ")
+		}
+		return
+	case len(args) == 2 && !trailingSpace:
+		// "show program 123 li" -- partial sub-view
+		prefix := args[1]
+		for _, v := range showProgramViews {
+			if strings.HasPrefix(v, prefix) {
+				candidates = append(candidates, v+" ")
+			}
+		}
+		replace = len(prefix)
+		return
 	}
 	return
 }
@@ -265,27 +365,71 @@ func replFileCompletions(prefix string) []string {
 	return completions
 }
 
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, input string) error {
-	tokens := strings.Fields(input)
-	if len(tokens) == 0 {
-		return nil
+type replContextKey int
+
+const replSourcingKey replContextKey = iota
+
+// replSource reads commands from a file and executes each line in the
+// current session. The sourced file shares all variable bindings with
+// the caller. Nested source commands are rejected to prevent
+// unbounded recursion.
+func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	if ctx.Value(replSourcingKey) != nil {
+		return fmt.Errorf("source cannot be used inside a sourced file")
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("source requires exactly one file argument")
+	}
+
+	lr, err := openScriptReader(args[0])
+	if err != nil {
+		return err
+	}
+	defer lr.Close()
+
+	ctx = context.WithValue(ctx, replSourcingKey, true)
+
+	for {
+		input, err := lr.Readline()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		if err := replEval(ctx, cli, mgr, session, input); err != nil {
+			return err
+		}
+	}
+}
+
+func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+	if len(args) == 0 {
+		return replang.Value{}, nil
 	}
 
 	switch {
-	case tokens[0] == "help":
-		return replHelp(cli)
-	case len(tokens) >= 2 && tokens[0] == "list" && tokens[1] == "programs":
-		return replListPrograms(ctx, cli, mgr)
-	case len(tokens) >= 2 && (tokens[0] == "program" || tokens[0] == "programs") && tokens[1] == "list":
-		return replListPrograms(ctx, cli, mgr)
-	case len(tokens) >= 2 && tokens[0] == "load" && tokens[1] == "file":
-		return replLoadFile(ctx, cli, mgr, tokens[2:])
-	case len(tokens) >= 3 && tokens[0] == "program" && tokens[1] == "load" && tokens[2] == "file":
-		return replLoadFile(ctx, cli, mgr, tokens[3:])
-	case len(tokens) >= 3 && tokens[0] == "program" && tokens[1] == "delete":
-		return replDeleteProgram(ctx, cli, mgr, tokens[2:])
+	case args[0] == "help":
+		return replang.Value{}, replHelp(cli)
+	case args[0] == "source":
+		return replang.Value{}, replSource(ctx, cli, mgr, session, args[1:])
+	case args[0] == "vars":
+		return replang.Value{}, replVars(cli, session)
+	case len(args) >= 2 && args[0] == "list" && args[1] == "programs":
+		return replang.Value{}, replListPrograms(ctx, cli, mgr)
+	case len(args) >= 2 && (args[0] == "program" || args[0] == "programs") && args[1] == "list":
+		return replang.Value{}, replListPrograms(ctx, cli, mgr)
+	case len(args) >= 2 && args[0] == "load" && args[1] == "file":
+		return replLoadFile(ctx, cli, mgr, args[2:])
+	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "file":
+		return replLoadFile(ctx, cli, mgr, args[3:])
+	case len(args) >= 3 && args[0] == "program" && args[1] == "delete":
+		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, args[2:])
+	case len(args) >= 3 && args[0] == "show" && args[1] == "program":
+		return replang.Value{}, replShowProgram(ctx, cli, mgr, args[2:])
 	default:
-		return fmt.Errorf("unknown command %q. Type \"help\" for available commands.", input)
+		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(args, " "))
 	}
 }
 
@@ -297,6 +441,13 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  load file [flags]             Load a BPF program from a local object file\n")
 	b.WriteString("  program delete <id>... [-r]   Delete programs with cascading cleanup\n")
 	b.WriteString("  program list                  Alias for list programs\n")
+	b.WriteString("  show program <id> [view] [-o]  Inspect program (views: links, maps, paths)\n")
+	b.WriteString("  source <file>                 Execute commands from a file\n")
+	b.WriteString("  vars                          List session variables\n")
+	b.WriteString("\n")
+	b.WriteString("Variables:\n")
+	b.WriteString("  prog = load file ...          Assign command result to a variable\n")
+	b.WriteString("  show program $prog.record.program_id  Use variable fields in commands\n")
 	b.WriteString("\n")
 	b.WriteString("Load file flags:\n")
 	b.WriteString("  --path, -p PATH             Path to the BPF object file (.o) (required)\n")
@@ -327,6 +478,24 @@ func replHistoryPath() (string, error) {
 		return "", fmt.Errorf("create state directory: %w", err)
 	}
 	return filepath.Join(dir, "repl-history"), nil
+}
+
+// replVars lists all session variables and their types.
+func replVars(cli *CLI, session *replang.Session) error {
+	names := session.Names()
+	if len(names) == 0 {
+		return cli.PrintOut("No variables defined.\n")
+	}
+	var b strings.Builder
+	for _, name := range names {
+		v, _ := session.Get(name)
+		kind := "scalar"
+		if v.IsStructured() {
+			kind = "structured"
+		}
+		fmt.Fprintf(&b, "  %s (%s)\n", name, kind)
+	}
+	return cli.PrintOut(b.String())
 }
 
 func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager) error {
@@ -367,14 +536,46 @@ func replParseLoadFile(args []string) (*LoadFileCmd, error) {
 	return &cmd, nil
 }
 
-// replLoadFile handles the "load file" REPL command by parsing the
-// remaining tokens and delegating to the shared load implementation.
-func replLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+// replLoadFileExec parses and executes a load file command, returning
+// the result for both display and optional variable assignment.
+func replLoadFileExec(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (loadFileResult, *LoadFileCmd, error) {
 	cmd, err := replParseLoadFile(args)
 	if err != nil {
-		return err
+		return loadFileResult{}, nil, err
 	}
-	return executeLoadFile(ctx, cli, mgr, cmd)
+	result, err := executeLoadFileResult(ctx, cli, mgr, cmd)
+	if err != nil {
+		return loadFileResult{}, nil, err
+	}
+	return result, cmd, nil
+}
+
+// replLoadFile handles the "load file" REPL command by parsing the
+// remaining tokens, executing the load, printing output, and
+// returning a structured Value for optional assignment.
+func replLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (replang.Value, error) {
+	result, cmd, err := replLoadFileExec(ctx, cli, mgr, args)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatLoadedPrograms(result.Programs, &cmd.OutputFlags)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	if len(result.Programs) == 0 {
+		return replang.Value{}, nil
+	}
+
+	val, err := replang.ValueFromStruct(result.Programs[0])
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
 }
 
 // replParseDeleteProgram parses REPL tokens into a ProgramDeleteCmd.
@@ -396,6 +597,78 @@ func replParseDeleteProgram(args []string) (*ProgramDeleteCmd, error) {
 		return nil, err
 	}
 	return &cmd, nil
+}
+
+// ShowProgramCmd is the Kong-parsed structure for "show program".
+type ShowProgramCmd struct {
+	ID     ProgramID   `arg:"" help:"Program ID to inspect."`
+	View   string      `arg:"" optional:"" default:"summary" help:"Sub-view: summary, links, maps, paths."`
+	Output OutputFlags `embed:""`
+}
+
+// replParseShowProgram parses REPL tokens into a ShowProgramCmd.
+func replParseShowProgram(args []string) (*ShowProgramCmd, error) {
+	var cmd ShowProgramCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("show program"),
+		kong.Description("Inspect a managed BPF program."),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create parser: %w", err)
+	}
+	_, err = parser.Parse(args)
+	if err != nil {
+		return nil, err
+	}
+	return &cmd, nil
+}
+
+// replShowProgram handles the "show program" REPL command.
+func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	cmd, err := replParseShowProgram(args)
+	if err != nil {
+		return err
+	}
+
+	detail, err := buildProgramDetail(ctx, mgr, cmd.ID.Value)
+	if err != nil {
+		return err
+	}
+
+	format, err := cmd.Output.Format()
+	if err != nil {
+		return err
+	}
+
+	// JSON output always emits the full ProgramDetail regardless
+	// of sub-view; consumers can select fields with jq.
+	if format == OutputFormatJSON {
+		output, err := formatShowJSON(detail)
+		if err != nil {
+			return err
+		}
+		return cli.PrintOut(output)
+	}
+
+	var output string
+	switch cmd.View {
+	case "summary":
+		output = formatShowSummary(detail)
+	case "links":
+		output = formatShowLinks(detail)
+	case "maps":
+		output = formatShowMaps(detail)
+	case "paths":
+		output = formatShowPaths(detail)
+	default:
+		return fmt.Errorf("unknown view %q (valid: summary, links, maps, paths)", cmd.View)
+	}
+
+	return cli.PrintOut(output)
 }
 
 // replDeleteProgram handles the "program delete" REPL command.

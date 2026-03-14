@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/replang"
 )
 
 func TestReplComplete_FileCompletion(t *testing.T) {
@@ -232,6 +234,198 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 			replace, candidates := replComplete(context.Background(), nil, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace)
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want)
+			}
+		})
+	}
+}
+
+func TestTokenTexts(t *testing.T) {
+	tokens := []replang.Token{
+		{Kind: replang.TokenWord, Text: "show"},
+		{Kind: replang.TokenWord, Text: "program"},
+		{Kind: replang.TokenWord, Text: "42"},
+	}
+	got := tokenTexts(tokens)
+	assert.Equal(t, []string{"show", "program", "42"}, got)
+}
+
+func TestTokenTexts_Empty(t *testing.T) {
+	got := tokenTexts(nil)
+	assert.Empty(t, got)
+}
+
+func TestReplLoop_VarsEmpty(t *testing.T) {
+	input := "vars\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "No variables defined")
+}
+
+func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
+	// "help" returns no value, so assigning should produce an error.
+	input := "x = help\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "command produced no result to assign")
+}
+
+func TestReplLoop_UndefinedVariable(t *testing.T) {
+	input := "show program $x.id\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "undefined variable")
+}
+
+func TestReplLoop_QuotedHashNotComment(t *testing.T) {
+	// A '#' inside double quotes should not be treated as a
+	// comment. The tokeniser preserves it, so the dispatched
+	// command should include the hash.
+	input := "\"bogus#notcomment\"\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	// The unknown command error should contain the hash character,
+	// proving it was not stripped as a comment.
+	assert.Contains(t, errBuf.String(), "bogus#notcomment")
+}
+
+func TestReplComplete_VarsCommand(t *testing.T) {
+	// "vars" should appear in command completions.
+	_, candidates := replComplete(context.Background(), nil, "va", len("va"))
+	assert.Contains(t, candidates, "vars ")
+}
+
+func TestReplLoop_Source(t *testing.T) {
+	// Write a temp file containing "help" and source it.
+	tmp := filepath.Join(t.TempDir(), "script.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("help\n"), 0o644))
+
+	input := "source " + tmp + "\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "Available commands:")
+}
+
+func TestReplLoop_SourceSharesSession(t *testing.T) {
+	// Source a file with an unknown command and verify the error
+	// appears, proving the sourced file runs in the same session.
+	tmp := filepath.Join(t.TempDir(), "script.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("nosuchcmd\n"), 0o644))
+
+	input := "source " + tmp + "\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "nosuchcmd")
+}
+
+func TestReplLoop_SourceMissingFile(t *testing.T) {
+	input := "source /nonexistent/path/script.bpfman\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "open script")
+}
+
+func TestReplLoop_SourceNestedRejected(t *testing.T) {
+	// A sourced file that itself contains a source command should
+	// be rejected with a clear error.
+	dir := t.TempDir()
+	inner := filepath.Join(dir, "inner.bpfman")
+	outer := filepath.Join(dir, "outer.bpfman")
+	require.NoError(t, os.WriteFile(inner, []byte("help\n"), 0o644))
+	require.NoError(t, os.WriteFile(outer, []byte("source "+inner+"\n"), 0o644))
+
+	input := "source " + outer + "\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "source cannot be used inside a sourced file")
+}
+
+func TestReplLoop_SourceNoArgs(t *testing.T) {
+	input := "source\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
+}
+
+func TestReplComplete_SourceFileCompletion(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "scripts"), 0o755))
+
+	orig, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(root))
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	tests := []struct {
+		name        string
+		line        string
+		wantReplace int
+		wantNonZero bool
+		wantAny     []string
+	}{
+		{
+			name:        "source with trailing space lists files",
+			line:        "source ",
+			wantReplace: 0,
+			wantNonZero: true,
+			wantAny:     []string{"./setup.bpfman", "./scripts/"},
+		},
+		{
+			name:        "source with partial path",
+			line:        "source ./set",
+			wantReplace: len("./set"),
+			wantNonZero: true,
+			wantAny:     []string{"./setup.bpfman"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pos := len(tt.line)
+			replace, candidates := replComplete(context.Background(), nil, tt.line, pos)
+
+			assert.Equal(t, tt.wantReplace, replace)
+			if tt.wantNonZero {
+				assert.NotEmpty(t, candidates)
+			}
 			for _, want := range tt.wantAny {
 				assert.Contains(t, candidates, want)
 			}

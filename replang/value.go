@@ -1,0 +1,225 @@
+package replang
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// Value wraps a JSON-compatible dynamic value for use as a shell
+// variable. The underlying representation is one of: map[string]any,
+// []any, string, json.Number, bool, or nil.
+type Value struct {
+	v any
+}
+
+// ValueFromMap wraps an existing map as a Value.
+func ValueFromMap(data map[string]any) Value {
+	return Value{v: data}
+}
+
+// ValueFromJSON decodes JSON bytes into a Value. Numbers are
+// preserved as json.Number to avoid float64 precision loss.
+func ValueFromJSON(b []byte) (Value, error) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return Value{}, fmt.Errorf("decode JSON: %w", err)
+	}
+	return Value{v: v}, nil
+}
+
+// ValueFromStruct converts a struct to a Value via JSON round-trip.
+// The struct must be JSON-serialisable.
+func ValueFromStruct(s any) (Value, error) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return Value{}, fmt.Errorf("marshal struct: %w", err)
+	}
+	return ValueFromJSON(b)
+}
+
+// StringValue wraps a plain string as a Value.
+func StringValue(s string) Value {
+	return Value{v: s}
+}
+
+// BoolValue wraps a boolean as a Value.
+func BoolValue(b bool) Value {
+	return Value{v: b}
+}
+
+// IsNil reports whether the underlying value is nil.
+func (v Value) IsNil() bool {
+	return v.v == nil
+}
+
+// IsScalar reports whether the value is a scalar (string, number,
+// bool) rather than a structured type (map, slice) or nil.
+func (v Value) IsScalar() bool {
+	switch v.v.(type) {
+	case string, json.Number, float64, bool:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsStructured reports whether the value is a map or slice.
+func (v Value) IsStructured() bool {
+	switch v.v.(type) {
+	case map[string]any, []any:
+		return true
+	default:
+		return false
+	}
+}
+
+// Raw returns the underlying dynamic value.
+func (v Value) Raw() any {
+	return v.v
+}
+
+// Scalar converts a scalar value to its string representation.
+// It handles string, json.Number, float64, and bool. It returns
+// an error for nil, map, and slice values.
+func (v Value) Scalar() (string, error) {
+	switch x := v.v.(type) {
+	case string:
+		return x, nil
+	case json.Number:
+		return x.String(), nil
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64), nil
+	case bool:
+		return strconv.FormatBool(x), nil
+	case nil:
+		return "", fmt.Errorf("value is null")
+	default:
+		return "", fmt.Errorf("value is not a scalar")
+	}
+}
+
+// Lookup walks a dotted field path (with optional [n] indexing) into
+// the value. The varName parameter is used only for error messages.
+// An empty path returns the value itself.
+func (v Value) Lookup(varName, path string) (Value, error) {
+	if path == "" {
+		return v, nil
+	}
+
+	steps, err := parsePath(path)
+	if err != nil {
+		return Value{}, err
+	}
+
+	current := v.v
+	traversed := varName
+
+	for _, step := range steps {
+		switch s := step.(type) {
+		case fieldStep:
+			m, ok := current.(map[string]any)
+			if !ok {
+				if current == nil {
+					return Value{}, fmt.Errorf("variable %s is null", traversed)
+				}
+				return Value{}, fmt.Errorf("cannot access field %s on non-object in variable %s", s.name, traversed)
+			}
+			val, exists := m[s.name]
+			if !exists {
+				return Value{}, fmt.Errorf("field %s not found in variable %s", s.name, traversed)
+			}
+			current = val
+			if traversed == varName {
+				traversed = varName + "." + s.name
+			} else {
+				traversed = traversed + "." + s.name
+			}
+
+		case indexStep:
+			arr, ok := current.([]any)
+			if !ok {
+				return Value{}, fmt.Errorf("cannot index non-array in variable %s", traversed)
+			}
+			if s.index < 0 || s.index >= len(arr) {
+				return Value{}, fmt.Errorf("index %d out of range for variable %s (length %d)", s.index, traversed, len(arr))
+			}
+			current = arr[s.index]
+			traversed = fmt.Sprintf("%s[%d]", traversed, s.index)
+		}
+	}
+
+	if current == nil {
+		return Value{}, fmt.Errorf("variable %s is null", traversed)
+	}
+
+	switch current.(type) {
+	case map[string]any:
+		return Value{}, fmt.Errorf("variable %s is an object; use field access to reach a scalar value", traversed)
+	case []any:
+		return Value{}, fmt.Errorf("variable %s is an array; use indexing to reach a scalar value", traversed)
+	}
+
+	return Value{v: current}, nil
+}
+
+// pathStep is either a field name or an array index.
+type pathStep interface {
+	pathStep()
+}
+
+type fieldStep struct {
+	name string
+}
+
+type indexStep struct {
+	index int
+}
+
+func (fieldStep) pathStep() {}
+func (indexStep) pathStep() {}
+
+// parsePath parses a dotted path with optional [n] indexing into a
+// sequence of steps. For example, "maps[0].name" becomes
+// [fieldStep{"maps"}, indexStep{0}, fieldStep{"name"}].
+func parsePath(path string) ([]pathStep, error) {
+	var steps []pathStep
+	i := 0
+	for i < len(path) {
+		// Skip leading dot.
+		if path[i] == '.' {
+			i++
+			if i >= len(path) {
+				break
+			}
+		}
+
+		if path[i] == '[' {
+			// Parse array index.
+			j := strings.IndexByte(path[i:], ']')
+			if j < 0 {
+				return nil, fmt.Errorf("unterminated [ in path %q", path)
+			}
+			numStr := path[i+1 : i+j]
+			n, err := strconv.Atoi(numStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid index in path %q: %w", path, err)
+			}
+			steps = append(steps, indexStep{index: n})
+			i += j + 1
+		} else {
+			// Parse field name.
+			j := i
+			for j < len(path) && path[j] != '.' && path[j] != '[' {
+				j++
+			}
+			steps = append(steps, fieldStep{name: path[i:j]})
+			i = j
+		}
+	}
+	return steps, nil
+}

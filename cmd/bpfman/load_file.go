@@ -45,17 +45,17 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 	return executeLoadFile(ctx, cli, mgr, c)
 }
 
-// executeLoadFile is the shared implementation for loading a BPF
-// program from a local object file. Both the CLI command and the REPL
-// call this function.
-func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) error {
+// executeLoadFileResult is the shared implementation for loading a
+// BPF program from a local object file, returning the result without
+// formatting. Both the CLI command and the REPL call this function.
+func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
 	// Validate object file exists (before acquiring lock)
 	objPath, err := ParseObjectPath(c.Path)
 	if err != nil {
-		return err
+		return loadFileResult{}, err
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+	return RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
@@ -94,6 +94,13 @@ func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *Loa
 		}
 		return loadFileResult{Programs: loaded}, nil
 	})
+}
+
+// executeLoadFile is the shared implementation for loading a BPF
+// program from a local object file. The CLI command calls this
+// function; the REPL uses executeLoadFileResult directly.
+func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) error {
+	result, err := executeLoadFileResult(ctx, cli, mgr, c)
 	if err != nil {
 		return err
 	}
