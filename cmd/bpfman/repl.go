@@ -428,9 +428,9 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "file":
 		return replLoadFile(ctx, cli, mgr, args[3:])
 	case len(args) >= 3 && args[0] == "program" && args[1] == "delete":
-		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, args[2:])
+		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, session, args[2:])
 	case len(args) >= 3 && args[0] == "show" && args[1] == "program":
-		return replang.Value{}, replShowProgram(ctx, cli, mgr, args[2:])
+		return replang.Value{}, replShowProgram(ctx, cli, mgr, session, args[2:])
 	default:
 		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(args, " "))
 	}
@@ -451,7 +451,8 @@ func replHelp(cli *CLI) error {
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
 	b.WriteString("  prog = load file ...          Assign command result to a variable\n")
-	b.WriteString("  show program $prog.record.program_id  Use variable fields in commands\n")
+	b.WriteString("  show program prog             Bare variable (auto-extracts program ID)\n")
+	b.WriteString("  show program $prog.record.program_id  Explicit variable path in commands\n")
 	b.WriteString("\n")
 	b.WriteString("Load file flags:\n")
 	b.WriteString("  --path, -p PATH             Path to the BPF object file (.o) (required)\n")
@@ -684,8 +685,80 @@ func replParseShowProgram(args []string) (*ShowProgramCmd, error) {
 	return &cmd, nil
 }
 
-// replShowProgram handles the "show program" REPL command.
-func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+// resolveProgramIDArg resolves a single argument to a program ID
+// string. Numeric IDs pass through unchanged. Bare words are looked
+// up as session variables: if the variable is structured, the path
+// .record.program_id is tried automatically; explicit dotted paths
+// are resolved as given.
+func resolveProgramIDArg(session *replang.Session, arg string) (string, error) {
+	if _, err := ParseProgramID(arg); err == nil {
+		return arg, nil
+	}
+
+	// Split on first '.' or '[' to separate variable name from path.
+	varName := arg
+	path := ""
+	if i := strings.IndexAny(arg, ".["); i >= 0 {
+		varName = arg[:i]
+		path = arg[i:]
+		path = strings.TrimPrefix(path, ".")
+	}
+
+	v, ok := session.Get(varName)
+	if !ok {
+		return "", fmt.Errorf("undefined variable %q", varName)
+	}
+
+	if path != "" {
+		resolved, err := v.LookupValue(varName, path)
+		if err != nil {
+			return "", err
+		}
+		return resolved.Scalar()
+	}
+
+	if v.IsStructured() {
+		resolved, err := v.LookupValue(varName, "record.program_id")
+		if err != nil {
+			return "", fmt.Errorf("variable %q is structured but has no .record.program_id field", varName)
+		}
+		return resolved.Scalar()
+	}
+
+	return v.Scalar()
+}
+
+// resolveProgramIDArgs maps resolveProgramIDArg over every element
+// that is not a flag (does not start with '-'). Returns a new slice
+// with resolved values.
+func resolveProgramIDArgs(session *replang.Session, args []string) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			resolved[i] = a
+			continue
+		}
+		r, err := resolveProgramIDArg(session, a)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
+	}
+	return resolved, nil
+}
+
+// replShowProgram handles the "show program" REPL command. Only the
+// first positional argument is a program ID; subsequent arguments are
+// sub-view names and flags.
+func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		resolved, err := resolveProgramIDArg(session, args[0])
+		if err != nil {
+			return err
+		}
+		args = append([]string{resolved}, args[1:]...)
+	}
+
 	cmd, err := replParseShowProgram(args)
 	if err != nil {
 		return err
@@ -729,7 +802,12 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args [
 }
 
 // replDeleteProgram handles the "program delete" REPL command.
-func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	args, err := resolveProgramIDArgs(session, args)
+	if err != nil {
+		return err
+	}
+
 	cmd, err := replParseDeleteProgram(args)
 	if err != nil {
 		return err

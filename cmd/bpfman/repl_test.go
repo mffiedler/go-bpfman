@@ -384,6 +384,200 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
 
+func TestResolveProgramIDArg(t *testing.T) {
+	session := replang.NewSession()
+
+	// Structured variable with .record.program_id
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	require.NoError(t, err)
+	session.Set("prog", structuredVal)
+
+	// Scalar variable
+	session.Set("pid", replang.StringValue("99"))
+
+	// Structured variable without .record.program_id
+	noIDVal, err := replang.ValueFromJSON([]byte(`{"name":"test"}`))
+	require.NoError(t, err)
+	session.Set("noid", noIDVal)
+
+	tests := []struct {
+		name    string
+		arg     string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "numeric ID passes through",
+			arg:  "123",
+			want: "123",
+		},
+		{
+			name: "hex ID passes through",
+			arg:  "0xff",
+			want: "0xff",
+		},
+		{
+			name: "bare variable resolves record.program_id",
+			arg:  "prog",
+			want: "42",
+		},
+		{
+			name: "explicit path resolves to scalar",
+			arg:  "prog.record.program_id",
+			want: "42",
+		},
+		{
+			name: "scalar variable resolves directly",
+			arg:  "pid",
+			want: "99",
+		},
+		{
+			name:    "undefined variable returns error",
+			arg:     "nosuch",
+			wantErr: "undefined variable",
+		},
+		{
+			name:    "structured variable without record.program_id returns error",
+			arg:     "noid",
+			wantErr: "has no .record.program_id field",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveProgramIDArg(session, tt.arg)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestResolveProgramIDArgs(t *testing.T) {
+	session := replang.NewSession()
+
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	require.NoError(t, err)
+	session.Set("prog", structuredVal)
+	session.Set("pid", replang.StringValue("99"))
+
+	// Mixed numeric, variable, and flags.
+	got, err := resolveProgramIDArgs(session, []string{"123", "prog", "pid", "-r"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"123", "42", "99", "-r"}, got)
+}
+
+// TestResolveProgramIDArgs_ShowProgram verifies that the show-program
+// resolution pattern only resolves the first positional argument,
+// leaving sub-view names like "links" and "maps" untouched.
+func TestResolveProgramIDArgs_ShowProgram(t *testing.T) {
+	session := replang.NewSession()
+
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	require.NoError(t, err)
+	session.Set("prog", structuredVal)
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "variable with links sub-view",
+			args: []string{"prog", "links"},
+			want: []string{"42", "links"},
+		},
+		{
+			name: "variable with maps sub-view",
+			args: []string{"prog", "maps"},
+			want: []string{"42", "maps"},
+		},
+		{
+			name: "variable with paths sub-view and output flag",
+			args: []string{"prog", "paths", "-o", "json"},
+			want: []string{"42", "paths", "-o", "json"},
+		},
+		{
+			name: "numeric ID with sub-view",
+			args: []string{"123", "links"},
+			want: []string{"123", "links"},
+		},
+		{
+			name: "variable alone",
+			args: []string{"prog"},
+			want: []string{"42"},
+		},
+		{
+			name: "output flag only",
+			args: []string{"-o", "json"},
+			want: []string{"-o", "json"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Replicate the resolution pattern from replShowProgram:
+			// resolve only the first non-flag argument.
+			args := make([]string, len(tt.args))
+			copy(args, tt.args)
+			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+				resolved, err := resolveProgramIDArg(session, args[0])
+				require.NoError(t, err)
+				args = append([]string{resolved}, args[1:]...)
+			}
+			assert.Equal(t, tt.want, args)
+		})
+	}
+}
+
+// TestResolveProgramIDArgs_DeleteProgram verifies that the delete
+// pattern resolves all positional arguments as program IDs, including
+// mixed numeric and variable forms, while leaving flags untouched.
+func TestResolveProgramIDArgs_DeleteProgram(t *testing.T) {
+	session := replang.NewSession()
+
+	p1, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":10}}`))
+	require.NoError(t, err)
+	p2, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":20}}`))
+	require.NoError(t, err)
+	session.Set("a", p1)
+	session.Set("b", p2)
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "multiple variables",
+			args: []string{"a", "b"},
+			want: []string{"10", "20"},
+		},
+		{
+			name: "mixed numeric and variables with flag",
+			args: []string{"99", "a", "b", "-r"},
+			want: []string{"99", "10", "20", "-r"},
+		},
+		{
+			name: "single variable with recursive flag",
+			args: []string{"a", "-r"},
+			want: []string{"10", "-r"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveProgramIDArgs(session, tt.args)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))
