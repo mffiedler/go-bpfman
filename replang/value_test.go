@@ -445,3 +445,25 @@ func TestValueIsPredicates(t *testing.T) {
 	assert.False(t, m.IsScalar())
 	assert.True(t, m.IsStructured())
 }
+
+func TestValueFromStruct_PreservesOrigin(t *testing.T) {
+	type MyStruct struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	orig := MyStruct{ID: 1, Name: "test"}
+	v, err := ValueFromStruct(orig)
+	require.NoError(t, err)
+	assert.Equal(t, orig, v.Origin())
+}
+
+func TestValueFromJSON_NilOrigin(t *testing.T) {
+	v, err := ValueFromJSON([]byte(`{"id": 1}`))
+	require.NoError(t, err)
+	assert.Nil(t, v.Origin())
+}
+
+func TestStringValue_NilOrigin(t *testing.T) {
+	v := StringValue("hello")
+	assert.Nil(t, v.Origin())
+}

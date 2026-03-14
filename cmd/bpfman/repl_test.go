@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/replang"
 )
 
@@ -1416,4 +1418,55 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveProgramIDArg_RejectsLinkVariable(t *testing.T) {
+	session := replang.NewSession()
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        kernel.LinkID(10),
+			ProgramID: kernel.ProgramID(42),
+		},
+	}
+	v, err := replang.ValueFromStruct(link)
+	require.NoError(t, err)
+	session.Set("mylink", v)
+
+	_, err = resolveProgramIDArg(session, "$mylink")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a program")
+}
+
+func TestResolveLinkIDArg_RejectsProgramVariable(t *testing.T) {
+	session := replang.NewSession()
+	prog := bpfman.Program{
+		Record: bpfman.ProgramRecord{
+			ProgramID: kernel.ProgramID(42),
+		},
+	}
+	v, err := replang.ValueFromStruct(prog)
+	require.NoError(t, err)
+	session.Set("myprog", v)
+
+	_, err = resolveLinkIDArg(session, "$myprog")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a link")
+}
+
+func TestResolveProgramIDArg_ExplicitPathStillWorks(t *testing.T) {
+	session := replang.NewSession()
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        kernel.LinkID(10),
+			ProgramID: kernel.ProgramID(42),
+		},
+	}
+	v, err := replang.ValueFromStruct(link)
+	require.NoError(t, err)
+	session.Set("mylink", v)
+
+	// Explicit path bypasses the type check.
+	got, err := resolveProgramIDArg(session, "$mylink.record.program_id")
+	require.NoError(t, err)
+	assert.Equal(t, "42", got)
 }

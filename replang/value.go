@@ -12,8 +12,13 @@ import (
 // Value wraps a JSON-compatible dynamic value for use as a shell
 // variable. The underlying representation is one of: map[string]any,
 // []any, string, json.Number, bool, or nil.
+//
+// When created via ValueFromStruct, the original Go value is
+// preserved in the origin field so that callers can recover type
+// information that the JSON round-trip erases.
 type Value struct {
-	v any
+	v      any // JSON-decoded tree (map[string]any, etc.)
+	origin any // original Go value, nil for non-struct values
 }
 
 // ValueFromMap wraps an existing map as a Value.
@@ -33,14 +38,25 @@ func ValueFromJSON(b []byte) (Value, error) {
 	return Value{v: v}, nil
 }
 
-// ValueFromStruct converts a struct to a Value via JSON round-trip.
-// The struct must be JSON-serialisable.
+// ValueFromStruct converts a struct to a Value via JSON round-trip,
+// preserving the original Go value for type checking.
 func ValueFromStruct(s any) (Value, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
 		return Value{}, fmt.Errorf("marshal struct: %w", err)
 	}
-	return ValueFromJSON(b)
+	v, err := ValueFromJSON(b)
+	if err != nil {
+		return Value{}, err
+	}
+	v.origin = s
+	return v, nil
+}
+
+// Origin returns the original Go value if this Value was created
+// from a struct via ValueFromStruct. Returns nil otherwise.
+func (v Value) Origin() any {
+	return v.origin
 }
 
 // StringValue wraps a plain string as a Value.

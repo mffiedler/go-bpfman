@@ -1223,6 +1223,13 @@ func resolveProgramIDArg(session *replang.Session, arg string) (string, error) {
 	}
 
 	if v.IsStructured() {
+		if origin := v.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Program); !ok {
+				return "", fmt.Errorf(
+					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
+					varName, origin, varName)
+			}
+		}
 		resolved, err := v.LookupValue(varName, "record.program_id")
 		if err != nil {
 			return "", fmt.Errorf("variable %q is structured but has no .record.program_id field", varName)
@@ -1363,6 +1370,13 @@ func resolveLinkIDArg(session *replang.Session, arg string) (string, error) {
 	}
 
 	if v.IsStructured() {
+		if origin := v.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Link); !ok {
+				return "", fmt.Errorf(
+					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
+					varName, origin, varName)
+			}
+		}
 		resolved, err := v.LookupValue(varName, "record.id")
 		if err != nil {
 			return "", fmt.Errorf("variable %q is structured but has no .record.id field", varName)
