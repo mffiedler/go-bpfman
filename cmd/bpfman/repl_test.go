@@ -1061,6 +1061,314 @@ func TestReplComplete_ProgramDeleteAll(t *testing.T) {
 	}
 }
 
+func TestReplComplete_ProgramGetNoAll(t *testing.T) {
+	// "program get" should offer program IDs, not --all.
+	replace, candidates := replComplete(context.Background(), nil, nil, "program get ", len("program get "))
+	assert.Equal(t, 0, replace)
+	for _, c := range candidates {
+		assert.NotEqual(t, "--all ", c, "program get must not offer --all")
+	}
+}
+
+func TestResolveVarRefs(t *testing.T) {
+	session := replang.NewSession()
+
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	require.NoError(t, err)
+	session.Set("prog", structuredVal)
+
+	// resolveVarRefs should pass non-$ tokens through unchanged,
+	// including bare words that are not valid program IDs.
+	got, err := resolveVarRefs(session, []string{"--iface", "eth0", "$prog", "123"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"--iface", "eth0", "42", "123"}, got)
+}
+
+func TestResolveVarRefs_UndefinedVar(t *testing.T) {
+	session := replang.NewSession()
+	_, err := resolveVarRefs(session, []string{"$nosuch"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable")
+}
+
+func TestResolveLinkIDArg(t *testing.T) {
+	session := replang.NewSession()
+
+	// Structured variable with .record.id
+	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	require.NoError(t, err)
+	session.Set("lnk", linkVal)
+
+	// Scalar variable
+	session.Set("lid", replang.StringValue("88"))
+
+	tests := []struct {
+		name    string
+		arg     string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "numeric ID passes through",
+			arg:  "123",
+			want: "123",
+		},
+		{
+			name: "$variable resolves record.id",
+			arg:  "$lnk",
+			want: "77",
+		},
+		{
+			name: "$scalar variable resolves directly",
+			arg:  "$lid",
+			want: "88",
+		},
+		{
+			name:    "bare word returns error",
+			arg:     "abc",
+			wantErr: "not a valid link ID",
+		},
+		{
+			name:    "undefined variable",
+			arg:     "$nosuch",
+			wantErr: "undefined variable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveLinkIDArg(session, tt.arg)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestResolveLinkIDArgs(t *testing.T) {
+	session := replang.NewSession()
+
+	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	require.NoError(t, err)
+	session.Set("lnk", linkVal)
+
+	got, err := resolveLinkIDArgs(session, []string{"10", "$lnk", "-r"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10", "77", "-r"}, got)
+}
+
+func TestReplLoop_Version(t *testing.T) {
+	input := "version\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.NotEmpty(t, outBuf.String())
+}
+
+func TestReplComplete_NewCommands(t *testing.T) {
+	tests := []struct {
+		name        string
+		line        string
+		wantAny     []string
+		wantReplace int
+	}{
+		{
+			name:        "link completes subcommands",
+			line:        "link ",
+			wantAny:     []string{"attach ", "detach ", "get ", "list ", "delete "},
+			wantReplace: 0,
+		},
+		{
+			name:        "link partial",
+			line:        "link at",
+			wantAny:     []string{"attach "},
+			wantReplace: 2,
+		},
+		{
+			name:        "dispatcher completes subcommands",
+			line:        "dispatcher ",
+			wantAny:     []string{"delete ", "get ", "list "},
+			wantReplace: 0,
+		},
+		{
+			name:        "doctor completes subcommands",
+			line:        "doctor ",
+			wantAny:     []string{"checkup ", "explain "},
+			wantReplace: 0,
+		},
+		{
+			name:        "program completes new subcommands",
+			line:        "program ",
+			wantAny:     []string{"get ", "unload "},
+			wantReplace: 0,
+		},
+		{
+			name:        "version in top-level completions",
+			line:        "ver",
+			wantAny:     []string{"version "},
+			wantReplace: 3,
+		},
+		{
+			name:        "gc in top-level completions",
+			line:        "gc",
+			wantAny:     []string{"gc "},
+			wantReplace: 2,
+		},
+		{
+			name:        "link attach completes types",
+			line:        "link attach ",
+			wantAny:     []string{"xdp ", "tc ", "tracepoint ", "kprobe "},
+			wantReplace: 0,
+		},
+		{
+			name:        "link attach partial type",
+			line:        "link attach xd",
+			wantAny:     []string{"xdp "},
+			wantReplace: 2,
+		},
+		{
+			name:        "load completes image subcommand",
+			line:        "load ",
+			wantAny:     []string{"file ", "image "},
+			wantReplace: 0,
+		},
+		{
+			name:        "program load completes file and image",
+			line:        "program load ",
+			wantAny:     []string{"file ", "image "},
+			wantReplace: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, len(tt.line))
+			assert.Equal(t, tt.wantReplace, replace, "replace")
+			for _, want := range tt.wantAny {
+				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
+		})
+	}
+}
+
+func TestReplLoop_DoctorExplain(t *testing.T) {
+	// "doctor explain" without a rule should list all rules.
+	input := "doctor explain\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "Available coherency rules")
+}
+
+func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
+	input := "doctor explain nosuch-rule\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "unknown rule")
+}
+
+func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
+	input := "doctor bogus\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "unknown doctor subcommand")
+}
+
+func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
+	input := "program get\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "program get requires a program ID")
+}
+
+func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
+	input := "program unload\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "program unload requires at least one program ID")
+}
+
+func TestReplLoop_LinkAttachNoType(t *testing.T) {
+	input := "link attach\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "link attach requires a type")
+}
+
+func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
+	input := "link attach bogus\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "unknown attach type")
+}
+
+func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
+	input := "link detach\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "link detach requires at least one link ID")
+}
+
+func TestReplLoop_LinkGetNoArgs(t *testing.T) {
+	input := "link get\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "link get requires a link ID")
+}
+
+func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
+	input := "link delete\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "link delete requires at least one link ID")
+}
+
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))

@@ -5,16 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/alecthomas/kong"
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/coherency"
+	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/replang"
+	"github.com/frobware/go-bpfman/version"
 )
 
 // ReplCmd starts an interactive shell for inspecting BPF state.
@@ -26,16 +36,22 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"dump", "help", "list", "load", "program", "programs", "show", "source", "unset", "vars"}
+var replCommandNames = []string{"dispatcher", "doctor", "dump", "gc", "help", "link", "list", "load", "program", "programs", "show", "source", "unset", "vars", "version"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
-	"list":     {"programs"},
-	"load":     {"file"},
-	"program":  {"delete", "list", "load"},
-	"programs": {"list"},
-	"show":     {"program"},
+	"dispatcher": {"delete", "get", "list"},
+	"doctor":     {"checkup", "explain"},
+	"link":       {"attach", "delete", "detach", "get", "list"},
+	"list":       {"programs"},
+	"load":       {"file", "image"},
+	"program":    {"delete", "get", "list", "load", "unload"},
+	"programs":   {"list"},
+	"show":       {"program"},
 }
+
+// replAttachTypes lists the valid attach types for "link attach <type>".
+var replAttachTypes = []string{"fentry", "fexit", "kprobe", "tc", "tcx", "tracepoint", "uprobe", "xdp"}
 
 // Run starts the read-eval-print loop. A single manager is held open
 // for the session lifetime to avoid repeated store open/close.
@@ -273,13 +289,90 @@ func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *replan
 		}
 		return replCompleteVarNames(session, prefix)
 	}
-	if tokens[0] == "program" && tokens[1] == "delete" {
-		return replCompleteProgramIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+
+	// program subcommands
+	if tokens[0] == "program" {
+		switch tokens[1] {
+		case "delete":
+			return replCompleteProgramDelete(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "get":
+			return replCompleteProgramIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "unload":
+			return replCompleteProgramIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "load":
+			// "program load file" or "program load image" -- third-level subcommand
+			if len(tokens) == 2 && trailingSpace {
+				return []string{"file ", "image "}, 0
+			}
+			if len(tokens) == 3 && !trailingSpace {
+				prefix := tokens[2]
+				for _, sub := range []string{"file", "image"} {
+					if strings.HasPrefix(sub, prefix) {
+						candidates = append(candidates, sub+" ")
+					}
+				}
+				return candidates, len(prefix)
+			}
+			return
+		}
 	}
+
 	if tokens[0] == "show" && tokens[1] == "program" {
 		return replCompleteShowProgram(ctx, mgr, session, tokens[2:], trailingSpace)
 	}
+
+	// link subcommands
+	if tokens[0] == "link" {
+		switch tokens[1] {
+		case "attach":
+			return replCompleteLinkAttach(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "detach":
+			return replCompleteLinkIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "get":
+			return replCompleteLinkIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+		case "delete":
+			return replCompleteLinkIDs(ctx, mgr, session, tokens[2:], trailingSpace)
+		}
+	}
+
 	return
+}
+
+// replCompleteLinkAttach handles completion for "link attach ...".
+// First arg is attach type, remaining args get program ID completion.
+func replCompleteLinkAttach(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+	switch {
+	case len(args) == 0 && trailingSpace:
+		// "link attach " -- complete attach types
+		for _, t := range replAttachTypes {
+			candidates = append(candidates, t+" ")
+		}
+		return
+	case len(args) == 1 && !trailingSpace:
+		// "link attach xd" -- partial attach type
+		prefix := args[0]
+		for _, t := range replAttachTypes {
+			if strings.HasPrefix(t, prefix) {
+				candidates = append(candidates, t+" ")
+			}
+		}
+		return candidates, len(prefix)
+	default:
+		// After the attach type, offer program ID completion for
+		// tokens that look like they could be a program ID argument.
+		// We only complete the last token if it starts with $ or is numeric.
+		if !trailingSpace && len(args) > 1 {
+			last := args[len(args)-1]
+			if strings.HasPrefix(last, "$") {
+				return replCompleteVarPath(session, last, true)
+			}
+		}
+		if trailingSpace {
+			// Offer program IDs and $variables.
+			return replCompleteProgramIDs(ctx, mgr, session, nil, true)
+		}
+		return
+	}
 }
 
 // showProgramViews lists the valid sub-view names for "show program <id>".
@@ -316,6 +409,34 @@ func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session 
 	return
 }
 
+// replCompleteProgramDelete handles completion for "program delete",
+// offering --all in addition to program IDs.
+func replCompleteProgramDelete(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+	candidates, replace = replCompleteProgramIDs(ctx, mgr, session, args, trailingSpace)
+
+	// Determine the current prefix.
+	prefix := ""
+	if !trailingSpace && len(args) > 0 {
+		prefix = args[len(args)-1]
+	}
+
+	// Offer --all when it matches the prefix and hasn't been specified.
+	if strings.HasPrefix("--all", prefix) {
+		already := false
+		for _, a := range args {
+			if a == "--all" {
+				already = true
+				break
+			}
+		}
+		if !already {
+			candidates = append(candidates, "--all ")
+		}
+	}
+
+	return
+}
+
 // replCompleteProgramIDs offers program ID completions, excluding IDs
 // that have already been specified on the command line. When the
 // prefix starts with '$', completion is delegated to
@@ -333,13 +454,6 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 		// The last token is a partial ID being typed.
 		prefix = args[len(args)-1]
 		delete(specified, prefix)
-	}
-
-	// Offer --all when the prefix matches.
-	if strings.HasPrefix("--all", prefix) {
-		if _, already := specified["--all"]; !already {
-			candidates = append(candidates, "--all ")
-		}
 	}
 
 	// When the prefix starts with '$', delegate to path completion.
@@ -687,18 +801,57 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return replang.Value{}, replUnset(cli, session, args[1:])
 	case args[0] == "vars":
 		return replang.Value{}, replVars(cli, session)
+	case args[0] == "version":
+		return replang.Value{}, replVersion(cli)
+
+	// program commands
 	case len(args) >= 2 && args[0] == "list" && args[1] == "programs":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr)
+		return replang.Value{}, replListPrograms(ctx, cli, mgr, args[2:])
 	case len(args) >= 2 && (args[0] == "program" || args[0] == "programs") && args[1] == "list":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr)
+		return replang.Value{}, replListPrograms(ctx, cli, mgr, args[2:])
 	case len(args) >= 2 && args[0] == "load" && args[1] == "file":
 		return replLoadFile(ctx, cli, mgr, args[2:])
 	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "file":
 		return replLoadFile(ctx, cli, mgr, args[3:])
+	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "image":
+		return replLoadImage(ctx, cli, mgr, args[3:])
+	case len(args) >= 2 && args[0] == "load" && args[1] == "image":
+		return replLoadImage(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && args[0] == "program" && args[1] == "get":
+		return replGetProgram(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && args[0] == "program" && args[1] == "unload":
+		return replang.Value{}, replUnloadProgram(ctx, cli, mgr, session, args[2:])
 	case len(args) >= 2 && args[0] == "program" && args[1] == "delete":
 		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, session, args[2:])
 	case len(args) >= 3 && args[0] == "show" && args[1] == "program":
 		return replang.Value{}, replShowProgram(ctx, cli, mgr, session, args[2:])
+
+	// link commands
+	case len(args) >= 2 && args[0] == "link" && args[1] == "attach":
+		return replLinkAttach(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && args[0] == "link" && args[1] == "detach":
+		return replang.Value{}, replLinkDetach(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && args[0] == "link" && args[1] == "get":
+		return replLinkGet(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && args[0] == "link" && args[1] == "list":
+		return replang.Value{}, replLinkList(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && args[0] == "link" && args[1] == "delete":
+		return replang.Value{}, replLinkDelete(ctx, cli, mgr, session, args[2:])
+
+	// dispatcher commands
+	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "list":
+		return replang.Value{}, replDispatcherList(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "get":
+		return replang.Value{}, replDispatcherGet(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "delete":
+		return replang.Value{}, replDispatcherDelete(ctx, cli, mgr, args[2:])
+
+	// diagnostics
+	case args[0] == "gc":
+		return replang.Value{}, replGC(ctx, cli, mgr, args[1:])
+	case args[0] == "doctor":
+		return replang.Value{}, replDoctor(ctx, cli, mgr, args[1:])
+
 	default:
 		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(args, " "))
 	}
@@ -707,29 +860,45 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 func replHelp(cli *CLI) error {
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
-	b.WriteString("  dump <variable>[.path]        Display variable contents\n")
-	b.WriteString("  help                          Show this help\n")
-	b.WriteString("  list programs                 List managed BPF programs\n")
-	b.WriteString("  load file [flags]             Load a BPF program from a local object file\n")
-	b.WriteString("  program delete (<id>... | --all) [-r]  Delete programs with cascading cleanup\n")
-	b.WriteString("  program list                  Alias for list programs\n")
-	b.WriteString("  show program <id> [view] [-o]  Inspect program (views: links, maps, paths)\n")
-	b.WriteString("  source <file>                 Execute commands from a file\n")
-	b.WriteString("  unset <var>...                Remove variable bindings\n")
-	b.WriteString("  vars                          List session variables\n")
+	b.WriteString("\n")
+	b.WriteString("Program management:\n")
+	b.WriteString("  program list [flags]                     List managed BPF programs\n")
+	b.WriteString("  program get <id>                         Get program details (assignable)\n")
+	b.WriteString("  program load file [flags]                Load from a local object file (assignable)\n")
+	b.WriteString("  program load image [flags]               Load from an OCI image (assignable)\n")
+	b.WriteString("  program unload <id>...                   Unload programs\n")
+	b.WriteString("  program delete (<id>... | --all) [-r]    Delete with cascading cleanup\n")
+	b.WriteString("  show program <id> [view] [-o]            Inspect (views: links, maps, paths)\n")
+	b.WriteString("\n")
+	b.WriteString("Link management:\n")
+	b.WriteString("  link attach <type> [flags] <id>          Attach a program (assignable)\n")
+	b.WriteString("  link detach <link-id>...                 Detach links\n")
+	b.WriteString("  link get <link-id>                       Get link details (assignable)\n")
+	b.WriteString("  link list [flags]                        List managed links\n")
+	b.WriteString("  link delete <link-id>... [-r]            Delete with cascading cleanup\n")
+	b.WriteString("\n")
+	b.WriteString("Dispatcher management:\n")
+	b.WriteString("  dispatcher list [--type <type>]           List dispatchers\n")
+	b.WriteString("  dispatcher get <type> <nsid> <ifindex>    Get dispatcher details\n")
+	b.WriteString("  dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher\n")
+	b.WriteString("\n")
+	b.WriteString("Diagnostics:\n")
+	b.WriteString("  gc [--dry-run] [--prune] [rule...]       Garbage collect stale resources\n")
+	b.WriteString("  doctor [checkup]                         Run coherency checks\n")
+	b.WriteString("  doctor explain [rule]                    Explain a coherency rule\n")
+	b.WriteString("  version                                  Print version information\n")
+	b.WriteString("\n")
+	b.WriteString("Session:\n")
+	b.WriteString("  dump <variable>[.path]                   Display variable contents\n")
+	b.WriteString("  source <file>                            Execute commands from a file\n")
+	b.WriteString("  unset <var>...                           Remove variable bindings\n")
+	b.WriteString("  vars                                     List session variables\n")
+	b.WriteString("  help                                     Show this help\n")
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
 	b.WriteString("  prog = load file ...          Assign command result to a variable\n")
 	b.WriteString("  show program $prog            Variable reference (auto-extracts program ID)\n")
-	b.WriteString("  show program $prog.record.program_id  Explicit variable path in commands\n")
-	b.WriteString("\n")
-	b.WriteString("Load file flags:\n")
-	b.WriteString("  --path, -p PATH             Path to the BPF object file (.o) (required)\n")
-	b.WriteString("  --programs TYPE:NAME[:FUNC]  Program to load (can be repeated)\n")
-	b.WriteString("  -m KEY=VALUE                Metadata to attach (can be repeated)\n")
-	b.WriteString("  -g NAME=HEX                 Global data (can be repeated)\n")
-	b.WriteString("  -a, --application NAME       Application name\n")
-	b.WriteString("  --map-owner-id ID            Program ID to share maps with\n")
+	b.WriteString("  link attach xdp -i eth0 $prog Use $variable as program ID argument\n")
 	return cli.PrintOut(b.String())
 }
 
@@ -839,13 +1008,58 @@ func replDump(cli *CLI, session *replang.Session, args []string) error {
 	return cli.PrintOut(string(b) + "\n")
 }
 
-func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager) error {
-	result, err := mgr.ListPrograms(ctx)
+// replParseListPrograms parses REPL tokens into a ListProgramsCmd.
+func replParseListPrograms(args []string) (*ListProgramsCmd, error) {
+	var cmd ListProgramsCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("program list"),
+		kong.Description("List managed BPF programs."),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create parser: %w", err)
+	}
+	_, err = parser.Parse(args)
+	if err != nil {
+		return nil, err
+	}
+	return &cmd, nil
+}
+
+func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	cmd, err := replParseListPrograms(args)
 	if err != nil {
 		return err
 	}
-	flags := &OutputFlags{Output: OutputValue{Value: "table"}}
-	output, err := FormatProgramsComposite(result, flags)
+	if err := cmd.Validate(); err != nil {
+		return err
+	}
+
+	opts, err := cmd.buildListOptions()
+	if err != nil {
+		return err
+	}
+
+	result, err := mgr.ListPrograms(ctx, opts...)
+	if err != nil {
+		return err
+	}
+
+	if len(result.Programs) == 0 && !cmd.OutputFlags.IsStructured() {
+		return nil
+	}
+
+	if cmd.Quiet {
+		var b strings.Builder
+		for _, p := range result.Programs {
+			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+		}
+		return cli.PrintOut(b.String())
+	}
+
+	output, err := FormatProgramsComposite(result, &cmd.OutputFlags)
 	if err != nil {
 		return err
 	}
@@ -1090,6 +1304,1081 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 	}
 
 	return cli.PrintOut(output)
+}
+
+// resolveVarRefs resolves only $-prefixed tokens in args, passing
+// everything else through unchanged. Unlike resolveProgramIDArgs,
+// this does not reject bare words as invalid IDs, making it suitable
+// for commands where positional args mix IDs with keywords (e.g.
+// interface names in attach commands).
+func resolveVarRefs(session *replang.Session, args []string) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		if !strings.HasPrefix(a, "$") {
+			resolved[i] = a
+			continue
+		}
+		r, err := resolveProgramIDArg(session, a)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
+	}
+	return resolved, nil
+}
+
+// resolveLinkIDArg resolves a single argument to a link ID string.
+// Numeric IDs pass through unchanged. Arguments starting with '$'
+// are looked up as session variables: structured variables try
+// .record.id automatically.
+func resolveLinkIDArg(session *replang.Session, arg string) (string, error) {
+	if _, err := ParseLinkID(arg); err == nil {
+		return arg, nil
+	}
+
+	if !strings.HasPrefix(arg, "$") {
+		return "", fmt.Errorf("%q is not a valid link ID or variable reference (use $name for variables)", arg)
+	}
+
+	ref := arg[1:]
+	varName := ref
+	path := ""
+	if i := strings.IndexAny(ref, ".["); i >= 0 {
+		varName = ref[:i]
+		path = ref[i:]
+		path = strings.TrimPrefix(path, ".")
+	}
+
+	v, ok := session.Get(varName)
+	if !ok {
+		return "", fmt.Errorf("undefined variable %q", varName)
+	}
+
+	if path != "" {
+		resolved, err := v.LookupValue(varName, path)
+		if err != nil {
+			return "", err
+		}
+		return resolved.Scalar()
+	}
+
+	if v.IsStructured() {
+		resolved, err := v.LookupValue(varName, "record.id")
+		if err != nil {
+			return "", fmt.Errorf("variable %q is structured but has no .record.id field", varName)
+		}
+		return resolved.Scalar()
+	}
+
+	return v.Scalar()
+}
+
+// resolveLinkIDArgs maps resolveLinkIDArg over every element that is
+// not a flag. Returns a new slice with resolved values.
+func resolveLinkIDArgs(session *replang.Session, args []string) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			resolved[i] = a
+			continue
+		}
+		r, err := resolveLinkIDArg(session, a)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
+	}
+	return resolved, nil
+}
+
+// replCompleteLinkIDs offers link ID completions, analogous to
+// replCompleteProgramIDs.
+func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+	specified := make(map[string]struct{}, len(args))
+	for _, a := range args {
+		specified[a] = struct{}{}
+	}
+
+	prefix := ""
+	if !trailingSpace && len(args) > 0 {
+		prefix = args[len(args)-1]
+		delete(specified, prefix)
+	}
+
+	if strings.HasPrefix(prefix, "$") {
+		candidates, replace = replCompleteVarPath(session, prefix, true)
+		return
+	}
+
+	if mgr != nil {
+		links, err := mgr.ListLinks(ctx)
+		if err == nil {
+			for _, l := range links {
+				id := fmt.Sprintf("%d", l.ID)
+				if _, already := specified[id]; already {
+					continue
+				}
+				if strings.HasPrefix(id, prefix) {
+					candidates = append(candidates, id+" ")
+				}
+			}
+		}
+	}
+
+	if session != nil {
+		for _, name := range session.Names() {
+			candidate := "$" + name
+			if _, already := specified[candidate]; already {
+				continue
+			}
+			if !strings.HasPrefix(candidate, prefix) {
+				continue
+			}
+			v, ok := session.Get(name)
+			if !ok {
+				continue
+			}
+			if v.IsStructured() {
+				if _, err := v.LookupValue(name, "record.id"); err != nil {
+					continue
+				}
+				candidates = append(candidates, candidate+" ")
+			} else if v.IsScalar() {
+				s, err := v.Scalar()
+				if err != nil {
+					continue
+				}
+				if _, err := ParseLinkID(s); err != nil {
+					continue
+				}
+				candidates = append(candidates, candidate+" ")
+			}
+		}
+	}
+
+	replace = len(prefix)
+	return
+}
+
+// replVersion prints version information.
+func replVersion(cli *CLI) error {
+	return cli.PrintOut(version.Get().Long())
+}
+
+// replGetProgram handles "program get <id>".
+func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+	if len(args) == 0 {
+		return replang.Value{}, fmt.Errorf("program get requires a program ID")
+	}
+
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		resolved, err := resolveProgramIDArg(session, args[0])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		args = append([]string{resolved}, args[1:]...)
+	}
+
+	var cmd GetProgramCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("program get"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return replang.Value{}, fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return replang.Value{}, err
+	}
+
+	prog, err := mgr.Get(ctx, cmd.ProgramID.Value)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatProgram(prog, &cmd.OutputFlags)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	val, err := replang.ValueFromStruct(prog)
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// replUnloadProgram handles "program unload <id>...".
+func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("program unload requires at least one program ID")
+	}
+
+	resolved, err := resolveProgramIDArgs(session, args)
+	if err != nil {
+		return err
+	}
+
+	var cmd UnloadCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("program unload"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(resolved); err != nil {
+		return err
+	}
+
+	ids := make([]kernel.ProgramID, len(cmd.ProgramIDs))
+	for i, pid := range cmd.ProgramIDs {
+		ids[i] = pid.Value
+	}
+	return runBatchMutation(ctx, cli, ids, "program", "unload",
+		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
+			return mgr.Unload(ctx, writeLock, id)
+		})
+}
+
+// replLoadImage handles "program load image" / "load image".
+func replLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (replang.Value, error) {
+	var cmd LoadImageCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("load image"),
+		kong.Description("Load BPF programs from an OCI image."),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(KeyValue{}), keyValueMapper()),
+		kong.TypeMapper(reflect.TypeOf(GlobalData{}), globalDataMapper()),
+		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
+		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return replang.Value{}, fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return replang.Value{}, err
+	}
+
+	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy.Value)
+	if err != nil {
+		return replang.Value{}, fmt.Errorf("invalid pull policy %q: %w", cmd.PullPolicy.Value, err)
+	}
+
+	type loadImageResult struct {
+		Programs []bpfman.Program
+	}
+
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+		var globalData map[string][]byte
+		if len(cmd.GlobalData) > 0 {
+			globalData = GlobalDataMap(cmd.GlobalData)
+		}
+
+		metadata := MetadataMap(cmd.Metadata)
+		if cmd.Application != "" {
+			if metadata == nil {
+				metadata = make(map[string]string)
+			}
+			metadata["bpfman.io/application"] = cmd.Application
+		}
+
+		ref := platform.ImageRef{
+			URL:        cmd.ImageURL,
+			PullPolicy: pullPolicy,
+		}
+
+		var programs []manager.ProgramSpec
+		for _, prog := range cmd.Programs {
+			programs = append(programs, manager.ProgramSpec{
+				Name:       prog.Name,
+				Type:       prog.Type,
+				AttachFunc: prog.AttachFunc,
+				MapOwnerID: cmd.MapOwnerID,
+			})
+		}
+
+		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
+			Image: &ref,
+		}, programs, manager.LoadOpts{
+			UserMetadata: metadata,
+			GlobalData:   globalData,
+		})
+		if loadErr != nil {
+			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
+		}
+		return loadImageResult{Programs: loaded}, nil
+	})
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatLoadedPrograms(result.Programs, &cmd.OutputFlags)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	if len(result.Programs) == 0 {
+		return replang.Value{}, nil
+	}
+
+	val, err := replang.ValueFromStruct(result.Programs[0])
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// replLinkAttach handles "link attach <type> [flags] <program-id>".
+func replLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+	if len(args) == 0 {
+		return replang.Value{}, fmt.Errorf("link attach requires a type (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)")
+	}
+
+	attachType := args[0]
+	rest := args[1:]
+
+	// Resolve $variable references in remaining args.
+	resolved, err := resolveVarRefs(session, rest)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	var link bpfman.Link
+	var outputFlags *OutputFlags
+
+	switch attachType {
+	case "xdp":
+		link, outputFlags, err = replAttachXDP(ctx, cli, mgr, resolved)
+	case "tc":
+		link, outputFlags, err = replAttachTC(ctx, cli, mgr, resolved)
+	case "tcx":
+		link, outputFlags, err = replAttachTCX(ctx, cli, mgr, resolved)
+	case "tracepoint":
+		link, outputFlags, err = replAttachTracepoint(ctx, cli, mgr, resolved)
+	case "kprobe":
+		link, outputFlags, err = replAttachKprobe(ctx, cli, mgr, resolved)
+	case "uprobe":
+		link, outputFlags, err = replAttachUprobe(ctx, cli, mgr, resolved)
+	case "fentry":
+		link, outputFlags, err = replAttachFentry(ctx, cli, mgr, resolved)
+	case "fexit":
+		link, outputFlags, err = replAttachFexit(ctx, cli, mgr, resolved)
+	default:
+		return replang.Value{}, fmt.Errorf("unknown attach type %q (valid: xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)", attachType)
+	}
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatLinkResult(link, outputFlags)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	val, err := replang.ValueFromStruct(link)
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// replParseAndAttach is a generic helper for attach commands that
+// creates a Kong parser, parses args, and executes the attach under lock.
+func replParseAndAttach[T any](
+	ctx context.Context,
+	cli *CLI,
+	mgr *manager.Manager,
+	cmd *T,
+	name string,
+	args []string,
+	mappers []kong.Option,
+	buildSpec func(*T) (bpfman.AttachSpec, error),
+	getFlags func(*T) *OutputFlags,
+) (bpfman.Link, *OutputFlags, error) {
+	opts := []kong.Option{
+		kong.Name(name),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+	}
+	opts = append(opts, mappers...)
+
+	parser, err := kong.New(cmd, opts...)
+	if err != nil {
+		return bpfman.Link{}, nil, fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return bpfman.Link{}, nil, err
+	}
+
+	spec, err := buildSpec(cmd)
+	if err != nil {
+		return bpfman.Link{}, nil, err
+	}
+
+	link, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
+		return mgr.Attach(ctx, writeLock, spec)
+	})
+	if err != nil {
+		return bpfman.Link{}, nil, err
+	}
+
+	return link, getFlags(cmd), nil
+}
+
+var attachMappers = []kong.Option{
+	kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
+	kong.TypeMapper(reflect.TypeOf(KeyValue{}), keyValueMapper()),
+	kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+}
+
+func replAttachXDP(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachXDPCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach xdp", args, attachMappers,
+		func(c *AttachXDPCmd) (bpfman.AttachSpec, error) {
+			iface, err := net.InterfaceByName(c.Iface)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
+			}
+			proceedOn, err := bpfman.ParseXDPActions(c.ProceedOn)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proceed-on value: %w", err)
+			}
+			spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, iface.Index)
+			if err != nil {
+				return nil, fmt.Errorf("invalid XDP spec: %w", err)
+			}
+			spec = spec.WithPriority(c.Priority).WithProceedOn(proceedOn)
+			if c.Netns != "" {
+				spec = spec.WithNetns(c.Netns)
+			}
+			return spec, nil
+		},
+		func(c *AttachXDPCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachTC(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachTCCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tc", args, attachMappers,
+		func(c *AttachTCCmd) (bpfman.AttachSpec, error) {
+			if c.Priority < 0 || c.Priority > 1000 {
+				return nil, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
+			}
+			direction, err := bpfman.ParseTCDirection(c.Direction)
+			if err != nil {
+				return nil, err
+			}
+			iface, err := net.InterfaceByName(c.Iface)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
+			}
+			proceedOn, err := bpfman.ParseTCActions(c.ProceedOn)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proceed-on value: %w", err)
+			}
+			spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
+			if err != nil {
+				return nil, fmt.Errorf("invalid TC spec: %w", err)
+			}
+			spec = spec.WithPriority(c.Priority).WithProceedOn(proceedOn)
+			if c.Netns != "" {
+				spec = spec.WithNetns(c.Netns)
+			}
+			return spec, nil
+		},
+		func(c *AttachTCCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachTCX(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachTCXCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tcx", args, attachMappers,
+		func(c *AttachTCXCmd) (bpfman.AttachSpec, error) {
+			if c.Priority < 0 || c.Priority > 1000 {
+				return nil, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
+			}
+			direction, err := bpfman.ParseTCDirection(c.Direction)
+			if err != nil {
+				return nil, err
+			}
+			iface, err := net.InterfaceByName(c.Iface)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
+			}
+			spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
+			if err != nil {
+				return nil, fmt.Errorf("invalid TCX spec: %w", err)
+			}
+			spec = spec.WithPriority(c.Priority)
+			if c.Netns != "" {
+				spec = spec.WithNetns(c.Netns)
+			}
+			return spec, nil
+		},
+		func(c *AttachTCXCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachTracepoint(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachTracepointCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tracepoint", args, attachMappers,
+		func(c *AttachTracepointCmd) (bpfman.AttachSpec, error) {
+			parts := strings.SplitN(c.Tracepoint, "/", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("tracepoint must be in 'group/name' format, got %q", c.Tracepoint)
+			}
+			spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, parts[0], parts[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid tracepoint spec: %w", err)
+			}
+			return spec, nil
+		},
+		func(c *AttachTracepointCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachKprobe(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachKprobeCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach kprobe", args, attachMappers,
+		func(c *AttachKprobeCmd) (bpfman.AttachSpec, error) {
+			spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
+			if err != nil {
+				return nil, fmt.Errorf("invalid kprobe spec: %w", err)
+			}
+			if c.Offset != 0 {
+				spec = spec.WithOffset(c.Offset)
+			}
+			return spec, nil
+		},
+		func(c *AttachKprobeCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachUprobe(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachUprobeCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach uprobe", args, attachMappers,
+		func(c *AttachUprobeCmd) (bpfman.AttachSpec, error) {
+			spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
+			if err != nil {
+				return nil, fmt.Errorf("invalid uprobe spec: %w", err)
+			}
+			if c.FnName != "" {
+				spec = spec.WithFnName(c.FnName)
+			}
+			if c.Offset != 0 {
+				spec = spec.WithOffset(c.Offset)
+			}
+			if c.ContainerPid > 0 {
+				spec = spec.WithContainerPid(c.ContainerPid)
+			}
+			return spec, nil
+		},
+		func(c *AttachUprobeCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachFentry(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachFentryCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach fentry", args, attachMappers,
+		func(c *AttachFentryCmd) (bpfman.AttachSpec, error) {
+			spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid fentry spec: %w", err)
+			}
+			return spec, nil
+		},
+		func(c *AttachFentryCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+func replAttachFexit(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
+	var cmd AttachFexitCmd
+	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach fexit", args, attachMappers,
+		func(c *AttachFexitCmd) (bpfman.AttachSpec, error) {
+			spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid fexit spec: %w", err)
+			}
+			return spec, nil
+		},
+		func(c *AttachFexitCmd) *OutputFlags { return &c.OutputFlags },
+	)
+}
+
+// replLinkDetach handles "link detach <id>...".
+func replLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("link detach requires at least one link ID")
+	}
+
+	resolved, err := resolveLinkIDArgs(session, args)
+	if err != nil {
+		return err
+	}
+
+	var cmd DetachCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("link detach"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(resolved); err != nil {
+		return err
+	}
+
+	ids := make([]kernel.LinkID, len(cmd.LinkIDs))
+	for i, lid := range cmd.LinkIDs {
+		ids[i] = lid.Value
+	}
+	return runBatchMutation(ctx, cli, ids, "link", "detach",
+		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
+			return mgr.Detach(ctx, writeLock, id)
+		})
+}
+
+// replLinkGet handles "link get <id>".
+func replLinkGet(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+	if len(args) == 0 {
+		return replang.Value{}, fmt.Errorf("link get requires a link ID")
+	}
+
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		resolved, err := resolveLinkIDArg(session, args[0])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		args = append([]string{resolved}, args[1:]...)
+	}
+
+	var cmd GetLinkCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("link get"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return replang.Value{}, fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return replang.Value{}, err
+	}
+
+	info, err := mgr.GetLinkInfo(ctx, cmd.LinkID.Value)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	link := bpfman.Link{
+		Record: info.Record,
+		Status: bpfman.LinkStatus{
+			Kernel:     info.Kernel,
+			KernelSeen: info.Presence.InKernel,
+			PinPresent: info.Presence.InFS,
+		},
+	}
+
+	output, err := FormatLinkResult(link, &cmd.OutputFlags)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	val, err := replang.ValueFromStruct(link)
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// replLinkList handles "link list [flags]".
+func replLinkList(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	var cmd ListLinksCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("link list"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return err
+	}
+
+	opts, err := cmd.buildLinkListOptions()
+	if err != nil {
+		return err
+	}
+
+	links, err := mgr.ListLinks(ctx, opts...)
+	if err != nil {
+		return err
+	}
+
+	if len(links) == 0 && !cmd.OutputFlags.IsStructured() {
+		return nil
+	}
+
+	if cmd.Quiet {
+		var b strings.Builder
+		for _, l := range links {
+			fmt.Fprintf(&b, "link/%d\n", l.ID)
+		}
+		return cli.PrintOut(b.String())
+	}
+
+	output, err := FormatLinkList(links, &cmd.OutputFlags)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// replLinkDelete handles "link delete <id>... [-r]".
+func replLinkDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("link delete requires at least one link ID")
+	}
+
+	resolved, err := resolveLinkIDArgs(session, args)
+	if err != nil {
+		return err
+	}
+
+	var cmd LinkDeleteCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("link delete"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(resolved); err != nil {
+		return err
+	}
+
+	type result struct {
+		id  kernel.LinkID
+		err error
+	}
+	results := make([]result, 0, len(cmd.LinkIDs))
+
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+		for _, lid := range cmd.LinkIDs {
+			err := deleteLink(ctx, writeLock, mgr, lid.Value, cmd.Recursive)
+			results = append(results, result{id: lid.Value, err: err})
+		}
+		return nil
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	var failCount int
+	for _, r := range results {
+		if r.err != nil {
+			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
+			failCount++
+		}
+	}
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d link(s) failed to delete", failCount, len(results))
+	}
+	return nil
+}
+
+// replDispatcherList handles "dispatcher list [--type <type>]".
+func replDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	var cmd ListDispatchersCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("dispatcher list"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return err
+	}
+
+	summaries, err := mgr.ListDispatcherSummaries(ctx)
+	if err != nil {
+		return err
+	}
+
+	if cmd.Type != "" {
+		filterType, err := dispatcher.ParseDispatcherType(cmd.Type)
+		if err != nil {
+			return err
+		}
+		filtered := summaries[:0]
+		for _, s := range summaries {
+			if s.Key.Type == filterType {
+				filtered = append(filtered, s)
+			}
+		}
+		summaries = filtered
+	}
+
+	if len(summaries) == 0 && !cmd.OutputFlags.IsStructured() {
+		return nil
+	}
+
+	output, err := FormatDispatcherList(summaries, &cmd.OutputFlags)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// replDispatcherGet handles "dispatcher get <type> <nsid> <ifindex>".
+func replDispatcherGet(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	var cmd GetDispatcherCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("dispatcher get"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return err
+	}
+
+	dispType, err := dispatcher.ParseDispatcherType(cmd.Type)
+	if err != nil {
+		return err
+	}
+
+	key := dispatcher.Key{
+		Type:    dispType,
+		Nsid:    cmd.Nsid,
+		Ifindex: cmd.Ifindex,
+	}
+
+	snap, err := mgr.GetDispatcherSnapshot(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	output, err := FormatDispatcherSnapshot(snap, &cmd.OutputFlags)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// replDispatcherDelete handles "dispatcher delete <type> <nsid> <ifindex>".
+func replDispatcherDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	var cmd DeleteDispatcherCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("dispatcher delete"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return err
+	}
+
+	dispType, err := dispatcher.ParseDispatcherType(cmd.Type)
+	if err != nil {
+		return err
+	}
+
+	key := dispatcher.Key{
+		Type:    dispType,
+		Nsid:    cmd.Nsid,
+		Ifindex: cmd.Ifindex,
+	}
+
+	return RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, key)
+	})
+}
+
+// replGC handles "gc [--dry-run] [--prune] [rule...]".
+func replGC(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	var cmd GCCmd
+	parser, err := kong.New(&cmd,
+		kong.Name("gc"),
+		kong.Exit(func(int) {}),
+		kong.Writers(io.Discard, io.Discard),
+	)
+	if err != nil {
+		return fmt.Errorf("create parser: %w", err)
+	}
+	if _, err := parser.Parse(args); err != nil {
+		return err
+	}
+
+	// Validate rule names.
+	if len(cmd.Rules) > 0 {
+		gcRuleNames := make(map[string]bool)
+		for _, r := range coherency.GCRules() {
+			gcRuleNames[r.Name] = true
+		}
+		for _, name := range cmd.Rules {
+			if !gcRuleNames[name] {
+				return fmt.Errorf("unknown GC rule: %s\n\nAvailable GC rules:\n%s",
+					name, formatGCRuleNames())
+			}
+		}
+	}
+
+	gcOpts := manager.GCOptions{
+		Rules: cmd.Rules,
+		Prune: cmd.Prune,
+	}
+
+	if cmd.DryRun {
+		return cmd.runDryRun(cli, ctx, mgr, gcOpts)
+	}
+	return cmd.runExecute(cli, ctx, mgr, gcOpts)
+}
+
+// replDoctor handles "doctor [checkup]" and "doctor explain [rule]".
+func replDoctor(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
+	// No args or "checkup" => run doctor checkup
+	if len(args) == 0 || (len(args) == 1 && args[0] == "checkup") {
+		return replDoctorCheckup(ctx, cli, mgr)
+	}
+
+	// "explain" subcommand
+	if args[0] == "explain" {
+		return replDoctorExplain(cli, args[1:])
+	}
+
+	return fmt.Errorf("unknown doctor subcommand %q (valid: checkup, explain)", args[0])
+}
+
+func replDoctorCheckup(ctx context.Context, cli *CLI, mgr *manager.Manager) error {
+	report, err := mgr.Doctor(ctx)
+	if err != nil {
+		return fmt.Errorf("doctor failed: %w", err)
+	}
+
+	if len(report.Findings) == 0 {
+		return cli.PrintOut("All checks passed. Database, kernel, and filesystem are coherent.\n")
+	}
+
+	ruleCounts := make(map[string]int)
+	for _, f := range report.Findings {
+		ruleCounts[f.RuleName]++
+	}
+
+	var out strings.Builder
+	var errorCount, warningCount int
+	lastCategory := ""
+	lastRule := ""
+
+	w := tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
+
+	for _, f := range report.Findings {
+		category := categoryHeading(f.Category)
+		if category != lastCategory {
+			w.Flush()
+			if lastCategory != "" {
+				out.WriteString("\n")
+			}
+			out.WriteString(category)
+			out.WriteString("\n")
+			lastCategory = category
+			lastRule = ""
+			w = tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
+		}
+		if f.RuleName != lastRule {
+			w.Flush()
+			fmt.Fprintf(&out, "  [%s] (%d)\n", f.RuleName, ruleCounts[f.RuleName])
+			lastRule = f.RuleName
+			w = tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
+		}
+		fmt.Fprintf(w, "    %s\t%s\n", f.Severity, f.Description)
+		switch f.Severity {
+		case coherency.SeverityError:
+			errorCount++
+		case coherency.SeverityWarning:
+			warningCount++
+		}
+	}
+	w.Flush()
+
+	fmt.Fprintf(&out, "\nSummary: %d error(s), %d warning(s)\n", errorCount, warningCount)
+	return cli.PrintOut(out.String())
+}
+
+func replDoctorExplain(cli *CLI, args []string) error {
+	if len(args) == 0 {
+		// List all rules.
+		var out strings.Builder
+		out.WriteString("Available coherency rules:\n\n")
+		names := coherency.RuleNames()
+		sort.Strings(names)
+		for _, name := range names {
+			out.WriteString("  ")
+			out.WriteString(name)
+			out.WriteString("\n")
+		}
+		out.WriteString("\nUse 'doctor explain <rule>' for details.\n")
+		return cli.PrintOut(out.String())
+	}
+
+	ruleName := args[0]
+	rule := coherency.FindRule(ruleName)
+	if rule == nil {
+		return fmt.Errorf("unknown rule: %s\n\nUse 'doctor explain' to list all rules", ruleName)
+	}
+
+	var out strings.Builder
+	out.WriteString(rule.Name)
+	out.WriteString("\n")
+	out.WriteString(strings.Repeat("=", len(rule.Name)))
+	out.WriteString("\n\n")
+	if rule.Description != "" {
+		out.WriteString(rule.Description)
+	} else {
+		out.WriteString("(No description available)")
+	}
+	out.WriteString("\n")
+	return cli.PrintOut(out.String())
 }
 
 // replDeleteProgram handles the "program delete" REPL command.
