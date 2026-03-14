@@ -63,7 +63,11 @@ func (s *Session) Expand(tokens []Token) ([]Token, error) {
 		if tok.VarPath == "" {
 			// Bare reference to variable.
 			if v.IsStructured() {
-				return nil, fmt.Errorf("variable %s is structured; use field access (e.g. $%s.id)", tok.VarName, tok.VarName)
+				// Pass through the original token text
+				// so per-command handlers can resolve it
+				// (e.g. auto-extract .record.program_id).
+				result = append(result, Token{Kind: TokenWord, Text: tok.Text})
+				continue
 			}
 			if v.IsNil() {
 				return nil, fmt.Errorf("variable %s is null", tok.VarName)

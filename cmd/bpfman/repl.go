@@ -47,18 +47,20 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	lr, err := c.newReader(ctx, mgr)
+	session := replang.NewSession()
+
+	lr, err := c.newReader(ctx, mgr, session)
 	if err != nil {
 		return err
 	}
 	defer lr.Close()
 
-	return replLoop(ctx, cli, mgr, lr)
+	return replLoop(ctx, cli, mgr, lr, session)
 }
 
 // newReader selects the appropriate LineReader: file, pipe, or
 // interactive readline.
-func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager) (LineReader, error) {
+func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *replang.Session) (LineReader, error) {
 	if c.File != "" {
 		return openScriptReader(c.File)
 	}
@@ -69,7 +71,7 @@ func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager) (LineRead
 	if err != nil {
 		return nil, fmt.Errorf("history path: %w", err)
 	}
-	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr))
+	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
 }
 
 // openScriptReader opens a file for reading commands. Use "-" to
@@ -89,9 +91,7 @@ func openScriptReader(path string) (LineReader, error) {
 // interrupt. Blank lines and comments are handled by
 // replang.Tokenise. Variable assignment and expansion use the
 // replang.Session.
-func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader) error {
-	session := replang.NewSession()
-
+func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *replang.Session) error {
 	for {
 		input, err := lr.Readline()
 		if err != nil {
@@ -164,14 +164,15 @@ func tokenTexts(tokens []replang.Token) []string {
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager
-// for dynamic completions such as program IDs.
-func replCompleter(ctx context.Context, mgr *manager.Manager) CompleteFunc {
+// and session for dynamic completions such as program IDs and
+// variable names.
+func replCompleter(ctx context.Context, mgr *manager.Manager, session *replang.Session) CompleteFunc {
 	return func(line string, pos int) (replace int, candidates []string) {
-		return replComplete(ctx, mgr, line, pos)
+		return replComplete(ctx, mgr, session, line, pos)
 	}
 }
 
-func replComplete(ctx context.Context, mgr *manager.Manager, line string, pos int) (replace int, candidates []string) {
+func replComplete(ctx context.Context, mgr *manager.Manager, session *replang.Session, line string, pos int) (replace int, candidates []string) {
 	head := line[:pos]
 
 	tokens := strings.Fields(head)
@@ -236,7 +237,7 @@ func replComplete(ctx context.Context, mgr *manager.Manager, line string, pos in
 		replace = len(prefix)
 	default:
 		// Third token onwards: context-sensitive completion.
-		candidates, replace = replCompleteArgs(ctx, mgr, tokens, trailingSpace)
+		candidates, replace = replCompleteArgs(ctx, mgr, session, tokens, trailingSpace)
 	}
 
 	return
@@ -244,15 +245,15 @@ func replComplete(ctx context.Context, mgr *manager.Manager, line string, pos in
 
 // replCompleteArgs handles completion for the third token onwards,
 // dispatching based on the command prefix.
-func replCompleteArgs(ctx context.Context, mgr *manager.Manager, tokens []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *replang.Session, tokens []string, trailingSpace bool) (candidates []string, replace int) {
 	if len(tokens) < 2 {
 		return
 	}
 	if tokens[0] == "program" && tokens[1] == "delete" {
-		return replCompleteProgramIDs(ctx, mgr, tokens[2:], trailingSpace)
+		return replCompleteProgramIDs(ctx, mgr, session, tokens[2:], trailingSpace)
 	}
 	if tokens[0] == "show" && tokens[1] == "program" {
-		return replCompleteShowProgram(ctx, mgr, tokens[2:], trailingSpace)
+		return replCompleteShowProgram(ctx, mgr, session, tokens[2:], trailingSpace)
 	}
 	return
 }
@@ -263,14 +264,14 @@ var showProgramViews = []string{"links", "maps", "paths"}
 // replCompleteShowProgram handles completion for "show program ..."
 // arguments. The first argument is a program ID; the second is a
 // sub-view name.
-func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	switch {
 	case len(args) == 0 && trailingSpace:
 		// "show program " -- complete program IDs
-		return replCompleteProgramIDs(ctx, mgr, args, trailingSpace)
+		return replCompleteProgramIDs(ctx, mgr, session, args, trailingSpace)
 	case len(args) == 1 && !trailingSpace:
 		// "show program 12" -- partial program ID
-		return replCompleteProgramIDs(ctx, mgr, args, trailingSpace)
+		return replCompleteProgramIDs(ctx, mgr, session, args, trailingSpace)
 	case len(args) == 1 && trailingSpace:
 		// "show program 123 " -- complete sub-view
 		for _, v := range showProgramViews {
@@ -292,13 +293,10 @@ func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, args []s
 }
 
 // replCompleteProgramIDs offers program ID completions, excluding IDs
-// that have already been specified on the command line.
-func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, args []string, trailingSpace bool) (candidates []string, replace int) {
-	result, err := mgr.ListPrograms(ctx)
-	if err != nil {
-		return
-	}
-
+// that have already been specified on the command line. Session
+// variables that resolve to a program ID are also offered with a '$'
+// prefix.
+func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	// Collect IDs already on the line so we don't offer them again.
 	specified := make(map[string]struct{}, len(args))
 	for _, a := range args {
@@ -312,15 +310,54 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, args []st
 		delete(specified, prefix)
 	}
 
-	for _, prog := range result.Programs {
-		id := fmt.Sprintf("%d", prog.Record.ProgramID)
-		if _, already := specified[id]; already {
-			continue
-		}
-		if strings.HasPrefix(id, prefix) {
-			candidates = append(candidates, id+" ")
+	if mgr != nil {
+		result, err := mgr.ListPrograms(ctx)
+		if err == nil {
+			for _, prog := range result.Programs {
+				id := fmt.Sprintf("%d", prog.Record.ProgramID)
+				if _, already := specified[id]; already {
+					continue
+				}
+				if strings.HasPrefix(id, prefix) {
+					candidates = append(candidates, id+" ")
+				}
+			}
 		}
 	}
+
+	// Offer $variable completions from the session.
+	if session != nil {
+		for _, name := range session.Names() {
+			candidate := "$" + name
+			if _, already := specified[candidate]; already {
+				continue
+			}
+			if !strings.HasPrefix(candidate, prefix) {
+				continue
+			}
+			v, ok := session.Get(name)
+			if !ok {
+				continue
+			}
+			if v.IsStructured() {
+				// Only offer if it has .record.program_id
+				if _, err := v.LookupValue(name, "record.program_id"); err != nil {
+					continue
+				}
+				candidates = append(candidates, candidate+" ")
+			} else if v.IsScalar() {
+				s, err := v.Scalar()
+				if err != nil {
+					continue
+				}
+				if _, err := ParseProgramID(s); err != nil {
+					continue
+				}
+				candidates = append(candidates, candidate+" ")
+			}
+		}
+	}
+
 	replace = len(prefix)
 	return
 }
@@ -451,7 +488,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
 	b.WriteString("  prog = load file ...          Assign command result to a variable\n")
-	b.WriteString("  show program prog             Bare variable (auto-extracts program ID)\n")
+	b.WriteString("  show program $prog            Variable reference (auto-extracts program ID)\n")
 	b.WriteString("  show program $prog.record.program_id  Explicit variable path in commands\n")
 	b.WriteString("\n")
 	b.WriteString("Load file flags:\n")
@@ -686,21 +723,29 @@ func replParseShowProgram(args []string) (*ShowProgramCmd, error) {
 }
 
 // resolveProgramIDArg resolves a single argument to a program ID
-// string. Numeric IDs pass through unchanged. Bare words are looked
-// up as session variables: if the variable is structured, the path
-// .record.program_id is tried automatically; explicit dotted paths
-// are resolved as given.
+// string. Numeric IDs pass through unchanged. Arguments starting
+// with '$' are looked up as session variables: if the variable is
+// structured, the path .record.program_id is tried automatically;
+// explicit dotted paths (e.g. $prog.record.program_id) are resolved
+// as given. Bare words without '$' that are not valid numeric IDs
+// return an error.
 func resolveProgramIDArg(session *replang.Session, arg string) (string, error) {
 	if _, err := ParseProgramID(arg); err == nil {
 		return arg, nil
 	}
 
-	// Split on first '.' or '[' to separate variable name from path.
-	varName := arg
+	if !strings.HasPrefix(arg, "$") {
+		return "", fmt.Errorf("%q is not a valid program ID or variable reference (use $name for variables)", arg)
+	}
+
+	// Strip the '$' prefix and split on first '.' or '[' to
+	// separate variable name from path.
+	ref := arg[1:]
+	varName := ref
 	path := ""
-	if i := strings.IndexAny(arg, ".["); i >= 0 {
-		varName = arg[:i]
-		path = arg[i:]
+	if i := strings.IndexAny(ref, ".["); i >= 0 {
+		varName = ref[:i]
+		path = ref[i:]
 		path = strings.TrimPrefix(path, ".")
 	}
 

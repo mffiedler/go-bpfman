@@ -116,7 +116,7 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pos := len(tt.line)
-			replace, candidates := replComplete(context.Background(), nil, tt.line, pos)
+			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 
@@ -171,7 +171,7 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 
 	// We expect exactly two error lines: one for "bogus", one for
@@ -231,7 +231,7 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pos := len(tt.line)
-			replace, candidates := replComplete(context.Background(), nil, tt.line, pos)
+			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace)
 			for _, want := range tt.wantAny {
@@ -262,7 +262,7 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "No variables defined")
 }
@@ -274,7 +274,7 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "command produced no result to assign")
 }
@@ -285,7 +285,7 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable")
 }
@@ -299,7 +299,7 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	// The unknown command error should contain the hash character,
 	// proving it was not stripped as a comment.
@@ -308,7 +308,7 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 
 func TestReplComplete_VarsCommand(t *testing.T) {
 	// "vars" should appear in command completions.
-	_, candidates := replComplete(context.Background(), nil, "va", len("va"))
+	_, candidates := replComplete(context.Background(), nil, nil, "va", len("va"))
 	assert.Contains(t, candidates, "vars ")
 }
 
@@ -322,7 +322,7 @@ func TestReplLoop_Source(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "Available commands:")
 }
@@ -338,7 +338,7 @@ func TestReplLoop_SourceSharesSession(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "nosuchcmd")
 }
@@ -349,7 +349,7 @@ func TestReplLoop_SourceMissingFile(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "open script")
 }
@@ -368,7 +368,7 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source cannot be used inside a sourced file")
 }
@@ -379,7 +379,7 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr)
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
@@ -417,29 +417,34 @@ func TestResolveProgramIDArg(t *testing.T) {
 			want: "0xff",
 		},
 		{
-			name: "bare variable resolves record.program_id",
-			arg:  "prog",
+			name: "$variable resolves record.program_id",
+			arg:  "$prog",
 			want: "42",
 		},
 		{
-			name: "explicit path resolves to scalar",
-			arg:  "prog.record.program_id",
+			name: "$variable with explicit path resolves to scalar",
+			arg:  "$prog.record.program_id",
 			want: "42",
 		},
 		{
-			name: "scalar variable resolves directly",
-			arg:  "pid",
+			name: "$scalar variable resolves directly",
+			arg:  "$pid",
 			want: "99",
 		},
 		{
-			name:    "undefined variable returns error",
-			arg:     "nosuch",
+			name:    "$undefined variable returns error",
+			arg:     "$nosuch",
 			wantErr: "undefined variable",
 		},
 		{
-			name:    "structured variable without record.program_id returns error",
-			arg:     "noid",
+			name:    "$structured variable without record.program_id returns error",
+			arg:     "$noid",
 			wantErr: "has no .record.program_id field",
+		},
+		{
+			name:    "bare word without $ returns error",
+			arg:     "prog",
+			wantErr: "not a valid program ID or variable reference",
 		},
 	}
 
@@ -465,8 +470,8 @@ func TestResolveProgramIDArgs(t *testing.T) {
 	session.Set("prog", structuredVal)
 	session.Set("pid", replang.StringValue("99"))
 
-	// Mixed numeric, variable, and flags.
-	got, err := resolveProgramIDArgs(session, []string{"123", "prog", "pid", "-r"})
+	// Mixed numeric, $variable, and flags.
+	got, err := resolveProgramIDArgs(session, []string{"123", "$prog", "$pid", "-r"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"123", "42", "99", "-r"}, got)
 }
@@ -487,18 +492,18 @@ func TestResolveProgramIDArgs_ShowProgram(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "variable with links sub-view",
-			args: []string{"prog", "links"},
+			name: "$variable with links sub-view",
+			args: []string{"$prog", "links"},
 			want: []string{"42", "links"},
 		},
 		{
-			name: "variable with maps sub-view",
-			args: []string{"prog", "maps"},
+			name: "$variable with maps sub-view",
+			args: []string{"$prog", "maps"},
 			want: []string{"42", "maps"},
 		},
 		{
-			name: "variable with paths sub-view and output flag",
-			args: []string{"prog", "paths", "-o", "json"},
+			name: "$variable with paths sub-view and output flag",
+			args: []string{"$prog", "paths", "-o", "json"},
 			want: []string{"42", "paths", "-o", "json"},
 		},
 		{
@@ -507,8 +512,8 @@ func TestResolveProgramIDArgs_ShowProgram(t *testing.T) {
 			want: []string{"123", "links"},
 		},
 		{
-			name: "variable alone",
-			args: []string{"prog"},
+			name: "$variable alone",
+			args: []string{"$prog"},
 			want: []string{"42"},
 		},
 		{
@@ -553,18 +558,18 @@ func TestResolveProgramIDArgs_DeleteProgram(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "multiple variables",
-			args: []string{"a", "b"},
+			name: "multiple $variables",
+			args: []string{"$a", "$b"},
 			want: []string{"10", "20"},
 		},
 		{
-			name: "mixed numeric and variables with flag",
-			args: []string{"99", "a", "b", "-r"},
+			name: "mixed numeric and $variables with flag",
+			args: []string{"99", "$a", "$b", "-r"},
 			want: []string{"99", "10", "20", "-r"},
 		},
 		{
-			name: "single variable with recursive flag",
-			args: []string{"a", "-r"},
+			name: "single $variable with recursive flag",
+			args: []string{"$a", "-r"},
 			want: []string{"10", "-r"},
 		},
 	}
@@ -614,7 +619,7 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pos := len(tt.line)
-			replace, candidates := replComplete(context.Background(), nil, tt.line, pos)
+			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace)
 			if tt.wantNonZero {

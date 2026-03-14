@@ -186,11 +186,13 @@ func TestSessionExpand(t *testing.T) {
 			wantErr: "undefined variable: unknown",
 		},
 		{
-			name: "bare structured variable",
+			name: "bare structured variable passes through",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog", VarName: "prog"},
 			},
-			wantErr: "variable prog is structured; use field access (e.g. $prog.id)",
+			want: []Token{
+				{Kind: TokenWord, Text: "$prog"},
+			},
 		},
 		{
 			name: "missing field",
