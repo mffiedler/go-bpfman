@@ -93,8 +93,8 @@ rediscover that fact".
 Ask of each parser argument: does this argument have domain meaning
 beyond plain text?
 
-- Yes: parse it into a typed value immediately (`ProgramRef`,
-  `LinkRef`).
+- Yes: parse it into a typed value immediately
+  (`parseProgramIDArg`, `parseLinkIDArg`).
 - No: plain text is fine (`maps`, `links`, `json`, `--recursive`).
 
 ## What is already implemented
@@ -105,9 +105,15 @@ beyond plain text?
 - `parseCommand(args []shell.Arg) (Command, error)` routing.
 - `execCommand(ctx, cli, mgr, cmd) (shell.Value, error)` dispatch.
 - Thin `replDispatch` orchestration.
+- `parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error)` —
+  typed parser for program ID arguments, used by `show program`
+  and `program get`.
+- `parseLinkIDArg(a shell.Arg) (kernel.LinkID, error)` — typed
+  parser for link ID arguments, used by `link get`.
 
-The command architecture exists. The next step is to refine it, not
-create it.
+The command architecture exists. The typed argument parsers exist.
+The next step is to migrate the remaining commands to use them and
+retire the old `extractProgramID`/`extractLinkID` helpers.
 
 ## Phasing
 
@@ -118,67 +124,48 @@ layer so that domain references are parsed directly into typed
 domain values at the parser boundary, instead of collapsing to
 strings and being reparsed.
 
-Introduce typed domain parsers:
+The typed domain parsers are:
 
 ```go
-type ProgramRef struct {
-    ID kernel.ProgramID
-}
-
-func parseProgramRef(arg shell.Arg) (ProgramRef, error)
-func parseProgramRefList(args []shell.Arg) ([]ProgramRef, error)
-
-type LinkRef struct {
-    ID kernel.LinkID
-}
-
-func parseLinkRef(arg shell.Arg) (LinkRef, error)
-func parseLinkRefList(args []shell.Arg) ([]LinkRef, error)
+func parseProgramIDArg(arg shell.Arg) (kernel.ProgramID, error)
+func parseLinkIDArg(arg shell.Arg) (kernel.LinkID, error)
 ```
 
-These replace the current path of:
+These replace the old two-step path:
 
 ```go
-// Before: shell.Arg -> string -> ParseXID -> typed ID
+// Before: shell.Arg -> string -> ParseXID -> wrapper -> .Value
 idStr, err := extractProgramID(args[0])
 parsed, err := ParseProgramID(idStr)
 cmd := &ShowProgramCommand{ID: parsed.Value}
 
-// After: shell.Arg -> typed domain ref
-prog, err := parseProgramRef(args[0])
-cmd := &ShowProgramCommand{Program: prog}
+// After: shell.Arg -> kernel.ProgramID directly
+id, err := parseProgramIDArg(args[0])
+cmd := &ShowProgramCommand{ID: id}
 ```
 
-Commands carry refs or IDs depending on what execution actually
-needs. If a command truly only needs a `kernel.ProgramID` and
-nothing else, carrying the ID is fine. The important point is that
-no command parser should go through `shell.Arg -> string ->
-ParseXID`.
+The important point is that no command parser should go through
+`shell.Arg -> string -> ParseXID`.
 
-#### Migration order
+#### Migration status
 
-1. **`show program`** (first target). Cleanest demonstration:
-   exercises bare structured refs (`$prog`), scalar refs (`$pid`),
-   explicit path refs (`$prog.record.program_id`), origin checking,
-   one typed domain argument, minimal mutation logic.
+Done:
 
-   Target shape:
+1. **`show program`** — uses `parseProgramIDArg`.
+2. **`program get`** — uses `parseProgramIDArg`.
+3. **`link get`** — uses `parseLinkIDArg`.
 
-   ```go
-   type ShowProgramCommand struct {
-       Program ProgramRef
-       View    string
-       Output  OutputFlags
-   }
-   ```
+Next:
 
-2. **`program get` / `link get`**. Same pattern, same payoff.
+4. **Plural-ID mutation commands**: `program unload`,
+   `program delete`, `link detach`, `link delete`. These call
+   `parseProgramIDArg` / `parseLinkIDArg` in a loop rather than
+   going through `extractProgramIDs` / `extractLinkIDs`.
 
-3. **Plural-ID mutation commands**: `program unload`,
-   `program delete`, `link detach`, `link delete`. These benefit
-   from `parseProgramRefList` / `parseLinkRefList`.
+5. Remaining commands as warranted.
 
-4. Remaining commands as warranted.
+Once all consumers are migrated, remove `extractProgramID`,
+`extractProgramIDs`, `extractLinkID`, and `extractLinkIDs`.
 
 #### What not to attack first
 
