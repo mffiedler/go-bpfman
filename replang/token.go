@@ -148,24 +148,28 @@ func lexBareVarRef(input string, pos int) (Token, int, error) {
 	name := input[nameStart:i]
 
 	// Consume optional path: dots, identifiers, and [n] indexing.
+	// The path grammar is: segment+ where segment = '.' ident | '[' digits ']'.
 	pathStart := i
 	for i < len(input) {
 		if input[i] == '.' {
 			i++
 			if i >= len(input) || !isIdentStart(input[i]) {
-				// Trailing dot -- include it in the path and stop.
-				break
+				return Token{}, 0, fmt.Errorf("invalid variable reference %q: expected identifier after '.'", input[pos:i])
 			}
 			for i < len(input) && isIdentContinue(input[i]) {
 				i++
 			}
 		} else if input[i] == '[' {
 			j := i + 1
+			digitStart := j
 			for j < len(input) && input[j] >= '0' && input[j] <= '9' {
 				j++
 			}
+			if j == digitStart {
+				return Token{}, 0, fmt.Errorf("invalid variable reference %q: expected digits inside '[]'", input[pos:min(j+1, len(input))])
+			}
 			if j >= len(input) || input[j] != ']' {
-				break
+				return Token{}, 0, fmt.Errorf("invalid variable reference %q: expected ']' after index", input[pos:min(j+1, len(input))])
 			}
 			i = j + 1
 		} else {
@@ -208,10 +212,34 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 	}
 	name := input[nameStart:i]
 
-	// Consume optional path inside braces.
+	// Validate optional path inside braces using the same grammar
+	// as bare refs: segment = '.' ident | '[' digits ']'.
 	pathStart := i
 	for i < len(input) && input[i] != '}' {
-		i++
+		if input[i] == '.' {
+			i++
+			if i >= len(input) || input[i] == '}' || !isIdentStart(input[i]) {
+				return Token{}, 0, fmt.Errorf("invalid variable reference: expected identifier after '.' in ${...}")
+			}
+			for i < len(input) && input[i] != '}' && isIdentContinue(input[i]) {
+				i++
+			}
+		} else if input[i] == '[' {
+			j := i + 1
+			digitStart := j
+			for j < len(input) && input[j] >= '0' && input[j] <= '9' {
+				j++
+			}
+			if j == digitStart {
+				return Token{}, 0, fmt.Errorf("invalid variable reference: expected digits inside '[]' in ${...}")
+			}
+			if j >= len(input) || input[j] != ']' {
+				return Token{}, 0, fmt.Errorf("invalid variable reference: expected ']' after index in ${...}")
+			}
+			i = j + 1
+		} else {
+			return Token{}, 0, fmt.Errorf("invalid variable reference: unexpected character %q in ${...} path", input[i])
+		}
 	}
 	if i >= len(input) {
 		return Token{}, 0, fmt.Errorf("unterminated variable reference: missing }")

@@ -201,7 +201,11 @@ func TestParseStmt(t *testing.T) {
 			wantErr: "unexpected '='",
 		},
 		{
-			name: "leading equals is a parse error",
+			// Defensive: the tokeniser cannot produce a leading
+			// TokenAssign (isTokenStart requires at least one
+			// preceding token), but the parser rejects it anyway
+			// as a safety net.
+			name: "leading equals is a parse error (defensive)",
 			tokens: []Token{
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "foo"},

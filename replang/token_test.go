@@ -222,6 +222,94 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenVarRef, Text: "$my_var.field_name", VarName: "my_var", VarPath: "field_name"},
 			},
 		},
+
+		// Malformed variable reference tests (Step 6: tighten
+		// tokeniser invariants).
+
+		// Bare form: trailing dot.
+		{
+			name:    "bare varref trailing dot at end of input",
+			input:   "$prog.",
+			wantErr: "expected identifier after '.'",
+		},
+		{
+			name:    "bare varref trailing dot before space",
+			input:   "$prog. foo",
+			wantErr: "expected identifier after '.'",
+		},
+		{
+			name:    "bare varref dot followed by digit",
+			input:   "$prog.123",
+			wantErr: "expected identifier after '.'",
+		},
+		{
+			name:    "bare varref trailing dot after path",
+			input:   "$prog.maps[0].",
+			wantErr: "expected identifier after '.'",
+		},
+
+		// Bare form: malformed index.
+		{
+			name:    "bare varref empty index",
+			input:   "$prog[]",
+			wantErr: "expected digits inside '[]'",
+		},
+		{
+			name:    "bare varref non-numeric index",
+			input:   "$prog[abc]",
+			wantErr: "expected digits inside '[]'",
+		},
+		{
+			name:    "bare varref unclosed index",
+			input:   "$prog[0",
+			wantErr: "expected ']' after index",
+		},
+		{
+			name:    "bare varref unclosed index no digits",
+			input:   "$prog[",
+			wantErr: "expected digits inside '[]'",
+		},
+
+		// Braced form: trailing dot.
+		{
+			name:    "braced varref trailing dot",
+			input:   "${prog.}",
+			wantErr: "expected identifier after '.' in ${...}",
+		},
+		{
+			name:    "braced varref empty segment (double dot)",
+			input:   "${prog..id}",
+			wantErr: "expected identifier after '.' in ${...}",
+		},
+
+		// Braced form: malformed index.
+		{
+			name:    "braced varref non-numeric index",
+			input:   "${prog[abc]}",
+			wantErr: "expected digits inside '[]' in ${...}",
+		},
+		{
+			name:    "braced varref empty index",
+			input:   "${prog[]}",
+			wantErr: "expected digits inside '[]' in ${...}",
+		},
+		{
+			name:    "braced varref unclosed index",
+			input:   "${prog[0}",
+			wantErr: "expected ']' after index in ${...}",
+		},
+
+		// Braced form: unexpected characters.
+		{
+			name:    "braced varref unexpected character in path",
+			input:   "${prog!id}",
+			wantErr: "unexpected character",
+		},
+		{
+			name:    "braced varref space in path",
+			input:   "${prog id}",
+			wantErr: "unexpected character",
+		},
 	}
 
 	for _, tt := range tests {
