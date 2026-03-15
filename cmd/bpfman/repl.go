@@ -1276,7 +1276,7 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 		return err
 	}
 
-	detail, err := buildProgramDetail(ctx, mgr, cmd.ID.Value)
+	prog, err := mgr.Get(ctx, cmd.ID.Value)
 	if err != nil {
 		return err
 	}
@@ -1286,10 +1286,10 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 		return err
 	}
 
-	// JSON output always emits the full ProgramDetail regardless
-	// of sub-view; consumers can select fields with jq.
+	// JSON output always emits the full Program regardless of
+	// sub-view; consumers can select fields with jq.
 	if format == OutputFormatJSON {
-		output, err := formatShowJSON(detail)
+		output, err := formatShowJSON(prog)
 		if err != nil {
 			return err
 		}
@@ -1300,16 +1300,16 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 	switch cmd.View {
 	case "summary":
 		var fmtErr error
-		output, fmtErr = FormatProgram(detail.Program, &cmd.Output)
+		output, fmtErr = FormatProgram(prog, &cmd.Output)
 		if fmtErr != nil {
 			return fmtErr
 		}
 	case "links":
-		output = formatShowLinks(detail)
+		output = formatShowLinks(prog)
 	case "maps":
-		output = formatShowMaps(detail)
+		output = formatShowMaps(prog)
 	case "paths":
-		output = formatShowPaths(detail)
+		output = formatShowPaths(prog)
 	default:
 		return fmt.Errorf("unknown view %q (valid: summary, links, maps, paths)", cmd.View)
 	}

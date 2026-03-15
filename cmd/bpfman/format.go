@@ -86,8 +86,10 @@ func formatProgramTree(prog bpfman.Program) string {
 	// Header
 	if prog.Status.Kernel != nil {
 		p := prog.Status.Kernel
-		fmt.Fprintf(&b, "Program %d: %s (%s)\n", p.ID, p.Name, p.ProgramType)
+		fmt.Fprintf(&b, "Program %d: %s%s\n", p.ID, p.Name, p.ProgramType)
 	}
+
+	hasPathSection := prog.Status.ProgPin.Path != ""
 
 	// Status (runtime state)
 	b.WriteString("├─ Status\n")
@@ -115,34 +117,64 @@ func formatProgramTree(prog bpfman.Program) string {
 				if i == len(prog.Status.Maps)-1 {
 					prefix = "│  │  └─"
 				}
-				fmt.Fprintf(&b, "%s [%d] %s (%s)\n", prefix, m.ID, m.Name, m.MapType)
+				fmt.Fprintf(&b, "%s [%d] %s%s\n", prefix, m.ID, m.Name, m.MapType)
 				detailPrefix := "│  │  │ "
 				if i == len(prog.Status.Maps)-1 {
 					detailPrefix = "│  │    "
 				}
 				fmt.Fprintf(&b, "%s        keys: %dB, values: %dB, max: %d\n",
 					detailPrefix, m.KeySize, m.ValueSize, m.MaxEntries)
+				if m.PinPath != "" {
+					fmt.Fprintf(&b, "%s        pin: %s%s\n",
+						detailPrefix, m.PinPath, presenceSuffix(m.Present))
+				}
 			}
 		} else {
 			b.WriteString("│  ├─ Maps: none\n")
 		}
 
-		// Links
+		// Links - connector depends on whether Paths section follows
+		linksConnector := "└─"
+		linksIndent := "│     "
+		if hasPathSection {
+			linksConnector = "├─"
+			linksIndent = "│  │  "
+		}
+
 		if len(prog.Status.Links) > 0 {
-			fmt.Fprintf(&b, "│  └─ Links (%d)\n", len(prog.Status.Links))
+			fmt.Fprintf(&b, "│  %s Links (%d)\n", linksConnector, len(prog.Status.Links))
 			for i, l := range prog.Status.Links {
-				prefix := "│     ├─"
-				if i == len(prog.Status.Links)-1 {
-					prefix = "│     └─"
+				isLast := i == len(prog.Status.Links)-1
+				prefix := linksIndent + "├─"
+				if isLast {
+					prefix = linksIndent + "└─"
 				}
 				if l.Status.Kernel != nil {
 					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Status.Kernel.LinkType)
 				} else {
 					fmt.Fprintf(&b, "%s [%d] %s\n", prefix, l.Record.ID, l.Record.Kind)
 				}
+				if l.Record.PinPath != nil {
+					detailPrefix := linksIndent + "│ "
+					if isLast {
+						detailPrefix = linksIndent + "  "
+					}
+					fmt.Fprintf(&b, "%s        pin: %s%s\n",
+						detailPrefix, l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent))
+				}
 			}
 		} else {
-			b.WriteString("│  └─ Links: none\n")
+			fmt.Fprintf(&b, "│  %s Links: none\n", linksConnector)
+		}
+
+		// Paths section (only when filesystem enrichment is present)
+		if hasPathSection {
+			b.WriteString("│  └─ Paths\n")
+			fmt.Fprintf(&b, "│     ├─ prog:     %s%s\n", prog.Status.ProgPin.Path, presenceSuffix(prog.Status.ProgPin.Present))
+			fmt.Fprintf(&b, "│     ├─ maps:     %s%s\n", prog.Status.MapDir.Path, presenceSuffix(prog.Status.MapDir.Present))
+			fmt.Fprintf(&b, "│     ├─ links:      %s%s\n", prog.Status.LinkDir.Path, presenceSuffix(prog.Status.LinkDir.Present))
+			fmt.Fprintf(&b, "│     ├─ bytecode:   %s%s\n", prog.Status.Bytecode.Path, presenceSuffix(prog.Status.Bytecode.Present))
+			fmt.Fprintf(&b, "│     └─ provenance: %s%s\n", prog.Status.Provenance.Path, presenceSuffix(prog.Status.Provenance.Present))
 		}
 	}
 
@@ -196,26 +228,32 @@ func formatProgramTable(prog bpfman.Program) string {
 	specFields = append(specFields, fmt.Sprintf("    Path:\t%s", p.Load.ObjectPath()))
 	specFields = append(specFields, fmt.Sprintf("    Type:\t%s", p.Load.ProgramType()))
 
-	// Status fields (sorted alphabetically)
+	// Status fields (sorted alphabetically).
+	// All lines use tabs so the tabwriter aligns values at
+	// a single column. Sub-section headers (Link N:, Map N:)
+	// carry an empty value; their properties use deeper indent.
 	if prog.Status.Kernel != nil {
 		kp := prog.Status.Kernel
 		if kp.BTFId != 0 {
 			statusFields = append(statusFields, fmt.Sprintf("    BTF ID:\t%d", kp.BTFId))
 		}
+		if prog.Status.ProgPin.Path != "" {
+			statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s%s", prog.Status.Bytecode.Path, presenceSuffix(prog.Status.Bytecode.Present)))
+		}
 		statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
+		if prog.Status.ProgPin.Path != "" {
+			statusFields = append(statusFields, fmt.Sprintf("    Link Dir:\t%s%s", prog.Status.LinkDir.Path, presenceSuffix(prog.Status.LinkDir.Present)))
+		}
 		if len(prog.Status.Links) > 0 {
-			for i, l := range prog.Status.Links {
-				var linkStr string
+			statusFields = append(statusFields, "    Links:\t ")
+			for _, l := range prog.Status.Links {
+				statusFields = append(statusFields, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
 				if l.Record.Details != nil {
-					attachInfo := formatAttachDetails(l.Record.Details)
-					linkStr = fmt.Sprintf("%d (%s)", l.Record.ID, attachInfo)
-				} else {
-					linkStr = fmt.Sprintf("%d", l.Record.ID)
+					statusFields = append(statusFields, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
 				}
-				if i == 0 {
-					statusFields = append(statusFields, fmt.Sprintf("    Links:\t%s", linkStr))
-				} else {
-					statusFields = append(statusFields, fmt.Sprintf("    \t%s", linkStr))
+				statusFields = append(statusFields, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
+				if l.Record.PinPath != nil {
+					statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
 				}
 			}
 		} else {
@@ -224,13 +262,33 @@ func formatProgramTable(prog bpfman.Program) string {
 		if !kp.LoadedAt.IsZero() {
 			statusFields = append(statusFields, fmt.Sprintf("    Loaded At:\t%s", kp.LoadedAt.Format(time.RFC3339)))
 		}
-		if len(kp.MapIDs) > 0 {
-			statusFields = append(statusFields, fmt.Sprintf("    Map IDs:\t%v", kp.MapIDs))
+		if prog.Status.ProgPin.Path != "" {
+			statusFields = append(statusFields, fmt.Sprintf("    Map Dir:\t%s%s", prog.Status.MapDir.Path, presenceSuffix(prog.Status.MapDir.Present)))
+		}
+		if len(prog.Status.Maps) > 0 {
+			statusFields = append(statusFields, "    Maps:\t ")
+			for _, m := range prog.Status.Maps {
+				statusFields = append(statusFields, fmt.Sprintf("    Map %d:\t ", m.ID))
+				statusFields = append(statusFields, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
+				statusFields = append(statusFields, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
+				statusFields = append(statusFields, fmt.Sprintf("      Name:\t%s", m.Name))
+				if m.PinPath != "" {
+					statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
+				}
+				statusFields = append(statusFields, fmt.Sprintf("      Type:\t%s", m.MapType))
+				statusFields = append(statusFields, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
+			}
+		} else if len(kp.MapIDs) > 0 {
+			statusFields = append(statusFields, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
 		} else {
-			statusFields = append(statusFields, "    Map IDs:\tNone")
+			statusFields = append(statusFields, "    Maps:\tNone")
 		}
 		if kp.Memlock != 0 {
 			statusFields = append(statusFields, fmt.Sprintf("    Memory:\t%d bytes", kp.Memlock))
+		}
+		if prog.Status.ProgPin.Path != "" {
+			statusFields = append(statusFields, fmt.Sprintf("    Prog Pin:\t%s%s", prog.Status.ProgPin.Path, presenceSuffix(prog.Status.ProgPin.Present)))
+			statusFields = append(statusFields, fmt.Sprintf("    Provenance:\t%s%s", prog.Status.Provenance.Path, presenceSuffix(prog.Status.Provenance.Present)))
 		}
 		statusFields = append(statusFields, fmt.Sprintf("    Size JITted:\t%d bytes", kp.JitedSize))
 		statusFields = append(statusFields, fmt.Sprintf("    Size Translated:\t%d bytes", kp.XlatedSize))
@@ -271,17 +329,17 @@ func formatProgramTable(prog bpfman.Program) string {
 
 	b.WriteString("  Spec:\n")
 	for _, line := range lines[:specEnd] {
-		b.WriteString(line)
+		b.WriteString(strings.TrimRight(line, " "))
 		b.WriteString("\n")
 	}
 	b.WriteString("  Status:\n")
 	for _, line := range lines[specEnd:statusEnd] {
-		b.WriteString(line)
+		b.WriteString(strings.TrimRight(line, " "))
 		b.WriteString("\n")
 	}
 	b.WriteString("  Stats:\n")
 	for _, line := range lines[statusEnd:] {
-		b.WriteString(line)
+		b.WriteString(strings.TrimRight(line, " "))
 		b.WriteString("\n")
 	}
 
@@ -711,20 +769,23 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			if kp.BTFId != 0 {
 				statusFields = append(statusFields, fmt.Sprintf("    BTF ID:\t%d", kp.BTFId))
 			}
+			if prog.Status.ProgPin.Path != "" {
+				statusFields = append(statusFields, fmt.Sprintf("    Bytecode:\t%s%s", prog.Status.Bytecode.Path, presenceSuffix(prog.Status.Bytecode.Present)))
+			}
 			statusFields = append(statusFields, fmt.Sprintf("    Instructions:\t%d", kp.VerifiedInstructions))
+			if prog.Status.ProgPin.Path != "" {
+				statusFields = append(statusFields, fmt.Sprintf("    Link Dir:\t%s%s", prog.Status.LinkDir.Path, presenceSuffix(prog.Status.LinkDir.Present)))
+			}
 			if len(prog.Status.Links) > 0 {
-				for j, l := range prog.Status.Links {
-					var linkStr string
+				statusFields = append(statusFields, "    Links:\t ")
+				for _, l := range prog.Status.Links {
+					statusFields = append(statusFields, fmt.Sprintf("    Link %d:\t ", l.Record.ID))
 					if l.Record.Details != nil {
-						attachInfo := formatAttachDetails(l.Record.Details)
-						linkStr = fmt.Sprintf("%d (%s)", l.Record.ID, attachInfo)
-					} else {
-						linkStr = fmt.Sprintf("%d", l.Record.ID)
+						statusFields = append(statusFields, fmt.Sprintf("      Attach:\t%s", formatAttachDetails(l.Record.Details)))
 					}
-					if j == 0 {
-						statusFields = append(statusFields, fmt.Sprintf("    Links:\t%s", linkStr))
-					} else {
-						statusFields = append(statusFields, fmt.Sprintf("    \t%s", linkStr))
+					statusFields = append(statusFields, fmt.Sprintf("      Kind:\t%s", l.Record.Kind))
+					if l.Record.PinPath != nil {
+						statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", l.Record.PinPath.String(), presenceSuffix(l.Status.PinPresent)))
 					}
 				}
 			} else {
@@ -733,13 +794,33 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 			if !kp.LoadedAt.IsZero() {
 				statusFields = append(statusFields, fmt.Sprintf("    Loaded At:\t%s", kp.LoadedAt.Format(time.RFC3339)))
 			}
-			if len(kp.MapIDs) > 0 {
-				statusFields = append(statusFields, fmt.Sprintf("    Map IDs:\t%v", kp.MapIDs))
+			if prog.Status.ProgPin.Path != "" {
+				statusFields = append(statusFields, fmt.Sprintf("    Map Dir:\t%s%s", prog.Status.MapDir.Path, presenceSuffix(prog.Status.MapDir.Present)))
+			}
+			if len(prog.Status.Maps) > 0 {
+				statusFields = append(statusFields, "    Maps:\t ")
+				for _, m := range prog.Status.Maps {
+					statusFields = append(statusFields, fmt.Sprintf("    Map %d:\t ", m.ID))
+					statusFields = append(statusFields, fmt.Sprintf("      Key Size:\t%dB", m.KeySize))
+					statusFields = append(statusFields, fmt.Sprintf("      Max Entries:\t%d", m.MaxEntries))
+					statusFields = append(statusFields, fmt.Sprintf("      Name:\t%s", m.Name))
+					if m.PinPath != "" {
+						statusFields = append(statusFields, fmt.Sprintf("      Pin:\t%s%s", m.PinPath, presenceSuffix(m.Present)))
+					}
+					statusFields = append(statusFields, fmt.Sprintf("      Type:\t%s", m.MapType))
+					statusFields = append(statusFields, fmt.Sprintf("      Value Size:\t%dB", m.ValueSize))
+				}
+			} else if len(kp.MapIDs) > 0 {
+				statusFields = append(statusFields, fmt.Sprintf("    Maps:\t%v", kp.MapIDs))
 			} else {
-				statusFields = append(statusFields, "    Map IDs:\tNone")
+				statusFields = append(statusFields, "    Maps:\tNone")
 			}
 			if kp.Memlock != 0 {
 				statusFields = append(statusFields, fmt.Sprintf("    Memory:\t%d bytes", kp.Memlock))
+			}
+			if prog.Status.ProgPin.Path != "" {
+				statusFields = append(statusFields, fmt.Sprintf("    Prog Pin:\t%s%s", prog.Status.ProgPin.Path, presenceSuffix(prog.Status.ProgPin.Present)))
+				statusFields = append(statusFields, fmt.Sprintf("    Provenance:\t%s%s", prog.Status.Provenance.Path, presenceSuffix(prog.Status.Provenance.Present)))
 			}
 			statusFields = append(statusFields, fmt.Sprintf("    Size JITted:\t%d bytes", kp.JitedSize))
 			statusFields = append(statusFields, fmt.Sprintf("    Size Translated:\t%d bytes", kp.XlatedSize))
@@ -780,17 +861,17 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 
 		b.WriteString("  Spec:\n")
 		for _, line := range lines[:specEnd] {
-			b.WriteString(line)
+			b.WriteString(strings.TrimRight(line, " "))
 			b.WriteString("\n")
 		}
 		b.WriteString("  Status:\n")
 		for _, line := range lines[specEnd:statusEnd] {
-			b.WriteString(line)
+			b.WriteString(strings.TrimRight(line, " "))
 			b.WriteString("\n")
 		}
 		b.WriteString("  Stats:\n")
 		for _, line := range lines[statusEnd:] {
-			b.WriteString(line)
+			b.WriteString(strings.TrimRight(line, " "))
 			b.WriteString("\n")
 		}
 	}

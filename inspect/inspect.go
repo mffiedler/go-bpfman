@@ -113,10 +113,10 @@ func (v ProgramView) AsProgram() (bpfman.Program, bool) {
 	return bpfman.Program{
 		Record: *v.Managed,
 		Status: bpfman.ProgramStatus{
-			Kernel:      v.Kernel,        // may be nil
-			PinPresent:  v.Presence.InFS, // Record.PinPath exists
-			MapsPresent: v.MapsPresent,   // map pin directory exists
-			Links:       links,
+			Kernel:  v.Kernel, // may be nil
+			ProgPin: bpfman.PathPresence{Present: v.Presence.InFS},
+			MapDir:  bpfman.PathPresence{Present: v.MapsPresent},
+			Links:   links,
 		},
 	}, true
 }

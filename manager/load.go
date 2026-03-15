@@ -170,10 +170,8 @@ func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source L
 		loaded = append(loaded, bpfman.Program{
 			Record: record,
 			Status: bpfman.ProgramStatus{
-				Kernel:      lo.Program,
-				PinPresent:  true,
-				MapsPresent: len(kernelMaps) > 0,
-				Maps:        kernelMaps,
+				Kernel: lo.Program,
+				Maps:   bpfman.ToMapStatus(kernelMaps),
 			},
 		})
 	}

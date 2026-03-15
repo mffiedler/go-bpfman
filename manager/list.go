@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -39,11 +42,10 @@ func GetHostInfo() bpfman.HostInfo {
 	}
 }
 
-// Get retrieves a managed program by its kernel ID.
-// Returns the canonical bpfman.Program type with both Spec (from store)
-// and Status (from kernel enumeration + filesystem checks + links + maps).
-// Returns an error if the program exists in the store but not in the kernel,
-// as this indicates an inconsistent state that requires reconciliation.
+// Get retrieves a managed program by its kernel ID with full
+// filesystem enrichment. Returns the canonical bpfman.Program type
+// with Record (from store) and Status (from kernel enumeration,
+// filesystem checks, links, and maps with pin correlation).
 func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.Program, error) {
 	// Fetch program from store
 	metadata, err := m.store.Get(ctx, programID)
@@ -63,6 +65,10 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 		return bpfman.Program{}, fmt.Errorf("list links: %w", err)
 	}
 
+	bpffs := m.rt.BPFFS()
+	scanner := bpffs.Scanner()
+	bc := m.rt.Bytecode()
+
 	// Build links with spec + status
 	var links []bpfman.Link
 	for _, sl := range storedLinks {
@@ -75,9 +81,11 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 
 		link := bpfman.Link{
 			Record: record,
-			Status: bpfman.LinkStatus{
-				PinPresent: record.PinPath != nil,
-			},
+		}
+
+		// Check pin presence from filesystem, not from record
+		if record.PinPath != nil {
+			link.Status.PinPresent = scanner.PathExists(record.PinPath.String())
 		}
 
 		// Fetch kernel link if non-synthetic
@@ -108,15 +116,100 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 		stats = s
 	}
 
+	// Determine map owner for map path construction.
+	mapOwner := programID
+	if metadata.Handles.MapOwnerID != nil {
+		mapOwner = *metadata.Handles.MapOwnerID
+	}
+
+	// Build map status with pin correlation. Derive map pins from
+	// the filesystem directory rather than constructing paths from
+	// kernel-truncated names. The kernel truncates map names to 15
+	// characters, but pins use the full ELF section name.
+	var mapStatuses []bpfman.MapStatus
+	mapDir := bpffs.MapPinDir(mapOwner)
+	if entries, err := os.ReadDir(mapDir); err == nil {
+		matched := make(map[int]bool)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			pinPath := filepath.Join(mapDir, name)
+
+			ms := bpfman.MapStatus{
+				PinPath: pinPath,
+				Present: true,
+			}
+
+			// Correlate with kernel map: the kernel truncates
+			// names to 15 chars, so the kernel name is a prefix
+			// of the full ELF name.
+			for i, km := range kernelMaps {
+				if matched[i] {
+					continue
+				}
+				if name == km.Name || strings.HasPrefix(name, km.Name) {
+					ms.Map = km
+					matched[i] = true
+					break
+				}
+			}
+
+			mapStatuses = append(mapStatuses, ms)
+		}
+
+		// Report kernel maps with no corresponding pin.
+		for i, km := range kernelMaps {
+			if !matched[i] {
+				pinPath := bpffs.MapPinPath(mapOwner, km.Name)
+				mapStatuses = append(mapStatuses, bpfman.MapStatus{
+					Map:     km,
+					PinPath: pinPath,
+					Present: false,
+				})
+			}
+		}
+	} else {
+		// Directory unreadable or absent: fall back to
+		// constructing paths from kernel names.
+		for _, km := range kernelMaps {
+			pinPath := bpffs.MapPinPath(mapOwner, km.Name)
+			mapStatuses = append(mapStatuses, bpfman.MapStatus{
+				Map:     km,
+				PinPath: pinPath,
+				Present: scanner.PathExists(pinPath),
+			})
+		}
+	}
+
 	return bpfman.Program{
 		Record: metadata,
 		Status: bpfman.ProgramStatus{
-			Kernel:      &kp,
-			Stats:       stats,
-			PinPresent:  true, // If we got here, program exists
-			MapsPresent: len(kernelMaps) > 0,
-			Links:       links,
-			Maps:        kernelMaps,
+			Kernel: &kp,
+			Stats:  stats,
+			ProgPin: bpfman.PathPresence{
+				Path:    bpffs.ProgPinPath(programID),
+				Present: scanner.PathExists(bpffs.ProgPinPath(programID)),
+			},
+			MapDir: bpfman.PathPresence{
+				Path:    bpffs.MapPinDir(mapOwner),
+				Present: scanner.PathExists(bpffs.MapPinDir(mapOwner)),
+			},
+			LinkDir: bpfman.PathPresence{
+				Path:    bpffs.LinkPinDir(programID),
+				Present: scanner.PathExists(bpffs.LinkPinDir(programID)),
+			},
+			Bytecode: bpfman.PathPresence{
+				Path:    bc.ProgramBytecodePath(programID),
+				Present: scanner.PathExists(bc.ProgramBytecodePath(programID)),
+			},
+			Provenance: bpfman.PathPresence{
+				Path:    bc.ProgramProvenancePath(programID),
+				Present: scanner.PathExists(bc.ProgramProvenancePath(programID)),
+			},
+			Links: links,
+			Maps:  mapStatuses,
 		},
 	}, nil
 }

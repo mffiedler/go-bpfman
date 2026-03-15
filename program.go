@@ -141,12 +141,15 @@ type ProgramRecord struct {
 // ProgramStatus is observed state (kernel + filesystem).
 // This is "what actually exists right now".
 type ProgramStatus struct {
-	Kernel      *kernel.Program      `json:"kernel,omitempty"` // nil means not in kernel
-	Stats       *kernel.ProgramStats `json:"stats,omitempty"`  // runtime stats (requires kernel.bpf_stats_enabled=1)
-	PinPresent  bool                 `json:"pin_present"`      // filesystem check
-	MapsPresent bool                 `json:"maps_present"`     // filesystem check
-	Links       []Link               `json:"links,omitempty"`  // links with spec + status
-	Maps        []kernel.Map         `json:"maps,omitempty"`   // kernel maps
+	Kernel     *kernel.Program      `json:"kernel,omitempty"` // nil means not in kernel
+	Stats      *kernel.ProgramStats `json:"stats,omitempty"`  // runtime stats (requires kernel.bpf_stats_enabled=1)
+	ProgPin    PathPresence         `json:"prog_pin"`         // program pin path + presence
+	MapDir     PathPresence         `json:"map_dir"`          // map pin directory + presence
+	LinkDir    PathPresence         `json:"link_dir"`         // link pin directory + presence
+	Bytecode   PathPresence         `json:"bytecode"`         // bytecode.o file + presence
+	Provenance PathPresence         `json:"provenance"`       // provenance.json file + presence
+	Links      []Link               `json:"links,omitempty"`  // links with spec + status
+	Maps       []MapStatus          `json:"maps,omitempty"`   // kernel maps with pin correlation
 }
 
 // Program is the canonical domain object combining record and status.
@@ -155,6 +158,31 @@ type ProgramStatus struct {
 type Program struct {
 	Record ProgramRecord `json:"record"`
 	Status ProgramStatus `json:"status"`
+}
+
+// PathPresence pairs a filesystem path with its presence status.
+type PathPresence struct {
+	Path    string `json:"path"`
+	Present bool   `json:"present"`
+}
+
+// MapStatus represents observed map state: kernel info plus
+// filesystem pin path and presence.
+type MapStatus struct {
+	kernel.Map
+	PinPath string `json:"pin_path"`
+	Present bool   `json:"present"`
+}
+
+// ToMapStatus converts kernel maps to MapStatus values with zero-
+// valued pin fields. Use this at construction sites that only have
+// kernel maps and no filesystem context.
+func ToMapStatus(maps []kernel.Map) []MapStatus {
+	result := make([]MapStatus, len(maps))
+	for i, m := range maps {
+		result[i] = MapStatus{Map: m}
+	}
+	return result
 }
 
 // WithDescription returns a new ProgramRecord with the description set.

@@ -215,6 +215,13 @@ func (rt Bytecode) ProgramBytecodePath(id kernel.ProgramID) string {
 	return filepath.Join(rt.ProgramDir(id), bytecodeName)
 }
 
+// ProgramProvenancePath returns the published provenance path for a
+// program.
+func (rt Bytecode) ProgramProvenancePath(id kernel.ProgramID) string {
+	rt.mustValid()
+	return filepath.Join(rt.ProgramDir(id), provName)
+}
+
 // CleanStaging removes all entries under <base>/.staging/. Staging is
 // a writer-only concern and is never visible to readers.
 func (rt Bytecode) CleanStaging() error {
