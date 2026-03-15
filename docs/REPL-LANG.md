@@ -1,637 +1,382 @@
-# REPL language: variables, field access, and projection
+# REPL language: design and architecture
 
 ## Summary
 
-The REPL needs a small amount of language support so that users can
-explore state interactively today and, as lifecycle commands are
-added, drive a full lifecycle in scripts:
+The REPL has a small language layer that supports interactive
+exploration and batch scripting of BPF lifecycle operations:
 
-- load a program
-- capture the result
-- pass fields from that result to later commands
-- inspect only the subset of information relevant to the current step
-- delete, and eventually detach, using explicit data flow
+- load a program and capture the result
+- pass structured values from that result to later commands
+- attach, inspect, detach, and delete using explicit data flow
+- narrow output with format flags and sub-views
 
-This document proposes three related features:
+The language has three statement forms (`let`, `set`, plain command),
+structured variables with dotted field access, and typed argument
+expansion. It is intentionally small: line-oriented, command-oriented,
+no expressions, no block structure.
 
-1. **Explicit assignment** for capturing command results into
-   variables.
-2. **Structured field access** for using selected fields from those
-   variables in later commands.
-3. **Projection** for narrowing large command outputs during
-   exploration.
-
-The design is intentionally small. Variables are explicit. There are
-no implicit or automatic variables. Ordinary access uses dotted field
-syntax. JSONPath remains available only as an advanced escape hatch
-for complex selection.
-
-## Motivation
-
-The REPL already supports commands such as load, delete, show, and
-list, but without variable binding it cannot express a real lifecycle.
-
-A useful exploratory or test-oriented session should be able to:
-
-- load a program
-- capture the resulting program identity
-- attach that program using fields from the load result
-- inspect only the fields or subviews of interest
-- detach the resulting link
-- delete the program
-
-For example:
+Example session:
 
 ```
 let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
-show program $prog.id maps
-link detach $link.id
-program delete $prog.id
+let link = link attach tracepoint --tracepoint sched/sched_switch $prog
+show program $prog maps
+link detach $link
+program delete $prog.record.program_id
 ```
-
-Without explicit data flow, the shell remains useful for one-off
-inspection but cannot support a full lifecycle cleanly.
-
-A second problem is output size. Commands such as `show program`
-often return more information than is needed in the moment. In an
-exploratory shell, users frequently want only a subset of fields.
-
-For example:
-
-```
-show program $prog.id select id,name,type
-show program $prog.id maps select name,pin
-show dispatcher xdp nsid=1 ifindex=2 slots select slot,program_id,link_id
-```
-
-The shell therefore needs not just variables, but also a simple way
-to project or narrow structured results for display.
 
 ## Design decisions
 
 ### 1. Explicit assignment is the only binding mechanism
 
-Explicit assignment is the primary and only way to bind variables.
-
 There are no automatic variables such as `$_`, `$1`, `$PROG_ID`,
-or "last result" slots.
+or "last result" slots. All binding is through `let` (command result)
+or `set` (scalar literal).
 
-Example:
+**Why:**
 
-```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-show program $prog.id maps
-program delete $prog.id
-```
-
-**Why explicit assignment:**
-
-- **Data flow is obvious.** The source of each value is visible in
-  the script.
-- **It scales beyond one-liners.** There is no ambiguity about
-  whether a reference points to the previous result, a positional
-  slot, or a named value.
-- **It matches the API-first design.** The shell remains a thin
-  control layer over typed operations rather than becoming magical.
-- **Errors are clearer.** "undefined variable prog" is much easier
-  to understand than implicit result-slot behaviour.
-- **It supports structured results naturally.** Once variables hold
-  records rather than strings, explicit binding becomes the least
-  surprising model.
-
-**Why not automatic variables:**
-
-Automatic variables encourage scripts that are short-lived,
-positional, and difficult to read once they grow beyond a few
-lines. They are convenient for demos but poor as the primary
-language model. Given the choice, explicit assignment alone is
-sufficient.
+- Data flow is visible in the script.
+- It scales beyond one-liners without ambiguity.
+- "undefined variable prog" is clearer than implicit result-slot
+  behaviour.
+- It supports structured results naturally.
 
 ### 2. Variables hold structured values
 
-Variables store structured command results, not plain strings.
+Variables store `Value`, a shell runtime type backed by a JSON-like
+tree (`map[string]any`). Domain result structs are JSON-round-tripped
+into `Value` at the command boundary. `Value` supports field lookup by
+name, array indexing, scalar leaf conversion to string, and optional
+origin metadata for type-safety checks.
 
-A command such as `load file` returns a shell-facing result object.
-That object is what gets bound to the variable.
+### 3. Two binding forms: `let` and `set`
 
-For example, `load file` might produce a result conceptually like:
-
-```go
-type LoadResult struct {
-    ID   uint32 `json:"id"`
-    Name string `json:"name"`
-    Type string `json:"type"`
-}
-```
-
-Then:
+`let` binds the structured result of a command:
 
 ```
-prog = load file --path foo.o ...
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
 ```
 
-binds a structured value to `prog`, and later commands can access
-its fields:
+`set` binds a scalar literal or the expansion of a variable reference:
 
 ```
-show program $prog.id
-link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
+set iface = eth0
+set prog_id = $prog.record.program_id
 ```
 
-The design requirement is that variables support structured field
-lookup. The internal representation may be:
+The distinction is syntactic: `let` executes a command, `set` assigns
+a value directly.
 
-- a `map[string]any`
-- a dedicated dynamic value tree
-- JSON round-tripping from typed result structs
+### 4. Bare structured references are passed through
 
-JSON round-tripping is a reasonable implementation strategy, but it
-is not itself the design goal. The design goal is uniform structured
-field access over shell-facing result values.
+A bare reference to a structured variable (`$prog` with no field path)
+is not an error. Expansion preserves it as a `StructuredValueArg`
+carrying the resolved `Value` directly. The receiving command parser
+decides how to use it -- typically by extracting a domain-specific
+field such as `.record.program_id` for programs or `.record.id` for
+links.
 
-### 3. Projection is a first-class part of the shell model
-
-This shell is exploratory. Users often want only part of a large
-result.
-
-Therefore the language should support projection for display.
-
-Examples:
+This enables concise command syntax:
 
 ```
-show program $prog.id select id,name,type
-show program $prog.id maps select name,pin
-show dispatcher xdp nsid=1 ifindex=2 slots select slot,program_id
+show program $prog
+link detach $link
 ```
 
-This is distinct from variable binding:
-
-- variables carry structured results forward to later commands
-- projection narrows what is displayed to the user
-
-Both are needed.
-
-### 4. JSONPath is an advanced escape hatch, not the main syntax
-
-Ordinary field access uses dotted syntax:
+rather than requiring explicit path access for every use:
 
 ```
-$prog.id
-$prog.name
-$prog.maps[0].name
+show program $prog.record.program_id
+link detach $link.record.id
 ```
 
-JSONPath remains useful for machine-oriented or complex selection:
+The command parser performs origin-type checking on the `Value` to
+ensure, for example, that a link variable is not passed where a
+program is expected.
 
-```
-show program 12 --format=jsonpath '{.maps[*].name}'
-```
+### 5. Output format is a command-level flag
 
-But JSONPath is not the primary language of the shell, because it
-is:
+Commands that produce rendered output accept `-o <format>` to control
+the output format. Supported formats are `table` (default), `wide`,
+`json`, and `jsonpath=<expr>`. Sub-views (e.g. `maps`, `links`,
+`paths` for `show program`) are positional arguments to the command,
+not language-level syntax.
 
-- more verbose
-- less readable for common cases
-- more foreign to a small domain-specific shell
+### 6. JSONPath is an escape hatch
 
-Dotted field access handles the common case. JSONPath handles
-complex selection when needed.
+Ordinary field access uses dotted syntax (`$prog.record.name`).
+JSONPath is available via `-o jsonpath='{.maps[*].name}'` for complex
+selection. It is not the primary language of the shell.
 
 ## Syntax
 
-### Assignment
-
-Assignment syntax is:
+### Statements
 
 ```
-let name = command args...
+line     := let-stmt | set-stmt | command-stmt
+let-stmt := "let" IDENT "=" TOKEN+
+set-stmt := "set" IDENT "=" TOKEN
+command  := TOKEN+
 ```
-
-Rules:
-
-- the first token must be the keyword `let`
-- the second token must be a valid identifier:
-  `[a-zA-Z_][a-zA-Z0-9_]*`
-- the third token must be the literal `=`
-- the remainder of the line is parsed as a command
-- the left-hand side is never expanded
-
-Examples:
-
-```
-let prog = load file --path foo.o ...
-let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
-```
-
-The command still prints its normal output unless the user has
-chosen a quiet mode. Assignment captures the structured result for
-later use; it does not suppress normal interactive behaviour by
-default.
 
 ### Variable references
 
-Variable references use either unbraced or braced syntax:
-
 ```
-$prog.id
-$prog.name
-${prog.id}
-${prog.maps[0].name}
-```
-
-Braces are available for disambiguation when adjacent characters
-would otherwise make parsing unclear.
-
-### Field access
-
-Field access supports:
-
-- dotted member lookup: `.field`
-- array indexing: `[n]`
-
-Examples:
-
-```
-$prog.id
-$prog.links[0].id
-$prog.maps[0].name
+varref   := '$' ident path? | '${' ident path? '}'
+path     := segment+
+segment  := '.' ident | '[' digits ']'
+ident    := [a-zA-Z_][a-zA-Z0-9_]*
+digits   := [0-9]+
 ```
 
-### Bare variable references
+Both bare and braced forms accept the same path grammar. Bare
+`$prog.record.program_id` is the normal form. Braces are supported
+for disambiguation but not promoted; they become essential only if the
+language later grows string interpolation.
 
-Bare access to a structured variable is an error.
+Variable references are lexed as single `TokenVarRef` tokens. They
+are never re-lexed after expansion.
 
-This is rejected:
+### Comments
 
-```
-$prog
-```
+A `#` and everything after it is discarded, unless the `#` appears
+inside a quoted string. Comments are stripped during tokenisation.
 
-with an error such as:
+### Quoting
 
-```
-variable prog is structured; use field access (e.g. $prog.id)
-```
+Single-quoted and double-quoted strings are supported. The delimiters
+are stripped by the tokeniser. `$` is literal inside quotes.
 
-This avoids introducing a magical "default" value for structured
-results.
+## Token types
+
+The tokeniser (`replang.Tokenise`) produces four token kinds:
+
+- `TokenWord`: unquoted word (command name, flag, path, numeric ID)
+- `TokenAssign`: standalone `=` at a token boundary
+- `TokenVarRef`: variable reference (`$prog.id`, `${prog.maps[0]}`)
+- `TokenQuoted`: quoted string with delimiters stripped
+
+`TokenAssign` is only valid inside `let` and `set` expressions. Its
+presence in a plain command is a syntax error.
+
+## Expansion and the Arg types
+
+`Session.Expand` resolves variable references in a token slice and
+returns `[]Arg`, a typed representation of the expanded arguments.
+`Arg` is a sealed sum type with four variants:
+
+- **`WordArg`**: literal command text supplied by the user. Never
+  came from a variable reference.
+- **`QuotedArg`**: a quoted string literal, preserving the syntactic
+  distinction from unquoted words.
+- **`ScalarValueArg`**: a value produced by variable expansion. The
+  original variable reference has been resolved to a string. This
+  covers both scalar variables (`$count`) and dotted paths into
+  structured values (`$prog.record.program_id`).
+- **`StructuredValueArg`**: a bare reference to a structured variable
+  (`$prog` with no field path). The resolved `Value` is carried
+  directly so that command parsers can extract the relevant field
+  without re-parsing dollar prefixes.
+
+This is the contract between `replang` and its clients. Clients
+receive typed, structured arguments and never need to re-discover
+variable references from strings.
 
 ### Expansion rules
 
-Expansion operates token by token, not by text substitution. Each
-variable reference token resolves to a scalar value and becomes a
-plain token. The expanded result is never re-lexed.
-
-Resolution proceeds as follows:
+Expansion operates token by token. For each `TokenVarRef`:
 
 1. Look up the variable name in session state.
-2. If a field path is present, walk the structured value using
-   dotted field lookup and array indexing.
-3. The resolved value must be a scalar non-null leaf. Scalars such
-   as strings, integers, and booleans are eligible for
-   substitution. Attempting to substitute a null, object, or array
-   value is an error unless later syntax is introduced for that
-   purpose.
-4. Convert the leaf to its string representation.
-5. If the variable is undefined, the field is missing, or indexing
-   is invalid, return an error.
+2. If a field path is present, walk the structured value and resolve
+   to a scalar. The result becomes a `ScalarValueArg`.
+3. If the variable is structured and has no field path, the `Value`
+   is preserved as a `StructuredValueArg`.
+4. If the variable is scalar and has no field path, the string value
+   becomes a `ScalarValueArg`.
+5. Undefined variables, missing fields, and invalid indices are
+   errors.
 
-Expansion occurs:
+Non-variable tokens pass through as `WordArg` or `QuotedArg`. The
+expanded result is never re-lexed.
 
-- on the right-hand side of assignments
-- on all command tokens for non-assignment commands
-
-Expansion never occurs on the left-hand side of an assignment.
+Expansion occurs on the right-hand side of `let`, on the value of
+`set`, and on all tokens for plain commands. Expansion never occurs
+on the left-hand side of a binding.
 
 ## Command result model
 
-Command execution produces a result with two independent parts:
-
-- **AssignValue**: the shell-facing value for variable binding
-  (nil if the command is not assignable)
-- **RenderValue**: the structured value for rendering (nil if the
-  command produces no displayable output)
-
-These are independent. A command may produce a RenderValue without
-an AssignValue. Commands such as `show` produce structured results
-for rendering and projection, even when they do not yield an
-assignable shell value. Keeping `show` and `list`
-non-assignable in Phase 1 preserves a useful distinction between
-operational commands that yield shell-facing result values and
-rendering commands whose primary job is display.
-
-Initial examples:
-
-| Command          | AssignValue fields         | RenderValue |
-|------------------|----------------------------|-------------|
-| `load file`      | `id`, `name`, `type`       | yes         |
-| `link attach`    | `id`, `program_id`, `kind` | yes         |
-| `program delete` | none                       | optional    |
-| `link detach`    | none                       | optional    |
-| `show program`   | none                       | yes         |
-| `list programs`  | none                       | yes         |
-
-Mutating commands may produce renderable status records, simple
-confirmations, or no output at all, even when they do not yield
-assignable shell values. Whether they do is a per-command decision,
-not a structural requirement.
-
-Assignment to a command that has no AssignValue is an error:
+Commands that support variable binding return a `replang.Value` from
+execution. Commands that do not produce a bindable result return an
+empty value. Assignment to such a command is an error:
 
 ```
-command produced no result to assign
+[repl] error: command produced no result to assign
 ```
 
-Phase 1 restricts assignment to commands with explicitly defined
-shell-facing result values. This is a deliberate scoping decision,
-not a fundamental property of the shell. The model leaves room for
-making rendering commands assignable later if that proves useful.
-
-## Projection
-
-Projection narrows what a command prints.
-
-The proposed user-facing syntax is:
-
-```
-show program $prog.id select id,name,type
-show program $prog.id maps select name,pin
-show dispatcher xdp nsid=1 ifindex=2 slots select slot,program_id,link_id
-```
-
-### Why `select`
-
-`select` is simple, readable, and domain-friendly.
-
-It avoids turning ordinary exploratory use into a JSON extraction
-exercise, while still giving users a quick way to focus on the
-fields they care about.
-
-### Scope of projection
-
-Projection is initially a display feature, not a
-data-transformation language. It should support:
-
-- selecting named fields from a result or subview
-- selecting columns for tabular display
-- narrowing interactive output
-
-It should not initially try to support:
-
-- arbitrary expressions
-- computed fields
-- filtering predicates
-- general-purpose transformations
-
-Those can be added later if real need emerges.
-
-`select` projects the current view. For `show program <id>`, that
-is the program result itself; for `show program <id> maps`, it is
-the maps subview.
-
-In Phase 1, `select` is a command-level trailing modifier supported
-by `show` and any later commands that render structured tabular or
-record output. Projection is a rendering concern: it narrows what
-is displayed, not what is computed or stored. It does not belong in
-the expansion or substitution layer.
-
-## Internal representation
-
-The REPL needs a session state holding bound variables.
-
-Conceptually:
-
-```go
-type replState struct {
-    vars map[string]Value
-}
-```
-
-Where `Value` is a shell runtime value, not a domain model object.
-It exists at the shell boundary and carries only the fields that
-the shell exposes, not the full internal domain representation.
-
-A Value must support:
-
-- field lookup by name
-- array indexing
-- conversion of scalar leaves to string
-- reporting type and path errors clearly
-
-A JSON-round-tripped `map[string]any` representation is acceptable
-as an implementation technique, especially early on. A custom value
-model may later be preferable if the shell grows more structured
-semantics.
-
-The important design point is that commands return shell-facing
-result objects, and those objects can be bound, traversed, and
-projected consistently.
-
-## Phased rollout
-
-### Phase 1: assignment, field access, and projection
-
-Deliver:
-
-- explicit assignment
-- dotted field access
-- array indexing
-- assignment errors for nil-result commands
-- `select` projection for narrowing display output
-
-This is enough to support exploratory lifecycle scripting.
-
-Example:
-
-```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-show program $prog.id select id,name,type
-show program $prog.id maps select name,pin
-program delete $prog.id
-```
-
-### Phase 2: lifecycle completion
-
-Add the remaining commands needed for a full lifecycle, especially
-attach and detach.
-
-Example:
-
-```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
-show program $prog.id maps
-link detach $link.id
-program delete $prog.id
-```
-
-### Phase 3: JSONPath escape hatch
-
-Retain or add JSON output / JSONPath support for complex
-extraction.
-
-Example:
-
-```
-show program 12 --format=jsonpath '{.maps[*].name}'
-```
-
-This is a secondary access mode, not the primary language.
+| Command          | Assignable | Returned Value                          |
+|------------------|------------|-----------------------------------------|
+| `load file`      | yes        | loaded program(s) as structured value   |
+| `load image`     | yes        | loaded program(s) as structured value   |
+| `link attach`    | yes        | attached link as structured value        |
+| `program get`    | yes        | program record as structured value      |
+| `link get`       | yes        | link record as structured value          |
+| `show program`   | no         | rendered output only                    |
+| `list programs`  | no         | rendered output only                    |
+| `list links`     | no         | rendered output only                    |
+| `program unload` | no         | side effect only                        |
+| `program delete` | no         | side effect only                        |
+| `link detach`    | no         | side effect only                        |
+| `link delete`    | no         | side effect only                        |
+| `gc`             | no         | rendered output only                    |
+| `doctor`         | no         | rendered output only                    |
 
 ## Execution model
 
 The REPL processes one line at a time through a fixed sequence of
-phases. This line-oriented model is deliberate: the language does
-not need multi-line blocks, operator precedence, pipelines, or
-nested expressions. One line, one command, one result.
+phases. The language is line-oriented: no multi-line blocks, operator
+precedence, pipelines, or nested expressions.
 
-### Phases
+### Pipeline
 
-1. **Read line.** The line editor provides prompt, history, and
-   completion. It returns a string.
+```
+read line
+  -> replang.Tokenise           (string -> []Token)
+  -> replang.ParseStmt          ([]Token -> Stmt)
+  -> session.Expand             ([]Token -> []Arg)
+  -> shell or domain dispatch
+       shell: replShellCmd      (assert, require, dump, help, ...)
+       domain: parseCommand     ([]Arg -> Command)
+             + execCommand      (Command -> Value, render)
+  -> bind variable (if let)
+```
 
-2. **Tokenize.** A small lexer produces tokens from the input
-   string. This is not ad hoc string splitting. The lexer
-   recognises at least identifiers, quoted strings, `=`, variable
-   references (`$name.path` and `${name.path}`), and flags; the
-   exact token type set will be determined during implementation.
-   Variable references such as `$prog.id` and
-   `${prog.maps[0].name}` are lexed as single tokens and resolved
-   during expansion. Proper tokenization avoids the fragility that
-   ad hoc splitting encounters with quoting, braces, and array
-   indexing syntax.
+### Phase detail
 
-   Comments are stripped before tokenization. A `#` and everything
-   after it is discarded, unless the `#` appears inside a quoted
-   string.
+1. **Read line.** The line editor provides prompt, history, and tab
+   completion.
 
-3. **Parse line.** The top-level grammar is tiny:
+2. **Tokenise.** `replang.Tokenise` produces `[]Token` from the
+   input string. Comments are stripped. Variable references are lexed
+   as single `TokenVarRef` tokens.
 
-   ```
-   line       := let-assignment | command
-   let-assignment := "let" IDENT "=" command
-   command    := TOKEN+
-   ```
+3. **Parse statement.** `replang.ParseStmt` classifies the token
+   sequence into one of three `Stmt` variants: `LetStmt`, `SetStmt`,
+   or `CommandStmt`.
 
-   The parser only answers: is this `let name = ...` or a plain
-   command?
+4. **Expand variables.** `session.Expand` resolves variable
+   references and returns `[]Arg`. Scalar references become
+   `ScalarValueArg`. Bare structured references become
+   `StructuredValueArg`. Literal tokens become `WordArg` or
+   `QuotedArg`. The result is never re-lexed.
 
-4. **Expand variables.** Variable references in the command tokens
-   are resolved against session state. For assignment lines,
-   expansion applies only to the right-hand side. For plain
-   commands, expansion applies to all tokens.
+5. **Dispatch.** Shell-language commands (`assert`, `require`,
+   `dump`, `help`, `source`, `unset`, `vars`, `version`) are handled
+   directly by `replShellCmd`. Domain commands flow to the typed
+   command pipeline.
 
-   Expansion operates token by token, not by text substitution.
-   A variable reference token such as `$prog.id` resolves to a
-   scalar value and becomes a plain token. The expanded result is
-   never re-lexed. This avoids the fragility and injection risks
-   of textual substitution.
+6. **Parse command.** `parseCommand` routes expanded `[]Arg` to the
+   per-command parser based on keyword patterns, returning a typed
+   `Command` node with fully resolved, validated fields.
 
-   Expansion is token-preserving: it replaces variable-reference
-   tokens with scalar argument tokens and never injects new syntax
-   that must be re-lexed. Parsing and expansion are deterministic
-   and side-effect free.
+7. **Execute command.** `execCommand` dispatches on the `Command`
+   type-switch, calling the per-command executor against
+   `manager.Manager`. Execution is the only phase that produces side
+   effects.
 
-5. **Parse command.** The expanded tokens are dispatched to a
-   per-command family parser. There is no single universal grammar.
-   Each command family (load, show, list, link, gc, etc.) has a
-   typed parser that consumes tokens and produces a typed command
-   value. Command-family parsers are responsible for trailing
-   modifiers such as `select` and `--format`, after variable
-   expansion has already occurred.
+8. **Bind variable.** For `let` statements, the returned `Value` is
+   stored in session state. For `set` statements, the expanded value
+   is stored directly.
 
-6. **Execute.** The typed command is executed against the manager
-   API. Execution is the only phase that may touch the bpfman API
-   layer or produce side effects. It produces a result with two
-   independent parts:
-
-   - **AssignValue**: the shell-facing value for variable binding
-     (nil if the command is not assignable)
-   - **RenderValue**: the structured value for rendering (nil if
-     the command produces no displayable output)
-
-   A command may have a RenderValue without an AssignValue. For
-   example, `show program 12` produces structured data for
-   rendering but is not assignable in Phase 1.
-
-7. **Bind variable.** If the line was an assignment:
-   - if AssignValue is nil, report an error
-   - otherwise store the value in session state
-
-8. **Render.** The RenderValue is formatted according to explicit
-   render metadata: output format, selected columns, and subview.
-   The renderer receives these options, not the entire parsed
-   command. Projection is a rendering concern: it narrows what is
-   displayed, not what is computed or stored.
+9. **Render.** Output is formatted according to the command's output
+   flags (`-o table`, `-o json`, etc.) and written to the CLI output.
 
 ### Phase ordering
 
-Variable expansion (phase 4) completes before command-family
-parsing (phase 5). By the time a command parser such as `show`
-sees its tokens, all variable references have already been resolved
-to scalar values. Command parsers never encounter variable syntax;
-they only see plain arguments, flags, and trailing modifiers like
-`select`.
+Variable expansion (phase 4) completes before command parsing
+(phase 6). Command parsers receive `[]Arg` with all variable
+references already resolved. They never encounter variable syntax
+directly.
 
-### Why line-oriented
+Parsing (phase 6) completes before execution (phase 7). The
+`parseCommand` / `execCommand` split means command routing is
+decoupled from execution. A command can be parsed without executing
+it.
 
-This model maps cleanly to both interactive use and batch scripts:
+## Package boundary
 
-```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
-show program $prog.id select id,name,type
-link detach $link.id
-program delete $prog.id
-```
+### `replang` owns language mechanics
 
-It also enforces useful separation:
+The `replang` package is pure (no I/O, standard library only). It
+provides:
 
-- language mechanics (lexing, parsing, expansion) are independent
-  of bpfman domain logic
-- commands operate on typed requests and typed results, never on
-  rendered text
-- rendering decisions (format, column selection) are applied at the
-  boundary, not entangled with command execution
-- the shell never needs to parse its own output
+- **Tokens**: `Token`, `TokenKind`, `Tokenise`, variable-reference
+  lexing, comment stripping, identifier validation.
+- **Statements**: `Stmt` (`LetStmt`, `SetStmt`, `CommandStmt`),
+  `ParseStmt`.
+- **Expansion**: `Session.Expand` returns `[]Arg`.
+- **Arg types**: `WordArg`, `QuotedArg`, `ScalarValueArg`,
+  `StructuredValueArg`.
+- **Session and Value**: variable store, structured value type,
+  field lookup, origin metadata.
+
+`replang` knows nothing about bpfman commands. It never requires
+downstream clients to re-parse `$` prefixes out of strings. It hands
+clients typed, structured arguments.
+
+### `cmd/bpfman/` owns domain semantics
+
+The REPL client layer provides:
+
+- **Shell-language dispatch**: `replShellCmd` handles `assert`,
+  `require`, `dump`, `help`, `source`, `unset`, `vars`, `version`.
+- **Command routing**: `parseCommand([]Arg) (Command, error)` matches
+  keyword patterns and delegates to per-command parsers.
+- **Typed command nodes**: `Command` interface with concrete types
+  (`ShowProgramCommand`, `LoadFileCommand`, `LinkAttachCommand`,
+  etc.). Each carries fully resolved, validated fields.
+- **Command execution**: `execCommand` dispatches on the `Command`
+  type-switch.
+- **Rendering and formatting**: output format handling, tab writers,
+  column layout.
+
+The client layer does not tokenise or parse language syntax. It does
+not re-discover variable references from strings. It only parses
+bpfman command semantics from typed arguments.
 
 ## Error behaviour
 
-Errors should be explicit and non-magical.
-
-Examples:
+Errors are explicit.
 
 - undefined variable: `"undefined variable: foo"`
-- missing field: `"field bar not found in variable foo"`
-- invalid index: `"index 3 out of range for variable foo.maps"`
-- bare structured variable: `"variable foo is structured; use
-  field access (e.g. $foo.id)"`
-- null leaf: `"variable foo.bar is null"`
-- non-scalar leaf: `"variable foo.bar is an object; use field
-  access to reach a scalar value"`
+- missing field: `"field not found: bar"`
+- invalid index: `"index 3 out of range"`
 - no result to assign: `"command produced no result to assign"`
-- command failure during assignment: if command execution fails
-  during assignment, no variable is created or updated; the
-  command error is reported
+- wrong origin type: `"$mylink is not a program"`
+- unknown command: `"unknown command \"bogus\". Type \"help\" for
+  available commands."`
+- parse errors: `"show program: requires a program ID"`
+- command failure during assignment: the command error is reported and
+  no variable is created or updated
+
+In interactive mode, non-fatal errors are printed and the session
+continues. In script mode (sourced files), errors halt execution. The
+`require` command provides fatal assertions; `assert` provides
+non-fatal assertions.
 
 ## Rationale
 
-This design keeps the language small while solving the real
-problems:
+The language is small by design:
 
 - explicit data flow between lifecycle steps
-- readable access to structured command results
-- narrower output for exploratory work
-
-It avoids over-design in several ways:
-
-- no automatic variables
-- no implicit "current result"
-- no default scalar value for structured variables
-- no JSONPath-heavy everyday syntax
+- structured values with typed expansion
+- two clean binding forms (`let` for commands, `set` for scalars)
+- bare structured references passed directly to commands
+- no automatic variables or implicit "current result"
 - no general-purpose expression language
+- no block structure or control flow
 
 The result is a shell that remains domain-specific and readable,
-while still being powerful enough to load, attach, inspect, detach,
-and delete objects with explicit data flow.
+while being powerful enough to load, attach, inspect, detach, and
+delete objects with explicit, typed data flow. The package boundary
+between `replang` (language) and `cmd/bpfman` (domain) keeps each
+layer focused and independently testable.

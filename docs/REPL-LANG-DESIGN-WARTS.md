@@ -624,11 +624,13 @@ is now a thin composition of the two.
 
 **Scope**: `cmd/bpfman/command.go`, `cmd/bpfman/repl.go`
 
-### Step 10: update `REPL-LANG.md` design document
+### Step 10: update `REPL-LANG.md` design document [DONE]
 
-Update the design document to reflect the final architecture: the
-`replang` / `cmd/bpfman` boundary, the `Stmt` and `Arg` types, the
-expansion contract, and the typed command pipeline.
+Rewrite the design document from a proposal into a description of the
+implemented architecture: the `replang` / `cmd/bpfman` package
+boundary, the `Stmt` and `Arg` types, the expansion contract, the
+typed command pipeline (`parseCommand` / `execCommand`), the shell
+versus domain command split, and the `set` binding form.
 
 **Scope**: `docs/REPL-LANG.md`
 
