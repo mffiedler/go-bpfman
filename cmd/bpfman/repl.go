@@ -24,7 +24,6 @@ import (
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
-	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/replang"
 	"github.com/frobware/go-bpfman/version"
 )
@@ -1136,13 +1135,29 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
 		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
 	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
-		return replLoadFile(ctx, cli, mgr, argTexts(args[2:]))
+		loadCmd, err := parseLoadFile(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execLoadFile(ctx, cli, mgr, loadCmd)
 	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
-		return replLoadFile(ctx, cli, mgr, argTexts(args[3:]))
+		loadCmd, err := parseLoadFile(args[3:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execLoadFile(ctx, cli, mgr, loadCmd)
 	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "image":
-		return replLoadImage(ctx, cli, mgr, argTexts(args[3:]))
+		imgCmd, err := parseLoadImage(args[3:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execLoadImage(ctx, cli, mgr, imgCmd)
 	case len(args) >= 2 && cmd == "load" && arg(1) == "image":
-		return replLoadImage(ctx, cli, mgr, argTexts(args[2:]))
+		imgCmd, err := parseLoadImage(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execLoadImage(ctx, cli, mgr, imgCmd)
 	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
 		return replGetProgram(ctx, cli, mgr, args[2:])
 	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":
@@ -1682,73 +1697,6 @@ func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, args 
 	return cli.PrintOut(output)
 }
 
-// replParseLoadFile parses REPL tokens into a LoadFileCmd using a
-// scoped Kong parser. This reuses the existing type mappers for
-// ProgramSpec, GlobalData, KeyValue, and ObjectPath.
-func replParseLoadFile(args []string) (*LoadFileCmd, error) {
-	var cmd LoadFileCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("load file"),
-		kong.Description("Load a BPF program from a local object file."),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(KeyValue{}), keyValueMapper()),
-		kong.TypeMapper(reflect.TypeOf(GlobalData{}), globalDataMapper()),
-		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create parser: %w", err)
-	}
-	_, err = parser.Parse(args)
-	if err != nil {
-		return nil, err
-	}
-	return &cmd, nil
-}
-
-// replLoadFileExec parses and executes a load file command, returning
-// the result for both display and optional variable assignment.
-func replLoadFileExec(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (loadFileResult, *LoadFileCmd, error) {
-	cmd, err := replParseLoadFile(args)
-	if err != nil {
-		return loadFileResult{}, nil, err
-	}
-	result, err := executeLoadFileResult(ctx, cli, mgr, cmd)
-	if err != nil {
-		return loadFileResult{}, nil, err
-	}
-	return result, cmd, nil
-}
-
-// replLoadFile handles the "load file" REPL command by parsing the
-// remaining tokens, executing the load, printing output, and
-// returning a structured Value for optional assignment.
-func replLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (replang.Value, error) {
-	result, cmd, err := replLoadFileExec(ctx, cli, mgr, args)
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	output, err := FormatLoadedPrograms(result.Programs, &cmd.OutputFlags)
-	if err != nil {
-		return replang.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
-	}
-
-	if len(result.Programs) == 0 {
-		return replang.Value{}, nil
-	}
-
-	val, err := replang.ValueFromStruct(result.Programs[0])
-	if err != nil {
-		return replang.Value{}, nil
-	}
-	return val, nil
-}
-
 // replParseDeleteProgram parses REPL tokens into a ProgramDeleteCmd.
 func replParseDeleteProgram(args []string) (*ProgramDeleteCmd, error) {
 	var cmd ProgramDeleteCmd
@@ -1928,99 +1876,6 @@ func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			return mgr.Unload(ctx, writeLock, id)
 		})
-}
-
-// replLoadImage handles "program load image" / "load image".
-func replLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (replang.Value, error) {
-	var cmd LoadImageCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("load image"),
-		kong.Description("Load BPF programs from an OCI image."),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(KeyValue{}), keyValueMapper()),
-		kong.TypeMapper(reflect.TypeOf(GlobalData{}), globalDataMapper()),
-		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
-		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return replang.Value{}, fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return replang.Value{}, err
-	}
-
-	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy.Value)
-	if err != nil {
-		return replang.Value{}, fmt.Errorf("invalid pull policy %q: %w", cmd.PullPolicy.Value, err)
-	}
-
-	type loadImageResult struct {
-		Programs []bpfman.Program
-	}
-
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
-		var globalData map[string][]byte
-		if len(cmd.GlobalData) > 0 {
-			globalData = GlobalDataMap(cmd.GlobalData)
-		}
-
-		metadata := MetadataMap(cmd.Metadata)
-		if cmd.Application != "" {
-			if metadata == nil {
-				metadata = make(map[string]string)
-			}
-			metadata["bpfman.io/application"] = cmd.Application
-		}
-
-		ref := platform.ImageRef{
-			URL:        cmd.ImageURL,
-			PullPolicy: pullPolicy,
-		}
-
-		var programs []manager.ProgramSpec
-		for _, prog := range cmd.Programs {
-			programs = append(programs, manager.ProgramSpec{
-				Name:       prog.Name,
-				Type:       prog.Type,
-				AttachFunc: prog.AttachFunc,
-				MapOwnerID: cmd.MapOwnerID,
-			})
-		}
-
-		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
-			Image: &ref,
-		}, programs, manager.LoadOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
-		})
-		if loadErr != nil {
-			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
-		}
-		return loadImageResult{Programs: loaded}, nil
-	})
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	output, err := FormatLoadedPrograms(result.Programs, &cmd.OutputFlags)
-	if err != nil {
-		return replang.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
-	}
-
-	if len(result.Programs) == 0 {
-		return replang.Value{}, nil
-	}
-
-	val, err := replang.ValueFromStruct(result.Programs[0])
-	if err != nil {
-		return replang.Value{}, nil
-	}
-	return val, nil
 }
 
 // replLinkAttach handles "link attach <type> [flags] <program-id>".

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/replang"
 )
 
@@ -139,4 +143,382 @@ func execShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *S
 	}
 
 	return cli.PrintOut(output)
+}
+
+// LoadFileCommand represents a fully parsed "load file" command.
+type LoadFileCommand struct {
+	Path        string
+	Programs    []ProgramSpec
+	Metadata    []KeyValue
+	GlobalData  []GlobalData
+	Application string
+	MapOwnerID  kernel.ProgramID
+	Output      OutputFlags
+}
+
+func (*LoadFileCommand) isCommand() {}
+
+// parseLoadFile resolves expanded REPL arguments into a
+// LoadFileCommand. The grammar is:
+//
+//	-p <path> [--programs <spec>]... [-m <key=val>]... [-g <name=hex>]...
+//	[-a <app>] [--map-owner-id <id>] [-o <format>]
+func parseLoadFile(args []replang.Arg) (*LoadFileCommand, error) {
+	cmd := &LoadFileCommand{
+		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "-p", "--path":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: %s requires a value", text)
+			}
+			cmd.Path = argText(args[i])
+		case "--programs":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: --programs requires a value")
+			}
+			spec, err := ParseProgramSpec(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load file: %w", err)
+			}
+			cmd.Programs = append(cmd.Programs, spec)
+		case "-m", "--metadata":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: %s requires a value", text)
+			}
+			kv, err := ParseKeyValue(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load file: %w", err)
+			}
+			cmd.Metadata = append(cmd.Metadata, kv)
+		case "-g", "--global":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: %s requires a value", text)
+			}
+			gd, err := ParseGlobalData(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load file: %w", err)
+			}
+			cmd.GlobalData = append(cmd.GlobalData, gd)
+		case "-a", "--application":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: %s requires a value", text)
+			}
+			cmd.Application = argText(args[i])
+		case "--map-owner-id":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: --map-owner-id requires a value")
+			}
+			parsed, err := ParseProgramID(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load file: %w", err)
+			}
+			cmd.MapOwnerID = parsed.Value
+		case "-o":
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("load file: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load file: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("load file: unknown flag %q", text)
+			}
+			return nil, fmt.Errorf("load file: unexpected argument %q", text)
+		}
+	}
+
+	if cmd.Path == "" {
+		return nil, fmt.Errorf("load file: --path is required")
+	}
+
+	return cmd, nil
+}
+
+// execLoadFile executes a parsed LoadFileCommand, loading the BPF
+// program from a local object file, printing output, and returning a
+// structured Value for optional variable assignment.
+func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadFileCommand) (replang.Value, error) {
+	objPath, err := ParseObjectPath(cmd.Path)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+		var globalData map[string][]byte
+		if len(cmd.GlobalData) > 0 {
+			globalData = GlobalDataMap(cmd.GlobalData)
+		}
+
+		metadata := MetadataMap(cmd.Metadata)
+		if cmd.Application != "" {
+			if metadata == nil {
+				metadata = make(map[string]string)
+			}
+			metadata["bpfman.io/application"] = cmd.Application
+		}
+
+		var programs []manager.ProgramSpec
+		for _, prog := range cmd.Programs {
+			programs = append(programs, manager.ProgramSpec{
+				Name:       prog.Name,
+				Type:       prog.Type,
+				AttachFunc: prog.AttachFunc,
+				MapOwnerID: cmd.MapOwnerID,
+			})
+		}
+
+		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
+			FilePath: objPath.Path,
+		}, programs, manager.LoadOpts{
+			UserMetadata: metadata,
+			GlobalData:   globalData,
+		})
+		if loadErr != nil {
+			return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
+		}
+		return loadFileResult{Programs: loaded}, nil
+	})
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	if len(result.Programs) == 0 {
+		return replang.Value{}, nil
+	}
+
+	val, err := replang.ValueFromStruct(result.Programs[0])
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// LoadImageCommand represents a fully parsed "load image" command.
+type LoadImageCommand struct {
+	ImageURL     string
+	Programs     []ProgramSpec
+	PullPolicy   string
+	RegistryAuth string
+	Application  string
+	Metadata     []KeyValue
+	GlobalData   []GlobalData
+	MapOwnerID   kernel.ProgramID
+	Output       OutputFlags
+}
+
+func (*LoadImageCommand) isCommand() {}
+
+// parseLoadImage resolves expanded REPL arguments into a
+// LoadImageCommand. The grammar is:
+//
+//	-i <url> [--programs <spec>]... [-p <policy>] [--registry-auth <auth>]
+//	[-a <app>] [--map-owner-id <id>] [-m <key=val>]... [-g <name=hex>]...
+//	[-o <format>]
+func parseLoadImage(args []replang.Arg) (*LoadImageCommand, error) {
+	cmd := &LoadImageCommand{
+		PullPolicy: "IfNotPresent",
+		Output:     OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "-i", "--image-url":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: %s requires a value", text)
+			}
+			cmd.ImageURL = argText(args[i])
+		case "--programs":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: --programs requires a value")
+			}
+			spec, err := ParseProgramSpec(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load image: %w", err)
+			}
+			cmd.Programs = append(cmd.Programs, spec)
+		case "-p", "--pull-policy":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: %s requires a value", text)
+			}
+			cmd.PullPolicy = argText(args[i])
+		case "--registry-auth":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: --registry-auth requires a value")
+			}
+			cmd.RegistryAuth = argText(args[i])
+		case "-a", "--application":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: %s requires a value", text)
+			}
+			cmd.Application = argText(args[i])
+		case "--map-owner-id":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: --map-owner-id requires a value")
+			}
+			parsed, err := ParseProgramID(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load image: %w", err)
+			}
+			cmd.MapOwnerID = parsed.Value
+		case "-m", "--metadata":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: %s requires a value", text)
+			}
+			kv, err := ParseKeyValue(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load image: %w", err)
+			}
+			cmd.Metadata = append(cmd.Metadata, kv)
+		case "-g", "--global":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: %s requires a value", text)
+			}
+			gd, err := ParseGlobalData(argText(args[i]))
+			if err != nil {
+				return nil, fmt.Errorf("load image: %w", err)
+			}
+			cmd.GlobalData = append(cmd.GlobalData, gd)
+		case "-o":
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("load image: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("load image: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("load image: unknown flag %q", text)
+			}
+			return nil, fmt.Errorf("load image: unexpected argument %q", text)
+		}
+	}
+
+	if cmd.ImageURL == "" {
+		return nil, fmt.Errorf("load image: --image-url is required")
+	}
+
+	return cmd, nil
+}
+
+// execLoadImage executes a parsed LoadImageCommand, loading BPF
+// programs from an OCI image, printing output, and returning a
+// structured Value for optional variable assignment.
+func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadImageCommand) (replang.Value, error) {
+	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy)
+	if err != nil {
+		return replang.Value{}, fmt.Errorf("load image: invalid pull policy %q: %w", cmd.PullPolicy, err)
+	}
+
+	type loadImageResult struct {
+		Programs []bpfman.Program
+	}
+
+	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+		var globalData map[string][]byte
+		if len(cmd.GlobalData) > 0 {
+			globalData = GlobalDataMap(cmd.GlobalData)
+		}
+
+		metadata := MetadataMap(cmd.Metadata)
+		if cmd.Application != "" {
+			if metadata == nil {
+				metadata = make(map[string]string)
+			}
+			metadata["bpfman.io/application"] = cmd.Application
+		}
+
+		ref := platform.ImageRef{
+			URL:        cmd.ImageURL,
+			PullPolicy: pullPolicy,
+		}
+
+		if cmd.RegistryAuth != "" {
+			decoded, decErr := base64.StdEncoding.DecodeString(cmd.RegistryAuth)
+			if decErr != nil {
+				return loadImageResult{}, fmt.Errorf("invalid registry-auth: invalid base64 encoding: %w", decErr)
+			}
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) != 2 {
+				return loadImageResult{}, fmt.Errorf("invalid registry-auth: expected 'username:password' format")
+			}
+			ref.Auth = &platform.ImageAuth{
+				Username: parts[0],
+				Password: parts[1],
+			}
+		}
+
+		var programs []manager.ProgramSpec
+		for _, prog := range cmd.Programs {
+			programs = append(programs, manager.ProgramSpec{
+				Name:       prog.Name,
+				Type:       prog.Type,
+				AttachFunc: prog.AttachFunc,
+				MapOwnerID: cmd.MapOwnerID,
+			})
+		}
+
+		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
+			Image: &ref,
+		}, programs, manager.LoadOpts{
+			UserMetadata: metadata,
+			GlobalData:   globalData,
+		})
+		if loadErr != nil {
+			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
+		}
+		return loadImageResult{Programs: loaded}, nil
+	})
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	if len(result.Programs) == 0 {
+		return replang.Value{}, nil
+	}
+
+	val, err := replang.ValueFromStruct(result.Programs[0])
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
 }
