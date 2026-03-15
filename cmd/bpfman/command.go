@@ -285,6 +285,7 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 
 	// Walk the remaining arguments: optional view positional, optional -o flag.
 	rest := args[1:]
+	viewSet := false
 	for i := 0; i < len(rest); i++ {
 		text := argText(rest[i])
 		if text == "-o" {
@@ -304,11 +305,15 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 		if strings.HasPrefix(text, "-") {
 			return nil, fmt.Errorf("show program: unknown flag %q", text)
 		}
+		if viewSet {
+			return nil, fmt.Errorf("show program: duplicate view %q (view already set)", text)
+		}
 		// Treat as view name.
 		if !validShowViews[text] {
 			return nil, fmt.Errorf("show program: unknown view %q (valid: summary, links, maps, paths)", text)
 		}
 		cmd.View = text
+		viewSet = true
 	}
 
 	return cmd, nil
@@ -575,7 +580,7 @@ func parseLinkAttach(args []shell.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachXDP parses "link attach xdp" arguments.
 //
 //	-i <iface> [-p <priority>] [--proceed-on <actions>]...
-//	[-n <netns>] [-m <key=val>]... [-o <format>] <program-id>
+//	[-n <netns>] [-o <format>] <program-id>
 func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -620,10 +625,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach xdp: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach xdp: duplicate -o flag")
@@ -684,7 +686,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachTC parses "link attach tc" arguments.
 //
 //	-i <iface> -d <direction> [-p <priority>] [--proceed-on <actions>]...
-//	[-n <netns>] [-m <key=val>]... [-o <format>] <program-id>
+//	[-n <netns>] [-o <format>] <program-id>
 func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -736,10 +738,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach tc: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach tc: duplicate -o flag")
@@ -811,7 +810,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachTCX parses "link attach tcx" arguments.
 //
 //	-i <iface> -d <direction> [-p <priority>] [-n <netns>]
-//	[-m <key=val>]... [-o <format>] <program-id>
+//	[-o <format>] <program-id>
 func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
@@ -854,10 +853,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach tcx: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach tcx: duplicate -o flag")
@@ -920,7 +916,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachTracepoint parses "link attach tracepoint" arguments.
 //
-//	-t <group/name> [-m <key=val>]... [-o <format>] <program-id>
+//	-t <group/name> [-o <format>] <program-id>
 func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		tracepoint string
@@ -938,10 +934,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			tracepoint = argText(args[i])
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tracepoint: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach tracepoint: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach tracepoint: duplicate -o flag")
@@ -989,7 +982,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachKprobe parses "link attach kprobe" arguments.
 //
-//	-f <fn-name> [--offset <n>] [-m <key=val>]... [-o <format>] <program-id>
+//	-f <fn-name> [--offset <n>] [-o <format>] <program-id>
 func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		fnName  string
@@ -1018,10 +1011,7 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			offset = v
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach kprobe: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach kprobe: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach kprobe: duplicate -o flag")
@@ -1068,7 +1058,7 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachUprobe parses "link attach uprobe" arguments.
 //
 //	--target <path> [-f <fn-name>] [--offset <n>] [--container-pid <pid>]
-//	[-m <key=val>]... [-o <format>] <program-id>
+//	[-o <format>] <program-id>
 func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		target       string
@@ -1115,10 +1105,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			}
 			containerPid = int32(v)
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach uprobe: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach uprobe: duplicate -o flag")
@@ -1170,7 +1157,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachFentry parses "link attach fentry" arguments.
 //
-//	[-m <key=val>]... [-o <format>] <program-id>
+//	[-o <format>] <program-id>
 func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg shell.Arg
@@ -1181,10 +1168,7 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 		text := argText(args[i])
 		switch text {
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach fentry: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach fentry: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach fentry: duplicate -o flag")
@@ -1224,7 +1208,7 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachFexit parses "link attach fexit" arguments.
 //
-//	[-m <key=val>]... [-o <format>] <program-id>
+//	[-o <format>] <program-id>
 func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg shell.Arg
@@ -1235,10 +1219,7 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 		text := argText(args[i])
 		switch text {
 		case "-m", "--metadata":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach fexit: %s requires a value", text)
-			}
+			return nil, fmt.Errorf("link attach fexit: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
 				return nil, fmt.Errorf("link attach fexit: duplicate -o flag")

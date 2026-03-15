@@ -189,6 +189,15 @@ func TestParseShowProgram(t *testing.T) {
 			},
 			wantErr: "does not provide a program ID",
 		},
+		{
+			name: "duplicate view positional rejected",
+			args: []shell.Arg{
+				shell.WordArg{Text: "123"},
+				shell.WordArg{Text: "links"},
+				shell.WordArg{Text: "maps"},
+			},
+			wantErr: "duplicate view",
+		},
 	}
 
 	for _, tt := range tests {
@@ -531,12 +540,12 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 			wantErr: "unknown flag",
 		},
 		{
-			name: "metadata silently consumed",
+			name: "metadata flag rejected",
 			args: []shell.Arg{
 				word("tracepoint"), word("-t"), word("sched/sched_switch"),
 				word("-m"), word("key=val"), word("42"),
 			},
-			wantOutput: "table",
+			wantErr: "not supported for attach",
 		},
 		{
 			name:    "duplicate -o flag",
@@ -594,6 +603,11 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 			args:    []shell.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("--offset"), word("abc"), word("42")},
 			wantErr: "invalid offset",
 		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -646,6 +660,11 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 			name:    "invalid container-pid",
 			args:    []shell.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("--container-pid"), word("abc"), word("42")},
 			wantErr: "invalid container-pid",
+		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
 		},
 	}
 	for _, tt := range tests {
@@ -702,6 +721,11 @@ func TestParseLinkAttachFentry(t *testing.T) {
 			args:    []shell.Arg{word("fentry"), structuredLink("lnk", 10)},
 			wantErr: "does not provide a program ID",
 		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("fentry"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -734,6 +758,11 @@ func TestParseLinkAttachFexit(t *testing.T) {
 			name:    "missing program ID",
 			args:    []shell.Arg{word("fexit")},
 			wantErr: "requires a program ID",
+		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("fexit"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
 		},
 	}
 	for _, tt := range tests {
@@ -777,6 +806,11 @@ func TestParseLinkAttachXDP_Errors(t *testing.T) {
 			args:    []shell.Arg{word("xdp"), word("-i"), word("lo"), word("-p"), word("abc"), word("42")},
 			wantErr: "invalid priority",
 		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("xdp"), word("-i"), word("lo"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -808,6 +842,11 @@ func TestParseLinkAttachTC_Errors(t *testing.T) {
 			args:    []shell.Arg{word("tc"), word("-i"), word("lo"), word("-d"), word("ingress")},
 			wantErr: "requires a program ID",
 		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("tc"), word("-i"), word("lo"), word("-d"), word("ingress"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -838,6 +877,11 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 			name:    "missing program ID",
 			args:    []shell.Arg{word("tcx"), word("-i"), word("lo"), word("-d"), word("ingress")},
 			wantErr: "requires a program ID",
+		},
+		{
+			name:    "metadata flag rejected",
+			args:    []shell.Arg{word("tcx"), word("-i"), word("lo"), word("-d"), word("ingress"), word("-m"), word("k=v"), word("42")},
+			wantErr: "not supported for attach",
 		},
 	}
 	for _, tt := range tests {

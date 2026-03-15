@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2009,4 +2010,29 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
 	require.ErrorIs(t, err, errScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:4: ")
+}
+
+func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
+	original := &CLI{
+		RuntimeDir:    "/run/bpfman",
+		ImageCacheDir: "/var/cache/bpfman",
+		Config:        "/etc/bpfman/bpfman.toml",
+		LockTimeout:   30 * time.Second,
+		Out:           os.Stdout,
+		Err:           os.Stderr,
+	}
+	quiet := original.WithDiscardOutput()
+
+	// Runtime state must be preserved.
+	assert.Equal(t, original.RuntimeDir, quiet.RuntimeDir)
+	assert.Equal(t, original.ImageCacheDir, quiet.ImageCacheDir)
+	assert.Equal(t, original.Config, quiet.Config)
+	assert.Equal(t, original.LockTimeout, quiet.LockTimeout)
+
+	// Output writers must be replaced.
+	assert.Equal(t, io.Discard, quiet.Out)
+	assert.Equal(t, io.Discard, quiet.Err)
+
+	// Must not alias the original.
+	assert.NotSame(t, original, quiet)
 }

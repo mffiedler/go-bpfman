@@ -60,6 +60,25 @@ type CLI struct {
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
 }
 
+// WithDiscardOutput returns a new CLI that shares the receiver's
+// runtime state (RuntimeDir, config, logger, lock timeout) but
+// discards all output. Used by assertion verbs to suppress command
+// output while preserving the execution environment.
+func (c *CLI) WithDiscardOutput() *CLI {
+	return &CLI{
+		RuntimeDir:    c.RuntimeDir,
+		ImageCacheDir: c.ImageCacheDir,
+		Config:        c.Config,
+		Log:           c.Log,
+		LockTimeout:   c.LockTimeout,
+		Out:           io.Discard,
+		Err:           io.Discard,
+		cachedConfig:  c.cachedConfig,
+		configErr:     c.configErr,
+		logger:        c.logger,
+	}
+}
+
 // Layout returns the filesystem layout for the configured runtime directory.
 // Returns an error if RuntimeDir is empty or not an absolute path.
 func (c *CLI) Layout() (fs.Layout, error) {

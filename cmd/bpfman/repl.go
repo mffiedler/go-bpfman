@@ -70,7 +70,7 @@ type assertResult struct {
 // Run starts the read-eval-print loop. A single manager is held open
 // for the session lifetime to avoid repeated store open/close.
 func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
-	mgr, cleanup, err := cli.NewManager(ctx)
+	mgr, cleanup, err := cli.NewManagerWithPuller(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -1319,8 +1319,7 @@ func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("ok requires a command")
 	}
-	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
-	err := runCommand(ctx, discardCLI, mgr, session, args)
+	err := runCommand(ctx, cli.WithDiscardOutput(), mgr, session, args)
 	if err != nil {
 		return assertResult{
 			pass:    false,
@@ -1337,8 +1336,7 @@ func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("fail requires a command")
 	}
-	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
-	err := runCommand(ctx, discardCLI, mgr, session, args)
+	err := runCommand(ctx, cli.WithDiscardOutput(), mgr, session, args)
 	if err != nil {
 		return assertResult{
 			pass:    true,

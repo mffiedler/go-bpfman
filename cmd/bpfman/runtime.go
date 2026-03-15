@@ -54,9 +54,9 @@ func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, e
 	return mgr, cleanup, nil
 }
 
-// NewManagerWithPuller creates a manager with an image puller for CLI commands
-// that need to load from OCI images. Returns the manager, a cleanup function,
-// and the image puller.
+// NewManagerWithPuller creates a manager with an image puller for CLI
+// commands that need to load from OCI images. Returns the manager and
+// a cleanup function that releases resources.
 func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func() error, error) {
 	layout, err := c.Layout()
 	if err != nil {
@@ -82,7 +82,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 	}
 
 	// Build image puller with signature verification settings from config
-	puller, err := c.buildImagePuller(logger)
+	puller, err := c.buildImagePuller()
 	if err != nil {
 		store.Close()
 		return nil, nil, fmt.Errorf("create image puller: %w", err)
@@ -103,7 +103,7 @@ func (c *CLI) NewManagerWithPuller(ctx context.Context) (*manager.Manager, func(
 }
 
 // buildImagePuller creates an image puller with signature verification settings from config.
-func (c *CLI) buildImagePuller(logger interface{ Debug(string, ...any) }) (platform.ImagePuller, error) {
+func (c *CLI) buildImagePuller() (platform.ImagePuller, error) {
 	cfg, err := c.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
