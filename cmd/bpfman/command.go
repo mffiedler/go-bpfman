@@ -8,10 +8,14 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/labels"
+
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/replang"
 )
@@ -1383,4 +1387,935 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 		return replang.Value{}, nil
 	}
 	return val, nil
+}
+
+// GetProgramCommand represents a fully parsed "program get" command
+// with a resolved program ID and output format.
+type GetProgramCommand struct {
+	ID     kernel.ProgramID
+	Output OutputFlags
+}
+
+func (*GetProgramCommand) isCommand() {}
+
+// parseGetProgram resolves expanded REPL arguments into a
+// GetProgramCommand. The grammar is:
+//
+//	<program-id> [-o format]
+func parseGetProgram(args []replang.Arg) (*GetProgramCommand, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("program get: requires a program ID")
+	}
+
+	idStr, err := extractProgramID(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("program get: %w", err)
+	}
+	parsed, err := ParseProgramID(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("program get: %w", err)
+	}
+
+	cmd := &GetProgramCommand{
+		ID: parsed.Value,
+		Output: OutputFlags{
+			Output: OutputValue{Value: "table"},
+		},
+	}
+
+	for i := 1; i < len(args); i++ {
+		text := argText(args[i])
+		if text == "-o" {
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("program get: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("program get: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{
+				Value: argText(args[i]),
+				IsSet: true,
+			}
+			continue
+		}
+		if strings.HasPrefix(text, "-") {
+			return nil, fmt.Errorf("program get: unknown flag %q", text)
+		}
+		return nil, fmt.Errorf("program get: unexpected argument %q", text)
+	}
+
+	return cmd, nil
+}
+
+// execGetProgram executes a parsed GetProgramCommand, fetching the
+// program from the store, rendering output, and returning a
+// structured Value for variable assignment.
+func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetProgramCommand) (replang.Value, error) {
+	prog, err := mgr.Get(ctx, cmd.ID)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	output, err := FormatProgram(prog, &cmd.Output)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	val, err := replang.ValueFromStruct(prog)
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// GetLinkCommand represents a fully parsed "link get" command with a
+// resolved link ID and output format.
+type GetLinkCommand struct {
+	ID     kernel.LinkID
+	Output OutputFlags
+}
+
+func (*GetLinkCommand) isCommand() {}
+
+// parseGetLink resolves expanded REPL arguments into a
+// GetLinkCommand. The grammar is:
+//
+//	<link-id> [-o format]
+func parseGetLink(args []replang.Arg) (*GetLinkCommand, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("link get: requires a link ID")
+	}
+
+	idStr, err := extractLinkID(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("link get: %w", err)
+	}
+	parsed, err := ParseLinkID(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("link get: %w", err)
+	}
+
+	cmd := &GetLinkCommand{
+		ID: parsed.Value,
+		Output: OutputFlags{
+			Output: OutputValue{Value: "table"},
+		},
+	}
+
+	for i := 1; i < len(args); i++ {
+		text := argText(args[i])
+		if text == "-o" {
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("link get: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("link get: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{
+				Value: argText(args[i]),
+				IsSet: true,
+			}
+			continue
+		}
+		if strings.HasPrefix(text, "-") {
+			return nil, fmt.Errorf("link get: unknown flag %q", text)
+		}
+		return nil, fmt.Errorf("link get: unexpected argument %q", text)
+	}
+
+	return cmd, nil
+}
+
+// execGetLink executes a parsed GetLinkCommand, fetching the link
+// from the store, rendering output, and returning a structured Value
+// for variable assignment.
+func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLinkCommand) (replang.Value, error) {
+	info, err := mgr.GetLinkInfo(ctx, cmd.ID)
+	if err != nil {
+		return replang.Value{}, err
+	}
+
+	link := bpfman.Link{
+		Record: info.Record,
+		Status: bpfman.LinkStatus{
+			Kernel:     info.Kernel,
+			KernelSeen: info.Presence.InKernel,
+			PinPresent: info.Presence.InFS,
+		},
+	}
+
+	output, fmtErr := FormatLinkResult(link, &cmd.Output)
+	if fmtErr != nil {
+		return replang.Value{}, fmtErr
+	}
+	if err := cli.PrintOut(output); err != nil {
+		return replang.Value{}, err
+	}
+
+	val, err := replang.ValueFromStruct(link)
+	if err != nil {
+		return replang.Value{}, nil
+	}
+	return val, nil
+}
+
+// UnloadProgramCommand represents a fully parsed "program unload"
+// command with resolved program IDs.
+type UnloadProgramCommand struct {
+	ProgramIDs []kernel.ProgramID
+}
+
+func (*UnloadProgramCommand) isCommand() {}
+
+// parseUnloadProgram resolves expanded REPL arguments into an
+// UnloadProgramCommand. Each positional argument is a program ID.
+func parseUnloadProgram(args []replang.Arg) (*UnloadProgramCommand, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("program unload: requires at least one program ID")
+	}
+
+	var ids []kernel.ProgramID
+	for _, a := range args {
+		idStr, err := extractProgramID(a)
+		if err != nil {
+			return nil, fmt.Errorf("program unload: %w", err)
+		}
+		parsed, err := ParseProgramID(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("program unload: %w", err)
+		}
+		ids = append(ids, parsed.Value)
+	}
+
+	return &UnloadProgramCommand{ProgramIDs: ids}, nil
+}
+
+// execUnloadProgram executes a parsed UnloadProgramCommand, unloading
+// each program under lock.
+func execUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *UnloadProgramCommand) error {
+	return runBatchMutation(ctx, cli, cmd.ProgramIDs, "program", "unload",
+		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
+			return mgr.Unload(ctx, writeLock, id)
+		})
+}
+
+// DeleteProgramCommand represents a fully parsed "program delete"
+// command with resolved program IDs and flags.
+type DeleteProgramCommand struct {
+	ProgramIDs []kernel.ProgramID
+	All        bool
+	Recursive  bool
+}
+
+func (*DeleteProgramCommand) isCommand() {}
+
+// parseDeleteProgram resolves expanded REPL arguments into a
+// DeleteProgramCommand. The grammar is:
+//
+//	(<program-id>... | --all) [-r]
+func parseDeleteProgram(args []replang.Arg) (*DeleteProgramCommand, error) {
+	cmd := &DeleteProgramCommand{}
+
+	var positionals []replang.Arg
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "--all":
+			cmd.All = true
+		case "-r", "--recursive":
+			cmd.Recursive = true
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("program delete: unknown flag %q", text)
+			}
+			positionals = append(positionals, args[i])
+		}
+	}
+
+	if cmd.All && len(positionals) > 0 {
+		return nil, fmt.Errorf("program delete: --all and explicit program IDs are mutually exclusive")
+	}
+	if !cmd.All && len(positionals) == 0 {
+		return nil, fmt.Errorf("program delete: provide at least one program ID or use --all")
+	}
+
+	for _, a := range positionals {
+		idStr, err := extractProgramID(a)
+		if err != nil {
+			return nil, fmt.Errorf("program delete: %w", err)
+		}
+		parsed, err := ParseProgramID(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("program delete: %w", err)
+		}
+		cmd.ProgramIDs = append(cmd.ProgramIDs, parsed.Value)
+	}
+
+	return cmd, nil
+}
+
+// execDeleteProgram executes a parsed DeleteProgramCommand. When All
+// is set, every managed program is collected first. Each program is
+// deleted with cascading cleanup under lock.
+func execDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DeleteProgramCommand) error {
+	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, programIDsToProgramIDs(cmd.ProgramIDs))
+	if err != nil {
+		return err
+	}
+	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive)
+}
+
+// programIDsToProgramIDs converts a slice of kernel.ProgramID to the
+// ProgramID wrapper type used by collectDeleteIDs.
+func programIDsToProgramIDs(ids []kernel.ProgramID) []ProgramID {
+	result := make([]ProgramID, len(ids))
+	for i, id := range ids {
+		result[i] = ProgramID{Value: id}
+	}
+	return result
+}
+
+// DeleteLinkCommand represents a fully parsed "link delete" command
+// with resolved link IDs and flags.
+type DeleteLinkCommand struct {
+	LinkIDs   []kernel.LinkID
+	Recursive bool
+}
+
+func (*DeleteLinkCommand) isCommand() {}
+
+// parseDeleteLink resolves expanded REPL arguments into a
+// DeleteLinkCommand. The grammar is:
+//
+//	<link-id>... [-r]
+func parseDeleteLink(args []replang.Arg) (*DeleteLinkCommand, error) {
+	cmd := &DeleteLinkCommand{}
+
+	var positionals []replang.Arg
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "-r", "--recursive":
+			cmd.Recursive = true
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("link delete: unknown flag %q", text)
+			}
+			positionals = append(positionals, args[i])
+		}
+	}
+
+	if len(positionals) == 0 {
+		return nil, fmt.Errorf("link delete: requires at least one link ID")
+	}
+
+	for _, a := range positionals {
+		idStr, err := extractLinkID(a)
+		if err != nil {
+			return nil, fmt.Errorf("link delete: %w", err)
+		}
+		parsed, err := ParseLinkID(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("link delete: %w", err)
+		}
+		cmd.LinkIDs = append(cmd.LinkIDs, parsed.Value)
+	}
+
+	return cmd, nil
+}
+
+// execDeleteLink executes a parsed DeleteLinkCommand, deleting each
+// link with cascading cleanup under lock.
+func execDeleteLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DeleteLinkCommand) error {
+	type result struct {
+		id  kernel.LinkID
+		err error
+	}
+	results := make([]result, 0, len(cmd.LinkIDs))
+
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+		for _, id := range cmd.LinkIDs {
+			err := deleteLink(ctx, writeLock, mgr, id, cmd.Recursive)
+			results = append(results, result{id: id, err: err})
+		}
+		return nil
+	})
+	if lockErr != nil {
+		return lockErr
+	}
+
+	var failCount int
+	for _, r := range results {
+		if r.err != nil {
+			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
+			failCount++
+		}
+	}
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d link(s) failed to delete", failCount, len(results))
+	}
+	return nil
+}
+
+// ListProgramsCommand represents a fully parsed "program list"
+// command with filter flags and output format.
+type ListProgramsCommand struct {
+	Quiet      bool
+	Attached   bool
+	Unattached bool
+	Types      []string
+	Selector   string
+	Output     OutputFlags
+}
+
+func (*ListProgramsCommand) isCommand() {}
+
+// parseListPrograms resolves expanded REPL arguments into a
+// ListProgramsCommand. The grammar is:
+//
+//	[-q] [--attached|--unattached] [--type <types>]...
+//	[-l <selector>] [-o <format>]
+func parseListPrograms(args []replang.Arg) (*ListProgramsCommand, error) {
+	cmd := &ListProgramsCommand{
+		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "-q", "--quiet":
+			cmd.Quiet = true
+		case "--attached":
+			cmd.Attached = true
+		case "--unattached":
+			cmd.Unattached = true
+		case "--type":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("program list: --type requires a value")
+			}
+			cmd.Types = append(cmd.Types, splitComma(argText(args[i]))...)
+		case "-l", "--selector":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("program list: %s requires a value", text)
+			}
+			cmd.Selector = argText(args[i])
+		case "-o":
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("program list: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("program list: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("program list: unknown flag %q", text)
+			}
+			return nil, fmt.Errorf("program list: unexpected argument %q", text)
+		}
+	}
+
+	if cmd.Attached && cmd.Unattached {
+		return nil, fmt.Errorf("program list: --attached and --unattached are mutually exclusive")
+	}
+
+	return cmd, nil
+}
+
+// execListPrograms executes a parsed ListProgramsCommand, listing
+// programs from the store and rendering output.
+func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListProgramsCommand) error {
+	var opts []bpfman.ListOption
+
+	if cmd.Attached {
+		opts = append(opts, bpfman.WithAttached())
+	} else if cmd.Unattached {
+		opts = append(opts, bpfman.WithUnattached())
+	}
+
+	if len(cmd.Types) > 0 {
+		types, err := ParseProgramTypesSlice(cmd.Types)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, bpfman.WithTypes(types...))
+	}
+
+	if s := strings.TrimSpace(cmd.Selector); s != "" {
+		sel, err := labels.Parse(s)
+		if err != nil {
+			return fmt.Errorf("invalid label selector: %w", err)
+		}
+		opts = append(opts, bpfman.MatchingSelector(sel))
+	}
+
+	result, err := mgr.ListPrograms(ctx, opts...)
+	if err != nil {
+		return err
+	}
+
+	if len(result.Programs) == 0 && !cmd.Output.IsStructured() {
+		return nil
+	}
+
+	if cmd.Quiet {
+		var b strings.Builder
+		for _, p := range result.Programs {
+			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+		}
+		return cli.PrintOut(b.String())
+	}
+
+	output, err := FormatProgramsComposite(result, &cmd.Output)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// ListLinksCommand represents a fully parsed "link list" command with
+// filter flags and output format.
+type ListLinksCommand struct {
+	Quiet     bool
+	ProgramID *kernel.ProgramID
+	Kinds     []string
+	Output    OutputFlags
+}
+
+func (*ListLinksCommand) isCommand() {}
+
+// parseListLinks resolves expanded REPL arguments into a
+// ListLinksCommand. The grammar is:
+//
+//	[-q] [--program-id <id>] [--kind <kinds>]... [-o <format>]
+func parseListLinks(args []replang.Arg) (*ListLinksCommand, error) {
+	cmd := &ListLinksCommand{
+		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "-q", "--quiet":
+			cmd.Quiet = true
+		case "--program-id":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("link list: --program-id requires a value")
+			}
+			idStr, err := extractProgramID(args[i])
+			if err != nil {
+				return nil, fmt.Errorf("link list: %w", err)
+			}
+			parsed, err := ParseProgramID(idStr)
+			if err != nil {
+				return nil, fmt.Errorf("link list: %w", err)
+			}
+			cmd.ProgramID = &parsed.Value
+		case "--kind":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("link list: --kind requires a value")
+			}
+			cmd.Kinds = append(cmd.Kinds, splitComma(argText(args[i]))...)
+		case "-o":
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("link list: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("link list: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("link list: unknown flag %q", text)
+			}
+			return nil, fmt.Errorf("link list: unexpected argument %q", text)
+		}
+	}
+
+	return cmd, nil
+}
+
+// execListLinks executes a parsed ListLinksCommand, listing links
+// from the store and rendering output.
+func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListLinksCommand) error {
+	var opts []bpfman.LinkListOption
+
+	if cmd.ProgramID != nil {
+		opts = append(opts, bpfman.WithProgramID(*cmd.ProgramID))
+	}
+
+	if len(cmd.Kinds) > 0 {
+		kinds, err := ParseLinkKindsSlice(cmd.Kinds)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, bpfman.WithKinds(kinds...))
+	}
+
+	links, err := mgr.ListLinks(ctx, opts...)
+	if err != nil {
+		return err
+	}
+
+	if len(links) == 0 && !cmd.Output.IsStructured() {
+		return nil
+	}
+
+	if cmd.Quiet {
+		var b strings.Builder
+		for _, l := range links {
+			fmt.Fprintf(&b, "link/%d\n", l.ID)
+		}
+		return cli.PrintOut(b.String())
+	}
+
+	output, err := FormatLinkList(links, &cmd.Output)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// DispatcherListCommand represents a fully parsed "dispatcher list"
+// command with optional type filter and output format.
+type DispatcherListCommand struct {
+	Type   string
+	Output OutputFlags
+}
+
+func (*DispatcherListCommand) isCommand() {}
+
+// parseDispatcherList resolves expanded REPL arguments into a
+// DispatcherListCommand. The grammar is:
+//
+//	[--type <type>] [-o <format>]
+func parseDispatcherList(args []replang.Arg) (*DispatcherListCommand, error) {
+	cmd := &DispatcherListCommand{
+		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "--type":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("dispatcher list: --type requires a value")
+			}
+			cmd.Type = argText(args[i])
+		case "-o":
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("dispatcher list: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("dispatcher list: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("dispatcher list: unknown flag %q", text)
+			}
+			return nil, fmt.Errorf("dispatcher list: unexpected argument %q", text)
+		}
+	}
+
+	return cmd, nil
+}
+
+// execDispatcherList executes a parsed DispatcherListCommand, listing
+// dispatchers from the store and rendering output.
+func execDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherListCommand) error {
+	summaries, err := mgr.ListDispatcherSummaries(ctx)
+	if err != nil {
+		return err
+	}
+
+	if cmd.Type != "" {
+		filterType, err := dispatcher.ParseDispatcherType(cmd.Type)
+		if err != nil {
+			return err
+		}
+		filtered := summaries[:0]
+		for _, s := range summaries {
+			if s.Key.Type == filterType {
+				filtered = append(filtered, s)
+			}
+		}
+		summaries = filtered
+	}
+
+	if len(summaries) == 0 && !cmd.Output.IsStructured() {
+		return nil
+	}
+
+	output, err := FormatDispatcherList(summaries, &cmd.Output)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// DispatcherGetCommand represents a fully parsed "dispatcher get"
+// command with resolved dispatcher key and output format.
+type DispatcherGetCommand struct {
+	Key    dispatcher.Key
+	Output OutputFlags
+}
+
+func (*DispatcherGetCommand) isCommand() {}
+
+// parseDispatcherGet resolves expanded REPL arguments into a
+// DispatcherGetCommand. The grammar is:
+//
+//	<type> <nsid> <ifindex> [-o <format>]
+func parseDispatcherGet(args []replang.Arg) (*DispatcherGetCommand, error) {
+	if len(args) < 3 {
+		return nil, fmt.Errorf("dispatcher get: requires <type> <nsid> <ifindex>")
+	}
+
+	dispType, err := dispatcher.ParseDispatcherType(argText(args[0]))
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher get: %w", err)
+	}
+
+	nsid, err := strconv.ParseUint(argText(args[1]), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher get: invalid nsid %q: %w", argText(args[1]), err)
+	}
+
+	ifindex, err := strconv.ParseUint(argText(args[2]), 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher get: invalid ifindex %q: %w", argText(args[2]), err)
+	}
+
+	cmd := &DispatcherGetCommand{
+		Key: dispatcher.Key{
+			Type:    dispType,
+			Nsid:    nsid,
+			Ifindex: uint32(ifindex),
+		},
+		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+	}
+
+	for i := 3; i < len(args); i++ {
+		text := argText(args[i])
+		if text == "-o" {
+			if cmd.Output.Output.IsSet {
+				return nil, fmt.Errorf("dispatcher get: duplicate -o flag")
+			}
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("dispatcher get: -o requires a value")
+			}
+			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			continue
+		}
+		if strings.HasPrefix(text, "-") {
+			return nil, fmt.Errorf("dispatcher get: unknown flag %q", text)
+		}
+		return nil, fmt.Errorf("dispatcher get: unexpected argument %q", text)
+	}
+
+	return cmd, nil
+}
+
+// execDispatcherGet executes a parsed DispatcherGetCommand, fetching
+// the dispatcher snapshot and rendering output.
+func execDispatcherGet(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) error {
+	snap, err := mgr.GetDispatcherSnapshot(ctx, cmd.Key)
+	if err != nil {
+		return err
+	}
+
+	output, err := FormatDispatcherSnapshot(snap, &cmd.Output)
+	if err != nil {
+		return err
+	}
+	return cli.PrintOut(output)
+}
+
+// DispatcherDeleteCommand represents a fully parsed "dispatcher
+// delete" command with a resolved dispatcher key.
+type DispatcherDeleteCommand struct {
+	Key dispatcher.Key
+}
+
+func (*DispatcherDeleteCommand) isCommand() {}
+
+// parseDispatcherDelete resolves expanded REPL arguments into a
+// DispatcherDeleteCommand. The grammar is:
+//
+//	<type> <nsid> <ifindex>
+func parseDispatcherDelete(args []replang.Arg) (*DispatcherDeleteCommand, error) {
+	if len(args) < 3 {
+		return nil, fmt.Errorf("dispatcher delete: requires <type> <nsid> <ifindex>")
+	}
+
+	dispType, err := dispatcher.ParseDispatcherType(argText(args[0]))
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher delete: %w", err)
+	}
+
+	nsid, err := strconv.ParseUint(argText(args[1]), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher delete: invalid nsid %q: %w", argText(args[1]), err)
+	}
+
+	ifindex, err := strconv.ParseUint(argText(args[2]), 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("dispatcher delete: invalid ifindex %q: %w", argText(args[2]), err)
+	}
+
+	if len(args) > 3 {
+		return nil, fmt.Errorf("dispatcher delete: unexpected argument %q", argText(args[3]))
+	}
+
+	return &DispatcherDeleteCommand{
+		Key: dispatcher.Key{
+			Type:    dispType,
+			Nsid:    nsid,
+			Ifindex: uint32(ifindex),
+		},
+	}, nil
+}
+
+// execDispatcherDelete executes a parsed DispatcherDeleteCommand,
+// deleting the dispatcher under lock.
+func execDispatcherDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherDeleteCommand) error {
+	return RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, cmd.Key)
+	})
+}
+
+// GCCommand represents a fully parsed "gc" command with flags and
+// optional rule names.
+type GCCommand struct {
+	DryRun bool
+	Prune  bool
+	Rules  []string
+}
+
+func (*GCCommand) isCommand() {}
+
+// parseGC resolves expanded REPL arguments into a GCCommand. The
+// grammar is:
+//
+//	[--dry-run] [--prune] [rule...]
+func parseGC(args []replang.Arg) (*GCCommand, error) {
+	cmd := &GCCommand{}
+
+	for i := 0; i < len(args); i++ {
+		text := argText(args[i])
+		switch text {
+		case "--dry-run":
+			cmd.DryRun = true
+		case "--prune":
+			cmd.Prune = true
+		default:
+			if strings.HasPrefix(text, "-") {
+				return nil, fmt.Errorf("gc: unknown flag %q", text)
+			}
+			cmd.Rules = append(cmd.Rules, text)
+		}
+	}
+
+	if len(cmd.Rules) > 0 {
+		gcRuleNames := make(map[string]bool)
+		for _, r := range coherency.GCRules() {
+			gcRuleNames[r.Name] = true
+		}
+		for _, name := range cmd.Rules {
+			if !gcRuleNames[name] {
+				return nil, fmt.Errorf("gc: unknown rule: %s\n\nAvailable GC rules:\n%s",
+					name, formatGCRuleNames())
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+// execGC executes a parsed GCCommand, running garbage collection.
+func execGC(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GCCommand) error {
+	gcCmd := &GCCmd{
+		DryRun: cmd.DryRun,
+		Prune:  cmd.Prune,
+		Rules:  cmd.Rules,
+	}
+
+	gcOpts := manager.GCOptions{
+		Rules: cmd.Rules,
+		Prune: cmd.Prune,
+	}
+
+	if cmd.DryRun {
+		return gcCmd.runDryRun(cli, ctx, mgr, gcOpts)
+	}
+	return gcCmd.runExecute(cli, ctx, mgr, gcOpts)
+}
+
+// DoctorCommand represents a fully parsed "doctor" command.
+type DoctorCommand struct {
+	Subcommand string // "checkup" or "explain"
+	RuleName   string // for "explain" subcommand
+}
+
+func (*DoctorCommand) isCommand() {}
+
+// parseDoctor resolves expanded REPL arguments into a
+// DoctorCommand. The grammar is:
+//
+//	[checkup]
+//	explain [rule]
+func parseDoctor(args []replang.Arg) (*DoctorCommand, error) {
+	if len(args) == 0 {
+		return &DoctorCommand{Subcommand: "checkup"}, nil
+	}
+
+	sub := argText(args[0])
+	switch sub {
+	case "checkup":
+		if len(args) > 1 {
+			return nil, fmt.Errorf("doctor checkup: unexpected argument %q", argText(args[1]))
+		}
+		return &DoctorCommand{Subcommand: "checkup"}, nil
+	case "explain":
+		cmd := &DoctorCommand{Subcommand: "explain"}
+		if len(args) > 1 {
+			cmd.RuleName = argText(args[1])
+		}
+		if len(args) > 2 {
+			return nil, fmt.Errorf("doctor explain: unexpected argument %q", argText(args[2]))
+		}
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("doctor: unknown subcommand %q (valid: checkup, explain)", sub)
+	}
+}
+
+// execDoctor executes a parsed DoctorCommand.
+func execDoctor(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DoctorCommand) error {
+	switch cmd.Subcommand {
+	case "checkup":
+		return replDoctorCheckup(ctx, cli, mgr)
+	case "explain":
+		if cmd.RuleName == "" {
+			return replDoctorExplain(cli, nil)
+		}
+		return replDoctorExplain(cli, []string{cmd.RuleName})
+	default:
+		return fmt.Errorf("doctor: unknown subcommand %q", cmd.Subcommand)
+	}
 }

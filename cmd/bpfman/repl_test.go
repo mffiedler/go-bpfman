@@ -1276,7 +1276,7 @@ func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "unknown doctor subcommand")
+	assert.Contains(t, errBuf.String(), "unknown subcommand \"bogus\" (valid: checkup, explain)")
 }
 
 func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
@@ -1287,7 +1287,7 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "program get requires a program ID")
+	assert.Contains(t, errBuf.String(), "program get: requires a program ID")
 }
 
 func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
@@ -1298,7 +1298,7 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "program unload requires at least one program ID")
+	assert.Contains(t, errBuf.String(), "program unload: requires at least one program ID")
 }
 
 func TestReplLoop_LinkAttachNoType(t *testing.T) {
@@ -1342,7 +1342,7 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "link get requires a link ID")
+	assert.Contains(t, errBuf.String(), "link get: requires a link ID")
 }
 
 func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
@@ -1353,7 +1353,7 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "link delete requires at least one link ID")
+	assert.Contains(t, errBuf.String(), "link delete: requires at least one link ID")
 }
 
 func TestReplComplete_SourceFileCompletion(t *testing.T) {

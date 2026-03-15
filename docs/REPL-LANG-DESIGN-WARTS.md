@@ -588,7 +588,7 @@ bpfman semantics.
 
 **Scope**: `cmd/bpfman/repl.go`
 
-### Step 8: introduce typed bpfman command nodes [IN PROGRESS]
+### Step 8: introduce typed bpfman command nodes [DONE]
 
 Define a `Command` interface in `cmd/bpfman/` with concrete types per
 command family. Add a command-parsing phase between expansion and
@@ -600,8 +600,8 @@ family at a time. A reasonable order:
 1. `show program` (high-frequency, exercises structured refs) [DONE]
 2. `load file` / `load image` (exercises result binding) [DONE]
 3. `link attach` / `link detach` (exercises cross-type refs) [DONE]
-4. `program get` / `link get` (exercises value return)
-5. Remaining commands
+4. `program get` / `link get` (exercises value return) [DONE]
+5. Remaining commands [DONE]
 
 Each command family can be migrated independently. The `replDispatch`
 switch shrinks as typed nodes absorb its cases.
@@ -609,12 +609,19 @@ switch shrinks as typed nodes absorb its cases.
 **Scope**: new file(s) in `cmd/bpfman/`, plus incremental changes to
 `cmd/bpfman/repl.go`
 
-### Step 9: typed command nodes absorb `replDispatch`
+### Step 9: typed command nodes absorb `replDispatch` [IN PROGRESS]
 
 Once all command families have typed nodes, the large `switch` block
 in `replDispatch` is replaced by a single type-switch on `Command`.
 The `resolveProgramIDArg`, `resolveProgramIDArgs`, `resolveLinkIDArg`,
 `resolveLinkIDArgs`, and `resolveVarRefs` functions are deleted.
+
+**Current state**: the resolve functions are deleted and every
+`replDispatch` case delegates to a typed parse/exec pair. The
+remaining structural change is to extract a unified
+`parseCommand(args) (Command, error)` routing function and a
+separate `execCommand` type-switch, so that command routing and
+execution are fully decoupled.
 
 **Scope**: `cmd/bpfman/repl.go`
 

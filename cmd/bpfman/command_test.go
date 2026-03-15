@@ -908,3 +908,218 @@ func TestParseLinkDetach(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGetProgram(t *testing.T) {
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	require.NoError(t, err)
+
+	linkVal, err := replang.ValueFromStruct(bpfman.Link{
+		Record: bpfman.LinkRecord{
+			ID:        kernel.LinkID(10),
+			ProgramID: kernel.ProgramID(42),
+		},
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		args       []replang.Arg
+		wantID     kernel.ProgramID
+		wantOutput string
+		wantErr    string
+	}{
+		{
+			name:       "numeric ID",
+			args:       []replang.Arg{word("123")},
+			wantID:     123,
+			wantOutput: "table",
+		},
+		{
+			name:       "hex ID",
+			args:       []replang.Arg{word("0x1a")},
+			wantID:     26,
+			wantOutput: "table",
+		},
+		{
+			name: "structured variable ref",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			},
+			wantID:     42,
+			wantOutput: "table",
+		},
+		{
+			name: "scalar value arg",
+			args: []replang.Arg{
+				replang.ScalarValueArg{Text: "55"},
+			},
+			wantID:     55,
+			wantOutput: "table",
+		},
+		{
+			name: "with output flag",
+			args: []replang.Arg{
+				word("100"),
+				word("-o"),
+				word("json"),
+			},
+			wantID:     100,
+			wantOutput: "json",
+		},
+		{
+			name:    "no arguments",
+			args:    []replang.Arg{},
+			wantErr: "requires a program ID",
+		},
+		{
+			name: "duplicate -o flag",
+			args: []replang.Arg{
+				word("100"),
+				word("-o"), word("json"),
+				word("-o"), word("wide"),
+			},
+			wantErr: "duplicate -o flag",
+		},
+		{
+			name:    "unknown flag",
+			args:    []replang.Arg{word("100"), word("--verbose")},
+			wantErr: "unknown flag",
+		},
+		{
+			name:    "-o without value",
+			args:    []replang.Arg{word("100"), word("-o")},
+			wantErr: "-o requires a value",
+		},
+		{
+			name:    "unexpected positional",
+			args:    []replang.Arg{word("100"), word("extra")},
+			wantErr: "unexpected argument",
+		},
+		{
+			name: "wrong origin type on structured ref",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "mylink", Value: linkVal},
+			},
+			wantErr: "not a program",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parseGetProgram(tt.args)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantID, cmd.ID)
+			assert.Equal(t, tt.wantOutput, cmd.Output.Output.Value)
+		})
+	}
+}
+
+func TestParseGetLink(t *testing.T) {
+	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	require.NoError(t, err)
+
+	progVal, err := replang.ValueFromStruct(bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		args       []replang.Arg
+		wantID     kernel.LinkID
+		wantOutput string
+		wantErr    string
+	}{
+		{
+			name:       "numeric ID",
+			args:       []replang.Arg{word("77")},
+			wantID:     77,
+			wantOutput: "table",
+		},
+		{
+			name:       "hex ID",
+			args:       []replang.Arg{word("0x4d")},
+			wantID:     77,
+			wantOutput: "table",
+		},
+		{
+			name: "structured variable ref",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "lnk", Value: structuredVal},
+			},
+			wantID:     77,
+			wantOutput: "table",
+		},
+		{
+			name:       "scalar value arg",
+			args:       []replang.Arg{replang.ScalarValueArg{Text: "55"}},
+			wantID:     55,
+			wantOutput: "table",
+		},
+		{
+			name: "with output flag",
+			args: []replang.Arg{
+				word("77"),
+				word("-o"),
+				word("json"),
+			},
+			wantID:     77,
+			wantOutput: "json",
+		},
+		{
+			name:    "no arguments",
+			args:    []replang.Arg{},
+			wantErr: "requires a link ID",
+		},
+		{
+			name: "duplicate -o flag",
+			args: []replang.Arg{
+				word("77"),
+				word("-o"), word("json"),
+				word("-o"), word("wide"),
+			},
+			wantErr: "duplicate -o flag",
+		},
+		{
+			name:    "unknown flag",
+			args:    []replang.Arg{word("77"), word("--verbose")},
+			wantErr: "unknown flag",
+		},
+		{
+			name:    "-o without value",
+			args:    []replang.Arg{word("77"), word("-o")},
+			wantErr: "-o requires a value",
+		},
+		{
+			name:    "unexpected positional",
+			args:    []replang.Arg{word("77"), word("extra")},
+			wantErr: "unexpected argument",
+		},
+		{
+			name: "wrong origin type on structured ref",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "myprog", Value: progVal},
+			},
+			wantErr: "not a link",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parseGetLink(tt.args)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantID, cmd.ID)
+			assert.Equal(t, tt.wantOutput, cmd.Output.Output.Value)
+		})
+	}
+}

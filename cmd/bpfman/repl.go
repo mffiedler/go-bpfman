@@ -8,19 +8,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/alecthomas/kong"
 	"golang.org/x/term"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/replang"
@@ -1107,9 +1102,17 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 	switch {
 	// program commands
 	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
+		listCmd, err := parseListPrograms(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execListPrograms(ctx, cli, mgr, listCmd)
 	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
+		listCmd, err := parseListPrograms(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execListPrograms(ctx, cli, mgr, listCmd)
 	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
 		loadCmd, err := parseLoadFile(args[2:])
 		if err != nil {
@@ -1135,11 +1138,23 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 		}
 		return execLoadImage(ctx, cli, mgr, imgCmd)
 	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
-		return replGetProgram(ctx, cli, mgr, args[2:])
+		getCmd, err := parseGetProgram(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execGetProgram(ctx, cli, mgr, getCmd)
 	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":
-		return replang.Value{}, replUnloadProgram(ctx, cli, mgr, args[2:])
+		unloadCmd, err := parseUnloadProgram(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execUnloadProgram(ctx, cli, mgr, unloadCmd)
 	case len(args) >= 2 && cmd == "program" && arg(1) == "delete":
-		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, args[2:])
+		delCmd, err := parseDeleteProgram(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDeleteProgram(ctx, cli, mgr, delCmd)
 	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
 		showCmd, err := parseShowProgram(args[2:])
 		if err != nil {
@@ -1161,25 +1176,57 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 		}
 		return replang.Value{}, execLinkDetach(ctx, cli, mgr, detachCmd)
 	case len(args) >= 2 && cmd == "link" && arg(1) == "get":
-		return replLinkGet(ctx, cli, mgr, args[2:])
+		getLinkCmd, err := parseGetLink(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execGetLink(ctx, cli, mgr, getLinkCmd)
 	case len(args) >= 2 && cmd == "link" && arg(1) == "list":
-		return replang.Value{}, replLinkList(ctx, cli, mgr, argTexts(args[2:]))
+		listLinksCmd, err := parseListLinks(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execListLinks(ctx, cli, mgr, listLinksCmd)
 	case len(args) >= 2 && cmd == "link" && arg(1) == "delete":
-		return replang.Value{}, replLinkDelete(ctx, cli, mgr, args[2:])
+		delLinkCmd, err := parseDeleteLink(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDeleteLink(ctx, cli, mgr, delLinkCmd)
 
 	// dispatcher commands
 	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "list":
-		return replang.Value{}, replDispatcherList(ctx, cli, mgr, argTexts(args[2:]))
+		dispListCmd, err := parseDispatcherList(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDispatcherList(ctx, cli, mgr, dispListCmd)
 	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "get":
-		return replang.Value{}, replDispatcherGet(ctx, cli, mgr, argTexts(args[2:]))
+		dispGetCmd, err := parseDispatcherGet(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDispatcherGet(ctx, cli, mgr, dispGetCmd)
 	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "delete":
-		return replang.Value{}, replDispatcherDelete(ctx, cli, mgr, argTexts(args[2:]))
+		dispDelCmd, err := parseDispatcherDelete(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDispatcherDelete(ctx, cli, mgr, dispDelCmd)
 
 	// diagnostics
 	case cmd == "gc":
-		return replang.Value{}, replGC(ctx, cli, mgr, argTexts(args[1:]))
+		gcCmd, err := parseGC(args[1:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execGC(ctx, cli, mgr, gcCmd)
 	case cmd == "doctor":
-		return replang.Value{}, replDoctor(ctx, cli, mgr, argTexts(args[1:]))
+		doctorCmd, err := parseDoctor(args[1:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execDoctor(ctx, cli, mgr, doctorCmd)
 
 	default:
 		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(argTexts(args), " "))
@@ -1623,85 +1670,6 @@ func negateMessage(msg string) string {
 	return "not: " + msg
 }
 
-// replParseListPrograms parses REPL tokens into a ListProgramsCmd.
-func replParseListPrograms(args []string) (*ListProgramsCmd, error) {
-	var cmd ListProgramsCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("program list"),
-		kong.Description("List managed BPF programs."),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create parser: %w", err)
-	}
-	_, err = parser.Parse(args)
-	if err != nil {
-		return nil, err
-	}
-	return &cmd, nil
-}
-
-func replListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	cmd, err := replParseListPrograms(args)
-	if err != nil {
-		return err
-	}
-	if err := cmd.Validate(); err != nil {
-		return err
-	}
-
-	opts, err := cmd.buildListOptions()
-	if err != nil {
-		return err
-	}
-
-	result, err := mgr.ListPrograms(ctx, opts...)
-	if err != nil {
-		return err
-	}
-
-	if len(result.Programs) == 0 && !cmd.OutputFlags.IsStructured() {
-		return nil
-	}
-
-	if cmd.Quiet {
-		var b strings.Builder
-		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
-		}
-		return cli.PrintOut(b.String())
-	}
-
-	output, err := FormatProgramsComposite(result, &cmd.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
-}
-
-// replParseDeleteProgram parses REPL tokens into a ProgramDeleteCmd.
-func replParseDeleteProgram(args []string) (*ProgramDeleteCmd, error) {
-	var cmd ProgramDeleteCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("program delete"),
-		kong.Description("Delete programs with cascading cleanup."),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create parser: %w", err)
-	}
-	_, err = parser.Parse(args)
-	if err != nil {
-		return nil, err
-	}
-	return &cmd, nil
-}
-
 // replCompleteLinkIDs offers link ID completions, analogous to
 // replCompleteProgramIDs.
 func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
@@ -1774,424 +1742,6 @@ func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *rep
 // replVersion prints version information.
 func replVersion(cli *CLI) error {
 	return cli.PrintOut(version.Get().Long())
-}
-
-// replGetProgram handles "program get <id>".
-func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
-	if len(args) == 0 {
-		return replang.Value{}, fmt.Errorf("program get requires a program ID")
-	}
-
-	ss := argTexts(args)
-	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
-		resolved, err := extractProgramID(args[0])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		ss = append([]string{resolved}, ss[1:]...)
-	}
-
-	var cmd GetProgramCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("program get"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return replang.Value{}, fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(ss); err != nil {
-		return replang.Value{}, err
-	}
-
-	prog, err := mgr.Get(ctx, cmd.ProgramID.Value)
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	output, err := FormatProgram(prog, &cmd.OutputFlags)
-	if err != nil {
-		return replang.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
-	}
-
-	val, err := replang.ValueFromStruct(prog)
-	if err != nil {
-		return replang.Value{}, nil
-	}
-	return val, nil
-}
-
-// replUnloadProgram handles "program unload <id>...".
-func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
-	if len(args) == 0 {
-		return fmt.Errorf("program unload requires at least one program ID")
-	}
-
-	resolved, err := extractProgramIDs(args)
-	if err != nil {
-		return err
-	}
-
-	var cmd UnloadCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("program unload"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(resolved); err != nil {
-		return err
-	}
-
-	ids := make([]kernel.ProgramID, len(cmd.ProgramIDs))
-	for i, pid := range cmd.ProgramIDs {
-		ids[i] = pid.Value
-	}
-	return runBatchMutation(ctx, cli, ids, "program", "unload",
-		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
-			return mgr.Unload(ctx, writeLock, id)
-		})
-}
-
-// replLinkGet handles "link get <id>".
-func replLinkGet(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
-	if len(args) == 0 {
-		return replang.Value{}, fmt.Errorf("link get requires a link ID")
-	}
-
-	ss := argTexts(args)
-	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
-		resolved, err := extractLinkID(args[0])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		ss = append([]string{resolved}, ss[1:]...)
-	}
-
-	var cmd GetLinkCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("link get"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return replang.Value{}, fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(ss); err != nil {
-		return replang.Value{}, err
-	}
-
-	info, err := mgr.GetLinkInfo(ctx, cmd.LinkID.Value)
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	link := bpfman.Link{
-		Record: info.Record,
-		Status: bpfman.LinkStatus{
-			Kernel:     info.Kernel,
-			KernelSeen: info.Presence.InKernel,
-			PinPresent: info.Presence.InFS,
-		},
-	}
-
-	output, err := FormatLinkResult(link, &cmd.OutputFlags)
-	if err != nil {
-		return replang.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
-	}
-
-	val, err := replang.ValueFromStruct(link)
-	if err != nil {
-		return replang.Value{}, nil
-	}
-	return val, nil
-}
-
-// replLinkList handles "link list [flags]".
-func replLinkList(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	var cmd ListLinksCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("link list"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return err
-	}
-
-	opts, err := cmd.buildLinkListOptions()
-	if err != nil {
-		return err
-	}
-
-	links, err := mgr.ListLinks(ctx, opts...)
-	if err != nil {
-		return err
-	}
-
-	if len(links) == 0 && !cmd.OutputFlags.IsStructured() {
-		return nil
-	}
-
-	if cmd.Quiet {
-		var b strings.Builder
-		for _, l := range links {
-			fmt.Fprintf(&b, "link/%d\n", l.ID)
-		}
-		return cli.PrintOut(b.String())
-	}
-
-	output, err := FormatLinkList(links, &cmd.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
-}
-
-// replLinkDelete handles "link delete <id>... [-r]".
-func replLinkDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
-	if len(args) == 0 {
-		return fmt.Errorf("link delete requires at least one link ID")
-	}
-
-	resolved, err := extractLinkIDs(args)
-	if err != nil {
-		return err
-	}
-
-	var cmd LinkDeleteCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("link delete"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(resolved); err != nil {
-		return err
-	}
-
-	type result struct {
-		id  kernel.LinkID
-		err error
-	}
-	results := make([]result, 0, len(cmd.LinkIDs))
-
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		for _, lid := range cmd.LinkIDs {
-			err := deleteLink(ctx, writeLock, mgr, lid.Value, cmd.Recursive)
-			results = append(results, result{id: lid.Value, err: err})
-		}
-		return nil
-	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("link %d: %v\n", r.id, r.err)
-			failCount++
-		}
-	}
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d link(s) failed to delete", failCount, len(results))
-	}
-	return nil
-}
-
-// replDispatcherList handles "dispatcher list [--type <type>]".
-func replDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	var cmd ListDispatchersCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("dispatcher list"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return err
-	}
-
-	summaries, err := mgr.ListDispatcherSummaries(ctx)
-	if err != nil {
-		return err
-	}
-
-	if cmd.Type != "" {
-		filterType, err := dispatcher.ParseDispatcherType(cmd.Type)
-		if err != nil {
-			return err
-		}
-		filtered := summaries[:0]
-		for _, s := range summaries {
-			if s.Key.Type == filterType {
-				filtered = append(filtered, s)
-			}
-		}
-		summaries = filtered
-	}
-
-	if len(summaries) == 0 && !cmd.OutputFlags.IsStructured() {
-		return nil
-	}
-
-	output, err := FormatDispatcherList(summaries, &cmd.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
-}
-
-// replDispatcherGet handles "dispatcher get <type> <nsid> <ifindex>".
-func replDispatcherGet(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	var cmd GetDispatcherCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("dispatcher get"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return err
-	}
-
-	dispType, err := dispatcher.ParseDispatcherType(cmd.Type)
-	if err != nil {
-		return err
-	}
-
-	key := dispatcher.Key{
-		Type:    dispType,
-		Nsid:    cmd.Nsid,
-		Ifindex: cmd.Ifindex,
-	}
-
-	snap, err := mgr.GetDispatcherSnapshot(ctx, key)
-	if err != nil {
-		return err
-	}
-
-	output, err := FormatDispatcherSnapshot(snap, &cmd.OutputFlags)
-	if err != nil {
-		return err
-	}
-	return cli.PrintOut(output)
-}
-
-// replDispatcherDelete handles "dispatcher delete <type> <nsid> <ifindex>".
-func replDispatcherDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	var cmd DeleteDispatcherCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("dispatcher delete"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return err
-	}
-
-	dispType, err := dispatcher.ParseDispatcherType(cmd.Type)
-	if err != nil {
-		return err
-	}
-
-	key := dispatcher.Key{
-		Type:    dispType,
-		Nsid:    cmd.Nsid,
-		Ifindex: cmd.Ifindex,
-	}
-
-	return RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, key)
-	})
-}
-
-// replGC handles "gc [--dry-run] [--prune] [rule...]".
-func replGC(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	var cmd GCCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("gc"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return err
-	}
-
-	// Validate rule names.
-	if len(cmd.Rules) > 0 {
-		gcRuleNames := make(map[string]bool)
-		for _, r := range coherency.GCRules() {
-			gcRuleNames[r.Name] = true
-		}
-		for _, name := range cmd.Rules {
-			if !gcRuleNames[name] {
-				return fmt.Errorf("unknown GC rule: %s\n\nAvailable GC rules:\n%s",
-					name, formatGCRuleNames())
-			}
-		}
-	}
-
-	gcOpts := manager.GCOptions{
-		Rules: cmd.Rules,
-		Prune: cmd.Prune,
-	}
-
-	if cmd.DryRun {
-		return cmd.runDryRun(cli, ctx, mgr, gcOpts)
-	}
-	return cmd.runExecute(cli, ctx, mgr, gcOpts)
-}
-
-// replDoctor handles "doctor [checkup]" and "doctor explain [rule]".
-func replDoctor(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) error {
-	// No args or "checkup" => run doctor checkup
-	if len(args) == 0 || (len(args) == 1 && args[0] == "checkup") {
-		return replDoctorCheckup(ctx, cli, mgr)
-	}
-
-	// "explain" subcommand
-	if args[0] == "explain" {
-		return replDoctorExplain(cli, args[1:])
-	}
-
-	return fmt.Errorf("unknown doctor subcommand %q (valid: checkup, explain)", args[0])
 }
 
 func replDoctorCheckup(ctx context.Context, cli *CLI, mgr *manager.Manager) error {
@@ -2283,36 +1833,4 @@ func replDoctorExplain(cli *CLI, args []string) error {
 	}
 	out.WriteString("\n")
 	return cli.PrintOut(out.String())
-}
-
-// replDeleteProgram handles the "program delete" REPL command.
-func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
-	// Only resolve positional args when --all is not present;
-	// with --all there are no program ID arguments to resolve.
-	ss := argTexts(args)
-	hasAll := false
-	for _, a := range ss {
-		if a == "--all" {
-			hasAll = true
-			break
-		}
-	}
-	if !hasAll {
-		var err error
-		ss, err = extractProgramIDs(args)
-		if err != nil {
-			return err
-		}
-	}
-
-	cmd, err := replParseDeleteProgram(ss)
-	if err != nil {
-		return err
-	}
-
-	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, cmd.ProgramIDs)
-	if err != nil {
-		return err
-	}
-	return executeDeletePrograms(ctx, cli, mgr, ids, cmd.Recursive)
 }
