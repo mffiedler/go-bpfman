@@ -1,27 +1,30 @@
 # -*- mode: bpfman -*-
-# Load a tracepoint program, attach it, and inspect using variable expansion.
+# Load a tracepoint program, attach it, verify state, and clean up.
 #
 # Requires root. Run with:
 #   sudo bpfman repl -f load-and-attach.bpfman
 
 # Load the tracepoint counter from the e2e testdata directory.
-prog = load file --path e2e/testdata/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+let prog = load file --path e2e/testdata/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+require not nil prog
+set pid = $prog.record.program_id
+assert not-empty $pid
 
 # Attach to the syscalls/sys_enter_kill tracepoint.
-link = link attach tracepoint --tracepoint syscalls/sys_enter_kill $prog
+let link = link attach tracepoint --tracepoint syscalls/sys_enter_kill $prog
+require not nil link
 
-# Show what we bound.
-vars
-
-# Inspect the loaded program and its link.
-show program $prog.record.program_id
-link get $link
+# Verify the program and link are visible.
+assert ok show program $pid
+require ok link get $link
 
 # List all managed programs and links.
 list programs
 link list
 
-# Clean up.
-# link delete $link.record.id
-# program delete $prog.record.program_id
-# unset link prog
+# Clean up: detach the link, then unload the program.
+link detach $link
+assert fail link get $link
+
+program unload $pid
+unset link prog pid

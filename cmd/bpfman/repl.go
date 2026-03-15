@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -36,10 +38,14 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"dispatcher", "doctor", "dump", "gc", "help", "link", "list", "load", "program", "programs", "show", "source", "unset", "vars", "version"}
+var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "gc", "help", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
+// replAssertVerbs lists the valid assertion verbs for completion.
+var replAssertVerbs = []string{"contains", "equal", "fail", "false", "ge", "gt", "le", "lt", "ne", "nil", "not", "not-empty", "ok", "path", "true"}
+
 var replSubcommands = map[string][]string{
+	"assert":     replAssertVerbs,
 	"dispatcher": {"delete", "get", "list"},
 	"doctor":     {"checkup", "explain"},
 	"link":       {"attach", "delete", "detach", "get", "list"},
@@ -47,11 +53,27 @@ var replSubcommands = map[string][]string{
 	"load":       {"file", "image"},
 	"program":    {"delete", "get", "list", "load", "unload"},
 	"programs":   {"list"},
+	"require":    replAssertVerbs,
 	"show":       {"program"},
 }
 
 // replAttachTypes lists the valid attach types for "link attach <type>".
 var replAttachTypes = []string{"fentry", "fexit", "kprobe", "tc", "tcx", "tracepoint", "uprobe", "xdp"}
+
+// errRequireFailed is the sentinel error used to halt script execution
+// when a require assertion fails.
+var errRequireFailed = errors.New("require failed")
+
+// errScriptError is the sentinel error used to halt script execution
+// when a command error occurs in file mode. The error message has
+// already been printed with a source location prefix.
+var errScriptError = errors.New("script error")
+
+// assertResult holds the outcome of evaluating an assertion verb.
+type assertResult struct {
+	pass    bool
+	message string
+}
 
 // Run starts the read-eval-print loop. A single manager is held open
 // for the session lifetime to avoid repeated store open/close.
@@ -70,7 +92,25 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer lr.Close()
 
-	return replLoop(ctx, cli, mgr, lr, session)
+	file := c.File
+	if file == "-" || (file == "" && !term.IsTerminal(int(os.Stdin.Fd()))) {
+		file = "<stdin>"
+	}
+	loopErr := replLoop(ctx, cli, mgr, lr, session, file)
+
+	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
+		return ErrSilent
+	}
+	if loopErr != nil {
+		return loopErr
+	}
+
+	if n := session.AssertFailures(); n > 0 {
+		_ = cli.PrintErrf("%d assertion(s) failed\n", n)
+		return fmt.Errorf("%d assertion(s) failed", n)
+	}
+
+	return nil
 }
 
 // newReader selects the appropriate LineReader: file, pipe, or
@@ -102,11 +142,28 @@ func openScriptReader(path string) (LineReader, error) {
 	return NewScannerReader(f, f), nil
 }
 
+// sourceLoc identifies a position in a script file. The zero value
+// means "no location" and formats as the empty string, so interactive
+// and piped-stdin modes are unaffected.
+type sourceLoc struct {
+	file string
+	line int
+}
+
+func (l sourceLoc) String() string {
+	if l.file == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d: ", l.file, l.line)
+}
+
 // replLoop reads lines from lr and dispatches them until EOF or
 // interrupt. Blank lines and comments are handled by
 // replang.Tokenise. Variable assignment and expansion use the
-// replang.Session.
-func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *replang.Session) error {
+// replang.Session. When file is non-empty, error messages include a
+// file:line: prefix for compiler-style diagnostics.
+func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *replang.Session, file string) error {
+	var lineNo int
 	for {
 		input, err := lr.Readline()
 		if err != nil {
@@ -115,23 +172,40 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 			}
 			return err
 		}
+		lineNo++
 
-		if err := replEval(ctx, cli, mgr, session, input); err != nil {
+		var loc sourceLoc
+		if file != "" {
+			loc = sourceLoc{file: file, line: lineNo}
+		}
+
+		if err := replEval(ctx, cli, mgr, session, input, loc); err != nil {
 			return err
 		}
 	}
 }
 
 // replEval processes a single input line: tokenise, parse, expand
-// variables, dispatch, and optionally bind the result. Non-fatal
-// errors (unknown command, undefined variable, failed assignment) are
-// printed to cli.Err and return nil, matching the interactive
-// continue behaviour. Only unexpected errors are returned.
-func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, input string) error {
+// variables, dispatch, and optionally bind the result. In interactive
+// mode (loc has no file), non-fatal errors are printed and return nil
+// so the session continues. In script mode (loc has a file), errors
+// return errScriptError to halt execution. The loc parameter provides
+// optional file:line context for error messages.
+func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, input string, loc sourceLoc) error {
+	// scriptErr prints an error and returns the appropriate
+	// sentinel: errScriptError in file mode, nil in interactive
+	// mode.
+	scriptErr := func(format string, args ...any) error {
+		_ = cli.PrintErrf(format, args...)
+		if loc.file != "" {
+			return errScriptError
+		}
+		return nil
+	}
+
 	tokens, err := replang.Tokenise(input)
 	if err != nil {
-		_ = cli.PrintErrf("[repl] error: %v\n", err)
-		return nil
+		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
 	if len(tokens) == 0 {
 		return nil
@@ -139,27 +213,33 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 
 	line, err := replang.ParseLine(tokens)
 	if err != nil {
-		_ = cli.PrintErrf("[repl] error: %v\n", err)
-		return nil
+		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
 
 	expanded, err := session.Expand(line.Command)
 	if err != nil {
-		_ = cli.PrintErrf("[repl] error: %v\n", err)
+		return scriptErr("%s[repl] error: %v\n", loc, err)
+	}
+
+	// set name = value: bind the expanded scalar directly.
+	if line.IsSet {
+		session.Set(line.VarName, replang.StringValue(expanded[0].Text))
 		return nil
 	}
 
 	args := tokenTexts(expanded)
-	val, err := replDispatch(ctx, cli, mgr, session, args)
+	val, err := replDispatch(ctx, cli, mgr, session, args, loc)
 	if err != nil {
-		_ = cli.PrintErrf("[repl] error: %v\n", err)
-		return nil
+		if errors.Is(err, errRequireFailed) {
+			return err
+		}
+		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
 
+	// let name = command: bind the command result.
 	if line.VarName != "" {
 		if val.IsNil() {
-			_ = cli.PrintErrf("[repl] error: command produced no result to assign\n")
-			return nil
+			return scriptErr("%s[repl] error: command produced no result to assign\n", loc)
 		}
 		session.Set(line.VarName, val)
 	}
@@ -770,6 +850,7 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 
 	ctx = context.WithValue(ctx, replSourcingKey, true)
 
+	var lineNo int
 	for {
 		input, err := lr.Readline()
 		if err != nil {
@@ -778,19 +859,25 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 			}
 			return err
 		}
+		lineNo++
 
-		if err := replEval(ctx, cli, mgr, session, input); err != nil {
+		loc := sourceLoc{file: args[0], line: lineNo}
+		if err := replEval(ctx, cli, mgr, session, input, loc); err != nil {
 			return err
 		}
 	}
 }
 
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string, loc sourceLoc) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, nil
 	}
 
 	switch {
+	case args[0] == "assert":
+		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
+	case args[0] == "require":
+		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
 	case args[0] == "dump":
 		return replang.Value{}, replDump(cli, session, args[1:])
 	case args[0] == "help":
@@ -896,9 +983,18 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  help                                     Show this help\n")
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
-	b.WriteString("  prog = load file ...          Assign command result to a variable\n")
+	b.WriteString("  let prog = load file ...      Assign command result to a variable\n")
+	b.WriteString("  set <name> = <value>          Bind scalar value to variable\n")
 	b.WriteString("  show program $prog            Variable reference (auto-extracts program ID)\n")
 	b.WriteString("  link attach xdp -i eth0 $prog Use $variable as program ID argument\n")
+	b.WriteString("\n")
+	b.WriteString("Assertions:\n")
+	b.WriteString("  assert <verb> [args...]       Check condition, continue on failure\n")
+	b.WriteString("  require <verb> [args...]      Check condition, stop on failure\n")
+	b.WriteString("  assert not <verb> [args...]   Negate condition\n")
+	b.WriteString("\n")
+	b.WriteString("  Verbs: equal, ne, nil, not-empty, ok, fail, path exists,\n")
+	b.WriteString("         contains, true, false, lt, le, gt, ge\n")
 	return cli.PrintOut(b.String())
 }
 
@@ -964,29 +1060,9 @@ func replDump(cli *CLI, session *replang.Session, args []string) error {
 		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path]")
 	}
 
-	arg := args[0]
-
-	// Split on the first '.' or '[' to separate variable name from path.
-	varName := arg
-	path := ""
-	if i := strings.IndexAny(arg, ".["); i >= 0 {
-		varName = arg[:i]
-		path = arg[i:]
-		// Strip leading dot so the path parser sees "field" not ".field".
-		path = strings.TrimPrefix(path, ".")
-	}
-
-	v, ok := session.Get(varName)
-	if !ok {
-		return fmt.Errorf("undefined variable %q", varName)
-	}
-
-	if path != "" {
-		var err error
-		v, err = v.LookupValue(varName, path)
-		if err != nil {
-			return err
-		}
+	v, err := lookupBareVar(session, args[0])
+	if err != nil {
+		return err
 	}
 
 	if v.IsNil() {
@@ -1006,6 +1082,288 @@ func replDump(cli *CLI, session *replang.Session, args []string) error {
 		return fmt.Errorf("marshal value: %w", err)
 	}
 	return cli.PrintOut(string(b) + "\n")
+}
+
+// lookupBareVar resolves a bare variable name (no $ prefix) with an
+// optional dotted path into a replang.Value. This is the shared logic
+// used by dump and assert nil.
+func lookupBareVar(session *replang.Session, arg string) (replang.Value, error) {
+	varName := arg
+	path := ""
+	if i := strings.IndexAny(arg, ".["); i >= 0 {
+		varName = arg[:i]
+		path = arg[i:]
+		path = strings.TrimPrefix(path, ".")
+	}
+
+	v, ok := session.Get(varName)
+	if !ok {
+		return replang.Value{}, fmt.Errorf("undefined variable %q", varName)
+	}
+
+	if path != "" {
+		return v.LookupValue(varName, path)
+	}
+	return v, nil
+}
+
+// replAssertRequire handles both "assert" and "require" commands.
+// When isRequire is true, failure halts execution immediately via
+// errRequireFailed. When false, failure is recorded in the session
+// counter and execution continues.
+func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string, isRequire bool, loc sourceLoc) error {
+	if len(args) == 0 {
+		return fmt.Errorf("expected a verb (equal, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
+	}
+
+	label := "assert"
+	if isRequire {
+		label = "require"
+	}
+
+	// Check for "not" negation.
+	negate := false
+	if args[0] == "not" {
+		negate = true
+		args = args[1:]
+		if len(args) == 0 {
+			return fmt.Errorf("expected a verb after \"not\"")
+		}
+	}
+
+	verb := args[0]
+	verbArgs := args[1:]
+
+	result, err := evalAssertVerb(ctx, cli, mgr, session, verb, verbArgs)
+	if err != nil {
+		return err
+	}
+
+	if negate {
+		result.pass = !result.pass
+		result.message = negateMessage(result.message)
+	}
+
+	if result.pass {
+		return nil
+	}
+
+	// Failure path.
+	_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+
+	if isRequire {
+		return errRequireFailed
+	}
+
+	session.RecordAssertFailure()
+	return nil
+}
+
+// evalAssertVerb dispatches to the appropriate verb evaluator.
+func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, verb string, args []string) (assertResult, error) {
+	switch verb {
+	case "equal":
+		return assertEqual(args)
+	case "ne":
+		return assertNe(args)
+	case "nil":
+		return assertNil(session, args)
+	case "not-empty":
+		return assertNotEmpty(args)
+	case "ok":
+		return assertOk(ctx, cli, mgr, session, args)
+	case "fail":
+		return assertFail(ctx, cli, mgr, session, args)
+	case "path":
+		return assertPath(args)
+	case "contains":
+		return assertContains(args)
+	case "true":
+		return assertBool(args, true)
+	case "false":
+		return assertBool(args, false)
+	case "lt":
+		return assertNumericCmp(args, "lt")
+	case "le":
+		return assertNumericCmp(args, "le")
+	case "gt":
+		return assertNumericCmp(args, "gt")
+	case "ge":
+		return assertNumericCmp(args, "ge")
+	default:
+		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
+	}
+}
+
+func assertEqual(args []string) (assertResult, error) {
+	if len(args) != 2 {
+		return assertResult{}, fmt.Errorf("equal requires exactly 2 arguments")
+	}
+	pass := args[0] == args[1]
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %q to equal %q", args[0], args[1]),
+	}, nil
+}
+
+func assertNe(args []string) (assertResult, error) {
+	if len(args) != 2 {
+		return assertResult{}, fmt.Errorf("ne requires exactly 2 arguments")
+	}
+	pass := args[0] != args[1]
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %q to not equal %q", args[0], args[1]),
+	}, nil
+}
+
+func assertNil(session *replang.Session, args []string) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, fmt.Errorf("nil requires exactly 1 argument (bare variable name, no $)")
+	}
+	v, err := lookupBareVar(session, args[0])
+	if err != nil {
+		return assertResult{}, err
+	}
+	return assertResult{
+		pass:    v.IsNil(),
+		message: fmt.Sprintf("expected %s to be nil", args[0]),
+	}, nil
+}
+
+func assertNotEmpty(args []string) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, fmt.Errorf("not-empty requires exactly 1 argument")
+	}
+	pass := args[0] != ""
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected non-empty string, got %q", args[0]),
+	}, nil
+}
+
+func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (assertResult, error) {
+	if len(args) == 0 {
+		return assertResult{}, fmt.Errorf("ok requires a command")
+	}
+	// Execute the sub-command with output suppressed.
+	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
+	_, err := replDispatch(ctx, discardCLI, mgr, session, args, sourceLoc{})
+	if err != nil {
+		return assertResult{
+			pass:    false,
+			message: fmt.Sprintf("expected command to succeed, but got: %v", err),
+		}, nil
+	}
+	return assertResult{
+		pass:    true,
+		message: "expected command to succeed",
+	}, nil
+}
+
+func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (assertResult, error) {
+	if len(args) == 0 {
+		return assertResult{}, fmt.Errorf("fail requires a command")
+	}
+	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
+	_, err := replDispatch(ctx, discardCLI, mgr, session, args, sourceLoc{})
+	if err != nil {
+		return assertResult{
+			pass:    true,
+			message: "expected command to fail",
+		}, nil
+	}
+	return assertResult{
+		pass:    false,
+		message: "expected command to fail, but it succeeded",
+	}, nil
+}
+
+func assertPath(args []string) (assertResult, error) {
+	if len(args) != 2 || args[0] != "exists" {
+		return assertResult{}, fmt.Errorf("path requires: path exists <filepath>")
+	}
+	_, err := os.Stat(args[1])
+	pass := err == nil
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected path %q to exist", args[1]),
+	}, nil
+}
+
+func assertContains(args []string) (assertResult, error) {
+	if len(args) != 2 {
+		return assertResult{}, fmt.Errorf("contains requires exactly 2 arguments: <haystack> <needle>")
+	}
+	pass := strings.Contains(args[0], args[1])
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %q to contain %q", args[0], args[1]),
+	}, nil
+}
+
+func assertBool(args []string, want bool) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, fmt.Errorf("true/false requires exactly 1 argument")
+	}
+	wantStr := strconv.FormatBool(want)
+	pass := args[0] == wantStr
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %q to be %q", args[0], wantStr),
+	}, nil
+}
+
+func assertNumericCmp(args []string, op string) (assertResult, error) {
+	if len(args) != 2 {
+		return assertResult{}, fmt.Errorf("%s requires exactly 2 numeric arguments", op)
+	}
+	a, err := strconv.ParseFloat(args[0], 64)
+	if err != nil {
+		return assertResult{}, fmt.Errorf("%s: left argument %q is not a number", op, args[0])
+	}
+	b, err := strconv.ParseFloat(args[1], 64)
+	if err != nil {
+		return assertResult{}, fmt.Errorf("%s: right argument %q is not a number", op, args[1])
+	}
+
+	var pass bool
+	var symbol string
+	switch op {
+	case "lt":
+		pass = a < b
+		symbol = "<"
+	case "le":
+		pass = a <= b
+		symbol = "<="
+	case "gt":
+		pass = a > b
+		symbol = ">"
+	case "ge":
+		pass = a >= b
+		symbol = ">="
+	}
+
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %s %s %s", args[0], symbol, args[1]),
+	}, nil
+}
+
+// negateMessage transforms an assertion message for negated assertions.
+// It inserts "not" into the message: "expected X to equal Y" becomes
+// "expected X not to equal Y", "expected X to be Y" becomes
+// "expected X not to be Y".
+func negateMessage(msg string) string {
+	// Try "to equal", "to not equal", "to be", "to contain", "to exist", "to succeed", "to fail".
+	if i := strings.Index(msg, " to "); i >= 0 {
+		return msg[:i] + " not to " + msg[i+4:]
+	}
+	// Try "expected command to" patterns.
+	if strings.HasPrefix(msg, "expected") {
+		return "expected not: " + msg[9:]
+	}
+	return "not: " + msg
 }
 
 // replParseListPrograms parses REPL tokens into a ListProgramsCmd.

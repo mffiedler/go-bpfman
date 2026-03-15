@@ -255,6 +255,18 @@ func TestSessionExpand(t *testing.T) {
 	}
 }
 
+func TestSessionAssertFailures(t *testing.T) {
+	s := NewSession()
+	assert.Equal(t, 0, s.AssertFailures())
+
+	s.RecordAssertFailure()
+	assert.Equal(t, 1, s.AssertFailures())
+
+	s.RecordAssertFailure()
+	s.RecordAssertFailure()
+	assert.Equal(t, 3, s.AssertFailures())
+}
+
 func TestSessionExpandNilVariable(t *testing.T) {
 	s := NewSession()
 	s.Set("n", Value{}) // nil value

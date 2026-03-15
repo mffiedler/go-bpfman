@@ -173,7 +173,7 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 
 	// We expect exactly two error lines: one for "bogus", one for
@@ -264,19 +264,19 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "No variables defined")
 }
 
 func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 	// "help" returns no value, so assigning should produce an error.
-	input := "x = help\n"
+	input := "let x = help\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "command produced no result to assign")
 }
@@ -287,7 +287,7 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable")
 }
@@ -301,7 +301,7 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	// The unknown command error should contain the hash character,
 	// proving it was not stripped as a comment.
@@ -324,7 +324,7 @@ func TestReplLoop_Unset(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, session)
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
 	_, ok := session.Get("foo")
 	assert.False(t, ok, "foo should be unset")
@@ -342,7 +342,7 @@ func TestReplLoop_UnsetMultiple(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, session)
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
 	_, ok := session.Get("a")
 	assert.False(t, ok)
@@ -358,7 +358,7 @@ func TestReplLoop_UnsetUndefined(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable")
 }
@@ -369,7 +369,7 @@ func TestReplLoop_UnsetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "requires at least one variable name")
 }
@@ -439,7 +439,7 @@ func TestReplLoop_Source(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "Available commands:")
 }
@@ -455,7 +455,7 @@ func TestReplLoop_SourceSharesSession(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "nosuchcmd")
 }
@@ -466,7 +466,7 @@ func TestReplLoop_SourceMissingFile(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "open script")
 }
@@ -485,7 +485,7 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source cannot be used inside a sourced file")
 }
@@ -496,7 +496,7 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
@@ -1169,7 +1169,7 @@ func TestReplLoop_Version(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, outBuf.String())
 }
@@ -1267,7 +1267,7 @@ func TestReplLoop_DoctorExplain(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "Available coherency rules")
 }
@@ -1278,7 +1278,7 @@ func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown rule")
 }
@@ -1289,7 +1289,7 @@ func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown doctor subcommand")
 }
@@ -1300,7 +1300,7 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "program get requires a program ID")
 }
@@ -1311,7 +1311,7 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "program unload requires at least one program ID")
 }
@@ -1322,7 +1322,7 @@ func TestReplLoop_LinkAttachNoType(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link attach requires a type")
 }
@@ -1333,7 +1333,7 @@ func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown attach type")
 }
@@ -1344,7 +1344,7 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link detach requires at least one link ID")
 }
@@ -1355,7 +1355,7 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link get requires a link ID")
 }
@@ -1366,7 +1366,7 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession())
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link delete requires at least one link ID")
 }
@@ -1469,4 +1469,705 @@ func TestResolveProgramIDArg_ExplicitPathStillWorks(t *testing.T) {
 	got, err := resolveProgramIDArg(session, "$mylink.record.program_id")
 	require.NoError(t, err)
 	assert.Equal(t, "42", got)
+}
+
+// ---- Assert/Require/Set tests ----
+
+func TestAssertEqual(t *testing.T) {
+	r, err := assertEqual([]string{"hello", "hello"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertEqual([]string{"hello", "world"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+	assert.Contains(t, r.message, "equal")
+}
+
+func TestAssertEqual_WrongArgCount(t *testing.T) {
+	_, err := assertEqual([]string{"one"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "2 arguments")
+}
+
+func TestAssertNe(t *testing.T) {
+	r, err := assertNe([]string{"a", "b"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertNe([]string{"a", "a"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestAssertNil(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("n", replang.Value{}) // nil value
+	session.Set("s", replang.StringValue("hello"))
+
+	r, err := assertNil(session, []string{"n"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertNil(session, []string{"s"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestAssertNil_Undefined(t *testing.T) {
+	session := replang.NewSession()
+	_, err := assertNil(session, []string{"novar"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined")
+}
+
+func TestAssertNotEmpty(t *testing.T) {
+	r, err := assertNotEmpty([]string{"hello"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertNotEmpty([]string{""})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestAssertContains(t *testing.T) {
+	r, err := assertContains([]string{"hello world", "world"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertContains([]string{"hello", "xyz"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestAssertBool(t *testing.T) {
+	r, err := assertBool([]string{"true"}, true)
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertBool([]string{"false"}, true)
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+
+	r, err = assertBool([]string{"false"}, false)
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+}
+
+func TestAssertPath(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "exists.txt")
+	require.NoError(t, os.WriteFile(existing, nil, 0o644))
+
+	r, err := assertPath([]string{"exists", existing})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+
+	r, err = assertPath([]string{"exists", filepath.Join(dir, "nope")})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestAssertPath_BadArgs(t *testing.T) {
+	_, err := assertPath([]string{"nope"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path requires")
+}
+
+func TestAssertNumericCmp(t *testing.T) {
+	tests := []struct {
+		op   string
+		a, b string
+		pass bool
+	}{
+		{"lt", "1", "2", true},
+		{"lt", "2", "1", false},
+		{"lt", "1", "1", false},
+		{"le", "1", "1", true},
+		{"le", "2", "1", false},
+		{"gt", "2", "1", true},
+		{"gt", "1", "2", false},
+		{"ge", "1", "1", true},
+		{"ge", "0", "1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.op+"_"+tt.a+"_"+tt.b, func(t *testing.T) {
+			r, err := assertNumericCmp([]string{tt.a, tt.b}, tt.op)
+			require.NoError(t, err)
+			assert.Equal(t, tt.pass, r.pass)
+		})
+	}
+}
+
+func TestAssertNumericCmp_NonNumeric(t *testing.T) {
+	_, err := assertNumericCmp([]string{"abc", "2"}, "lt")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a number")
+
+	_, err = assertNumericCmp([]string{"1", "xyz"}, "gt")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a number")
+}
+
+func TestAssertOk_UnknownCommand(t *testing.T) {
+	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	session := replang.NewSession()
+	// "bogus" is not a valid command, so it should fail.
+	r, err := assertOk(context.Background(), cli, nil, session, []string{"bogus"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+	assert.Contains(t, r.message, "succeed")
+}
+
+func TestAssertFail_UnknownCommand(t *testing.T) {
+	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	session := replang.NewSession()
+	r, err := assertFail(context.Background(), cli, nil, session, []string{"bogus"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+}
+
+func TestAssertOk_SuccessfulCommand(t *testing.T) {
+	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	session := replang.NewSession()
+	// "help" always succeeds.
+	r, err := assertOk(context.Background(), cli, nil, session, []string{"help"})
+	require.NoError(t, err)
+	assert.True(t, r.pass)
+}
+
+func TestAssertFail_SuccessfulCommand(t *testing.T) {
+	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	session := replang.NewSession()
+	r, err := assertFail(context.Background(), cli, nil, session, []string{"help"})
+	require.NoError(t, err)
+	assert.False(t, r.pass)
+}
+
+func TestNegateMessage(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{`expected "a" to equal "b"`, `expected "a" not to equal "b"`},
+		{`expected path "/tmp" to exist`, `expected path "/tmp" not to exist`},
+		{`expected command to succeed`, `expected command not to succeed`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.want, negateMessage(tt.in))
+		})
+	}
+}
+
+func TestReplLoop_AssertEqualPass(t *testing.T) {
+	input := "assert equal hello hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_AssertEqualFail(t *testing.T) {
+	input := "assert equal hello world\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "[assert] FAIL")
+	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_AssertNotEqual(t *testing.T) {
+	input := "assert not equal hello hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "[assert] FAIL")
+	assert.Contains(t, errBuf.String(), "not to equal")
+	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_RequireHaltsExecution(t *testing.T) {
+	// The second line should never run because require halts.
+	input := strings.Join([]string{
+		"require equal hello world",
+		"assert equal a a",
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.Error(t, err)
+	assert.Contains(t, errBuf.String(), "[require] FAIL")
+	// The second line's assert should not have been evaluated.
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_MultipleAssertFailures(t *testing.T) {
+	input := strings.Join([]string{
+		"assert equal a b",
+		"assert equal c d",
+		"assert equal e e",
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Equal(t, 2, session.AssertFailures())
+}
+
+func TestReplLoop_SetAndAssert(t *testing.T) {
+	input := strings.Join([]string{
+		"set x = 42",
+		"assert equal $x 42",
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("x")
+	require.True(t, ok)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "42", s)
+}
+
+func TestReplLoop_SetMissingEquals(t *testing.T) {
+	input := "set x 42 val\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "missing '='")
+}
+
+func TestReplLoop_SetTooFewArgs(t *testing.T) {
+	input := "set x\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "set requires")
+}
+
+func TestReplLoop_SetTooManyArgs(t *testing.T) {
+	input := "set x = a b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exactly one value")
+}
+
+func TestReplLoop_SetInvalidName(t *testing.T) {
+	input := "set 0bad = val\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "invalid variable name")
+}
+
+func TestReplLoop_AssertNil(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("n", replang.Value{}) // nil
+
+	input := "assert nil n\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_AssertNotNil(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("s", replang.StringValue("hello"))
+
+	input := "assert not nil s\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_AssertContains(t *testing.T) {
+	input := "assert contains \"hello world\" world\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertTrue(t *testing.T) {
+	input := "assert true true\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertFalse(t *testing.T) {
+	input := "assert false false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertOkHelp(t *testing.T) {
+	input := "assert ok help\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertFailBogus(t *testing.T) {
+	input := "assert fail bogus_command\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertPathExists(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(f, nil, 0o644))
+
+	input := "assert path exists " + f + "\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertPathNotExists(t *testing.T) {
+	input := "assert not path exists /nonexistent/path/xyz\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertLt(t *testing.T) {
+	input := "assert lt 1 2\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertGeFail(t *testing.T) {
+	input := "assert ge 1 2\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := replang.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "[assert] FAIL")
+	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_AssertUnknownVerb(t *testing.T) {
+	input := "assert bogusverb x y\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "unknown assertion verb")
+}
+
+func TestReplLoop_AssertNoVerb(t *testing.T) {
+	input := "assert\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "expected a verb")
+}
+
+func TestReplLoop_AssertNotNoVerb(t *testing.T) {
+	input := "assert not\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "expected a verb after")
+}
+
+func TestReplLoop_SetWithExpandedVar(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("prog", replang.ValueFromMap(map[string]any{
+		"record": map[string]any{
+			"program_id": "199421",
+		},
+	}))
+
+	input := "set pid = $prog.record.program_id\nassert equal $pid 199421\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_RequireNotEqualPass(t *testing.T) {
+	input := "require not equal a b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertNe(t *testing.T) {
+	input := "assert ne foo bar\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_AssertNotEmpty(t *testing.T) {
+	input := "assert not-empty hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplComplete_AssertVerbs(t *testing.T) {
+	// "assert " should offer verb completions.
+	_, candidates := replComplete(context.Background(), nil, nil, "assert ", len("assert "))
+	assert.Contains(t, candidates, "equal ")
+	assert.Contains(t, candidates, "nil ")
+	assert.Contains(t, candidates, "ok ")
+	assert.Contains(t, candidates, "not ")
+}
+
+func TestReplComplete_RequireVerbs(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "require ", len("require "))
+	assert.Contains(t, candidates, "equal ")
+	assert.Contains(t, candidates, "fail ")
+}
+
+func TestReplComplete_SetInCommandNames(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "se", len("se"))
+	assert.Contains(t, candidates, "set ")
+}
+
+func TestLookupBareVar(t *testing.T) {
+	session := replang.NewSession()
+	session.Set("x", replang.StringValue("hello"))
+	session.Set("obj", replang.ValueFromMap(map[string]any{
+		"a": map[string]any{"b": "deep"},
+	}))
+
+	v, err := lookupBareVar(session, "x")
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello", s)
+
+	v, err = lookupBareVar(session, "obj.a.b")
+	require.NoError(t, err)
+	s, err = v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "deep", s)
+
+	_, err = lookupBareVar(session, "novar")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined")
+}
+
+func TestSourceLoc_String(t *testing.T) {
+	tests := []struct {
+		name string
+		loc  sourceLoc
+		want string
+	}{
+		{"zero value", sourceLoc{}, ""},
+		{"with file and line", sourceLoc{"test.bpfman", 5}, "test.bpfman:5: "},
+		{"line one", sourceLoc{"script.bpfman", 1}, "script.bpfman:1: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.loc.String())
+		})
+	}
+}
+
+func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
+	// When a filename is provided, error messages should be
+	// prefixed with file:line: for compilation-mode integration.
+	input := "# line 1\n$undefined\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	require.ErrorIs(t, err, errScriptError)
+	assert.Contains(t, errBuf.String(), "test.bpfman:2: ")
+}
+
+func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
+	// Interactive mode (no file): errors have no location prefix
+	// and execution continues to subsequent lines.
+	input := "$undefined\nversion\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(errBuf.String(), "[repl]"), "expected error to start with [repl], got: %s", errBuf.String())
+	assert.Contains(t, outBuf.String(), "Version:", "expected version output after error in interactive mode")
+}
+
+func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
+	// require failures should also carry the file:line: prefix.
+	input := "require equal a b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "script.bpfman")
+	require.Error(t, err)
+	assert.Contains(t, errBuf.String(), "script.bpfman:1: [require] FAIL:")
+}
+
+func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
+	input := "assert equal a b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "script.bpfman")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "script.bpfman:1: [assert] FAIL:")
+}
+
+func TestReplLoop_StdinIncludesLocation(t *testing.T) {
+	// When the filename is "<stdin>" (piped input), errors should
+	// carry a <stdin>:line: prefix and halt execution.
+	input := "version\nx\nversion\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "<stdin>")
+	require.ErrorIs(t, err, errScriptError)
+	assert.Contains(t, errBuf.String(), "<stdin>:2: [repl] error:")
+	// The third line should not have run.
+	assert.Equal(t, 1, strings.Count(outBuf.String(), "Version:"), "expected only one version output before halt")
+}
+
+func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
+	// In script mode (file provided), an error on an early line
+	// should prevent subsequent lines from executing.
+	input := "x\nversion\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	require.ErrorIs(t, err, errScriptError)
+	assert.Contains(t, errBuf.String(), "test.bpfman:1:")
+	assert.Empty(t, outBuf.String(), "expected no output after error halted script")
+}
+
+func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
+	// Blank lines and comments still count towards the line number.
+	input := "# comment\n\n# another\n$undefined\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	require.ErrorIs(t, err, errScriptError)
+	assert.Contains(t, errBuf.String(), "test.bpfman:4: ")
 }

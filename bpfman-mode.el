@@ -18,7 +18,7 @@
 ;; Language features:
 ;;
 ;;   Comments:     # to end of line (not inside quotes)
-;;   Assignment:   prog = load file --path foo.o
+;;   Assignment:   let prog = load file --path foo.o
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
 ;;   Strings:      "double quoted", 'single quoted'
 ;;   Flags:        --path, -m, --dry-run
@@ -46,9 +46,10 @@
 
 (defconst bpfman--commands
   (let ((ht (make-hash-table :test 'equal)))
-    (dolist (w '("dispatcher" "doctor" "dump" "gc" "help" "link" "list"
-                 "load" "program" "programs" "show" "source" "unset"
-                 "vars" "version"))
+    (dolist (w '("assert" "dispatcher" "doctor" "dump" "gc" "help"
+                 "let" "link" "list" "load" "program" "programs"
+                 "require" "set" "show" "source" "unset" "vars"
+                 "version"))
       (puthash w t ht))
     ht)
   "Hash table of top-level bpfman REPL commands.")
@@ -238,15 +239,11 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
 
          ;; Assignment operator.
          ((= kind bpfman--tok-assign)
-          (if (eq state 'saw-ident)
+          (if (eq state 'let-eq)
               (progn
-                ;; Fontify the preceding identifier as variable-name.
-                (let ((prev (car tokens)))
-                  (put-text-property (nth 1 prev) (nth 2 prev)
-                                    'face 'font-lock-variable-name-face))
                 (put-text-property beg end 'face 'font-lock-keyword-face)
                 (setq state 'command))
-            ;; Equals not after an identifier; treat as plain.
+            ;; Equals outside let/set context; treat as plain.
             (setq state 'args)))
 
          ;; Plain word: face depends on position.
@@ -254,16 +251,31 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (let ((text (buffer-substring-no-properties beg end)))
             (pcase state
               ('start
-               ;; First word.  If next token is =, defer (saw-ident).
-               ;; Otherwise it's the command position.
-               (if (and rest
-                        (= (nth 0 (car rest)) bpfman--tok-assign)
-                        (bpfman--ident-p text))
-                   (setq state 'saw-ident)
-                 ;; Command position.
+               ;; First word.  "let" starts a let-assignment;
+               ;; "set" starts a set-binding; everything else is
+               ;; a command.
+               (cond
+                ((string= text "let")
+                 (put-text-property beg end 'face 'font-lock-keyword-face)
+                 (setq state 'let-name))
+                ((string= text "set")
+                 (put-text-property beg end 'face 'font-lock-keyword-face)
+                 (setq state 'let-name))
+                (t
                  (when (gethash text bpfman--commands)
                    (put-text-property beg end 'face 'font-lock-keyword-face))
-                 (setq state 'subcommand)))
+                 (setq state 'subcommand))))
+
+              ('let-name
+               ;; Word after "let"/"set": variable name.
+               (when (bpfman--ident-p text)
+                 (put-text-property beg end 'face 'font-lock-variable-name-face))
+               (setq state 'let-eq))
+
+              ('let-eq
+               ;; Expected = after variable name; got a word instead.
+               ;; Fall through to args.
+               (setq state 'args))
 
               ('command
                ;; First word after `=': command position.
@@ -277,33 +289,10 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                  (put-text-property beg end 'face 'font-lock-builtin-face))
                (setq state 'args))
 
-              ('saw-ident
-               ;; We expected = but got a word; first token was actually
-               ;; the command.
-               (let ((prev (car tokens)))
-                 (when (gethash (buffer-substring-no-properties
-                                 (nth 1 prev) (nth 2 prev))
-                                bpfman--commands)
-                   (put-text-property (nth 1 prev) (nth 2 prev)
-                                    'face 'font-lock-keyword-face)))
-               (when (gethash text bpfman--subcommands)
-                 (put-text-property beg end 'face 'font-lock-builtin-face))
-               (setq state 'args))
-
               ('args
                ;; In argument position: no special highlighting for
                ;; plain words.
-               nil))))))
-
-      ;; Handle the case where we ended in saw-ident without seeing =.
-      ;; The first token was actually a command.
-      (when (eq state 'saw-ident)
-        (let ((first (car tokens)))
-          (when (gethash (buffer-substring-no-properties
-                          (nth 1 first) (nth 2 first))
-                         bpfman--commands)
-            (put-text-property (nth 1 first) (nth 2 first)
-                              'face 'font-lock-keyword-face)))))))
+               nil)))))))
 
 (defun bpfman--ident-p (str)
   "Return non-nil if STR is a valid bpfman identifier."
@@ -344,9 +333,10 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
 (define-derived-mode bpfman-mode prog-mode "Bpfman"
   "Major mode for editing bpfman REPL scripts.
 
-The bpfman REPL language is line-oriented.  Each line is either an
-assignment (name = command ...) or a plain command.  Comments begin
-with # and extend to end of line.
+The bpfman REPL language is line-oriented.  Each line is either a
+let-assignment (let name = command ...), a set-binding
+(set name = value), an assertion, or a plain command.  Comments
+begin with # and extend to end of line.
 
 Variable references use the $ sigil: $prog.id, ${prog.maps[0].name}.
 Strings may be single- or double-quoted; $ is literal inside quotes.

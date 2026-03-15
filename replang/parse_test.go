@@ -40,8 +40,9 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 		{
-			name: "assignment",
+			name: "let assignment",
 			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
 				{Kind: TokenWord, Text: "prog"},
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "load"},
@@ -56,8 +57,9 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 		{
-			name: "assignment with varrefs in command",
+			name: "let assignment with varrefs in command",
 			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
 				{Kind: TokenWord, Text: "link"},
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "attach"},
@@ -72,55 +74,140 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 		{
-			name: "no command after equals",
+			name: "let no command after equals",
 			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
 				{Kind: TokenWord, Text: "x"},
 				{Kind: TokenAssign, Text: "="},
 			},
-			wantErr: "expected command after =",
+			wantErr: "let requires",
 		},
 		{
-			name: "varref as LHS is not assignment",
+			name: "let too few tokens",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenWord, Text: "x"},
+			},
+			wantErr: "let requires",
+		},
+		{
+			name: "let missing equals",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenWord, Text: "x"},
+				{Kind: TokenWord, Text: "load"},
+				{Kind: TokenWord, Text: "file"},
+			},
+			wantErr: "missing '='",
+		},
+		{
+			name: "let non-identifier LHS",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "foo"},
+			},
+			wantErr: "let requires an identifier",
+		},
+		{
+			name: "let invalid identifier",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenWord, Text: "0bad"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "foo"},
+			},
+			wantErr: "invalid variable name",
+		},
+		{
+			name: "set binding",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "set"},
+				{Kind: TokenWord, Text: "pid"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "42"},
+			},
+			want: Line{
+				VarName: "pid",
+				Command: []Token{{Kind: TokenWord, Text: "42"}},
+				IsSet:   true,
+			},
+		},
+		{
+			name: "set rejects multiple values",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "set"},
+				{Kind: TokenWord, Text: "x"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "a"},
+				{Kind: TokenWord, Text: "b"},
+			},
+			wantErr: "exactly one value",
+		},
+		{
+			name: "set too few tokens",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "set"},
+				{Kind: TokenWord, Text: "x"},
+			},
+			wantErr: "set requires",
+		},
+		{
+			name: "set missing equals",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "set"},
+				{Kind: TokenWord, Text: "x"},
+				{Kind: TokenWord, Text: "42"},
+				{Kind: TokenWord, Text: "extra"},
+			},
+			wantErr: "missing '='",
+		},
+		{
+			name: "set invalid identifier",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "set"},
+				{Kind: TokenWord, Text: "0bad"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "val"},
+			},
+			wantErr: "invalid variable name",
+		},
+		{
+			name: "bare ident-equals is a parse error",
+			tokens: []Token{
+				{Kind: TokenWord, Text: "prog"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "load"},
+				{Kind: TokenWord, Text: "file"},
+			},
+			wantErr: "unexpected '='",
+		},
+		{
+			name: "varref then equals is a parse error",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "foo"},
 			},
-			want: Line{
-				Command: []Token{
-					{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-					{Kind: TokenAssign, Text: "="},
-					{Kind: TokenWord, Text: "foo"},
-				},
-			},
+			wantErr: "unexpected '='",
 		},
 		{
-			name: "quoted as LHS is not assignment",
+			name: "quoted then equals is a parse error",
 			tokens: []Token{
 				{Kind: TokenQuoted, Text: "name"},
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "foo"},
 			},
-			want: Line{
-				Command: []Token{
-					{Kind: TokenQuoted, Text: "name"},
-					{Kind: TokenAssign, Text: "="},
-					{Kind: TokenWord, Text: "foo"},
-				},
-			},
+			wantErr: "unexpected '='",
 		},
 		{
-			name: "assign as LHS is not assignment",
+			name: "leading equals is a parse error",
 			tokens: []Token{
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "foo"},
 			},
-			want: Line{
-				Command: []Token{
-					{Kind: TokenAssign, Text: "="},
-					{Kind: TokenWord, Text: "foo"},
-				},
-			},
+			wantErr: "unexpected '='",
 		},
 		{
 			name: "command with only varref",

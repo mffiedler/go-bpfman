@@ -8,7 +8,18 @@ import (
 // Session holds variable bindings for the REPL. It is the runtime
 // state that persists across commands within a session.
 type Session struct {
-	vars map[string]Value
+	vars           map[string]Value
+	assertFailures int
+}
+
+// RecordAssertFailure increments the assertion failure counter.
+func (s *Session) RecordAssertFailure() {
+	s.assertFailures++
+}
+
+// AssertFailures returns the number of recorded assertion failures.
+func (s *Session) AssertFailures() int {
+	return s.assertFailures
 }
 
 // NewSession returns an empty session.

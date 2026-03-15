@@ -43,8 +43,8 @@ A useful exploratory or test-oriented session should be able to:
 For example:
 
 ```
-prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
 show program $prog.id maps
 link detach $link.id
 program delete $prog.id
@@ -80,7 +80,7 @@ or "last result" slots.
 Example:
 
 ```
-prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
 show program $prog.id maps
 program delete $prog.id
 ```
@@ -205,22 +205,23 @@ complex selection when needed.
 Assignment syntax is:
 
 ```
-name = command args...
+let name = command args...
 ```
 
 Rules:
 
-- the first token must be a valid identifier:
+- the first token must be the keyword `let`
+- the second token must be a valid identifier:
   `[a-zA-Z_][a-zA-Z0-9_]*`
-- the second token must be the literal `=`
+- the third token must be the literal `=`
 - the remainder of the line is parsed as a command
 - the left-hand side is never expanded
 
 Examples:
 
 ```
-prog = load file --path foo.o ...
-link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
+let prog = load file --path foo.o ...
+let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
 ```
 
 The command still prints its normal output unless the user has
@@ -444,7 +445,7 @@ This is enough to support exploratory lifecycle scripting.
 Example:
 
 ```
-prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
 show program $prog.id select id,name,type
 show program $prog.id maps select name,pin
 program delete $prog.id
@@ -458,8 +459,8 @@ attach and detach.
 Example:
 
 ```
-prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
 show program $prog.id maps
 link detach $link.id
 program delete $prog.id
@@ -508,12 +509,12 @@ nested expressions. One line, one command, one result.
 3. **Parse line.** The top-level grammar is tiny:
 
    ```
-   line       := assignment | command
-   assignment := IDENT "=" command
+   line       := let-assignment | command
+   let-assignment := "let" IDENT "=" command
    command    := TOKEN+
    ```
 
-   The parser only answers: is this `name = ...` or a plain
+   The parser only answers: is this `let name = ...` or a plain
    command?
 
 4. **Expand variables.** Variable references in the command tokens
@@ -578,8 +579,8 @@ they only see plain arguments, flags, and trailing modifiers like
 This model maps cleanly to both interactive use and batch scripts:
 
 ```
-prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
+let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let link = link attach tracepoint --tracepoint sched/sched_switch --program-id $prog.id
 show program $prog.id select id,name,type
 link detach $link.id
 program delete $prog.id
