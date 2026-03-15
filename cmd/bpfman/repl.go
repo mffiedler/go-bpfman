@@ -211,40 +211,60 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		return nil
 	}
 
-	line, err := replang.ParseLine(tokens)
+	stmt, err := replang.ParseStmt(tokens)
 	if err != nil {
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
-
-	expanded, err := session.Expand(line.Command)
-	if err != nil {
-		return scriptErr("%s[repl] error: %v\n", loc, err)
-	}
-
-	// set name = value: bind the expanded scalar directly.
-	if line.IsSet {
-		session.Set(line.VarName, replang.StringValue(expanded[0].Text))
+	if stmt == nil {
 		return nil
 	}
 
-	args := tokenTexts(expanded)
-	val, err := replDispatch(ctx, cli, mgr, session, args, loc)
-	if err != nil {
-		if errors.Is(err, errRequireFailed) {
-			return err
+	switch s := stmt.(type) {
+	case *replang.SetStmt:
+		expanded, err := session.Expand([]replang.Token{s.Value})
+		if err != nil {
+			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		return scriptErr("%s[repl] error: %v\n", loc, err)
-	}
+		session.Set(s.Name, replang.StringValue(expanded[0].Text))
+		return nil
 
-	// let name = command: bind the command result.
-	if line.VarName != "" {
+	case *replang.LetStmt:
+		expanded, err := session.Expand(s.Command)
+		if err != nil {
+			return scriptErr("%s[repl] error: %v\n", loc, err)
+		}
+		args := tokenTexts(expanded)
+		val, err := replDispatch(ctx, cli, mgr, session, args, loc)
+		if err != nil {
+			if errors.Is(err, errRequireFailed) {
+				return err
+			}
+			return scriptErr("%s[repl] error: %v\n", loc, err)
+		}
 		if val.IsNil() {
 			return scriptErr("%s[repl] error: command produced no result to assign\n", loc)
 		}
-		session.Set(line.VarName, val)
-	}
+		session.Set(s.Name, val)
+		return nil
 
-	return nil
+	case *replang.CommandStmt:
+		expanded, err := session.Expand(s.Tokens)
+		if err != nil {
+			return scriptErr("%s[repl] error: %v\n", loc, err)
+		}
+		args := tokenTexts(expanded)
+		_, err = replDispatch(ctx, cli, mgr, session, args, loc)
+		if err != nil {
+			if errors.Is(err, errRequireFailed) {
+				return err
+			}
+			return scriptErr("%s[repl] error: %v\n", loc, err)
+		}
+		return nil
+
+	default:
+		return scriptErr("%s[repl] error: unknown statement type %T\n", loc, stmt)
+	}
 }
 
 // tokenTexts extracts the text of each token into a plain string

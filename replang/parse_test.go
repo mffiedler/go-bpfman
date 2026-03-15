@@ -7,22 +7,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseLine(t *testing.T) {
+func TestParseStmt(t *testing.T) {
 	tests := []struct {
 		name    string
 		tokens  []Token
-		want    Line
+		want    Stmt
 		wantErr string
 	}{
 		{
 			name:   "empty",
 			tokens: nil,
-			want:   Line{},
+			want:   nil,
 		},
 		{
 			name:   "single word command",
 			tokens: []Token{{Kind: TokenWord, Text: "help"}},
-			want:   Line{Command: []Token{{Kind: TokenWord, Text: "help"}}},
+			want:   &CommandStmt{Tokens: []Token{{Kind: TokenWord, Text: "help"}}},
 		},
 		{
 			name: "plain command",
@@ -31,8 +31,8 @@ func TestParseLine(t *testing.T) {
 				{Kind: TokenWord, Text: "program"},
 				{Kind: TokenWord, Text: "123"},
 			},
-			want: Line{
-				Command: []Token{
+			want: &CommandStmt{
+				Tokens: []Token{
 					{Kind: TokenWord, Text: "show"},
 					{Kind: TokenWord, Text: "program"},
 					{Kind: TokenWord, Text: "123"},
@@ -48,8 +48,8 @@ func TestParseLine(t *testing.T) {
 				{Kind: TokenWord, Text: "load"},
 				{Kind: TokenWord, Text: "file"},
 			},
-			want: Line{
-				VarName: "prog",
+			want: &LetStmt{
+				Name: "prog",
 				Command: []Token{
 					{Kind: TokenWord, Text: "load"},
 					{Kind: TokenWord, Text: "file"},
@@ -65,8 +65,8 @@ func TestParseLine(t *testing.T) {
 				{Kind: TokenWord, Text: "attach"},
 				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
 			},
-			want: Line{
-				VarName: "link",
+			want: &LetStmt{
+				Name: "link",
 				Command: []Token{
 					{Kind: TokenWord, Text: "attach"},
 					{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
@@ -128,10 +128,9 @@ func TestParseLine(t *testing.T) {
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "42"},
 			},
-			want: Line{
-				VarName: "pid",
-				Command: []Token{{Kind: TokenWord, Text: "42"}},
-				IsSet:   true,
+			want: &SetStmt{
+				Name:  "pid",
+				Value: Token{Kind: TokenWord, Text: "42"},
 			},
 		},
 		{
@@ -214,8 +213,8 @@ func TestParseLine(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
 			},
-			want: Line{
-				Command: []Token{
+			want: &CommandStmt{
+				Tokens: []Token{
 					{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
 				},
 			},
@@ -226,8 +225,8 @@ func TestParseLine(t *testing.T) {
 				{Kind: TokenWord, Text: "prog"},
 				{Kind: TokenWord, Text: "load"},
 			},
-			want: Line{
-				Command: []Token{
+			want: &CommandStmt{
+				Tokens: []Token{
 					{Kind: TokenWord, Text: "prog"},
 					{Kind: TokenWord, Text: "load"},
 				},
@@ -237,7 +236,7 @@ func TestParseLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseLine(tt.tokens)
+			got, err := ParseStmt(tt.tokens)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

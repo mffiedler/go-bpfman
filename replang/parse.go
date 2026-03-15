@@ -2,20 +2,38 @@ package replang
 
 import "fmt"
 
-// Line is the result of parsing a tokenised input line.
-//
-// For a let-assignment (let name = command...): VarName is the
-// identifier, Command holds the command tokens after "=".
-//
-// For a set-binding (set name = value): VarName is the identifier,
-// Command holds the single value token, and IsSet is true.
-//
-// For a plain command: VarName is empty and Command holds all tokens.
-type Line struct {
-	VarName string
-	Command []Token
-	IsSet   bool
+// Stmt is the result of parsing a tokenised input line. It is a
+// sealed sum type with three variants: LetStmt for command-result
+// bindings, SetStmt for scalar bindings, and CommandStmt for plain
+// commands.
+type Stmt interface {
+	isStmt()
 }
+
+// LetStmt represents a let-assignment: let name = command...
+// Name is the identifier and Command holds the tokens after "=".
+type LetStmt struct {
+	Name    string
+	Command []Token
+}
+
+func (*LetStmt) isStmt() {}
+
+// SetStmt represents a set-binding: set name = value.
+// Name is the identifier and Value holds the single value token.
+type SetStmt struct {
+	Name  string
+	Value Token
+}
+
+func (*SetStmt) isStmt() {}
+
+// CommandStmt represents a plain command with no variable binding.
+type CommandStmt struct {
+	Tokens []Token
+}
+
+func (*CommandStmt) isStmt() {}
 
 // parseBinding handles the shared grammar for "let" and "set":
 // keyword name = tokens... It returns the variable name and the
@@ -41,13 +59,15 @@ func parseBinding(keyword string, tokens []Token) (string, []Token, error) {
 	return name, rhs, nil
 }
 
-// ParseLine inspects the token sequence to determine whether this is
+// ParseStmt inspects the token sequence to determine whether this is
 // a let-assignment (let name = command...), a set-binding (set name =
 // value), or a plain command. TokenAssign is only valid inside let
 // and set expressions; its presence elsewhere is a syntax error.
-func ParseLine(tokens []Token) (Line, error) {
+//
+// Returns nil for empty input.
+func ParseStmt(tokens []Token) (Stmt, error) {
 	if len(tokens) == 0 {
-		return Line{}, nil
+		return nil, nil
 	}
 
 	if tokens[0].Kind == TokenWord {
@@ -55,19 +75,19 @@ func ParseLine(tokens []Token) (Line, error) {
 		case "let":
 			name, cmd, err := parseBinding("let", tokens)
 			if err != nil {
-				return Line{}, err
+				return nil, err
 			}
-			return Line{VarName: name, Command: cmd}, nil
+			return &LetStmt{Name: name, Command: cmd}, nil
 
 		case "set":
 			name, rhs, err := parseBinding("set", tokens)
 			if err != nil {
-				return Line{}, err
+				return nil, err
 			}
 			if len(rhs) != 1 {
-				return Line{}, fmt.Errorf("set requires exactly one value after '='")
+				return nil, fmt.Errorf("set requires exactly one value after '='")
 			}
-			return Line{VarName: name, Command: rhs, IsSet: true}, nil
+			return &SetStmt{Name: name, Value: rhs[0]}, nil
 		}
 	}
 
@@ -75,9 +95,9 @@ func ParseLine(tokens []Token) (Line, error) {
 	// presence in a plain command is a syntax error.
 	for i, tok := range tokens {
 		if tok.Kind == TokenAssign {
-			return Line{}, fmt.Errorf("unexpected '=' at position %d; use \"let <name> = <command...>\" for assignment", i+1)
+			return nil, fmt.Errorf("unexpected '=' at position %d; use \"let <name> = <command...>\" for assignment", i+1)
 		}
 	}
 
-	return Line{Command: tokens}, nil
+	return &CommandStmt{Tokens: tokens}, nil
 }

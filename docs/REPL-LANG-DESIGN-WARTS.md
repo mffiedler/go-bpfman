@@ -493,7 +493,7 @@ that an earlier phase already resolved.
 The fixes are ordered so that each step is self-contained, testable,
 and valuable on its own. No step depends on a later step.
 
-### Step 1: introduce `Stmt` sum type
+### Step 1: introduce `Stmt` sum type [DONE]
 
 Replace the `Line` struct with a sealed `Stmt` interface and concrete
 types (`LetStmt`, `SetStmt`, `CommandStmt`). `ParseLine` becomes
