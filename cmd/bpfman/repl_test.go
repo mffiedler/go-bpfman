@@ -520,73 +520,51 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
 
-func TestResolveProgramIDArg(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractProgramID(t *testing.T) {
 	// Structured variable with .record.program_id
 	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
-	session.Set("prog", structuredVal)
-
-	// Scalar variable
-	session.Set("pid", replang.StringValue("99"))
 
 	// Structured variable without .record.program_id
 	noIDVal, err := replang.ValueFromJSON([]byte(`{"name":"test"}`))
 	require.NoError(t, err)
-	session.Set("noid", noIDVal)
 
 	tests := []struct {
 		name    string
-		arg     string
+		arg     replang.Arg
 		want    string
 		wantErr string
 	}{
 		{
 			name: "numeric ID passes through",
-			arg:  "123",
+			arg:  replang.WordArg{Text: "123"},
 			want: "123",
 		},
 		{
 			name: "hex ID passes through",
-			arg:  "0xff",
+			arg:  replang.WordArg{Text: "0xff"},
 			want: "0xff",
 		},
 		{
-			name: "$variable resolves record.program_id",
-			arg:  "$prog",
+			name: "structured variable resolves record.program_id",
+			arg:  replang.StructuredValueArg{Name: "prog", Value: structuredVal},
 			want: "42",
 		},
 		{
-			name: "$variable with explicit path resolves to scalar",
-			arg:  "$prog.record.program_id",
-			want: "42",
-		},
-		{
-			name: "$scalar variable resolves directly",
-			arg:  "$pid",
+			name: "scalar variable resolves directly",
+			arg:  replang.ScalarValueArg{Text: "99"},
 			want: "99",
 		},
 		{
-			name:    "$undefined variable returns error",
-			arg:     "$nosuch",
-			wantErr: "undefined variable",
-		},
-		{
-			name:    "$structured variable without record.program_id returns error",
-			arg:     "$noid",
+			name:    "structured variable without record.program_id returns error",
+			arg:     replang.StructuredValueArg{Name: "noid", Value: noIDVal},
 			wantErr: "has no .record.program_id field",
-		},
-		{
-			name:    "bare word without $ returns error",
-			arg:     "prog",
-			wantErr: "not a valid program ID or variable reference",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveProgramIDArg(session, tt.arg)
+			got, err := extractProgramID(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -598,63 +576,80 @@ func TestResolveProgramIDArg(t *testing.T) {
 	}
 }
 
-func TestResolveProgramIDArgs(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractProgramIDs(t *testing.T) {
 	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
-	session.Set("prog", structuredVal)
-	session.Set("pid", replang.StringValue("99"))
 
-	// Mixed numeric, $variable, and flags.
-	got, err := resolveProgramIDArgs(session, []string{"123", "$prog", "$pid", "-r"})
+	// Mixed numeric, structured variable, scalar, and flags.
+	got, err := extractProgramIDs([]replang.Arg{
+		replang.WordArg{Text: "123"},
+		replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+		replang.ScalarValueArg{Text: "99"},
+		replang.WordArg{Text: "-r"},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"123", "42", "99", "-r"}, got)
 }
 
-// TestResolveProgramIDArgs_ShowProgram verifies that the show-program
+// TestExtractProgramIDs_ShowProgram verifies that the show-program
 // resolution pattern only resolves the first positional argument,
 // leaving sub-view names like "links" and "maps" untouched.
-func TestResolveProgramIDArgs_ShowProgram(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractProgramIDs_ShowProgram(t *testing.T) {
 	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
-	session.Set("prog", structuredVal)
 
 	tests := []struct {
 		name string
-		args []string
+		args []replang.Arg
 		want []string
 	}{
 		{
-			name: "$variable with links sub-view",
-			args: []string{"$prog", "links"},
+			name: "structured variable with links sub-view",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+				replang.WordArg{Text: "links"},
+			},
 			want: []string{"42", "links"},
 		},
 		{
-			name: "$variable with maps sub-view",
-			args: []string{"$prog", "maps"},
+			name: "structured variable with maps sub-view",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+				replang.WordArg{Text: "maps"},
+			},
 			want: []string{"42", "maps"},
 		},
 		{
-			name: "$variable with paths sub-view and output flag",
-			args: []string{"$prog", "paths", "-o", "json"},
+			name: "structured variable with paths sub-view and output flag",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+				replang.WordArg{Text: "paths"},
+				replang.WordArg{Text: "-o"},
+				replang.WordArg{Text: "json"},
+			},
 			want: []string{"42", "paths", "-o", "json"},
 		},
 		{
 			name: "numeric ID with sub-view",
-			args: []string{"123", "links"},
+			args: []replang.Arg{
+				replang.WordArg{Text: "123"},
+				replang.WordArg{Text: "links"},
+			},
 			want: []string{"123", "links"},
 		},
 		{
-			name: "$variable alone",
-			args: []string{"$prog"},
+			name: "structured variable alone",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			},
 			want: []string{"42"},
 		},
 		{
 			name: "output flag only",
-			args: []string{"-o", "json"},
+			args: []replang.Arg{
+				replang.WordArg{Text: "-o"},
+				replang.WordArg{Text: "json"},
+			},
 			want: []string{"-o", "json"},
 		},
 	}
@@ -663,56 +658,62 @@ func TestResolveProgramIDArgs_ShowProgram(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Replicate the resolution pattern from replShowProgram:
 			// resolve only the first non-flag argument.
-			args := make([]string, len(tt.args))
-			copy(args, tt.args)
-			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-				resolved, err := resolveProgramIDArg(session, args[0])
+			ss := argTexts(tt.args)
+			if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
+				resolved, err := extractProgramID(tt.args[0])
 				require.NoError(t, err)
-				args = append([]string{resolved}, args[1:]...)
+				ss = append([]string{resolved}, ss[1:]...)
 			}
-			assert.Equal(t, tt.want, args)
+			assert.Equal(t, tt.want, ss)
 		})
 	}
 }
 
-// TestResolveProgramIDArgs_DeleteProgram verifies that the delete
+// TestExtractProgramIDs_DeleteProgram verifies that the delete
 // pattern resolves all positional arguments as program IDs, including
 // mixed numeric and variable forms, while leaving flags untouched.
-func TestResolveProgramIDArgs_DeleteProgram(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractProgramIDs_DeleteProgram(t *testing.T) {
 	p1, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":10}}`))
 	require.NoError(t, err)
 	p2, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":20}}`))
 	require.NoError(t, err)
-	session.Set("a", p1)
-	session.Set("b", p2)
 
 	tests := []struct {
 		name string
-		args []string
+		args []replang.Arg
 		want []string
 	}{
 		{
-			name: "multiple $variables",
-			args: []string{"$a", "$b"},
+			name: "multiple structured variables",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "a", Value: p1},
+				replang.StructuredValueArg{Name: "b", Value: p2},
+			},
 			want: []string{"10", "20"},
 		},
 		{
-			name: "mixed numeric and $variables with flag",
-			args: []string{"99", "$a", "$b", "-r"},
+			name: "mixed numeric and structured variables with flag",
+			args: []replang.Arg{
+				replang.WordArg{Text: "99"},
+				replang.StructuredValueArg{Name: "a", Value: p1},
+				replang.StructuredValueArg{Name: "b", Value: p2},
+				replang.WordArg{Text: "-r"},
+			},
 			want: []string{"99", "10", "20", "-r"},
 		},
 		{
-			name: "single $variable with recursive flag",
-			args: []string{"$a", "-r"},
+			name: "single structured variable with recursive flag",
+			args: []replang.Arg{
+				replang.StructuredValueArg{Name: "a", Value: p1},
+				replang.WordArg{Text: "-r"},
+			},
 			want: []string{"10", "-r"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveProgramIDArgs(session, tt.args)
+			got, err := extractProgramIDs(tt.args)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1091,74 +1092,54 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 	}
 }
 
-func TestResolveVarRefs(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractProgramIDsFromArgs(t *testing.T) {
 	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
-	session.Set("prog", structuredVal)
 
-	// resolveVarRefs should pass non-$ tokens through unchanged,
-	// including bare words that are not valid program IDs.
-	got, err := resolveVarRefs(session, []string{"--iface", "eth0", "$prog", "123"})
+	// extractProgramIDsFromArgs should pass non-structured args
+	// through unchanged, including bare words that are not valid
+	// program IDs, resolving only StructuredValueArg.
+	got, err := extractProgramIDsFromArgs([]replang.Arg{
+		replang.WordArg{Text: "--iface"},
+		replang.WordArg{Text: "eth0"},
+		replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+		replang.WordArg{Text: "123"},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"--iface", "eth0", "42", "123"}, got)
 }
 
-func TestResolveVarRefs_UndefinedVar(t *testing.T) {
-	session := replang.NewSession()
-	_, err := resolveVarRefs(session, []string{"$nosuch"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined variable")
-}
-
-func TestResolveLinkIDArg(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractLinkID(t *testing.T) {
 	// Structured variable with .record.id
 	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
-	session.Set("lnk", linkVal)
-
-	// Scalar variable
-	session.Set("lid", replang.StringValue("88"))
 
 	tests := []struct {
 		name    string
-		arg     string
+		arg     replang.Arg
 		want    string
 		wantErr string
 	}{
 		{
 			name: "numeric ID passes through",
-			arg:  "123",
+			arg:  replang.WordArg{Text: "123"},
 			want: "123",
 		},
 		{
-			name: "$variable resolves record.id",
-			arg:  "$lnk",
+			name: "structured variable resolves record.id",
+			arg:  replang.StructuredValueArg{Name: "lnk", Value: linkVal},
 			want: "77",
 		},
 		{
-			name: "$scalar variable resolves directly",
-			arg:  "$lid",
+			name: "scalar variable resolves directly",
+			arg:  replang.ScalarValueArg{Text: "88"},
 			want: "88",
-		},
-		{
-			name:    "bare word returns error",
-			arg:     "abc",
-			wantErr: "not a valid link ID",
-		},
-		{
-			name:    "undefined variable",
-			arg:     "$nosuch",
-			wantErr: "undefined variable",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveLinkIDArg(session, tt.arg)
+			got, err := extractLinkID(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -1170,14 +1151,15 @@ func TestResolveLinkIDArg(t *testing.T) {
 	}
 }
 
-func TestResolveLinkIDArgs(t *testing.T) {
-	session := replang.NewSession()
-
+func TestExtractLinkIDs(t *testing.T) {
 	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
-	session.Set("lnk", linkVal)
 
-	got, err := resolveLinkIDArgs(session, []string{"10", "$lnk", "-r"})
+	got, err := extractLinkIDs([]replang.Arg{
+		replang.WordArg{Text: "10"},
+		replang.StructuredValueArg{Name: "lnk", Value: linkVal},
+		replang.WordArg{Text: "-r"},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"10", "77", "-r"}, got)
 }
@@ -1439,8 +1421,7 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	}
 }
 
-func TestResolveProgramIDArg_RejectsLinkVariable(t *testing.T) {
-	session := replang.NewSession()
+func TestExtractProgramID_RejectsLinkVariable(t *testing.T) {
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
 			ID:        kernel.LinkID(10),
@@ -1449,15 +1430,13 @@ func TestResolveProgramIDArg_RejectsLinkVariable(t *testing.T) {
 	}
 	v, err := replang.ValueFromStruct(link)
 	require.NoError(t, err)
-	session.Set("mylink", v)
 
-	_, err = resolveProgramIDArg(session, "$mylink")
+	_, err = extractProgramID(replang.StructuredValueArg{Name: "mylink", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a program")
 }
 
-func TestResolveLinkIDArg_RejectsProgramVariable(t *testing.T) {
-	session := replang.NewSession()
+func TestExtractLinkID_RejectsProgramVariable(t *testing.T) {
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{
 			ProgramID: kernel.ProgramID(42),
@@ -1465,29 +1444,10 @@ func TestResolveLinkIDArg_RejectsProgramVariable(t *testing.T) {
 	}
 	v, err := replang.ValueFromStruct(prog)
 	require.NoError(t, err)
-	session.Set("myprog", v)
 
-	_, err = resolveLinkIDArg(session, "$myprog")
+	_, err = extractLinkID(replang.StructuredValueArg{Name: "myprog", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a link")
-}
-
-func TestResolveProgramIDArg_ExplicitPathStillWorks(t *testing.T) {
-	session := replang.NewSession()
-	link := bpfman.Link{
-		Record: bpfman.LinkRecord{
-			ID:        kernel.LinkID(10),
-			ProgramID: kernel.ProgramID(42),
-		},
-	}
-	v, err := replang.ValueFromStruct(link)
-	require.NoError(t, err)
-	session.Set("mylink", v)
-
-	// Explicit path bypasses the type check.
-	got, err := resolveProgramIDArg(session, "$mylink.record.program_id")
-	require.NoError(t, err)
-	assert.Equal(t, "42", got)
 }
 
 // ---- Assert/Require/Set tests ----
@@ -1629,11 +1589,20 @@ func TestAssertNumericCmp_NonNumeric(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a number")
 }
 
+// wordArgs converts string slices to []replang.Arg for test convenience.
+func wordArgs(ss ...string) []replang.Arg {
+	args := make([]replang.Arg, len(ss))
+	for i, s := range ss {
+		args[i] = replang.WordArg{Text: s}
+	}
+	return args
+}
+
 func TestAssertOk_UnknownCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := replang.NewSession()
 	// "bogus" is not a valid command, so it should fail.
-	r, err := assertOk(context.Background(), cli, nil, session, []string{"bogus"})
+	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("bogus"))
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 	assert.Contains(t, r.message, "succeed")
@@ -1642,7 +1611,7 @@ func TestAssertOk_UnknownCommand(t *testing.T) {
 func TestAssertFail_UnknownCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := replang.NewSession()
-	r, err := assertFail(context.Background(), cli, nil, session, []string{"bogus"})
+	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("bogus"))
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 }
@@ -1651,7 +1620,7 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := replang.NewSession()
 	// "help" always succeeds.
-	r, err := assertOk(context.Background(), cli, nil, session, []string{"help"})
+	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("help"))
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 }
@@ -1659,7 +1628,7 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 func TestAssertFail_SuccessfulCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := replang.NewSession()
-	r, err := assertFail(context.Background(), cli, nil, session, []string{"help"})
+	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("help"))
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 }

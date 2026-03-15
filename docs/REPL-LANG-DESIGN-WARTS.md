@@ -532,7 +532,7 @@ prefixes.
 
 **Scope**: `replang/` (new file or in `session.go`)
 
-### Step 4: remove `tokenTexts` from the main path
+### Step 4: remove `tokenTexts` from the main path [DONE]
 
 Make `replEval` pass structured expanded arguments (`[]Arg`) forward
 instead of collapsing to `[]string`. Where command handlers currently

@@ -233,8 +233,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		args := argTexts(expanded)
-		val, err := replDispatch(ctx, cli, mgr, session, args, loc)
+		val, err := replDispatch(ctx, cli, mgr, session, expanded, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -252,8 +251,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		args := argTexts(expanded)
-		_, err = replDispatch(ctx, cli, mgr, session, args, loc)
+		_, err = replDispatch(ctx, cli, mgr, session, expanded, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -267,23 +265,35 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 	}
 }
 
-// argTexts extracts a plain string from each Arg. This bridges
-// replang.Arg to the []string that Kong parsers and command handlers
-// expect. StructuredValueArg is reconstructed as "$name" to preserve
-// current handler behaviour until typed command parsing replaces it.
+// argText extracts the text from a single Arg. For text-bearing
+// variants (WordArg, QuotedArg, ScalarValueArg) this returns the
+// text directly. For StructuredValueArg this returns "$name" as a
+// display form suitable for error messages.
+func argText(a replang.Arg) string {
+	switch v := a.(type) {
+	case replang.WordArg:
+		return v.Text
+	case replang.QuotedArg:
+		return v.Text
+	case replang.ScalarValueArg:
+		return v.Text
+	case replang.StructuredValueArg:
+		return "$" + v.Name
+	default:
+		return ""
+	}
+}
+
+// argTexts extracts plain strings from all Args. This is the
+// conversion boundary for passing expanded arguments to Kong parsers
+// and handlers that operate on resolved string values. Structured
+// values should already have been extracted by typed helpers before
+// this point; any remaining StructuredValueArg is rendered as
+// "$name" for display.
 func argTexts(args []replang.Arg) []string {
 	ss := make([]string, len(args))
 	for i, a := range args {
-		switch v := a.(type) {
-		case replang.WordArg:
-			ss[i] = v.Text
-		case replang.QuotedArg:
-			ss[i] = v.Text
-		case replang.ScalarValueArg:
-			ss[i] = v.Text
-		case replang.StructuredValueArg:
-			ss[i] = "$" + v.Name
-		}
+		ss[i] = argText(a)
 	}
 	return ss
 }
@@ -305,6 +315,128 @@ func argToValue(a replang.Arg) replang.Value {
 	default:
 		return replang.StringValue("")
 	}
+}
+
+// extractProgramID resolves a single Arg to a program ID string. For
+// text-bearing args, the text is returned directly (Kong validates
+// the numeric form). For StructuredValueArg, the value's Origin is
+// checked for type safety and the path .record.program_id is
+// extracted automatically.
+func extractProgramID(a replang.Arg) (string, error) {
+	switch v := a.(type) {
+	case replang.WordArg:
+		return v.Text, nil
+	case replang.QuotedArg:
+		return v.Text, nil
+	case replang.ScalarValueArg:
+		return v.Text, nil
+	case replang.StructuredValueArg:
+		if origin := v.Value.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Program); !ok {
+				return "", fmt.Errorf(
+					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
+					v.Name, origin, v.Name)
+			}
+		}
+		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
+		if err != nil {
+			return "", fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
+		}
+		return resolved.Scalar()
+	default:
+		return "", fmt.Errorf("unexpected argument type %T", a)
+	}
+}
+
+// extractProgramIDs resolves each non-flag Arg to a program ID
+// string. Flags (starting with '-') pass through as text.
+func extractProgramIDs(args []replang.Arg) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		text := argText(a)
+		if strings.HasPrefix(text, "-") {
+			resolved[i] = text
+			continue
+		}
+		r, err := extractProgramID(a)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
+	}
+	return resolved, nil
+}
+
+// extractLinkID resolves a single Arg to a link ID string. For
+// text-bearing args, the text is returned directly. For
+// StructuredValueArg, the value's Origin is checked and the path
+// .record.id is extracted automatically.
+func extractLinkID(a replang.Arg) (string, error) {
+	switch v := a.(type) {
+	case replang.WordArg:
+		return v.Text, nil
+	case replang.QuotedArg:
+		return v.Text, nil
+	case replang.ScalarValueArg:
+		return v.Text, nil
+	case replang.StructuredValueArg:
+		if origin := v.Value.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Link); !ok {
+				return "", fmt.Errorf(
+					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
+					v.Name, origin, v.Name)
+			}
+		}
+		resolved, err := v.Value.LookupValue(v.Name, "record.id")
+		if err != nil {
+			return "", fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)
+		}
+		return resolved.Scalar()
+	default:
+		return "", fmt.Errorf("unexpected argument type %T", a)
+	}
+}
+
+// extractLinkIDs resolves each non-flag Arg to a link ID string.
+// Flags (starting with '-') pass through as text.
+func extractLinkIDs(args []replang.Arg) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		text := argText(a)
+		if strings.HasPrefix(text, "-") {
+			resolved[i] = text
+			continue
+		}
+		r, err := extractLinkID(a)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
+	}
+	return resolved, nil
+}
+
+// extractProgramIDsFromArgs resolves structured variable args to
+// program IDs while passing all other args through as text. Unlike
+// extractProgramIDs, this does not reject bare words that are not
+// valid program IDs, making it suitable for commands like link attach
+// where positional args mix IDs with keywords.
+func extractProgramIDsFromArgs(args []replang.Arg) ([]string, error) {
+	resolved := make([]string, len(args))
+	for i, a := range args {
+		switch v := a.(type) {
+		case replang.StructuredValueArg:
+			r, err := extractProgramID(a)
+			if err != nil {
+				return nil, err
+			}
+			resolved[i] = r
+		default:
+			_ = v
+			resolved[i] = argText(a)
+		}
+	}
+	return resolved, nil
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager
@@ -917,79 +1049,87 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 	}
 }
 
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string, loc sourceLoc) (replang.Value, error) {
+func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, loc sourceLoc) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, nil
 	}
 
+	cmd := argText(args[0])
+	arg := func(n int) string {
+		if n < len(args) {
+			return argText(args[n])
+		}
+		return ""
+	}
+
 	switch {
-	case args[0] == "assert":
+	case cmd == "assert":
 		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
-	case args[0] == "require":
+	case cmd == "require":
 		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
-	case args[0] == "dump":
-		return replang.Value{}, replDump(cli, session, args[1:])
-	case args[0] == "help":
+	case cmd == "dump":
+		return replang.Value{}, replDump(cli, session, argTexts(args[1:]))
+	case cmd == "help":
 		return replang.Value{}, replHelp(cli)
-	case args[0] == "source":
-		return replang.Value{}, replSource(ctx, cli, mgr, session, args[1:])
-	case args[0] == "unset":
-		return replang.Value{}, replUnset(cli, session, args[1:])
-	case args[0] == "vars":
+	case cmd == "source":
+		return replang.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+	case cmd == "unset":
+		return replang.Value{}, replUnset(cli, session, argTexts(args[1:]))
+	case cmd == "vars":
 		return replang.Value{}, replVars(cli, session)
-	case args[0] == "version":
+	case cmd == "version":
 		return replang.Value{}, replVersion(cli)
 
 	// program commands
-	case len(args) >= 2 && args[0] == "list" && args[1] == "programs":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && (args[0] == "program" || args[0] == "programs") && args[1] == "list":
-		return replang.Value{}, replListPrograms(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && args[0] == "load" && args[1] == "file":
-		return replLoadFile(ctx, cli, mgr, args[2:])
-	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "file":
-		return replLoadFile(ctx, cli, mgr, args[3:])
-	case len(args) >= 3 && args[0] == "program" && args[1] == "load" && args[2] == "image":
-		return replLoadImage(ctx, cli, mgr, args[3:])
-	case len(args) >= 2 && args[0] == "load" && args[1] == "image":
-		return replLoadImage(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && args[0] == "program" && args[1] == "get":
-		return replGetProgram(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 2 && args[0] == "program" && args[1] == "unload":
-		return replang.Value{}, replUnloadProgram(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 2 && args[0] == "program" && args[1] == "delete":
-		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 3 && args[0] == "show" && args[1] == "program":
-		return replang.Value{}, replShowProgram(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
+		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
+		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
+		return replLoadFile(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
+		return replLoadFile(ctx, cli, mgr, argTexts(args[3:]))
+	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "image":
+		return replLoadImage(ctx, cli, mgr, argTexts(args[3:]))
+	case len(args) >= 2 && cmd == "load" && arg(1) == "image":
+		return replLoadImage(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
+		return replGetProgram(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":
+		return replang.Value{}, replUnloadProgram(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "program" && arg(1) == "delete":
+		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, args[2:])
+	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
+		return replang.Value{}, replShowProgram(ctx, cli, mgr, args[2:])
 
 	// link commands
-	case len(args) >= 2 && args[0] == "link" && args[1] == "attach":
-		return replLinkAttach(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 2 && args[0] == "link" && args[1] == "detach":
-		return replang.Value{}, replLinkDetach(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 2 && args[0] == "link" && args[1] == "get":
-		return replLinkGet(ctx, cli, mgr, session, args[2:])
-	case len(args) >= 2 && args[0] == "link" && args[1] == "list":
-		return replang.Value{}, replLinkList(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && args[0] == "link" && args[1] == "delete":
-		return replang.Value{}, replLinkDelete(ctx, cli, mgr, session, args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
+		return replLinkAttach(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "detach":
+		return replang.Value{}, replLinkDetach(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "get":
+		return replLinkGet(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "list":
+		return replang.Value{}, replLinkList(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && cmd == "link" && arg(1) == "delete":
+		return replang.Value{}, replLinkDelete(ctx, cli, mgr, args[2:])
 
 	// dispatcher commands
-	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "list":
-		return replang.Value{}, replDispatcherList(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "get":
-		return replang.Value{}, replDispatcherGet(ctx, cli, mgr, args[2:])
-	case len(args) >= 2 && args[0] == "dispatcher" && args[1] == "delete":
-		return replang.Value{}, replDispatcherDelete(ctx, cli, mgr, args[2:])
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "list":
+		return replang.Value{}, replDispatcherList(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "get":
+		return replang.Value{}, replDispatcherGet(ctx, cli, mgr, argTexts(args[2:]))
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "delete":
+		return replang.Value{}, replDispatcherDelete(ctx, cli, mgr, argTexts(args[2:]))
 
 	// diagnostics
-	case args[0] == "gc":
-		return replang.Value{}, replGC(ctx, cli, mgr, args[1:])
-	case args[0] == "doctor":
-		return replang.Value{}, replDoctor(ctx, cli, mgr, args[1:])
+	case cmd == "gc":
+		return replang.Value{}, replGC(ctx, cli, mgr, argTexts(args[1:]))
+	case cmd == "doctor":
+		return replang.Value{}, replDoctor(ctx, cli, mgr, argTexts(args[1:]))
 
 	default:
-		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(args, " "))
+		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(argTexts(args), " "))
 	}
 }
 
@@ -1160,7 +1300,7 @@ func lookupBareVar(session *replang.Session, arg string) (replang.Value, error) 
 // When isRequire is true, failure halts execution immediately via
 // errRequireFailed. When false, failure is recorded in the session
 // counter and execution continues.
-func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string, isRequire bool, loc sourceLoc) error {
+func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
 		return fmt.Errorf("expected a verb (equal, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
 	}
@@ -1172,7 +1312,7 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 
 	// Check for "not" negation.
 	negate := false
-	if args[0] == "not" {
+	if argText(args[0]) == "not" {
 		negate = true
 		args = args[1:]
 		if len(args) == 0 {
@@ -1180,7 +1320,7 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		}
 	}
 
-	verb := args[0]
+	verb := argText(args[0])
 	verbArgs := args[1:]
 
 	result, err := evalAssertVerb(ctx, cli, mgr, session, verb, verbArgs)
@@ -1209,36 +1349,37 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 }
 
 // evalAssertVerb dispatches to the appropriate verb evaluator.
-func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, verb string, args []string) (assertResult, error) {
+func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, verb string, args []replang.Arg) (assertResult, error) {
+	ss := argTexts(args)
 	switch verb {
 	case "equal":
-		return assertEqual(args)
+		return assertEqual(ss)
 	case "ne":
-		return assertNe(args)
+		return assertNe(ss)
 	case "nil":
-		return assertNil(session, args)
+		return assertNil(session, ss)
 	case "not-empty":
-		return assertNotEmpty(args)
+		return assertNotEmpty(ss)
 	case "ok":
 		return assertOk(ctx, cli, mgr, session, args)
 	case "fail":
 		return assertFail(ctx, cli, mgr, session, args)
 	case "path":
-		return assertPath(args)
+		return assertPath(ss)
 	case "contains":
-		return assertContains(args)
+		return assertContains(ss)
 	case "true":
-		return assertBool(args, true)
+		return assertBool(ss, true)
 	case "false":
-		return assertBool(args, false)
+		return assertBool(ss, false)
 	case "lt":
-		return assertNumericCmp(args, "lt")
+		return assertNumericCmp(ss, "lt")
 	case "le":
-		return assertNumericCmp(args, "le")
+		return assertNumericCmp(ss, "le")
 	case "gt":
-		return assertNumericCmp(args, "gt")
+		return assertNumericCmp(ss, "gt")
 	case "ge":
-		return assertNumericCmp(args, "ge")
+		return assertNumericCmp(ss, "ge")
 	default:
 		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
 	}
@@ -1291,7 +1432,7 @@ func assertNotEmpty(args []string) (assertResult, error) {
 	}, nil
 }
 
-func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (assertResult, error) {
+func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("ok requires a command")
 	}
@@ -1310,7 +1451,7 @@ func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 	}, nil
 }
 
-func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (assertResult, error) {
+func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("fail requires a command")
 	}
@@ -1589,96 +1730,20 @@ func replParseShowProgram(args []string) (*ShowProgramCmd, error) {
 	return &cmd, nil
 }
 
-// resolveProgramIDArg resolves a single argument to a program ID
-// string. Numeric IDs pass through unchanged. Arguments starting
-// with '$' are looked up as session variables: if the variable is
-// structured, the path .record.program_id is tried automatically;
-// explicit dotted paths (e.g. $prog.record.program_id) are resolved
-// as given. Bare words without '$' that are not valid numeric IDs
-// return an error.
-func resolveProgramIDArg(session *replang.Session, arg string) (string, error) {
-	if _, err := ParseProgramID(arg); err == nil {
-		return arg, nil
-	}
-
-	if !strings.HasPrefix(arg, "$") {
-		return "", fmt.Errorf("%q is not a valid program ID or variable reference (use $name for variables)", arg)
-	}
-
-	// Strip the '$' prefix and split on first '.' or '[' to
-	// separate variable name from path.
-	ref := arg[1:]
-	varName := ref
-	path := ""
-	if i := strings.IndexAny(ref, ".["); i >= 0 {
-		varName = ref[:i]
-		path = ref[i:]
-		path = strings.TrimPrefix(path, ".")
-	}
-
-	v, ok := session.Get(varName)
-	if !ok {
-		return "", fmt.Errorf("undefined variable %q", varName)
-	}
-
-	if path != "" {
-		resolved, err := v.LookupValue(varName, path)
-		if err != nil {
-			return "", err
-		}
-		return resolved.Scalar()
-	}
-
-	if v.IsStructured() {
-		if origin := v.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Program); !ok {
-				return "", fmt.Errorf(
-					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
-					varName, origin, varName)
-			}
-		}
-		resolved, err := v.LookupValue(varName, "record.program_id")
-		if err != nil {
-			return "", fmt.Errorf("variable %q is structured but has no .record.program_id field", varName)
-		}
-		return resolved.Scalar()
-	}
-
-	return v.Scalar()
-}
-
-// resolveProgramIDArgs maps resolveProgramIDArg over every element
-// that is not a flag (does not start with '-'). Returns a new slice
-// with resolved values.
-func resolveProgramIDArgs(session *replang.Session, args []string) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		if strings.HasPrefix(a, "-") {
-			resolved[i] = a
-			continue
-		}
-		r, err := resolveProgramIDArg(session, a)
-		if err != nil {
-			return nil, err
-		}
-		resolved[i] = r
-	}
-	return resolved, nil
-}
-
 // replShowProgram handles the "show program" REPL command. Only the
 // first positional argument is a program ID; subsequent arguments are
 // sub-view names and flags.
-func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		resolved, err := resolveProgramIDArg(session, args[0])
+func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
+	ss := argTexts(args)
+	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
+		resolved, err := extractProgramID(args[0])
 		if err != nil {
 			return err
 		}
-		args = append([]string{resolved}, args[1:]...)
+		ss = append([]string{resolved}, ss[1:]...)
 	}
 
-	cmd, err := replParseShowProgram(args)
+	cmd, err := replParseShowProgram(ss)
 	if err != nil {
 		return err
 	}
@@ -1722,98 +1787,6 @@ func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 	}
 
 	return cli.PrintOut(output)
-}
-
-// resolveVarRefs resolves only $-prefixed tokens in args, passing
-// everything else through unchanged. Unlike resolveProgramIDArgs,
-// this does not reject bare words as invalid IDs, making it suitable
-// for commands where positional args mix IDs with keywords (e.g.
-// interface names in attach commands).
-func resolveVarRefs(session *replang.Session, args []string) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		if !strings.HasPrefix(a, "$") {
-			resolved[i] = a
-			continue
-		}
-		r, err := resolveProgramIDArg(session, a)
-		if err != nil {
-			return nil, err
-		}
-		resolved[i] = r
-	}
-	return resolved, nil
-}
-
-// resolveLinkIDArg resolves a single argument to a link ID string.
-// Numeric IDs pass through unchanged. Arguments starting with '$'
-// are looked up as session variables: structured variables try
-// .record.id automatically.
-func resolveLinkIDArg(session *replang.Session, arg string) (string, error) {
-	if _, err := ParseLinkID(arg); err == nil {
-		return arg, nil
-	}
-
-	if !strings.HasPrefix(arg, "$") {
-		return "", fmt.Errorf("%q is not a valid link ID or variable reference (use $name for variables)", arg)
-	}
-
-	ref := arg[1:]
-	varName := ref
-	path := ""
-	if i := strings.IndexAny(ref, ".["); i >= 0 {
-		varName = ref[:i]
-		path = ref[i:]
-		path = strings.TrimPrefix(path, ".")
-	}
-
-	v, ok := session.Get(varName)
-	if !ok {
-		return "", fmt.Errorf("undefined variable %q", varName)
-	}
-
-	if path != "" {
-		resolved, err := v.LookupValue(varName, path)
-		if err != nil {
-			return "", err
-		}
-		return resolved.Scalar()
-	}
-
-	if v.IsStructured() {
-		if origin := v.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Link); !ok {
-				return "", fmt.Errorf(
-					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
-					varName, origin, varName)
-			}
-		}
-		resolved, err := v.LookupValue(varName, "record.id")
-		if err != nil {
-			return "", fmt.Errorf("variable %q is structured but has no .record.id field", varName)
-		}
-		return resolved.Scalar()
-	}
-
-	return v.Scalar()
-}
-
-// resolveLinkIDArgs maps resolveLinkIDArg over every element that is
-// not a flag. Returns a new slice with resolved values.
-func resolveLinkIDArgs(session *replang.Session, args []string) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		if strings.HasPrefix(a, "-") {
-			resolved[i] = a
-			continue
-		}
-		r, err := resolveLinkIDArg(session, a)
-		if err != nil {
-			return nil, err
-		}
-		resolved[i] = r
-	}
-	return resolved, nil
 }
 
 // replCompleteLinkIDs offers link ID completions, analogous to
@@ -1891,17 +1864,18 @@ func replVersion(cli *CLI) error {
 }
 
 // replGetProgram handles "program get <id>".
-func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, fmt.Errorf("program get requires a program ID")
 	}
 
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		resolved, err := resolveProgramIDArg(session, args[0])
+	ss := argTexts(args)
+	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
+		resolved, err := extractProgramID(args[0])
 		if err != nil {
 			return replang.Value{}, err
 		}
-		args = append([]string{resolved}, args[1:]...)
+		ss = append([]string{resolved}, ss[1:]...)
 	}
 
 	var cmd GetProgramCmd
@@ -1915,7 +1889,7 @@ func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session
 	if err != nil {
 		return replang.Value{}, fmt.Errorf("create parser: %w", err)
 	}
-	if _, err := parser.Parse(args); err != nil {
+	if _, err := parser.Parse(ss); err != nil {
 		return replang.Value{}, err
 	}
 
@@ -1940,12 +1914,12 @@ func replGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session
 }
 
 // replUnloadProgram handles "program unload <id>...".
-func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
 	if len(args) == 0 {
 		return fmt.Errorf("program unload requires at least one program ID")
 	}
 
-	resolved, err := resolveProgramIDArgs(session, args)
+	resolved, err := extractProgramIDs(args)
 	if err != nil {
 		return err
 	}
@@ -2069,16 +2043,17 @@ func replLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, args []s
 }
 
 // replLinkAttach handles "link attach <type> [flags] <program-id>".
-func replLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+func replLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, fmt.Errorf("link attach requires a type (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)")
 	}
 
-	attachType := args[0]
+	attachType := argText(args[0])
 	rest := args[1:]
 
-	// Resolve $variable references in remaining args.
-	resolved, err := resolveVarRefs(session, rest)
+	// Resolve structured variable references to program IDs while
+	// passing all other args through as text.
+	resolved, err := extractProgramIDsFromArgs(rest)
 	if err != nil {
 		return replang.Value{}, err
 	}
@@ -2349,12 +2324,12 @@ func replAttachFexit(ctx context.Context, cli *CLI, mgr *manager.Manager, args [
 }
 
 // replLinkDetach handles "link detach <id>...".
-func replLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+func replLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
 	if len(args) == 0 {
 		return fmt.Errorf("link detach requires at least one link ID")
 	}
 
-	resolved, err := resolveLinkIDArgs(session, args)
+	resolved, err := extractLinkIDs(args)
 	if err != nil {
 		return err
 	}
@@ -2385,17 +2360,18 @@ func replLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, session
 }
 
 // replLinkGet handles "link get <id>".
-func replLinkGet(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) (replang.Value, error) {
+func replLinkGet(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, fmt.Errorf("link get requires a link ID")
 	}
 
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		resolved, err := resolveLinkIDArg(session, args[0])
+	ss := argTexts(args)
+	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
+		resolved, err := extractLinkID(args[0])
 		if err != nil {
 			return replang.Value{}, err
 		}
-		args = append([]string{resolved}, args[1:]...)
+		ss = append([]string{resolved}, ss[1:]...)
 	}
 
 	var cmd GetLinkCmd
@@ -2409,7 +2385,7 @@ func replLinkGet(ctx context.Context, cli *CLI, mgr *manager.Manager, session *r
 	if err != nil {
 		return replang.Value{}, fmt.Errorf("create parser: %w", err)
 	}
-	if _, err := parser.Parse(args); err != nil {
+	if _, err := parser.Parse(ss); err != nil {
 		return replang.Value{}, err
 	}
 
@@ -2489,12 +2465,12 @@ func replLinkList(ctx context.Context, cli *CLI, mgr *manager.Manager, args []st
 }
 
 // replLinkDelete handles "link delete <id>... [-r]".
-func replLinkDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+func replLinkDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
 	if len(args) == 0 {
 		return fmt.Errorf("link delete requires at least one link ID")
 	}
 
-	resolved, err := resolveLinkIDArgs(session, args)
+	resolved, err := extractLinkIDs(args)
 	if err != nil {
 		return err
 	}
@@ -2807,11 +2783,12 @@ func replDoctorExplain(cli *CLI, args []string) error {
 }
 
 // replDeleteProgram handles the "program delete" REPL command.
-func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
 	// Only resolve positional args when --all is not present;
 	// with --all there are no program ID arguments to resolve.
+	ss := argTexts(args)
 	hasAll := false
-	for _, a := range args {
+	for _, a := range ss {
 		if a == "--all" {
 			hasAll = true
 			break
@@ -2819,13 +2796,13 @@ func replDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 	}
 	if !hasAll {
 		var err error
-		args, err = resolveProgramIDArgs(session, args)
+		ss, err = extractProgramIDs(args)
 		if err != nil {
 			return err
 		}
 	}
 
-	cmd, err := replParseDeleteProgram(args)
+	cmd, err := replParseDeleteProgram(ss)
 	if err != nil {
 		return err
 	}
