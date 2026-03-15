@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -474,29 +473,6 @@ func extractLinkIDs(args []replang.Arg) ([]string, error) {
 			return nil, err
 		}
 		resolved[i] = r
-	}
-	return resolved, nil
-}
-
-// extractProgramIDsFromArgs resolves structured variable args to
-// program IDs while passing all other args through as text. Unlike
-// extractProgramIDs, this does not reject bare words that are not
-// valid program IDs, making it suitable for commands like link attach
-// where positional args mix IDs with keywords.
-func extractProgramIDsFromArgs(args []replang.Arg) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		switch v := a.(type) {
-		case replang.StructuredValueArg:
-			r, err := extractProgramID(a)
-			if err != nil {
-				return nil, err
-			}
-			resolved[i] = r
-		default:
-			_ = v
-			resolved[i] = argText(a)
-		}
 	}
 	return resolved, nil
 }
@@ -1173,9 +1149,17 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 
 	// link commands
 	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
-		return replLinkAttach(ctx, cli, mgr, args[2:])
+		attachCmd, err := parseLinkAttach(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return execLinkAttach(ctx, cli, mgr, attachCmd)
 	case len(args) >= 2 && cmd == "link" && arg(1) == "detach":
-		return replang.Value{}, replLinkDetach(ctx, cli, mgr, args[2:])
+		detachCmd, err := parseLinkDetach(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execLinkDetach(ctx, cli, mgr, detachCmd)
 	case len(args) >= 2 && cmd == "link" && arg(1) == "get":
 		return replLinkGet(ctx, cli, mgr, args[2:])
 	case len(args) >= 2 && cmd == "link" && arg(1) == "list":
@@ -1875,323 +1859,6 @@ func replUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args
 	return runBatchMutation(ctx, cli, ids, "program", "unload",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			return mgr.Unload(ctx, writeLock, id)
-		})
-}
-
-// replLinkAttach handles "link attach <type> [flags] <program-id>".
-func replLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
-	if len(args) == 0 {
-		return replang.Value{}, fmt.Errorf("link attach requires a type (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)")
-	}
-
-	attachType := argText(args[0])
-	rest := args[1:]
-
-	// Resolve structured variable references to program IDs while
-	// passing all other args through as text.
-	resolved, err := extractProgramIDsFromArgs(rest)
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	var link bpfman.Link
-	var outputFlags *OutputFlags
-
-	switch attachType {
-	case "xdp":
-		link, outputFlags, err = replAttachXDP(ctx, cli, mgr, resolved)
-	case "tc":
-		link, outputFlags, err = replAttachTC(ctx, cli, mgr, resolved)
-	case "tcx":
-		link, outputFlags, err = replAttachTCX(ctx, cli, mgr, resolved)
-	case "tracepoint":
-		link, outputFlags, err = replAttachTracepoint(ctx, cli, mgr, resolved)
-	case "kprobe":
-		link, outputFlags, err = replAttachKprobe(ctx, cli, mgr, resolved)
-	case "uprobe":
-		link, outputFlags, err = replAttachUprobe(ctx, cli, mgr, resolved)
-	case "fentry":
-		link, outputFlags, err = replAttachFentry(ctx, cli, mgr, resolved)
-	case "fexit":
-		link, outputFlags, err = replAttachFexit(ctx, cli, mgr, resolved)
-	default:
-		return replang.Value{}, fmt.Errorf("unknown attach type %q (valid: xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)", attachType)
-	}
-	if err != nil {
-		return replang.Value{}, err
-	}
-
-	output, err := FormatLinkResult(link, outputFlags)
-	if err != nil {
-		return replang.Value{}, err
-	}
-	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
-	}
-
-	val, err := replang.ValueFromStruct(link)
-	if err != nil {
-		return replang.Value{}, nil
-	}
-	return val, nil
-}
-
-// replParseAndAttach is a generic helper for attach commands that
-// creates a Kong parser, parses args, and executes the attach under lock.
-func replParseAndAttach[T any](
-	ctx context.Context,
-	cli *CLI,
-	mgr *manager.Manager,
-	cmd *T,
-	name string,
-	args []string,
-	mappers []kong.Option,
-	buildSpec func(*T) (bpfman.AttachSpec, error),
-	getFlags func(*T) *OutputFlags,
-) (bpfman.Link, *OutputFlags, error) {
-	opts := []kong.Option{
-		kong.Name(name),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-	}
-	opts = append(opts, mappers...)
-
-	parser, err := kong.New(cmd, opts...)
-	if err != nil {
-		return bpfman.Link{}, nil, fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(args); err != nil {
-		return bpfman.Link{}, nil, err
-	}
-
-	spec, err := buildSpec(cmd)
-	if err != nil {
-		return bpfman.Link{}, nil, err
-	}
-
-	link, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
-		return mgr.Attach(ctx, writeLock, spec)
-	})
-	if err != nil {
-		return bpfman.Link{}, nil, err
-	}
-
-	return link, getFlags(cmd), nil
-}
-
-var attachMappers = []kong.Option{
-	kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-	kong.TypeMapper(reflect.TypeOf(KeyValue{}), keyValueMapper()),
-	kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-}
-
-func replAttachXDP(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachXDPCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach xdp", args, attachMappers,
-		func(c *AttachXDPCmd) (bpfman.AttachSpec, error) {
-			iface, err := net.InterfaceByName(c.Iface)
-			if err != nil {
-				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-			}
-			proceedOn, err := bpfman.ParseXDPActions(c.ProceedOn)
-			if err != nil {
-				return nil, fmt.Errorf("invalid proceed-on value: %w", err)
-			}
-			spec, err := bpfman.NewXDPAttachSpec(c.ProgramID.Value, c.Iface, iface.Index)
-			if err != nil {
-				return nil, fmt.Errorf("invalid XDP spec: %w", err)
-			}
-			spec = spec.WithPriority(c.Priority).WithProceedOn(proceedOn)
-			if c.Netns != "" {
-				spec = spec.WithNetns(c.Netns)
-			}
-			return spec, nil
-		},
-		func(c *AttachXDPCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachTC(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachTCCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tc", args, attachMappers,
-		func(c *AttachTCCmd) (bpfman.AttachSpec, error) {
-			if c.Priority < 0 || c.Priority > 1000 {
-				return nil, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
-			}
-			direction, err := bpfman.ParseTCDirection(c.Direction)
-			if err != nil {
-				return nil, err
-			}
-			iface, err := net.InterfaceByName(c.Iface)
-			if err != nil {
-				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-			}
-			proceedOn, err := bpfman.ParseTCActions(c.ProceedOn)
-			if err != nil {
-				return nil, fmt.Errorf("invalid proceed-on value: %w", err)
-			}
-			spec, err := bpfman.NewTCAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
-			if err != nil {
-				return nil, fmt.Errorf("invalid TC spec: %w", err)
-			}
-			spec = spec.WithPriority(c.Priority).WithProceedOn(proceedOn)
-			if c.Netns != "" {
-				spec = spec.WithNetns(c.Netns)
-			}
-			return spec, nil
-		},
-		func(c *AttachTCCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachTCX(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachTCXCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tcx", args, attachMappers,
-		func(c *AttachTCXCmd) (bpfman.AttachSpec, error) {
-			if c.Priority < 0 || c.Priority > 1000 {
-				return nil, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
-			}
-			direction, err := bpfman.ParseTCDirection(c.Direction)
-			if err != nil {
-				return nil, err
-			}
-			iface, err := net.InterfaceByName(c.Iface)
-			if err != nil {
-				return nil, fmt.Errorf("failed to find interface %q: %w", c.Iface, err)
-			}
-			spec, err := bpfman.NewTCXAttachSpec(c.ProgramID.Value, c.Iface, iface.Index, direction)
-			if err != nil {
-				return nil, fmt.Errorf("invalid TCX spec: %w", err)
-			}
-			spec = spec.WithPriority(c.Priority)
-			if c.Netns != "" {
-				spec = spec.WithNetns(c.Netns)
-			}
-			return spec, nil
-		},
-		func(c *AttachTCXCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachTracepoint(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachTracepointCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach tracepoint", args, attachMappers,
-		func(c *AttachTracepointCmd) (bpfman.AttachSpec, error) {
-			parts := strings.SplitN(c.Tracepoint, "/", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("tracepoint must be in 'group/name' format, got %q", c.Tracepoint)
-			}
-			spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, parts[0], parts[1])
-			if err != nil {
-				return nil, fmt.Errorf("invalid tracepoint spec: %w", err)
-			}
-			return spec, nil
-		},
-		func(c *AttachTracepointCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachKprobe(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachKprobeCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach kprobe", args, attachMappers,
-		func(c *AttachKprobeCmd) (bpfman.AttachSpec, error) {
-			spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
-			if err != nil {
-				return nil, fmt.Errorf("invalid kprobe spec: %w", err)
-			}
-			if c.Offset != 0 {
-				spec = spec.WithOffset(c.Offset)
-			}
-			return spec, nil
-		},
-		func(c *AttachKprobeCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachUprobe(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachUprobeCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach uprobe", args, attachMappers,
-		func(c *AttachUprobeCmd) (bpfman.AttachSpec, error) {
-			spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
-			if err != nil {
-				return nil, fmt.Errorf("invalid uprobe spec: %w", err)
-			}
-			if c.FnName != "" {
-				spec = spec.WithFnName(c.FnName)
-			}
-			if c.Offset != 0 {
-				spec = spec.WithOffset(c.Offset)
-			}
-			if c.ContainerPid > 0 {
-				spec = spec.WithContainerPid(c.ContainerPid)
-			}
-			return spec, nil
-		},
-		func(c *AttachUprobeCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachFentry(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachFentryCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach fentry", args, attachMappers,
-		func(c *AttachFentryCmd) (bpfman.AttachSpec, error) {
-			spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
-			if err != nil {
-				return nil, fmt.Errorf("invalid fentry spec: %w", err)
-			}
-			return spec, nil
-		},
-		func(c *AttachFentryCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-func replAttachFexit(ctx context.Context, cli *CLI, mgr *manager.Manager, args []string) (bpfman.Link, *OutputFlags, error) {
-	var cmd AttachFexitCmd
-	return replParseAndAttach(ctx, cli, mgr, &cmd, "link attach fexit", args, attachMappers,
-		func(c *AttachFexitCmd) (bpfman.AttachSpec, error) {
-			spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
-			if err != nil {
-				return nil, fmt.Errorf("invalid fexit spec: %w", err)
-			}
-			return spec, nil
-		},
-		func(c *AttachFexitCmd) *OutputFlags { return &c.OutputFlags },
-	)
-}
-
-// replLinkDetach handles "link detach <id>...".
-func replLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
-	if len(args) == 0 {
-		return fmt.Errorf("link detach requires at least one link ID")
-	}
-
-	resolved, err := extractLinkIDs(args)
-	if err != nil {
-		return err
-	}
-
-	var cmd DetachCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("link detach"),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(LinkID{}), linkIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
-	}
-	if _, err := parser.Parse(resolved); err != nil {
-		return err
-	}
-
-	ids := make([]kernel.LinkID, len(cmd.LinkIDs))
-	for i, lid := range cmd.LinkIDs {
-		ids[i] = lid.Value
-	}
-	return runBatchMutation(ctx, cli, ids, "link", "detach",
-		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
-			return mgr.Detach(ctx, writeLock, id)
 		})
 }
 

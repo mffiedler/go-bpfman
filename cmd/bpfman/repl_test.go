@@ -1093,23 +1093,6 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 	}
 }
 
-func TestExtractProgramIDsFromArgs(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
-	require.NoError(t, err)
-
-	// extractProgramIDsFromArgs should pass non-structured args
-	// through unchanged, including bare words that are not valid
-	// program IDs, resolving only StructuredValueArg.
-	got, err := extractProgramIDsFromArgs([]replang.Arg{
-		replang.WordArg{Text: "--iface"},
-		replang.WordArg{Text: "eth0"},
-		replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-		replang.WordArg{Text: "123"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"--iface", "eth0", "42", "123"}, got)
-}
-
 func TestExtractLinkID(t *testing.T) {
 	// Structured variable with .record.id
 	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
@@ -1348,7 +1331,7 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "link detach requires at least one link ID")
+	assert.Contains(t, errBuf.String(), "link detach: requires at least one link ID")
 }
 
 func TestReplLoop_LinkGetNoArgs(t *testing.T) {

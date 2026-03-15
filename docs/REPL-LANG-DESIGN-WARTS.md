@@ -599,7 +599,7 @@ family at a time. A reasonable order:
 
 1. `show program` (high-frequency, exercises structured refs) [DONE]
 2. `load file` / `load image` (exercises result binding) [DONE]
-3. `link attach` / `link detach` (exercises cross-type refs)
+3. `link attach` / `link detach` (exercises cross-type refs) [DONE]
 4. `program get` / `link get` (exercises value return)
 5. Remaining commands
 
