@@ -143,6 +143,52 @@ func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Comman
 	}
 }
 
+// parseProgramIDArg resolves a single shell.Arg directly to a
+// kernel.ProgramID, combining argument extraction and ID parsing
+// into one step. For text-bearing args the text is parsed as a
+// program ID. For StructuredValueArg, the value's Origin is
+// checked for type safety and the path .record.program_id is
+// extracted automatically.
+func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
+	switch v := a.(type) {
+	case shell.WordArg:
+		return parseProgramIDText(v.Text)
+	case shell.QuotedArg:
+		return parseProgramIDText(v.Text)
+	case shell.ScalarValueArg:
+		return parseProgramIDText(v.Text)
+	case shell.StructuredValueArg:
+		if origin := v.Value.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Program); !ok {
+				return 0, fmt.Errorf(
+					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
+					v.Name, origin, v.Name)
+			}
+		}
+		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
+		if err != nil {
+			return 0, fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
+		}
+		s, err := resolved.Scalar()
+		if err != nil {
+			return 0, err
+		}
+		return parseProgramIDText(s)
+	default:
+		return 0, fmt.Errorf("unexpected argument type %T", a)
+	}
+}
+
+// parseProgramIDText parses a program ID from text into a
+// kernel.ProgramID.
+func parseProgramIDText(s string) (kernel.ProgramID, error) {
+	parsed, err := ParseProgramID(s)
+	if err != nil {
+		return 0, err
+	}
+	return parsed.Value, nil
+}
+
 // ShowProgramCommand represents a fully parsed "show program" command
 // with resolved program ID, view name, and output format.
 type ShowProgramCommand struct {
@@ -174,17 +220,13 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 	}
 
 	// Resolve the program ID from the first argument.
-	idStr, err := extractProgramID(args[0])
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := ParseProgramID(idStr)
+	id, err := parseProgramIDArg(args[0])
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := &ShowProgramCommand{
-		ID:   parsed.Value,
+		ID:   id,
 		View: "summary",
 		Output: OutputFlags{
 			Output: OutputValue{Value: "table"},
