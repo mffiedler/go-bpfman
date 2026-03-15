@@ -546,7 +546,7 @@ through the type system rather than through string re-parsing.
 
 **Scope**: `cmd/bpfman/repl.go`, `cmd/bpfman/repl_test.go`
 
-### Step 5: update `doc.go`
+### Step 5: update `doc.go` [DONE]
 
 Rewrite the package documentation to reflect:
 
