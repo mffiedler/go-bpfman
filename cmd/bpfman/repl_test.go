@@ -289,7 +289,8 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 }
 
 func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
-	// "help" returns no value, so assigning should produce an error.
+	// "help" is a shell command that produces no value, so
+	// assigning should produce an error.
 	input := "let x = help\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -297,7 +298,7 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "command produced no result to assign")
+	assert.Contains(t, errBuf.String(), "cannot bind result of \"help\" to a variable")
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {

@@ -185,12 +185,62 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 	}
 }
 
+// shellCommands is the set of commands that are shell-language or
+// session concerns rather than bpfman domain commands. These are
+// handled directly by replEval and never reach the domain command
+// dispatcher.
+var shellCommands = map[string]bool{
+	"assert":  true,
+	"require": true,
+	"dump":    true,
+	"help":    true,
+	"source":  true,
+	"unset":   true,
+	"vars":    true,
+	"version": true,
+}
+
+// replShellCmd handles shell-language and session commands. It returns
+// (true, err) if the command was handled, (false, nil) if the command
+// is not a shell command and should be dispatched to the domain layer.
+func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, loc sourceLoc) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	cmd := argText(args[0])
+	if !shellCommands[cmd] {
+		return false, nil
+	}
+
+	switch cmd {
+	case "assert":
+		return true, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
+	case "require":
+		return true, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
+	case "dump":
+		return true, replDump(cli, session, argTexts(args[1:]))
+	case "help":
+		return true, replHelp(cli)
+	case "source":
+		return true, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+	case "unset":
+		return true, replUnset(cli, session, argTexts(args[1:]))
+	case "vars":
+		return true, replVars(cli, session)
+	case "version":
+		return true, replVersion(cli)
+	default:
+		return false, nil
+	}
+}
+
 // replEval processes a single input line: tokenise, parse, expand
-// variables, dispatch, and optionally bind the result. In interactive
-// mode (loc has no file), non-fatal errors are printed and return nil
-// so the session continues. In script mode (loc has a file), errors
-// return errScriptError to halt execution. The loc parameter provides
-// optional file:line context for error messages.
+// variables, dispatch, and optionally bind the result. Shell-language
+// commands (assert, require, dump, help, source, unset, vars, version)
+// are handled directly. Domain commands flow to replDispatch. In
+// interactive mode (loc has no file), non-fatal errors are printed and
+// return nil so the session continues. In script mode (loc has a
+// file), errors return errScriptError to halt execution.
 func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, input string, loc sourceLoc) error {
 	// scriptErr prints an error and returns the appropriate
 	// sentinel: errScriptError in file mode, nil in interactive
@@ -233,7 +283,10 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		val, err := replDispatch(ctx, cli, mgr, session, expanded, loc)
+		if len(expanded) > 0 && shellCommands[argText(expanded[0])] {
+			return scriptErr("%s[repl] error: cannot bind result of %q to a variable\n", loc, argText(expanded[0]))
+		}
+		val, err := replDispatch(ctx, cli, mgr, expanded)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -251,7 +304,17 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		_, err = replDispatch(ctx, cli, mgr, session, expanded, loc)
+		handled, err := replShellCmd(ctx, cli, mgr, session, expanded, loc)
+		if err != nil {
+			if errors.Is(err, errRequireFailed) {
+				return err
+			}
+			return scriptErr("%s[repl] error: %v\n", loc, err)
+		}
+		if handled {
+			return nil
+		}
+		_, err = replDispatch(ctx, cli, mgr, expanded)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -1049,7 +1112,11 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 	}
 }
 
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, loc sourceLoc) (replang.Value, error) {
+// replDispatch routes expanded domain command arguments to the
+// appropriate bpfman command handler. Shell-language commands (assert,
+// require, dump, help, source, unset, vars, version) are handled by
+// replShellCmd before reaching this function.
+func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
 	if len(args) == 0 {
 		return replang.Value{}, nil
 	}
@@ -1063,23 +1130,6 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	}
 
 	switch {
-	case cmd == "assert":
-		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
-	case cmd == "require":
-		return replang.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
-	case cmd == "dump":
-		return replang.Value{}, replDump(cli, session, argTexts(args[1:]))
-	case cmd == "help":
-		return replang.Value{}, replHelp(cli)
-	case cmd == "source":
-		return replang.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
-	case cmd == "unset":
-		return replang.Value{}, replUnset(cli, session, argTexts(args[1:]))
-	case cmd == "vars":
-		return replang.Value{}, replVars(cli, session)
-	case cmd == "version":
-		return replang.Value{}, replVersion(cli)
-
 	// program commands
 	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
 		return replang.Value{}, replListPrograms(ctx, cli, mgr, argTexts(args[2:]))
@@ -1432,13 +1482,27 @@ func assertNotEmpty(args []string) (assertResult, error) {
 	}, nil
 }
 
+// runCommand executes a command through both the shell command layer
+// and the domain dispatch layer. It is used by assertion verbs (ok,
+// fail) to test whether a sub-command succeeds or fails.
+func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) error {
+	handled, err := replShellCmd(ctx, cli, mgr, session, args, sourceLoc{})
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	_, err = replDispatch(ctx, cli, mgr, args)
+	return err
+}
+
 func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("ok requires a command")
 	}
-	// Execute the sub-command with output suppressed.
 	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
-	_, err := replDispatch(ctx, discardCLI, mgr, session, args, sourceLoc{})
+	err := runCommand(ctx, discardCLI, mgr, session, args)
 	if err != nil {
 		return assertResult{
 			pass:    false,
@@ -1456,7 +1520,7 @@ func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 		return assertResult{}, fmt.Errorf("fail requires a command")
 	}
 	discardCLI := &CLI{Out: io.Discard, Err: io.Discard}
-	_, err := replDispatch(ctx, discardCLI, mgr, session, args, sourceLoc{})
+	err := runCommand(ctx, discardCLI, mgr, session, args)
 	if err != nil {
 		return assertResult{
 			pass:    true,

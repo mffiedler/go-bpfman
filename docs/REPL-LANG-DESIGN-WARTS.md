@@ -563,7 +563,7 @@ the real API, not a transitional state.
 
 **Scope**: `replang/doc.go`
 
-### Step 6: tighten tokeniser invariants
+### Step 6: tighten tokeniser invariants [DONE]
 
 - Annotate or remove the parse test for leading `TokenAssign` (the
   tokeniser cannot produce it).
@@ -575,7 +575,7 @@ the real API, not a transitional state.
 **Scope**: `replang/token.go`, `replang/token_test.go`,
 `replang/parse_test.go`
 
-### Step 7: split shell-language commands from domain commands
+### Step 7: split shell-language commands from domain commands [DONE]
 
 In `replEval`, after `ParseStmt` and expansion, handle
 shell-language commands and control commands (`unset`, `vars`, `dump`,
