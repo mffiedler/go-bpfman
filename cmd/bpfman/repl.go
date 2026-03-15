@@ -225,7 +225,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		session.Set(s.Name, replang.StringValue(expanded[0].Text))
+		session.Set(s.Name, argToValue(expanded[0]))
 		return nil
 
 	case *replang.LetStmt:
@@ -233,7 +233,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		args := tokenTexts(expanded)
+		args := argTexts(expanded)
 		val, err := replDispatch(ctx, cli, mgr, session, args, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
@@ -252,7 +252,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		args := tokenTexts(expanded)
+		args := argTexts(expanded)
 		_, err = replDispatch(ctx, cli, mgr, session, args, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
@@ -267,15 +267,44 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 	}
 }
 
-// tokenTexts extracts the text of each token into a plain string
-// slice. This bridges replang.Token to the []string that Kong parsers
-// and command handlers expect.
-func tokenTexts(tokens []replang.Token) []string {
-	ss := make([]string, len(tokens))
-	for i, t := range tokens {
-		ss[i] = t.Text
+// argTexts extracts a plain string from each Arg. This bridges
+// replang.Arg to the []string that Kong parsers and command handlers
+// expect. StructuredValueArg is reconstructed as "$name" to preserve
+// current handler behaviour until typed command parsing replaces it.
+func argTexts(args []replang.Arg) []string {
+	ss := make([]string, len(args))
+	for i, a := range args {
+		switch v := a.(type) {
+		case replang.WordArg:
+			ss[i] = v.Text
+		case replang.QuotedArg:
+			ss[i] = v.Text
+		case replang.ScalarValueArg:
+			ss[i] = v.Text
+		case replang.StructuredValueArg:
+			ss[i] = "$" + v.Name
+		}
 	}
 	return ss
+}
+
+// argToValue converts a single Arg to a replang.Value for variable
+// assignment. For structured args the Value is passed through
+// directly; for all text-bearing args the text becomes a string
+// value.
+func argToValue(a replang.Arg) replang.Value {
+	switch v := a.(type) {
+	case replang.WordArg:
+		return replang.StringValue(v.Text)
+	case replang.QuotedArg:
+		return replang.StringValue(v.Text)
+	case replang.ScalarValueArg:
+		return replang.StringValue(v.Text)
+	case replang.StructuredValueArg:
+		return v.Value
+	default:
+		return replang.StringValue("")
+	}
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager

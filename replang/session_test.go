@@ -76,7 +76,7 @@ func TestSessionExpand(t *testing.T) {
 	tests := []struct {
 		name    string
 		tokens  []Token
-		want    []Token
+		want    []Arg
 		wantErr string
 	}{
 		{
@@ -85,9 +85,9 @@ func TestSessionExpand(t *testing.T) {
 				{Kind: TokenWord, Text: "show"},
 				{Kind: TokenWord, Text: "program"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "show"},
-				{Kind: TokenWord, Text: "program"},
+			want: []Arg{
+				WordArg{Text: "show"},
+				WordArg{Text: "program"},
 			},
 		},
 		{
@@ -96,9 +96,9 @@ func TestSessionExpand(t *testing.T) {
 				{Kind: TokenWord, Text: "echo"},
 				{Kind: TokenVarRef, Text: "$simple", VarName: "simple"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "echo"},
-				{Kind: TokenWord, Text: "hello"},
+			want: []Arg{
+				WordArg{Text: "echo"},
+				ScalarValueArg{Text: "hello"},
 			},
 		},
 		{
@@ -108,10 +108,10 @@ func TestSessionExpand(t *testing.T) {
 				{Kind: TokenWord, Text: "program"},
 				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "show"},
-				{Kind: TokenWord, Text: "program"},
-				{Kind: TokenWord, Text: "42"},
+			want: []Arg{
+				WordArg{Text: "show"},
+				WordArg{Text: "program"},
+				ScalarValueArg{Text: "42"},
 			},
 		},
 		{
@@ -119,8 +119,8 @@ func TestSessionExpand(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.details.kernel_id", VarName: "prog", VarPath: "details.kernel_id"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "99"},
+			want: []Arg{
+				ScalarValueArg{Text: "99"},
 			},
 		},
 		{
@@ -128,8 +128,8 @@ func TestSessionExpand(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.maps[0].name", VarName: "prog", VarPath: "maps[0].name"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "counts"},
+			want: []Arg{
+				ScalarValueArg{Text: "counts"},
 			},
 		},
 		{
@@ -140,11 +140,11 @@ func TestSessionExpand(t *testing.T) {
 				{Kind: TokenWord, Text: "--name"},
 				{Kind: TokenVarRef, Text: "$prog.name", VarName: "prog", VarPath: "name"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "--id"},
-				{Kind: TokenWord, Text: "42"},
-				{Kind: TokenWord, Text: "--name"},
-				{Kind: TokenWord, Text: "test_prog"},
+			want: []Arg{
+				WordArg{Text: "--id"},
+				ScalarValueArg{Text: "42"},
+				WordArg{Text: "--name"},
+				ScalarValueArg{Text: "test_prog"},
 			},
 		},
 		{
@@ -154,10 +154,10 @@ func TestSessionExpand(t *testing.T) {
 				{Kind: TokenQuoted, Text: "my file.o"},
 				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "load"},
-				{Kind: TokenQuoted, Text: "my file.o"},
-				{Kind: TokenWord, Text: "42"},
+			want: []Arg{
+				WordArg{Text: "load"},
+				QuotedArg{Text: "my file.o"},
+				ScalarValueArg{Text: "42"},
 			},
 		},
 		{
@@ -165,8 +165,8 @@ func TestSessionExpand(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.active", VarName: "prog", VarPath: "active"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "true"},
+			want: []Arg{
+				ScalarValueArg{Text: "true"},
 			},
 		},
 		{
@@ -174,8 +174,8 @@ func TestSessionExpand(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$flag", VarName: "flag"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "true"},
+			want: []Arg{
+				ScalarValueArg{Text: "true"},
 			},
 		},
 		{
@@ -186,12 +186,12 @@ func TestSessionExpand(t *testing.T) {
 			wantErr: "undefined variable: unknown",
 		},
 		{
-			name: "bare structured variable passes through",
+			name: "bare structured variable preserved as typed arg",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog", VarName: "prog"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "$prog"},
+			want: []Arg{
+				StructuredValueArg{Name: "prog", Value: ValueFromMap(progData)},
 			},
 		},
 		{
@@ -234,8 +234,8 @@ func TestSessionExpand(t *testing.T) {
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.type", VarName: "prog", VarPath: "type"},
 			},
-			want: []Token{
-				{Kind: TokenWord, Text: "tracepoint"},
+			want: []Arg{
+				ScalarValueArg{Text: "tracepoint"},
 			},
 		},
 	}

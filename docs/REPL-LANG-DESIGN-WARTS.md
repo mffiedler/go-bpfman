@@ -505,7 +505,7 @@ breaking expansion semantics.
 **Scope**: `replang/parse.go`, `replang/parse_test.go`,
 `cmd/bpfman/repl.go`
 
-### Step 2: preserve structured refs through expansion
+### Step 2: preserve structured refs through expansion [DONE]
 
 Change `Session.Expand` so that structured references are preserved
 in typed form instead of being downgraded to `TokenWord`. Update the
@@ -520,7 +520,7 @@ which step 3 fixes.
 
 **Scope**: `replang/session.go`, `replang/session_test.go`
 
-### Step 3: introduce typed `Arg` representation in `replang`
+### Step 3: introduce typed `Arg` representation in `replang` [DONE]
 
 Introduce the `Arg` interface (`WordArg`, `QuotedArg`,
 `ScalarValueArg`, `StructuredValueArg`). Expansion produces `[]Arg`

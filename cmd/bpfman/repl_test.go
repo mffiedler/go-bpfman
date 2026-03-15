@@ -243,19 +243,38 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 	}
 }
 
-func TestTokenTexts(t *testing.T) {
-	tokens := []replang.Token{
-		{Kind: replang.TokenWord, Text: "show"},
-		{Kind: replang.TokenWord, Text: "program"},
-		{Kind: replang.TokenWord, Text: "42"},
+func TestArgTexts(t *testing.T) {
+	args := []replang.Arg{
+		replang.WordArg{Text: "show"},
+		replang.WordArg{Text: "program"},
+		replang.ScalarValueArg{Text: "42"},
 	}
-	got := tokenTexts(tokens)
+	got := argTexts(args)
 	assert.Equal(t, []string{"show", "program", "42"}, got)
 }
 
-func TestTokenTexts_Empty(t *testing.T) {
-	got := tokenTexts(nil)
+func TestArgTexts_Empty(t *testing.T) {
+	got := argTexts(nil)
 	assert.Empty(t, got)
+}
+
+func TestArgTexts_StructuredValueArg(t *testing.T) {
+	args := []replang.Arg{
+		replang.WordArg{Text: "show"},
+		replang.WordArg{Text: "program"},
+		replang.StructuredValueArg{Name: "prog", Value: replang.ValueFromMap(map[string]any{"id": "42"})},
+	}
+	got := argTexts(args)
+	assert.Equal(t, []string{"show", "program", "$prog"}, got)
+}
+
+func TestArgTexts_QuotedArg(t *testing.T) {
+	args := []replang.Arg{
+		replang.WordArg{Text: "load"},
+		replang.QuotedArg{Text: "my file.o"},
+	}
+	got := argTexts(args)
+	assert.Equal(t, []string{"load", "my file.o"}, got)
 }
 
 func TestReplLoop_VarsEmpty(t *testing.T) {

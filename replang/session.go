@@ -54,15 +54,22 @@ func (s *Session) Names() []string {
 	return names
 }
 
-// Expand resolves all VarRef tokens in the slice against this
-// session's variable bindings. Each VarRef is replaced with a
-// TokenWord containing the scalar string value. Non-VarRef tokens
-// pass through unchanged.
-func (s *Session) Expand(tokens []Token) ([]Token, error) {
-	result := make([]Token, 0, len(tokens))
+// Expand resolves all variable references in the token slice against
+// this session's bindings and returns typed arguments. Scalar
+// references are resolved eagerly to ScalarValueArg. Bare structured
+// references become StructuredValueArg, preserving the Value for
+// typed consumption by command parsers. Non-variable tokens become
+// WordArg or QuotedArg.
+func (s *Session) Expand(tokens []Token) ([]Arg, error) {
+	result := make([]Arg, 0, len(tokens))
 	for _, tok := range tokens {
 		if tok.Kind != TokenVarRef {
-			result = append(result, tok)
+			switch tok.Kind {
+			case TokenQuoted:
+				result = append(result, QuotedArg{Text: tok.Text})
+			default:
+				result = append(result, WordArg{Text: tok.Text})
+			}
 			continue
 		}
 
@@ -74,10 +81,10 @@ func (s *Session) Expand(tokens []Token) ([]Token, error) {
 		if tok.VarPath == "" {
 			// Bare reference to variable.
 			if v.IsStructured() {
-				// Pass through the original token text
-				// so per-command handlers can resolve it
-				// (e.g. auto-extract .record.program_id).
-				result = append(result, Token{Kind: TokenWord, Text: tok.Text})
+				result = append(result, StructuredValueArg{
+					Name:  tok.VarName,
+					Value: v,
+				})
 				continue
 			}
 			if v.IsNil() {
@@ -87,7 +94,7 @@ func (s *Session) Expand(tokens []Token) ([]Token, error) {
 			if err != nil {
 				return nil, fmt.Errorf("variable %s: %w", tok.VarName, err)
 			}
-			result = append(result, Token{Kind: TokenWord, Text: str})
+			result = append(result, ScalarValueArg{Text: str})
 			continue
 		}
 
@@ -99,7 +106,7 @@ func (s *Session) Expand(tokens []Token) ([]Token, error) {
 		if err != nil {
 			return nil, fmt.Errorf("variable %s.%s: %w", tok.VarName, tok.VarPath, err)
 		}
-		result = append(result, Token{Kind: TokenWord, Text: str})
+		result = append(result, ScalarValueArg{Text: str})
 	}
 	return result, nil
 }
