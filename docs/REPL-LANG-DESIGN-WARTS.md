@@ -588,7 +588,7 @@ bpfman semantics.
 
 **Scope**: `cmd/bpfman/repl.go`
 
-### Step 8: introduce typed bpfman command nodes
+### Step 8: introduce typed bpfman command nodes [IN PROGRESS]
 
 Define a `Command` interface in `cmd/bpfman/` with concrete types per
 command family. Add a command-parsing phase between expansion and
@@ -597,7 +597,7 @@ execution. Each command node carries resolved arguments.
 This is the largest step and should be done incrementally, one command
 family at a time. A reasonable order:
 
-1. `show program` (high-frequency, exercises structured refs)
+1. `show program` (high-frequency, exercises structured refs) [DONE]
 2. `load file` / `load image` (exercises result binding)
 3. `link attach` / `link detach` (exercises cross-type refs)
 4. `program get` / `link get` (exercises value return)

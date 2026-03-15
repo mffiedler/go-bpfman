@@ -1150,7 +1150,11 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []re
 	case len(args) >= 2 && cmd == "program" && arg(1) == "delete":
 		return replang.Value{}, replDeleteProgram(ctx, cli, mgr, args[2:])
 	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
-		return replang.Value{}, replShowProgram(ctx, cli, mgr, args[2:])
+		showCmd, err := parseShowProgram(args[2:])
+		if err != nil {
+			return replang.Value{}, err
+		}
+		return replang.Value{}, execShowProgram(ctx, cli, mgr, showCmd)
 
 	// link commands
 	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
@@ -1764,93 +1768,6 @@ func replParseDeleteProgram(args []string) (*ProgramDeleteCmd, error) {
 		return nil, err
 	}
 	return &cmd, nil
-}
-
-// ShowProgramCmd is the Kong-parsed structure for "show program".
-type ShowProgramCmd struct {
-	ID     ProgramID   `arg:"" help:"Program ID to inspect."`
-	View   string      `arg:"" optional:"" default:"summary" help:"Sub-view: summary, links, maps, paths."`
-	Output OutputFlags `embed:""`
-}
-
-// replParseShowProgram parses REPL tokens into a ShowProgramCmd.
-func replParseShowProgram(args []string) (*ShowProgramCmd, error) {
-	var cmd ShowProgramCmd
-	parser, err := kong.New(&cmd,
-		kong.Name("show program"),
-		kong.Description("Inspect a managed BPF program."),
-		kong.Exit(func(int) {}),
-		kong.Writers(io.Discard, io.Discard),
-		kong.TypeMapper(reflect.TypeOf(ProgramID{}), programIDMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create parser: %w", err)
-	}
-	_, err = parser.Parse(args)
-	if err != nil {
-		return nil, err
-	}
-	return &cmd, nil
-}
-
-// replShowProgram handles the "show program" REPL command. Only the
-// first positional argument is a program ID; subsequent arguments are
-// sub-view names and flags.
-func replShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) error {
-	ss := argTexts(args)
-	if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
-		resolved, err := extractProgramID(args[0])
-		if err != nil {
-			return err
-		}
-		ss = append([]string{resolved}, ss[1:]...)
-	}
-
-	cmd, err := replParseShowProgram(ss)
-	if err != nil {
-		return err
-	}
-
-	prog, err := mgr.Get(ctx, cmd.ID.Value)
-	if err != nil {
-		return err
-	}
-
-	format, err := cmd.Output.Format()
-	if err != nil {
-		return err
-	}
-
-	// JSON output always emits the full Program regardless of
-	// sub-view; consumers can select fields with jq.
-	if format == OutputFormatJSON {
-		output, err := formatShowJSON(prog)
-		if err != nil {
-			return err
-		}
-		return cli.PrintOut(output)
-	}
-
-	var output string
-	switch cmd.View {
-	case "summary":
-		var fmtErr error
-		output, fmtErr = FormatProgram(prog, &cmd.Output)
-		if fmtErr != nil {
-			return fmtErr
-		}
-	case "links":
-		output = formatShowLinks(prog)
-	case "maps":
-		output = formatShowMaps(prog)
-	case "paths":
-		output = formatShowPaths(prog)
-	default:
-		return fmt.Errorf("unknown view %q (valid: summary, links, maps, paths)", cmd.View)
-	}
-
-	return cli.PrintOut(output)
 }
 
 // replCompleteLinkIDs offers link ID completions, analogous to
