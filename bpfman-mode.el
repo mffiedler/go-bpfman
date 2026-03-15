@@ -58,12 +58,17 @@
   (let ((ht (make-hash-table :test 'equal)))
     (dolist (w '(;; subcommands
                  "attach" "checkup" "delete" "detach" "explain" "file"
-                 "get" "image" "list" "program" "programs" "unload"
+                 "get" "image" "list" "load" "program" "programs"
+                 "unload"
                  ;; attach types
                  "fentry" "fexit" "kprobe" "tc" "tcx" "tracepoint"
                  "uprobe" "xdp"
                  ;; show subviews
-                 "links" "maps" "paths"))
+                 "links" "maps" "paths" "summary"
+                 ;; assertion verbs (assert/require)
+                 "contains" "equal" "fail" "false" "ge" "gt" "le"
+                 "lt" "ne" "nil" "not" "not-empty" "ok" "path"
+                 "true"))
       (puthash w t ht))
     ht)
   "Hash table of bpfman subcommands, attach types, and subviews.")
@@ -292,7 +297,7 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
               ('args
                ;; In argument position: no special highlighting for
                ;; plain words.
-               nil)))))))
+               nil)))))))))
 
 (defun bpfman--ident-p (str)
   "Return non-nil if STR is a valid bpfman identifier."
