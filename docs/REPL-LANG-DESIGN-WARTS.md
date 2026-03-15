@@ -609,21 +609,20 @@ switch shrinks as typed nodes absorb its cases.
 **Scope**: new file(s) in `cmd/bpfman/`, plus incremental changes to
 `cmd/bpfman/repl.go`
 
-### Step 9: typed command nodes absorb `replDispatch` [IN PROGRESS]
+### Step 9: typed command nodes absorb `replDispatch` [DONE]
 
 Once all command families have typed nodes, the large `switch` block
 in `replDispatch` is replaced by a single type-switch on `Command`.
 The `resolveProgramIDArg`, `resolveProgramIDArgs`, `resolveLinkIDArg`,
 `resolveLinkIDArgs`, and `resolveVarRefs` functions are deleted.
 
-**Current state**: the resolve functions are deleted and every
-`replDispatch` case delegates to a typed parse/exec pair. The
-remaining structural change is to extract a unified
-`parseCommand(args) (Command, error)` routing function and a
-separate `execCommand` type-switch, so that command routing and
-execution are fully decoupled.
+`parseCommand(args) (Command, error)` owns all command routing:
+matching keyword patterns and delegating to per-command parsers.
+`execCommand(ctx, cli, mgr, cmd) (Value, error)` owns execution
+dispatch via a type-switch on the `Command` interface. `replDispatch`
+is now a thin composition of the two.
 
-**Scope**: `cmd/bpfman/repl.go`
+**Scope**: `cmd/bpfman/command.go`, `cmd/bpfman/repl.go`
 
 ### Step 10: update `REPL-LANG.md` design document
 

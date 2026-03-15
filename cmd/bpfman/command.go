@@ -27,6 +27,122 @@ type Command interface {
 	isCommand()
 }
 
+// parseCommand routes expanded domain command arguments to the
+// appropriate per-command parser, returning a typed Command node. The
+// routing logic matches command and subcommand keywords, then
+// delegates the remaining arguments to the specific parser. Returns
+// nil with no error when args is empty.
+func parseCommand(args []replang.Arg) (Command, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+
+	cmd := argText(args[0])
+	arg := func(n int) string {
+		if n < len(args) {
+			return argText(args[n])
+		}
+		return ""
+	}
+
+	switch {
+	// program commands
+	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
+		return parseListPrograms(args[2:])
+	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
+		return parseListPrograms(args[2:])
+	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
+		return parseLoadFile(args[2:])
+	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
+		return parseLoadFile(args[3:])
+	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "image":
+		return parseLoadImage(args[3:])
+	case len(args) >= 2 && cmd == "load" && arg(1) == "image":
+		return parseLoadImage(args[2:])
+	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
+		return parseGetProgram(args[2:])
+	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":
+		return parseUnloadProgram(args[2:])
+	case len(args) >= 2 && cmd == "program" && arg(1) == "delete":
+		return parseDeleteProgram(args[2:])
+	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
+		return parseShowProgram(args[2:])
+
+	// link commands
+	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
+		return parseLinkAttach(args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "detach":
+		return parseLinkDetach(args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "get":
+		return parseGetLink(args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "list":
+		return parseListLinks(args[2:])
+	case len(args) >= 2 && cmd == "link" && arg(1) == "delete":
+		return parseDeleteLink(args[2:])
+
+	// dispatcher commands
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "list":
+		return parseDispatcherList(args[2:])
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "get":
+		return parseDispatcherGet(args[2:])
+	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "delete":
+		return parseDispatcherDelete(args[2:])
+
+	// diagnostics
+	case cmd == "gc":
+		return parseGC(args[1:])
+	case cmd == "doctor":
+		return parseDoctor(args[1:])
+
+	default:
+		return nil, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(argTexts(args), " "))
+	}
+}
+
+// execCommand executes a typed Command node, returning an optional
+// result value for variable binding. Commands that do not produce
+// assignable results return an empty value.
+func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Command) (replang.Value, error) {
+	switch c := cmd.(type) {
+	case *ShowProgramCommand:
+		return replang.Value{}, execShowProgram(ctx, cli, mgr, c)
+	case *LoadFileCommand:
+		return execLoadFile(ctx, cli, mgr, c)
+	case *LoadImageCommand:
+		return execLoadImage(ctx, cli, mgr, c)
+	case *GetProgramCommand:
+		return execGetProgram(ctx, cli, mgr, c)
+	case *GetLinkCommand:
+		return execGetLink(ctx, cli, mgr, c)
+	case *UnloadProgramCommand:
+		return replang.Value{}, execUnloadProgram(ctx, cli, mgr, c)
+	case *DeleteProgramCommand:
+		return replang.Value{}, execDeleteProgram(ctx, cli, mgr, c)
+	case *ListProgramsCommand:
+		return replang.Value{}, execListPrograms(ctx, cli, mgr, c)
+	case *LinkAttachCommand:
+		return execLinkAttach(ctx, cli, mgr, c)
+	case *LinkDetachCommand:
+		return replang.Value{}, execLinkDetach(ctx, cli, mgr, c)
+	case *ListLinksCommand:
+		return replang.Value{}, execListLinks(ctx, cli, mgr, c)
+	case *DeleteLinkCommand:
+		return replang.Value{}, execDeleteLink(ctx, cli, mgr, c)
+	case *DispatcherListCommand:
+		return replang.Value{}, execDispatcherList(ctx, cli, mgr, c)
+	case *DispatcherGetCommand:
+		return replang.Value{}, execDispatcherGet(ctx, cli, mgr, c)
+	case *DispatcherDeleteCommand:
+		return replang.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
+	case *GCCommand:
+		return replang.Value{}, execGC(ctx, cli, mgr, c)
+	case *DoctorCommand:
+		return replang.Value{}, execDoctor(ctx, cli, mgr, c)
+	default:
+		return replang.Value{}, fmt.Errorf("unhandled command type %T", cmd)
+	}
+}
+
 // ShowProgramCommand represents a fully parsed "show program" command
 // with resolved program ID, view name, and output format.
 type ShowProgramCommand struct {

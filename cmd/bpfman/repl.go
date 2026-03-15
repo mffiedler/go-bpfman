@@ -1086,151 +1086,19 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 // appropriate bpfman command handler. Shell-language commands (assert,
 // require, dump, help, source, unset, vars, version) are handled by
 // replShellCmd before reaching this function.
+//
+// Parsing and execution are fully decoupled: parseCommand routes
+// arguments to the per-command parser and returns a typed Command
+// node, then execCommand dispatches execution via a type-switch.
 func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
-	if len(args) == 0 {
+	cmd, err := parseCommand(args)
+	if err != nil {
+		return replang.Value{}, err
+	}
+	if cmd == nil {
 		return replang.Value{}, nil
 	}
-
-	cmd := argText(args[0])
-	arg := func(n int) string {
-		if n < len(args) {
-			return argText(args[n])
-		}
-		return ""
-	}
-
-	switch {
-	// program commands
-	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
-		listCmd, err := parseListPrograms(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execListPrograms(ctx, cli, mgr, listCmd)
-	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
-		listCmd, err := parseListPrograms(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execListPrograms(ctx, cli, mgr, listCmd)
-	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
-		loadCmd, err := parseLoadFile(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execLoadFile(ctx, cli, mgr, loadCmd)
-	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
-		loadCmd, err := parseLoadFile(args[3:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execLoadFile(ctx, cli, mgr, loadCmd)
-	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "image":
-		imgCmd, err := parseLoadImage(args[3:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execLoadImage(ctx, cli, mgr, imgCmd)
-	case len(args) >= 2 && cmd == "load" && arg(1) == "image":
-		imgCmd, err := parseLoadImage(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execLoadImage(ctx, cli, mgr, imgCmd)
-	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
-		getCmd, err := parseGetProgram(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execGetProgram(ctx, cli, mgr, getCmd)
-	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":
-		unloadCmd, err := parseUnloadProgram(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execUnloadProgram(ctx, cli, mgr, unloadCmd)
-	case len(args) >= 2 && cmd == "program" && arg(1) == "delete":
-		delCmd, err := parseDeleteProgram(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDeleteProgram(ctx, cli, mgr, delCmd)
-	case len(args) >= 3 && cmd == "show" && arg(1) == "program":
-		showCmd, err := parseShowProgram(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execShowProgram(ctx, cli, mgr, showCmd)
-
-	// link commands
-	case len(args) >= 2 && cmd == "link" && arg(1) == "attach":
-		attachCmd, err := parseLinkAttach(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execLinkAttach(ctx, cli, mgr, attachCmd)
-	case len(args) >= 2 && cmd == "link" && arg(1) == "detach":
-		detachCmd, err := parseLinkDetach(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execLinkDetach(ctx, cli, mgr, detachCmd)
-	case len(args) >= 2 && cmd == "link" && arg(1) == "get":
-		getLinkCmd, err := parseGetLink(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return execGetLink(ctx, cli, mgr, getLinkCmd)
-	case len(args) >= 2 && cmd == "link" && arg(1) == "list":
-		listLinksCmd, err := parseListLinks(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execListLinks(ctx, cli, mgr, listLinksCmd)
-	case len(args) >= 2 && cmd == "link" && arg(1) == "delete":
-		delLinkCmd, err := parseDeleteLink(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDeleteLink(ctx, cli, mgr, delLinkCmd)
-
-	// dispatcher commands
-	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "list":
-		dispListCmd, err := parseDispatcherList(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDispatcherList(ctx, cli, mgr, dispListCmd)
-	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "get":
-		dispGetCmd, err := parseDispatcherGet(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDispatcherGet(ctx, cli, mgr, dispGetCmd)
-	case len(args) >= 2 && cmd == "dispatcher" && arg(1) == "delete":
-		dispDelCmd, err := parseDispatcherDelete(args[2:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDispatcherDelete(ctx, cli, mgr, dispDelCmd)
-
-	// diagnostics
-	case cmd == "gc":
-		gcCmd, err := parseGC(args[1:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execGC(ctx, cli, mgr, gcCmd)
-	case cmd == "doctor":
-		doctorCmd, err := parseDoctor(args[1:])
-		if err != nil {
-			return replang.Value{}, err
-		}
-		return replang.Value{}, execDoctor(ctx, cli, mgr, doctorCmd)
-
-	default:
-		return replang.Value{}, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(argTexts(args), " "))
-	}
+	return execCommand(ctx, cli, mgr, cmd)
 }
 
 func replHelp(cli *CLI) error {
