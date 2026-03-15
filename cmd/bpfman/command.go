@@ -645,11 +645,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach xdp: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach xdp: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
@@ -667,7 +663,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach xdp: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewXDPAttachSpec(parsed.Value, iface, ifObj.Index)
+	spec, err := bpfman.NewXDPAttachSpec(progID, iface, ifObj.Index)
 	if err != nil {
 		return nil, fmt.Errorf("link attach xdp: %w", err)
 	}
@@ -776,11 +772,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tc: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
@@ -798,7 +790,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tc: invalid proceed-on value: %w", err)
 	}
 
-	spec, err := bpfman.NewTCAttachSpec(parsed.Value, iface, ifObj.Index, dir)
+	spec, err := bpfman.NewTCAttachSpec(progID, iface, ifObj.Index, dir)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tc: %w", err)
 	}
@@ -898,11 +890,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tcx: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
@@ -912,7 +900,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tcx: failed to find interface %q: %w", iface, err)
 	}
 
-	spec, err := bpfman.NewTCXAttachSpec(parsed.Value, iface, ifObj.Index, dir)
+	spec, err := bpfman.NewTCXAttachSpec(progID, iface, ifObj.Index, dir)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tcx: %w", err)
 	}
@@ -980,16 +968,12 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: tracepoint must be in 'group/name' format, got %q", tracepoint)
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach tracepoint: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	spec, err := bpfman.NewTracepointAttachSpec(parsed.Value, parts[0], parts[1])
+	spec, err := bpfman.NewTracepointAttachSpec(progID, parts[0], parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
@@ -1059,16 +1043,12 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach kprobe: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach kprobe: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach kprobe: %w", err)
 	}
 
-	spec, err := bpfman.NewKprobeAttachSpec(parsed.Value, fnName)
+	spec, err := bpfman.NewKprobeAttachSpec(progID, fnName)
 	if err != nil {
 		return nil, fmt.Errorf("link attach kprobe: %w", err)
 	}
@@ -1160,16 +1140,12 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach uprobe: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach uprobe: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach uprobe: %w", err)
 	}
 
-	spec, err := bpfman.NewUprobeAttachSpec(parsed.Value, target)
+	spec, err := bpfman.NewUprobeAttachSpec(progID, target)
 	if err != nil {
 		return nil, fmt.Errorf("link attach uprobe: %w", err)
 	}
@@ -1227,16 +1203,12 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fentry: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach fentry: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach fentry: %w", err)
 	}
 
-	spec, err := bpfman.NewFentryAttachSpec(parsed.Value)
+	spec, err := bpfman.NewFentryAttachSpec(progID)
 	if err != nil {
 		return nil, fmt.Errorf("link attach fentry: %w", err)
 	}
@@ -1285,16 +1257,12 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach fexit: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(progArg)
-	if err != nil {
-		return nil, fmt.Errorf("link attach fexit: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	progID, err := parseProgramIDArg(progArg)
 	if err != nil {
 		return nil, fmt.Errorf("link attach fexit: %w", err)
 	}
 
-	spec, err := bpfman.NewFexitAttachSpec(parsed.Value)
+	spec, err := bpfman.NewFexitAttachSpec(progID)
 	if err != nil {
 		return nil, fmt.Errorf("link attach fexit: %w", err)
 	}
@@ -1346,15 +1314,11 @@ func parseLinkDetach(args []shell.Arg) (*LinkDetachCommand, error) {
 
 	var ids []kernel.LinkID
 	for _, a := range args {
-		idStr, err := extractLinkID(a)
+		id, err := parseLinkIDArg(a)
 		if err != nil {
 			return nil, fmt.Errorf("link detach: %w", err)
 		}
-		parsed, err := ParseLinkID(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("link detach: %w", err)
-		}
-		ids = append(ids, parsed.Value)
+		ids = append(ids, id)
 	}
 
 	return &LinkDetachCommand{LinkIDs: ids}, nil
@@ -1775,15 +1739,11 @@ func parseUnloadProgram(args []shell.Arg) (*UnloadProgramCommand, error) {
 
 	var ids []kernel.ProgramID
 	for _, a := range args {
-		idStr, err := extractProgramID(a)
+		id, err := parseProgramIDArg(a)
 		if err != nil {
 			return nil, fmt.Errorf("program unload: %w", err)
 		}
-		parsed, err := ParseProgramID(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("program unload: %w", err)
-		}
-		ids = append(ids, parsed.Value)
+		ids = append(ids, id)
 	}
 
 	return &UnloadProgramCommand{ProgramIDs: ids}, nil
@@ -1839,15 +1799,11 @@ func parseDeleteProgram(args []shell.Arg) (*DeleteProgramCommand, error) {
 	}
 
 	for _, a := range positionals {
-		idStr, err := extractProgramID(a)
+		id, err := parseProgramIDArg(a)
 		if err != nil {
 			return nil, fmt.Errorf("program delete: %w", err)
 		}
-		parsed, err := ParseProgramID(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("program delete: %w", err)
-		}
-		cmd.ProgramIDs = append(cmd.ProgramIDs, parsed.Value)
+		cmd.ProgramIDs = append(cmd.ProgramIDs, id)
 	}
 
 	return cmd, nil
@@ -1909,15 +1865,11 @@ func parseDeleteLink(args []shell.Arg) (*DeleteLinkCommand, error) {
 	}
 
 	for _, a := range positionals {
-		idStr, err := extractLinkID(a)
+		id, err := parseLinkIDArg(a)
 		if err != nil {
 			return nil, fmt.Errorf("link delete: %w", err)
 		}
-		parsed, err := ParseLinkID(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("link delete: %w", err)
-		}
-		cmd.LinkIDs = append(cmd.LinkIDs, parsed.Value)
+		cmd.LinkIDs = append(cmd.LinkIDs, id)
 	}
 
 	return cmd, nil
@@ -2105,15 +2057,11 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link list: --program-id requires a value")
 			}
-			idStr, err := extractProgramID(args[i])
+			id, err := parseProgramIDArg(args[i])
 			if err != nil {
 				return nil, fmt.Errorf("link list: %w", err)
 			}
-			parsed, err := ParseProgramID(idStr)
-			if err != nil {
-				return nil, fmt.Errorf("link list: %w", err)
-			}
-			cmd.ProgramID = &parsed.Value
+			cmd.ProgramID = &id
 		case "--kind":
 			i++
 			if i >= len(args) {

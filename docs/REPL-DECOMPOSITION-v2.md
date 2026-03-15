@@ -14,12 +14,12 @@ typed command nodes (e.g. `ShowProgramCommand`, `LoadFileCommand`,
 already `[]shell.Arg -> typed Command -> execCommand`. This is the
 architecture the earlier plan called "Phase 1"; it is implemented.
 
-The remaining architectural weakness is more specific: command
-parsing still relies on `extractProgramID`, `extractProgramIDs`,
-`extractLinkID`, and `extractLinkIDs`. These helpers collapse
-domain meaning to a string, which is then reparsed into a typed ID.
-The seam is inside command parsing, not at the higher-level
-command-dispatch shape.
+The typed argument parsers (`parseProgramIDArg`, `parseLinkIDArg`)
+resolve `shell.Arg` directly to `kernel.ProgramID` or
+`kernel.LinkID` in one step. Every command parser that handles
+domain IDs now uses these. The old `extractProgramID` /
+`extractLinkID` helpers and their string intermediates have been
+removed.
 
 `command.go` is now the real god file (2400+ lines). `repl.go`
 (1700 lines) is large but architecturally sound: a REPL loop, shell
@@ -106,66 +106,35 @@ beyond plain text?
 - `execCommand(ctx, cli, mgr, cmd) (shell.Value, error)` dispatch.
 - Thin `replDispatch` orchestration.
 - `parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error)` —
-  typed parser for program ID arguments, used by `show program`
-  and `program get`.
+  typed parser for program ID arguments.
 - `parseLinkIDArg(a shell.Arg) (kernel.LinkID, error)` — typed
-  parser for link ID arguments, used by `link get`.
+  parser for link ID arguments.
 
-The command architecture exists. The typed argument parsers exist.
-The next step is to migrate the remaining commands to use them and
-retire the old `extractProgramID`/`extractLinkID` helpers.
+Phase 1 is complete. Every command parser that handles a program
+ID or link ID now goes through `parseProgramIDArg` or
+`parseLinkIDArg` directly. The old `extractProgramID`,
+`extractProgramIDs`, `extractLinkID`, and `extractLinkIDs` helpers
+have been removed.
 
 ## Phasing
 
-### Phase 1: typed domain parsers at the parser boundary
+### Phase 1: typed domain parsers at the parser boundary (complete)
 
-The remaining architectural work is to refine the typed command
-layer so that domain references are parsed directly into typed
-domain values at the parser boundary, instead of collapsing to
-strings and being reparsed.
+Every command parser that accepts a program ID or link ID now
+resolves `shell.Arg` directly to a typed kernel ID via
+`parseProgramIDArg` or `parseLinkIDArg`. No command parser goes
+through the old `shell.Arg -> string -> ParseXID` path.
 
-The typed domain parsers are:
+Migrated commands:
 
-```go
-func parseProgramIDArg(arg shell.Arg) (kernel.ProgramID, error)
-func parseLinkIDArg(arg shell.Arg) (kernel.LinkID, error)
-```
+- **Single-ID**: `show program`, `program get`, `link get`,
+  `link attach` (all 8 attach types: xdp, tc, tcx, tracepoint,
+  kprobe, uprobe, fentry, fexit), `link list` (--program-id flag).
+- **Plural-ID**: `program unload`, `program delete`, `link detach`,
+  `link delete`.
 
-These replace the old two-step path:
-
-```go
-// Before: shell.Arg -> string -> ParseXID -> wrapper -> .Value
-idStr, err := extractProgramID(args[0])
-parsed, err := ParseProgramID(idStr)
-cmd := &ShowProgramCommand{ID: parsed.Value}
-
-// After: shell.Arg -> kernel.ProgramID directly
-id, err := parseProgramIDArg(args[0])
-cmd := &ShowProgramCommand{ID: id}
-```
-
-The important point is that no command parser should go through
-`shell.Arg -> string -> ParseXID`.
-
-#### Migration status
-
-Done:
-
-1. **`show program`** — uses `parseProgramIDArg`.
-2. **`program get`** — uses `parseProgramIDArg`.
-3. **`link get`** — uses `parseLinkIDArg`.
-
-Next:
-
-4. **Plural-ID mutation commands**: `program unload`,
-   `program delete`, `link detach`, `link delete`. These call
-   `parseProgramIDArg` / `parseLinkIDArg` in a loop rather than
-   going through `extractProgramIDs` / `extractLinkIDs`.
-
-5. Remaining commands as warranted.
-
-Once all consumers are migrated, remove `extractProgramID`,
-`extractProgramIDs`, `extractLinkID`, and `extractLinkIDs`.
+The old helpers (`extractProgramID`, `extractProgramIDs`,
+`extractLinkID`, `extractLinkIDs`) have been removed.
 
 #### What not to attack first
 

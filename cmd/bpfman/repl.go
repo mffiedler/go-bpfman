@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/shell"
@@ -371,105 +370,6 @@ func argToValue(a shell.Arg) shell.Value {
 	default:
 		return shell.StringValue("")
 	}
-}
-
-// extractProgramID resolves a single Arg to a program ID string. For
-// text-bearing args, the text is returned directly (Kong validates
-// the numeric form). For StructuredValueArg, the value's Origin is
-// checked for type safety and the path .record.program_id is
-// extracted automatically.
-func extractProgramID(a shell.Arg) (string, error) {
-	switch v := a.(type) {
-	case shell.WordArg:
-		return v.Text, nil
-	case shell.QuotedArg:
-		return v.Text, nil
-	case shell.ScalarValueArg:
-		return v.Text, nil
-	case shell.StructuredValueArg:
-		if origin := v.Value.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Program); !ok {
-				return "", fmt.Errorf(
-					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
-					v.Name, origin, v.Name)
-			}
-		}
-		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
-		if err != nil {
-			return "", fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
-		}
-		return resolved.Scalar()
-	default:
-		return "", fmt.Errorf("unexpected argument type %T", a)
-	}
-}
-
-// extractProgramIDs resolves each non-flag Arg to a program ID
-// string. Flags (starting with '-') pass through as text.
-func extractProgramIDs(args []shell.Arg) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		text := argText(a)
-		if strings.HasPrefix(text, "-") {
-			resolved[i] = text
-			continue
-		}
-		r, err := extractProgramID(a)
-		if err != nil {
-			return nil, err
-		}
-		resolved[i] = r
-	}
-	return resolved, nil
-}
-
-// extractLinkID resolves a single Arg to a link ID string. For
-// text-bearing args, the text is returned directly. For
-// StructuredValueArg, the value's Origin is checked and the path
-// .record.id is extracted automatically.
-func extractLinkID(a shell.Arg) (string, error) {
-	switch v := a.(type) {
-	case shell.WordArg:
-		return v.Text, nil
-	case shell.QuotedArg:
-		return v.Text, nil
-	case shell.ScalarValueArg:
-		return v.Text, nil
-	case shell.StructuredValueArg:
-		if origin := v.Value.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Link); !ok {
-				return "", fmt.Errorf(
-					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
-					v.Name, origin, v.Name)
-			}
-		}
-		resolved, err := v.Value.LookupValue(v.Name, "record.id")
-		if err != nil {
-			return "", fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)
-		}
-		return resolved.Scalar()
-	default:
-		return "", fmt.Errorf("unexpected argument type %T", a)
-	}
-}
-
-// extractLinkIDs resolves each non-flag Arg to a link ID string.
-// Flags (starting with '-') pass through as text.
-func extractLinkIDs(args []shell.Arg) ([]string, error) {
-	resolved := make([]string, len(args))
-	for i, a := range args {
-		text := argText(a)
-		if strings.HasPrefix(text, "-") {
-			resolved[i] = text
-			continue
-		}
-		r, err := extractLinkID(a)
-		if err != nil {
-			return nil, err
-		}
-		resolved[i] = r
-	}
-	return resolved, nil
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager

@@ -521,7 +521,7 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
 
-func TestExtractProgramID(t *testing.T) {
+func TestParseProgramIDArg(t *testing.T) {
 	// Structured variable with .record.program_id
 	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
@@ -533,28 +533,28 @@ func TestExtractProgramID(t *testing.T) {
 	tests := []struct {
 		name    string
 		arg     shell.Arg
-		want    string
+		want    kernel.ProgramID
 		wantErr string
 	}{
 		{
-			name: "numeric ID passes through",
+			name: "numeric ID",
 			arg:  shell.WordArg{Text: "123"},
-			want: "123",
+			want: 123,
 		},
 		{
-			name: "hex ID passes through",
+			name: "hex ID",
 			arg:  shell.WordArg{Text: "0xff"},
-			want: "0xff",
+			want: 255,
 		},
 		{
 			name: "structured variable resolves record.program_id",
 			arg:  shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-			want: "42",
+			want: 42,
 		},
 		{
 			name: "scalar variable resolves directly",
 			arg:  shell.ScalarValueArg{Text: "99"},
-			want: "99",
+			want: 99,
 		},
 		{
 			name:    "structured variable without record.program_id returns error",
@@ -565,7 +565,7 @@ func TestExtractProgramID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractProgramID(tt.arg)
+			got, err := parseProgramIDArg(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -573,150 +573,6 @@ func TestExtractProgramID(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)
 			}
-		})
-	}
-}
-
-func TestExtractProgramIDs(t *testing.T) {
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
-	require.NoError(t, err)
-
-	// Mixed numeric, structured variable, scalar, and flags.
-	got, err := extractProgramIDs([]shell.Arg{
-		shell.WordArg{Text: "123"},
-		shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-		shell.ScalarValueArg{Text: "99"},
-		shell.WordArg{Text: "-r"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"123", "42", "99", "-r"}, got)
-}
-
-// TestExtractProgramIDs_ShowProgram verifies that the show-program
-// resolution pattern only resolves the first positional argument,
-// leaving sub-view names like "links" and "maps" untouched.
-func TestExtractProgramIDs_ShowProgram(t *testing.T) {
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
-	require.NoError(t, err)
-
-	tests := []struct {
-		name string
-		args []shell.Arg
-		want []string
-	}{
-		{
-			name: "structured variable with links sub-view",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-				shell.WordArg{Text: "links"},
-			},
-			want: []string{"42", "links"},
-		},
-		{
-			name: "structured variable with maps sub-view",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-				shell.WordArg{Text: "maps"},
-			},
-			want: []string{"42", "maps"},
-		},
-		{
-			name: "structured variable with paths sub-view and output flag",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-				shell.WordArg{Text: "paths"},
-				shell.WordArg{Text: "-o"},
-				shell.WordArg{Text: "json"},
-			},
-			want: []string{"42", "paths", "-o", "json"},
-		},
-		{
-			name: "numeric ID with sub-view",
-			args: []shell.Arg{
-				shell.WordArg{Text: "123"},
-				shell.WordArg{Text: "links"},
-			},
-			want: []string{"123", "links"},
-		},
-		{
-			name: "structured variable alone",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
-			},
-			want: []string{"42"},
-		},
-		{
-			name: "output flag only",
-			args: []shell.Arg{
-				shell.WordArg{Text: "-o"},
-				shell.WordArg{Text: "json"},
-			},
-			want: []string{"-o", "json"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Replicate the resolution pattern from replShowProgram:
-			// resolve only the first non-flag argument.
-			ss := argTexts(tt.args)
-			if len(ss) > 0 && !strings.HasPrefix(ss[0], "-") {
-				resolved, err := extractProgramID(tt.args[0])
-				require.NoError(t, err)
-				ss = append([]string{resolved}, ss[1:]...)
-			}
-			assert.Equal(t, tt.want, ss)
-		})
-	}
-}
-
-// TestExtractProgramIDs_DeleteProgram verifies that the delete
-// pattern resolves all positional arguments as program IDs, including
-// mixed numeric and variable forms, while leaving flags untouched.
-func TestExtractProgramIDs_DeleteProgram(t *testing.T) {
-	p1, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":10}}`))
-	require.NoError(t, err)
-	p2, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":20}}`))
-	require.NoError(t, err)
-
-	tests := []struct {
-		name string
-		args []shell.Arg
-		want []string
-	}{
-		{
-			name: "multiple structured variables",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "a", Value: p1},
-				shell.StructuredValueArg{Name: "b", Value: p2},
-			},
-			want: []string{"10", "20"},
-		},
-		{
-			name: "mixed numeric and structured variables with flag",
-			args: []shell.Arg{
-				shell.WordArg{Text: "99"},
-				shell.StructuredValueArg{Name: "a", Value: p1},
-				shell.StructuredValueArg{Name: "b", Value: p2},
-				shell.WordArg{Text: "-r"},
-			},
-			want: []string{"99", "10", "20", "-r"},
-		},
-		{
-			name: "single structured variable with recursive flag",
-			args: []shell.Arg{
-				shell.StructuredValueArg{Name: "a", Value: p1},
-				shell.WordArg{Text: "-r"},
-			},
-			want: []string{"10", "-r"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractProgramIDs(tt.args)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -1093,7 +949,7 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 	}
 }
 
-func TestExtractLinkID(t *testing.T) {
+func TestParseLinkIDArg(t *testing.T) {
 	// Structured variable with .record.id
 	linkVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
@@ -1101,29 +957,29 @@ func TestExtractLinkID(t *testing.T) {
 	tests := []struct {
 		name    string
 		arg     shell.Arg
-		want    string
+		want    kernel.LinkID
 		wantErr string
 	}{
 		{
-			name: "numeric ID passes through",
+			name: "numeric ID",
 			arg:  shell.WordArg{Text: "123"},
-			want: "123",
+			want: 123,
 		},
 		{
 			name: "structured variable resolves record.id",
 			arg:  shell.StructuredValueArg{Name: "lnk", Value: linkVal},
-			want: "77",
+			want: 77,
 		},
 		{
 			name: "scalar variable resolves directly",
 			arg:  shell.ScalarValueArg{Text: "88"},
-			want: "88",
+			want: 88,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractLinkID(tt.arg)
+			got, err := parseLinkIDArg(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -1133,19 +989,6 @@ func TestExtractLinkID(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestExtractLinkIDs(t *testing.T) {
-	linkVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
-	require.NoError(t, err)
-
-	got, err := extractLinkIDs([]shell.Arg{
-		shell.WordArg{Text: "10"},
-		shell.StructuredValueArg{Name: "lnk", Value: linkVal},
-		shell.WordArg{Text: "-r"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"10", "77", "-r"}, got)
 }
 
 func TestReplLoop_Version(t *testing.T) {
@@ -1405,7 +1248,7 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	}
 }
 
-func TestExtractProgramID_RejectsLinkVariable(t *testing.T) {
+func TestParseProgramIDArg_RejectsLinkVariable(t *testing.T) {
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
 			ID:        kernel.LinkID(10),
@@ -1415,12 +1258,12 @@ func TestExtractProgramID_RejectsLinkVariable(t *testing.T) {
 	v, err := shell.ValueFromStruct(link)
 	require.NoError(t, err)
 
-	_, err = extractProgramID(shell.StructuredValueArg{Name: "mylink", Value: v})
+	_, err = parseProgramIDArg(shell.StructuredValueArg{Name: "mylink", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a program")
 }
 
-func TestExtractLinkID_RejectsProgramVariable(t *testing.T) {
+func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{
 			ProgramID: kernel.ProgramID(42),
@@ -1429,7 +1272,7 @@ func TestExtractLinkID_RejectsProgramVariable(t *testing.T) {
 	v, err := shell.ValueFromStruct(prog)
 	require.NoError(t, err)
 
-	_, err = extractLinkID(shell.StructuredValueArg{Name: "myprog", Value: v})
+	_, err = parseLinkIDArg(shell.StructuredValueArg{Name: "myprog", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a link")
 }
