@@ -189,6 +189,50 @@ func parseProgramIDText(s string) (kernel.ProgramID, error) {
 	return parsed.Value, nil
 }
 
+// parseLinkIDArg resolves a single shell.Arg directly to a
+// kernel.LinkID, combining argument extraction and ID parsing into
+// one step. For text-bearing args the text is parsed as a link ID.
+// For StructuredValueArg, the value's Origin is checked for type
+// safety and the path .record.id is extracted automatically.
+func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
+	switch v := a.(type) {
+	case shell.WordArg:
+		return parseLinkIDText(v.Text)
+	case shell.QuotedArg:
+		return parseLinkIDText(v.Text)
+	case shell.ScalarValueArg:
+		return parseLinkIDText(v.Text)
+	case shell.StructuredValueArg:
+		if origin := v.Value.Origin(); origin != nil {
+			if _, ok := origin.(bpfman.Link); !ok {
+				return 0, fmt.Errorf(
+					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
+					v.Name, origin, v.Name)
+			}
+		}
+		resolved, err := v.Value.LookupValue(v.Name, "record.id")
+		if err != nil {
+			return 0, fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)
+		}
+		s, err := resolved.Scalar()
+		if err != nil {
+			return 0, err
+		}
+		return parseLinkIDText(s)
+	default:
+		return 0, fmt.Errorf("unexpected argument type %T", a)
+	}
+}
+
+// parseLinkIDText parses a link ID from text into a kernel.LinkID.
+func parseLinkIDText(s string) (kernel.LinkID, error) {
+	parsed, err := ParseLinkID(s)
+	if err != nil {
+		return 0, err
+	}
+	return parsed.Value, nil
+}
+
 // ShowProgramCommand represents a fully parsed "show program" command
 // with resolved program ID, view name, and output format.
 type ShowProgramCommand struct {
@@ -1565,17 +1609,13 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 		return nil, fmt.Errorf("program get: requires a program ID")
 	}
 
-	idStr, err := extractProgramID(args[0])
-	if err != nil {
-		return nil, fmt.Errorf("program get: %w", err)
-	}
-	parsed, err := ParseProgramID(idStr)
+	id, err := parseProgramIDArg(args[0])
 	if err != nil {
 		return nil, fmt.Errorf("program get: %w", err)
 	}
 
 	cmd := &GetProgramCommand{
-		ID: parsed.Value,
+		ID: id,
 		Output: OutputFlags{
 			Output: OutputValue{Value: "table"},
 		},
@@ -1648,17 +1688,13 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 		return nil, fmt.Errorf("link get: requires a link ID")
 	}
 
-	idStr, err := extractLinkID(args[0])
-	if err != nil {
-		return nil, fmt.Errorf("link get: %w", err)
-	}
-	parsed, err := ParseLinkID(idStr)
+	id, err := parseLinkIDArg(args[0])
 	if err != nil {
 		return nil, fmt.Errorf("link get: %w", err)
 	}
 
 	cmd := &GetLinkCommand{
-		ID: parsed.Value,
+		ID: id,
 		Output: OutputFlags{
 			Output: OutputValue{Value: "table"},
 		},
