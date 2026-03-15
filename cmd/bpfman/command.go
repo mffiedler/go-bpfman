@@ -306,7 +306,7 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 			return nil, fmt.Errorf("show program: unknown flag %q", text)
 		}
 		if viewSet {
-			return nil, fmt.Errorf("show program: duplicate view %q (view already set)", text)
+			return nil, fmt.Errorf("show program: only one view may be specified")
 		}
 		// Treat as view name.
 		if !validShowViews[text] {

@@ -196,7 +196,7 @@ func TestParseShowProgram(t *testing.T) {
 				shell.WordArg{Text: "links"},
 				shell.WordArg{Text: "maps"},
 			},
-			wantErr: "duplicate view",
+			wantErr: "only one view may be specified",
 		},
 	}
 
