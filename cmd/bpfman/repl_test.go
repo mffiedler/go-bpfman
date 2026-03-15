@@ -14,7 +14,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/replang"
+	"github.com/frobware/go-bpfman/shell"
 )
 
 func TestReplComplete_FileCompletion(t *testing.T) {
@@ -173,7 +173,7 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 
 	// We expect exactly two error lines: one for "bogus", one for
@@ -244,10 +244,10 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 }
 
 func TestArgTexts(t *testing.T) {
-	args := []replang.Arg{
-		replang.WordArg{Text: "show"},
-		replang.WordArg{Text: "program"},
-		replang.ScalarValueArg{Text: "42"},
+	args := []shell.Arg{
+		shell.WordArg{Text: "show"},
+		shell.WordArg{Text: "program"},
+		shell.ScalarValueArg{Text: "42"},
 	}
 	got := argTexts(args)
 	assert.Equal(t, []string{"show", "program", "42"}, got)
@@ -259,19 +259,19 @@ func TestArgTexts_Empty(t *testing.T) {
 }
 
 func TestArgTexts_StructuredValueArg(t *testing.T) {
-	args := []replang.Arg{
-		replang.WordArg{Text: "show"},
-		replang.WordArg{Text: "program"},
-		replang.StructuredValueArg{Name: "prog", Value: replang.ValueFromMap(map[string]any{"id": "42"})},
+	args := []shell.Arg{
+		shell.WordArg{Text: "show"},
+		shell.WordArg{Text: "program"},
+		shell.StructuredValueArg{Name: "prog", Value: shell.ValueFromMap(map[string]any{"id": "42"})},
 	}
 	got := argTexts(args)
 	assert.Equal(t, []string{"show", "program", "$prog"}, got)
 }
 
 func TestArgTexts_QuotedArg(t *testing.T) {
-	args := []replang.Arg{
-		replang.WordArg{Text: "load"},
-		replang.QuotedArg{Text: "my file.o"},
+	args := []shell.Arg{
+		shell.WordArg{Text: "load"},
+		shell.QuotedArg{Text: "my file.o"},
 	}
 	got := argTexts(args)
 	assert.Equal(t, []string{"load", "my file.o"}, got)
@@ -283,7 +283,7 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "No variables defined")
 }
@@ -296,7 +296,7 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "cannot bind result of \"help\" to a variable")
 }
@@ -307,7 +307,7 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable")
 }
@@ -321,7 +321,7 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	// The unknown command error should contain the hash character,
 	// proving it was not stripped as a comment.
@@ -335,9 +335,9 @@ func TestReplComplete_VarsCommand(t *testing.T) {
 }
 
 func TestReplLoop_Unset(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("foo", replang.StringValue("42"))
-	session.Set("bar", replang.StringValue("99"))
+	session := shell.NewSession()
+	session.Set("foo", shell.StringValue("42"))
+	session.Set("bar", shell.StringValue("99"))
 
 	input := "unset foo\n"
 	var outBuf bytes.Buffer
@@ -353,10 +353,10 @@ func TestReplLoop_Unset(t *testing.T) {
 }
 
 func TestReplLoop_UnsetMultiple(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("a", replang.StringValue("1"))
-	session.Set("b", replang.StringValue("2"))
-	session.Set("c", replang.StringValue("3"))
+	session := shell.NewSession()
+	session.Set("a", shell.StringValue("1"))
+	session.Set("b", shell.StringValue("2"))
+	session.Set("c", shell.StringValue("3"))
 
 	input := "unset a b\n"
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
@@ -378,7 +378,7 @@ func TestReplLoop_UnsetUndefined(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "undefined variable")
 }
@@ -389,16 +389,16 @@ func TestReplLoop_UnsetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "requires at least one variable name")
 }
 
 func TestReplComplete_UnsetCompletion(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("prog", replang.StringValue("42"))
-	session.Set("prog2", replang.StringValue("99"))
-	session.Set("other", replang.StringValue("1"))
+	session := shell.NewSession()
+	session.Set("prog", shell.StringValue("42"))
+	session.Set("prog2", shell.StringValue("99"))
+	session.Set("other", shell.StringValue("1"))
 
 	tests := []struct {
 		name        string
@@ -459,7 +459,7 @@ func TestReplLoop_Source(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "Available commands:")
 }
@@ -475,7 +475,7 @@ func TestReplLoop_SourceSharesSession(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "nosuchcmd")
 }
@@ -486,7 +486,7 @@ func TestReplLoop_SourceMissingFile(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "open script")
 }
@@ -505,7 +505,7 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source cannot be used inside a sourced file")
 }
@@ -516,49 +516,49 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "source requires exactly one file argument")
 }
 
 func TestExtractProgramID(t *testing.T) {
 	// Structured variable with .record.program_id
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
 	// Structured variable without .record.program_id
-	noIDVal, err := replang.ValueFromJSON([]byte(`{"name":"test"}`))
+	noIDVal, err := shell.ValueFromJSON([]byte(`{"name":"test"}`))
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
-		arg     replang.Arg
+		arg     shell.Arg
 		want    string
 		wantErr string
 	}{
 		{
 			name: "numeric ID passes through",
-			arg:  replang.WordArg{Text: "123"},
+			arg:  shell.WordArg{Text: "123"},
 			want: "123",
 		},
 		{
 			name: "hex ID passes through",
-			arg:  replang.WordArg{Text: "0xff"},
+			arg:  shell.WordArg{Text: "0xff"},
 			want: "0xff",
 		},
 		{
 			name: "structured variable resolves record.program_id",
-			arg:  replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			arg:  shell.StructuredValueArg{Name: "prog", Value: structuredVal},
 			want: "42",
 		},
 		{
 			name: "scalar variable resolves directly",
-			arg:  replang.ScalarValueArg{Text: "99"},
+			arg:  shell.ScalarValueArg{Text: "99"},
 			want: "99",
 		},
 		{
 			name:    "structured variable without record.program_id returns error",
-			arg:     replang.StructuredValueArg{Name: "noid", Value: noIDVal},
+			arg:     shell.StructuredValueArg{Name: "noid", Value: noIDVal},
 			wantErr: "has no .record.program_id field",
 		},
 	}
@@ -578,15 +578,15 @@ func TestExtractProgramID(t *testing.T) {
 }
 
 func TestExtractProgramIDs(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
 	// Mixed numeric, structured variable, scalar, and flags.
-	got, err := extractProgramIDs([]replang.Arg{
-		replang.WordArg{Text: "123"},
-		replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-		replang.ScalarValueArg{Text: "99"},
-		replang.WordArg{Text: "-r"},
+	got, err := extractProgramIDs([]shell.Arg{
+		shell.WordArg{Text: "123"},
+		shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+		shell.ScalarValueArg{Text: "99"},
+		shell.WordArg{Text: "-r"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"123", "42", "99", "-r"}, got)
@@ -596,60 +596,60 @@ func TestExtractProgramIDs(t *testing.T) {
 // resolution pattern only resolves the first positional argument,
 // leaving sub-view names like "links" and "maps" untouched.
 func TestExtractProgramIDs_ShowProgram(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
 		name string
-		args []replang.Arg
+		args []shell.Arg
 		want []string
 	}{
 		{
 			name: "structured variable with links sub-view",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-				replang.WordArg{Text: "links"},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+				shell.WordArg{Text: "links"},
 			},
 			want: []string{"42", "links"},
 		},
 		{
 			name: "structured variable with maps sub-view",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-				replang.WordArg{Text: "maps"},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+				shell.WordArg{Text: "maps"},
 			},
 			want: []string{"42", "maps"},
 		},
 		{
 			name: "structured variable with paths sub-view and output flag",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-				replang.WordArg{Text: "paths"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "json"},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+				shell.WordArg{Text: "paths"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "json"},
 			},
 			want: []string{"42", "paths", "-o", "json"},
 		},
 		{
 			name: "numeric ID with sub-view",
-			args: []replang.Arg{
-				replang.WordArg{Text: "123"},
-				replang.WordArg{Text: "links"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "123"},
+				shell.WordArg{Text: "links"},
 			},
 			want: []string{"123", "links"},
 		},
 		{
 			name: "structured variable alone",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
 			},
 			want: []string{"42"},
 		},
 		{
 			name: "output flag only",
-			args: []replang.Arg{
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "json"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "json"},
 			},
 			want: []string{"-o", "json"},
 		},
@@ -674,39 +674,39 @@ func TestExtractProgramIDs_ShowProgram(t *testing.T) {
 // pattern resolves all positional arguments as program IDs, including
 // mixed numeric and variable forms, while leaving flags untouched.
 func TestExtractProgramIDs_DeleteProgram(t *testing.T) {
-	p1, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":10}}`))
+	p1, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":10}}`))
 	require.NoError(t, err)
-	p2, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":20}}`))
+	p2, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":20}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
 		name string
-		args []replang.Arg
+		args []shell.Arg
 		want []string
 	}{
 		{
 			name: "multiple structured variables",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "a", Value: p1},
-				replang.StructuredValueArg{Name: "b", Value: p2},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "a", Value: p1},
+				shell.StructuredValueArg{Name: "b", Value: p2},
 			},
 			want: []string{"10", "20"},
 		},
 		{
 			name: "mixed numeric and structured variables with flag",
-			args: []replang.Arg{
-				replang.WordArg{Text: "99"},
-				replang.StructuredValueArg{Name: "a", Value: p1},
-				replang.StructuredValueArg{Name: "b", Value: p2},
-				replang.WordArg{Text: "-r"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "99"},
+				shell.StructuredValueArg{Name: "a", Value: p1},
+				shell.StructuredValueArg{Name: "b", Value: p2},
+				shell.WordArg{Text: "-r"},
 			},
 			want: []string{"99", "10", "20", "-r"},
 		},
 		{
 			name: "single structured variable with recursive flag",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "a", Value: p1},
-				replang.WordArg{Text: "-r"},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "a", Value: p1},
+				shell.WordArg{Text: "-r"},
 			},
 			want: []string{"10", "-r"},
 		},
@@ -722,10 +722,10 @@ func TestExtractProgramIDs_DeleteProgram(t *testing.T) {
 }
 
 func TestReplCompleteVarPath(t *testing.T) {
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	// Structured variable mimicking a loaded program.
-	progVal, err := replang.ValueFromJSON([]byte(`{
+	progVal, err := shell.ValueFromJSON([]byte(`{
 		"record": {
 			"program_id": 42,
 			"name": "my_prog",
@@ -741,10 +741,10 @@ func TestReplCompleteVarPath(t *testing.T) {
 	session.Set("prog", progVal)
 
 	// Scalar variable.
-	session.Set("pid", replang.StringValue("99"))
+	session.Set("pid", shell.StringValue("99"))
 
 	// Second structured variable for name-matching tests.
-	prog2Val, err := replang.ValueFromJSON([]byte(`{"id": 7}`))
+	prog2Val, err := shell.ValueFromJSON([]byte(`{"id": 7}`))
 	require.NoError(t, err)
 	session.Set("prog2", prog2Val)
 
@@ -912,11 +912,11 @@ func TestReplCompleteVarPath_NilSession(t *testing.T) {
 }
 
 func TestReplComplete_DumpCompletion(t *testing.T) {
-	session := replang.NewSession()
-	v, err := replang.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
+	session := shell.NewSession()
+	v, err := shell.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
 	require.NoError(t, err)
 	session.Set("prog", v)
-	session.Set("pid", replang.StringValue("99"))
+	session.Set("pid", shell.StringValue("99"))
 
 	tests := []struct {
 		name        string
@@ -962,8 +962,8 @@ func TestReplComplete_DumpCompletion(t *testing.T) {
 }
 
 func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
-	session := replang.NewSession()
-	v, err := replang.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
+	session := shell.NewSession()
+	v, err := shell.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
 	require.NoError(t, err)
 	session.Set("prog", v)
 
@@ -1095,28 +1095,28 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 
 func TestExtractLinkID(t *testing.T) {
 	// Structured variable with .record.id
-	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	linkVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
-		arg     replang.Arg
+		arg     shell.Arg
 		want    string
 		wantErr string
 	}{
 		{
 			name: "numeric ID passes through",
-			arg:  replang.WordArg{Text: "123"},
+			arg:  shell.WordArg{Text: "123"},
 			want: "123",
 		},
 		{
 			name: "structured variable resolves record.id",
-			arg:  replang.StructuredValueArg{Name: "lnk", Value: linkVal},
+			arg:  shell.StructuredValueArg{Name: "lnk", Value: linkVal},
 			want: "77",
 		},
 		{
 			name: "scalar variable resolves directly",
-			arg:  replang.ScalarValueArg{Text: "88"},
+			arg:  shell.ScalarValueArg{Text: "88"},
 			want: "88",
 		},
 	}
@@ -1136,13 +1136,13 @@ func TestExtractLinkID(t *testing.T) {
 }
 
 func TestExtractLinkIDs(t *testing.T) {
-	linkVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	linkVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
 
-	got, err := extractLinkIDs([]replang.Arg{
-		replang.WordArg{Text: "10"},
-		replang.StructuredValueArg{Name: "lnk", Value: linkVal},
-		replang.WordArg{Text: "-r"},
+	got, err := extractLinkIDs([]shell.Arg{
+		shell.WordArg{Text: "10"},
+		shell.StructuredValueArg{Name: "lnk", Value: linkVal},
+		shell.WordArg{Text: "-r"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"10", "77", "-r"}, got)
@@ -1154,7 +1154,7 @@ func TestReplLoop_Version(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, outBuf.String())
 }
@@ -1252,7 +1252,7 @@ func TestReplLoop_DoctorExplain(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "Available coherency rules")
 }
@@ -1263,7 +1263,7 @@ func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown rule")
 }
@@ -1274,7 +1274,7 @@ func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown subcommand \"bogus\" (valid: checkup, explain)")
 }
@@ -1285,7 +1285,7 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "program get: requires a program ID")
 }
@@ -1296,7 +1296,7 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "program unload: requires at least one program ID")
 }
@@ -1307,7 +1307,7 @@ func TestReplLoop_LinkAttachNoType(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link attach requires a type")
 }
@@ -1318,7 +1318,7 @@ func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown attach type")
 }
@@ -1329,7 +1329,7 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link detach: requires at least one link ID")
 }
@@ -1340,7 +1340,7 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link get: requires a link ID")
 }
@@ -1351,7 +1351,7 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "link delete: requires at least one link ID")
 }
@@ -1412,10 +1412,10 @@ func TestExtractProgramID_RejectsLinkVariable(t *testing.T) {
 			ProgramID: kernel.ProgramID(42),
 		},
 	}
-	v, err := replang.ValueFromStruct(link)
+	v, err := shell.ValueFromStruct(link)
 	require.NoError(t, err)
 
-	_, err = extractProgramID(replang.StructuredValueArg{Name: "mylink", Value: v})
+	_, err = extractProgramID(shell.StructuredValueArg{Name: "mylink", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a program")
 }
@@ -1426,10 +1426,10 @@ func TestExtractLinkID_RejectsProgramVariable(t *testing.T) {
 			ProgramID: kernel.ProgramID(42),
 		},
 	}
-	v, err := replang.ValueFromStruct(prog)
+	v, err := shell.ValueFromStruct(prog)
 	require.NoError(t, err)
 
-	_, err = extractLinkID(replang.StructuredValueArg{Name: "myprog", Value: v})
+	_, err = extractLinkID(shell.StructuredValueArg{Name: "myprog", Value: v})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a link")
 }
@@ -1464,9 +1464,9 @@ func TestAssertNe(t *testing.T) {
 }
 
 func TestAssertNil(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("n", replang.Value{}) // nil value
-	session.Set("s", replang.StringValue("hello"))
+	session := shell.NewSession()
+	session.Set("n", shell.Value{}) // nil value
+	session.Set("s", shell.StringValue("hello"))
 
 	r, err := assertNil(session, []string{"n"})
 	require.NoError(t, err)
@@ -1478,7 +1478,7 @@ func TestAssertNil(t *testing.T) {
 }
 
 func TestAssertNil_Undefined(t *testing.T) {
-	session := replang.NewSession()
+	session := shell.NewSession()
 	_, err := assertNil(session, []string{"novar"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined")
@@ -1573,18 +1573,18 @@ func TestAssertNumericCmp_NonNumeric(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a number")
 }
 
-// wordArgs converts string slices to []replang.Arg for test convenience.
-func wordArgs(ss ...string) []replang.Arg {
-	args := make([]replang.Arg, len(ss))
+// wordArgs converts string slices to []shell.Arg for test convenience.
+func wordArgs(ss ...string) []shell.Arg {
+	args := make([]shell.Arg, len(ss))
 	for i, s := range ss {
-		args[i] = replang.WordArg{Text: s}
+		args[i] = shell.WordArg{Text: s}
 	}
 	return args
 }
 
 func TestAssertOk_UnknownCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
-	session := replang.NewSession()
+	session := shell.NewSession()
 	// "bogus" is not a valid command, so it should fail.
 	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("bogus"))
 	require.NoError(t, err)
@@ -1594,7 +1594,7 @@ func TestAssertOk_UnknownCommand(t *testing.T) {
 
 func TestAssertFail_UnknownCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
-	session := replang.NewSession()
+	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("bogus"))
 	require.NoError(t, err)
 	assert.True(t, r.pass)
@@ -1602,7 +1602,7 @@ func TestAssertFail_UnknownCommand(t *testing.T) {
 
 func TestAssertOk_SuccessfulCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
-	session := replang.NewSession()
+	session := shell.NewSession()
 	// "help" always succeeds.
 	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("help"))
 	require.NoError(t, err)
@@ -1611,7 +1611,7 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 
 func TestAssertFail_SuccessfulCommand(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
-	session := replang.NewSession()
+	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("help"))
 	require.NoError(t, err)
 	assert.False(t, r.pass)
@@ -1638,7 +1638,7 @@ func TestReplLoop_AssertEqualPass(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1651,7 +1651,7 @@ func TestReplLoop_AssertEqualFail(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1664,7 +1664,7 @@ func TestReplLoop_AssertNotEqual(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1682,7 +1682,7 @@ func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.Error(t, err)
@@ -1700,7 +1700,7 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1715,7 +1715,7 @@ func TestReplLoop_SetAndAssert(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1734,7 +1734,7 @@ func TestReplLoop_SetMissingEquals(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "missing '='")
 }
@@ -1745,7 +1745,7 @@ func TestReplLoop_SetTooFewArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "set requires")
 }
@@ -1756,7 +1756,7 @@ func TestReplLoop_SetTooManyArgs(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "exactly one value")
 }
@@ -1767,14 +1767,14 @@ func TestReplLoop_SetInvalidName(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "invalid variable name")
 }
 
 func TestReplLoop_AssertNil(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("n", replang.Value{}) // nil
+	session := shell.NewSession()
+	session.Set("n", shell.Value{}) // nil
 
 	input := "assert nil n\n"
 	var errBuf bytes.Buffer
@@ -1788,8 +1788,8 @@ func TestReplLoop_AssertNil(t *testing.T) {
 }
 
 func TestReplLoop_AssertNotNil(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("s", replang.StringValue("hello"))
+	session := shell.NewSession()
+	session.Set("s", shell.StringValue("hello"))
 
 	input := "assert not nil s\n"
 	var errBuf bytes.Buffer
@@ -1808,7 +1808,7 @@ func TestReplLoop_AssertContains(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1819,7 +1819,7 @@ func TestReplLoop_AssertTrue(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1830,7 +1830,7 @@ func TestReplLoop_AssertFalse(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1841,7 +1841,7 @@ func TestReplLoop_AssertOkHelp(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1852,7 +1852,7 @@ func TestReplLoop_AssertFailBogus(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1867,7 +1867,7 @@ func TestReplLoop_AssertPathExists(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1878,7 +1878,7 @@ func TestReplLoop_AssertPathNotExists(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1889,7 +1889,7 @@ func TestReplLoop_AssertLt(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1899,7 +1899,7 @@ func TestReplLoop_AssertGeFail(t *testing.T) {
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
@@ -1913,7 +1913,7 @@ func TestReplLoop_AssertUnknownVerb(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "unknown assertion verb")
 }
@@ -1924,7 +1924,7 @@ func TestReplLoop_AssertNoVerb(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "expected a verb")
 }
@@ -1935,14 +1935,14 @@ func TestReplLoop_AssertNotNoVerb(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "expected a verb after")
 }
 
 func TestReplLoop_SetWithExpandedVar(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("prog", replang.ValueFromMap(map[string]any{
+	session := shell.NewSession()
+	session.Set("prog", shell.ValueFromMap(map[string]any{
 		"record": map[string]any{
 			"program_id": "199421",
 		},
@@ -1965,7 +1965,7 @@ func TestReplLoop_RequireNotEqualPass(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1976,7 +1976,7 @@ func TestReplLoop_AssertNe(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -1987,7 +1987,7 @@ func TestReplLoop_AssertNotEmpty(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -2013,9 +2013,9 @@ func TestReplComplete_SetInCommandNames(t *testing.T) {
 }
 
 func TestLookupBareVar(t *testing.T) {
-	session := replang.NewSession()
-	session.Set("x", replang.StringValue("hello"))
-	session.Set("obj", replang.ValueFromMap(map[string]any{
+	session := shell.NewSession()
+	session.Set("x", shell.StringValue("hello"))
+	session.Set("obj", shell.ValueFromMap(map[string]any{
 		"a": map[string]any{"b": "deep"},
 	}))
 
@@ -2061,7 +2061,7 @@ func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
 	require.ErrorIs(t, err, errScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:2: ")
 }
@@ -2074,7 +2074,7 @@ func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(errBuf.String(), "[repl]"), "expected error to start with [repl], got: %s", errBuf.String())
 	assert.Contains(t, outBuf.String(), "Version:", "expected version output after error in interactive mode")
@@ -2087,7 +2087,7 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "script.bpfman")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "script.bpfman")
 	require.Error(t, err)
 	assert.Contains(t, errBuf.String(), "script.bpfman:1: [require] FAIL:")
 }
@@ -2098,7 +2098,7 @@ func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "script.bpfman")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "script.bpfman")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "script.bpfman:1: [assert] FAIL:")
 }
@@ -2111,7 +2111,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "<stdin>")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>")
 	require.ErrorIs(t, err, errScriptError)
 	assert.Contains(t, errBuf.String(), "<stdin>:2: [repl] error:")
 	// The third line should not have run.
@@ -2126,7 +2126,7 @@ func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
 	require.ErrorIs(t, err, errScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:1:")
 	assert.Empty(t, outBuf.String(), "expected no output after error halted script")
@@ -2139,7 +2139,7 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, replang.NewSession(), "test.bpfman")
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
 	require.ErrorIs(t, err, errScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:4: ")
 }

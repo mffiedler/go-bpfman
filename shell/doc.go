@@ -1,4 +1,4 @@
-// Package replang implements the REPL language layer: tokenisation,
+// Package shell implements the REPL language layer: tokenisation,
 // statement parsing, variable binding, structured field access, and
 // typed argument expansion.
 //
@@ -63,7 +63,7 @@
 //     directly so that command parsers can extract the relevant field
 //     without re-parsing dollar prefixes or calling session.Get.
 //
-// This is the contract between replang and its clients. Clients
+// This is the contract between shell and its clients. Clients
 // receive typed, structured arguments and never need to re-discover
 // variable references from strings.
 //
@@ -73,4 +73,4 @@
 // as [Value], which may be scalar (a single string) or structured
 // (a JSON-like tree with optional origin metadata). The session
 // provides Set, Get, Delete, and Names for variable management.
-package replang
+package shell

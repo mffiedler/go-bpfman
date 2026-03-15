@@ -18,7 +18,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
-	"github.com/frobware/go-bpfman/replang"
+	"github.com/frobware/go-bpfman/shell"
 	"github.com/frobware/go-bpfman/version"
 )
 
@@ -77,7 +77,7 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 	}
 	defer cleanup()
 
-	session := replang.NewSession()
+	session := shell.NewSession()
 
 	lr, err := c.newReader(ctx, mgr, session)
 	if err != nil {
@@ -108,7 +108,7 @@ func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
 
 // newReader selects the appropriate LineReader: file, pipe, or
 // interactive readline.
-func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *replang.Session) (LineReader, error) {
+func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (LineReader, error) {
 	if c.File != "" {
 		return openScriptReader(c.File)
 	}
@@ -152,10 +152,10 @@ func (l sourceLoc) String() string {
 
 // replLoop reads lines from lr and dispatches them until EOF or
 // interrupt. Blank lines and comments are handled by
-// replang.Tokenise. Variable assignment and expansion use the
-// replang.Session. When file is non-empty, error messages include a
+// shell.Tokenise. Variable assignment and expansion use the
+// shell.Session. When file is non-empty, error messages include a
 // file:line: prefix for compiler-style diagnostics.
-func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *replang.Session, file string) error {
+func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
 	var lineNo int
 	for {
 		input, err := lr.Readline()
@@ -196,7 +196,7 @@ var shellCommands = map[string]bool{
 // replShellCmd handles shell-language and session commands. It returns
 // (true, err) if the command was handled, (false, nil) if the command
 // is not a shell command and should be dispatched to the domain layer.
-func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, loc sourceLoc) (bool, error) {
+func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
@@ -234,7 +234,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 // interactive mode (loc has no file), non-fatal errors are printed and
 // return nil so the session continues. In script mode (loc has a
 // file), errors return errScriptError to halt execution.
-func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, input string, loc sourceLoc) error {
+func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
 	// scriptErr prints an error and returns the appropriate
 	// sentinel: errScriptError in file mode, nil in interactive
 	// mode.
@@ -246,7 +246,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		return nil
 	}
 
-	tokens, err := replang.Tokenise(input)
+	tokens, err := shell.Tokenise(input)
 	if err != nil {
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
@@ -254,7 +254,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		return nil
 	}
 
-	stmt, err := replang.ParseStmt(tokens)
+	stmt, err := shell.ParseStmt(tokens)
 	if err != nil {
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
@@ -263,15 +263,15 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 	}
 
 	switch s := stmt.(type) {
-	case *replang.SetStmt:
-		expanded, err := session.Expand([]replang.Token{s.Value})
+	case *shell.SetStmt:
+		expanded, err := session.Expand([]shell.Token{s.Value})
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
 		session.Set(s.Name, argToValue(expanded[0]))
 		return nil
 
-	case *replang.LetStmt:
+	case *shell.LetStmt:
 		expanded, err := session.Expand(s.Command)
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
@@ -292,7 +292,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 		session.Set(s.Name, val)
 		return nil
 
-	case *replang.CommandStmt:
+	case *shell.CommandStmt:
 		expanded, err := session.Expand(s.Tokens)
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
@@ -325,15 +325,15 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 // variants (WordArg, QuotedArg, ScalarValueArg) this returns the
 // text directly. For StructuredValueArg this returns "$name" as a
 // display form suitable for error messages.
-func argText(a replang.Arg) string {
+func argText(a shell.Arg) string {
 	switch v := a.(type) {
-	case replang.WordArg:
+	case shell.WordArg:
 		return v.Text
-	case replang.QuotedArg:
+	case shell.QuotedArg:
 		return v.Text
-	case replang.ScalarValueArg:
+	case shell.ScalarValueArg:
 		return v.Text
-	case replang.StructuredValueArg:
+	case shell.StructuredValueArg:
 		return "$" + v.Name
 	default:
 		return ""
@@ -346,7 +346,7 @@ func argText(a replang.Arg) string {
 // values should already have been extracted by typed helpers before
 // this point; any remaining StructuredValueArg is rendered as
 // "$name" for display.
-func argTexts(args []replang.Arg) []string {
+func argTexts(args []shell.Arg) []string {
 	ss := make([]string, len(args))
 	for i, a := range args {
 		ss[i] = argText(a)
@@ -354,22 +354,22 @@ func argTexts(args []replang.Arg) []string {
 	return ss
 }
 
-// argToValue converts a single Arg to a replang.Value for variable
+// argToValue converts a single Arg to a shell.Value for variable
 // assignment. For structured args the Value is passed through
 // directly; for all text-bearing args the text becomes a string
 // value.
-func argToValue(a replang.Arg) replang.Value {
+func argToValue(a shell.Arg) shell.Value {
 	switch v := a.(type) {
-	case replang.WordArg:
-		return replang.StringValue(v.Text)
-	case replang.QuotedArg:
-		return replang.StringValue(v.Text)
-	case replang.ScalarValueArg:
-		return replang.StringValue(v.Text)
-	case replang.StructuredValueArg:
+	case shell.WordArg:
+		return shell.StringValue(v.Text)
+	case shell.QuotedArg:
+		return shell.StringValue(v.Text)
+	case shell.ScalarValueArg:
+		return shell.StringValue(v.Text)
+	case shell.StructuredValueArg:
 		return v.Value
 	default:
-		return replang.StringValue("")
+		return shell.StringValue("")
 	}
 }
 
@@ -378,15 +378,15 @@ func argToValue(a replang.Arg) replang.Value {
 // the numeric form). For StructuredValueArg, the value's Origin is
 // checked for type safety and the path .record.program_id is
 // extracted automatically.
-func extractProgramID(a replang.Arg) (string, error) {
+func extractProgramID(a shell.Arg) (string, error) {
 	switch v := a.(type) {
-	case replang.WordArg:
+	case shell.WordArg:
 		return v.Text, nil
-	case replang.QuotedArg:
+	case shell.QuotedArg:
 		return v.Text, nil
-	case replang.ScalarValueArg:
+	case shell.ScalarValueArg:
 		return v.Text, nil
-	case replang.StructuredValueArg:
+	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
 			if _, ok := origin.(bpfman.Program); !ok {
 				return "", fmt.Errorf(
@@ -406,7 +406,7 @@ func extractProgramID(a replang.Arg) (string, error) {
 
 // extractProgramIDs resolves each non-flag Arg to a program ID
 // string. Flags (starting with '-') pass through as text.
-func extractProgramIDs(args []replang.Arg) ([]string, error) {
+func extractProgramIDs(args []shell.Arg) ([]string, error) {
 	resolved := make([]string, len(args))
 	for i, a := range args {
 		text := argText(a)
@@ -427,15 +427,15 @@ func extractProgramIDs(args []replang.Arg) ([]string, error) {
 // text-bearing args, the text is returned directly. For
 // StructuredValueArg, the value's Origin is checked and the path
 // .record.id is extracted automatically.
-func extractLinkID(a replang.Arg) (string, error) {
+func extractLinkID(a shell.Arg) (string, error) {
 	switch v := a.(type) {
-	case replang.WordArg:
+	case shell.WordArg:
 		return v.Text, nil
-	case replang.QuotedArg:
+	case shell.QuotedArg:
 		return v.Text, nil
-	case replang.ScalarValueArg:
+	case shell.ScalarValueArg:
 		return v.Text, nil
-	case replang.StructuredValueArg:
+	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
 			if _, ok := origin.(bpfman.Link); !ok {
 				return "", fmt.Errorf(
@@ -455,7 +455,7 @@ func extractLinkID(a replang.Arg) (string, error) {
 
 // extractLinkIDs resolves each non-flag Arg to a link ID string.
 // Flags (starting with '-') pass through as text.
-func extractLinkIDs(args []replang.Arg) ([]string, error) {
+func extractLinkIDs(args []shell.Arg) ([]string, error) {
 	resolved := make([]string, len(args))
 	for i, a := range args {
 		text := argText(a)
@@ -475,13 +475,13 @@ func extractLinkIDs(args []replang.Arg) ([]string, error) {
 // replCompleter returns a CompleteFunc that has access to the manager
 // and session for dynamic completions such as program IDs and
 // variable names.
-func replCompleter(ctx context.Context, mgr *manager.Manager, session *replang.Session) CompleteFunc {
+func replCompleter(ctx context.Context, mgr *manager.Manager, session *shell.Session) CompleteFunc {
 	return func(line string, pos int) (replace int, candidates []string) {
 		return replComplete(ctx, mgr, session, line, pos)
 	}
 }
 
-func replComplete(ctx context.Context, mgr *manager.Manager, session *replang.Session, line string, pos int) (replace int, candidates []string) {
+func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Session, line string, pos int) (replace int, candidates []string) {
 	head := line[:pos]
 
 	tokens := strings.Fields(head)
@@ -572,7 +572,7 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *replang.Se
 
 // replCompleteArgs handles completion for the third token onwards,
 // dispatching based on the command prefix.
-func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *replang.Session, tokens []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *shell.Session, tokens []string, trailingSpace bool) (candidates []string, replace int) {
 	if len(tokens) < 2 {
 		return
 	}
@@ -634,7 +634,7 @@ func replCompleteArgs(ctx context.Context, mgr *manager.Manager, session *replan
 
 // replCompleteLinkAttach handles completion for "link attach ...".
 // First arg is attach type, remaining args get program ID completion.
-func replCompleteLinkAttach(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteLinkAttach(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	switch {
 	case len(args) == 0 && trailingSpace:
 		// "link attach " -- complete attach types
@@ -675,7 +675,7 @@ var showProgramViews = []string{"links", "maps", "paths"}
 // replCompleteShowProgram handles completion for "show program ..."
 // arguments. The first argument is a program ID; the second is a
 // sub-view name.
-func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	switch {
 	case len(args) == 0 && trailingSpace:
 		// "show program " -- complete program IDs
@@ -705,7 +705,7 @@ func replCompleteShowProgram(ctx context.Context, mgr *manager.Manager, session 
 
 // replCompleteProgramDelete handles completion for "program delete",
 // offering --all in addition to program IDs.
-func replCompleteProgramDelete(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteProgramDelete(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	candidates, replace = replCompleteProgramIDs(ctx, mgr, session, args, trailingSpace)
 
 	// Determine the current prefix.
@@ -736,7 +736,7 @@ func replCompleteProgramDelete(ctx context.Context, mgr *manager.Manager, sessio
 // prefix starts with '$', completion is delegated to
 // replCompleteVarPath for dotted path support. Otherwise, numeric IDs
 // and top-level $variable names are offered.
-func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	// Collect IDs already on the line so we don't offer them again.
 	specified := make(map[string]struct{}, len(args))
 	for _, a := range args {
@@ -814,7 +814,7 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 // is true, variable names carry a '$' prefix (program ID contexts);
 // when false they are bare (dump context). Returns candidates and the
 // number of characters to replace (the full token length).
-func replCompleteVarPath(session *replang.Session, token string, sigil bool) (candidates []string, replace int) {
+func replCompleteVarPath(session *shell.Session, token string, sigil bool) (candidates []string, replace int) {
 	if session == nil {
 		return
 	}
@@ -971,7 +971,7 @@ func replCompleteVarPath(session *replang.Session, token string, sigil bool) (ca
 // replCompleteVarNames offers bare variable name completions with a
 // trailing space. Used by commands like unset that take whole variable
 // names rather than dotted paths.
-func replCompleteVarNames(session *replang.Session, prefix string) (candidates []string, replace int) {
+func replCompleteVarNames(session *shell.Session, prefix string) (candidates []string, replace int) {
 	if session == nil {
 		return
 	}
@@ -988,7 +988,7 @@ func replCompleteVarNames(session *replang.Session, prefix string) (candidates [
 // candidate based on the value type: "." for maps (invites deeper
 // traversal), "[" for arrays (invites indexing), " " for scalars
 // and nil (terminal).
-func varPathSuffix(v replang.Value) string {
+func varPathSuffix(v shell.Value) string {
 	switch v.Raw().(type) {
 	case map[string]any:
 		return "."
@@ -1048,7 +1048,7 @@ const replSourcingKey replContextKey = iota
 // current session. The sourced file shares all variable bindings with
 // the caller. Nested source commands are rejected to prevent
 // unbounded recursion.
-func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []string) error {
+func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
 	if ctx.Value(replSourcingKey) != nil {
 		return fmt.Errorf("source cannot be used inside a sourced file")
 	}
@@ -1090,13 +1090,13 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 // Parsing and execution are fully decoupled: parseCommand routes
 // arguments to the per-command parser and returns a typed Command
 // node, then execCommand dispatches execution via a type-switch.
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []replang.Arg) (replang.Value, error) {
+func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
 	cmd, err := parseCommand(args)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 	if cmd == nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return execCommand(ctx, cli, mgr, cmd)
 }
@@ -1177,7 +1177,7 @@ func replHistoryPath() (string, error) {
 }
 
 // replVars lists all session variables and their types.
-func replVars(cli *CLI, session *replang.Session) error {
+func replVars(cli *CLI, session *shell.Session) error {
 	names := session.Names()
 	if len(names) == 0 {
 		return cli.PrintOut("No variables defined.\n")
@@ -1195,7 +1195,7 @@ func replVars(cli *CLI, session *replang.Session) error {
 }
 
 // replUnset removes one or more variable bindings from the session.
-func replUnset(cli *CLI, session *replang.Session, args []string) error {
+func replUnset(cli *CLI, session *shell.Session, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("unset requires at least one variable name")
 	}
@@ -1212,7 +1212,7 @@ func replUnset(cli *CLI, session *replang.Session, args []string) error {
 // is a bare variable name with an optional dotted/indexed path (no $
 // prefix). Scalars are printed as plain text, structured values as
 // indented JSON, and nil as "null".
-func replDump(cli *CLI, session *replang.Session, args []string) error {
+func replDump(cli *CLI, session *shell.Session, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path]")
 	}
@@ -1242,9 +1242,9 @@ func replDump(cli *CLI, session *replang.Session, args []string) error {
 }
 
 // lookupBareVar resolves a bare variable name (no $ prefix) with an
-// optional dotted path into a replang.Value. This is the shared logic
+// optional dotted path into a shell.Value. This is the shared logic
 // used by dump and assert nil.
-func lookupBareVar(session *replang.Session, arg string) (replang.Value, error) {
+func lookupBareVar(session *shell.Session, arg string) (shell.Value, error) {
 	varName := arg
 	path := ""
 	if i := strings.IndexAny(arg, ".["); i >= 0 {
@@ -1255,7 +1255,7 @@ func lookupBareVar(session *replang.Session, arg string) (replang.Value, error) 
 
 	v, ok := session.Get(varName)
 	if !ok {
-		return replang.Value{}, fmt.Errorf("undefined variable %q", varName)
+		return shell.Value{}, fmt.Errorf("undefined variable %q", varName)
 	}
 
 	if path != "" {
@@ -1268,7 +1268,7 @@ func lookupBareVar(session *replang.Session, arg string) (replang.Value, error) 
 // When isRequire is true, failure halts execution immediately via
 // errRequireFailed. When false, failure is recorded in the session
 // counter and execution continues.
-func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg, isRequire bool, loc sourceLoc) error {
+func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
 		return fmt.Errorf("expected a verb (equal, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
 	}
@@ -1317,7 +1317,7 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 }
 
 // evalAssertVerb dispatches to the appropriate verb evaluator.
-func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, verb string, args []replang.Arg) (assertResult, error) {
+func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
 	switch verb {
 	case "equal":
@@ -1375,7 +1375,7 @@ func assertNe(args []string) (assertResult, error) {
 	}, nil
 }
 
-func assertNil(session *replang.Session, args []string) (assertResult, error) {
+func assertNil(session *shell.Session, args []string) (assertResult, error) {
 	if len(args) != 1 {
 		return assertResult{}, fmt.Errorf("nil requires exactly 1 argument (bare variable name, no $)")
 	}
@@ -1403,7 +1403,7 @@ func assertNotEmpty(args []string) (assertResult, error) {
 // runCommand executes a command through both the shell command layer
 // and the domain dispatch layer. It is used by assertion verbs (ok,
 // fail) to test whether a sub-command succeeds or fails.
-func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) error {
+func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
 	handled, err := replShellCmd(ctx, cli, mgr, session, args, sourceLoc{})
 	if err != nil {
 		return err
@@ -1415,7 +1415,7 @@ func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *re
 	return err
 }
 
-func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) (assertResult, error) {
+func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("ok requires a command")
 	}
@@ -1433,7 +1433,7 @@ func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *repl
 	}, nil
 }
 
-func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *replang.Session, args []replang.Arg) (assertResult, error) {
+func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("fail requires a command")
 	}
@@ -1540,7 +1540,7 @@ func negateMessage(msg string) string {
 
 // replCompleteLinkIDs offers link ID completions, analogous to
 // replCompleteProgramIDs.
-func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *replang.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
+func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (candidates []string, replace int) {
 	specified := make(map[string]struct{}, len(args))
 	for _, a := range args {
 		specified[a] = struct{}{}

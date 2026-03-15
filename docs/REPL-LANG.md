@@ -149,7 +149,7 @@ are stripped by the tokeniser. `$` is literal inside quotes.
 
 ## Token types
 
-The tokeniser (`replang.Tokenise`) produces four token kinds:
+The tokeniser (`shell.Tokenise`) produces four token kinds:
 
 - `TokenWord`: unquoted word (command name, flag, path, numeric ID)
 - `TokenAssign`: standalone `=` at a token boundary
@@ -178,7 +178,7 @@ returns `[]Arg`, a typed representation of the expanded arguments.
   directly so that command parsers can extract the relevant field
   without re-parsing dollar prefixes.
 
-This is the contract between `replang` and its clients. Clients
+This is the contract between `shell` and its clients. Clients
 receive typed, structured arguments and never need to re-discover
 variable references from strings.
 
@@ -205,7 +205,7 @@ on the left-hand side of a binding.
 
 ## Command result model
 
-Commands that support variable binding return a `replang.Value` from
+Commands that support variable binding return a `shell.Value` from
 execution. Commands that do not produce a bindable result return an
 empty value. Assignment to such a command is an error:
 
@@ -240,8 +240,8 @@ precedence, pipelines, or nested expressions.
 
 ```
 read line
-  -> replang.Tokenise           (string -> []Token)
-  -> replang.ParseStmt          ([]Token -> Stmt)
+  -> shell.Tokenise           (string -> []Token)
+  -> shell.ParseStmt          ([]Token -> Stmt)
   -> session.Expand             ([]Token -> []Arg)
   -> shell or domain dispatch
        shell: replShellCmd      (assert, require, dump, help, ...)
@@ -255,11 +255,11 @@ read line
 1. **Read line.** The line editor provides prompt, history, and tab
    completion.
 
-2. **Tokenise.** `replang.Tokenise` produces `[]Token` from the
+2. **Tokenise.** `shell.Tokenise` produces `[]Token` from the
    input string. Comments are stripped. Variable references are lexed
    as single `TokenVarRef` tokens.
 
-3. **Parse statement.** `replang.ParseStmt` classifies the token
+3. **Parse statement.** `shell.ParseStmt` classifies the token
    sequence into one of three `Stmt` variants: `LetStmt`, `SetStmt`,
    or `CommandStmt`.
 
@@ -304,9 +304,9 @@ it.
 
 ## Package boundary
 
-### `replang` owns language mechanics
+### `shell` owns language mechanics
 
-The `replang` package is pure (no I/O, standard library only). It
+The `shell` package is pure (no I/O, standard library only). It
 provides:
 
 - **Tokens**: `Token`, `TokenKind`, `Tokenise`, variable-reference
@@ -319,7 +319,7 @@ provides:
 - **Session and Value**: variable store, structured value type,
   field lookup, origin metadata.
 
-`replang` knows nothing about bpfman commands. It never requires
+`shell` knows nothing about bpfman commands. It never requires
 downstream clients to re-parse `$` prefixes out of strings. It hands
 clients typed, structured arguments.
 
@@ -339,9 +339,9 @@ The REPL client layer provides:
 - **Rendering and formatting**: output format handling, tab writers,
   column layout.
 
-The client layer does not tokenise or parse language syntax. It does
-not re-discover variable references from strings. It only parses
-bpfman command semantics from typed arguments.
+The client layer does not tokenise or parse shell-language syntax. It
+consumes typed statements and arguments from `shell` and parses only
+bpfman command semantics.
 
 ## Error behaviour
 
@@ -378,5 +378,5 @@ The language is small by design:
 The result is a shell that remains domain-specific and readable,
 while being powerful enough to load, attach, inspect, detach, and
 delete objects with explicit, typed data flow. The package boundary
-between `replang` (language) and `cmd/bpfman` (domain) keeps each
+between `shell` (language) and `cmd/bpfman` (domain) keeps each
 layer focused and independently testable.

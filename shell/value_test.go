@@ -1,4 +1,4 @@
-package replang
+package shell
 
 import (
 	"encoding/json"

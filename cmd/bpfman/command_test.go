@@ -8,38 +8,38 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/replang"
+	"github.com/frobware/go-bpfman/shell"
 )
 
 // structured helper builds a program-origin structured value with a
 // given program ID for use in attach/detach parse tests.
-func structuredProgram(name string, progID kernel.ProgramID) replang.Arg {
-	val, err := replang.ValueFromStruct(bpfman.Program{
+func structuredProgram(name string, progID kernel.ProgramID) shell.Arg {
+	val, err := shell.ValueFromStruct(bpfman.Program{
 		Record: bpfman.ProgramRecord{ProgramID: progID},
 	})
 	if err != nil {
 		panic(err)
 	}
-	return replang.StructuredValueArg{Name: name, Value: val}
+	return shell.StructuredValueArg{Name: name, Value: val}
 }
 
-func structuredLink(name string, linkID kernel.LinkID) replang.Arg {
-	val, err := replang.ValueFromStruct(bpfman.Link{
+func structuredLink(name string, linkID kernel.LinkID) shell.Arg {
+	val, err := shell.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{ID: linkID},
 	})
 	if err != nil {
 		panic(err)
 	}
-	return replang.StructuredValueArg{Name: name, Value: val}
+	return shell.StructuredValueArg{Name: name, Value: val}
 }
 
-func word(s string) replang.Arg { return replang.WordArg{Text: s} }
+func word(s string) shell.Arg { return shell.WordArg{Text: s} }
 
 func TestParseShowProgram(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
-	linkVal, err := replang.ValueFromStruct(bpfman.Link{
+	linkVal, err := shell.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
 			ID:        kernel.LinkID(10),
 			ProgramID: kernel.ProgramID(42),
@@ -49,7 +49,7 @@ func TestParseShowProgram(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantID     kernel.ProgramID
 		wantView   string
 		wantOutput string
@@ -57,22 +57,22 @@ func TestParseShowProgram(t *testing.T) {
 	}{
 		{
 			name:       "numeric ID only",
-			args:       []replang.Arg{replang.WordArg{Text: "123"}},
+			args:       []shell.Arg{shell.WordArg{Text: "123"}},
 			wantID:     123,
 			wantView:   "summary",
 			wantOutput: "table",
 		},
 		{
 			name:       "hex ID",
-			args:       []replang.Arg{replang.WordArg{Text: "0x1a"}},
+			args:       []shell.Arg{shell.WordArg{Text: "0x1a"}},
 			wantID:     26,
 			wantView:   "summary",
 			wantOutput: "table",
 		},
 		{
 			name: "structured variable ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
 			},
 			wantID:     42,
 			wantView:   "summary",
@@ -80,8 +80,8 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "scalar value arg",
-			args: []replang.Arg{
-				replang.ScalarValueArg{Text: "55"},
+			args: []shell.Arg{
+				shell.ScalarValueArg{Text: "55"},
 			},
 			wantID:     55,
 			wantView:   "summary",
@@ -89,9 +89,9 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "with view argument",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "links"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "links"},
 			},
 			wantID:     100,
 			wantView:   "links",
@@ -99,10 +99,10 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "with output flag",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "json"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "json"},
 			},
 			wantID:     100,
 			wantView:   "summary",
@@ -110,11 +110,11 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "view and output flag",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "maps"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "wide"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "maps"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "wide"},
 			},
 			wantID:     100,
 			wantView:   "maps",
@@ -122,11 +122,11 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "output flag before view",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "json"},
-				replang.WordArg{Text: "paths"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "json"},
+				shell.WordArg{Text: "paths"},
 			},
 			wantID:     100,
 			wantView:   "paths",
@@ -134,9 +134,9 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name: "structured ref with view",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
-				replang.WordArg{Text: "maps"},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+				shell.WordArg{Text: "maps"},
 			},
 			wantID:     42,
 			wantView:   "maps",
@@ -144,48 +144,48 @@ func TestParseShowProgram(t *testing.T) {
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "requires a program ID",
 		},
 		{
 			name: "duplicate -o flag",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "json"},
-				replang.WordArg{Text: "-o"},
-				replang.WordArg{Text: "wide"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "json"},
+				shell.WordArg{Text: "-o"},
+				shell.WordArg{Text: "wide"},
 			},
 			wantErr: "duplicate -o flag",
 		},
 		{
 			name: "unknown flag",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "--verbose"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "--verbose"},
 			},
 			wantErr: "unknown flag",
 		},
 		{
 			name: "unknown view",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "nonsense"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "nonsense"},
 			},
 			wantErr: "unknown view",
 		},
 		{
 			name: "-o without value",
-			args: []replang.Arg{
-				replang.WordArg{Text: "100"},
-				replang.WordArg{Text: "-o"},
+			args: []shell.Arg{
+				shell.WordArg{Text: "100"},
+				shell.WordArg{Text: "-o"},
 			},
 			wantErr: "-o requires a value",
 		},
 		{
 			name: "wrong origin type on structured ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "mylink", Value: linkVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
 			wantErr: "not a program",
 		},
@@ -210,7 +210,7 @@ func TestParseShowProgram(t *testing.T) {
 func TestParseLoadFile(t *testing.T) {
 	tests := []struct {
 		name        string
-		args        []replang.Arg
+		args        []shell.Arg
 		wantPath    string
 		wantProgs   int
 		wantMeta    int
@@ -222,19 +222,19 @@ func TestParseLoadFile(t *testing.T) {
 	}{
 		{
 			name:       "path only",
-			args:       []replang.Arg{word("-p"), word("/tmp/test.o")},
+			args:       []shell.Arg{word("-p"), word("/tmp/test.o")},
 			wantPath:   "/tmp/test.o",
 			wantOutput: "table",
 		},
 		{
 			name:       "long path flag",
-			args:       []replang.Arg{word("--path"), word("/tmp/test.o")},
+			args:       []shell.Arg{word("--path"), word("/tmp/test.o")},
 			wantPath:   "/tmp/test.o",
 			wantOutput: "table",
 		},
 		{
 			name: "all flags",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("-p"), word("/tmp/test.o"),
 				word("--programs"), word("xdp:xdp_pass"),
 				word("-m"), word("app=test"),
@@ -253,7 +253,7 @@ func TestParseLoadFile(t *testing.T) {
 		},
 		{
 			name: "multiple programs",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("-p"), word("/tmp/test.o"),
 				word("--programs"), word("xdp:xdp_pass"),
 				word("--programs"), word("tc:tc_stats"),
@@ -264,7 +264,7 @@ func TestParseLoadFile(t *testing.T) {
 		},
 		{
 			name: "multiple metadata",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("-p"), word("/tmp/test.o"),
 				word("-m"), word("a=1"),
 				word("-m"), word("b=2"),
@@ -275,52 +275,52 @@ func TestParseLoadFile(t *testing.T) {
 		},
 		{
 			name:    "missing path",
-			args:    []replang.Arg{word("-m"), word("a=1")},
+			args:    []shell.Arg{word("-m"), word("a=1")},
 			wantErr: "--path is required",
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "--path is required",
 		},
 		{
 			name:    "path flag without value",
-			args:    []replang.Arg{word("-p")},
+			args:    []shell.Arg{word("-p")},
 			wantErr: "requires a value",
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("--verbose")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("--verbose")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "unexpected positional",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("extra")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("extra")},
 			wantErr: "unexpected argument",
 		},
 		{
 			name:    "duplicate -o flag",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("-o"), word("json"), word("-o"), word("wide")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("-o"), word("json"), word("-o"), word("wide")},
 			wantErr: "duplicate -o flag",
 		},
 		{
 			name:    "invalid program spec",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("--programs"), word("badspec")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("--programs"), word("badspec")},
 			wantErr: "invalid program spec",
 		},
 		{
 			name:    "invalid metadata",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("-m"), word("noequalssign")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("-m"), word("noequalssign")},
 			wantErr: "invalid format",
 		},
 		{
 			name:    "invalid global data",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("-g"), word("BAD=notahex!")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("-g"), word("BAD=notahex!")},
 			wantErr: "invalid hex data",
 		},
 		{
 			name:    "invalid map-owner-id",
-			args:    []replang.Arg{word("-p"), word("/tmp/test.o"), word("--map-owner-id"), word("abc")},
+			args:    []shell.Arg{word("-p"), word("/tmp/test.o"), word("--map-owner-id"), word("abc")},
 			wantErr: "invalid program ID",
 		},
 	}
@@ -348,7 +348,7 @@ func TestParseLoadFile(t *testing.T) {
 func TestParseLoadImage(t *testing.T) {
 	tests := []struct {
 		name           string
-		args           []replang.Arg
+		args           []shell.Arg
 		wantURL        string
 		wantProgs      int
 		wantPullPolicy string
@@ -362,21 +362,21 @@ func TestParseLoadImage(t *testing.T) {
 	}{
 		{
 			name:           "image url only",
-			args:           []replang.Arg{word("-i"), word("quay.io/bpfman/xdp_pass:latest")},
+			args:           []shell.Arg{word("-i"), word("quay.io/bpfman/xdp_pass:latest")},
 			wantURL:        "quay.io/bpfman/xdp_pass:latest",
 			wantPullPolicy: "IfNotPresent",
 			wantOutput:     "table",
 		},
 		{
 			name:           "long image-url flag",
-			args:           []replang.Arg{word("--image-url"), word("quay.io/bpfman/xdp_pass:latest")},
+			args:           []shell.Arg{word("--image-url"), word("quay.io/bpfman/xdp_pass:latest")},
 			wantURL:        "quay.io/bpfman/xdp_pass:latest",
 			wantPullPolicy: "IfNotPresent",
 			wantOutput:     "table",
 		},
 		{
 			name: "all flags",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("-i"), word("quay.io/bpfman/xdp_pass:latest"),
 				word("--programs"), word("xdp:xdp_pass"),
 				word("-p"), word("Always"),
@@ -399,37 +399,37 @@ func TestParseLoadImage(t *testing.T) {
 		},
 		{
 			name:    "missing image url",
-			args:    []replang.Arg{word("--programs"), word("xdp:xdp_pass")},
+			args:    []shell.Arg{word("--programs"), word("xdp:xdp_pass")},
 			wantErr: "--image-url is required",
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "--image-url is required",
 		},
 		{
 			name:    "image-url flag without value",
-			args:    []replang.Arg{word("-i")},
+			args:    []shell.Arg{word("-i")},
 			wantErr: "requires a value",
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("-i"), word("img"), word("--verbose")},
+			args:    []shell.Arg{word("-i"), word("img"), word("--verbose")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "unexpected positional",
-			args:    []replang.Arg{word("-i"), word("img"), word("extra")},
+			args:    []shell.Arg{word("-i"), word("img"), word("extra")},
 			wantErr: "unexpected argument",
 		},
 		{
 			name:    "duplicate -o flag",
-			args:    []replang.Arg{word("-i"), word("img"), word("-o"), word("json"), word("-o"), word("wide")},
+			args:    []shell.Arg{word("-i"), word("img"), word("-o"), word("json"), word("-o"), word("wide")},
 			wantErr: "duplicate -o flag",
 		},
 		{
 			name:    "invalid program spec",
-			args:    []replang.Arg{word("-i"), word("img"), word("--programs"), word("bad")},
+			args:    []shell.Arg{word("-i"), word("img"), word("--programs"), word("bad")},
 			wantErr: "invalid program spec",
 		},
 	}
@@ -459,17 +459,17 @@ func TestParseLoadImage(t *testing.T) {
 func TestParseLinkAttach_Routing(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []replang.Arg
+		args    []shell.Arg
 		wantErr string
 	}{
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "requires a type",
 		},
 		{
 			name:    "unknown type",
-			args:    []replang.Arg{word("rawsock"), word("42")},
+			args:    []shell.Arg{word("rawsock"), word("42")},
 			wantErr: "unknown attach type",
 		},
 	}
@@ -485,18 +485,18 @@ func TestParseLinkAttach_Routing(t *testing.T) {
 func TestParseLinkAttachTracepoint(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "minimal",
-			args:       []replang.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("42")},
+			args:       []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("42")},
 			wantOutput: "table",
 		},
 		{
 			name: "with output flag",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("tracepoint"), word("-t"), word("sched/sched_switch"),
 				word("-o"), word("json"), word("42"),
 			},
@@ -504,7 +504,7 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 		},
 		{
 			name: "structured program ref",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("tracepoint"), word("-t"), word("sched/sched_switch"),
 				structuredProgram("prog", 99),
 			},
@@ -512,27 +512,27 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 		},
 		{
 			name:    "missing tracepoint flag",
-			args:    []replang.Arg{word("tracepoint"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("42")},
 			wantErr: "--tracepoint is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch")},
+			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "bad tracepoint format",
-			args:    []replang.Arg{word("tracepoint"), word("-t"), word("noslash"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("-t"), word("noslash"), word("42")},
 			wantErr: "group/name",
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("--verbose"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("--verbose"), word("42")},
 			wantErr: "unknown flag",
 		},
 		{
 			name: "metadata silently consumed",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("tracepoint"), word("-t"), word("sched/sched_switch"),
 				word("-m"), word("key=val"), word("42"),
 			},
@@ -540,7 +540,7 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 		},
 		{
 			name:    "duplicate -o flag",
-			args:    []replang.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("-o"), word("json"), word("-o"), word("wide"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("-o"), word("json"), word("-o"), word("wide"), word("42")},
 			wantErr: "duplicate -o flag",
 		},
 	}
@@ -562,18 +562,18 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 func TestParseLinkAttachKprobe(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "minimal",
-			args:       []replang.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("42")},
+			args:       []shell.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("42")},
 			wantOutput: "table",
 		},
 		{
 			name: "with offset",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("kprobe"), word("-f"), word("do_unlinkat"),
 				word("--offset"), word("16"), word("42"),
 			},
@@ -581,17 +581,17 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 		},
 		{
 			name:    "missing fn-name",
-			args:    []replang.Arg{word("kprobe"), word("42")},
+			args:    []shell.Arg{word("kprobe"), word("42")},
 			wantErr: "--fn-name is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("kprobe"), word("-f"), word("do_unlinkat")},
+			args:    []shell.Arg{word("kprobe"), word("-f"), word("do_unlinkat")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "invalid offset",
-			args:    []replang.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("--offset"), word("abc"), word("42")},
+			args:    []shell.Arg{word("kprobe"), word("-f"), word("do_unlinkat"), word("--offset"), word("abc"), word("42")},
 			wantErr: "invalid offset",
 		},
 	}
@@ -613,18 +613,18 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 func TestParseLinkAttachUprobe(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "minimal",
-			args:       []replang.Arg{word("uprobe"), word("--target"), word("/usr/lib/libc.so.6"), word("42")},
+			args:       []shell.Arg{word("uprobe"), word("--target"), word("/usr/lib/libc.so.6"), word("42")},
 			wantOutput: "table",
 		},
 		{
 			name: "all optional flags",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("uprobe"), word("--target"), word("/usr/lib/libc.so.6"),
 				word("-f"), word("malloc"), word("--offset"), word("8"),
 				word("--container-pid"), word("1234"),
@@ -634,17 +634,17 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 		},
 		{
 			name:    "missing target",
-			args:    []replang.Arg{word("uprobe"), word("42")},
+			args:    []shell.Arg{word("uprobe"), word("42")},
 			wantErr: "--target is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("uprobe"), word("--target"), word("/bin/foo")},
+			args:    []shell.Arg{word("uprobe"), word("--target"), word("/bin/foo")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "invalid container-pid",
-			args:    []replang.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("--container-pid"), word("abc"), word("42")},
+			args:    []shell.Arg{word("uprobe"), word("--target"), word("/bin/foo"), word("--container-pid"), word("abc"), word("42")},
 			wantErr: "invalid container-pid",
 		},
 	}
@@ -666,40 +666,40 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 func TestParseLinkAttachFentry(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "program ID only",
-			args:       []replang.Arg{word("fentry"), word("42")},
+			args:       []shell.Arg{word("fentry"), word("42")},
 			wantOutput: "table",
 		},
 		{
 			name:       "with output flag",
-			args:       []replang.Arg{word("fentry"), word("-o"), word("json"), word("42")},
+			args:       []shell.Arg{word("fentry"), word("-o"), word("json"), word("42")},
 			wantOutput: "json",
 		},
 		{
 			name: "structured program ref",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("fentry"), structuredProgram("prog", 55),
 			},
 			wantOutput: "table",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("fentry")},
+			args:    []shell.Arg{word("fentry")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("fentry"), word("--verbose"), word("42")},
+			args:    []shell.Arg{word("fentry"), word("--verbose"), word("42")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "wrong origin type",
-			args:    []replang.Arg{word("fentry"), structuredLink("lnk", 10)},
+			args:    []shell.Arg{word("fentry"), structuredLink("lnk", 10)},
 			wantErr: "not a program",
 		},
 	}
@@ -721,18 +721,18 @@ func TestParseLinkAttachFentry(t *testing.T) {
 func TestParseLinkAttachFexit(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "program ID only",
-			args:       []replang.Arg{word("fexit"), word("42")},
+			args:       []shell.Arg{word("fexit"), word("42")},
 			wantOutput: "table",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("fexit")},
+			args:    []shell.Arg{word("fexit")},
 			wantErr: "requires a program ID",
 		},
 	}
@@ -754,27 +754,27 @@ func TestParseLinkAttachFexit(t *testing.T) {
 func TestParseLinkAttachXDP_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []replang.Arg
+		args    []shell.Arg
 		wantErr string
 	}{
 		{
 			name:    "missing iface",
-			args:    []replang.Arg{word("xdp"), word("42")},
+			args:    []shell.Arg{word("xdp"), word("42")},
 			wantErr: "--iface is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("xdp"), word("-i"), word("lo")},
+			args:    []shell.Arg{word("xdp"), word("-i"), word("lo")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("xdp"), word("-i"), word("lo"), word("--verbose"), word("42")},
+			args:    []shell.Arg{word("xdp"), word("-i"), word("lo"), word("--verbose"), word("42")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "invalid priority",
-			args:    []replang.Arg{word("xdp"), word("-i"), word("lo"), word("-p"), word("abc"), word("42")},
+			args:    []shell.Arg{word("xdp"), word("-i"), word("lo"), word("-p"), word("abc"), word("42")},
 			wantErr: "invalid priority",
 		},
 	}
@@ -790,22 +790,22 @@ func TestParseLinkAttachXDP_Errors(t *testing.T) {
 func TestParseLinkAttachTC_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []replang.Arg
+		args    []shell.Arg
 		wantErr string
 	}{
 		{
 			name:    "missing iface",
-			args:    []replang.Arg{word("tc"), word("-d"), word("ingress"), word("42")},
+			args:    []shell.Arg{word("tc"), word("-d"), word("ingress"), word("42")},
 			wantErr: "--iface is required",
 		},
 		{
 			name:    "missing direction",
-			args:    []replang.Arg{word("tc"), word("-i"), word("lo"), word("42")},
+			args:    []shell.Arg{word("tc"), word("-i"), word("lo"), word("42")},
 			wantErr: "--direction is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("tc"), word("-i"), word("lo"), word("-d"), word("ingress")},
+			args:    []shell.Arg{word("tc"), word("-i"), word("lo"), word("-d"), word("ingress")},
 			wantErr: "requires a program ID",
 		},
 	}
@@ -821,22 +821,22 @@ func TestParseLinkAttachTC_Errors(t *testing.T) {
 func TestParseLinkAttachTCX_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []replang.Arg
+		args    []shell.Arg
 		wantErr string
 	}{
 		{
 			name:    "missing iface",
-			args:    []replang.Arg{word("tcx"), word("-d"), word("ingress"), word("42")},
+			args:    []shell.Arg{word("tcx"), word("-d"), word("ingress"), word("42")},
 			wantErr: "--iface is required",
 		},
 		{
 			name:    "missing direction",
-			args:    []replang.Arg{word("tcx"), word("-i"), word("lo"), word("42")},
+			args:    []shell.Arg{word("tcx"), word("-i"), word("lo"), word("42")},
 			wantErr: "--direction is required",
 		},
 		{
 			name:    "missing program ID",
-			args:    []replang.Arg{word("tcx"), word("-i"), word("lo"), word("-d"), word("ingress")},
+			args:    []shell.Arg{word("tcx"), word("-i"), word("lo"), word("-d"), word("ingress")},
 			wantErr: "requires a program ID",
 		},
 	}
@@ -852,28 +852,28 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 func TestParseLinkDetach(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    []replang.Arg
+		args    []shell.Arg
 		wantIDs []kernel.LinkID
 		wantErr string
 	}{
 		{
 			name:    "single numeric ID",
-			args:    []replang.Arg{word("42")},
+			args:    []shell.Arg{word("42")},
 			wantIDs: []kernel.LinkID{42},
 		},
 		{
 			name:    "multiple numeric IDs",
-			args:    []replang.Arg{word("10"), word("20"), word("30")},
+			args:    []shell.Arg{word("10"), word("20"), word("30")},
 			wantIDs: []kernel.LinkID{10, 20, 30},
 		},
 		{
 			name:    "structured variable ref",
-			args:    []replang.Arg{structuredLink("lnk", 77)},
+			args:    []shell.Arg{structuredLink("lnk", 77)},
 			wantIDs: []kernel.LinkID{77},
 		},
 		{
 			name: "mixed numeric and structured",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("5"),
 				structuredLink("lnk", 99),
 			},
@@ -881,17 +881,17 @@ func TestParseLinkDetach(t *testing.T) {
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "requires at least one link ID",
 		},
 		{
 			name:    "invalid ID",
-			args:    []replang.Arg{word("abc")},
+			args:    []shell.Arg{word("abc")},
 			wantErr: "invalid link ID",
 		},
 		{
 			name:    "wrong origin type",
-			args:    []replang.Arg{structuredProgram("prog", 42)},
+			args:    []shell.Arg{structuredProgram("prog", 42)},
 			wantErr: "not a link",
 		},
 	}
@@ -910,10 +910,10 @@ func TestParseLinkDetach(t *testing.T) {
 }
 
 func TestParseGetProgram(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
-	linkVal, err := replang.ValueFromStruct(bpfman.Link{
+	linkVal, err := shell.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
 			ID:        kernel.LinkID(10),
 			ProgramID: kernel.ProgramID(42),
@@ -923,42 +923,42 @@ func TestParseGetProgram(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantID     kernel.ProgramID
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "numeric ID",
-			args:       []replang.Arg{word("123")},
+			args:       []shell.Arg{word("123")},
 			wantID:     123,
 			wantOutput: "table",
 		},
 		{
 			name:       "hex ID",
-			args:       []replang.Arg{word("0x1a")},
+			args:       []shell.Arg{word("0x1a")},
 			wantID:     26,
 			wantOutput: "table",
 		},
 		{
 			name: "structured variable ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "prog", Value: structuredVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "prog", Value: structuredVal},
 			},
 			wantID:     42,
 			wantOutput: "table",
 		},
 		{
 			name: "scalar value arg",
-			args: []replang.Arg{
-				replang.ScalarValueArg{Text: "55"},
+			args: []shell.Arg{
+				shell.ScalarValueArg{Text: "55"},
 			},
 			wantID:     55,
 			wantOutput: "table",
 		},
 		{
 			name: "with output flag",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("100"),
 				word("-o"),
 				word("json"),
@@ -968,12 +968,12 @@ func TestParseGetProgram(t *testing.T) {
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "requires a program ID",
 		},
 		{
 			name: "duplicate -o flag",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("100"),
 				word("-o"), word("json"),
 				word("-o"), word("wide"),
@@ -982,23 +982,23 @@ func TestParseGetProgram(t *testing.T) {
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("100"), word("--verbose")},
+			args:    []shell.Arg{word("100"), word("--verbose")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "-o without value",
-			args:    []replang.Arg{word("100"), word("-o")},
+			args:    []shell.Arg{word("100"), word("-o")},
 			wantErr: "-o requires a value",
 		},
 		{
 			name:    "unexpected positional",
-			args:    []replang.Arg{word("100"), word("extra")},
+			args:    []shell.Arg{word("100"), word("extra")},
 			wantErr: "unexpected argument",
 		},
 		{
 			name: "wrong origin type on structured ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "mylink", Value: linkVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
 			wantErr: "not a program",
 		},
@@ -1020,50 +1020,50 @@ func TestParseGetProgram(t *testing.T) {
 }
 
 func TestParseGetLink(t *testing.T) {
-	structuredVal, err := replang.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
 
-	progVal, err := replang.ValueFromStruct(bpfman.Program{
+	progVal, err := shell.ValueFromStruct(bpfman.Program{
 		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
 	})
 	require.NoError(t, err)
 
 	tests := []struct {
 		name       string
-		args       []replang.Arg
+		args       []shell.Arg
 		wantID     kernel.LinkID
 		wantOutput string
 		wantErr    string
 	}{
 		{
 			name:       "numeric ID",
-			args:       []replang.Arg{word("77")},
+			args:       []shell.Arg{word("77")},
 			wantID:     77,
 			wantOutput: "table",
 		},
 		{
 			name:       "hex ID",
-			args:       []replang.Arg{word("0x4d")},
+			args:       []shell.Arg{word("0x4d")},
 			wantID:     77,
 			wantOutput: "table",
 		},
 		{
 			name: "structured variable ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "lnk", Value: structuredVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "lnk", Value: structuredVal},
 			},
 			wantID:     77,
 			wantOutput: "table",
 		},
 		{
 			name:       "scalar value arg",
-			args:       []replang.Arg{replang.ScalarValueArg{Text: "55"}},
+			args:       []shell.Arg{shell.ScalarValueArg{Text: "55"}},
 			wantID:     55,
 			wantOutput: "table",
 		},
 		{
 			name: "with output flag",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("77"),
 				word("-o"),
 				word("json"),
@@ -1073,12 +1073,12 @@ func TestParseGetLink(t *testing.T) {
 		},
 		{
 			name:    "no arguments",
-			args:    []replang.Arg{},
+			args:    []shell.Arg{},
 			wantErr: "requires a link ID",
 		},
 		{
 			name: "duplicate -o flag",
-			args: []replang.Arg{
+			args: []shell.Arg{
 				word("77"),
 				word("-o"), word("json"),
 				word("-o"), word("wide"),
@@ -1087,23 +1087,23 @@ func TestParseGetLink(t *testing.T) {
 		},
 		{
 			name:    "unknown flag",
-			args:    []replang.Arg{word("77"), word("--verbose")},
+			args:    []shell.Arg{word("77"), word("--verbose")},
 			wantErr: "unknown flag",
 		},
 		{
 			name:    "-o without value",
-			args:    []replang.Arg{word("77"), word("-o")},
+			args:    []shell.Arg{word("77"), word("-o")},
 			wantErr: "-o requires a value",
 		},
 		{
 			name:    "unexpected positional",
-			args:    []replang.Arg{word("77"), word("extra")},
+			args:    []shell.Arg{word("77"), word("extra")},
 			wantErr: "unexpected argument",
 		},
 		{
 			name: "wrong origin type on structured ref",
-			args: []replang.Arg{
-				replang.StructuredValueArg{Name: "myprog", Value: progVal},
+			args: []shell.Arg{
+				shell.StructuredValueArg{Name: "myprog", Value: progVal},
 			},
 			wantErr: "not a link",
 		},

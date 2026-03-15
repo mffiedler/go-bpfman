@@ -17,7 +17,7 @@ import (
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/replang"
+	"github.com/frobware/go-bpfman/shell"
 )
 
 // Command is the sealed interface for typed command nodes produced by
@@ -32,7 +32,7 @@ type Command interface {
 // routing logic matches command and subcommand keywords, then
 // delegates the remaining arguments to the specific parser. Returns
 // nil with no error when args is empty.
-func parseCommand(args []replang.Arg) (Command, error) {
+func parseCommand(args []shell.Arg) (Command, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
@@ -102,10 +102,10 @@ func parseCommand(args []replang.Arg) (Command, error) {
 // execCommand executes a typed Command node, returning an optional
 // result value for variable binding. Commands that do not produce
 // assignable results return an empty value.
-func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Command) (replang.Value, error) {
+func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Command) (shell.Value, error) {
 	switch c := cmd.(type) {
 	case *ShowProgramCommand:
-		return replang.Value{}, execShowProgram(ctx, cli, mgr, c)
+		return shell.Value{}, execShowProgram(ctx, cli, mgr, c)
 	case *LoadFileCommand:
 		return execLoadFile(ctx, cli, mgr, c)
 	case *LoadImageCommand:
@@ -115,31 +115,31 @@ func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Comman
 	case *GetLinkCommand:
 		return execGetLink(ctx, cli, mgr, c)
 	case *UnloadProgramCommand:
-		return replang.Value{}, execUnloadProgram(ctx, cli, mgr, c)
+		return shell.Value{}, execUnloadProgram(ctx, cli, mgr, c)
 	case *DeleteProgramCommand:
-		return replang.Value{}, execDeleteProgram(ctx, cli, mgr, c)
+		return shell.Value{}, execDeleteProgram(ctx, cli, mgr, c)
 	case *ListProgramsCommand:
-		return replang.Value{}, execListPrograms(ctx, cli, mgr, c)
+		return shell.Value{}, execListPrograms(ctx, cli, mgr, c)
 	case *LinkAttachCommand:
 		return execLinkAttach(ctx, cli, mgr, c)
 	case *LinkDetachCommand:
-		return replang.Value{}, execLinkDetach(ctx, cli, mgr, c)
+		return shell.Value{}, execLinkDetach(ctx, cli, mgr, c)
 	case *ListLinksCommand:
-		return replang.Value{}, execListLinks(ctx, cli, mgr, c)
+		return shell.Value{}, execListLinks(ctx, cli, mgr, c)
 	case *DeleteLinkCommand:
-		return replang.Value{}, execDeleteLink(ctx, cli, mgr, c)
+		return shell.Value{}, execDeleteLink(ctx, cli, mgr, c)
 	case *DispatcherListCommand:
-		return replang.Value{}, execDispatcherList(ctx, cli, mgr, c)
+		return shell.Value{}, execDispatcherList(ctx, cli, mgr, c)
 	case *DispatcherGetCommand:
-		return replang.Value{}, execDispatcherGet(ctx, cli, mgr, c)
+		return shell.Value{}, execDispatcherGet(ctx, cli, mgr, c)
 	case *DispatcherDeleteCommand:
-		return replang.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
+		return shell.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
 	case *GCCommand:
-		return replang.Value{}, execGC(ctx, cli, mgr, c)
+		return shell.Value{}, execGC(ctx, cli, mgr, c)
 	case *DoctorCommand:
-		return replang.Value{}, execDoctor(ctx, cli, mgr, c)
+		return shell.Value{}, execDoctor(ctx, cli, mgr, c)
 	default:
-		return replang.Value{}, fmt.Errorf("unhandled command type %T", cmd)
+		return shell.Value{}, fmt.Errorf("unhandled command type %T", cmd)
 	}
 }
 
@@ -168,7 +168,7 @@ var validShowViews = map[string]bool{
 //
 // One required positional (program ID), one optional positional (view
 // name defaulting to "summary"), and one optional flag (-o).
-func parseShowProgram(args []replang.Arg) (*ShowProgramCommand, error) {
+func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("show program: requires a program ID")
 	}
@@ -285,7 +285,7 @@ func (*LoadFileCommand) isCommand() {}
 //
 //	-p <path> [--programs <spec>]... [-m <key=val>]... [-g <name=hex>]...
 //	[-a <app>] [--map-owner-id <id>] [-o <format>]
-func parseLoadFile(args []replang.Arg) (*LoadFileCommand, error) {
+func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 	cmd := &LoadFileCommand{
 		Output: OutputFlags{Output: OutputValue{Value: "table"}},
 	}
@@ -372,10 +372,10 @@ func parseLoadFile(args []replang.Arg) (*LoadFileCommand, error) {
 // execLoadFile executes a parsed LoadFileCommand, loading the BPF
 // program from a local object file, printing output, and returning a
 // structured Value for optional variable assignment.
-func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadFileCommand) (replang.Value, error) {
+func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadFileCommand) (shell.Value, error) {
 	objPath, err := ParseObjectPath(cmd.Path)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
@@ -414,24 +414,24 @@ func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Load
 		return loadFileResult{Programs: loaded}, nil
 	})
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	if len(result.Programs) == 0 {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 
-	val, err := replang.ValueFromStruct(result.Programs[0])
+	val, err := shell.ValueFromStruct(result.Programs[0])
 	if err != nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return val, nil
 }
@@ -450,7 +450,7 @@ func (*LinkAttachCommand) isCommand() {}
 // LinkAttachCommand. The first argument is the attach type; the
 // remaining arguments are type-specific flags and one required
 // program ID.
-func parseLinkAttach(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttach(args []shell.Arg) (*LinkAttachCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("link attach requires a type (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry, fexit)")
 	}
@@ -484,13 +484,13 @@ func parseLinkAttach(args []replang.Arg) (*LinkAttachCommand, error) {
 //
 //	-i <iface> [-p <priority>] [--proceed-on <actions>]...
 //	[-n <netns>] [-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachXDP(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		priority  int
 		proceedOn []string
 		netns     string
-		progArg   replang.Arg
+		progArg   shell.Arg
 		output    = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -597,14 +597,14 @@ func parseLinkAttachXDP(args []replang.Arg) (*LinkAttachCommand, error) {
 //
 //	-i <iface> -d <direction> [-p <priority>] [--proceed-on <actions>]...
 //	[-n <netns>] [-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachTC(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		direction string
 		priority  int
 		proceedOn []string
 		netns     string
-		progArg   replang.Arg
+		progArg   shell.Arg
 		output    = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -728,13 +728,13 @@ func parseLinkAttachTC(args []replang.Arg) (*LinkAttachCommand, error) {
 //
 //	-i <iface> -d <direction> [-p <priority>] [-n <netns>]
 //	[-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachTCX(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		iface     string
 		direction string
 		priority  int
 		netns     string
-		progArg   replang.Arg
+		progArg   shell.Arg
 		output    = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -841,10 +841,10 @@ func parseLinkAttachTCX(args []replang.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachTracepoint parses "link attach tracepoint" arguments.
 //
 //	-t <group/name> [-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachTracepoint(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		tracepoint string
-		progArg    replang.Arg
+		progArg    shell.Arg
 		output     = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -914,11 +914,11 @@ func parseLinkAttachTracepoint(args []replang.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachKprobe parses "link attach kprobe" arguments.
 //
 //	-f <fn-name> [--offset <n>] [-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachKprobe(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		fnName  string
 		offset  uint64
-		progArg replang.Arg
+		progArg shell.Arg
 		output  = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -997,13 +997,13 @@ func parseLinkAttachKprobe(args []replang.Arg) (*LinkAttachCommand, error) {
 //
 //	--target <path> [-f <fn-name>] [--offset <n>] [--container-pid <pid>]
 //	[-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachUprobe(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		target       string
 		fnName       string
 		offset       uint64
 		containerPid int32
-		progArg      replang.Arg
+		progArg      shell.Arg
 		output       = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -1103,9 +1103,9 @@ func parseLinkAttachUprobe(args []replang.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachFentry parses "link attach fentry" arguments.
 //
 //	[-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachFentry(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
-		progArg replang.Arg
+		progArg shell.Arg
 		output  = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -1161,9 +1161,9 @@ func parseLinkAttachFentry(args []replang.Arg) (*LinkAttachCommand, error) {
 // parseLinkAttachFexit parses "link attach fexit" arguments.
 //
 //	[-m <key=val>]... [-o <format>] <program-id>
-func parseLinkAttachFexit(args []replang.Arg) (*LinkAttachCommand, error) {
+func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
-		progArg replang.Arg
+		progArg shell.Arg
 		output  = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
@@ -1219,25 +1219,25 @@ func parseLinkAttachFexit(args []replang.Arg) (*LinkAttachCommand, error) {
 // execLinkAttach executes a parsed LinkAttachCommand, attaching the
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
-func execLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (replang.Value, error) {
+func execLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (shell.Value, error) {
 	link, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	output, err := FormatLinkResult(link, &cmd.Output)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
-	val, err := replang.ValueFromStruct(link)
+	val, err := shell.ValueFromStruct(link)
 	if err != nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return val, nil
 }
@@ -1253,7 +1253,7 @@ func (*LinkDetachCommand) isCommand() {}
 // parseLinkDetach resolves expanded REPL arguments into a
 // LinkDetachCommand. Each positional argument is a link ID, possibly
 // from a structured variable reference.
-func parseLinkDetach(args []replang.Arg) (*LinkDetachCommand, error) {
+func parseLinkDetach(args []shell.Arg) (*LinkDetachCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("link detach: requires at least one link ID")
 	}
@@ -1317,7 +1317,7 @@ func (*LoadImageCommand) isCommand() {}
 //	-i <url> [--programs <spec>]... [-p <policy>] [--registry-auth <auth>]
 //	[-a <app>] [--map-owner-id <id>] [-m <key=val>]... [-g <name=hex>]...
 //	[-o <format>]
-func parseLoadImage(args []replang.Arg) (*LoadImageCommand, error) {
+func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 	cmd := &LoadImageCommand{
 		PullPolicy: "IfNotPresent",
 		Output:     OutputFlags{Output: OutputValue{Value: "table"}},
@@ -1417,10 +1417,10 @@ func parseLoadImage(args []replang.Arg) (*LoadImageCommand, error) {
 // execLoadImage executes a parsed LoadImageCommand, loading BPF
 // programs from an OCI image, printing output, and returning a
 // structured Value for optional variable assignment.
-func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadImageCommand) (replang.Value, error) {
+func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadImageCommand) (shell.Value, error) {
 	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy)
 	if err != nil {
-		return replang.Value{}, fmt.Errorf("load image: invalid pull policy %q: %w", cmd.PullPolicy, err)
+		return shell.Value{}, fmt.Errorf("load image: invalid pull policy %q: %w", cmd.PullPolicy, err)
 	}
 
 	type loadImageResult struct {
@@ -1483,24 +1483,24 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 		return loadImageResult{Programs: loaded}, nil
 	})
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	if len(result.Programs) == 0 {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 
-	val, err := replang.ValueFromStruct(result.Programs[0])
+	val, err := shell.ValueFromStruct(result.Programs[0])
 	if err != nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return val, nil
 }
@@ -1518,7 +1518,7 @@ func (*GetProgramCommand) isCommand() {}
 // GetProgramCommand. The grammar is:
 //
 //	<program-id> [-o format]
-func parseGetProgram(args []replang.Arg) (*GetProgramCommand, error) {
+func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("program get: requires a program ID")
 	}
@@ -1567,23 +1567,23 @@ func parseGetProgram(args []replang.Arg) (*GetProgramCommand, error) {
 // execGetProgram executes a parsed GetProgramCommand, fetching the
 // program from the store, rendering output, and returning a
 // structured Value for variable assignment.
-func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetProgramCommand) (replang.Value, error) {
+func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetProgramCommand) (shell.Value, error) {
 	prog, err := mgr.Get(ctx, cmd.ID)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	output, err := FormatProgram(prog, &cmd.Output)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
-	val, err := replang.ValueFromStruct(prog)
+	val, err := shell.ValueFromStruct(prog)
 	if err != nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return val, nil
 }
@@ -1601,7 +1601,7 @@ func (*GetLinkCommand) isCommand() {}
 // GetLinkCommand. The grammar is:
 //
 //	<link-id> [-o format]
-func parseGetLink(args []replang.Arg) (*GetLinkCommand, error) {
+func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("link get: requires a link ID")
 	}
@@ -1650,10 +1650,10 @@ func parseGetLink(args []replang.Arg) (*GetLinkCommand, error) {
 // execGetLink executes a parsed GetLinkCommand, fetching the link
 // from the store, rendering output, and returning a structured Value
 // for variable assignment.
-func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLinkCommand) (replang.Value, error) {
+func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLinkCommand) (shell.Value, error) {
 	info, err := mgr.GetLinkInfo(ctx, cmd.ID)
 	if err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
 	link := bpfman.Link{
@@ -1667,15 +1667,15 @@ func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLi
 
 	output, fmtErr := FormatLinkResult(link, &cmd.Output)
 	if fmtErr != nil {
-		return replang.Value{}, fmtErr
+		return shell.Value{}, fmtErr
 	}
 	if err := cli.PrintOut(output); err != nil {
-		return replang.Value{}, err
+		return shell.Value{}, err
 	}
 
-	val, err := replang.ValueFromStruct(link)
+	val, err := shell.ValueFromStruct(link)
 	if err != nil {
-		return replang.Value{}, nil
+		return shell.Value{}, nil
 	}
 	return val, nil
 }
@@ -1690,7 +1690,7 @@ func (*UnloadProgramCommand) isCommand() {}
 
 // parseUnloadProgram resolves expanded REPL arguments into an
 // UnloadProgramCommand. Each positional argument is a program ID.
-func parseUnloadProgram(args []replang.Arg) (*UnloadProgramCommand, error) {
+func parseUnloadProgram(args []shell.Arg) (*UnloadProgramCommand, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("program unload: requires at least one program ID")
 	}
@@ -1734,10 +1734,10 @@ func (*DeleteProgramCommand) isCommand() {}
 // DeleteProgramCommand. The grammar is:
 //
 //	(<program-id>... | --all) [-r]
-func parseDeleteProgram(args []replang.Arg) (*DeleteProgramCommand, error) {
+func parseDeleteProgram(args []shell.Arg) (*DeleteProgramCommand, error) {
 	cmd := &DeleteProgramCommand{}
 
-	var positionals []replang.Arg
+	var positionals []shell.Arg
 	for i := 0; i < len(args); i++ {
 		text := argText(args[i])
 		switch text {
@@ -1809,10 +1809,10 @@ func (*DeleteLinkCommand) isCommand() {}
 // DeleteLinkCommand. The grammar is:
 //
 //	<link-id>... [-r]
-func parseDeleteLink(args []replang.Arg) (*DeleteLinkCommand, error) {
+func parseDeleteLink(args []shell.Arg) (*DeleteLinkCommand, error) {
 	cmd := &DeleteLinkCommand{}
 
-	var positionals []replang.Arg
+	var positionals []shell.Arg
 	for i := 0; i < len(args); i++ {
 		text := argText(args[i])
 		switch text {
@@ -1896,7 +1896,7 @@ func (*ListProgramsCommand) isCommand() {}
 //
 //	[-q] [--attached|--unattached] [--type <types>]...
 //	[-l <selector>] [-o <format>]
-func parseListPrograms(args []replang.Arg) (*ListProgramsCommand, error) {
+func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 	cmd := &ListProgramsCommand{
 		Output: OutputFlags{Output: OutputValue{Value: "table"}},
 	}
@@ -2012,7 +2012,7 @@ func (*ListLinksCommand) isCommand() {}
 // ListLinksCommand. The grammar is:
 //
 //	[-q] [--program-id <id>] [--kind <kinds>]... [-o <format>]
-func parseListLinks(args []replang.Arg) (*ListLinksCommand, error) {
+func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 	cmd := &ListLinksCommand{
 		Output: OutputFlags{Output: OutputValue{Value: "table"}},
 	}
@@ -2116,7 +2116,7 @@ func (*DispatcherListCommand) isCommand() {}
 // DispatcherListCommand. The grammar is:
 //
 //	[--type <type>] [-o <format>]
-func parseDispatcherList(args []replang.Arg) (*DispatcherListCommand, error) {
+func parseDispatcherList(args []shell.Arg) (*DispatcherListCommand, error) {
 	cmd := &DispatcherListCommand{
 		Output: OutputFlags{Output: OutputValue{Value: "table"}},
 	}
@@ -2196,7 +2196,7 @@ func (*DispatcherGetCommand) isCommand() {}
 // DispatcherGetCommand. The grammar is:
 //
 //	<type> <nsid> <ifindex> [-o <format>]
-func parseDispatcherGet(args []replang.Arg) (*DispatcherGetCommand, error) {
+func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("dispatcher get: requires <type> <nsid> <ifindex>")
 	}
@@ -2274,7 +2274,7 @@ func (*DispatcherDeleteCommand) isCommand() {}
 // DispatcherDeleteCommand. The grammar is:
 //
 //	<type> <nsid> <ifindex>
-func parseDispatcherDelete(args []replang.Arg) (*DispatcherDeleteCommand, error) {
+func parseDispatcherDelete(args []shell.Arg) (*DispatcherDeleteCommand, error) {
 	if len(args) < 3 {
 		return nil, fmt.Errorf("dispatcher delete: requires <type> <nsid> <ifindex>")
 	}
@@ -2329,7 +2329,7 @@ func (*GCCommand) isCommand() {}
 // grammar is:
 //
 //	[--dry-run] [--prune] [rule...]
-func parseGC(args []replang.Arg) (*GCCommand, error) {
+func parseGC(args []shell.Arg) (*GCCommand, error) {
 	cmd := &GCCommand{}
 
 	for i := 0; i < len(args); i++ {
@@ -2395,7 +2395,7 @@ func (*DoctorCommand) isCommand() {}
 //
 //	[checkup]
 //	explain [rule]
-func parseDoctor(args []replang.Arg) (*DoctorCommand, error) {
+func parseDoctor(args []shell.Arg) (*DoctorCommand, error) {
 	if len(args) == 0 {
 		return &DoctorCommand{Subcommand: "checkup"}, nil
 	}

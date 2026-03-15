@@ -1,4 +1,4 @@
-package replang
+package shell
 
 // Arg is the post-expansion representation of a command argument. It
 // is a sealed sum type that preserves distinctions lost in []string:

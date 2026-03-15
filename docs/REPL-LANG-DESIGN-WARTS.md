@@ -1,12 +1,12 @@
 # REPL language: design warts and incremental fix plan
 
-This document captures known design issues in the `replang` package
+This document captures known design issues in the `shell` package
 and the REPL consumer code in `cmd/bpfman/repl.go`, together with a
 phased plan to resolve them.
 
 The target is a clean package boundary:
 
-- `replang` owns the language: lexing, statement parsing, session
+- `shell` owns the language: lexing, statement parsing, session
   state, expansion, and typed argument output.
 - `cmd/bpfman/repl.go` owns bpfman command semantics and I/O: domain
   command parsing, execution against `manager.Manager`, and rendering.
@@ -203,7 +203,7 @@ syntax.
 
 ### Wart 6: information loss at the dispatch boundary
 
-The conversion from `[]replang.Token` to `[]string` via `tokenTexts`
+The conversion from `[]shell.Token` to `[]string` via `tokenTexts`
 is the current information-loss boundary. After this point, token
 kind, variable-reference structure, and any future typed argument
 information are unrecoverable without re-parsing strings.
@@ -288,20 +288,20 @@ The target pipeline is:
 
 ```
 read line
-  -> replang.Tokenise
-  -> replang.ParseStmt
-  -> replang.ExpandStmt
-  -> replang produces typed, structured arguments
+  -> shell.Tokenise
+  -> shell.ParseStmt
+  -> shell.ExpandStmt
+  -> shell produces typed, structured arguments
   -> cmd/bpfman parses those into typed bpfman command nodes
   -> execute
   -> render
   -> update session
 ```
 
-`replang` is a general shell language layer. `cmd/bpfman/repl.go` is
+`shell` is a general shell language layer. `cmd/bpfman/repl.go` is
 a client and executor over that layer.
 
-### What `replang` owns
+### What `shell` owns
 
 **Tokens.** Already in the right place: `Token`, `TokenKind`,
 `Tokenise`, variable-reference lexing, comment stripping, identifier
@@ -380,16 +380,16 @@ to a command.
   how to use it (e.g. extract `.record.program_id`).
 
 Expansion produces `[]Arg`, not `[]Token` and not `[]string`. This
-is the contract between `replang` and its clients. Clients never need
+is the contract between `shell` and its clients. Clients never need
 to re-parse `$` prefixes or re-discover variable references from
 strings.
 
-**Shell-language commands.** `replang` should understand binding,
+**Shell-language commands.** `shell` should understand binding,
 unbinding, and variable inspection. At minimum: `let`, `set`, `unset`,
 `vars`, `dump`. These are language-level concerns, not domain
 concerns. `source`, `assert`, and `require` may stay partly
 in the REPL client layer, but the language-level mechanics belong in
-`replang`.
+`shell`.
 
 ### What `cmd/bpfman/repl.go` owns
 
@@ -420,12 +420,12 @@ current resolution helpers:
 ```go
 type ProgramRefArg struct {
     ID    *kernel.ProgramID
-    Value *replang.Value
+    Value *shell.Value
 }
 
 type LinkRefArg struct {
     ID    *kernel.LinkID
-    Value *replang.Value
+    Value *shell.Value
 }
 ```
 
@@ -436,9 +436,9 @@ disappear into typed argument parsing.
 **Domain command parsing.** Each command family parses from expanded
 structured args into typed command nodes:
 
-- `parseShowProgram(args []replang.Arg) (ShowProgramCmd, error)`
-- `parseLoadFile(args []replang.Arg) (LoadFileCmd, error)`
-- `parseLinkAttach(args []replang.Arg) (LinkAttachCmd, error)`
+- `parseShowProgram(args []shell.Arg) (ShowProgramCmd, error)`
+- `parseLoadFile(args []shell.Arg) (LoadFileCmd, error)`
+- `parseLinkAttach(args []shell.Arg) (LinkAttachCmd, error)`
 
 **Execution and rendering.** Typed commands are executed against
 `manager.Manager`. Rendering, formatting, tab completion, and CLI
@@ -447,19 +447,19 @@ output remain in the REPL client layer.
 ### The end state
 
 ```go
-stmt, err := replang.ParseStmt(tokens)
-expanded, err := replang.ExpandStmt(session, stmt)
+stmt, err := shell.ParseStmt(tokens)
+expanded, err := shell.ExpandStmt(session, stmt)
 
 switch s := expanded.(type) {
-case *replang.LetStmt:
+case *shell.LetStmt:
     cmd, err := replcmd.Parse(s.Cmd)
     result, err := executor.Execute(cmd)
     session.Set(s.Name, result.AssignValue)
 
-case *replang.SetStmt:
+case *shell.SetStmt:
     session.Set(s.Name, s.Value)
 
-case *replang.CommandStmt:
+case *shell.CommandStmt:
     cmd, err := replcmd.Parse(s.Cmd)
     result, err := executor.Execute(cmd)
     renderer.Render(result)
@@ -471,7 +471,7 @@ that an earlier phase already resolved.
 
 ### The final package boundary
 
-`replang` exports:
+`shell` exports:
 
 - `Token`, `Tokenise`
 - `Stmt` (`LetStmt`, `SetStmt`, `CommandStmt`), `ParseStmt`
@@ -482,7 +482,7 @@ that an earlier phase already resolved.
 `cmd/bpfman/` uses:
 
 - Typed bpfman command nodes (`Command` interface)
-- Command parsers from `[]replang.Arg`
+- Command parsers from `[]shell.Arg`
 - Executors against `manager.Manager`
 - Renderers and completers
 
@@ -502,7 +502,7 @@ types (`LetStmt`, `SetStmt`, `CommandStmt`). `ParseLine` becomes
 This is mechanical and improves the boundary immediately without
 breaking expansion semantics.
 
-**Scope**: `replang/parse.go`, `replang/parse_test.go`,
+**Scope**: `shell/parse.go`, `shell/parse_test.go`,
 `cmd/bpfman/repl.go`
 
 ### Step 2: preserve structured refs through expansion [DONE]
@@ -515,12 +515,12 @@ After this step, expansion resolves scalar references eagerly but
 leaves structured references intact in typed form for command
 parsing.
 
-This is a `replang`-only change. It breaks the consumer in `repl.go`,
+This is a `shell`-only change. It breaks the consumer in `repl.go`,
 which step 3 fixes.
 
-**Scope**: `replang/session.go`, `replang/session_test.go`
+**Scope**: `shell/session.go`, `shell/session_test.go`
 
-### Step 3: introduce typed `Arg` representation in `replang` [DONE]
+### Step 3: introduce typed `Arg` representation in `shell` [DONE]
 
 Introduce the `Arg` interface (`WordArg`, `QuotedArg`,
 `ScalarValueArg`, `StructuredValueArg`). Expansion produces `[]Arg`
@@ -530,7 +530,7 @@ This makes the expansion contract explicit: clients receive typed,
 structured arguments and never need to inspect token kinds or string
 prefixes.
 
-**Scope**: `replang/` (new file or in `session.go`)
+**Scope**: `shell/` (new file or in `session.go`)
 
 ### Step 4: remove `tokenTexts` from the main path [DONE]
 
@@ -561,7 +561,7 @@ Rewrite the package documentation to reflect:
 This moves after step 4 because the documentation should describe
 the real API, not a transitional state.
 
-**Scope**: `replang/doc.go`
+**Scope**: `shell/doc.go`
 
 ### Step 6: tighten tokeniser invariants [DONE]
 
@@ -572,8 +572,8 @@ the real API, not a transitional state.
   grammar as bare refs.
 - Add test cases for malformed variable references.
 
-**Scope**: `replang/token.go`, `replang/token_test.go`,
-`replang/parse_test.go`
+**Scope**: `shell/token.go`, `shell/token_test.go`,
+`shell/parse_test.go`
 
 ### Step 7: split shell-language commands from domain commands [DONE]
 
@@ -627,18 +627,30 @@ is now a thin composition of the two.
 ### Step 10: update `REPL-LANG.md` design document [DONE]
 
 Rewrite the design document from a proposal into a description of the
-implemented architecture: the `replang` / `cmd/bpfman` package
+implemented architecture: the `shell` / `cmd/bpfman` package
 boundary, the `Stmt` and `Arg` types, the expansion contract, the
 typed command pipeline (`parseCommand` / `execCommand`), the shell
 versus domain command split, and the `set` binding form.
 
 **Scope**: `docs/REPL-LANG.md`
 
+### Step 11: rename `replang` package to `shell` [DONE]
+
+Rename the `replang/` directory to `shell/` and update all package
+declarations, import paths, qualified references, and documentation.
+The name `shell` better reflects what the package is: a general
+shell language layer for the REPL, not a language unto itself.
+
+**Scope**: `shell/` (all files), `cmd/bpfman/repl.go`,
+`cmd/bpfman/command.go`, `cmd/bpfman/repl_test.go`,
+`cmd/bpfman/command_test.go`, `docs/REPL-LANG.md`,
+`docs/REPL-LANG-DESIGN-WARTS.md`
+
 ---
 
 ## Definition of done
 
-### `replang` is complete when
+### `shell` is complete when
 
 - It fully owns lexing, statement parsing, session state, and
   expansion.
