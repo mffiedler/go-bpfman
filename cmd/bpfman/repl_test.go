@@ -522,8 +522,15 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 }
 
 func TestParseProgramIDArg(t *testing.T) {
-	// Structured variable with .record.program_id
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	// Origin-backed value via ValueFromStruct (exercises HasProgramID capability).
+	prog := bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
+	}
+	originVal, err := shell.ValueFromStruct(prog)
+	require.NoError(t, err)
+
+	// Origin-less structured value via ValueFromJSON (exercises path lookup fallback).
+	jsonVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":99}}`))
 	require.NoError(t, err)
 
 	// Structured variable without .record.program_id
@@ -547,9 +554,14 @@ func TestParseProgramIDArg(t *testing.T) {
 			want: 255,
 		},
 		{
-			name: "structured variable resolves record.program_id",
-			arg:  shell.StructuredValueArg{Name: "prog", Value: structuredVal},
+			name: "origin-backed variable uses HasProgramID",
+			arg:  shell.StructuredValueArg{Name: "prog", Value: originVal},
 			want: 42,
+		},
+		{
+			name: "origin-less variable falls back to path lookup",
+			arg:  shell.StructuredValueArg{Name: "prog", Value: jsonVal},
+			want: 99,
 		},
 		{
 			name: "scalar variable resolves directly",
@@ -950,8 +962,15 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 }
 
 func TestParseLinkIDArg(t *testing.T) {
-	// Structured variable with .record.id
-	linkVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	// Origin-backed value via ValueFromStruct (exercises HasLinkID capability).
+	link := bpfman.Link{
+		Record: bpfman.LinkRecord{ID: kernel.LinkID(77)},
+	}
+	originVal, err := shell.ValueFromStruct(link)
+	require.NoError(t, err)
+
+	// Origin-less structured value via ValueFromJSON (exercises path lookup fallback).
+	jsonVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":88}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -966,14 +985,19 @@ func TestParseLinkIDArg(t *testing.T) {
 			want: 123,
 		},
 		{
-			name: "structured variable resolves record.id",
-			arg:  shell.StructuredValueArg{Name: "lnk", Value: linkVal},
+			name: "origin-backed variable uses HasLinkID",
+			arg:  shell.StructuredValueArg{Name: "lnk", Value: originVal},
 			want: 77,
 		},
 		{
-			name: "scalar variable resolves directly",
-			arg:  shell.ScalarValueArg{Text: "88"},
+			name: "origin-less variable falls back to path lookup",
+			arg:  shell.StructuredValueArg{Name: "lnk", Value: jsonVal},
 			want: 88,
+		},
+		{
+			name: "scalar variable resolves directly",
+			arg:  shell.ScalarValueArg{Text: "99"},
+			want: 99,
 		},
 	}
 

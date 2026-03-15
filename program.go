@@ -152,6 +152,14 @@ type ProgramStatus struct {
 	Maps       []MapStatus          `json:"maps,omitempty"`   // kernel maps with pin correlation
 }
 
+// HasProgramID is a capability interface for domain objects that
+// carry a program ID. The typed argument parsers use this to extract
+// a program ID from an origin-backed structured value without
+// depending on a concrete type.
+type HasProgramID interface {
+	GetProgramID() kernel.ProgramID
+}
+
 // Program is the canonical domain object combining record and status.
 // Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
@@ -159,6 +167,12 @@ type Program struct {
 	Record ProgramRecord `json:"record"`
 	Status ProgramStatus `json:"status"`
 }
+
+// GetProgramID returns the program's ID.
+func (p Program) GetProgramID() kernel.ProgramID { return p.Record.ProgramID }
+
+// GetProgramID returns the record's program ID.
+func (r ProgramRecord) GetProgramID() kernel.ProgramID { return r.ProgramID }
 
 // PathPresence pairs a filesystem path with its presence status.
 type PathPresence struct {

@@ -146,9 +146,10 @@ func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Comman
 // parseProgramIDArg resolves a single shell.Arg directly to a
 // kernel.ProgramID, combining argument extraction and ID parsing
 // into one step. For text-bearing args the text is parsed as a
-// program ID. For StructuredValueArg, the value's Origin is
-// checked for type safety and the path .record.program_id is
-// extracted automatically.
+// program ID. For StructuredValueArg with an origin, the
+// HasProgramID capability interface is used to extract the ID
+// directly. For origin-less structured values, path lookup
+// (.record.program_id) is the fallback.
 func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 	switch v := a.(type) {
 	case shell.WordArg:
@@ -159,12 +160,14 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 		return parseProgramIDText(v.Text)
 	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Program); !ok {
-				return 0, fmt.Errorf(
-					"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
-					v.Name, origin, v.Name)
+			if x, ok := origin.(bpfman.HasProgramID); ok {
+				return x.GetProgramID(), nil
 			}
+			return 0, fmt.Errorf(
+				"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
+				v.Name, origin, v.Name)
 		}
+		// Fallback for origin-less structured values.
 		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
 		if err != nil {
 			return 0, fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
@@ -192,8 +195,9 @@ func parseProgramIDText(s string) (kernel.ProgramID, error) {
 // parseLinkIDArg resolves a single shell.Arg directly to a
 // kernel.LinkID, combining argument extraction and ID parsing into
 // one step. For text-bearing args the text is parsed as a link ID.
-// For StructuredValueArg, the value's Origin is checked for type
-// safety and the path .record.id is extracted automatically.
+// For StructuredValueArg with an origin, the HasLinkID capability
+// interface is used to extract the ID directly. For origin-less
+// structured values, path lookup (.record.id) is the fallback.
 func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 	switch v := a.(type) {
 	case shell.WordArg:
@@ -204,12 +208,14 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 		return parseLinkIDText(v.Text)
 	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
-			if _, ok := origin.(bpfman.Link); !ok {
-				return 0, fmt.Errorf(
-					"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
-					v.Name, origin, v.Name)
+			if x, ok := origin.(bpfman.HasLinkID); ok {
+				return x.GetLinkID(), nil
 			}
+			return 0, fmt.Errorf(
+				"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
+				v.Name, origin, v.Name)
 		}
+		// Fallback for origin-less structured values.
 		resolved, err := v.Value.LookupValue(v.Name, "record.id")
 		if err != nil {
 			return 0, fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)

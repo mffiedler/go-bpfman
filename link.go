@@ -412,6 +412,14 @@ type LinkStatus struct {
 	PinPresent bool         `json:"pin_present"`      // true if pin path exists on filesystem
 }
 
+// HasLinkID is a capability interface for domain objects that carry
+// a link ID. The typed argument parsers use this to extract a link
+// ID from an origin-backed structured value without depending on a
+// concrete type.
+type HasLinkID interface {
+	GetLinkID() kernel.LinkID
+}
+
 // Link is the canonical domain object combining record and status.
 // Record comes from the store (what bpfman manages).
 // Status comes from observation (kernel enumeration + filesystem checks).
@@ -419,6 +427,12 @@ type Link struct {
 	Record LinkRecord `json:"record"`
 	Status LinkStatus `json:"status"`
 }
+
+// GetLinkID returns the link's ID.
+func (l Link) GetLinkID() kernel.LinkID { return l.Record.ID }
+
+// GetLinkID returns the record's link ID.
+func (r LinkRecord) GetLinkID() kernel.LinkID { return r.ID }
 
 // AttachOutput is the raw result of a kernel attach operation.
 // This is transient I/O boundary data - the manager uses it along with
