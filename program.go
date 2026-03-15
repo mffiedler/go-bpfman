@@ -152,13 +152,19 @@ type ProgramStatus struct {
 	Maps       []MapStatus          `json:"maps,omitempty"`   // kernel maps with pin correlation
 }
 
-// HasProgramID is a capability interface for domain objects that
-// carry a program ID. The typed argument parsers use this to extract
-// a program ID from an origin-backed structured value without
-// depending on a concrete type.
+// HasKernelProgramID is a capability interface for domain objects
+// that carry a kernel-assigned program ID. The typed argument
+// parsers use this to extract a program ID from an origin-backed
+// structured value without depending on a concrete type.
 type HasKernelProgramID interface {
 	KernelProgramID() kernel.ProgramID
 }
+
+// Compile-time interface assertions.
+var (
+	_ HasKernelProgramID = Program{}
+	_ HasKernelProgramID = ProgramRecord{}
+)
 
 // Program is the canonical domain object combining record and status.
 // Record comes from the store (what bpfman manages).
