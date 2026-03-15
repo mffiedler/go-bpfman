@@ -416,8 +416,8 @@ type LinkStatus struct {
 // a link ID. The typed argument parsers use this to extract a link
 // ID from an origin-backed structured value without depending on a
 // concrete type.
-type HasLinkID interface {
-	GetLinkID() kernel.LinkID
+type HasKernelLinkID interface {
+	KernelLinkID() kernel.LinkID
 }
 
 // Link is the canonical domain object combining record and status.
@@ -428,11 +428,11 @@ type Link struct {
 	Status LinkStatus `json:"status"`
 }
 
-// GetLinkID returns the link's ID.
-func (l Link) GetLinkID() kernel.LinkID { return l.Record.ID }
+// KernelLinkID returns the link's kernel-assigned ID.
+func (l Link) KernelLinkID() kernel.LinkID { return l.Record.ID }
 
-// GetLinkID returns the record's link ID.
-func (r LinkRecord) GetLinkID() kernel.LinkID { return r.ID }
+// KernelLinkID returns the record's kernel-assigned link ID.
+func (r LinkRecord) KernelLinkID() kernel.LinkID { return r.ID }
 
 // AttachOutput is the raw result of a kernel attach operation.
 // This is transient I/O boundary data - the manager uses it along with

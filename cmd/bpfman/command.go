@@ -160,11 +160,11 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 		return parseProgramIDText(v.Text)
 	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
-			if x, ok := origin.(bpfman.HasProgramID); ok {
-				return x.GetProgramID(), nil
+			if x, ok := origin.(bpfman.HasKernelProgramID); ok {
+				return x.KernelProgramID(), nil
 			}
 			return 0, fmt.Errorf(
-				"variable %q holds a %T, not a program (use $%s.record.program_id to be explicit)",
+				"variable %q holds a %T, which does not provide a program ID (use $%s.record.program_id to be explicit)",
 				v.Name, origin, v.Name)
 		}
 		// Fallback for origin-less structured values.
@@ -208,11 +208,11 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 		return parseLinkIDText(v.Text)
 	case shell.StructuredValueArg:
 		if origin := v.Value.Origin(); origin != nil {
-			if x, ok := origin.(bpfman.HasLinkID); ok {
-				return x.GetLinkID(), nil
+			if x, ok := origin.(bpfman.HasKernelLinkID); ok {
+				return x.KernelLinkID(), nil
 			}
 			return 0, fmt.Errorf(
-				"variable %q holds a %T, not a link (use $%s.record.id to be explicit)",
+				"variable %q holds a %T, which does not provide a link ID (use $%s.record.id to be explicit)",
 				v.Name, origin, v.Name)
 		}
 		// Fallback for origin-less structured values.

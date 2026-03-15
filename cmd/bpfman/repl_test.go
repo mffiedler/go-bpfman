@@ -1284,7 +1284,7 @@ func TestParseProgramIDArg_RejectsLinkVariable(t *testing.T) {
 
 	_, err = parseProgramIDArg(shell.StructuredValueArg{Name: "mylink", Value: v})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not a program")
+	assert.Contains(t, err.Error(), "does not provide a program ID")
 }
 
 func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
@@ -1298,7 +1298,7 @@ func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 
 	_, err = parseLinkIDArg(shell.StructuredValueArg{Name: "myprog", Value: v})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not a link")
+	assert.Contains(t, err.Error(), "does not provide a link ID")
 }
 
 // ---- Assert/Require/Set tests ----

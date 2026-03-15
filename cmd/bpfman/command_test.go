@@ -187,7 +187,7 @@ func TestParseShowProgram(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
-			wantErr: "not a program",
+			wantErr: "does not provide a program ID",
 		},
 	}
 
@@ -700,7 +700,7 @@ func TestParseLinkAttachFentry(t *testing.T) {
 		{
 			name:    "wrong origin type",
 			args:    []shell.Arg{word("fentry"), structuredLink("lnk", 10)},
-			wantErr: "not a program",
+			wantErr: "does not provide a program ID",
 		},
 	}
 	for _, tt := range tests {
@@ -892,7 +892,7 @@ func TestParseLinkDetach(t *testing.T) {
 		{
 			name:    "wrong origin type",
 			args:    []shell.Arg{structuredProgram("prog", 42)},
-			wantErr: "not a link",
+			wantErr: "does not provide a link ID",
 		},
 	}
 	for _, tt := range tests {
@@ -1000,7 +1000,7 @@ func TestParseGetProgram(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
-			wantErr: "not a program",
+			wantErr: "does not provide a program ID",
 		},
 	}
 
@@ -1105,7 +1105,7 @@ func TestParseGetLink(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "myprog", Value: progVal},
 			},
-			wantErr: "not a link",
+			wantErr: "does not provide a link ID",
 		},
 	}
 
