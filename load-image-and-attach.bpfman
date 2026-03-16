@@ -1,9 +1,12 @@
 # -*- mode: bpfman -*-
 # Load an XDP program from an OCI image, attach it, verify state, and clean up.
 #
-# Requires root and a dummy interface. Run with:
-#   sudo ip link add bpfman-demo type dummy && sudo ip link set bpfman-demo up
+# Requires root. Run with:
 #   sudo bpfman repl -f load-image-and-attach.bpfman
+
+# Create a dummy interface for the test.
+require ok exec ip link add bpfman-demo type dummy
+require ok exec ip link set bpfman-demo up
 
 # Load the XDP pass program from the bpfman bytecode registry.
 let prog = load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
@@ -28,4 +31,8 @@ link detach $link
 assert fail link get $link
 
 program unload $pid
+
+# Remove the dummy interface.
+exec ip link del bpfman-demo
+
 unset link prog pid

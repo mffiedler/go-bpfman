@@ -689,68 +689,100 @@ wants.
 
 That is the wrong trade-off for now.
 
-## Open questions
+## Resolved questions
 
-There are several useful questions to settle before implementation.
+### 1. Command name
 
-### 1. Should json parse be called json parse or from-json?
-
-`json parse` is clearer and groups naturally if later JSON helpers
-exist.
-
-`from-json` is slightly more direct, but less extensible.
-
-Current preference: `json parse`.
+`json parse` was chosen. It groups naturally if later JSON helpers
+exist (e.g., `json format`) and reads clearly in both plain and bound
+form.
 
 ### 2. Display model
 
-The initial design assumes `print` is the standard display mechanism
-for structured values. No separate JSON display command is needed.
-Plain-form `json parse` prints using the same mechanism.
+`dump` is the standard display mechanism for structured values. No
+separate JSON display command is needed. Plain-form `json parse`
+prints using `json.MarshalIndent` through the same output path.
 
-### 3. Do we need a helper to bind sub-values?
+### 3. Trailing garbage rejection
 
-For example:
+`ValueFromJSON` now rejects trailing data after a valid JSON value.
+Input such as `123 junk` or `{"a":1} {"b":2}` produces a parse error.
+Trailing whitespace is accepted.
 
-```
-let first = value get data[0]
-```
+## Open questions
+
+### 1. Sub-value binding
 
 At present, `let` binds command results, not arbitrary sub-values.
-This may become the next real usability gap after `json parse`.
+This does not work:
 
-It may deserve a later, separate extension.
+```
+let first = data[0]
+```
 
-### 4. Do we need collection helpers immediately?
+because `data[0]` is a path expression, not a command invocation.
 
-Maybe not.
+A helper such as `value get data[0]` could address this. It is likely
+the next real usability gap, but it is a separate concern from JSON
+ingestion and should be assessed after more experience with the
+current model.
 
-It is better to ship explicit parsing first, then see whether the
-existing path model is sufficient in practice.
+### 2. Collection helpers
+
+Small structured-value helpers such as `value keys`, `value len`, and
+`value type` may be useful. The internal `Value.Keys()` method
+already exists. Whether to expose these as user-facing commands
+should be decided after real usage shows the current path model is
+insufficient.
+
+### 3. Non-identifier JSON keys
+
+JSON objects may contain keys that do not fit the current path
+grammar (e.g., `"map-id"`, `"foo.bar"`). These values can be parsed
+and stored, but cannot be navigated with the current `$var.path`
+syntax. This limitation is acceptable for now but may need a
+bracket-string accessor (e.g., `$data["map-id"]`) if it becomes a
+real obstacle.
+
+## Implementation status
+
+### Done
+
+- `json parse <string>` shell command in `cmd/bpfman/repl.go`
+- returns a structured `shell.Value` via `shell.ValueFromJSON`
+- plain form prints indented JSON; bound form returns the value
+  silently (suppressed by `WithDiscardOutput` in `LetStmt`)
+- `json` added to `shellCommands`, `replCommandNames`, and
+  `replSubcommands` for dispatch and tab completion
+- help text updated
+- trailing garbage rejection in `ValueFromJSON` via `dec.More()`
+- parsed JSON values share the same `shell.Value` model as native
+  command results: `Lookup`, `LookupValue`, `Scalar`, `dump`, and
+  path expansion all work identically regardless of origin
+- 14 unit tests covering object/array/scalar parsing, plain and
+  bound form, invalid JSON, no-args error, assert ok/fail, nested
+  access, exec+json integration, non-value shell command rejection,
+  and tab completion
+- 3 unit tests for trailing garbage rejection in `ValueFromJSON`
+
+### Not yet done
+
+- sub-value binding (e.g., `let first = value get data[0]`)
+- user-facing `value keys`, `value type`, `value len` helpers
+- bracket-string accessor for non-identifier keys
+- `json parse` currently accepts only a single scalar text argument;
+  passing a bare structured variable resolves to its display text
+  rather than its JSON serialisation
 
 ## Recommendation
 
-Proceed with a minimal first implementation.
+Phase 1 is complete. The minimal implementation satisfies the core
+design: explicit JSON parsing into the existing structured value
+model, with no separate query subsystem.
 
-### Phase 1
-
-Add:
-
-- a shell-layer command:
-  - `json parse <string>`
-  - return a structured `shell.Value`
-  - reuse existing `print`, path lookup, and scalar expansion
-
-### Phase 2, only if needed
-
-Consider tiny structured-value helpers such as:
-
-- `value keys`
-- `value len`
-- `value type`
-
-But only after real usage shows that the current path model is not
-enough.
+Phase 2 should be driven by real usage. The most likely next steps
+are sub-value binding and collection helpers, but neither should be
+added speculatively.
 
 The important thing is not to build "JSON support" as a separate
 mini-system.
