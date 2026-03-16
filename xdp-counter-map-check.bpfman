@@ -1,4 +1,5 @@
 # -*- mode: bpfman -*-
+
 # Load an XDP counter program, send traffic, and verify the program
 # updated its map counters. This proves the program was not just
 # attached but actually processed packets.
@@ -9,12 +10,12 @@
 # Uses the xdp_stats program from the bpfman go-xdp-counter example.
 # That program maintains a per-CPU array map keyed by XDP action,
 # incrementing rx_packets and rx_bytes on every packet. Key 2 is
-# XDP_PASS. The map is a per-CPU array, so traffic may be counted
-# by different CPUs across bursts.
+# XDP_PASS. The map is a per-CPU array, so traffic may be counted by
+# different CPUs across bursts.
 #
 # A veth pair with a network namespace is used to generate real
-# ingress traffic. Pinging a local address on a dummy interface
-# does not trigger XDP because the kernel routes through loopback.
+# ingress traffic. Pinging a local address on a dummy interface does
+# not trigger XDP because the kernel routes through loopback.
 
 # Create a namespace and veth pair for traffic generation.
 require ok exec ip netns add bpfman-test
@@ -42,7 +43,6 @@ exec sleep 1
 # Snapshot the counters after the first burst.
 let raw1 = exec bpftool map dump id $map_id
 let snap1 = json parse $raw1.stdout
-dump snap1[2]
 
 # Second burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -53,15 +53,20 @@ exec sleep 1
 # a single CPU slot.
 let raw2 = exec bpftool map dump id $map_id
 let snap2 = json parse $raw2.stdout
-dump snap2[2]
 assert ne $raw1.stdout $raw2.stdout
+
+# Show the actual differences between the two snapshots. Use exec
+# status because diff exits 1 when files differ, which is a domain
+# result rather than an execution failure.
+let d = exec status diff -u file:$raw1.stdout file:$raw2.stdout
+assert le $d.exit_code 1
+dump d.stdout
 
 # Clean up: detach, unload, remove network resources.
 link detach $link
 assert fail link get $link
 
 program unload $pid
+
 exec ip link del veth-host
 exec ip netns del bpfman-test
-
-unset link prog pid map_id raw1 raw2 snap1 snap2

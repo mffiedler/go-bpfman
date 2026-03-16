@@ -6,6 +6,11 @@ import (
 	"unicode"
 )
 
+// adapterPrefixes is the fixed set of known adapter names recognised
+// by the tokeniser. Only these names followed by :$ trigger adapter
+// token recognition.
+var adapterPrefixes = []string{"file"}
+
 // TokenKind classifies a lexed token.
 type TokenKind int
 
@@ -20,14 +25,19 @@ const (
 	// TokenQuoted is a single- or double-quoted string. The
 	// delimiters are stripped; $ is literal inside quotes.
 	TokenQuoted
+	// TokenAdapterRef is an adapter invocation such as
+	// file:$var.path. It carries the adapter name, the variable
+	// name, and the optional field path.
+	TokenAdapterRef
 )
 
 // Token is a single lexical element produced by Tokenise.
 type Token struct {
 	Kind    TokenKind
 	Text    string // content (stripped quotes for TokenQuoted)
-	VarName string // variable name for TokenVarRef
-	VarPath string // field path for TokenVarRef (empty if bare)
+	VarName string // variable name for TokenVarRef and TokenAdapterRef
+	VarPath string // field path for TokenVarRef and TokenAdapterRef (empty if bare)
+	Adapter string // adapter name for TokenAdapterRef (e.g. "file")
 }
 
 // Tokenise lexes input into tokens. It strips comments (# and
@@ -75,9 +85,14 @@ func Tokenise(input string) ([]Token, error) {
 			i += n
 
 		default:
-			tok, n := lexWord(input, i)
-			tokens = append(tokens, tok)
-			i += n
+			if tok, n, ok := lexAdapterRef(input, i); ok {
+				tokens = append(tokens, tok)
+				i += n
+			} else {
+				tok, n := lexWord(input, i)
+				tokens = append(tokens, tok)
+				i += n
+			}
 		}
 	}
 
@@ -290,6 +305,38 @@ func lexWord(input string, pos int) (Token, int) {
 	}
 	tok := Token{Kind: TokenWord, Text: input[pos:i]}
 	return tok, i - pos
+}
+
+// lexAdapterRef tries to lex an adapter reference at input[pos].
+// Known adapter prefixes (e.g. "file") immediately followed by :$
+// trigger recognition. The variable reference after : is lexed by
+// lexVarRef. Returns (token, consumed, true) on success, or
+// (Token{}, 0, false) if this position is not an adapter reference.
+func lexAdapterRef(input string, pos int) (Token, int, bool) {
+	for _, prefix := range adapterPrefixes {
+		full := prefix + ":"
+		if !strings.HasPrefix(input[pos:], full) {
+			continue
+		}
+		afterColon := pos + len(full)
+		if afterColon >= len(input) || input[afterColon] != '$' {
+			continue
+		}
+		tok, n, err := lexVarRef(input, afterColon)
+		if err != nil {
+			// Let normal flow handle the error via lexWord + lexVarRef.
+			return Token{}, 0, false
+		}
+		adapterTok := Token{
+			Kind:    TokenAdapterRef,
+			Text:    input[pos : afterColon+n],
+			Adapter: prefix,
+			VarName: tok.VarName,
+			VarPath: tok.VarPath,
+		}
+		return adapterTok, afterColon + n - pos, true
+	}
+	return Token{}, 0, false
 }
 
 func isIdentStart(b byte) bool {

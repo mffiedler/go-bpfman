@@ -310,6 +310,73 @@ func TestTokenise(t *testing.T) {
 			input:   "${prog id}",
 			wantErr: "unexpected character",
 		},
+
+		// Adapter reference tests.
+
+		{
+			name:  "adapter ref bare",
+			input: "exec diff file:$x file:$y",
+			want: []Token{
+				{Kind: TokenWord, Text: "exec"},
+				{Kind: TokenWord, Text: "diff"},
+				{Kind: TokenAdapterRef, Text: "file:$x", Adapter: "file", VarName: "x"},
+				{Kind: TokenAdapterRef, Text: "file:$y", Adapter: "file", VarName: "y"},
+			},
+		},
+		{
+			name:  "adapter ref with dotted path",
+			input: "file:$raw.stdout",
+			want: []Token{
+				{Kind: TokenAdapterRef, Text: "file:$raw.stdout", Adapter: "file", VarName: "raw", VarPath: "stdout"},
+			},
+		},
+		{
+			name:  "adapter ref with index",
+			input: "file:$snap[2]",
+			want: []Token{
+				{Kind: TokenAdapterRef, Text: "file:$snap[2]", Adapter: "file", VarName: "snap", VarPath: "[2]"},
+			},
+		},
+		{
+			name:  "adapter ref braced form",
+			input: "file:${data.items[0]}",
+			want: []Token{
+				{Kind: TokenAdapterRef, Text: "file:${data.items[0]}", Adapter: "file", VarName: "data", VarPath: "items[0]"},
+			},
+		},
+		{
+			name:  "file colon without dollar is plain word",
+			input: "file:something",
+			want: []Token{
+				{Kind: TokenWord, Text: "file:something"},
+			},
+		},
+		{
+			name:  "file colon with space before dollar is two tokens",
+			input: "file: $var",
+			want: []Token{
+				{Kind: TokenWord, Text: "file:"},
+				{Kind: TokenVarRef, Text: "$var", VarName: "var"},
+			},
+		},
+		{
+			name:  "unknown adapter prefix is word plus varref",
+			input: "notanadapter:$var",
+			want: []Token{
+				{Kind: TokenWord, Text: "notanadapter:"},
+				{Kind: TokenVarRef, Text: "$var", VarName: "var"},
+			},
+		},
+		{
+			name:  "adapter ref mixed with normal args",
+			input: "exec wc -l file:$raw.stdout",
+			want: []Token{
+				{Kind: TokenWord, Text: "exec"},
+				{Kind: TokenWord, Text: "wc"},
+				{Kind: TokenWord, Text: "-l"},
+				{Kind: TokenAdapterRef, Text: "file:$raw.stdout", Adapter: "file", VarName: "raw", VarPath: "stdout"},
+			},
+		},
 	}
 
 	for _, tt := range tests {

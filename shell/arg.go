@@ -39,7 +39,19 @@ type StructuredValueArg struct {
 	Value Value
 }
 
+// AdapterArg is a resolved adapter invocation from inline adapter
+// syntax (e.g. file:$var.path in exec argument position). Adapter
+// is the adapter name, Value is the resolved REPL value (scalar or
+// structured), and Name/Path are retained for display.
+type AdapterArg struct {
+	Adapter string
+	Name    string
+	Path    string
+	Value   Value
+}
+
 func (WordArg) isArg()            {}
 func (QuotedArg) isArg()          {}
 func (ScalarValueArg) isArg()     {}
 func (StructuredValueArg) isArg() {}
+func (AdapterArg) isArg()         {}

@@ -32,7 +32,7 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec", "gc", "help", "json", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
+var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec", "file", "gc", "help", "json", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 // replAssertVerbs lists the valid assertion verbs for completion.
@@ -42,6 +42,8 @@ var replSubcommands = map[string][]string{
 	"assert":     replAssertVerbs,
 	"dispatcher": {"delete", "get", "list"},
 	"doctor":     {"checkup", "explain"},
+	"exec":       {"status"},
+	"file":       {"temp"},
 	"json":       {"parse"},
 	"link":       {"attach", "delete", "detach", "get", "list"},
 	"list":       {"programs"},
@@ -187,6 +189,7 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 var shellCommands = map[string]bool{
 	"assert":  true,
 	"exec":    true,
+	"file":    true,
 	"json":    true,
 	"require": true,
 	"dump":    true,
@@ -216,6 +219,9 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
 	case "exec":
 		val, err := replExec(ctx, cli, args[1:])
+		return true, val, err
+	case "file":
+		val, err := replFile(cli, session, args[1:])
 		return true, val, err
 	case "json":
 		val, err := replJSON(cli, args[1:])
@@ -362,6 +368,11 @@ func argText(a shell.Arg) string {
 		return v.Text
 	case shell.StructuredValueArg:
 		return "$" + v.Name
+	case shell.AdapterArg:
+		if v.Path != "" {
+			return fmt.Sprintf("%s:$%s.%s", v.Adapter, v.Name, v.Path)
+		}
+		return fmt.Sprintf("%s:$%s", v.Adapter, v.Name)
 	default:
 		return ""
 	}
@@ -1061,9 +1072,11 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  version                                  Print version information\n")
 	b.WriteString("\n")
 	b.WriteString("Session:\n")
-	b.WriteString("  exec <command> [args...]                 Run a host command (assignable)\n")
-	b.WriteString("  json parse <string>                      Parse JSON into a value (assignable)\n")
-	b.WriteString("  dump <variable>[.path]                   Display variable contents\n")
+	b.WriteString("  exec <command> [args|file:$var...]        Run a host command (assignable)\n")
+	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
+	b.WriteString("  file temp <variable>[.path]               Write value to temp file (assignable)\n")
+	b.WriteString("  json parse <string>                       Parse JSON into a value (assignable)\n")
+	b.WriteString("  dump <variable>[.path]                    Display variable contents\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")
@@ -1133,6 +1146,52 @@ func replJSON(cli *CLI, args []shell.Arg) (shell.Value, error) {
 	return val, nil
 }
 
+// replFile implements the file shell command. The only subcommand is
+// "temp", which writes a REPL value to a private temporary file and
+// returns the path as a scalar string. The argument is a bare
+// variable name with optional field path (no $ prefix), the same
+// form accepted by dump.
+func replFile(cli *CLI, session *shell.Session, args []shell.Arg) (shell.Value, error) {
+	if len(args) == 0 || argText(args[0]) != "temp" {
+		return shell.Value{}, fmt.Errorf("usage: file temp <variable>[.path]")
+	}
+	if len(args) != 2 {
+		return shell.Value{}, fmt.Errorf("file temp requires exactly one argument")
+	}
+	v, err := lookupBareVar(session, argText(args[1]))
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("file temp: %w", err)
+	}
+	path, err := writeValueToTemp(v)
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("file temp: %w", err)
+	}
+	if err := cli.PrintOut(path + "\n"); err != nil {
+		return shell.Value{}, err
+	}
+	return shell.StringValue(path), nil
+}
+
+// writeValueToTemp renders a shell.Value to a private temporary file
+// and returns the absolute path. The file is created with mode 0600
+// in the OS default temp directory with a recognisable prefix.
+func writeValueToTemp(v shell.Value) (string, error) {
+	data, err := shell.RenderValue(v)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp("", "bpfman-repl-")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write temp file: %w", err)
+	}
+	return f.Name(), nil
+}
+
 // execResult holds the captured output of a subprocess run by the
 // exec shell command. The JSON tags produce the field names visible
 // in the REPL's structured-value model.
@@ -1144,21 +1203,70 @@ type execResult struct {
 }
 
 // replExec runs an external command and returns a structured result.
-// On success the result contains captured stdout, stderr, the argv
-// vector, and exit code 0. On non-zero exit the command returns an
-// error that includes the exit status and any stderr output.
+//
+// In strict mode (the default), exit 0 returns a structured result
+// and non-zero exit returns an error. This keeps the common case
+// clean for require ok exec and assert ok exec.
+//
+// In status mode (exec status ...), non-zero exit is not an error.
+// The structured result is returned for all exit codes, with
+// exit_code reflecting the actual status. Only genuine launch
+// failures (command not found, permission denied) produce errors.
+// This mode is for commands like diff, grep -q, and cmp where
+// non-zero exit is a domain result rather than an execution failure.
+//
+// Inline adapter arguments (e.g. file:$var.path) are resolved to
+// temporary files before the command runs. All adapter-created temp
+// files are removed unconditionally after the command completes.
 func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("exec requires at least one argument")
 	}
 
-	argv := argTexts(args)
+	// Detect status mode.
+	statusMode := false
+	if argText(args[0]) == "status" {
+		statusMode = true
+		args = args[1:]
+		if len(args) == 0 {
+			return shell.Value{}, fmt.Errorf("exec status requires at least one argument")
+		}
+	}
+
+	// Resolve adapter args to temp files.
+	var tempFiles []string
+	defer func() {
+		for _, f := range tempFiles {
+			os.Remove(f)
+		}
+	}()
+
+	resolved := make([]shell.Arg, len(args))
+	for i, a := range args {
+		aa, ok := a.(shell.AdapterArg)
+		if !ok {
+			resolved[i] = a
+			continue
+		}
+		if aa.Adapter != "file" {
+			return shell.Value{}, fmt.Errorf("unknown adapter %q", aa.Adapter)
+		}
+		path, err := writeValueToTemp(aa.Value)
+		if err != nil {
+			return shell.Value{}, fmt.Errorf("adapter file: %w", err)
+		}
+		tempFiles = append(tempFiles, path)
+		resolved[i] = shell.ScalarValueArg{Text: path}
+	}
+
+	argv := argTexts(resolved)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	exitCode := 0
 	err := cmd.Run()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -1166,18 +1274,21 @@ func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, err
 			// Not an exit error — command not found or similar.
 			return shell.Value{}, fmt.Errorf("exec %s: %w", argv[0], err)
 		}
-		msg := fmt.Sprintf("exec %s: exit status %d", strings.Join(argv, " "), exitErr.ExitCode())
-		if stderr.Len() > 0 {
-			msg += ": " + strings.TrimRight(stderr.String(), "\n")
+		if !statusMode {
+			msg := fmt.Sprintf("exec %s: exit status %d", strings.Join(argv, " "), exitErr.ExitCode())
+			if stderr.Len() > 0 {
+				msg += ": " + strings.TrimRight(stderr.String(), "\n")
+			}
+			return shell.Value{}, errors.New(msg)
 		}
-		return shell.Value{}, errors.New(msg)
+		exitCode = exitErr.ExitCode()
 	}
 
 	result := execResult{
 		Argv:     argv,
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
-		ExitCode: 0,
+		ExitCode: exitCode,
 	}
 	val, err := shell.ValueFromStruct(result)
 	if err != nil {

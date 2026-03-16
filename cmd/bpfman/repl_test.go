@@ -2279,6 +2279,116 @@ func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "cannot bind result of")
 }
 
+// --- exec status tests ---
+
+func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
+	// exec status captures non-zero exit as data, not error.
+	input := "let r = exec status false\nassert equal $r.exit_code 1\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	val, ok := session.Get("r")
+	require.True(t, ok)
+	assert.True(t, val.IsStructured())
+}
+
+func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
+	// exec status also works for exit 0.
+	input := "let r = exec status true\nassert equal $r.exit_code 0\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
+	input := "let r = exec status echo hello\nassert contains $r.stdout hello\nassert equal $r.exit_code 0\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
+	// Launch failures are still errors even in status mode.
+	input := "let r = exec status __nonexistent_command_12345__\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exec __nonexistent_command_12345__")
+}
+
+func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
+	input := "exec status\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exec status requires at least one argument")
+}
+
+func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
+	// exec status works with file adapters.
+	input := "set a = hello\nset b = world\nlet r = exec status diff file:$a file:$b\nassert equal $r.exit_code 1\nassert not-empty $r.stdout\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
+	// diff exits 0 when files are identical.
+	input := "set a = same\nset b = same\nlet r = exec status diff file:$a file:$b\nassert equal $r.exit_code 0\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
+	// Plain exec still errors on non-zero exit.
+	input := "exec false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exit status 1")
+}
+
+func TestReplComplete_ExecStatusSubcommand(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "exec ", len("exec "))
+	assert.Contains(t, candidates, "status ")
+}
+
 func TestReplComplete_ExecInCommandNames(t *testing.T) {
 	_, candidates := replComplete(context.Background(), nil, nil, "ex", len("ex"))
 	assert.Contains(t, candidates, "exec ")
@@ -2436,6 +2546,249 @@ func TestReplLoop_JSONParseCannotBindNonValueShellCmd(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "cannot bind result of")
+}
+
+// file temp tests
+
+func TestReplLoop_FileTempScalar(t *testing.T) {
+	input := "set data = hello\nlet f = file temp data\nassert not-empty $f\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	val, ok := session.Get("f")
+	require.True(t, ok)
+	path, err := val.Scalar()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content))
+	os.Remove(path)
+}
+
+func TestReplLoop_FileTempStructured(t *testing.T) {
+	input := `let data = json parse '{"b":2,"a":1}'` + "\nlet f = file temp data\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	val, ok := session.Get("f")
+	require.True(t, ok)
+	path, err := val.Scalar()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	// Keys should be sorted alphabetically.
+	assert.Contains(t, string(content), `"a": 1`)
+	assert.Contains(t, string(content), `"b": 2`)
+	// Trailing newline after JSON.
+	assert.True(t, strings.HasSuffix(string(content), "}\n"))
+	os.Remove(path)
+}
+
+func TestReplLoop_FileTempPathScalar(t *testing.T) {
+	input := "let raw = exec echo hello\nlet f = file temp raw.stdout\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	val, ok := session.Get("f")
+	require.True(t, ok)
+	path, err := val.Scalar()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(content))
+	os.Remove(path)
+}
+
+func TestReplLoop_FileTempPathStructured(t *testing.T) {
+	input := `let data = json parse '{"items":[{"id":1},{"id":2}]}'` + "\nlet f = file temp data.items\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	val, ok := session.Get("f")
+	require.True(t, ok)
+	path, err := val.Scalar()
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	// Should be a JSON array.
+	assert.Contains(t, string(content), `"id": 1`)
+	os.Remove(path)
+}
+
+func TestReplLoop_FileTempNoArgs(t *testing.T) {
+	input := "file temp\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "file temp requires exactly one argument")
+}
+
+func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
+	input := "let f = file temp undefined_var\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "undefined variable")
+}
+
+func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
+	input := "set data = hello\nfile temp data\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	// Plain form should print the path.
+	assert.Contains(t, outBuf.String(), "bpfman-repl-")
+}
+
+func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
+	input := "file\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "usage: file temp")
+}
+
+// Inline file adapter tests
+
+func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
+	input := "let raw = exec echo hello\nlet out = exec wc -c file:$raw.stdout\nassert contains $out.stdout 6\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
+	input := `let data = json parse '{"name":"test"}'` + "\nlet out = exec cat file:$data\nassert contains $out.stdout name\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
+	input := "let a = exec echo aaa\nlet b = exec echo bbb\nlet out = exec diff file:$a.stdout file:$b.stdout\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	// diff returns non-zero exit for different files, which is an error.
+	require.NoError(t, err)
+	// The error from exec diff is reported but not fatal in interactive mode.
+	assert.Contains(t, errBuf.String(), "exit status 1")
+}
+
+func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
+	input := "let raw = exec echo hello\nlet out = exec wc -l file:$raw.stdout\nassert equal $out.exit_code 0\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
+	// Verify that adapter temp files are cleaned up after exec.
+	input := "set data = hello\nlet out = exec cat file:$data\nassert contains $out.stdout hello\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	// The adapter temp file should not exist. Since we cannot
+	// directly observe the temp path, verify the output came
+	// through correctly (if the file did not exist, cat would
+	// have failed).
+	out, ok := session.Get("out")
+	require.True(t, ok)
+	stdout, err := out.LookupValue("out", "stdout")
+	require.NoError(t, err)
+	s, err := stdout.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello", s)
+}
+
+func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
+	input := `let data = json parse '{"a":1}'` + "\nlet out = exec cat file:$data\nassert contains $out.stdout '\"a\": 1'\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+// Completion tests for file command
+
+func TestReplComplete_FileInCommandNames(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "fi", len("fi"))
+	assert.Contains(t, candidates, "file ")
+}
+
+func TestReplComplete_FileSubcommands(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "file ", len("file "))
+	assert.Contains(t, candidates, "temp ")
 }
 
 func TestReplComplete_JSONInCommandNames(t *testing.T) {

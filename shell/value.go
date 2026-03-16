@@ -301,3 +301,34 @@ func parsePath(path string) ([]pathStep, error) {
 	}
 	return steps, nil
 }
+
+// RenderValue produces the byte representation of a Value suitable
+// for writing to a file. Scalar strings are written verbatim (no
+// trailing newline added). Numbers, booleans, and null are rendered
+// as their text forms. Structured values (maps, slices) are rendered
+// as deterministic pretty-printed JSON with sorted keys, two-space
+// indentation, and a trailing newline after the final bracket.
+func RenderValue(v Value) ([]byte, error) {
+	switch x := v.v.(type) {
+	case string:
+		return []byte(x), nil
+	case json.Number:
+		return []byte(x.String()), nil
+	case float64:
+		return []byte(strconv.FormatFloat(x, 'f', -1, 64)), nil
+	case bool:
+		if x {
+			return []byte("true"), nil
+		}
+		return []byte("false"), nil
+	case nil:
+		return []byte("null"), nil
+	default:
+		// Structured: map or slice.
+		b, err := json.MarshalIndent(v.v, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("render value: %w", err)
+		}
+		return append(b, '\n'), nil
+	}
+}

@@ -46,10 +46,10 @@
 
 (defconst bpfman--commands
   (let ((ht (make-hash-table :test 'equal)))
-    (dolist (w '("assert" "dispatcher" "doctor" "dump" "gc" "help"
-                 "let" "link" "list" "load" "program" "programs"
-                 "require" "set" "show" "source" "unset" "vars"
-                 "version"))
+    (dolist (w '("assert" "dispatcher" "doctor" "dump" "exec" "file"
+                 "gc" "help" "json" "let" "link" "list" "load"
+                 "program" "programs" "require" "set" "show" "source"
+                 "unset" "vars" "version"))
       (puthash w t ht))
     ht)
   "Hash table of top-level bpfman REPL commands.")
@@ -58,8 +58,8 @@
   (let ((ht (make-hash-table :test 'equal)))
     (dolist (w '(;; subcommands
                  "attach" "checkup" "delete" "detach" "explain" "file"
-                 "get" "image" "list" "load" "program" "programs"
-                 "unload"
+                 "get" "image" "list" "load" "parse" "program"
+                 "programs" "status" "temp" "unload"
                  ;; attach types
                  "fentry" "fexit" "kprobe" "tc" "tcx" "tracepoint"
                  "uprobe" "xdp"
@@ -81,6 +81,10 @@
 (defconst bpfman--tok-assign 3)
 (defconst bpfman--tok-string 4)
 (defconst bpfman--tok-select 5)
+(defconst bpfman--tok-adapter-ref 6)
+
+(defconst bpfman--adapter-prefixes '("file")
+  "Known adapter prefixes for inline file:$var syntax.")
 
 ;; ---- Line tokeniser ----
 
@@ -188,19 +192,61 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
                 (setq pos (point)))
               (push (list bpfman--tok-flag start pos) tokens)))
 
-           ;; Plain word.
+           ;; Plain word (with adapter-ref detection).
            (t
             (let ((start pos))
               (goto-char pos)
               (skip-chars-forward "^ \t\n#'\"$" eol)
               (setq pos (point))
               (when (> pos start)
-                (let ((text (buffer-substring-no-properties start pos)))
-                  (push (list (if (string= text "select")
-                                  bpfman--tok-select
-                                bpfman--tok-word)
-                              start pos)
-                        tokens)))))))))
+                ;; Check for adapter prefix: word ends with
+                ;; "<adapter>:" and next char is $.
+                (let ((text (buffer-substring-no-properties start pos))
+                      (is-adapter nil))
+                  (when (and (< pos eol) (= (char-after pos) ?$))
+                    (dolist (prefix bpfman--adapter-prefixes)
+                      (when (string= text (concat prefix ":"))
+                        (setq is-adapter t))))
+                  (if is-adapter
+                      ;; Consume the $varref part too.
+                      (progn
+                        (setq pos (1+ pos)) ; skip $
+                        (if (and (< pos eol) (= (char-after pos) ?{))
+                            ;; Braced form.
+                            (progn
+                              (setq pos (1+ pos))
+                              (while (and (< pos eol) (/= (char-after pos) ?}))
+                                (setq pos (1+ pos)))
+                              (when (< pos eol)
+                                (setq pos (1+ pos)))) ; consume }
+                          ;; Bare form: ident(.field|[n])*
+                          (when (and (< pos eol)
+                                     (let ((c (char-after pos)))
+                                       (or (and (>= c ?a) (<= c ?z))
+                                           (and (>= c ?A) (<= c ?Z))
+                                           (= c ?_))))
+                            (goto-char pos)
+                            (skip-chars-forward "a-zA-Z0-9_" eol)
+                            (while (and (< (point) eol)
+                                        (let ((c (char-after (point))))
+                                          (or (= c ?.) (= c ?\[))))
+                              (if (= (char-after (point)) ?.)
+                                  (progn
+                                    (forward-char 1)
+                                    (skip-chars-forward "a-zA-Z0-9_" eol))
+                                (forward-char 1)
+                                (skip-chars-forward "0-9" eol)
+                                (when (and (< (point) eol)
+                                           (= (char-after (point)) ?\]))
+                                  (forward-char 1))))
+                            (setq pos (point))))
+                        (push (list bpfman--tok-adapter-ref start pos) tokens))
+                    ;; Normal word.
+                    (push (list (if (string= text "select")
+                                    bpfman--tok-select
+                                  bpfman--tok-word)
+                                start pos)
+                          tokens))))))))))
     (nreverse tokens)))
 
 ;; ---- Structural font-lock ----
@@ -228,6 +274,12 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (put-text-property beg end 'face 'font-lock-variable-name-face)
           ;; A varref in start position means this is a command line,
           ;; not an assignment.
+          (when (eq state 'start)
+            (setq state 'args)))
+
+         ;; Adapter references (file:$var.path) are variable-name face.
+         ((= kind bpfman--tok-adapter-ref)
+          (put-text-property beg end 'face 'font-lock-variable-name-face)
           (when (eq state 'start)
             (setq state 'args)))
 

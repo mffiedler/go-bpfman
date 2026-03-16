@@ -63,6 +63,31 @@ func (s *Session) Names() []string {
 func (s *Session) Expand(tokens []Token) ([]Arg, error) {
 	result := make([]Arg, 0, len(tokens))
 	for _, tok := range tokens {
+		if tok.Kind == TokenAdapterRef {
+			v, ok := s.vars[tok.VarName]
+			if !ok {
+				return nil, fmt.Errorf("undefined variable: %s", tok.VarName)
+			}
+			resolved := v
+			if tok.VarPath != "" {
+				var err error
+				resolved, err = v.LookupValue(tok.VarName, tok.VarPath)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if resolved.IsNil() {
+				return nil, fmt.Errorf("adapter %s: variable %s is null", tok.Adapter, tok.VarName)
+			}
+			result = append(result, AdapterArg{
+				Adapter: tok.Adapter,
+				Name:    tok.VarName,
+				Path:    tok.VarPath,
+				Value:   resolved,
+			})
+			continue
+		}
+
 		if tok.Kind != TokenVarRef {
 			switch tok.Kind {
 			case TokenQuoted:

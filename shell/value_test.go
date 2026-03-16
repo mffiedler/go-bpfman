@@ -487,3 +487,92 @@ func TestStringValue_NilOrigin(t *testing.T) {
 	v := StringValue("hello")
 	assert.Nil(t, v.Origin())
 }
+
+func TestRenderValue(t *testing.T) {
+	tests := []struct {
+		name string
+		val  Value
+		want string
+	}{
+		{
+			name: "scalar string",
+			val:  StringValue("hello world"),
+			want: "hello world",
+		},
+		{
+			name: "empty string",
+			val:  StringValue(""),
+			want: "",
+		},
+		{
+			name: "string with trailing newline preserved",
+			val:  StringValue("line1\nline2\n"),
+			want: "line1\nline2\n",
+		},
+		{
+			name: "string without trailing newline stays without",
+			val:  StringValue("no newline"),
+			want: "no newline",
+		},
+		{
+			name: "json.Number integer",
+			val:  Value{v: json.Number("42")},
+			want: "42",
+		},
+		{
+			name: "json.Number float",
+			val:  Value{v: json.Number("3.14")},
+			want: "3.14",
+		},
+		{
+			name: "float64",
+			val:  Value{v: float64(2.5)},
+			want: "2.5",
+		},
+		{
+			name: "bool true",
+			val:  BoolValue(true),
+			want: "true",
+		},
+		{
+			name: "bool false",
+			val:  BoolValue(false),
+			want: "false",
+		},
+		{
+			name: "null",
+			val:  Value{},
+			want: "null",
+		},
+		{
+			name: "structured object with sorted keys",
+			val: ValueFromMap(map[string]any{
+				"zebra": "z",
+				"alpha": "a",
+			}),
+			want: "{\n  \"alpha\": \"a\",\n  \"zebra\": \"z\"\n}\n",
+		},
+		{
+			name: "structured array",
+			val:  Value{v: []any{"a", "b", "c"}},
+			want: "[\n  \"a\",\n  \"b\",\n  \"c\"\n]\n",
+		},
+		{
+			name: "nested structured value",
+			val: ValueFromMap(map[string]any{
+				"items": []any{
+					map[string]any{"id": json.Number("1"), "name": "first"},
+				},
+			}),
+			want: "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"name\": \"first\"\n    }\n  ]\n}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := RenderValue(tt.val)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(got))
+		})
+	}
+}

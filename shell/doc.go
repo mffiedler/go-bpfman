@@ -63,6 +63,11 @@
 //     directly so that command parsers can extract the relevant field
 //     without re-parsing dollar prefixes or calling session.Get.
 //
+//   - [AdapterArg]: an inline adapter invocation (file:$var.path).
+//     The adapter name, variable name, path, and resolved [Value]
+//     are carried so that command handlers can render the value to
+//     the appropriate transport form (e.g. a temporary file).
+//
 // This is the contract between shell and its clients. Clients
 // receive typed, structured arguments and never need to re-discover
 // variable references from strings.

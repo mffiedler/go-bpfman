@@ -267,6 +267,116 @@ func TestSessionAssertFailures(t *testing.T) {
 	assert.Equal(t, 3, s.AssertFailures())
 }
 
+func TestSessionExpandAdapterRef(t *testing.T) {
+	progData := map[string]any{
+		"id":   json.Number("42"),
+		"name": "test_prog",
+		"maps": []any{
+			map[string]any{"name": "counts"},
+			map[string]any{"name": "events"},
+		},
+		"details": map[string]any{
+			"kernel_id": json.Number("99"),
+		},
+	}
+
+	newSession := func() *Session {
+		s := NewSession()
+		s.Set("prog", ValueFromMap(progData))
+		s.Set("simple", StringValue("hello"))
+		return s
+	}
+
+	t.Run("adapter ref with scalar value", func(t *testing.T) {
+		s := newSession()
+		got, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$simple", Adapter: "file", VarName: "simple"},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		aa, ok := got[0].(AdapterArg)
+		require.True(t, ok)
+		assert.Equal(t, "file", aa.Adapter)
+		assert.Equal(t, "simple", aa.Name)
+		assert.True(t, aa.Value.IsScalar())
+		str, err := aa.Value.Scalar()
+		require.NoError(t, err)
+		assert.Equal(t, "hello", str)
+	})
+
+	t.Run("adapter ref with bare structured value", func(t *testing.T) {
+		s := newSession()
+		got, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$prog", Adapter: "file", VarName: "prog"},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		aa, ok := got[0].(AdapterArg)
+		require.True(t, ok)
+		assert.True(t, aa.Value.IsStructured())
+	})
+
+	t.Run("adapter ref with pathed structured subtree", func(t *testing.T) {
+		s := newSession()
+		got, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$prog.details", Adapter: "file", VarName: "prog", VarPath: "details"},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		aa, ok := got[0].(AdapterArg)
+		require.True(t, ok)
+		assert.True(t, aa.Value.IsStructured())
+	})
+
+	t.Run("adapter ref with pathed scalar leaf", func(t *testing.T) {
+		s := newSession()
+		got, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$prog.name", Adapter: "file", VarName: "prog", VarPath: "name"},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		aa, ok := got[0].(AdapterArg)
+		require.True(t, ok)
+		assert.True(t, aa.Value.IsScalar())
+		str, err := aa.Value.Scalar()
+		require.NoError(t, err)
+		assert.Equal(t, "test_prog", str)
+	})
+
+	t.Run("adapter ref with undefined variable", func(t *testing.T) {
+		s := newSession()
+		_, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$unknown", Adapter: "file", VarName: "unknown"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined variable: unknown")
+	})
+
+	t.Run("adapter ref with null value", func(t *testing.T) {
+		s := newSession()
+		s.Set("n", Value{})
+		_, err := s.Expand([]Token{
+			{Kind: TokenAdapterRef, Text: "file:$n", Adapter: "file", VarName: "n"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "null")
+	})
+
+	t.Run("adapter ref mixed with normal tokens", func(t *testing.T) {
+		s := newSession()
+		got, err := s.Expand([]Token{
+			{Kind: TokenWord, Text: "diff"},
+			{Kind: TokenAdapterRef, Text: "file:$prog.name", Adapter: "file", VarName: "prog", VarPath: "name"},
+			{Kind: TokenAdapterRef, Text: "file:$simple", Adapter: "file", VarName: "simple"},
+		})
+		require.NoError(t, err)
+		require.Len(t, got, 3)
+		assert.IsType(t, WordArg{}, got[0])
+		assert.IsType(t, AdapterArg{}, got[1])
+		assert.IsType(t, AdapterArg{}, got[2])
+	})
+}
+
 func TestSessionExpandNilVariable(t *testing.T) {
 	s := NewSession()
 	s.Set("n", Value{}) // nil value
