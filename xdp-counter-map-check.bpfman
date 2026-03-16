@@ -18,30 +18,26 @@
 # not trigger XDP because the kernel routes through loopback.
 
 # Create a namespace and veth pair for traffic generation.
-require ok exec ip netns add bpfman-test
-require ok exec ip link add veth-host type veth peer name veth-ns
-require ok exec ip link set veth-ns netns bpfman-test
-require ok exec ip addr add 198.51.100.1/24 dev veth-host
-require ok exec ip link set veth-host up
-require ok exec ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
-require ok exec ip netns exec bpfman-test ip link set veth-ns up
+exec ip netns add bpfman-test
+exec ip link add veth-host type veth peer name veth-ns
+exec ip link set veth-ns netns bpfman-test
+exec ip addr add 198.51.100.1/24 dev veth-host
+exec ip link set veth-host up
+exec ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
+exec ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
 let prog = load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
-require not nil prog
-set pid = $prog.record.program_id
-set map_id = $prog.status.maps[0].id
 
 # Attach to the veth endpoint in the root namespace.
 let link = link attach xdp -i veth-host $prog
-require not nil link
 
 # First burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
 exec sleep 1
 
 # Snapshot the counters after the first burst.
-let raw1 = exec bpftool map dump id $map_id
+let raw1 = exec bpftool map dump id $prog.status.maps[0].id
 let snap1 = json parse $raw1.stdout
 
 # Second burst of traffic.
@@ -51,7 +47,7 @@ exec sleep 1
 # Snapshot again. Because this is a per-CPU map, traffic may be counted
 # on different CPUs across bursts, so compare the full dump rather than
 # a single CPU slot.
-let raw2 = exec bpftool map dump id $map_id
+let raw2 = exec bpftool map dump id $prog.status.maps[0].id
 let snap2 = json parse $raw2.stdout
 assert ne $raw1.stdout $raw2.stdout
 
@@ -66,7 +62,7 @@ dump d.stdout
 link detach $link
 assert fail link get $link
 
-program unload $pid
+program unload $prog
 
 exec ip link del veth-host
 exec ip netns del bpfman-test
