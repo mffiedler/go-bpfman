@@ -46,7 +46,7 @@ The REPL already has a useful structured value model.
 A user can write:
 
 ```
-let prog = program get 123
+let prog = bpfman program get 123
 print prog.record.program_id
 ```
 
@@ -111,8 +111,8 @@ or equivalent syntax.
 Once a value is structured, the same mental model should apply whether
 it came from:
 
-- `program get`
-- `link get`
+- `bpfman program get`
+- `bpfman link get`
 - `exec ... --json`
 - any future command that yields structured data
 
@@ -140,7 +140,7 @@ assert not-empty $data[0].name
 or, for native values:
 
 ```
-let prog = program get 123
+let prog = bpfman program get 123
 print prog.record.name
 ```
 
@@ -192,7 +192,7 @@ centre is `shell.Value` and the existing path model that operates on
 it.
 
 JSON is simply another producer of structured values, alongside native
-commands like `program get` and `link get`.
+commands like `bpfman program get` and `bpfman link get`.
 
 If the design is framed as "JSON support", users may incorrectly infer
 that:
@@ -371,7 +371,7 @@ print data[0].name
 Likewise for native values:
 
 ```
-let prog = program get 123
+let prog = bpfman program get 123
 print prog.record.program_id
 print prog.status.kernel_seen
 ```
@@ -555,7 +555,7 @@ They should not be.
 For example, this should remain ordinary:
 
 ```
-let prog = program get 123
+let prog = bpfman program get 123
 print prog.record.program_id
 ```
 
@@ -621,7 +621,7 @@ print ifaces[0].ifname
 ### Native value and parsed JSON side by side
 
 ```
-let prog = program get 123
+let prog = bpfman program get 123
 let raw = exec bpftool prog show --json
 let data = json parse $raw.stdout
 
@@ -634,7 +634,7 @@ print data[0].id
 ```
 let raw = exec bpftool prog show --json
 let data = json parse $raw.stdout
-program get $data[0].id
+bpfman program get $data[0].id
 ```
 
 This demonstrates convergence of the two worlds: external JSON is

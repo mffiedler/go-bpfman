@@ -27,10 +27,10 @@ exec ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
 exec ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
-let prog = load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
+let prog = bpfman load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
 
 # Attach to the veth endpoint in the root namespace.
-let link = link attach xdp -i veth-host $prog
+let link = bpfman link attach xdp -i veth-host $prog
 
 # First burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -59,10 +59,10 @@ assert $d.exit_code <= 1
 dump d.stdout
 
 # Clean up: detach, unload, remove network resources.
-link detach $link
-assert fail link get $link
+bpfman link detach $link
+assert fail bpfman link get $link
 
-program unload $prog
+bpfman program unload $prog
 
 exec ip link del veth-host
 exec ip netns del bpfman-test

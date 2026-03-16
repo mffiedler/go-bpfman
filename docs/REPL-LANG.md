@@ -18,11 +18,11 @@ no expressions, no block structure.
 Example session:
 
 ```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
-let link = link attach tracepoint --tracepoint sched/sched_switch $prog
-show program $prog maps
-link detach $link
-program delete $prog.record.program_id
+let prog = bpfman load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let link = bpfman link attach tracepoint --tracepoint sched/sched_switch $prog
+bpfman show program $prog maps
+bpfman link detach $link
+bpfman program delete $prog.record.program_id
 ```
 
 ## Design decisions
@@ -54,7 +54,7 @@ origin metadata for type-safety checks.
 `let` binds the structured result of a command:
 
 ```
-let prog = load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
+let prog = bpfman load file --path foo.o --programs tracepoint:my_prog:sched/sched_switch
 ```
 
 `set` binds a scalar literal or the expansion of a variable reference:
@@ -79,15 +79,15 @@ links.
 This enables concise command syntax:
 
 ```
-show program $prog
-link detach $link
+bpfman show program $prog
+bpfman link detach $link
 ```
 
 rather than requiring explicit path access for every use:
 
 ```
-show program $prog.record.program_id
-link detach $link.record.id
+bpfman show program $prog.record.program_id
+bpfman link detach $link.record.id
 ```
 
 The command parser performs origin-type checking on the `Value` to
@@ -99,7 +99,7 @@ program is expected.
 Commands that produce rendered output accept `-o <format>` to control
 the output format. Supported formats are `table` (default), `wide`,
 `json`, and `jsonpath=<expr>`. Sub-views (e.g. `maps`, `links`,
-`paths` for `show program`) are positional arguments to the command,
+`paths` for `bpfman show program`) are positional arguments to the command,
 not language-level syntax.
 
 ### 6. JSONPath is an escape hatch
@@ -213,22 +213,22 @@ empty value. Assignment to such a command is an error:
 [repl] error: command produced no result to assign
 ```
 
-| Command          | Assignable | Returned Value                          |
-|------------------|------------|-----------------------------------------|
-| `load file`      | yes        | loaded program(s) as structured value   |
-| `load image`     | yes        | loaded program(s) as structured value   |
-| `link attach`    | yes        | attached link as structured value        |
-| `program get`    | yes        | program record as structured value      |
-| `link get`       | yes        | link record as structured value          |
-| `show program`   | no         | rendered output only                    |
-| `list programs`  | no         | rendered output only                    |
-| `list links`     | no         | rendered output only                    |
-| `program unload` | no         | side effect only                        |
-| `program delete` | no         | side effect only                        |
-| `link detach`    | no         | side effect only                        |
-| `link delete`    | no         | side effect only                        |
-| `gc`             | no         | rendered output only                    |
-| `doctor`         | no         | rendered output only                    |
+| Command                | Assignable | Returned Value                          |
+|------------------------|------------|-----------------------------------------|
+| `bpfman load file`     | yes        | loaded program(s) as structured value   |
+| `bpfman load image`    | yes        | loaded program(s) as structured value   |
+| `bpfman link attach`   | yes        | attached link as structured value        |
+| `bpfman program get`   | yes        | program record as structured value      |
+| `bpfman link get`      | yes        | link record as structured value          |
+| `bpfman show program`  | no         | rendered output only                    |
+| `bpfman list programs` | no         | rendered output only                    |
+| `bpfman list links`    | no         | rendered output only                    |
+| `bpfman program unload`| no         | side effect only                        |
+| `bpfman program delete`| no         | side effect only                        |
+| `bpfman link detach`   | no         | side effect only                        |
+| `bpfman link delete`   | no         | side effect only                        |
+| `bpfman gc`            | no         | rendered output only                    |
+| `bpfman doctor`        | no         | rendered output only                    |
 
 ## Execution model
 

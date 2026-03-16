@@ -48,67 +48,67 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 	}{
 		{
 			name:        "absolute path to directory",
-			line:        "load file --path " + root + "/e2e/",
+			line:        "bpfman load file --path " + root + "/e2e/",
 			wantReplace: len(root + "/e2e/"),
 			wantAny:     []string{root + "/e2e/testdata/", root + "/e2e/README"},
 			wantNonZero: true,
 		},
 		{
 			name:        "absolute path partial match",
-			line:        "load file --path " + root + "/e2e/test",
+			line:        "bpfman load file --path " + root + "/e2e/test",
 			wantReplace: len(root + "/e2e/test"),
 			wantAny:     []string{root + "/e2e/testdata/"},
 			wantNonZero: true,
 		},
 		{
 			name:        "relative path ./e2e/",
-			line:        "load file --path ./e2e/",
+			line:        "bpfman load file --path ./e2e/",
 			wantReplace: len("./e2e/"),
 			wantAny:     []string{"./e2e/testdata/", "./e2e/README"},
 			wantNonZero: true,
 		},
 		{
 			name:        "relative path ./e2e/test",
-			line:        "load file --path ./e2e/test",
+			line:        "bpfman load file --path ./e2e/test",
 			wantReplace: len("./e2e/test"),
 			wantAny:     []string{"./e2e/testdata/"},
 			wantNonZero: true,
 		},
 		{
 			name:        "relative path without dot prefix",
-			line:        "load file --path e2e/test",
+			line:        "bpfman load file --path e2e/test",
 			wantReplace: len("e2e/test"),
 			wantAny:     []string{"e2e/testdata/"},
 			wantNonZero: true,
 		},
 		{
 			name:        "short flag -p",
-			line:        "load file -p ./e2e/test",
+			line:        "bpfman load file -p ./e2e/test",
 			wantReplace: len("./e2e/test"),
 			wantAny:     []string{"./e2e/testdata/"},
 			wantNonZero: true,
 		},
 		{
 			name:        "--path with trailing space lists cwd",
-			line:        "load file --path ",
+			line:        "bpfman load file --path ",
 			wantReplace: 0,
 			wantAny:     []string{"./e2e/", "./somefile.o"},
 			wantNonZero: true,
 		},
 		{
 			name:        "-p with trailing space lists cwd",
-			line:        "load file -p ",
+			line:        "bpfman load file -p ",
 			wantReplace: 0,
 			wantNonZero: true,
 		},
 		{
 			name:        "nonexistent path returns nothing",
-			line:        "load file --path /nonexistent/path/xyz",
+			line:        "bpfman load file --path /nonexistent/path/xyz",
 			wantReplace: len("/nonexistent/path/xyz"),
 		},
 		{
 			name:        "file completion with .o filter prefix",
-			line:        "load file --path " + root + "/e2e/testdata/s",
+			line:        "bpfman load file --path " + root + "/e2e/testdata/s",
 			wantReplace: len(root + "/e2e/testdata/s"),
 			wantAny:     []string{root + "/e2e/testdata/stats.o"},
 			wantNone:    []string{root + "/e2e/testdata/other.o"},
@@ -196,36 +196,42 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 		{
 			name:        "empty line completes commands",
 			line:        "",
-			wantAny:     []string{"help ", "load ", "list "},
+			wantAny:     []string{"help ", "bpfman "},
 			wantReplace: 0,
 		},
 		{
-			name:        "partial load",
-			line:        "lo",
-			wantAny:     []string{"load "},
-			wantReplace: len("lo"),
+			name:        "partial bpfman",
+			line:        "bp",
+			wantAny:     []string{"bpfman "},
+			wantReplace: len("bp"),
 		},
 		{
-			name:        "load completes to file",
-			line:        "load ",
-			wantAny:     []string{"file "},
+			name:        "bpfman completes domain commands",
+			line:        "bpfman ",
+			wantAny:     []string{"program ", "link ", "load "},
 			wantReplace: 0,
 		},
 		{
-			name:        "list completes to programs",
-			line:        "list ",
+			name:        "bpfman load completes to file and image",
+			line:        "bpfman load ",
+			wantAny:     []string{"file ", "image "},
+			wantReplace: 0,
+		},
+		{
+			name:        "bpfman list completes to programs",
+			line:        "bpfman list ",
 			wantAny:     []string{"programs "},
 			wantReplace: 0,
 		},
 		{
-			name:        "program completes to delete, list, and load",
-			line:        "program ",
+			name:        "bpfman program completes to delete, list, and load",
+			line:        "bpfman program ",
 			wantAny:     []string{"delete ", "list ", "load "},
 			wantReplace: 0,
 		},
 		{
-			name:        "program partial delete",
-			line:        "program de",
+			name:        "bpfman program partial delete",
+			line:        "bpfman program de",
 			wantAny:     []string{"delete "},
 			wantReplace: len("de"),
 		},
@@ -303,7 +309,7 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
-	input := "show program $x.id\n"
+	input := "bpfman show program $x.id\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -843,20 +849,20 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 		wantReplace int
 	}{
 		{
-			name:        "show program $prog. completes fields",
-			line:        "show program $prog.",
+			name:        "bpfman show program $prog. completes fields",
+			line:        "bpfman show program $prog.",
 			wantAny:     []string{"$prog.record.", "$prog.name "},
 			wantReplace: 6,
 		},
 		{
-			name:        "show program $prog.record. completes nested",
-			line:        "show program $prog.record.",
+			name:        "bpfman show program $prog.record. completes nested",
+			line:        "bpfman show program $prog.record.",
 			wantAny:     []string{"$prog.record.program_id "},
 			wantReplace: 13,
 		},
 		{
-			name:        "program delete $prog. completes fields",
-			line:        "program delete $prog.",
+			name:        "bpfman program delete $prog. completes fields",
+			line:        "bpfman program delete $prog.",
 			wantAny:     []string{"$prog.record.", "$prog.name "},
 			wantReplace: 6,
 		},
@@ -923,20 +929,20 @@ func TestReplComplete_ProgramDeleteAll(t *testing.T) {
 		wantReplace int
 	}{
 		{
-			name:        "program delete offers --all",
-			line:        "program delete ",
+			name:        "bpfman program delete offers --all",
+			line:        "bpfman program delete ",
 			wantAny:     []string{"--all "},
 			wantReplace: 0,
 		},
 		{
-			name:        "program delete partial --a",
-			line:        "program delete --a",
+			name:        "bpfman program delete partial --a",
+			line:        "bpfman program delete --a",
 			wantAny:     []string{"--all "},
 			wantReplace: 3,
 		},
 		{
-			name:        "program delete partial --al",
-			line:        "program delete --al",
+			name:        "bpfman program delete partial --al",
+			line:        "bpfman program delete --al",
 			wantAny:     []string{"--all "},
 			wantReplace: 4,
 		},
@@ -954,8 +960,8 @@ func TestReplComplete_ProgramDeleteAll(t *testing.T) {
 }
 
 func TestReplComplete_ProgramGetNoAll(t *testing.T) {
-	// "program get" should offer program IDs, not --all.
-	replace, candidates := replComplete(context.Background(), nil, nil, "program get ", len("program get "))
+	// "bpfman program get" should offer program IDs, not --all.
+	replace, candidates := replComplete(context.Background(), nil, nil, "bpfman program get ", len("bpfman program get "))
 	assert.Equal(t, 0, replace)
 	for _, c := range candidates {
 		assert.NotEqual(t, "--all ", c, "program get must not offer --all")
@@ -1035,32 +1041,32 @@ func TestReplComplete_NewCommands(t *testing.T) {
 		wantReplace int
 	}{
 		{
-			name:        "link completes subcommands",
-			line:        "link ",
+			name:        "bpfman link completes subcommands",
+			line:        "bpfman link ",
 			wantAny:     []string{"attach ", "detach ", "get ", "list ", "delete "},
 			wantReplace: 0,
 		},
 		{
-			name:        "link partial",
-			line:        "link at",
+			name:        "bpfman link partial",
+			line:        "bpfman link at",
 			wantAny:     []string{"attach "},
 			wantReplace: 2,
 		},
 		{
-			name:        "dispatcher completes subcommands",
-			line:        "dispatcher ",
+			name:        "bpfman dispatcher completes subcommands",
+			line:        "bpfman dispatcher ",
 			wantAny:     []string{"delete ", "get ", "list "},
 			wantReplace: 0,
 		},
 		{
-			name:        "doctor completes subcommands",
-			line:        "doctor ",
+			name:        "bpfman doctor completes subcommands",
+			line:        "bpfman doctor ",
 			wantAny:     []string{"checkup ", "explain "},
 			wantReplace: 0,
 		},
 		{
-			name:        "program completes new subcommands",
-			line:        "program ",
+			name:        "bpfman program completes new subcommands",
+			line:        "bpfman program ",
 			wantAny:     []string{"get ", "unload "},
 			wantReplace: 0,
 		},
@@ -1071,32 +1077,32 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			wantReplace: 3,
 		},
 		{
-			name:        "gc in top-level completions",
-			line:        "gc",
+			name:        "bpfman gc in domain completions",
+			line:        "bpfman g",
 			wantAny:     []string{"gc "},
-			wantReplace: 2,
+			wantReplace: 1,
 		},
 		{
-			name:        "link attach completes types",
-			line:        "link attach ",
+			name:        "bpfman link attach completes types",
+			line:        "bpfman link attach ",
 			wantAny:     []string{"xdp ", "tc ", "tracepoint ", "kprobe "},
 			wantReplace: 0,
 		},
 		{
-			name:        "link attach partial type",
-			line:        "link attach xd",
+			name:        "bpfman link attach partial type",
+			line:        "bpfman link attach xd",
 			wantAny:     []string{"xdp "},
 			wantReplace: 2,
 		},
 		{
-			name:        "load completes image subcommand",
-			line:        "load ",
+			name:        "bpfman load completes image subcommand",
+			line:        "bpfman load ",
 			wantAny:     []string{"file ", "image "},
 			wantReplace: 0,
 		},
 		{
-			name:        "program load completes file and image",
-			line:        "program load ",
+			name:        "bpfman program load completes file and image",
+			line:        "bpfman program load ",
 			wantAny:     []string{"file ", "image "},
 			wantReplace: 0,
 		},
@@ -1114,8 +1120,8 @@ func TestReplComplete_NewCommands(t *testing.T) {
 }
 
 func TestReplLoop_DoctorExplain(t *testing.T) {
-	// "doctor explain" without a rule should list all rules.
-	input := "doctor explain\n"
+	// "bpfman doctor explain" without a rule should list all rules.
+	input := "bpfman doctor explain\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1126,7 +1132,7 @@ func TestReplLoop_DoctorExplain(t *testing.T) {
 }
 
 func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
-	input := "doctor explain nosuch-rule\n"
+	input := "bpfman doctor explain nosuch-rule\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1137,7 +1143,7 @@ func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
 }
 
 func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
-	input := "doctor bogus\n"
+	input := "bpfman doctor bogus\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1148,7 +1154,7 @@ func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
 }
 
 func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
-	input := "program get\n"
+	input := "bpfman program get\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1159,7 +1165,7 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
-	input := "program unload\n"
+	input := "bpfman program unload\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1170,7 +1176,7 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkAttachNoType(t *testing.T) {
-	input := "link attach\n"
+	input := "bpfman link attach\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1181,7 +1187,7 @@ func TestReplLoop_LinkAttachNoType(t *testing.T) {
 }
 
 func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
-	input := "link attach bogus\n"
+	input := "bpfman link attach bogus\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1192,7 +1198,7 @@ func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
 }
 
 func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
-	input := "link detach\n"
+	input := "bpfman link detach\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1203,7 +1209,7 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkGetNoArgs(t *testing.T) {
-	input := "link get\n"
+	input := "bpfman link get\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1214,7 +1220,7 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
-	input := "link delete\n"
+	input := "bpfman link delete\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)

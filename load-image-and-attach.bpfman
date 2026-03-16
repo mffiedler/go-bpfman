@@ -9,28 +9,28 @@ require ok exec ip link add bpfman-demo type dummy
 require ok exec ip link set bpfman-demo up
 
 # Load the XDP pass program from the bpfman bytecode registry.
-let prog = load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
+let prog = bpfman load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
 require not nil prog
 set pid = $prog.record.program_id
 assert not-empty $pid
 
 # Attach to the dummy interface.
-let link = link attach xdp -i bpfman-demo $prog
+let link = bpfman link attach xdp -i bpfman-demo $prog
 require not nil link
 
 # Verify the program and link are visible.
-assert ok show program $pid
-require ok link get $link
+assert ok bpfman show program $pid
+require ok bpfman link get $link
 
 # List all managed programs and links.
-list programs
-link list
+bpfman list programs
+bpfman link list
 
 # Clean up: detach the link, then unload the program.
-link detach $link
-assert fail link get $link
+bpfman link detach $link
+assert fail bpfman link get $link
 
-program unload $pid
+bpfman program unload $pid
 
 # Remove the dummy interface.
 exec ip link del bpfman-demo

@@ -442,9 +442,9 @@ The implemented behaviour is:
 
     exec ip link add dummy0 type dummy
     exec ip link set dummy0 up
-    let prog = load file -p ./xdp.o --programs xdp:pass
-    let link = link attach xdp -i dummy0 $prog
-    show program $prog links
+    let prog = bpfman load file -p ./xdp.o --programs xdp:pass
+    let link = bpfman link attach xdp -i dummy0 $prog
+    bpfman show program $prog links
     exec ip link del dummy0
 
 ### Variable expansion

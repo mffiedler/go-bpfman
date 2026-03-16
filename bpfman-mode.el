@@ -18,11 +18,11 @@
 ;; Language features:
 ;;
 ;;   Comments:     # to end of line (not inside quotes)
-;;   Assignment:   let prog = load file --path foo.o
+;;   Assignment:   let prog = bpfman load file --path foo.o
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
 ;;   Strings:      "double quoted", 'single quoted'
 ;;   Flags:        --path, -m, --dry-run
-;;   Commands:     load, show, program, link, etc.
+;;   Commands:     bpfman (domain gateway), assert, exec, etc.
 ;;
 ;; Highlighting uses a custom font-lock matcher that parses each line
 ;; structurally, so tokens are fontified according to their position
@@ -46,9 +46,9 @@
 
 (defconst bpfman--commands
   (let ((ht (make-hash-table :test 'equal)))
-    (dolist (w '("assert" "dispatcher" "doctor" "dump" "exec" "file"
-                 "gc" "help" "json" "let" "link" "list" "load"
-                 "program" "programs" "require" "set" "show" "source"
+    (dolist (w '("assert" "bpfman" "dump" "exec" "file"
+                 "help" "json" "let"
+                 "require" "set" "source"
                  "unset" "vars" "version"))
       (puthash w t ht))
     ht)
@@ -56,10 +56,13 @@
 
 (defconst bpfman--subcommands
   (let ((ht (make-hash-table :test 'equal)))
-    (dolist (w '(;; subcommands
+    (dolist (w '(;; domain commands (after "bpfman" prefix)
+                 "dispatcher" "doctor" "gc" "link" "list" "load"
+                 "program" "programs" "show"
+                 ;; subcommands
                  "attach" "checkup" "delete" "detach" "explain" "file"
-                 "get" "image" "list" "load" "parse" "program"
-                 "programs" "status" "temp" "unload"
+                 "get" "image" "parse"
+                 "status" "temp" "unload"
                  ;; attach types
                  "fentry" "fexit" "kprobe" "tc" "tcx" "tracepoint"
                  "uprobe" "xdp"

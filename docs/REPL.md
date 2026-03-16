@@ -31,9 +31,9 @@ The REPL is partially implemented. What exists today:
 
 Commands:
 	-	help
-	-	list programs / program list
-	-	load file [flags]
-	-	program delete <id>... [-r]
+	-	bpfman list programs / bpfman program list
+	-	bpfman load file [flags]
+	-	bpfman program delete <id>... [-r]
 
 Input modes:
 	-	Interactive readline with history and tab completion.
@@ -160,7 +160,7 @@ CLI parity
 
 Every CLI command should work in the REPL. The REPL is the CLI with
 a persistent session, readline, and completion. If you can type
-"bpfman program list", you can type "program list" at the REPL
+"bpfman program list", you can type "bpfman program list" at the REPL
 prompt.
 
 Inspection through sub-views
@@ -169,14 +169,14 @@ The debugger surface is the `show` command with sub-views. A program
 ID is the pivot point; sub-views fan out to different facets of the
 same entity:
 
-show program 12
-show program 12 links
-show program 12 maps
-show program 12 paths
-show dispatcher xdp nsid=1 ifindex=2
-show dispatcher xdp nsid=1 ifindex=2 slots
+bpfman show program 12
+bpfman show program 12 links
+bpfman show program 12 maps
+bpfman show program 12 paths
+bpfman show dispatcher xdp nsid=1 ifindex=2
+bpfman show dispatcher xdp nsid=1 ifindex=2 slots
 drift
-gc --dry-run
+bpfman gc --dry-run
 
 Each sub-view is a rendering choice over the same underlying data,
 not a different query. The typed result carries everything; the
@@ -331,20 +331,20 @@ type and produces output in one of:
 	-	tree (hierarchical, useful for dispatchers and relationships)
 	-	JSON (machine-readable, stable for automation)
 
-Sub-views are rendering selections, not distinct queries. "show
-program 12 maps" runs the same GetProgram query as "show program 12"
-but renders only the maps facet.
+Sub-views are rendering selections, not distinct queries. "bpfman show
+program 12 maps" runs the same GetProgram query as "bpfman show
+program 12" but renders only the maps facet.
 
 The CLI already has rendering infrastructure for table, JSON, tree,
 and jsonpath output. The REPL reuses and extends that.
 
 Example Session
 
-bpfman> list programs
+bpfman> bpfman list programs
 PROGRAM ID  TYPE        NAME                      SOURCE
 195043      tracepoint  tracepoint_kill_recorder  /run/bpfman/programs/195043/bytecode.o
 
-bpfman> show program 195043
+bpfman> bpfman show program 195043
 Program 195043: tracepoint_kill_recorder (tracepoint)
   Source:     /run/bpfman/programs/195043/bytecode.o
   Loaded:     2026-03-13T19:42:01Z
@@ -355,16 +355,16 @@ Program 195043: tracepoint_kill_recorder (tracepoint)
   Maps (2):    kill_events, rb_events
   Links (1):   8801 (sched/sched_switch)
 
-bpfman> show program 195043 maps
+bpfman> bpfman show program 195043 maps
 ID     NAME           TYPE       KEYS   VALUES  MAX   PIN                                            PRESENT
 4201   kill_events    ringbuf    0B     0B      256   /sys/fs/bpf/bpfman/maps/195043/kill_events    yes
 4202   rb_events      ringbuf    0B     0B      256   /sys/fs/bpf/bpfman/maps/195043/rb_events      yes
 
-bpfman> show program 195043 links
+bpfman> bpfman show program 195043 links
 ID     TYPE          ATTACH                PIN                                                       PRESENT
 8801   tracepoint    sched/sched_switch    /sys/fs/bpf/bpfman/links/195043/sched_sched_switch       yes
 
-bpfman> show program 195043 paths
+bpfman> bpfman show program 195043 paths
 /sys/fs/bpf/bpfman/prog_195043                              present
 /sys/fs/bpf/bpfman/maps/195043/                             present (2 pins)
 /sys/fs/bpf/bpfman/maps/195043/kill_events                  present
@@ -373,14 +373,14 @@ bpfman> show program 195043 paths
 /sys/fs/bpf/bpfman/links/195043/sched_sched_switch          present
 /run/bpfman/programs/195043/bytecode.o                       present
 
-bpfman> drift
+bpfman> bpfman drift
 SEVERITY  CATEGORY     RULE                    DESCRIPTION
 warning   filesystem   orphan-fs-entries       /sys/fs/bpf/bpfman/prog_99: no DB record
 error     kernel       program-in-kernel       program 20: in store but not in kernel
 
 2 findings: 1 error, 1 warning
 
-bpfman> gc --dry-run
+bpfman> bpfman gc --dry-run
 Violations:
   [error] program 20: in store but not in kernel
     -> DeleteProgram{ProgramID: 20}
@@ -407,7 +407,7 @@ Implementation Strategy
 
 Step 1: show program with sub-views
 
-Build the `show program <id>` command in the REPL with sub-views:
+Build the `bpfman show program <id>` command in the REPL with sub-views:
 summary (default), links, maps, paths. This requires enriching the
 GetProgram result to include per-map and per-link pin path
 correlation, which inspect.GetProgram currently does not carry.

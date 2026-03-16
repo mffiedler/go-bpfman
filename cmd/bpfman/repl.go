@@ -32,25 +32,33 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec", "file", "gc", "help", "json", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
+// Domain commands live behind the "bpfman" prefix; shell-language
+// commands are bare.
+var replCommandNames = []string{"assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "set", "source", "unset", "vars", "version"}
 
-// replSubcommands maps a top-level token to its valid subcommands for completion.
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
 
+// replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
-	"assert":     replAssertVerbs,
+	"assert":  replAssertVerbs,
+	"bpfman":  {"dispatcher", "doctor", "gc", "link", "list", "load", "program", "programs", "show"},
+	"exec":    {"status"},
+	"file":    {"temp"},
+	"json":    {"parse"},
+	"require": replAssertVerbs,
+}
+
+// bpfmanSubcommands maps a bpfman domain token to its valid
+// subcommands for completion.
+var bpfmanSubcommands = map[string][]string{
 	"dispatcher": {"delete", "get", "list"},
 	"doctor":     {"checkup", "explain"},
-	"exec":       {"status"},
-	"file":       {"temp"},
-	"json":       {"parse"},
 	"link":       {"attach", "delete", "detach", "get", "list"},
 	"list":       {"programs"},
 	"load":       {"file", "image"},
 	"program":    {"delete", "get", "list", "load", "unload"},
 	"programs":   {"list"},
-	"require":    replAssertVerbs,
 	"show":       {"program"},
 }
 
@@ -447,6 +455,12 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 		}
 	}
 
+	// When the first token is "bpfman", delegate to domain
+	// completion with the prefix stripped.
+	if len(tokens) >= 1 && tokens[0] == "bpfman" {
+		return replCompleteBpfman(ctx, mgr, session, tokens[1:], trailingSpace)
+	}
+
 	switch {
 	case len(tokens) == 0 || (len(tokens) == 1 && !trailingSpace):
 		// Completing the first token.
@@ -506,6 +520,46 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 		candidates, replace = replCompleteArgs(ctx, mgr, session, tokens, trailingSpace)
 	}
 
+	return
+}
+
+// replCompleteBpfman handles completion for tokens after the leading
+// "bpfman" prefix. The args slice has the prefix already stripped.
+func replCompleteBpfman(ctx context.Context, mgr *manager.Manager, session *shell.Session, args []string, trailingSpace bool) (replace int, candidates []string) {
+	// "bpfman " or "bpfman dis..." -- complete domain command names.
+	if len(args) == 0 || (len(args) == 1 && !trailingSpace) {
+		prefix := ""
+		if len(args) == 1 {
+			prefix = args[0]
+		}
+		for _, sub := range replSubcommands["bpfman"] {
+			if strings.HasPrefix(sub, prefix) {
+				candidates = append(candidates, sub+" ")
+			}
+		}
+		replace = len(prefix)
+		return
+	}
+
+	// "bpfman program " -- complete second-level domain subcommand.
+	if (len(args) == 1 && trailingSpace) || (len(args) == 2 && !trailingSpace) {
+		subs := bpfmanSubcommands[args[0]]
+		prefix := ""
+		if len(args) == 2 {
+			prefix = args[1]
+		}
+		for _, sub := range subs {
+			if strings.HasPrefix(sub, prefix) {
+				candidates = append(candidates, sub+" ")
+			}
+		}
+		replace = len(prefix)
+		return
+	}
+
+	// Third token onwards: delegate to the same arg completer,
+	// using the domain tokens (without the "bpfman" prefix).
+	candidates, replace = replCompleteArgs(ctx, mgr, session, args, trailingSpace)
 	return
 }
 
@@ -1030,12 +1084,19 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 // arguments to the per-command parser and returns a typed Command
 // node, then execCommand dispatches execution via a type-switch.
 func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
-	cmd, err := parseCommand(args)
+	if len(args) == 0 {
+		return shell.Value{}, nil
+	}
+	first := argText(args[0])
+	if first != "bpfman" {
+		return shell.Value{}, fmt.Errorf("unknown command %q; domain commands require a \"bpfman\" prefix (e.g. \"bpfman program list\")", first)
+	}
+	cmd, err := parseCommand(args[1:])
 	if err != nil {
 		return shell.Value{}, err
 	}
 	if cmd == nil {
-		return shell.Value{}, nil
+		return shell.Value{}, fmt.Errorf("missing command after \"bpfman\"; try \"bpfman program list\"")
 	}
 	return execCommand(ctx, cli, mgr, cmd)
 }
@@ -1044,34 +1105,36 @@ func replHelp(cli *CLI) error {
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
 	b.WriteString("\n")
-	b.WriteString("Program management:\n")
-	b.WriteString("  program list [flags]                     List managed BPF programs\n")
-	b.WriteString("  program get <id>                         Get program details (assignable)\n")
-	b.WriteString("  program load file [flags]                Load from a local object file (assignable)\n")
-	b.WriteString("  program load image [flags]               Load from an OCI image (assignable)\n")
-	b.WriteString("  program unload <id>...                   Unload programs\n")
-	b.WriteString("  program delete (<id>... | --all) [-r]    Delete with cascading cleanup\n")
-	b.WriteString("  show program <id> [view] [-o]            Inspect (views: links, maps, paths)\n")
+	b.WriteString("Domain commands (require \"bpfman\" prefix):\n")
 	b.WriteString("\n")
-	b.WriteString("Link management:\n")
-	b.WriteString("  link attach <type> [flags] <id>          Attach a program (assignable)\n")
-	b.WriteString("  link detach <link-id>...                 Detach links\n")
-	b.WriteString("  link get <link-id>                       Get link details (assignable)\n")
-	b.WriteString("  link list [flags]                        List managed links\n")
-	b.WriteString("  link delete <link-id>... [-r]            Delete with cascading cleanup\n")
+	b.WriteString("  Program management:\n")
+	b.WriteString("    bpfman program list [flags]                     List managed BPF programs\n")
+	b.WriteString("    bpfman program get <id>                         Get program details (assignable)\n")
+	b.WriteString("    bpfman program load file [flags]                Load from a local object file (assignable)\n")
+	b.WriteString("    bpfman program load image [flags]               Load from an OCI image (assignable)\n")
+	b.WriteString("    bpfman program unload <id>...                   Unload programs\n")
+	b.WriteString("    bpfman program delete (<id>... | --all) [-r]    Delete with cascading cleanup\n")
+	b.WriteString("    bpfman show program <id> [view] [-o]            Inspect (views: links, maps, paths)\n")
 	b.WriteString("\n")
-	b.WriteString("Dispatcher management:\n")
-	b.WriteString("  dispatcher list [--type <type>]           List dispatchers\n")
-	b.WriteString("  dispatcher get <type> <nsid> <ifindex>    Get dispatcher details\n")
-	b.WriteString("  dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher\n")
+	b.WriteString("  Link management:\n")
+	b.WriteString("    bpfman link attach <type> [flags] <id>          Attach a program (assignable)\n")
+	b.WriteString("    bpfman link detach <link-id>...                 Detach links\n")
+	b.WriteString("    bpfman link get <link-id>                       Get link details (assignable)\n")
+	b.WriteString("    bpfman link list [flags]                        List managed links\n")
+	b.WriteString("    bpfman link delete <link-id>... [-r]            Delete with cascading cleanup\n")
 	b.WriteString("\n")
-	b.WriteString("Diagnostics:\n")
-	b.WriteString("  gc [--dry-run] [--prune] [rule...]       Garbage collect stale resources\n")
-	b.WriteString("  doctor [checkup]                         Run coherency checks\n")
-	b.WriteString("  doctor explain [rule]                    Explain a coherency rule\n")
-	b.WriteString("  version                                  Print version information\n")
+	b.WriteString("  Dispatcher management:\n")
+	b.WriteString("    bpfman dispatcher list [--type <type>]           List dispatchers\n")
+	b.WriteString("    bpfman dispatcher get <type> <nsid> <ifindex>    Get dispatcher details\n")
+	b.WriteString("    bpfman dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher\n")
 	b.WriteString("\n")
-	b.WriteString("Session:\n")
+	b.WriteString("  Diagnostics:\n")
+	b.WriteString("    bpfman gc [--dry-run] [--prune] [rule...]       Garbage collect stale resources\n")
+	b.WriteString("    bpfman doctor [checkup]                         Run coherency checks\n")
+	b.WriteString("    bpfman doctor explain [rule]                    Explain a coherency rule\n")
+	b.WriteString("\n")
+	b.WriteString("Shell commands:\n")
+	b.WriteString("\n")
 	b.WriteString("  exec <command> [args|file:$var...]        Run a host command (assignable)\n")
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
 	b.WriteString("  file temp <variable>[.path]               Write value to temp file (assignable)\n")
@@ -1080,13 +1143,14 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")
+	b.WriteString("  version                                  Print version information\n")
 	b.WriteString("  help                                     Show this help\n")
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
-	b.WriteString("  let prog = load file ...      Assign command result to a variable\n")
-	b.WriteString("  set <name> = <value>          Bind scalar value to variable\n")
-	b.WriteString("  show program $prog            Variable reference (auto-extracts program ID)\n")
-	b.WriteString("  link attach xdp -i eth0 $prog Use $variable as program ID argument\n")
+	b.WriteString("  let prog = bpfman load file ...   Assign command result to a variable\n")
+	b.WriteString("  set <name> = <value>              Bind scalar value to variable\n")
+	b.WriteString("  bpfman show program $prog         Variable reference (auto-extracts program ID)\n")
+	b.WriteString("  bpfman link attach xdp -i eth0 $prog  Use $variable as program ID argument\n")
 	b.WriteString("\n")
 	b.WriteString("Assertions:\n")
 	b.WriteString("  assert <verb> [args...]       Check condition, continue on failure\n")
