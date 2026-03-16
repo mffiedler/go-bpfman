@@ -2036,3 +2036,250 @@ func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
 	// Must not alias the original.
 	assert.NotSame(t, original, quiet)
 }
+
+// --- exec shell command tests ---
+
+func TestReplLoop_ExecSuccess(t *testing.T) {
+	input := "exec echo hello world\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, "hello world\n", outBuf.String())
+}
+
+func TestReplLoop_ExecFailure(t *testing.T) {
+	input := "exec false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exit status 1")
+}
+
+func TestReplLoop_ExecNoArgs(t *testing.T) {
+	input := "exec\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exec requires at least one argument")
+}
+
+func TestReplLoop_ExecCommandNotFound(t *testing.T) {
+	input := "exec __nonexistent_command_12345__\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exec __nonexistent_command_12345__")
+}
+
+func TestReplLoop_ExecLetBinding(t *testing.T) {
+	input := "let out = exec echo hello\nassert contains $out.stdout hello\nassert equal $out.exit_code 0\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	// Bound form should not print stdout.
+	assert.Empty(t, outBuf.String())
+
+	// Variable should be set with a structured value.
+	val, ok := session.Get("out")
+	require.True(t, ok)
+	assert.True(t, val.IsStructured())
+
+	// Verify stdout field contains expected output.
+	stdout, err := val.LookupValue("out", "stdout")
+	require.NoError(t, err)
+	s, err := stdout.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", s)
+}
+
+func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
+	input := "let out = exec echo testing123\ndump out.stdout\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "testing123")
+}
+
+func TestReplLoop_ExecLetFailure(t *testing.T) {
+	// Let binding with a failing command should produce an error.
+	input := "let out = exec false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "exit status 1")
+
+	// Variable should not be set.
+	_, ok := session.Get("out")
+	assert.False(t, ok)
+}
+
+func TestReplLoop_ExecAssertOk(t *testing.T) {
+	input := "assert ok exec echo hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_ExecAssertFail(t *testing.T) {
+	input := "assert fail exec false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_ExecAssertOkFails(t *testing.T) {
+	input := "assert ok exec false\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "FAIL")
+	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
+	input := "assert fail exec echo hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "FAIL")
+	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
+	input := "let out = exec echo \"hello world\"\nassert contains $out.stdout hello\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_ExecArgvField(t *testing.T) {
+	input := "let out = exec echo a b c\ndump out.argv\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "echo")
+	assert.Contains(t, outBuf.String(), "a")
+	assert.Contains(t, outBuf.String(), "b")
+	assert.Contains(t, outBuf.String(), "c")
+}
+
+func TestReplLoop_ExecStderrCaptured(t *testing.T) {
+	// Use sh -c to produce stderr output. The exec command runs
+	// argv[0] directly, so we invoke sh as the command.
+	input := "let out = exec sh -c \"echo errout >&2\"\nassert contains $out.stderr errout\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_ExecVariableExpansion(t *testing.T) {
+	session := shell.NewSession()
+	session.Set("msg", shell.StringValue("expanded"))
+
+	input := "let out = exec echo $msg\nassert contains $out.stdout expanded\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_ExecContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	input := "exec sleep 60\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(ctx, cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.NotEmpty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
+	// Shell commands that do not produce values should still be
+	// rejected in let bindings.
+	input := "let x = help\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "cannot bind result of")
+}
+
+func TestReplComplete_ExecInCommandNames(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "ex", len("ex"))
+	assert.Contains(t, candidates, "exec ")
+}

@@ -2,22 +2,22 @@
 
 ## Summary
 
-Add an `exec` shell command to the bpfman REPL so that users can run
-small host-side helper commands such as `ip`, `tc`, and `bpftool`
-during interactive sessions and scripts.
+The `exec` shell command allows users to run small host-side helper
+commands such as `ip`, `tc`, and `bpftool` during interactive REPL
+sessions and scripts.
 
 The purpose is not to embed a general shell into the REPL. The purpose
 is to support the setup, inspection, and cleanup steps that naturally
 surround `load`, `attach`, `doctor`, and related bpfman workflows.
 
-This document proposes a deliberately narrow design:
+The design is deliberately narrow:
 
 - `exec` is a REPL shell command, not a bpfman domain command
 - arguments are tokenised and expanded by the REPL, then passed
   directly to `exec.CommandContext`
 - there is no `sh -c`
 - there are no pipelines, redirects, globbing, or job control
-- `exec` may return a structured result suitable for `let`
+- `exec` returns a structured result suitable for `let`
 - non-zero exit status is treated as command failure
 
 That gives the REPL a practical escape hatch without collapsing the
@@ -25,9 +25,8 @@ boundary between the REPL language and a full shell.
 
 ## Motivation
 
-Today the REPL can inspect and manage bpfman state, but many realistic
-workflows still require leaving the REPL to prepare the host
-environment.
+The REPL can inspect and manage bpfman state, but many realistic
+workflows require preparing the host environment.
 
 Typical examples include:
 
@@ -51,11 +50,11 @@ A small `exec` command solves that problem.
 
 ## Goals
 
-The feature should satisfy the following goals.
+The feature satisfies the following goals.
 
 ### 1. Support setup and inspection helpers
 
-Users should be able to run commands such as:
+Users can run commands such as:
 
 - `exec ip link add dummy0 type dummy`
 - `exec ip link set dummy0 up`
@@ -64,12 +63,12 @@ Users should be able to run commands such as:
 
 ### 2. Work in both interactive and script mode
 
-The command should behave consistently in interactive REPL sessions and
-in sourced or file-backed scripts.
+The command behaves consistently in interactive REPL sessions and in
+sourced or file-backed scripts.
 
 ### 3. Integrate with variables and assertions
 
-Users should be able to write:
+Users can write:
 
 - `let out = exec ip link show dummy0`
 - `dump out.stdout`
@@ -79,16 +78,16 @@ Users should be able to write:
 
 ### 4. Preserve the existing REPL model
 
-The REPL should remain a small command language with typed values and
-explicit dispatch. `exec` should fit into that model rather than
-introducing an entirely different execution model.
+The REPL remains a small command language with typed values and
+explicit dispatch. `exec` fits into that model without introducing an
+entirely different execution model.
 
 ## Non-goals
 
 This feature is not intended to turn the REPL into a general-purpose
 shell.
 
-Specifically, it must not become:
+Specifically, it does not provide:
 
 - a POSIX shell
 - a command language with pipelines
@@ -98,9 +97,11 @@ Specifically, it must not become:
 - a replacement for writing a real shell script when that is the
   better tool
 
-The following are explicitly out of scope for the initial design:
+The following are explicitly out of scope:
 
-- `sh -c`
+- implicit shell invocation (the REPL never wraps commands in `sh -c`
+  on the user's behalf; a user may still explicitly run `exec sh -c
+  "..."` as the target program)
 - `|`
 - `>`, `>>`, `<`, `2>`
 - `&&`, `||`, `;`
@@ -111,18 +112,24 @@ The following are explicitly out of scope for the initial design:
 - per-command working-directory management
 - REPL builtins that emulate large portions of bash
 
-The design should make those non-goals obvious in both implementation
-and user-visible behaviour.
+The implementation makes those non-goals obvious: `replExec` passes
+the argv vector directly to `exec.CommandContext` and never invokes a
+shell interpreter.
+
+These non-goals describe functionality the REPL does not implement
+itself. Users may still explicitly run external programs, including a
+shell, and thereby opt into those programs' semantics.
 
 ## Why exec belongs in the shell layer
 
-The current REPL has two conceptual layers.
+The REPL has two conceptual layers.
 
 The first layer is the REPL shell language:
 
 - `let`
 - `set`
 - `dump`
+- `exec`
 - `assert`
 - `require`
 - `source`
@@ -156,11 +163,11 @@ Treating it as a shell command preserves a clear architectural rule:
   the host environment
 - domain commands manipulate bpfman-managed state
 
-That separation remains useful even after `exec` is added.
+That separation remains useful with `exec` present.
 
 ## User model
 
-The user model should be simple.
+The user model is simple.
 
 The REPL accepts a command line, tokenises it, expands variables, and
 dispatches it either to:
@@ -168,7 +175,7 @@ dispatches it either to:
 - a shell command implementation, or
 - a typed bpfman domain command parser and executor
 
-`exec` should follow that same pattern.
+`exec` follows that same pattern.
 
 Examples:
 
@@ -178,12 +185,12 @@ Examples:
     assert contains $out.stdout dummy0
     assert fail exec ip link del does-not-exist
 
-The user should not have to learn shell quoting or shell expansion
-rules beyond the REPL's own tokenisation rules.
+The user does not have to learn shell quoting or shell expansion rules
+beyond the REPL's own tokenisation rules.
 
 ## Syntax
 
-The proposed syntax is:
+The syntax is:
 
     exec <argv...>
 
@@ -216,83 +223,92 @@ That means:
 - quoted strings remain single arguments
 - `$var` expansion happens through the REPL's existing `shell.Session`
   model
-- structured values are not passed directly to subprocesses; they must
-  first be resolved to scalar values where appropriate
+- structured values are not passed directly to subprocesses; they are
+  resolved to scalar text via `argTexts`
+
+`exec` is argv-oriented. It does not serialise structured REPL values
+for subprocess input. If a command needs a value from a structured
+variable, the user must pass a scalar path such as
+`$prog.record.program_id`.
 
 ### Process spawning
 
-After expansion, `exec` constructs an argv vector and passes it
-directly to `exec.CommandContext`.
+After expansion, `exec` constructs an argv vector via `argTexts` and
+passes it directly to `exec.CommandContext`.
 
 This is the key semantic constraint.
 
-The REPL does not invoke:
+The REPL does not implicitly invoke:
 
 - `sh -c`
 - `bash -c`
 - any other shell interpreter
 
-This means shell syntax is not recognised. Characters such as `|`,
-`>`, and `&&` are just ordinary argv elements unless the target
-program interprets them.
+Instead, it passes the argv vector directly to `exec.CommandContext`.
+Users may still explicitly choose to run a shell, for example:
 
-That is intentional.
+    exec sh -c "echo hello"
+
+Shell syntax such as `|`, `>`, and `&&` has no special meaning to
+`exec` itself. Those characters are just ordinary argv elements unless
+the target program interprets them.
 
 ### Environment
 
 The subprocess inherits the current process environment by default.
 
-The initial design does not add a custom environment model.
+There is no custom environment model.
 
 ### Working directory
 
 The subprocess runs in the current working directory of the bpfman
 process.
 
-The initial design does not add `cd` or per-command working-directory
-selection.
+There is no `cd` or per-command working-directory selection.
 
 ### Context and cancellation
 
-The subprocess should be created with the REPL command context so that
+The subprocess is created with the REPL command context so that
 cancellation and timeout behaviour compose naturally with the rest of
 the REPL.
 
-If the REPL context is cancelled, the subprocess should be terminated
-through standard `CommandContext` behaviour.
+If the REPL context is cancelled, the subprocess is terminated through
+standard `CommandContext` behaviour.
 
 ## Result model
 
-`exec` should produce a structured result on success so it can be
-bound with `let`.
+`exec` produces a structured result on success, represented by the
+`execResult` type:
 
-A suitable result shape is:
+```go
+type execResult struct {
+    Argv     []string `json:"argv"`
+    Stdout   string   `json:"stdout"`
+    Stderr   string   `json:"stderr"`
+    ExitCode int      `json:"exit_code"`
+}
+```
 
-- `argv` `[]string`
-- `stdout` `string`
-- `stderr` `string`
-- `exit_code` `int`
-
-For example, conceptually:
+The fields are:
 
 - `argv`: the exact argv vector executed
 - `stdout`: captured standard output
 - `stderr`: captured standard error
-- `exit_code`: process exit status
+- `exit_code`: process exit status (always 0 on success)
 
-This result should be convertible to `shell.Value` using the existing
-`ValueFromStruct` mechanism.
+The result is converted to a `shell.Value` using `ValueFromStruct`.
 
 That allows idioms such as:
 
 - `let out = exec ip link show dummy0`
 - `dump out.stdout`
 - `assert contains $out.stdout dummy0`
+- `dump out.argv`
 
 ## Printing behaviour
 
-The command needs a clear distinction between plain execution and bound
-execution.
+The command makes a clear distinction between plain execution and
+bound execution.
 
 ### Plain command form
 
@@ -300,18 +316,9 @@ When the user runs:
 
     exec ip link show dummy0
 
-the command should print captured stdout to the REPL output stream on
-success.
-
-This matches user expectation that `exec` behaves like a simple
-command runner in interactive use.
-
-For stderr on success, the simplest initial rule is:
-
-- do not print stderr automatically on success
-- retain it in the structured result for `let` use if needed later
-
-That keeps ordinary output cleaner.
+the command prints captured stdout to the REPL output stream on
+success. Stderr is not printed on success; it is retained in the
+structured result for `let` use if needed.
 
 ### Bound form
 
@@ -319,15 +326,16 @@ When the user runs:
 
     let out = exec ip link show dummy0
 
-the command should not print normal command output. It should return
-the structured value for binding.
+the command does not print normal command output. It returns the
+structured value for binding.
 
-This matches the existing REPL convention that `let` captures results
-rather than printing them.
+This works because the `LetStmt` path in `replEval` calls
+`replShellCmd` with `cli.WithDiscardOutput()`, so `replExec` writes
+its stdout to a discarded writer. The structured result is unaffected.
 
 ## Failure model
 
-Non-zero exit status should be treated as command failure.
+Non-zero exit status is treated as command failure.
 
 That means:
 
@@ -335,13 +343,13 @@ That means:
 - `assert ok exec ...` fails on non-zero exit
 - `assert fail exec ...` passes on non-zero exit
 
-This is the best fit for the existing REPL model, where command
-failure is represented as an error rather than as a value the caller
-must always inspect.
+This fits the existing REPL model, where command failure is
+represented as an error rather than as a value the caller must always
+inspect.
 
-The error message should include enough context to be useful, ideally:
+The error message includes enough context to be useful:
 
-- the command or argv
+- the full argv joined with spaces
 - the exit status
 - captured stderr when non-empty
 
@@ -349,60 +357,66 @@ For example:
 
     exec ip link del does-not-exist: exit status 1: Cannot find device ...
 
-The design deliberately does not model shell-style success/failure as
-a normal value path.
+When the command is not found (not an exit error), the error wraps the
+underlying OS error:
+
+    exec nosuchcmd: exec: "nosuchcmd": executable file not found in $PATH
+
+The implementation deliberately does not model shell-style
+success/failure as a normal value path.
 
 ## Shell command dispatch change
 
-Adding `exec` exposes a useful gap in the current shell command layer.
-
-At the moment, shell commands are handled by a function that returns
-roughly:
+Adding `exec` required a change to the shell command dispatch
+contract. Previously `replShellCmd` returned:
 
 - `handled` `bool`
 - `err` `error`
 
-That is enough for commands like `help` or `vars`, but it is not
-enough for shell commands that produce an assignable result.
+That was enough for commands like `help` or `vars`, but not for shell
+commands that produce an assignable result.
 
-`exec` is the first clear example of a shell-layer command that should
-be assignable through `let`.
+`exec` is the first shell-layer command that is assignable through
+`let`.
 
-So the shell command dispatch path should be adjusted to support an
-optional `shell.Value` result.
-
-Conceptually, the shell command contract should become something like:
+The dispatch function now returns:
 
 - `handled` `bool`
 - `value` `shell.Value`
 - `err` `error`
 
-or an equivalent small result type.
+Existing shell commands return `shell.Value{}` (nil value) for the
+value position. `exec` returns a non-nil structured value.
 
-That allows:
+The `LetStmt` case in `replEval` was updated accordingly. Instead of
+rejecting all shell commands in `let` context, it now:
 
-- shell commands that only print and return no value
-- shell commands that are assignable
-- `let` bindings for shell commands where appropriate
+1. calls `replShellCmd` with `cli.WithDiscardOutput()` to suppress
+   printing
+2. if the command was handled and produced a non-nil value, binds it
+3. if the command was handled but produced no value, reports an error
+   ("cannot bind result of ...")
+4. if the command was not handled, falls through to domain dispatch
 
-This is the deeper architectural change. `exec` is simply the first
-feature that requires it.
+That allows shell commands that only print to remain non-assignable
+while letting `exec` (and any future value-producing shell commands)
+participate in `let` bindings.
 
-## Proposed command behaviour
+## Command behaviour
 
-The initial behaviour should be:
+The implemented behaviour is:
 
-- `exec` is available as a shell command
+- `exec` is a shell command registered in `shellCommands`
 - it requires at least one argv element
-- it captures stdout and stderr
+- it captures stdout and stderr into `bytes.Buffer` values
 - on success:
-  - plain form prints stdout
-  - bound form returns a structured value
+  - plain form prints stdout to the REPL output stream
+  - bound form returns a structured value without printing
 - on non-zero exit:
   - it returns an error
-  - stderr is incorporated into the error message where useful
-
-That gives a consistent and minimal model.
+  - stderr is incorporated into the error message when non-empty
+- on command-not-found or other non-exit errors:
+  - it returns an error wrapping the underlying OS error
 
 ## Examples
 
@@ -433,21 +447,33 @@ That gives a consistent and minimal model.
     show program $prog links
     exec ip link del dummy0
 
+### Variable expansion
+
+    set iface = dummy0
+    exec ip link add $iface type dummy
+    let out = exec ip link show $iface
+    assert contains $out.stdout $iface
+
+### Stderr inspection
+
+    let out = exec sh -c "echo errout >&2"
+    assert contains $out.stderr errout
+
 ## Security and boundary considerations
 
 `exec` runs arbitrary host commands as the same user as the bpfman
 process. That is powerful, but it is not meaningfully more powerful
 than the user already having shell access in the same environment.
 
-This feature should not attempt to impose a partial security sandbox.
-A weak sandbox would create false confidence.
+This feature does not attempt to impose a partial security sandbox. A
+weak sandbox would create false confidence.
 
 The correct stance is simpler:
 
 - `exec` is a convenience for trusted users in trusted environments
 - it is intended for development, testing, debugging, and local
   operational workflows
-- it should remain explicit and minimal
+- it remains explicit and minimal
 
 The main safety mechanism is scope control, not faux isolation.
 
@@ -471,17 +497,21 @@ accumulating thin wrappers over existing tools.
 
 That is worse than a narrow `exec`.
 
-### 3. Use sh -c
+### 3. Implicit sh -c wrapping
 
-This would make the feature superficially more powerful, but it would
-also:
+An alternative would have been for `exec` to always route commands
+through `sh -c` internally. That would make the feature superficially
+more powerful, but it would also:
 
 - blur the REPL language boundary
 - import shell quoting and shell expansion complexity
 - make behaviour harder to reason about
 - increase the risk of accidental feature creep into "mini-shell"
 
-This is the wrong trade-off.
+This is the wrong trade-off. The implementation avoids it by passing
+the argv vector directly to `exec.CommandContext`. Users who need
+shell features can still run `exec sh -c "..."` explicitly, making
+the choice visible and intentional.
 
 ### 4. Make exec a domain command
 
@@ -491,52 +521,31 @@ This would put host-process execution into the same category as
 That is architecturally muddled. `exec` is not a bpfman domain
 operation.
 
-## Open questions
-
-There are a few points worth deciding explicitly before
-implementation.
+## Resolved questions
 
 ### 1. Should stderr be printed on successful plain exec?
 
-A conservative initial answer is no.
-
-Print stdout on success, but keep stderr only in the structured result
-or use it in error construction on failure.
+No. Stdout is printed on success. Stderr is retained only in the
+structured result and used in error construction on failure.
 
 ### 2. Should there be a text-only helper alongside exec?
 
-Possibly later, but not initially.
-
-If users often want "run command and return stdout only", that can be
-revisited after the result model settles.
+Not implemented. If users often want "run command and return stdout
+only", that can be revisited after the result model settles.
 
 ### 3. Should stdin ever be forwarded?
 
-Not in the first version.
-
-Foreground interactive subprocess handling is a much bigger feature
-than simple helper execution.
+Not implemented. Foreground interactive subprocess handling is a much
+bigger feature than simple helper execution.
 
 ### 4. Should the REPL eventually support a few more shell helpers?
 
-Possibly. But `exec` should land first, and any future helper should
-be judged against the same boundary: useful session primitive, not
-shell-creep.
+Possibly. Any future helper should be judged against the same
+boundary: useful session primitive, not shell-creep.
 
-## Recommendation
+## Future considerations
 
-Proceed with a narrow `exec` design.
-
-Implement it as a shell-layer command with direct argv execution,
-captured output, structured success results, and ordinary error-based
-failure semantics.
-
-Before coding, make one small architectural change:
-
-- allow shell-layer commands to return an optional `shell.Value`
-
-That keeps the design clean and avoids special-casing `exec` later.
-
-The important thing is not merely adding command execution. The
-important thing is adding it without surrendering the REPL's current
-clarity of purpose.
+The dispatch change that introduced `shell.Value` returns for shell
+commands is general. If future shell commands need to produce
+assignable results, they can follow the same pattern without further
+architectural work.

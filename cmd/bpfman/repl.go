@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -30,7 +32,7 @@ type ReplCmd struct {
 }
 
 // replCommandNames lists the top-level command tokens for completion.
-var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "gc", "help", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
+var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec", "gc", "help", "let", "link", "list", "load", "program", "programs", "require", "set", "show", "source", "unset", "vars", "version"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 // replAssertVerbs lists the valid assertion verbs for completion.
@@ -183,6 +185,7 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 // dispatcher.
 var shellCommands = map[string]bool{
 	"assert":  true,
+	"exec":    true,
 	"require": true,
 	"dump":    true,
 	"help":    true,
@@ -193,36 +196,41 @@ var shellCommands = map[string]bool{
 }
 
 // replShellCmd handles shell-language and session commands. It returns
-// (true, err) if the command was handled, (false, nil) if the command
-// is not a shell command and should be dispatched to the domain layer.
-func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, error) {
+// (true, value, err) if the command was handled, where value is
+// non-nil for commands that produce an assignable result (e.g. exec).
+// Returns (false, Value{}, nil) if the command is not a shell command
+// and should be dispatched to the domain layer.
+func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
 	if len(args) == 0 {
-		return false, nil
+		return false, shell.Value{}, nil
 	}
 	cmd := argText(args[0])
 	if !shellCommands[cmd] {
-		return false, nil
+		return false, shell.Value{}, nil
 	}
 
 	switch cmd {
 	case "assert":
-		return true, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
+		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
+	case "exec":
+		val, err := replExec(ctx, cli, args[1:])
+		return true, val, err
 	case "require":
-		return true, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
+		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
 	case "dump":
-		return true, replDump(cli, session, argTexts(args[1:]))
+		return true, shell.Value{}, replDump(cli, session, argTexts(args[1:]))
 	case "help":
-		return true, replHelp(cli)
+		return true, shell.Value{}, replHelp(cli)
 	case "source":
-		return true, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+		return true, shell.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
 	case "unset":
-		return true, replUnset(cli, session, argTexts(args[1:]))
+		return true, shell.Value{}, replUnset(cli, session, argTexts(args[1:]))
 	case "vars":
-		return true, replVars(cli, session)
+		return true, shell.Value{}, replVars(cli, session)
 	case "version":
-		return true, replVersion(cli)
+		return true, shell.Value{}, replVersion(cli)
 	default:
-		return false, nil
+		return false, shell.Value{}, nil
 	}
 }
 
@@ -275,10 +283,25 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		if len(expanded) > 0 && shellCommands[argText(expanded[0])] {
-			return scriptErr("%s[repl] error: cannot bind result of %q to a variable\n", loc, argText(expanded[0]))
+		// Try shell commands first — some (like exec) produce
+		// assignable values. Use WithDiscardOutput so that
+		// bound commands do not print their normal output.
+		var val shell.Value
+		handled, val, err := replShellCmd(ctx, cli.WithDiscardOutput(), mgr, session, expanded, loc)
+		if err != nil {
+			if errors.Is(err, errRequireFailed) {
+				return err
+			}
+			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		val, err := replDispatch(ctx, cli, mgr, expanded)
+		if handled {
+			if val.IsNil() {
+				return scriptErr("%s[repl] error: cannot bind result of %q to a variable\n", loc, argText(expanded[0]))
+			}
+			session.Set(s.Name, val)
+			return nil
+		}
+		val, err = replDispatch(ctx, cli, mgr, expanded)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -296,7 +319,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
-		handled, err := replShellCmd(ctx, cli, mgr, session, expanded, loc)
+		handled, _, err := replShellCmd(ctx, cli, mgr, session, expanded, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -1033,6 +1056,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  version                                  Print version information\n")
 	b.WriteString("\n")
 	b.WriteString("Session:\n")
+	b.WriteString("  exec <command> [args...]                 Run a host command (assignable)\n")
 	b.WriteString("  dump <variable>[.path]                   Display variable contents\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
@@ -1074,6 +1098,66 @@ func replHistoryPath() (string, error) {
 		return "", fmt.Errorf("create state directory: %w", err)
 	}
 	return filepath.Join(dir, "repl-history"), nil
+}
+
+// execResult holds the captured output of a subprocess run by the
+// exec shell command. The JSON tags produce the field names visible
+// in the REPL's structured-value model.
+type execResult struct {
+	Argv     []string `json:"argv"`
+	Stdout   string   `json:"stdout"`
+	Stderr   string   `json:"stderr"`
+	ExitCode int      `json:"exit_code"`
+}
+
+// replExec runs an external command and returns a structured result.
+// On success the result contains captured stdout, stderr, the argv
+// vector, and exit code 0. On non-zero exit the command returns an
+// error that includes the exit status and any stderr output.
+func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, error) {
+	if len(args) == 0 {
+		return shell.Value{}, fmt.Errorf("exec requires at least one argument")
+	}
+
+	argv := argTexts(args)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			// Not an exit error — command not found or similar.
+			return shell.Value{}, fmt.Errorf("exec %s: %w", argv[0], err)
+		}
+		msg := fmt.Sprintf("exec %s: exit status %d", strings.Join(argv, " "), exitErr.ExitCode())
+		if stderr.Len() > 0 {
+			msg += ": " + strings.TrimRight(stderr.String(), "\n")
+		}
+		return shell.Value{}, errors.New(msg)
+	}
+
+	result := execResult{
+		Argv:     argv,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: 0,
+	}
+	val, err := shell.ValueFromStruct(result)
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("exec: build result: %w", err)
+	}
+
+	if stdout.Len() > 0 {
+		if err := cli.PrintOut(stdout.String()); err != nil {
+			return shell.Value{}, err
+		}
+	}
+
+	return val, nil
 }
 
 // replVars lists all session variables and their types.
@@ -1304,7 +1388,7 @@ func assertNotEmpty(args []string) (assertResult, error) {
 // and the domain dispatch layer. It is used by assertion verbs (ok,
 // fail) to test whether a sub-command succeeds or fails.
 func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
-	handled, err := replShellCmd(ctx, cli, mgr, session, args, sourceLoc{})
+	handled, _, err := replShellCmd(ctx, cli, mgr, session, args, sourceLoc{})
 	if err != nil {
 		return err
 	}
