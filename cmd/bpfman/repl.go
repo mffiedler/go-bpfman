@@ -36,7 +36,7 @@ var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec"
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 // replAssertVerbs lists the valid assertion verbs for completion.
-var replAssertVerbs = []string{"contains", "equal", "fail", "false", "ge", "gt", "le", "lt", "ne", "nil", "not", "not-empty", "ok", "path", "true"}
+var replAssertVerbs = []string{"contains", "eq", "fail", "false", "ge", "gt", "le", "lt", "ne", "nil", "not", "not-empty", "ok", "path", "true"}
 
 var replSubcommands = map[string][]string{
 	"assert":     replAssertVerbs,
@@ -1093,7 +1093,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  require <verb> [args...]      Check condition, stop on failure\n")
 	b.WriteString("  assert not <verb> [args...]   Negate condition\n")
 	b.WriteString("\n")
-	b.WriteString("  Verbs: equal, ne, nil, not-empty, ok, fail, path exists,\n")
+	b.WriteString("  Verbs: eq, ne, nil, not-empty, ok, fail, path exists,\n")
 	b.WriteString("         contains, true, false, lt, le, gt, ge\n")
 	return cli.PrintOut(b.String())
 }
@@ -1398,7 +1398,7 @@ func lookupBareVar(session *shell.Session, arg string) (shell.Value, error) {
 // counter and execution continues.
 func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
-		return fmt.Errorf("expected a verb (equal, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
+		return fmt.Errorf("expected a verb (eq, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
 	}
 
 	label := "assert"
@@ -1448,7 +1448,7 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
 	switch verb {
-	case "equal":
+	case "eq":
 		return assertEqual(ss)
 	case "ne":
 		return assertNe(ss)

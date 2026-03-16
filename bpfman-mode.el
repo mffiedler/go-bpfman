@@ -66,7 +66,7 @@
                  ;; show subviews
                  "links" "maps" "paths" "summary"
                  ;; assertion verbs (assert/require)
-                 "contains" "equal" "fail" "false" "ge" "gt" "le"
+                 "contains" "eq" "fail" "false" "ge" "gt" "le"
                  "lt" "ne" "nil" "not" "not-empty" "ok" "path"
                  "true"))
       (puthash w t ht))
