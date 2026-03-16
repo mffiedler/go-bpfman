@@ -44,6 +44,26 @@ func TestValueFromJSON(t *testing.T) {
 		_, err := ValueFromJSON([]byte(`{invalid`))
 		require.Error(t, err)
 	})
+
+	t.Run("trailing garbage after value", func(t *testing.T) {
+		_, err := ValueFromJSON([]byte(`123 junk`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "trailing data")
+	})
+
+	t.Run("trailing garbage after object", func(t *testing.T) {
+		_, err := ValueFromJSON([]byte(`{"a":1} {"b":2}`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "trailing data")
+	})
+
+	t.Run("trailing whitespace is not trailing garbage", func(t *testing.T) {
+		v, err := ValueFromJSON([]byte("42  \n  "))
+		require.NoError(t, err)
+		s, err := v.Scalar()
+		require.NoError(t, err)
+		assert.Equal(t, "42", s)
+	})
 }
 
 func TestValueFromStruct(t *testing.T) {

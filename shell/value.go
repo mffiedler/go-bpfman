@@ -35,6 +35,9 @@ func ValueFromJSON(b []byte) (Value, error) {
 	if err := dec.Decode(&v); err != nil {
 		return Value{}, fmt.Errorf("decode JSON: %w", err)
 	}
+	if dec.More() {
+		return Value{}, fmt.Errorf("decode JSON: trailing data after value")
+	}
 	return Value{v: v}, nil
 }
 
