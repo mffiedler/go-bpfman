@@ -2283,3 +2283,167 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 	_, candidates := replComplete(context.Background(), nil, nil, "ex", len("ex"))
 	assert.Contains(t, candidates, "exec ")
 }
+
+// --- json parse shell command tests ---
+
+func TestReplLoop_JSONParseObject(t *testing.T) {
+	input := `let data = json parse '{"name":"test","id":42}'` + "\nassert equal $data.name test\nassert equal $data.id 42\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	// Bound form should not print.
+	assert.Empty(t, outBuf.String())
+
+	val, ok := session.Get("data")
+	require.True(t, ok)
+	assert.True(t, val.IsStructured())
+}
+
+func TestReplLoop_JSONParseArray(t *testing.T) {
+	input := `let arr = json parse '[1,2,3]'` + "\nassert equal $arr[0] 1\nassert equal $arr[2] 3\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_JSONParseScalar(t *testing.T) {
+	input := "let v = json parse 123\nassert equal $v 123\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_JSONParsePlainForm(t *testing.T) {
+	input := `json parse '{"a":1}'` + "\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	// Plain form should print indented JSON.
+	assert.Contains(t, outBuf.String(), "\"a\": 1")
+}
+
+func TestReplLoop_JSONParseInvalidJSON(t *testing.T) {
+	input := "let data = json parse not-json\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "json parse")
+}
+
+func TestReplLoop_JSONParseNoArgs(t *testing.T) {
+	input := "json parse\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "json parse requires exactly one argument")
+}
+
+func TestReplLoop_JSONParseNoSubcommand(t *testing.T) {
+	input := "json\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "usage: json parse")
+}
+
+func TestReplLoop_JSONParseAssertOk(t *testing.T) {
+	input := `assert ok json parse '{"a":1}'` + "\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_JSONParseAssertFail(t *testing.T) {
+	input := "assert fail json parse not-json\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
+}
+
+func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
+	input := `let data = json parse '{"a":{"b":{"c":"deep"}}}'` + "\nassert equal $data.a.b.c deep\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_JSONParseWithExec(t *testing.T) {
+	// End-to-end: exec produces JSON text, json parse makes it structured.
+	input := `let raw = exec echo '{"status":"ok","count":3}'` + "\nlet data = json parse $raw.stdout\nassert equal $data.status ok\nassert equal $data.count 3\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_JSONParseCannotBindNonValueShellCmd(t *testing.T) {
+	// Other non-value shell commands should still be rejected.
+	input := "let x = vars\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "cannot bind result of")
+}
+
+func TestReplComplete_JSONInCommandNames(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "js", len("js"))
+	assert.Contains(t, candidates, "json ")
+}
+
+func TestReplComplete_JSONSubcommands(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "json ", len("json "))
+	assert.Contains(t, candidates, "parse ")
+}
