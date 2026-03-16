@@ -65,10 +65,13 @@
                  "uprobe" "xdp"
                  ;; show subviews
                  "links" "maps" "paths" "summary"
-                 ;; assertion verbs (assert/require)
-                 "contains" "eq" "fail" "false" "ge" "gt" "le"
-                 "lt" "ne" "nil" "not" "not-empty" "ok" "path"
-                 "true"))
+                 ;; assertion verbs (assert/require): prefix unary
+                 "contains" "fail" "false" "nil" "not" "not-empty"
+                 "ok" "path" "true"
+                 ;; assertion operators: infix textual (lexicographic)
+                 "eq" "ne" "lt" "le" "gt" "ge"
+                 ;; assertion operators: infix numeric
+                 "==" "!=" "<" "<=" ">" ">="))
       (puthash w t ht))
     ht)
   "Hash table of bpfman subcommands, attach types, and subviews.")
@@ -156,10 +159,15 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
                   (setq pos (point))
                   (push (list bpfman--tok-varref start pos) tokens)))))
 
-           ;; Standalone = (assignment operator).
+           ;; = or == distinction: == is a comparison operator (word),
+           ;; = alone is an assignment operator.
            ((= ch ?=)
-            (push (list bpfman--tok-assign pos (1+ pos)) tokens)
-            (setq pos (1+ pos)))
+            (if (and (< (1+ pos) eol) (= (char-after (1+ pos)) ?=))
+                (progn
+                  (push (list bpfman--tok-word pos (+ pos 2)) tokens)
+                  (setq pos (+ pos 2)))
+              (push (list bpfman--tok-assign pos (1+ pos)) tokens)
+              (setq pos (1+ pos))))
 
            ;; Flag: --long or -x (short).
            ((and (= ch ?-)

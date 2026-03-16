@@ -359,6 +359,67 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenVarRef, Text: "$var", VarName: "var"},
 			},
 		},
+		// Comparison operator tokenisation (Phase 2 infix assertions).
+		{
+			name:  "== is a single word token, not two assigns",
+			input: "assert $a == 1",
+			want: []Token{
+				{Kind: TokenWord, Text: "assert"},
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "=="},
+				{Kind: TokenWord, Text: "1"},
+			},
+		},
+		{
+			name:  "!= is a single word token",
+			input: "assert $a != 1",
+			want: []Token{
+				{Kind: TokenWord, Text: "assert"},
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "!="},
+				{Kind: TokenWord, Text: "1"},
+			},
+		},
+		{
+			name:  "< and > are word tokens",
+			input: "assert $a < $b",
+			want: []Token{
+				{Kind: TokenWord, Text: "assert"},
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "<"},
+				{Kind: TokenVarRef, Text: "$b", VarName: "b"},
+			},
+		},
+		{
+			name:  "<= is a single word token",
+			input: "assert $a <= $b",
+			want: []Token{
+				{Kind: TokenWord, Text: "assert"},
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "<="},
+				{Kind: TokenVarRef, Text: "$b", VarName: "b"},
+			},
+		},
+		{
+			name:  ">= is a single word token",
+			input: "assert $a >= $b",
+			want: []Token{
+				{Kind: TokenWord, Text: "assert"},
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: ">="},
+				{Kind: TokenVarRef, Text: "$b", VarName: "b"},
+			},
+		},
+		{
+			name:  "= remains assignment when not followed by =",
+			input: "x = 42",
+			want: []Token{
+				{Kind: TokenWord, Text: "x"},
+				{Kind: TokenAssign, Text: "="},
+				{Kind: TokenWord, Text: "42"},
+			},
+		},
+
 		{
 			name:  "unknown adapter prefix is word plus varref",
 			input: "notanadapter:$var",

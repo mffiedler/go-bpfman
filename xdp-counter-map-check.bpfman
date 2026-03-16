@@ -49,13 +49,13 @@ exec sleep 1
 # a single CPU slot.
 let raw2 = exec bpftool map dump id $prog.status.maps[0].id
 let snap2 = json parse $raw2.stdout
-assert ne $raw1.stdout $raw2.stdout
+assert $raw1.stdout ne $raw2.stdout
 
 # Show the actual differences between the two snapshots. Use exec
 # status because diff exits 1 when files differ, which is a domain
 # result rather than an execution failure.
 let d = exec status diff -u file:$raw1.stdout file:$raw2.stdout
-assert le $d.exit_code 1
+assert $d.exit_code <= 1
 dump d.stdout
 
 # Clean up: detach, unload, remove network resources.

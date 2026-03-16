@@ -36,7 +36,7 @@ var replCommandNames = []string{"assert", "dispatcher", "doctor", "dump", "exec"
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 // replAssertVerbs lists the valid assertion verbs for completion.
-var replAssertVerbs = []string{"contains", "eq", "fail", "false", "ge", "gt", "le", "lt", "ne", "nil", "not", "not-empty", "ok", "path", "true"}
+var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
 
 var replSubcommands = map[string][]string{
 	"assert":     replAssertVerbs,
@@ -1398,7 +1398,7 @@ func lookupBareVar(session *shell.Session, arg string) (shell.Value, error) {
 // counter and execution continues.
 func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
-		return fmt.Errorf("expected a verb (eq, ne, nil, not-empty, ok, fail, path, contains, true, false, lt, le, gt, ge)")
+		return fmt.Errorf("expected an assertion (e.g. \"$a eq $b\", \"true $flag\", \"ok exec ...\")")
 	}
 
 	label := "assert"
@@ -1416,6 +1416,30 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		}
 	}
 
+	// Try infix binary assertion: <left> <op> <right>.
+	if len(args) >= 3 && isInfixOp(argText(args[1])) {
+		if negate {
+			return fmt.Errorf("\"not\" is not supported with infix assertions; use the complementary operator (ne, le, ge, !=, <=, >=)")
+		}
+		if len(args) != 3 {
+			return fmt.Errorf("infix assertion requires exactly two operands: <left> <op> <right>")
+		}
+		result, err := evalInfixAssertion(argText(args[0]), argText(args[1]), argText(args[2]))
+		if err != nil {
+			return err
+		}
+		if result.pass {
+			return nil
+		}
+		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+		if isRequire {
+			return errRequireFailed
+		}
+		session.RecordAssertFailure()
+		return nil
+	}
+
+	// Prefix verb dispatch (unary predicates and command assertions).
 	verb := argText(args[0])
 	verbArgs := args[1:]
 
@@ -1444,14 +1468,12 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 	return nil
 }
 
-// evalAssertVerb dispatches to the appropriate verb evaluator.
+// evalAssertVerb dispatches to the appropriate prefix verb evaluator.
+// Binary comparison verbs (eq, ne, lt, le, gt, ge) are handled by
+// infix dispatch in replAssertRequire and are not valid here.
 func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
 	switch verb {
-	case "eq":
-		return assertEqual(ss)
-	case "ne":
-		return assertNe(ss)
 	case "nil":
 		return assertNil(session, ss)
 	case "not-empty":
@@ -1468,39 +1490,96 @@ func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session
 		return assertBool(ss, true)
 	case "false":
 		return assertBool(ss, false)
-	case "lt":
-		return assertNumericCmp(ss, "lt")
-	case "le":
-		return assertNumericCmp(ss, "le")
-	case "gt":
-		return assertNumericCmp(ss, "gt")
-	case "ge":
-		return assertNumericCmp(ss, "ge")
+	case "eq", "ne", "lt", "le", "gt", "ge":
+		return assertResult{}, fmt.Errorf("%q is not a prefix verb; use infix form: assert <left> %s <right>", verb, verb)
 	default:
 		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
 	}
 }
 
-func assertEqual(args []string) (assertResult, error) {
-	if len(args) != 2 {
-		return assertResult{}, fmt.Errorf("equal requires exactly 2 arguments")
+// isInfixOp reports whether s is a recognised infix comparison
+// operator. Word operators (eq, ne, lt, le, gt, ge) perform textual
+// (lexicographic) comparison; symbol operators (==, !=, <, <=, >, >=)
+// perform numeric comparison.
+func isInfixOp(s string) bool {
+	switch s {
+	case "eq", "ne", "lt", "le", "gt", "ge",
+		"==", "!=", "<", "<=", ">", ">=":
+		return true
 	}
-	pass := args[0] == args[1]
-	return assertResult{
-		pass:    pass,
-		message: fmt.Sprintf("expected %q to equal %q", args[0], args[1]),
-	}, nil
+	return false
 }
 
-func assertNe(args []string) (assertResult, error) {
-	if len(args) != 2 {
-		return assertResult{}, fmt.Errorf("ne requires exactly 2 arguments")
+// evalInfixAssertion evaluates a binary comparison in infix form:
+// <left> <op> <right>. Word operators compare textually; symbol
+// operators compare numerically.
+func evalInfixAssertion(left, op, right string) (assertResult, error) {
+	switch op {
+	// Textual (lexicographic) operators.
+	case "eq":
+		return assertResult{
+			pass:    left == right,
+			message: fmt.Sprintf("expected %q to equal %q", left, right),
+		}, nil
+	case "ne":
+		return assertResult{
+			pass:    left != right,
+			message: fmt.Sprintf("expected %q to not equal %q", left, right),
+		}, nil
+	case "lt":
+		return assertResult{
+			pass:    left < right,
+			message: fmt.Sprintf("expected %q lt %q (lexicographic)", left, right),
+		}, nil
+	case "le":
+		return assertResult{
+			pass:    left <= right,
+			message: fmt.Sprintf("expected %q le %q (lexicographic)", left, right),
+		}, nil
+	case "gt":
+		return assertResult{
+			pass:    left > right,
+			message: fmt.Sprintf("expected %q gt %q (lexicographic)", left, right),
+		}, nil
+	case "ge":
+		return assertResult{
+			pass:    left >= right,
+			message: fmt.Sprintf("expected %q ge %q (lexicographic)", left, right),
+		}, nil
+
+	// Numeric operators.
+	case "==", "!=", "<", "<=", ">", ">=":
+		a, err := strconv.ParseFloat(left, 64)
+		if err != nil {
+			return assertResult{}, fmt.Errorf("left operand %q is not numeric", left)
+		}
+		b, err := strconv.ParseFloat(right, 64)
+		if err != nil {
+			return assertResult{}, fmt.Errorf("right operand %q is not numeric", right)
+		}
+		var pass bool
+		switch op {
+		case "==":
+			pass = a == b
+		case "!=":
+			pass = a != b
+		case "<":
+			pass = a < b
+		case "<=":
+			pass = a <= b
+		case ">":
+			pass = a > b
+		case ">=":
+			pass = a >= b
+		}
+		return assertResult{
+			pass:    pass,
+			message: fmt.Sprintf("expected %s %s %s", left, op, right),
+		}, nil
+
+	default:
+		return assertResult{}, fmt.Errorf("unknown infix operator %q", op)
 	}
-	pass := args[0] != args[1]
-	return assertResult{
-		pass:    pass,
-		message: fmt.Sprintf("expected %q to not equal %q", args[0], args[1]),
-	}, nil
 }
 
 func assertNil(session *shell.Session, args []string) (assertResult, error) {
@@ -1609,42 +1688,6 @@ func assertBool(args []string, want bool) (assertResult, error) {
 	return assertResult{
 		pass:    pass,
 		message: fmt.Sprintf("expected %q to be %q", args[0], wantStr),
-	}, nil
-}
-
-func assertNumericCmp(args []string, op string) (assertResult, error) {
-	if len(args) != 2 {
-		return assertResult{}, fmt.Errorf("%s requires exactly 2 numeric arguments", op)
-	}
-	a, err := strconv.ParseFloat(args[0], 64)
-	if err != nil {
-		return assertResult{}, fmt.Errorf("%s: left argument %q is not a number", op, args[0])
-	}
-	b, err := strconv.ParseFloat(args[1], 64)
-	if err != nil {
-		return assertResult{}, fmt.Errorf("%s: right argument %q is not a number", op, args[1])
-	}
-
-	var pass bool
-	var symbol string
-	switch op {
-	case "lt":
-		pass = a < b
-		symbol = "<"
-	case "le":
-		pass = a <= b
-		symbol = "<="
-	case "gt":
-		pass = a > b
-		symbol = ">"
-	case "ge":
-		pass = a >= b
-		symbol = ">="
-	}
-
-	return assertResult{
-		pass:    pass,
-		message: fmt.Sprintf("expected %s %s %s", args[0], symbol, args[1]),
 	}, nil
 }
 

@@ -65,8 +65,14 @@ func Tokenise(input string) ([]Token, error) {
 
 		switch {
 		case ch == '=' && isTokenStart(tokens):
-			tokens = append(tokens, Token{Kind: TokenAssign, Text: "="})
-			i++
+			// Distinguish == (comparison) from = (assignment).
+			if i+1 < len(input) && input[i+1] == '=' {
+				tokens = append(tokens, Token{Kind: TokenWord, Text: "=="})
+				i += 2
+			} else {
+				tokens = append(tokens, Token{Kind: TokenAssign, Text: "="})
+				i++
+			}
 
 		case ch == '$':
 			tok, n, err := lexVarRef(input, i)

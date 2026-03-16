@@ -1304,31 +1304,80 @@ func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 
 // ---- Assert/Require/Set tests ----
 
-func TestAssertEqual(t *testing.T) {
-	r, err := assertEqual([]string{"hello", "hello"})
-	require.NoError(t, err)
-	assert.True(t, r.pass)
-
-	r, err = assertEqual([]string{"hello", "world"})
-	require.NoError(t, err)
-	assert.False(t, r.pass)
-	assert.Contains(t, r.message, "equal")
+func TestInfixTextualComparison(t *testing.T) {
+	tests := []struct {
+		left, op, right string
+		pass            bool
+	}{
+		{"hello", "eq", "hello", true},
+		{"hello", "eq", "world", false},
+		{"a", "ne", "b", true},
+		{"a", "ne", "a", false},
+		{"a", "lt", "b", true},
+		{"b", "lt", "a", false},
+		{"a", "lt", "a", false},
+		{"a", "le", "a", true},
+		{"b", "le", "a", false},
+		{"b", "gt", "a", true},
+		{"a", "gt", "b", false},
+		{"a", "ge", "a", true},
+		{"a", "ge", "b", false},
+		// Lexicographic: "9" > "10" because "9" > "1".
+		{"9", "lt", "10", false},
+		{"9", "gt", "10", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.left+"_"+tt.op+"_"+tt.right, func(t *testing.T) {
+			r, err := evalInfixAssertion(tt.left, tt.op, tt.right)
+			require.NoError(t, err)
+			assert.Equal(t, tt.pass, r.pass)
+		})
+	}
 }
 
-func TestAssertEqual_WrongArgCount(t *testing.T) {
-	_, err := assertEqual([]string{"one"})
+func TestInfixNumericComparison(t *testing.T) {
+	tests := []struct {
+		left, op, right string
+		pass            bool
+	}{
+		{"3", "==", "3", true},
+		{"3", "==", "4", false},
+		{"03", "==", "3", true},
+		{"3", "!=", "4", true},
+		{"3", "!=", "3", false},
+		{"1", "<", "2", true},
+		{"2", "<", "1", false},
+		{"1", "<", "1", false},
+		{"1", "<=", "1", true},
+		{"2", "<=", "1", false},
+		{"2", ">", "1", true},
+		{"1", ">", "2", false},
+		{"1", ">=", "1", true},
+		{"0", ">=", "1", false},
+		// Numeric: 9 < 10.
+		{"9", "<", "10", true},
+		// Float support.
+		{"3.14", "<", "3.15", true},
+		{"1e2", "==", "100", true},
+		{"-1", "<", "0", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.left+"_"+tt.op+"_"+tt.right, func(t *testing.T) {
+			r, err := evalInfixAssertion(tt.left, tt.op, tt.right)
+			require.NoError(t, err)
+			assert.Equal(t, tt.pass, r.pass)
+		})
+	}
+}
+
+func TestInfixNumericNonNumericError(t *testing.T) {
+	_, err := evalInfixAssertion("abc", ">", "2")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "2 arguments")
-}
+	assert.Contains(t, err.Error(), "not numeric")
 
-func TestAssertNe(t *testing.T) {
-	r, err := assertNe([]string{"a", "b"})
-	require.NoError(t, err)
-	assert.True(t, r.pass)
-
-	r, err = assertNe([]string{"a", "a"})
-	require.NoError(t, err)
-	assert.False(t, r.pass)
+	_, err = evalInfixAssertion("1", "==", "xyz")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not numeric")
 }
 
 func TestAssertNil(t *testing.T) {
@@ -1406,39 +1455,13 @@ func TestAssertPath_BadArgs(t *testing.T) {
 	assert.Contains(t, err.Error(), "path requires")
 }
 
-func TestAssertNumericCmp(t *testing.T) {
-	tests := []struct {
-		op   string
-		a, b string
-		pass bool
-	}{
-		{"lt", "1", "2", true},
-		{"lt", "2", "1", false},
-		{"lt", "1", "1", false},
-		{"le", "1", "1", true},
-		{"le", "2", "1", false},
-		{"gt", "2", "1", true},
-		{"gt", "1", "2", false},
-		{"ge", "1", "1", true},
-		{"ge", "0", "1", false},
+func TestIsInfixOp(t *testing.T) {
+	for _, op := range []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="} {
+		assert.True(t, isInfixOp(op), "expected %q to be an infix op", op)
 	}
-	for _, tt := range tests {
-		t.Run(tt.op+"_"+tt.a+"_"+tt.b, func(t *testing.T) {
-			r, err := assertNumericCmp([]string{tt.a, tt.b}, tt.op)
-			require.NoError(t, err)
-			assert.Equal(t, tt.pass, r.pass)
-		})
+	for _, op := range []string{"contains", "nil", "true", "false", "ok", "fail", "+", "&&"} {
+		assert.False(t, isInfixOp(op), "expected %q not to be an infix op", op)
 	}
-}
-
-func TestAssertNumericCmp_NonNumeric(t *testing.T) {
-	_, err := assertNumericCmp([]string{"abc", "2"}, "lt")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not a number")
-
-	_, err = assertNumericCmp([]string{"1", "xyz"}, "gt")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not a number")
 }
 
 // wordArgs converts string slices to []shell.Arg for test convenience.
@@ -1502,7 +1525,7 @@ func TestNegateMessage(t *testing.T) {
 }
 
 func TestReplLoop_AssertEqPass(t *testing.T) {
-	input := "assert eq hello hello\n"
+	input := "assert hello eq hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1515,7 +1538,7 @@ func TestReplLoop_AssertEqPass(t *testing.T) {
 }
 
 func TestReplLoop_AssertEqFail(t *testing.T) {
-	input := "assert eq hello world\n"
+	input := "assert hello eq world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1527,8 +1550,8 @@ func TestReplLoop_AssertEqFail(t *testing.T) {
 	assert.Equal(t, 1, session.AssertFailures())
 }
 
-func TestReplLoop_AssertNotEq(t *testing.T) {
-	input := "assert not eq hello hello\n"
+func TestReplLoop_AssertNeFail(t *testing.T) {
+	input := "assert hello ne hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1537,15 +1560,27 @@ func TestReplLoop_AssertNotEq(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "[assert] FAIL")
-	assert.Contains(t, errBuf.String(), "not to equal")
+	assert.Contains(t, errBuf.String(), "not equal")
 	assert.Equal(t, 1, session.AssertFailures())
+}
+
+func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
+	input := "assert not hello eq world\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "not\" is not supported with infix")
 }
 
 func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 	// The second line should never run because require halts.
 	input := strings.Join([]string{
-		"require eq hello world",
-		"assert eq a a",
+		"require hello eq world",
+		"assert a eq a",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1561,9 +1596,9 @@ func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 
 func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 	input := strings.Join([]string{
-		"assert eq a b",
-		"assert eq c d",
-		"assert eq e e",
+		"assert a eq b",
+		"assert c eq d",
+		"assert e eq e",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1578,7 +1613,7 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 func TestReplLoop_SetAndAssert(t *testing.T) {
 	input := strings.Join([]string{
 		"set x = 42",
-		"assert eq $x 42",
+		"assert $x eq 42",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1751,8 +1786,8 @@ func TestReplLoop_AssertPathNotExists(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_AssertLt(t *testing.T) {
-	input := "assert lt 1 2\n"
+func TestReplLoop_AssertNumericLt(t *testing.T) {
+	input := "assert 1 < 2\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1762,8 +1797,8 @@ func TestReplLoop_AssertLt(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_AssertGeFail(t *testing.T) {
-	input := "assert ge 1 2\n"
+func TestReplLoop_AssertNumericGeFail(t *testing.T) {
+	input := "assert 1 >= 2\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1786,6 +1821,19 @@ func TestReplLoop_AssertUnknownVerb(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "unknown assertion verb")
 }
 
+func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
+	// Phase 2: prefix binary verbs are removed; infix form required.
+	input := "assert eq hello world\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "not a prefix verb")
+	assert.Contains(t, errBuf.String(), "infix form")
+}
+
 func TestReplLoop_AssertNoVerb(t *testing.T) {
 	input := "assert\n"
 	var errBuf bytes.Buffer
@@ -1794,7 +1842,7 @@ func TestReplLoop_AssertNoVerb(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "expected a verb")
+	assert.Contains(t, errBuf.String(), "expected an assertion")
 }
 
 func TestReplLoop_AssertNotNoVerb(t *testing.T) {
@@ -1816,7 +1864,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 		},
 	}))
 
-	input := "set pid = $prog.record.program_id\nassert eq $pid 199421\n"
+	input := "set pid = $prog.record.program_id\nassert $pid eq 199421\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1827,8 +1875,8 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
-func TestReplLoop_RequireNotEqPass(t *testing.T) {
-	input := "require not eq a b\n"
+func TestReplLoop_RequireNePass(t *testing.T) {
+	input := "require a ne b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1839,7 +1887,7 @@ func TestReplLoop_RequireNotEqPass(t *testing.T) {
 }
 
 func TestReplLoop_AssertNe(t *testing.T) {
-	input := "assert ne foo bar\n"
+	input := "assert foo ne bar\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1863,16 +1911,20 @@ func TestReplLoop_AssertNotEmpty(t *testing.T) {
 func TestReplComplete_AssertVerbs(t *testing.T) {
 	// "assert " should offer verb completions.
 	_, candidates := replComplete(context.Background(), nil, nil, "assert ", len("assert "))
-	assert.Contains(t, candidates, "eq ")
 	assert.Contains(t, candidates, "nil ")
 	assert.Contains(t, candidates, "ok ")
 	assert.Contains(t, candidates, "not ")
+	// Binary comparison verbs (eq, ne, etc.) are infix operators,
+	// not prefix verbs; they do not appear in prefix completion.
+	assert.NotContains(t, candidates, "eq ")
+	assert.NotContains(t, candidates, "ne ")
+	assert.NotContains(t, candidates, "lt ")
 }
 
 func TestReplComplete_RequireVerbs(t *testing.T) {
 	_, candidates := replComplete(context.Background(), nil, nil, "require ", len("require "))
-	assert.Contains(t, candidates, "eq ")
 	assert.Contains(t, candidates, "fail ")
+	assert.NotContains(t, candidates, "eq ")
 }
 
 func TestReplComplete_SetInCommandNames(t *testing.T) {
@@ -1950,7 +2002,7 @@ func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
 
 func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 	// require failures should also carry the file:line: prefix.
-	input := "require eq a b\n"
+	input := "require a eq b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1961,7 +2013,7 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 }
 
 func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
-	input := "assert eq a b\n"
+	input := "assert a eq b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2085,7 +2137,7 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBinding(t *testing.T) {
-	input := "let out = exec echo hello\nassert contains $out.stdout hello\nassert eq $out.exit_code 0\n"
+	input := "let out = exec echo hello\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2283,7 +2335,7 @@ func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 
 func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 	// exec status captures non-zero exit as data, not error.
-	input := "let r = exec status false\nassert eq $r.exit_code 1\n"
+	input := "let r = exec status false\nassert $r.exit_code eq 1\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2300,7 +2352,7 @@ func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 
 func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 	// exec status also works for exit 0.
-	input := "let r = exec status true\nassert eq $r.exit_code 0\n"
+	input := "let r = exec status true\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2312,7 +2364,7 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
-	input := "let r = exec status echo hello\nassert contains $r.stdout hello\nassert eq $r.exit_code 0\n"
+	input := "let r = exec status echo hello\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2348,7 +2400,7 @@ func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 
 func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 	// exec status works with file adapters.
-	input := "set a = hello\nset b = world\nlet r = exec status diff file:$a file:$b\nassert eq $r.exit_code 1\nassert not-empty $r.stdout\n"
+	input := "set a = hello\nset b = world\nlet r = exec status diff file:$a file:$b\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2361,7 +2413,7 @@ func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 
 func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
 	// diff exits 0 when files are identical.
-	input := "set a = same\nset b = same\nlet r = exec status diff file:$a file:$b\nassert eq $r.exit_code 0\n"
+	input := "set a = same\nset b = same\nlet r = exec status diff file:$a file:$b\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2397,7 +2449,7 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 // --- json parse shell command tests ---
 
 func TestReplLoop_JSONParseObject(t *testing.T) {
-	input := `let data = json parse '{"name":"test","id":42}'` + "\nassert eq $data.name test\nassert eq $data.id 42\n"
+	input := `let data = json parse '{"name":"test","id":42}'` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2416,7 +2468,7 @@ func TestReplLoop_JSONParseObject(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseArray(t *testing.T) {
-	input := `let arr = json parse '[1,2,3]'` + "\nassert eq $arr[0] 1\nassert eq $arr[2] 3\n"
+	input := `let arr = json parse '[1,2,3]'` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2428,7 +2480,7 @@ func TestReplLoop_JSONParseArray(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseScalar(t *testing.T) {
-	input := "let v = json parse 123\nassert eq $v 123\n"
+	input := "let v = json parse 123\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2512,7 +2564,7 @@ func TestReplLoop_JSONParseAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
-	input := `let data = json parse '{"a":{"b":{"c":"deep"}}}'` + "\nassert eq $data.a.b.c deep\n"
+	input := `let data = json parse '{"a":{"b":{"c":"deep"}}}'` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2525,7 +2577,7 @@ func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
 
 func TestReplLoop_JSONParseWithExec(t *testing.T) {
 	// End-to-end: exec produces JSON text, json parse makes it structured.
-	input := `let raw = exec echo '{"status":"ok","count":3}'` + "\nlet data = json parse $raw.stdout\nassert eq $data.status ok\nassert eq $data.count 3\n"
+	input := `let raw = exec echo '{"status":"ok","count":3}'` + "\nlet data = json parse $raw.stdout\nassert $data.status eq ok\nassert $data.count eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2731,7 +2783,7 @@ func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
-	input := "let raw = exec echo hello\nlet out = exec wc -l file:$raw.stdout\nassert eq $out.exit_code 0\n"
+	input := "let raw = exec echo hello\nlet out = exec wc -l file:$raw.stdout\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
