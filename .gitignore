@@ -5,3 +5,4 @@ archive/bpfman-kernel/bpfman-kernel
 .direnv/
 .dispatcher-docker-stamp
 e2e/testdata/*.bpf.o
+e2e/testdata/call_malloc
