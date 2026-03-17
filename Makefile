@@ -112,8 +112,10 @@ e2e-testdata-bpf:
 	$(MAKE) -C e2e/testdata/bpf
 
 test-e2e: e2e-testdata-bpf
+	@echo "Compiling e2e test binary..."
+	go test -c -race -tags=e2e -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
-	go test -test.failfast -race -v -count=1 -tags=e2e $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST),-run $(TEST)) ./e2e/...
+	cd e2e && sudo ../e2e.test -test.failfast -test.v -test.count=1 $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Documentation
 DOC_PORT ?= 6060

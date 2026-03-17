@@ -11,7 +11,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: "1.25"
 
       - name: Install BPF build dependencies
         run: |
@@ -25,4 +25,4 @@ jobs:
         run: make test PARALLEL=1
 
       - name: E2E tests
-        run: sudo make test-e2e PARALLEL=1
+        run: make test-e2e PARALLEL=1
