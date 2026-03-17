@@ -76,8 +76,10 @@ docker-build-all: docker-build-bpfman docker-build-bpfman-upstream docker-build-
 clean: bpfman-clean dispatchers-clean coverage-clean
 	$(RM) -r $(BIN_DIR)
 
+PARALLEL ?=
+
 test:
-	go test -race -v ./...
+	go test -race -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
 
 lint:
 	golangci-lint run
@@ -111,7 +113,7 @@ e2e-testdata-bpf:
 
 test-e2e: e2e-testdata-bpf
 	@echo "Running e2e tests (requires root)..."
-	go test -test.failfast -race -v -count=1 -tags=e2e $(if $(TEST),-run $(TEST)) ./e2e/...
+	go test -test.failfast -race -v -count=1 -tags=e2e $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST),-run $(TEST)) ./e2e/...
 
 # Documentation
 DOC_PORT ?= 6060

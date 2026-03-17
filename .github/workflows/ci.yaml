@@ -22,7 +22,7 @@ jobs:
         run: make
 
       - name: Unit tests
-        run: make test
+        run: make test PARALLEL=1
 
       - name: E2E tests
-        run: sudo make test-e2e
+        run: sudo make test-e2e PARALLEL=1
