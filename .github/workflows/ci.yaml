@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+
+      - name: Build (includes dispatcher Docker build)
+        run: make
+
+      - name: Unit tests
+        run: make test
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+
+      - name: Install BPF build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libbpf-dev
+
+      - name: Build dispatchers
+        run: make ensure-dispatchers
+
+      - name: E2E tests
+        run: sudo make test-e2e
