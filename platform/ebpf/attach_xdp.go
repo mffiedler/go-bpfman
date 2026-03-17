@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -17,6 +18,28 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
+// attachXDPWithRetry retries link.AttachXDP on EBUSY. Removing a
+// pinned XDP link drops the last kernel reference, but the kernel
+// releases the XDP hook asynchronously. A brief retry avoids
+// spurious failures when re-attaching to the same interface
+// immediately after detach.
+func attachXDPWithRetry(opts link.XDPOptions) (link.Link, error) {
+	const (
+		maxAttempts = 5
+		baseDelay   = 50 * time.Millisecond
+	)
+	var lnk link.Link
+	var err error
+	for i := range maxAttempts {
+		lnk, err = link.AttachXDP(opts)
+		if err == nil || !errors.Is(err, syscall.EBUSY) {
+			return lnk, err
+		}
+		time.Sleep(baseDelay << i)
+	}
+	return nil, err
+}
+
 // AttachXDP attaches a pinned XDP program to a network interface.
 func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error) {
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
@@ -25,7 +48,7 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	}
 	defer prog.Close()
 
-	lnk, err := link.AttachXDP(link.XDPOptions{
+	lnk, err := attachXDPWithRetry(link.XDPOptions{
 		Program:   prog,
 		Interface: ifindex,
 	})
@@ -117,7 +140,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 			"ifindex", spec.Target.IfIndex,
 			"netns", spec.Target.NetNS,
 			"prog_pin_path", spec.ProgPinPath)
-		lnk, err := link.AttachXDP(link.XDPOptions{
+		lnk, err := attachXDPWithRetry(link.XDPOptions{
 			Program:   dispatcherProg,
 			Interface: spec.Target.IfIndex,
 		})
@@ -280,7 +303,7 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, i
 			"prog_pin_path", progPinPath,
 			"link_pin_path", linkPinPath,
 			"netns", netnsPath)
-		lnk, err := link.AttachXDP(link.XDPOptions{
+		lnk, err := attachXDPWithRetry(link.XDPOptions{
 			Program:   prog,
 			Interface: ifindex,
 		})

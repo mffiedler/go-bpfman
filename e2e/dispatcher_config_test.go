@@ -525,7 +525,6 @@ func testSlotReusedAfterDetach(t *testing.T, h dispatcherTestHarness) {
 // last attached program tears down the dispatcher entirely (pins
 // removed), and that a fresh attachment creates a new dispatcher.
 func TestDispatcher_LifecycleAfterLastDetach(t *testing.T) {
-	t.Skip("skipped: kernel XDP link cleanup after pin removal is asynchronous; re-attach races with cleanup on CI runners")
 	t.Parallel()
 	for _, h := range eachDispatcherType(t) {
 		t.Run(h.name, func(t *testing.T) {
