@@ -1230,6 +1230,115 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "link delete: requires at least one link ID")
 }
 
+func TestReplLoop_AliasBasic(t *testing.T) {
+	// Define an alias and use it to invoke a domain command.
+	// "bpfman doctor explain" lists rules; the alias should work the same.
+	input := "alias b = bpfman\nb doctor explain\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "Available coherency rules")
+}
+
+func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"assert", "alias assert = bpfman\n", "shell command"},
+		{"let", "alias let = bpfman\n", "shell keyword"},
+		{"set", "alias set = bpfman\n", "shell keyword"},
+		{"bpfman", "alias bpfman = b\n", "domain prefix"},
+		{"exec", "alias exec = bpfman\n", "shell command"},
+		{"alias", "alias alias = bpfman\n", "shell command"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var errBuf bytes.Buffer
+			cli := &CLI{Out: io.Discard, Err: &errBuf}
+			lr := NewScannerReader(strings.NewReader(tt.input), nil)
+
+			err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+			require.NoError(t, err)
+			assert.Contains(t, errBuf.String(), tt.want)
+		})
+	}
+}
+
+func TestReplLoop_AliasBadSyntax(t *testing.T) {
+	input := "alias b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "usage: alias")
+}
+
+func TestReplLoop_UnaliasBasic(t *testing.T) {
+	input := "alias b = bpfman\nunalias b\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_UnaliasUndefined(t *testing.T) {
+	input := "unalias nosuch\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "undefined alias")
+}
+
+func TestReplLoop_AliasesList(t *testing.T) {
+	input := "alias b = bpfman\nalias bp = bpfman\naliases\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "b = bpfman")
+	assert.Contains(t, outBuf.String(), "bp = bpfman")
+}
+
+func TestReplLoop_AliasesEmpty(t *testing.T) {
+	input := "aliases\n"
+	var outBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "No aliases defined")
+}
+
+func TestReplLoop_AliasInLetBinding(t *testing.T) {
+	// "let x = b doctor explain" should fail to bind (doctor
+	// produces no assignable value) but should reach the domain
+	// dispatcher, proving alias expansion works in let context.
+	input := "alias b = bpfman\nlet x = b doctor explain\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "command produced no result to assign")
+}
+
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))

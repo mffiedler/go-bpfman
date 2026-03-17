@@ -34,7 +34,7 @@ type ReplCmd struct {
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "set", "source", "unset", "vars", "version"}
+var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "set", "source", "unalias", "unset", "vars", "version"}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -195,6 +195,8 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 // handled directly by replEval and never reach the domain command
 // dispatcher.
 var shellCommands = map[string]bool{
+	"alias":   true,
+	"aliases": true,
 	"assert":  true,
 	"exec":    true,
 	"file":    true,
@@ -203,6 +205,7 @@ var shellCommands = map[string]bool{
 	"dump":    true,
 	"help":    true,
 	"source":  true,
+	"unalias": true,
 	"unset":   true,
 	"vars":    true,
 	"version": true,
@@ -223,6 +226,10 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	}
 
 	switch cmd {
+	case "alias":
+		return true, shell.Value{}, replAlias(cli, session, argTexts(args[1:]))
+	case "aliases":
+		return true, shell.Value{}, replAliases(cli, session)
 	case "assert":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
 	case "exec":
@@ -242,6 +249,8 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
 		return true, shell.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+	case "unalias":
+		return true, shell.Value{}, replUnalias(cli, session, argTexts(args[1:]))
 	case "unset":
 		return true, shell.Value{}, replUnset(cli, session, argTexts(args[1:]))
 	case "vars":
@@ -302,6 +311,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
+		expanded = applyAlias(session, expanded)
 		// Try shell commands first — some (like exec) produce
 		// assignable values. Use WithDiscardOutput so that
 		// bound commands do not print their normal output.
@@ -338,6 +348,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
+		expanded = applyAlias(session, expanded)
 		handled, _, err := replShellCmd(ctx, cli, mgr, session, expanded, loc)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
@@ -1146,6 +1157,11 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  version                                  Print version information\n")
 	b.WriteString("  help                                     Show this help\n")
 	b.WriteString("\n")
+	b.WriteString("Aliases:\n")
+	b.WriteString("  alias <name> = <expansion>               Define a first-token alias\n")
+	b.WriteString("  unalias <name>...                        Remove alias bindings\n")
+	b.WriteString("  aliases                                  List defined aliases\n")
+	b.WriteString("\n")
 	b.WriteString("Variables:\n")
 	b.WriteString("  let prog = bpfman load file ...   Assign command result to a variable\n")
 	b.WriteString("  set <name> = <value>              Bind scalar value to variable\n")
@@ -1382,6 +1398,75 @@ func replVars(cli *CLI, session *shell.Session) error {
 			kind = "structured"
 		}
 		fmt.Fprintf(&b, "  %s (%s)\n", name, kind)
+	}
+	return cli.PrintOut(b.String())
+}
+
+// applyAlias rewrites the first token of an expanded arg slice if it
+// matches a session alias. Expansion is non-recursive: only one
+// rewrite is performed.
+func applyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
+	if len(args) == 0 {
+		return args
+	}
+	w, ok := args[0].(shell.WordArg)
+	if !ok {
+		return args
+	}
+	expansion, found := session.GetAlias(w.Text)
+	if !found {
+		return args
+	}
+	rewritten := make([]shell.Arg, len(args))
+	copy(rewritten, args)
+	rewritten[0] = shell.WordArg{Text: expansion}
+	return rewritten
+}
+
+// replAlias defines a first-token alias. Syntax: alias <name> = <expansion>.
+// The name must not collide with shell commands or "bpfman".
+func replAlias(cli *CLI, session *shell.Session, args []string) error {
+	if len(args) != 3 || args[1] != "=" {
+		return fmt.Errorf("usage: alias <name> = <expansion>")
+	}
+	name, expansion := args[0], args[2]
+	if shellCommands[name] {
+		return fmt.Errorf("cannot alias %q: it is a shell command", name)
+	}
+	if name == "bpfman" {
+		return fmt.Errorf("cannot alias %q: it is the domain prefix", name)
+	}
+	if name == "let" || name == "set" {
+		return fmt.Errorf("cannot alias %q: it is a shell keyword", name)
+	}
+	session.SetAlias(name, expansion)
+	return nil
+}
+
+// replUnalias removes one or more alias bindings.
+func replUnalias(cli *CLI, session *shell.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("unalias requires at least one alias name")
+	}
+	for _, name := range args {
+		if _, ok := session.GetAlias(name); !ok {
+			return fmt.Errorf("undefined alias %q", name)
+		}
+		session.DeleteAlias(name)
+	}
+	return nil
+}
+
+// replAliases lists all defined aliases.
+func replAliases(cli *CLI, session *shell.Session) error {
+	names := session.AliasNames()
+	if len(names) == 0 {
+		return cli.PrintOut("No aliases defined\n")
+	}
+	var b strings.Builder
+	for _, name := range names {
+		expansion, _ := session.GetAlias(name)
+		fmt.Fprintf(&b, "  %s = %s\n", name, expansion)
 	}
 	return cli.PrintOut(b.String())
 }

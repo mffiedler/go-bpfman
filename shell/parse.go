@@ -91,6 +91,13 @@ func ParseStmt(tokens []Token) (Stmt, error) {
 		}
 	}
 
+	// The "alias" command uses "=" in its own syntax
+	// (alias name = expansion), so it is exempt from the stray
+	// assignment check.
+	if tokens[0].Kind == TokenWord && tokens[0].Text == "alias" {
+		return &CommandStmt{Tokens: tokens}, nil
+	}
+
 	// TokenAssign is only valid inside let/set expressions. Its
 	// presence in a plain command is a syntax error.
 	for i, tok := range tokens {
