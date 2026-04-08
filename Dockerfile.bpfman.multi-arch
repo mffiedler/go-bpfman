@@ -1,0 +1,16 @@
+# Multi-arch runtime image for go-bpfman.
+#
+# This Dockerfile expects a pre-built bpfman binary at bin/bpfman and
+# pre-built dispatcher BPF objects at dispatcher/*.bpf.o. The CI
+# workflow builds these per-architecture and passes them via the
+# build context.
+
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+FROM ${BASE_IMAGE}
+
+COPY bin/bpfman /bpfman
+
+ENV BPFMAN_MODE=bpfman-rpc
+ENV BPFMAN_PPROF_ADDRESS=localhost:6060
+ENTRYPOINT ["/bpfman"]
