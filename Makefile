@@ -163,11 +163,14 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 		exit 1; \
 	fi; \
 	qemu="qemu-$$qemu_arch"; \
+	sysroot=""; \
 	if [ -d "/usr/$${prefix}-linux-gnu" ]; then \
-		qemu="$$qemu -L /usr/$${prefix}-linux-gnu"; \
+		sysroot="/usr/$${prefix}-linux-gnu"; \
+		qemu="$$qemu -L $$sysroot"; \
 	fi; \
 	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
 	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
+		QEMU_LD_PREFIX="$$sysroot" \
 		go test -v -count=1 -exec "$$qemu" ./ns/nsenter/
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))

@@ -43,6 +43,4 @@ jobs:
           sudo apt-get install -y ${{ matrix.pkgs }}
 
       - name: Run nsenter tests
-        env:
-          QEMU_LD_PREFIX: ${{ matrix.qemu_ld_prefix }}
         run: make test-nsenter-${{ matrix.goarch }}
