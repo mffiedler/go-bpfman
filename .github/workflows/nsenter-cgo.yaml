@@ -1,0 +1,48 @@
+name: nsenter CGO cross-architecture
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-nsenter:
+    name: nsenter ${{ matrix.goarch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            pkgs: ""
+          - goarch: arm64
+            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-binfmt
+          - goarch: ppc64le
+            pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross qemu-user-binfmt
+          - goarch: s390x
+            pkgs: gcc-s390x-linux-gnu libc6-dev-s390x-cross qemu-user-binfmt
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install cross-compilation toolchain
+        if: matrix.pkgs != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.pkgs }}
+
+      - name: Run nsenter tests
+        env:
+          QEMU_LD_PREFIX: ${{ matrix.qemu_ld_prefix }}
+        run: make test-nsenter-${{ matrix.goarch }}

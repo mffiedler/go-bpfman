@@ -30,6 +30,9 @@ help:
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
+	@echo "  test-nsenter                Run nsenter tests (native amd64)"
+	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
+	@echo "  test-nsenter-{arch}         Run nsenter tests for a single architecture"
 	@echo "  lint                        Run golangci-lint"
 	@echo "  coverage                    Generate coverage profile and show total"
 	@echo "  coverage-func               Show coverage by function"
@@ -120,6 +123,54 @@ coverage-open: coverage-html
 
 coverage-clean:
 	$(RM) -r $(COVERAGE_DIR)
+
+# nsenter cross-architecture tests
+#
+# Proves the nsenter package's C constructor and nsexec code compile,
+# link, and run on each target architecture. Uses cross-compilation
+# GCC and QEMU user-mode emulation for foreign architectures.
+#
+# The CC is auto-detected: Nix-style triples are tried first
+# (<prefix>-unknown-linux-gnu-gcc), then distro-style
+# (<prefix>-linux-gnu-gcc). QEMU adds -L <sysroot> automatically
+# when a distro sysroot directory exists (/usr/<prefix>-linux-gnu).
+#
+# Usage:
+#   make test-nsenter                 # native amd64 only
+#   make test-nsenter-arm64           # single foreign architecture
+#   make test-nsenter-cross           # all architectures
+
+NSENTER_ARCHES ?= amd64 arm64 ppc64le s390x
+
+test-nsenter test-nsenter-amd64:
+	@echo "=== nsenter: amd64 ==="
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+		go test -v -count=1 ./ns/nsenter/
+
+test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
+	@goarch=$(@:test-nsenter-%=%); \
+	case $$goarch in \
+		arm64)   prefix=aarch64;     qemu_arch=aarch64 ;; \
+		ppc64le) prefix=powerpc64le; qemu_arch=ppc64le ;; \
+		s390x)   prefix=s390x;       qemu_arch=s390x ;; \
+	esac; \
+	cc=$$(command -v $${prefix}-unknown-linux-gnu-gcc 2>/dev/null || \
+	      command -v $${prefix}-linux-gnu-gcc 2>/dev/null || true); \
+	if [ -z "$$cc" ]; then \
+		echo "error: no cross-compiler for $$goarch" >&2; \
+		echo "  tried: $${prefix}-unknown-linux-gnu-gcc (nix)" >&2; \
+		echo "  tried: $${prefix}-linux-gnu-gcc (distro)" >&2; \
+		exit 1; \
+	fi; \
+	qemu="qemu-$$qemu_arch"; \
+	if [ -d "/usr/$${prefix}-linux-gnu" ]; then \
+		qemu="$$qemu -L /usr/$${prefix}-linux-gnu"; \
+	fi; \
+	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
+	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
+		go test -v -count=1 -exec "$$qemu" ./ns/nsenter/
+
+test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
 test-e2e: bpf-build
 	@echo "Compiling e2e test binary..."
@@ -365,4 +416,10 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	stats-reader-deploy \
 	stats-reader-logs \
 	test-e2e \
-	test
+	test \
+	test-nsenter \
+	test-nsenter-amd64 \
+	test-nsenter-arm64 \
+	test-nsenter-cross \
+	test-nsenter-ppc64le \
+	test-nsenter-s390x
