@@ -41,7 +41,6 @@ FROM ${BASE_IMAGE}
 
 # Single binary; behavioural mode is selected via BPFMAN_MODE.
 COPY --from=builder /build/bin/bpfman /bpfman
-COPY testdata/stats.o /opt/bpf/stats.o
 
 ENV BPFMAN_MODE=bpfman-rpc
 ENV BPFMAN_PPROF_ADDRESS=localhost:6060
