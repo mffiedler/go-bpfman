@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1.4
+
 # Build csi-sanity tool
 FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
-RUN CGO_ENABLED=0 go install github.com/kubernetes-csi/csi-test/v5/cmd/csi-sanity@latest
+RUN --mount=type=cache,target=/go-cache,uid=1001,gid=0 \
+    --mount=type=cache,target=/go-mod-cache,uid=1001,gid=0 \
+    CGO_ENABLED=0 GOCACHE=/go-cache GOMODCACHE=/go-mod-cache go install github.com/kubernetes-csi/csi-test/v5/cmd/csi-sanity@latest
 
 # Runtime image
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest

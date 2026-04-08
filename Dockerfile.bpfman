@@ -31,7 +31,9 @@ USER default
 COPY . .
 COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
 
-RUN --mount=type=cache,target=/root/.cache/go-build make bpfman-compile
+RUN --mount=type=cache,target=/go-cache,uid=1001,gid=0 \
+    --mount=type=cache,target=/go-mod-cache,uid=1001,gid=0 \
+    GOCACHE=/go-cache GOMODCACHE=/go-mod-cache make bpfman-compile
 
 # Runtime image
 FROM ${BASE_IMAGE}
