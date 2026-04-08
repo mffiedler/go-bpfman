@@ -54,6 +54,20 @@
 // works transparently when binfmt_misc is registered for the
 // target architecture; if not, the subprocess tests skip with an
 // "exec format error" diagnostic.
+//
+// # What cross-architecture testing does and does not prove
+//
+// The cross-architecture tests under QEMU user-mode prove that the
+// CGO code compiles, links, and executes on each target CPU
+// architecture: the constructor fires and nsexec runs. They do not
+// prove the setns path works on those architectures because QEMU
+// user-mode translates instructions, not the kernel -- setns is a
+// kernel namespace operation that QEMU user-mode cannot perform
+// (it returns EINVAL). On a native runner for the target
+// architecture (real hardware or QEMU system emulation with a full
+// guest kernel) all tests run identically to amd64, including the
+// setns proof. We consider QEMU system emulation too heavyweight
+// for CI at present.
 package nsenter_test
 
 import (
