@@ -61,9 +61,11 @@ jobs:
             e2e/testdata/call_malloc
 
       - name: Trim Go build cache
+        if: github.ref == 'refs/heads/main'
         run: find ~/.cache/go-build -type f -mmin +90 -delete
 
       - name: Save Go cache
+        if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v5
         with:
           path: |
