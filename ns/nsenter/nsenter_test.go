@@ -39,13 +39,13 @@
 // produced its expected debug message on stderr, proving the
 // constructor fired. Does not require elevated privileges.
 //
-// TestConstructorWithSelfNamespace: launches a subprocess with
-// _BPFMAN_MNT_NS=/proc/self/ns/mnt. After setns the constructor
-// clears the variable. The helper reports whether the variable is
-// gone. This is the strongest proof: if the constructor did not
-// run, the variable is still present and the test fails. Requires
-// CAP_SYS_ADMIN (root) because setns demands it; fails without
-// sudo. Skipped under QEMU user-mode where setns is unsupported.
+// TestConstructorWithSelfNamespace (build tag "nsenter"): launches
+// a subprocess with _BPFMAN_MNT_NS=/proc/self/ns/mnt. After setns
+// the constructor clears the variable. The helper reports whether
+// the variable is gone. This is the strongest proof: if the
+// constructor did not run, the variable is still present and the
+// test fails. Requires CAP_SYS_ADMIN (root) because setns demands
+// it. Skipped under QEMU user-mode where setns is unsupported.
 //
 // # Cross-architecture testing
 //
@@ -135,30 +135,6 @@ func TestConstructorWithoutNamespace(t *testing.T) {
 	t.Logf("subprocess inode: %d", result.inode)
 }
 
-// TestConstructorWithSelfNamespace is the strongest proof that the
-// constructor runs and the full setns path executes.
-//
-// The subprocess is launched with _BPFMAN_MNT_NS pointing at its
-// own mount namespace (/proc/self/ns/mnt). This is a no-op
-// namespace switch (same namespace) but it exercises the real code
-// path: open the namespace file, call setns, clear the environment
-// variable. The test asserts that the variable was cleared. If the
-// constructor did not run the variable would still be present.
-//
-// Requires CAP_SYS_ADMIN; fails if not root. Skipped under QEMU
-// user-mode emulation where setns is not supported.
-func TestConstructorWithSelfNamespace(t *testing.T) {
-	result := runHelper(t, []string{
-		nsenter.MntNsEnvVar + "=/proc/self/ns/mnt",
-	})
-	if result.mntNsEnv != "cleared" {
-		t.Fatalf("%s was not cleared by the constructor: env is %q",
-			nsenter.MntNsEnvVar, result.mntNsEnv)
-	}
-	t.Logf("subprocess inode: %d (constructor cleared %s)",
-		result.inode, nsenter.MntNsEnvVar)
-}
-
 type helperResult struct {
 	inode    uint64
 	mntNsEnv string // "cleared" or "present"
@@ -196,7 +172,7 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 		}
 		if strings.Contains(errOut, "Operation not permitted") ||
 			strings.Contains(errOut, "EPERM") {
-			t.Fatalf("setns failed (run with sudo): %s", errOut)
+			t.Fatalf("setns failed (run with sudo or use make test-nsenter): %s", errOut)
 		}
 		if strings.Contains(errOut, "Invalid argument") ||
 			strings.Contains(errOut, "EINVAL") {

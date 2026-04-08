@@ -142,10 +142,12 @@ coverage-clean:
 
 NSENTER_ARCHES ?= amd64 arm64 ppc64le s390x
 
+NSENTER_TEST_BIN ?= nsenter.test
+
 test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
-	sudo CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-		go test -v -count=1 ./ns/nsenter/
+	CGO_ENABLED=1 go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/
+	sudo ./$(NSENTER_TEST_BIN) -test.v -test.count=1
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 	@goarch=$(@:test-nsenter-%=%); \
@@ -169,9 +171,10 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 		qemu="$$qemu -L $$sysroot"; \
 	fi; \
 	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
-	sudo CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
-		QEMU_LD_PREFIX="$$sysroot" \
-		go test -v -count=1 -exec "$$qemu" ./ns/nsenter/
+	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
+		go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/; \
+	sudo QEMU_LD_PREFIX="$$sysroot" \
+		$$qemu ./$(NSENTER_TEST_BIN) -test.v -test.count=1
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
