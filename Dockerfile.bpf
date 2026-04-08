@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.4
+# Dockerfile for building all BPF programs (dispatchers + e2e testdata).
+
+ARG FEDORA_VERSION=43
+
+FROM fedora:${FEDORA_VERSION} AS bpf-builder
+
+RUN dnf update -y && dnf install -y \
+    clang \
+    gcc \
+    llvm \
+    libbpf-devel \
+    pkg-config \
+    make \
+    kernel-headers \
+    && dnf clean all
+
+WORKDIR /build
+
+# Copy BPF source trees
+COPY dispatcher/ dispatcher/
+COPY e2e/testdata/bpf/ e2e/testdata/bpf/
+
+# Build dispatcher BPF objects
+RUN make -C dispatcher
+
+# Build e2e testdata BPF objects and call_malloc binary
+RUN make -C e2e/testdata/bpf
+
+# Organise output
+RUN mkdir -p /output/dispatcher /output/e2e/testdata && \
+    cp dispatcher/*.bpf.o /output/dispatcher/ && \
+    cp e2e/testdata/*.bpf.o e2e/testdata/call_malloc /output/e2e/testdata/
+
+FROM scratch AS artifacts
+COPY --from=bpf-builder /output/ /

@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.4
 
+ARG FEDORA_VERSION=43
 ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset:1.25
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # BPF toolchain stage — builds dispatcher .bpf.o files
-FROM fedora:latest AS bpf-builder
+FROM fedora:${FEDORA_VERSION} AS bpf-builder
 
 RUN dnf update -y && dnf install -y \
     clang \

@@ -1,3 +1,8 @@
+# Tool versions — single source of truth for CI and Docker builds.
+FEDORA_VERSION ?= 43
+GO_VERSION ?= 1.25
+GOLANGCI_LINT_VERSION ?= v2.11.2
+
 IMAGE_TAG ?= dev
 BPFMAN_IMAGE ?= bpfman
 KIND_CLUSTER ?= bpfman-deployment
@@ -5,7 +10,16 @@ NAMESPACE ?= bpfman
 STATS_READER_IMAGE ?= stats-reader
 BIN_DIR ?= bin
 
-all: bpfman-fmt bpfman-vet bpfman-build
+all: bpfman-build
+
+print-go-version:
+	@echo $(GO_VERSION)
+
+print-fedora-version:
+	@echo $(FEDORA_VERSION)
+
+$(BIN_DIR)/golangci-lint: | $(BIN_DIR)
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(abspath $(BIN_DIR)) $(GOLANGCI_LINT_VERSION)
 
 help:
 	@echo "Build:"
@@ -56,11 +70,10 @@ help:
 	@echo "  doc                         Start pkgsite documentation server"
 	@echo "  doc-text                    Print API documentation to stdout"
 	@echo ""
-	@echo "Dispatchers:"
-	@echo "  dispatchers-build           Build XDP/TC dispatcher BPF programs (host)"
-	@echo "  dispatchers-docker          Build XDP/TC dispatcher BPF programs (Docker)"
-	@echo "  dispatchers-clean           Remove dispatcher build artifacts"
-	@echo "  dispatchers-docker-test     Build and test dispatcher files in container"
+	@echo "BPF:"
+	@echo "  bpf-build                   Build all BPF programs (Docker by default)"
+	@echo "  bpf-clean                   Remove BPF build artifacts"
+	@echo "  Set BPF_USE_HOST=1 to use host toolchain instead of Docker."
 	@echo ""
 	@echo "Combined:"
 	@echo "  kind-undeploy-all           Remove all components from KIND cluster"
@@ -73,16 +86,16 @@ help:
 
 docker-build-all: docker-build-bpfman docker-build-bpfman-upstream docker-build-stats-reader docker-build-csi-sanity
 
-clean: bpfman-clean dispatchers-clean coverage-clean
+clean: bpfman-clean bpf-clean coverage-clean
 	$(RM) -r $(BIN_DIR)
 
 PARALLEL ?=
 
-test:
+test: bpf-build
 	go test -race -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
 
-lint:
-	golangci-lint run
+lint: bpf-build $(BIN_DIR)/golangci-lint
+	$(BIN_DIR)/golangci-lint run
 
 # Coverage targets
 COVERAGE_DIR ?= .coverage
@@ -108,10 +121,7 @@ coverage-open: coverage-html
 coverage-clean:
 	$(RM) -r $(COVERAGE_DIR)
 
-e2e-testdata-bpf:
-	$(MAKE) -C e2e/testdata/bpf
-
-test-e2e: e2e-testdata-bpf
+test-e2e: bpf-build
 	@echo "Compiling e2e test binary..."
 	go test -c -race -tags=e2e -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
@@ -151,13 +161,12 @@ LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
 # Run 'make bpfman-proto' explicitly after modifying proto/bpfman.proto.
 # CGO is required for the ns/nsenter package which uses a C constructor to call
 # setns() before Go runtime starts (needed for uprobe container attachment).
-# For daily development use bpfman-all which also runs fmt and vet.
-bpfman-build: ensure-dispatchers bpfman-compile
+bpfman-build: bpfman-fmt bpfman-vet bpf-build bpfman-compile
 
 bpfman-fmt:
 	go fmt ./...
 
-bpfman-vet: ensure-dispatchers
+bpfman-vet: bpf-build
 	go vet ./...
 
 # Compile bpfman without the dispatcher dependency. Used directly by
@@ -286,46 +295,36 @@ kind-create:
 kind-delete:
 	kind delete cluster --name $(KIND_CLUSTER)
 
-# Dispatcher targets
-dispatchers-build:
+# BPF build targets
+#
+# Default: build all BPF programs (dispatchers + e2e testdata) via Docker.
+# Set BPF_USE_HOST=1 to use the host toolchain instead.
+# Set DOCKER_BUILD_ARGS for additional docker build flags (e.g., cache options).
+
+DOCKER_BUILD_ARGS ?=
+
+BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c) e2e/testdata/bpf/call_malloc.c
+BPF_STAMP := .bpf-build-stamp
+
+.PHONY: bpf-build bpf-clean
+
+bpf-build: $(BPF_STAMP)
+
+ifdef BPF_USE_HOST
+$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
 	$(MAKE) -C dispatcher
+	$(MAKE) -C e2e/testdata/bpf
+	touch $(BPF_STAMP)
+else
+$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile Dockerfile.bpf
+	docker build -f Dockerfile.bpf --build-arg FEDORA_VERSION=$(FEDORA_VERSION) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
+	touch $(BPF_STAMP)
+endif
 
-dispatchers-clean:
+bpf-clean:
 	$(MAKE) -C dispatcher clean
-	rm -f $(DISPATCHER_OBJECTS) $(DISPATCHER_STAMP)
-
-# Smart Docker-based dispatcher build - only rebuilds when sources change
-DISPATCHER_OBJECTS := dispatcher/tc_dispatcher.bpf.o dispatcher/tc_dispatcher_v2.bpf.o dispatcher/xdp_dispatcher_v1.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o dispatcher/xdp_dispatcher_v3.bpf.o
-DISPATCHER_SOURCES := $(patsubst dispatcher/%.bpf.o,dispatcher/bpf/%.bpf.c,$(DISPATCHER_OBJECTS))
-DISPATCHER_STAMP := .dispatcher-docker-stamp
-
-# Phony target to ensure dispatcher objects are built
-.PHONY: ensure-dispatchers
-ensure-dispatchers: $(DISPATCHER_STAMP)
-	@# Verify all dispatcher objects exist
-	@for obj in $(DISPATCHER_OBJECTS); do \
-		if [ ! -f "$$obj" ]; then \
-			echo "Error: $$obj not found after Docker build"; \
-			exit 1; \
-		fi; \
-	done
-
-# Convenience target for building dispatchers with Docker
-dispatchers-docker: $(DISPATCHER_STAMP)
-
-# Use a stamp file to track when dispatcher objects are built
-$(DISPATCHER_STAMP): $(DISPATCHER_SOURCES) dispatcher/Makefile Dockerfile.dispatchers Makefile
-	docker build -f Dockerfile.dispatchers --target testable -t bpfman-dispatchers-test:latest .
-	docker rm dispatcher-temp 2>/dev/null || true
-	docker create --name dispatcher-temp bpfman-dispatchers-test:latest
-	docker cp dispatcher-temp:/dispatcher/ ./
-	docker rm dispatcher-temp
-	@echo "Extracted updated BPF objects to ./dispatcher/"
-	touch $(DISPATCHER_STAMP)
-
-dispatchers-docker-test:
-	docker build -f Dockerfile.dispatchers --target testable -t bpfman-dispatchers-test:latest .
-	docker run --rm bpfman-dispatchers-test:latest
+	$(MAKE) -C e2e/testdata/bpf clean
+	rm -f $(BPF_STAMP)
 
 # Combined targets
 kind-undeploy-all: stats-reader-delete bpfman-delete
@@ -348,12 +347,8 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	coverage-func \
 	coverage-html \
 	coverage-open \
-	dispatchers-build \
-	dispatchers-clean \
-	e2e-testdata-bpf \
-	dispatchers-docker-build \
-	dispatchers-docker-extract \
-	dispatchers-docker-test \
+	bpf-build \
+	bpf-clean \
 	doc \
 	doc-text \
 	docker-build-all \

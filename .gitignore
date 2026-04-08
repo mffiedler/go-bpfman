@@ -3,6 +3,6 @@ bpfman/testdata/
 bpfman/internal/server/pb/
 archive/bpfman-kernel/bpfman-kernel
 .direnv/
-.dispatcher-docker-stamp
+.bpf-build-stamp
 e2e/testdata/*.bpf.o
 e2e/testdata/call_malloc
