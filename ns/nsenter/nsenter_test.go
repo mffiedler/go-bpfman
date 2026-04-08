@@ -44,7 +44,8 @@
 // clears the variable. The helper reports whether the variable is
 // gone. This is the strongest proof: if the constructor did not
 // run, the variable is still present and the test fails. Requires
-// CAP_SYS_ADMIN (root) because setns demands it.
+// CAP_SYS_ADMIN (root) because setns demands it; fails without
+// sudo. Skipped under QEMU user-mode where setns is unsupported.
 //
 // # Cross-architecture testing
 //
@@ -144,7 +145,8 @@ func TestConstructorWithoutNamespace(t *testing.T) {
 // variable. The test asserts that the variable was cleared. If the
 // constructor did not run the variable would still be present.
 //
-// Requires CAP_SYS_ADMIN; skipped when unprivileged.
+// Requires CAP_SYS_ADMIN; fails if not root. Skipped under QEMU
+// user-mode emulation where setns is not supported.
 func TestConstructorWithSelfNamespace(t *testing.T) {
 	result := runHelper(t, []string{
 		nsenter.MntNsEnvVar + "=/proc/self/ns/mnt",
@@ -194,7 +196,11 @@ func runHelper(t *testing.T, extraEnv []string) helperResult {
 		}
 		if strings.Contains(errOut, "Operation not permitted") ||
 			strings.Contains(errOut, "EPERM") {
-			t.Skipf("setns requires CAP_SYS_ADMIN:\n%s", errOut)
+			t.Fatalf("setns failed (run with sudo): %s", errOut)
+		}
+		if strings.Contains(errOut, "Invalid argument") ||
+			strings.Contains(errOut, "EINVAL") {
+			t.Skipf("setns not supported (QEMU user-mode cannot perform namespace operations):\n%s", errOut)
 		}
 		t.Fatalf("subprocess failed: %v\nstderr:\n%s\nstdout:\n%s",
 			err, errOut, stdout.String())

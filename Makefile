@@ -144,7 +144,7 @@ NSENTER_ARCHES ?= amd64 arm64 ppc64le s390x
 
 test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+	sudo CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
 		go test -v -count=1 ./ns/nsenter/
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
@@ -169,7 +169,7 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 		qemu="$$qemu -L $$sysroot"; \
 	fi; \
 	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
-	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
+	sudo CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
 		QEMU_LD_PREFIX="$$sysroot" \
 		go test -v -count=1 -exec "$$qemu" ./ns/nsenter/
 
