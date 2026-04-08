@@ -12,9 +12,15 @@ jobs:
   build-bpf:
     name: Build BPF objects
     runs-on: ubuntu-24.04
+    outputs:
+      build_date: ${{ steps.meta.outputs.build_date }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
+
+      - name: Compute build metadata
+        id: meta
+        run: echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Read Go version from Makefile
         run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
@@ -87,6 +93,7 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
+          BUILD_DATE: ${{ needs.build-bpf.outputs.build_date }}
         run: make bpfman-compile
 
       - name: Upload binary

@@ -201,11 +201,11 @@ doc-text:
 
 # Version information injected at build time.
 VERSION_PKG := github.com/frobware/go-bpfman/version
-GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
-GIT_STATE := $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo dirty; fi)
-BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
+GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo dirty; fi)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 
 LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
            -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
