@@ -12,10 +12,30 @@ jobs:
     needs: build-bpf
     uses: ./.github/workflows/test.yaml
 
-  build-and-push-image:
-    name: Build and push multi-arch image
+  build-and-push:
+    name: Build and push (${{ matrix.goarch }})
     runs-on: ubuntu-24.04
-    needs: [test, build-bpf]
+    needs: build-bpf
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            cc: gcc
+            pkgs: ""
+            expect_file: "x86-64"
+          - goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+            expect_file: "aarch64"
+          - goarch: ppc64le
+            cc: powerpc64le-linux-gnu-gcc
+            pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross
+            expect_file: "64-bit.*PowerPC"
+          - goarch: s390x
+            cc: s390x-linux-gnu-gcc
+            pkgs: gcc-s390x-linux-gnu libc6-dev-s390x-cross
+            expect_file: "IBM S/390"
     steps:
       - uses: actions/checkout@v6
 
@@ -27,13 +47,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install cross-compilation toolchains
+      - name: Install cross-compilation toolchain
+        if: matrix.pkgs != ''
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
-            gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross \
-            gcc-s390x-linux-gnu libc6-dev-s390x-cross
+          sudo apt-get install -y ${{ matrix.pkgs }}
 
       - name: Download BPF objects
         uses: actions/download-artifact@v6
@@ -43,91 +61,72 @@ jobs:
       - name: Touch BPF objects to preserve Make freshness
         run: touch .bpf-build-stamp dispatcher/*.bpf.o
 
-      - name: Cross-compile bpfman for all architectures
+      - name: Cross-compile bpfman
         env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+        run: make bpfman-compile
+
+      - name: Verify binary architecture
         run: |
-          declare -A expect_file=(
-            [amd64]="x86-64"
-            [arm64]="aarch64"
-            [ppc64le]="64-bit.*PowerPC"
-            [s390x]="IBM S/390"
-          )
-          for arch in amd64:gcc arm64:aarch64-linux-gnu-gcc ppc64le:powerpc64le-linux-gnu-gcc s390x:s390x-linux-gnu-gcc; do
-            goarch="${arch%%:*}"
-            cc="${arch##*:}"
-            echo "=== Building bpfman for ${goarch} (CC=${cc}) ==="
-            CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" CC="${cc}" make bpfman-compile
-            mv bin/bpfman "bin/bpfman-${goarch}"
-            file_output=$(file "bin/bpfman-${goarch}")
-            echo "${file_output}"
-            echo "${file_output}" | grep -qE "${expect_file[${goarch}]}" || { echo "FAIL: binary is not ${goarch}"; exit 1; }
-          done
+          file_output=$(file bin/bpfman)
+          echo "${file_output}"
           echo "GIT_COMMIT=${{ github.sha }}"
           echo "BUILD_DATE=${{ github.event.head_commit.timestamp }}"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          echo "${file_output}" | grep -qE "${{ matrix.expect_file }}" || { echo "FAIL: binary is not ${{ matrix.goarch }}"; exit 1; }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Prepare per-platform build contexts
+      - name: Build and push image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.bpfman.multi-arch
+          platforms: linux/${{ matrix.goarch }}
+          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
+
+      - name: Save digest
         run: |
-          for arch in amd64 arm64 ppc64le s390x; do
-            mkdir -p "build-${arch}/bin"
-            cp "bin/bpfman-${arch}" "build-${arch}/bin/bpfman"
-            chmod +x "build-${arch}/bin/bpfman"
-          done
+          mkdir -p /tmp/digests
+          echo "${{ steps.push.outputs.digest }}" > "/tmp/digests/${{ matrix.goarch }}"
 
-      - name: Build and push amd64
-        id: build-amd64
-        uses: docker/build-push-action@v6
+      - name: Upload digest
+        uses: actions/upload-artifact@v6
         with:
-          context: build-amd64
-          file: ./Dockerfile.bpfman.multi-arch
-          platforms: linux/amd64
-          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
+          name: digest-${{ matrix.goarch }}
+          path: /tmp/digests/${{ matrix.goarch }}
 
-      - name: Build and push arm64
-        id: build-arm64
-        uses: docker/build-push-action@v6
+  assemble-manifest:
+    name: Assemble manifest
+    runs-on: ubuntu-24.04
+    needs: [test, build-and-push]
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v6
         with:
-          context: build-arm64
-          file: ./Dockerfile.bpfman.multi-arch
-          platforms: linux/arm64
-          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
-
-      - name: Build and push ppc64le
-        id: build-ppc64le
-        uses: docker/build-push-action@v6
-        with:
-          context: build-ppc64le
-          file: ./Dockerfile.bpfman.multi-arch
-          platforms: linux/ppc64le
-          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
-
-      - name: Build and push s390x
-        id: build-s390x
-        uses: docker/build-push-action@v6
-        with:
-          context: build-s390x
-          file: ./Dockerfile.bpfman.multi-arch
-          platforms: linux/s390x
-          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
+          pattern: digest-*
+          path: /tmp/digests
 
       - name: Create and push manifest
         run: |
-          docker buildx imagetools create -t ttl.sh/frobware/go-bpfman:latest \
-            ttl.sh/frobware/go-bpfman@${{ steps.build-amd64.outputs.digest }} \
-            ttl.sh/frobware/go-bpfman@${{ steps.build-arm64.outputs.digest }} \
-            ttl.sh/frobware/go-bpfman@${{ steps.build-ppc64le.outputs.digest }} \
-            ttl.sh/frobware/go-bpfman@${{ steps.build-s390x.outputs.digest }}
+          args=""
+          for f in /tmp/digests/digest-*/; do
+            arch=$(basename "$f" | sed 's/digest-//')
+            digest=$(cat "${f}${arch}")
+            echo "${arch}: ${digest}"
+            args="${args} ttl.sh/frobware/go-bpfman@${digest}"
+          done
+          docker buildx imagetools create -t ttl.sh/frobware/go-bpfman:latest ${args}
 
   verify-image:
     name: Verify image (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    needs: build-and-push-image
+    needs: assemble-manifest
     strategy:
       fail-fast: false
       matrix:
