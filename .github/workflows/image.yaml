@@ -7,9 +7,13 @@ on:
     branches: [main]
 
 jobs:
+  build-bpf:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    uses: ./.github/workflows/build-bpf.yaml
+
   build-bpfman:
     name: Cross-compile bpfman (${{ matrix.goarch }})
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: build-bpf
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -49,8 +53,6 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: bpf-objects
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Touch BPF objects to preserve Make freshness
         run: touch .bpf-build-stamp dispatcher/*.bpf.o
