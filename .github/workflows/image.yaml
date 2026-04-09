@@ -1,15 +1,16 @@
 name: Image
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
     branches: [main]
 
 jobs:
   build-bpf:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/build-bpf.yaml
+
+  test:
+    needs: build-bpf
+    uses: ./.github/workflows/test.yaml
 
   build-bpfman:
     name: Cross-compile bpfman (${{ matrix.goarch }})
@@ -63,11 +64,14 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
-          BUILD_DATE: ${{ github.event.workflow_run.created_at }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: make bpfman-compile
 
-      - name: Verify binary architecture
-        run: file bin/bpfman
+      - name: Verify binary
+        run: |
+          file bin/bpfman
+          echo "GIT_COMMIT=${{ github.sha }}"
+          echo "BUILD_DATE=${{ github.event.head_commit.timestamp }}"
 
       - name: Upload binary
         uses: actions/upload-artifact@v6
@@ -78,7 +82,7 @@ jobs:
   build-and-push-image:
     name: Assemble and push multi-arch image
     runs-on: ubuntu-24.04
-    needs: build-bpfman
+    needs: [test, build-bpfman]
     steps:
       - uses: actions/checkout@v6
 
@@ -145,3 +149,26 @@ jobs:
             ttl.sh/frobware/go-bpfman@${{ steps.build-arm64.outputs.digest }} \
             ttl.sh/frobware/go-bpfman@${{ steps.build-ppc64le.outputs.digest }} \
             ttl.sh/frobware/go-bpfman@${{ steps.build-s390x.outputs.digest }}
+
+  verify-image:
+    name: Verify image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: build-and-push-image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Verify image metadata
+        run: |
+          output=$(docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest bpfman version)
+          echo "$output"
+          echo "$output" | grep -q "${{ github.sha }}" || { echo "FAIL: expected git commit ${{ github.sha }}"; exit 1; }
+          echo "$output" | grep -q "${{ github.event.head_commit.timestamp }}" || { echo "FAIL: expected build date ${{ github.event.head_commit.timestamp }}"; exit 1; }
+          echo "$output" | grep -q "${{ matrix.platform }}" || { echo "FAIL: expected platform ${{ matrix.platform }}"; exit 1; }

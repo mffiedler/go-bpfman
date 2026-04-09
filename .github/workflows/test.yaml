@@ -1,0 +1,111 @@
+name: Tests
+
+on:
+  workflow_call:
+
+jobs:
+  unit-test:
+    name: Unit tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Set Go cache date
+        if: matrix.arch == 'amd64'
+        run: echo "GO_CACHE_DATE=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - name: Restore Go cache
+        if: matrix.arch == 'amd64'
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod') }}-${{ env.GO_CACHE_DATE }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
+            go-${{ runner.os }}-
+
+      - name: Download BPF objects
+        uses: actions/download-artifact@v6
+        with:
+          name: bpf-objects
+
+      - name: Touch BPF objects to preserve Make freshness
+        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
+
+      - name: Unit tests
+        run: make test PARALLEL=1
+
+      - name: Trim Go build cache
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
+        run: find ~/.cache/go-build -type f -mmin +90 -delete
+
+      - name: Save Go cache
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod') }}-${{ env.GO_CACHE_DATE }}
+
+  test-e2e:
+    name: E2E tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: nonexistent
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
+            go-${{ runner.os }}-
+
+      - name: Download BPF objects
+        uses: actions/download-artifact@v6
+        with:
+          name: bpf-objects
+
+      - name: Touch BPF objects to preserve Make freshness
+        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
+
+      - name: E2E tests
+        run: make test-e2e PARALLEL=1
