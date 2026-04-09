@@ -68,7 +68,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: make bpfman-compile
+        run: make bpfman-compile STATIC=1
 
       - name: Verify binary architecture
         run: |

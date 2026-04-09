@@ -1,45 +1,41 @@
 # syntax=docker/dockerfile:1.4
+#
+# Self-contained build of bpfman as a container image. Produces a
+# scratch-based image containing only the statically linked bpfman
+# binary. No host toolchain is required -- everything is built
+# inside the container using Fedora.
+#
+# Usage:
+#
+#   docker build -f Dockerfile.bpfman -t bpfman .
+#   docker run --rm -e BPFMAN_MODE= bpfman version
 
 ARG FEDORA_VERSION=43
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset:1.25
-ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
-# BPF toolchain stage — builds dispatcher .bpf.o files
-FROM fedora:${FEDORA_VERSION} AS bpf-builder
+FROM fedora:${FEDORA_VERSION} AS builder
 
-RUN dnf update -y && dnf install -y \
+RUN dnf install -y \
     clang \
     llvm \
     libbpf-devel \
     pkg-config \
     make \
     kernel-headers \
+    glibc-static \
+    gcc \
+    golang \
     && dnf clean all
 
 WORKDIR /build
-COPY dispatcher/ dispatcher/
-RUN cd dispatcher && make tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o
-
-# Build stage for Go binary
-FROM ${BUILDER_IMAGE} AS builder
-
-WORKDIR /build
-
-USER root
-RUN dnf install -y glibc-static gcc && dnf clean all
-RUN chown default:root /build
-USER default
 COPY . .
-COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
 
-RUN --mount=type=cache,target=/go-cache,uid=1001,gid=0 \
-    --mount=type=cache,target=/go-mod-cache,uid=1001,gid=0 \
-    GOCACHE=/go-cache GOMODCACHE=/go-mod-cache make bpfman-compile
+RUN --mount=type=cache,target=/go-cache \
+    --mount=type=cache,target=/go-mod-cache \
+    GOCACHE=/go-cache GOMODCACHE=/go-mod-cache BPF_USE_HOST=1 \
+    make bpfman-build STATIC=1
 
-# Runtime image
-FROM ${BASE_IMAGE}
+FROM scratch
 
-# Single binary; behavioural mode is selected via BPFMAN_MODE.
 COPY --from=builder /build/bin/bpfman /bpfman
 
 ENV BPFMAN_MODE=bpfman-rpc

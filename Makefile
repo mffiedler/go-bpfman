@@ -1,3 +1,6 @@
+# Make helper: literal comma for use inside $(if) expansions.
+comma := ,
+
 # Tool versions — single source of truth for CI and Docker builds.
 FEDORA_VERSION ?= 43
 GO_VERSION ?= 1.25
@@ -98,7 +101,7 @@ clean: bpfman-clean bpf-clean coverage-clean
 PARALLEL ?=
 
 test: bpf-build
-	go test -race -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
+	go test -race $(if $(STATIC),-tags '$(STATIC_TAGS)' -ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
 
 lint: bpf-build $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
@@ -151,7 +154,7 @@ test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
 	CGO_ENABLED=1 go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/
 	file $(NSENTER_TEST_BIN)
-	sudo ./$(NSENTER_TEST_BIN) -test.v -test.count=1
+	sudo ./$(NSENTER_TEST_BIN) -test.v
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 	@goarch=$(@:test-nsenter-%=%); \
@@ -179,18 +182,18 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 		go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/; \
 	file $(NSENTER_TEST_BIN); \
 	sudo QEMU_LD_PREFIX="$$sysroot" \
-		$$qemu ./$(NSENTER_TEST_BIN) -test.v -test.count=1
+		$$qemu ./$(NSENTER_TEST_BIN) -test.v
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
 e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
-	$(CC) -O0 -o $@ $<
+	$(CC) -O0 $(if $(STATIC),-static) -o $@ $<
 
 test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	@echo "Compiling e2e test binary..."
-	go test -c -race -tags=e2e -o e2e.test ./e2e
+	go test -c -race -tags=e2e$(if $(STATIC),$(comma)$(STATIC_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
-	cd e2e && sudo ../e2e.test -test.failfast -test.v -test.count=1 $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	cd e2e && sudo ../e2e.test -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Documentation
 DOC_PORT ?= 6060
@@ -215,7 +218,8 @@ GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 
-GO_LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
+GO_LDFLAGS := $(if $(STATIC),-extldflags '-static') \
+              -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
               -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
               -X $(VERSION_PKG).gitState=$(GIT_STATE) \
               -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
@@ -237,7 +241,10 @@ bpfman-vet: bpf-build
 # Compile bpfman without the dispatcher dependency. Used directly by
 # container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
+STATIC_TAGS := osusergo,netgo
+
+bpfman-compile: | $(BIN_DIR)
+	CGO_ENABLED=1 go build $(if $(STATIC),-tags '$(STATIC_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
 
 # Ensure bin directory exists
 $(BIN_DIR):
