@@ -306,7 +306,7 @@ jobs:
   # checks pass. On pull_request events they are skipped entirely.
 
   build-bpfman:
-    name: Build bpfman (${{ matrix.goarch }})
+    name: Cross-compile bpfman (${{ matrix.goarch }})
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     needs: ci-complete
