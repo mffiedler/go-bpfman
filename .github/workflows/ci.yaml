@@ -14,16 +14,6 @@ env:
   DOCKER_BUILD_ARGS: "--cache-from type=gha --cache-to type=gha,mode=max"
 
 jobs:
-  setup:
-    name: Env prep
-    runs-on: ubuntu-latest
-    outputs:
-      build_date: ${{ steps.meta.outputs.build_date }}
-    steps:
-      - name: Compute build metadata
-        id: meta
-        run: echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
   build-bpf:
     name: Build BPF objects (dispatchers + e2e testdata)
     runs-on: ubuntu-latest
@@ -83,7 +73,7 @@ jobs:
   build-and-test:
     name: Build and unit test (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    needs: [build-bpf, setup]
+    needs: build-bpf
     strategy:
       fail-fast: false
       matrix:
@@ -128,8 +118,6 @@ jobs:
         run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: Build
-        env:
-          BUILD_DATE: ${{ needs.setup.outputs.build_date }}
         run: make
 
       - name: Unit tests
