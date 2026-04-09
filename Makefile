@@ -18,6 +18,9 @@ print-go-version:
 print-fedora-version:
 	@echo $(FEDORA_VERSION)
 
+print-golangci-lint-version:
+	@echo $(GOLANGCI_LINT_VERSION)
+
 $(BIN_DIR)/golangci-lint: | $(BIN_DIR)
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(abspath $(BIN_DIR)) $(GOLANGCI_LINT_VERSION)
 
@@ -147,6 +150,7 @@ NSENTER_TEST_BIN ?= nsenter.test
 test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
 	CGO_ENABLED=1 go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/
+	file $(NSENTER_TEST_BIN)
 	sudo ./$(NSENTER_TEST_BIN) -test.v -test.count=1
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
@@ -173,6 +177,7 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
 	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
 		go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/; \
+	file $(NSENTER_TEST_BIN); \
 	sudo QEMU_LD_PREFIX="$$sysroot" \
 		$$qemu ./$(NSENTER_TEST_BIN) -test.v -test.count=1
 

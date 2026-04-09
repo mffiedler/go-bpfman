@@ -14,8 +14,8 @@ env:
   DOCKER_BUILD_ARGS: "--cache-from type=gha --cache-to type=gha,mode=max"
 
 jobs:
-  build:
-    name: Build
+  build-bpf:
+    name: Build BPF objects (dispatchers + e2e testdata)
     runs-on: ubuntu-latest
     outputs:
       build_date: ${{ steps.meta.outputs.build_date }}
@@ -26,6 +26,63 @@ jobs:
       - name: Compute build metadata
         id: meta
         run: echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build BPF objects
+        run: make bpf-build
+
+      - name: Upload BPF objects
+        uses: actions/upload-artifact@v6
+        with:
+          name: bpf-objects
+          path: |
+            .bpf-build-stamp
+            dispatcher/*.bpf.o
+            e2e/testdata/*.bpf.o
+            e2e/testdata/call_malloc
+
+  check-vendor:
+    name: Check go.mod and vendor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Check go.mod and vendor are tidy
+        run: |
+          go mod tidy
+          go mod vendor
+          git diff --exit-code
+
+  check-fmt:
+    name: Check Go formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Check format
+        run: make bpfman-fmt && git diff --exit-code
+
+  build:
+    name: Build bpfman (amd64)
+    runs-on: ubuntu-latest
+    needs: build-bpf
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Read Go version from Makefile
         run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
@@ -49,24 +106,20 @@ jobs:
             go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
             go-${{ runner.os }}-
 
-      - name: Check go.mod and vendor are tidy
-        run: |
-          go mod tidy
-          go mod vendor
-          git diff --exit-code
-
-      - name: Build
-        run: make
-
-      - name: Upload BPF objects
-        uses: actions/upload-artifact@v6
+      - name: Download BPF objects
+        uses: actions/download-artifact@v6
         with:
           name: bpf-objects
-          path: |
-            .bpf-build-stamp
-            dispatcher/*.bpf.o
-            e2e/testdata/*.bpf.o
-            e2e/testdata/call_malloc
+
+      - name: Touch BPF objects to preserve Make freshness
+        run: |
+          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
+          chmod +x e2e/testdata/call_malloc
+
+      - name: Build
+        env:
+          BUILD_DATE: ${{ needs.build-bpf.outputs.build_date }}
+        run: make
 
       - name: Trim Go build cache
         if: github.ref == 'refs/heads/main'
@@ -84,13 +137,16 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-bpf
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
       - name: Read Go version from Makefile
         run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - name: Read golangci-lint version from Makefile
+        run: echo "LINT_VERSION=$(make -s print-golangci-lint-version)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v6
         with:
@@ -113,25 +169,21 @@ jobs:
         with:
           name: bpf-objects
 
-      # git checkout sets all source file mtimes to "now", which is
-      # newer than the artifact timestamps from the build job. Without
-      # this touch, Make would consider the objects stale and rebuild
-      # them via Docker, defeating the purpose of artifact sharing.
       - name: Touch BPF objects to preserve Make freshness
         run: |
           touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
           chmod +x e2e/testdata/call_malloc
 
-      - name: Check format
-        run: make bpfman-fmt && git diff --exit-code
-
       - name: Run lint
-        run: make lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: ${{ env.LINT_VERSION }}
+          args: -v --timeout 5m
 
   test:
     name: Unit tests
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-bpf
     steps:
       - uses: actions/checkout@v6
 
@@ -170,7 +222,7 @@ jobs:
   test-e2e:
     name: E2E tests
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-bpf
     steps:
       - uses: actions/checkout@v6
 
@@ -206,9 +258,45 @@ jobs:
       - name: E2E tests
         run: make test-e2e PARALLEL=1
 
+  test-nsenter:
+    name: test nsenter (${{ matrix.goarch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            pkgs: ""
+          - goarch: arm64
+            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-binfmt
+          - goarch: ppc64le
+            pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross qemu-user-binfmt
+          - goarch: s390x
+            pkgs: gcc-s390x-linux-gnu libc6-dev-s390x-cross qemu-user-binfmt
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Go version from Makefile
+        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install cross-compilation toolchain
+        if: matrix.pkgs != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.pkgs }}
+
+      - name: Run nsenter tests
+        run: make test-nsenter-${{ matrix.goarch }}
+
   ci-complete:
     name: CI complete
-    needs: [build, lint, test, test-e2e]
+    needs: [check-vendor, check-fmt, build, lint, test, test-e2e, test-nsenter]
     runs-on: ubuntu-latest
     steps:
       - name: CI complete
@@ -217,7 +305,7 @@ jobs:
   # Image build jobs below only run on push to main, after all
   # checks pass. On pull_request events they are skipped entirely.
 
-  build-binary:
+  build-bpfman:
     name: Build bpfman (${{ matrix.goarch }})
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
@@ -270,8 +358,11 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
-          BUILD_DATE: ${{ needs.build.outputs.build_date }}
+          BUILD_DATE: ${{ needs.build-bpf.outputs.build_date }}
         run: make bpfman-compile
+
+      - name: Verify binary architecture
+        run: file bin/bpfman
 
       - name: Upload binary
         uses: actions/upload-artifact@v6
@@ -283,7 +374,7 @@ jobs:
     name: Assemble and push multi-arch image
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    needs: build-binary
+    needs: build-bpfman
     steps:
       - uses: actions/checkout@v6
 
