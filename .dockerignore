@@ -1,5 +1,6 @@
 # Build output
 bin/
+!bin/bpfman
 dispatcher/*.bpf.o
 
 # Not needed for build
