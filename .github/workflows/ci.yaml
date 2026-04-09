@@ -263,7 +263,7 @@ jobs:
         run: make test-e2e PARALLEL=1
 
   test-nsenter:
-    name: test nsenter (${{ matrix.goarch }})
+    name: Test nsenter (${{ matrix.goarch }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
