@@ -167,7 +167,7 @@ jobs:
     steps:
       - name: Verify image metadata
         run: |
-          output=$(docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest bpfman version)
+          output=$(docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest version)
           echo "$output"
           echo "$output" | grep -q "${{ github.sha }}" || { echo "FAIL: expected git commit ${{ github.sha }}"; exit 1; }
           echo "$output" | grep -q "${{ github.event.head_commit.timestamp }}" || { echo "FAIL: expected build date ${{ github.event.head_commit.timestamp }}"; exit 1; }
