@@ -495,7 +495,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Behavioural validation: trigger the uprobe by running the
 	// call_malloc binary whose do_work function is the attach target.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/bpf/call_malloc").Run()
+		exec.Command("testdata/bin/call_malloc").Run()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -618,7 +618,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Behavioural validation: trigger the uretprobe by running the
 	// call_malloc binary whose do_work function is the attach target.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/bpf/call_malloc").Run()
+		exec.Command("testdata/bin/call_malloc").Run()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -1359,5 +1359,5 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 // libc path (which breaks on NixOS, Guix, musl, and other
 // non-standard layouts).
 func uprobeTarget() (target, fnName string) {
-	return "testdata/bpf/call_malloc", "do_work"
+	return "testdata/bin/call_malloc", "do_work"
 }

@@ -23,13 +23,13 @@ COPY e2e/testdata/bpf/ e2e/testdata/bpf/
 # Build dispatcher BPF objects
 RUN make -C dispatcher
 
-# Build e2e testdata BPF objects and call_malloc binary
+# Build e2e testdata BPF objects
 RUN make -C e2e/testdata/bpf
 
 # Organise output
 RUN mkdir -p /output/dispatcher /output/e2e/testdata/bpf && \
     cp dispatcher/*.bpf.o /output/dispatcher/ && \
-    cp e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc /output/e2e/testdata/bpf/
+    cp e2e/testdata/bpf/*.bpf.o /output/e2e/testdata/bpf/
 
 FROM scratch AS artifacts
 COPY --from=bpf-builder /output/ /

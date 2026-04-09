@@ -183,7 +183,10 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
-test-e2e: bpf-build
+e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
+	$(CC) -O0 -o $@ $<
+
+test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	@echo "Compiling e2e test binary..."
 	go test -c -race -tags=e2e -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
@@ -254,7 +257,7 @@ bpfman-build-portable: bpfman-build
 	@echo "Built $(BIN_DIR)/bpfman-portable (container-compatible)"
 
 bpfman-clean:
-	$(RM) $(BIN_DIR)/bpfman $(BIN_DIR)/bpfman-portable
+	$(RM) $(BIN_DIR)/bpfman $(BIN_DIR)/bpfman-portable e2e/testdata/bin/call_malloc
 
 # Proto generation for bpfman gRPC API
 BPFMAN_PROTO_DIR := proto
@@ -358,7 +361,7 @@ kind-delete:
 
 DOCKER_BUILD_ARGS ?=
 
-BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c) e2e/testdata/bpf/call_malloc.c
+BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c)
 BPF_STAMP := .bpf-build-stamp
 
 .PHONY: bpf-build bpf-clean

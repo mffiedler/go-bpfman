@@ -42,7 +42,6 @@ jobs:
             .bpf-build-stamp
             dispatcher/*.bpf.o
             e2e/testdata/bpf/*.bpf.o
-            e2e/testdata/bpf/call_malloc
 
   check-vendor:
     name: Check go.mod and vendor
@@ -81,10 +80,18 @@ jobs:
       - name: Check format
         run: make bpfman-fmt && git diff --exit-code
 
-  build:
-    name: Build bpfman (amd64)
-    runs-on: ubuntu-latest
+  build-and-test:
+    name: Build and unit test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     needs: [build-bpf, setup]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -97,9 +104,11 @@ jobs:
           cache: false
 
       - name: Set Go cache date
+        if: matrix.arch == 'amd64'
         run: echo "GO_CACHE_DATE=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
 
       - name: Restore Go cache
+        if: matrix.arch == 'amd64'
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -116,21 +125,22 @@ jobs:
           name: bpf-objects
 
       - name: Touch BPF objects to preserve Make freshness
-        run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
-          chmod +x e2e/testdata/bpf/call_malloc
+        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: Build
         env:
           BUILD_DATE: ${{ needs.setup.outputs.build_date }}
         run: make
 
+      - name: Unit tests
+        run: make test PARALLEL=1
+
       - name: Trim Go build cache
-        if: github.ref == 'refs/heads/main'
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
         run: find ~/.cache/go-build -type f -mmin +90 -delete
 
       - name: Save Go cache
-        if: github.ref == 'refs/heads/main'
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v5
         with:
           path: |
@@ -173,9 +183,7 @@ jobs:
           name: bpf-objects
 
       - name: Touch BPF objects to preserve Make freshness
-        run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
-          chmod +x e2e/testdata/bpf/call_malloc
+        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: Run lint
         uses: golangci/golangci-lint-action@v7
@@ -183,49 +191,18 @@ jobs:
           version: ${{ env.LINT_VERSION }}
           args: -v --timeout 5m
 
-  test:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    needs: build-bpf
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Read Go version from Makefile
-        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: nonexistent
-          restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
-            go-${{ runner.os }}-
-
-      - name: Download BPF objects
-        uses: actions/download-artifact@v6
-        with:
-          name: bpf-objects
-
-      - name: Touch BPF objects to preserve Make freshness
-        run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
-          chmod +x e2e/testdata/bpf/call_malloc
-
-      - name: Unit tests
-        run: make test PARALLEL=1
-
   test-e2e:
-    name: E2E tests
-    runs-on: ubuntu-latest
+    name: E2E tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     needs: build-bpf
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -254,24 +231,18 @@ jobs:
           name: bpf-objects
 
       - name: Touch BPF objects to preserve Make freshness
-        run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
-          chmod +x e2e/testdata/bpf/call_malloc
+        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: E2E tests
         run: make test-e2e PARALLEL=1
 
-  test-nsenter:
-    name: Test nsenter (${{ matrix.goarch }})
+  test-nsenter-qemu:
+    name: Test nsenter QEMU (${{ matrix.goarch }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - goarch: amd64
-            pkgs: ""
-          - goarch: arm64
-            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-binfmt
           - goarch: ppc64le
             pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross qemu-user-binfmt
           - goarch: s390x
@@ -289,7 +260,6 @@ jobs:
           cache: true
 
       - name: Install cross-compilation toolchain
-        if: matrix.pkgs != ''
         run: |
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.pkgs }}
@@ -299,7 +269,7 @@ jobs:
 
   ci-complete:
     name: CI complete
-    needs: [check-vendor, check-fmt, build, lint, test, test-e2e, test-nsenter]
+    needs: [check-vendor, check-fmt, build-and-test, lint, test-e2e, test-nsenter-qemu]
     runs-on: ubuntu-latest
     steps:
       - name: CI complete

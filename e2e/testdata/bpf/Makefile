@@ -22,15 +22,12 @@ endif
 SOURCES := $(wildcard *.bpf.c)
 OBJECTS := $(SOURCES:.bpf.c=.bpf.o)
 
-all: $(OBJECTS) call_malloc
+all: $(OBJECTS)
 
 %.bpf.o: %.bpf.c Makefile
 	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) $< -o $@
 
-call_malloc: call_malloc.c Makefile
-	$(CC) -O0 -o $@ $<
-
 clean:
-	rm -f $(OBJECTS) call_malloc
+	rm -f $(OBJECTS)
 
 .PHONY: all clean
