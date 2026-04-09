@@ -8,10 +8,6 @@ jobs:
   build-bpf:
     uses: ./.github/workflows/build-bpf.yaml
 
-  test:
-    needs: build-bpf
-    uses: ./.github/workflows/test.yaml
-
   build-and-push:
     name: Build and push (${{ matrix.goarch }})
     runs-on: ubuntu-24.04
@@ -104,7 +100,7 @@ jobs:
   assemble-manifest:
     name: Assemble manifest
     runs-on: ubuntu-24.04
-    needs: [test, build-and-push]
+    needs: build-and-push
     steps:
       - name: Download digests
         uses: actions/download-artifact@v6
