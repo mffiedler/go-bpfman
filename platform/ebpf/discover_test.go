@@ -1,7 +1,6 @@
 package ebpf_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -9,14 +8,17 @@ import (
 	"github.com/frobware/go-bpfman/platform/ebpf"
 )
 
-func TestDiscoverPrograms(t *testing.T) {
-	// Find the testdata directory relative to the project root
-	objectPath := filepath.Join("..", "..", "testdata", "stats.o")
-	if _, err := os.Stat(objectPath); os.IsNotExist(err) {
-		t.Skipf("test object file not found: %s", objectPath)
-	}
+// testObjectPath returns the path to a BPF object file built by
+// make bpf-build. The tests require the BPF objects to be present;
+// run make bpf-build (or make) first.
+func testObjectPath(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join("..", "..", "e2e", "testdata", "xdp_pass.bpf.o")
+	return path
+}
 
-	programs, err := ebpf.DiscoverPrograms(objectPath)
+func TestDiscoverPrograms(t *testing.T) {
+	programs, err := ebpf.DiscoverPrograms(testObjectPath(t))
 	if err != nil {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
 	}
@@ -58,11 +60,7 @@ func TestDiscoverPrograms_NonExistentFile(t *testing.T) {
 }
 
 func TestValidatePrograms(t *testing.T) {
-	// Find the testdata directory relative to the project root
-	objectPath := filepath.Join("..", "..", "testdata", "stats.o")
-	if _, err := os.Stat(objectPath); os.IsNotExist(err) {
-		t.Skipf("test object file not found: %s", objectPath)
-	}
+	objectPath := testObjectPath(t)
 
 	// First discover what programs are available
 	discovered, err := ebpf.DiscoverPrograms(objectPath)
@@ -70,7 +68,7 @@ func TestValidatePrograms(t *testing.T) {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
 	}
 	if len(discovered) == 0 {
-		t.Skip("no programs discovered in test file")
+		t.Fatal("no programs discovered in test file")
 	}
 
 	t.Run("valid programs", func(t *testing.T) {

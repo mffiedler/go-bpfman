@@ -269,12 +269,12 @@ $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: $(BPFMAN_PROTO
 		--proto_path=$(BPFMAN_PROTO_DIR) \
 		$<
 
-docker-build-bpfman: testdata/stats.o
+docker-build-bpfman:
 	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) -f Dockerfile.bpfman .
 
 # Fast build: copy pre-built binary from host (skips in-container compilation)
 # Requires: make bpfman-build-portable first
-docker-build-bpfman-fast: bpfman-build-portable testdata/stats.o
+docker-build-bpfman-fast: bpfman-build-portable
 	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) -f Dockerfile.bpfman-fast .
 
 # Build bpfman using upstream image as base (for operator integration testing)
@@ -314,13 +314,6 @@ bpfman-operator-deploy: docker-build-bpfman-upstream-fast
 
 bpfman-test-grpc: docker-build-bpfman
 	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
-
-# bpfman testdata
-BPFMAN_HACKS_DIR ?= $(HOME)/src/github.com/frobware/bpfman-hacks
-
-testdata/stats.o: $(BPFMAN_HACKS_DIR)/stats/bpf/stats.o
-	mkdir -p testdata
-	cp $< $@
 
 # stats-reader example app
 docker-build-stats-reader:

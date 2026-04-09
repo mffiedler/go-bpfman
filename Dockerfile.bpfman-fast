@@ -12,7 +12,6 @@ ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 FROM ${BASE_IMAGE}
 
 COPY bin/bpfman-portable /bpfman
-COPY testdata/stats.o /opt/bpf/stats.o
 
 ENV BPFMAN_MODE=bpfman-rpc
 ENV BPFMAN_PPROF_ADDRESS=localhost:6060
