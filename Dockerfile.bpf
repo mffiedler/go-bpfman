@@ -8,7 +8,6 @@ FROM fedora:${FEDORA_VERSION} AS bpf-builder
 RUN dnf update -y && dnf install -y \
     clang \
     gcc \
-    glibc-static \
     llvm \
     libbpf-devel \
     pkg-config \
@@ -28,9 +27,9 @@ RUN make -C dispatcher
 RUN make -C e2e/testdata/bpf
 
 # Organise output
-RUN mkdir -p /output/dispatcher /output/e2e/testdata && \
+RUN mkdir -p /output/dispatcher /output/e2e/testdata/bpf && \
     cp dispatcher/*.bpf.o /output/dispatcher/ && \
-    cp e2e/testdata/*.bpf.o e2e/testdata/call_malloc /output/e2e/testdata/
+    cp e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc /output/e2e/testdata/bpf/
 
 FROM scratch AS artifacts
 COPY --from=bpf-builder /output/ /

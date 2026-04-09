@@ -41,8 +41,8 @@ jobs:
           path: |
             .bpf-build-stamp
             dispatcher/*.bpf.o
-            e2e/testdata/*.bpf.o
-            e2e/testdata/call_malloc
+            e2e/testdata/bpf/*.bpf.o
+            e2e/testdata/bpf/call_malloc
 
   check-vendor:
     name: Check go.mod and vendor
@@ -117,8 +117,8 @@ jobs:
 
       - name: Touch BPF objects to preserve Make freshness
         run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
-          chmod +x e2e/testdata/call_malloc
+          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
+          chmod +x e2e/testdata/bpf/call_malloc
 
       - name: Build
         env:
@@ -175,8 +175,8 @@ jobs:
 
       - name: Touch BPF objects to preserve Make freshness
         run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
-          chmod +x e2e/testdata/call_malloc
+          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
+          chmod +x e2e/testdata/bpf/call_malloc
 
       - name: Run lint
         uses: golangci/golangci-lint-action@v7
@@ -217,8 +217,8 @@ jobs:
 
       - name: Touch BPF objects to preserve Make freshness
         run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
-          chmod +x e2e/testdata/call_malloc
+          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
+          chmod +x e2e/testdata/bpf/call_malloc
 
       - name: Unit tests
         run: make test PARALLEL=1
@@ -256,8 +256,8 @@ jobs:
 
       - name: Touch BPF objects to preserve Make freshness
         run: |
-          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/*.bpf.o e2e/testdata/call_malloc
-          chmod +x e2e/testdata/call_malloc
+          touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/call_malloc
+          chmod +x e2e/testdata/bpf/call_malloc
 
       - name: E2E tests
         run: make test-e2e PARALLEL=1

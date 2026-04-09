@@ -28,7 +28,7 @@ fi
 BPFMAN="${BPFMAN:-./bin/bpfman}"
 CONFIG="${CONFIG:-./config/test.toml}"
 RUNTIME_DIR="${RUNTIME_DIR:-/tmp/bpfman-slow-tc-$$}"
-BYTECODE="${BYTECODE:-./e2e/testdata/tc_counter.bpf.o}"
+BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter.bpf.o}"
 VETH0="bpf-veth0"
 VETH1="bpf-veth1"
 

@@ -10,7 +10,7 @@
 # Prerequisites:
 # - bpfman binary built (bin/bpfman)
 # - Root privileges (run with sudo)
-# - e2e/testdata/tc_counter.bpf.o present
+# - e2e/testdata/bpf/tc_counter.bpf.o present
 # - jq installed
 
 set -euo pipefail
@@ -23,7 +23,7 @@ fi
 BPFMAN="${BPFMAN:-./bin/bpfman}"
 CONFIG="${CONFIG:-./config/test.toml}"
 RUNTIME_DIR="${RUNTIME_DIR:-/tmp/bpfman-tc-multi-priority-$$}"
-BYTECODE="${BYTECODE:-./e2e/testdata/tc_counter.bpf.o}"
+BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter.bpf.o}"
 IFACE="bpfman-tcp"
 
 DB_PATH="$RUNTIME_DIR/db/store.db"

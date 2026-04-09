@@ -49,7 +49,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/tracepoint_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/tracepoint_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTracepoint,
 			Name: "tracepoint_kill_recorder",
@@ -179,7 +179,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/kprobe_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/kprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKprobe,
 			Name: "kprobe_counter",
@@ -295,7 +295,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file (same program as kprobe, loaded as kretprobe)
-	programs, err := env.LoadFile(ctx, "testdata/kprobe_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/kprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeKretprobe,
 			Name: "kprobe_counter",
@@ -413,7 +413,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/uprobe_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/uprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUprobe,
 			Name: "uprobe_counter",
@@ -495,7 +495,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Behavioural validation: trigger the uprobe by running the
 	// call_malloc binary whose do_work function is the attach target.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/call_malloc").Run()
+		exec.Command("testdata/bpf/call_malloc").Run()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -535,7 +535,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file (same program as uprobe, loaded as uretprobe)
-	programs, err := env.LoadFile(ctx, "testdata/uprobe_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/uprobe_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeUretprobe,
 			Name: "uprobe_counter",
@@ -618,7 +618,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	// Behavioural validation: trigger the uretprobe by running the
 	// call_malloc binary whose do_work function is the attach target.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/call_malloc").Run()
+		exec.Command("testdata/bpf/call_malloc").Run()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -658,7 +658,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/fentry_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_counter.bpf.o", []manager.ProgramSpec{
 		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: "do_unlinkat"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -772,7 +772,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/fentry_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_counter.bpf.o", []manager.ProgramSpec{
 		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: "do_unlinkat"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -887,7 +887,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/tc_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/tc_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTC,
 			Name: "stats",
@@ -1040,7 +1040,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/tcx_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/tcx_counter.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeTCX,
 			Name: "tcx_stats",
@@ -1160,7 +1160,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	env.AssertCleanState()
 
 	// When: load from local file
-	programs, err := env.LoadFile(ctx, "testdata/xdp_pass.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/xdp_pass.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
@@ -1293,7 +1293,7 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 	}
 
 	// When: load from local file with metadata and global data
-	programs, err := env.LoadFile(ctx, "testdata/xdp_pass.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/xdp_pass.bpf.o", []manager.ProgramSpec{
 		{
 			Type: bpfman.ProgramTypeXDP,
 			Name: "pass",
@@ -1359,5 +1359,5 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 // libc path (which breaks on NixOS, Guix, musl, and other
 // non-standard layouts).
 func uprobeTarget() (target, fnName string) {
-	return "testdata/call_malloc", "do_work"
+	return "testdata/bpf/call_malloc", "do_work"
 }

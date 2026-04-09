@@ -4,5 +4,5 @@ bpfman/internal/server/pb/
 archive/bpfman-kernel/bpfman-kernel
 .direnv/
 .bpf-build-stamp
-e2e/testdata/*.bpf.o
-e2e/testdata/call_malloc
+e2e/testdata/bpf/*.bpf.o
+e2e/testdata/bpf/call_malloc

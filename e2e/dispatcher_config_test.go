@@ -134,7 +134,7 @@ func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 		loadProg: func(t *testing.T) kernel.ProgramID {
 			t.Helper()
 			programs, err := env.LoadFile(context.Background(),
-				"testdata/tc_counter.bpf.o", []manager.ProgramSpec{
+				"testdata/bpf/tc_counter.bpf.o", []manager.ProgramSpec{
 					{Type: bpfman.ProgramTypeTC, Name: "stats"},
 				}, manager.LoadOpts{})
 			require.NoError(t, err)
@@ -186,7 +186,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 		loadProg: func(t *testing.T) kernel.ProgramID {
 			t.Helper()
 			programs, err := env.LoadFile(context.Background(),
-				"testdata/xdp_counter.bpf.o", []manager.ProgramSpec{
+				"testdata/bpf/xdp_counter.bpf.o", []manager.ProgramSpec{
 					{Type: bpfman.ProgramTypeXDP, Name: "xdp_stats"},
 				}, manager.LoadOpts{})
 			require.NoError(t, err)
@@ -329,7 +329,7 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 	var entries []loaded
 
 	for _, prio := range priorities {
-		programs, err := env.LoadFile(ctx, "testdata/tcx_counter_nopin.bpf.o", []manager.ProgramSpec{
+		programs, err := env.LoadFile(ctx, "testdata/bpf/tcx_counter_nopin.bpf.o", []manager.ProgramSpec{
 			{Type: bpfman.ProgramTypeTCX, Name: "tcx_stats"},
 		}, manager.LoadOpts{})
 		require.NoError(t, err)

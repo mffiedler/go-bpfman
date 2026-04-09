@@ -13,7 +13,7 @@ import (
 // run make bpf-build (or make) first.
 func testObjectPath(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join("..", "..", "e2e", "testdata", "xdp_pass.bpf.o")
+	path := filepath.Join("..", "..", "e2e", "testdata", "bpf", "xdp_pass.bpf.o")
 	return path
 }
 
