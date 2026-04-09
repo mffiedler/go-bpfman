@@ -12,27 +12,10 @@ jobs:
     needs: build-bpf
     uses: ./.github/workflows/test.yaml
 
-  build-bpfman:
-    name: Cross-compile bpfman (${{ matrix.goarch }})
-    needs: build-bpf
+  build-and-push-image:
+    name: Build and push multi-arch image
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goarch: amd64
-            cc: gcc
-            pkgs: ""
-          - goarch: arm64
-            cc: aarch64-linux-gnu-gcc
-            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-          - goarch: ppc64le
-            cc: powerpc64le-linux-gnu-gcc
-            pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross
-          - goarch: s390x
-            cc: s390x-linux-gnu-gcc
-            pkgs: gcc-s390x-linux-gnu libc6-dev-s390x-cross
-
+    needs: [test, build-bpf]
     steps:
       - uses: actions/checkout@v6
 
@@ -44,11 +27,13 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install cross-compilation toolchain
-        if: matrix.pkgs != ''
+      - name: Install cross-compilation toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y ${{ matrix.pkgs }}
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross \
+            gcc-s390x-linux-gnu libc6-dev-s390x-cross
 
       - name: Download BPF objects
         uses: actions/download-artifact@v6
@@ -58,33 +43,20 @@ jobs:
       - name: Touch BPF objects to preserve Make freshness
         run: touch .bpf-build-stamp dispatcher/*.bpf.o
 
-      - name: Build bpfman
+      - name: Cross-compile bpfman for all architectures
         env:
-          CGO_ENABLED: "1"
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          CC: ${{ matrix.cc }}
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: make bpfman-compile
-
-      - name: Verify binary
         run: |
-          file bin/bpfman
+          for arch in amd64:gcc arm64:aarch64-linux-gnu-gcc ppc64le:powerpc64le-linux-gnu-gcc s390x:s390x-linux-gnu-gcc; do
+            goarch="${arch%%:*}"
+            cc="${arch##*:}"
+            echo "=== Building bpfman for ${goarch} (CC=${cc}) ==="
+            CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" CC="${cc}" make bpfman-compile
+            mv bin/bpfman "bin/bpfman-${goarch}"
+            file "bin/bpfman-${goarch}"
+          done
           echo "GIT_COMMIT=${{ github.sha }}"
           echo "BUILD_DATE=${{ github.event.head_commit.timestamp }}"
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v6
-        with:
-          name: bpfman-${{ matrix.goarch }}
-          path: bin/bpfman
-
-  build-and-push-image:
-    name: Assemble and push multi-arch image
-    runs-on: ubuntu-24.04
-    needs: [test, build-bpfman]
-    steps:
-      - uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -92,17 +64,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Download all binaries
-        uses: actions/download-artifact@v6
-        with:
-          pattern: bpfman-*
-          path: artifacts
-
       - name: Prepare per-platform build contexts
         run: |
           for arch in amd64 arm64 ppc64le s390x; do
             mkdir -p "build-${arch}/bin"
-            cp "artifacts/bpfman-${arch}/bpfman" "build-${arch}/bin/bpfman"
+            cp "bin/bpfman-${arch}" "build-${arch}/bin/bpfman"
             chmod +x "build-${arch}/bin/bpfman"
           done
 
