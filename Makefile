@@ -212,11 +212,11 @@ GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 
-LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
-           -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
-           -X $(VERSION_PKG).gitState=$(GIT_STATE) \
-           -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
-           -X $(VERSION_PKG).version=$(GIT_VERSION)
+GO_LDFLAGS := -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
+              -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
+              -X $(VERSION_PKG).gitState=$(GIT_STATE) \
+              -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
+              -X $(VERSION_PKG).version=$(GIT_VERSION)
 
 # bpfman targets
 # Note: bpfman-proto is not a dependency here since pb files are committed.
@@ -234,7 +234,7 @@ bpfman-vet: bpf-build
 # Compile bpfman without the dispatcher dependency. Used directly by
 # container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
+	CGO_ENABLED=1 go build -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
 
 # Ensure bin directory exists
 $(BIN_DIR):

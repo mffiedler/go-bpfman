@@ -8,12 +8,12 @@ FROM fedora:${FEDORA_VERSION} AS bpf-builder
 RUN dnf update -y && dnf install -y \
     clang \
     gcc \
+    glibc-static \
     llvm \
     libbpf-devel \
     pkg-config \
     make \
-    kernel-headers \
-    && dnf clean all
+    kernel-headers
 
 WORKDIR /build
 

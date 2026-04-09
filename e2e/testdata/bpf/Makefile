@@ -29,7 +29,7 @@ $(OUT_DIR)/%.bpf.o: %.bpf.c Makefile
 	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) $< -o $@
 
 $(OUT_DIR)/call_malloc: call_malloc.c Makefile
-	$(CC) -O0 -o $@ $<
+	$(CC) -static -O0 -o $@ $<
 
 clean:
 	rm -f $(addprefix $(OUT_DIR)/,$(OBJECTS)) $(OUT_DIR)/call_malloc
