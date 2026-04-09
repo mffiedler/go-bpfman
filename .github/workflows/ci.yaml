@@ -14,18 +14,22 @@ env:
   DOCKER_BUILD_ARGS: "--cache-from type=gha --cache-to type=gha,mode=max"
 
 jobs:
-  build-bpf:
-    name: Build BPF objects (dispatchers + e2e testdata)
+  setup:
+    name: Env prep
     runs-on: ubuntu-latest
     outputs:
       build_date: ${{ steps.meta.outputs.build_date }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
-
       - name: Compute build metadata
         id: meta
         run: echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+  build-bpf:
+    name: Build BPF objects (dispatchers + e2e testdata)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build BPF objects
         run: make bpf-build
@@ -80,7 +84,7 @@ jobs:
   build:
     name: Build bpfman (amd64)
     runs-on: ubuntu-latest
-    needs: build-bpf
+    needs: [build-bpf, setup]
     steps:
       - uses: actions/checkout@v6
 
@@ -118,7 +122,7 @@ jobs:
 
       - name: Build
         env:
-          BUILD_DATE: ${{ needs.build-bpf.outputs.build_date }}
+          BUILD_DATE: ${{ needs.setup.outputs.build_date }}
         run: make
 
       - name: Trim Go build cache
@@ -309,7 +313,7 @@ jobs:
     name: Cross-compile bpfman (${{ matrix.goarch }})
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    needs: ci-complete
+    needs: [ci-complete, setup]
     strategy:
       fail-fast: false
       matrix:
@@ -358,7 +362,7 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
-          BUILD_DATE: ${{ needs.build-bpf.outputs.build_date }}
+          BUILD_DATE: ${{ needs.setup.outputs.build_date }}
         run: make bpfman-compile
 
       - name: Verify binary architecture
