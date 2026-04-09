@@ -748,6 +748,7 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 		require.NoError(t, err, "Attach to %s/%s should succeed", tp.group, tp.name)
 		linkIDs = append(linkIDs, link.Record.ID)
 	}
+	require.Len(t, linkIDs, len(tracepoints), "should have collected link IDs for all tracepoints")
 
 	// List all links by program
 	links, err := fix.Manager.ListLinksByProgram(ctx, prog.Record.ProgramID)

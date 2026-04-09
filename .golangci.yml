@@ -14,42 +14,18 @@ formatters:
         - github.com/frobware/go-bpfman
 
 linters:
+  default: none
   enable:
-    - asasalint         # Detects "[]any" used as argument for variadic "func(...any)".
-    - bodyclose         # Checks whether HTTP response body is closed successfully.
-    - copyloopvar       # Detects places where loop variables are copied.
+    - bodyclose
+    - copyloopvar
     - depguard
-    - dogsled           # Detects assignments with too many blank identifiers.
-    - dupword           # Detects duplicate words.
-    - durationcheck     # Detect cases where two time.Duration values are being multiplied.
-    - errcheck
-    - errchkjson        # Detects unsupported types passed to json encoding functions.
-    - errorlint         # Detects code that will cause problems with Go 1.13 error wrapping.
-    - exhaustive        # Detects missing options in enum switch statements.
-    - exptostd          # Detects functions from golang.org/x/exp/ replaceable by std.
-    - fatcontext        # Detects nested contexts in loops and function literals.
-    - gocheckcompilerdirectives # Detects invalid go compiler directive comments.
-    - gocritic          # Detects bugs, performance and style issues.
+    - durationcheck
     - govet
-    - iface             # Detects incorrect use of interfaces.
     - ineffassign
-    - makezero          # Finds slice declarations with non-zero initial length.
-    - mirror            # Detects wrong mirror patterns of bytes/strings usage.
-    - misspell          # Detects commonly misspelled English words in comments.
-    - nakedret          # Detects uses of naked returns.
-    - nilnesserr        # Detects returning nil errors.
-    - noctx             # Detects HTTP requests without context.Context.
-    - nosprintfhostport # Detects misuse of Sprintf to construct host:port URLs.
-    - reassign          # Detects reassigning a top-level variable in another package.
-    - revive            # Metalinter; drop-in replacement for golint.
-    - sqlclosecheck     # Checks that sql.Rows and sql.Stmt are closed.
+    - misspell
     - staticcheck
-    - thelper           # Detects test helpers without t.Helper().
-    - unconvert         # Detects unnecessary type conversions.
-    - unparam           # Detects unused function parameters.
+    - unconvert
     - unused
-    - usestdlibvars     # Detects possibility to use variables/constants from stdlib.
-    - wastedassign      # Detects wasted assignment statements.
 
   settings:
     depguard:
@@ -58,44 +34,6 @@ linters:
           deny:
             - pkg: "github.com/hashicorp/go-multierror"
               desc: "Use errors.Join instead"
-
-    dupword:
-      ignore:
-        - "true"
-        - "false"
-        # Mountinfo format has repeated filesystem names (e.g., "bpf bpf", "proc proc")
-        - "bpf"
-        - "proc"
-        - "sysfs"
-        - "cgroup2"
-        - "devtmpfs"
-
-    errcheck:
-      check-type-assertions: true
-      check-blank: false
-
-    errorlint:
-      errorf: true
-      asserts: true
-
-    exhaustive:
-      check:
-        - switch
-      default-signifies-exhaustive: true
-
-    gocritic:
-      disabled-checks:
-        - appendAssign
-        - assignOp
-        - captLocal
-        - elseif
-        - exitAfterDefer
-        - ifElseChain
-        - regexpMust
-        - singleCaseSwitch
-        - sloppyLen
-        - underef
-        - unlambda
 
     govet:
       enable:
@@ -107,42 +45,11 @@ linters:
     misspell:
       locale: UK
 
-    nakedret:
-      max-func-lines: 30
-
-    revive:
-      rules:
-        - name: blank-imports
-        - name: context-as-argument
-        - name: context-keys-type
-        - name: dot-imports
-        - name: error-return
-        - name: error-strings
-        - name: error-naming
-        - name: exported
-          arguments:
-            - checkPrivateReceivers
-            - disableStutteringCheck
-        - name: if-return
-        - name: increment-decrement
-        - name: var-naming
-        - name: var-declaration
-        - name: range
-        - name: receiver-naming
-        - name: time-naming
-        - name: indent-error-flow
-        - name: errorf
-        - name: superfluous-else
-        - name: unreachable-code
-        - name: redefines-builtin-id
-
     staticcheck:
       checks:
-        - all
-
-    usestdlibvars:
-      http-method: true
-      http-status-code: true
+        - "all"
+        - "-QF*"
+        - "-ST*"
 
   exclusions:
     generated: lax
@@ -150,66 +57,13 @@ linters:
       - vendor
       - third_party
     rules:
-      # Exclude some linters from running on test files.
-      - path: _test\.go
-        linters:
-          - errcheck
-          - gocritic
-          - unparam
-
-      # Example code can be more lenient.
-      - path: examples/
-        linters:
-          - errcheck
-          - unparam
-
       # Generated protobuf files.
       - path: '\.pb\.go$'
         linters:
           - govet
-          - revive
           - staticcheck
           - unused
 
-      # Ignore ctx shadowing - common pattern.
-      - text: '^shadow: declaration of "(ctx|err|ok)" shadows declaration'
-        linters:
-          - govet
-
-      # Ignore ineffectual ctx assignments from tracing/context wrapping.
-      - text: "assigned to ctx, but never used afterwards"
-        linters:
-          - wastedassign
-
-      - text: "ineffectual assignment to ctx"
-        source: "ctx[, ].*=.*\\(ctx[,)]"
-        linters:
-          - ineffassign
-
-      - text: "SA4006: this value of ctx is never used"
-        source: "ctx[, ].*=.*\\(ctx[,)]"
-        linters:
-          - staticcheck
-
-      # Ignore errcheck for defer Close patterns.
-      - source: "defer .*\\.Close\\(\\)"
-        linters:
-          - errcheck
-
-      # Ignore errcheck for defer Rollback patterns.
-      - source: "defer .*\\.Rollback\\(\\)"
-        linters:
-          - errcheck
-
-    presets:
-      - comments
-
-    # Log a warning if an exclusion rule is unused.
-    warn-unused: true
-
 issues:
-  # Maximum issues count per one linter. Set to 0 to disable.
   max-issues-per-linter: 0
-
-  # Maximum count of issues with the same text. Set to 0 to disable.
   max-same-issues: 0

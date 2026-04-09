@@ -259,7 +259,7 @@ type SnapshotMeta struct {
 	// ObservedAt is when the snapshot was taken.
 	ObservedAt time.Time `json:"observed_at"`
 	// Errors encountered during snapshot (non-fatal)
-	Errors []error `json:"-"` // errors don't serialize well to JSON
+	Errors []error `json:"-"` // errors don't serialise well to JSON
 	// ProgramEnumErrors counts errors during kernel program enumeration.
 	ProgramEnumErrors int `json:"program_enum_errors"`
 	// LinkEnumErrors counts errors during kernel link enumeration.

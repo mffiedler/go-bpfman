@@ -92,20 +92,3 @@ func (td *testDispatchers) getTC() (*ebpf.Program, error) {
 	td.tc = prog
 	return prog, nil
 }
-
-// close releases all test dispatcher resources.
-func (td *testDispatchers) close() {
-	td.mu.Lock()
-	defer td.mu.Unlock()
-
-	if td.xdpC != nil {
-		td.xdpC.Close()
-		td.xdp = nil
-		td.xdpC = nil
-	}
-	if td.tcC != nil {
-		td.tcC.Close()
-		td.tc = nil
-		td.tcC = nil
-	}
-}
