@@ -169,6 +169,46 @@ jobs:
           jq '.[0].optional | {Issuer, Subject, githubWorkflowName, githubWorkflowRef, githubWorkflowSha}' \
             "${RUNNER_TEMP}/cosign-verify.json"
 
+      - name: Verify cosign signature via binary's embedded attestation
+        # Self-consistency check between the build-args used to
+        # bake the Attestation field into the binary and the
+        # cosign signature that was actually applied.  The
+        # previous step verifies the signature against
+        # workflow-hardcoded identity values; this step verifies
+        # the signature against the values the binary itself
+        # carries in its `bpfman version` output.  If anyone
+        # typos IMAGE_REF or SIGNER_IDENTITY in the build-args
+        # passed to the make target, this step fails because
+        # cosign verify would either run against the wrong
+        # registry path or assert against the wrong cert
+        # subject.  The previous step would not catch that.
+        #
+        # The pipeline below is the same one we document for
+        # operators consuming the published image:
+        #
+        #   docker run --rm -e BPFMAN_MODE= <image> version \
+        #     | grep ^Attestation: \
+        #     | sed 's/^Attestation: *//' \
+        #     | sh
+        #
+        # Here we capture cosign's stdout (the verification
+        # JSON) so we can assert githubWorkflowSha matches the
+        # current run's commit.
+        run: |
+          set -euo pipefail
+          docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest version \
+            | grep ^Attestation: \
+            | sed 's/^Attestation: *//' \
+            | sh \
+            > "${RUNNER_TEMP}/embedded-verify.json"
+          actual_sha=$(jq -r '.[0].optional.githubWorkflowSha' "${RUNNER_TEMP}/embedded-verify.json")
+          if [ "${actual_sha}" != "${{ github.sha }}" ]; then
+            echo "FAIL: embedded-attestation verify returned sha=${actual_sha}, expected ${{ github.sha }}" >&2
+            jq '.[0].optional' "${RUNNER_TEMP}/embedded-verify.json" >&2
+            exit 1
+          fi
+          echo "Embedded attestation verified: githubWorkflowSha=${actual_sha}"
+
       - name: Inspect attestations
         run: |
           # Provenance and SBOM are attached as separate manifests in
