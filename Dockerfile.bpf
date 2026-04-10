@@ -5,14 +5,18 @@ ARG FEDORA_VERSION=43
 
 FROM fedora:${FEDORA_VERSION} AS bpf-builder
 
-RUN dnf update -y && dnf install -y \
+# Distro rolling repos make exact version pinning brittle.
+# hadolint ignore=DL3041
+RUN dnf update -y && \
+    dnf install -y \
     clang \
     gcc \
     llvm \
     libbpf-devel \
     pkg-config \
     make \
-    kernel-headers
+    kernel-headers \
+    && dnf clean all
 
 WORKDIR /build
 
@@ -20,14 +24,11 @@ WORKDIR /build
 COPY dispatcher/ dispatcher/
 COPY e2e/testdata/bpf/ e2e/testdata/bpf/
 
-# Build dispatcher BPF objects
-RUN make -C dispatcher
-
-# Build e2e testdata BPF objects
-RUN make -C e2e/testdata/bpf
-
-# Organise output
-RUN mkdir -p /output/dispatcher /output/e2e/testdata/bpf && \
+# Build dispatcher and e2e testdata BPF objects, then organise the
+# resulting .bpf.o files into /output/ for the artifacts stage.
+RUN make -C dispatcher && \
+    make -C e2e/testdata/bpf && \
+    mkdir -p /output/dispatcher /output/e2e/testdata/bpf && \
     cp dispatcher/*.bpf.o /output/dispatcher/ && \
     cp e2e/testdata/bpf/*.bpf.o /output/e2e/testdata/bpf/
 

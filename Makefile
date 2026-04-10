@@ -358,9 +358,14 @@ kind-delete:
 #
 # Default: build all BPF programs (dispatchers + e2e testdata) via Docker.
 # Set BPF_USE_HOST=1 to use the host toolchain instead.
+# Set BPF_DOCKERFILE to select a different BPF builder Dockerfile;
+# downstream Konflux builds set BPF_DOCKERFILE=Dockerfile.bpf.openshift
+# to substitute a UBI-based builder. The Dockerfile contract is the
+# output layout under /output/, not the build environment.
 # Set DOCKER_BUILD_ARGS for additional docker build flags (e.g., cache options).
 
 DOCKER_BUILD_ARGS ?=
+BPF_DOCKERFILE ?= Dockerfile.bpf
 
 BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c)
 BPF_STAMP := .bpf-build-stamp
@@ -375,8 +380,8 @@ $(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
 	$(MAKE) -C e2e/testdata/bpf
 	touch $(BPF_STAMP)
 else
-$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile Dockerfile.bpf
-	docker build -f Dockerfile.bpf --build-arg FEDORA_VERSION=$(FEDORA_VERSION) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
+$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile $(BPF_DOCKERFILE)
+	docker build -f $(BPF_DOCKERFILE) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
 	touch $(BPF_STAMP)
 endif
 

@@ -14,7 +14,10 @@ ARG FEDORA_VERSION=43
 
 FROM fedora:${FEDORA_VERSION} AS builder
 
-RUN dnf install -y \
+# Distro rolling repos make exact version pinning brittle.
+# hadolint ignore=DL3041
+RUN dnf update -y && \
+    dnf install -y \
     clang \
     llvm \
     libbpf-devel \
