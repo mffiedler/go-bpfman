@@ -30,7 +30,23 @@ jobs:
           # built rather than the runner's wall clock.
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: |
+          # MULTIARCH_DOCKERFILE points at the all-Fedora variant
+          # so the published image is built end-to-end on Fedora 43,
+          # matching Dockerfile.bpf and Dockerfile.bpf.openshift.
+          # The bookworm-based Dockerfile.bpfman.multiarch is kept
+          # in tree as the default for local development and as a
+          # documented alternative; flipping CI back is a one-line
+          # workflow edit.
+          #
+          # EXTRA_GO_LDFLAGS="-s -w" strips the symbol table and
+          # DWARF sections from the shipped binary, dropping the
+          # image size by roughly 90 MB on the Fedora path (which
+          # otherwise inherits a lot of debug info from
+          # glibc-static). Local builds leave this empty so
+          # bin/bpfman stays debuggable.
           make docker-build-bpfman-multiarch \
+            MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch.fedora \
+            EXTRA_GO_LDFLAGS="-s -w" \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
             PUSH=1 \
             BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \

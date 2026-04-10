@@ -229,12 +229,19 @@ GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 
+# Caller-supplied additional ldflags. Empty by default so local
+# development still produces unstripped binaries with full symbol
+# information for debugging; CI publish overrides this with -s -w
+# to drop the symbol table and DWARF sections from shipped images.
+EXTRA_GO_LDFLAGS ?=
+
 GO_LDFLAGS := $(if $(STATIC),-extldflags '-static') \
               -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
               -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
               -X $(VERSION_PKG).gitState=$(GIT_STATE) \
               -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
-              -X $(VERSION_PKG).version=$(GIT_VERSION)
+              -X $(VERSION_PKG).version=$(GIT_VERSION) \
+              $(EXTRA_GO_LDFLAGS)
 
 # bpfman targets
 # Note: bpfman-proto is not a dependency here since pb files are committed.
@@ -327,9 +334,14 @@ docker-build-bpfman-local: bpfman-build
 # builder. CI workflows use docker/setup-buildx-action which
 # provisions one automatically; locally, run `docker buildx create
 # --driver docker-container --use` once.
-PLATFORMS         ?=
-PUSH              ?=
-BUILDX_EXTRA_ARGS ?=
+PLATFORMS            ?=
+PUSH                 ?=
+BUILDX_EXTRA_ARGS    ?=
+# Selects which multiarch Dockerfile the target builds. Defaults to
+# the bookworm-based production path; CI overrides this to point at
+# Dockerfile.bpfman.multiarch.fedora when building the all-Fedora
+# variant. Mirrors the existing BPF_DOCKERFILE convention.
+MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch
 
 # Output-flag selection. Truth table:
 #
@@ -359,7 +371,8 @@ docker-build-bpfman-multiarch:
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-f Dockerfile.bpfman.multiarch \
+		--build-arg EXTRA_GO_LDFLAGS="$(EXTRA_GO_LDFLAGS)" \
+		-f $(MULTIARCH_DOCKERFILE) \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
 
 bpfman-kind-load: docker-build-bpfman-local

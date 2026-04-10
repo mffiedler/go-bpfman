@@ -126,6 +126,12 @@ ARG GIT_BRANCH=
 ARG GIT_VERSION=
 ARG BUILD_DATE=
 
+# Caller-supplied additional Go ldflags. Empty by default; CI passes
+# `-s -w` to drop the symbol table and DWARF sections from shipped
+# images. Local development leaves it empty so that bin/bpfman
+# remains debuggable.
+ARG EXTRA_GO_LDFLAGS=
+
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -144,7 +150,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         GIT_COMMIT="$GIT_COMMIT" \
         GIT_BRANCH="$GIT_BRANCH" \
         GIT_VERSION="$GIT_VERSION" \
-        BUILD_DATE="$BUILD_DATE"; \
+        BUILD_DATE="$BUILD_DATE" \
+        EXTRA_GO_LDFLAGS="$EXTRA_GO_LDFLAGS"; \
     file bin/bpfman
 
 # ---------------------------------------------------------------------------
