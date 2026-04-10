@@ -126,6 +126,37 @@ jobs:
           echo "$output" | grep -q "${{ github.event.head_commit.timestamp }}" || { echo "FAIL: expected build date ${{ github.event.head_commit.timestamp }}"; exit 1; }
           echo "$output" | grep -q "${{ matrix.platform }}" || { echo "FAIL: expected platform ${{ matrix.platform }}"; exit 1; }
 
+      - name: Install cosign
+        # Required for the verify step below.  Pinned by SHA to
+        # match the build-and-push job and to immunise against
+        # malicious tag moves on the action repo.
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb
+
+      - name: Verify cosign signature
+        # Closes the loop on the build-and-push job's signing
+        # step: assert that a sigstore signature exists on the
+        # published image, that it was issued by the GitHub
+        # Actions OIDC provider, that the signing identity is
+        # this exact workflow file on this exact repository, and
+        # crucially that the signature was made by the *current*
+        # commit (not some prior run that left a stale signature
+        # on the floating :latest tag).
+        run: |
+          set -euo pipefail
+          cosign verify ttl.sh/frobware/go-bpfman:latest \
+            --certificate-identity-regexp 'https://github\.com/frobware/go-bpfman/\.github/workflows/image\.yaml@.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > "${RUNNER_TEMP}/cosign-verify.json"
+          actual_sha=$(jq -r '.[0].optional.githubWorkflowSha' "${RUNNER_TEMP}/cosign-verify.json")
+          if [ "${actual_sha}" != "${{ github.sha }}" ]; then
+            echo "FAIL: signature is from sha=${actual_sha}, expected ${{ github.sha }}" >&2
+            jq '.[0].optional' "${RUNNER_TEMP}/cosign-verify.json" >&2
+            exit 1
+          fi
+          echo "Signature verified: githubWorkflowSha=${actual_sha}"
+          jq '.[0].optional | {Issuer, Subject, githubWorkflowName, githubWorkflowRef, githubWorkflowSha}' \
+            "${RUNNER_TEMP}/cosign-verify.json"
+
       - name: Inspect attestations
         run: |
           # Provenance and SBOM are attached as separate manifests in
