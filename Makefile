@@ -236,12 +236,27 @@ GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 # to drop the symbol table and DWARF sections from shipped images.
 EXTRA_GO_LDFLAGS ?=
 
+# Image attestation metadata, baked into the binary via -ldflags so
+# `bpfman version` can print a ready-to-pipe `cosign verify` command
+# for the image this binary was published from. All three default
+# to empty: local `make build`, the host-build path via
+# Dockerfile.bpfman.host, and downstream Konflux/RHEL/UBI builds
+# leave them unset, and the version printer omits the Attestation
+# line entirely when any of them is empty. Only the CI image-build
+# workflow (.github/workflows/image.yaml) populates them.
+IMAGE_REF       ?=
+SIGNER_IDENTITY ?=
+OIDC_ISSUER     ?=
+
 GO_LDFLAGS := $(if $(STATIC),-extldflags '-static') \
               -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
               -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
               -X $(VERSION_PKG).gitState=$(GIT_STATE) \
               -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
               -X $(VERSION_PKG).version=$(GIT_VERSION) \
+              $(if $(IMAGE_REF),-X $(VERSION_PKG).imageRef=$(IMAGE_REF)) \
+              $(if $(SIGNER_IDENTITY),-X $(VERSION_PKG).signerIdentity=$(SIGNER_IDENTITY)) \
+              $(if $(OIDC_ISSUER),-X $(VERSION_PKG).oidcIssuer=$(OIDC_ISSUER)) \
               $(EXTRA_GO_LDFLAGS)
 
 # bpfman targets
@@ -380,6 +395,9 @@ docker-build-bpfman-multiarch:
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--build-arg EXTRA_GO_LDFLAGS="$(EXTRA_GO_LDFLAGS)" \
+		--build-arg IMAGE_REF="$(IMAGE_REF)" \
+		--build-arg SIGNER_IDENTITY="$(SIGNER_IDENTITY)" \
+		--build-arg OIDC_ISSUER="$(OIDC_ISSUER)" \
 		-f $(MULTIARCH_DOCKERFILE) \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
 

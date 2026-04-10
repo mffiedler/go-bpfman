@@ -132,6 +132,15 @@ ARG BUILD_DATE=
 # remains debuggable.
 ARG EXTRA_GO_LDFLAGS=
 
+# Image attestation metadata. All three default to empty; the
+# version printer omits the Attestation line entirely when any of
+# them is unset, so local builds and downstream Konflux/RHEL/UBI
+# builds are unaffected. Only the CI image-build workflow sets
+# these.
+ARG IMAGE_REF=
+ARG SIGNER_IDENTITY=
+ARG OIDC_ISSUER=
+
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -151,7 +160,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         GIT_BRANCH="$GIT_BRANCH" \
         GIT_VERSION="$GIT_VERSION" \
         BUILD_DATE="$BUILD_DATE" \
-        EXTRA_GO_LDFLAGS="$EXTRA_GO_LDFLAGS"; \
+        EXTRA_GO_LDFLAGS="$EXTRA_GO_LDFLAGS" \
+        IMAGE_REF="$IMAGE_REF" \
+        SIGNER_IDENTITY="$SIGNER_IDENTITY" \
+        OIDC_ISSUER="$OIDC_ISSUER"; \
     file bin/bpfman
 
 # ---------------------------------------------------------------------------

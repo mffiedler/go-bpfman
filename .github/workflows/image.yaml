@@ -66,9 +66,21 @@ jobs:
           # the immutable digest rather than the mutable :latest
           # tag. The file ends up in $RUNNER_TEMP so it is cleaned
           # up at job teardown.
+          # IMAGE_REF / SIGNER_IDENTITY / OIDC_ISSUER bake the
+          # cosign verify command into the binary via -ldflags so
+          # `bpfman version` can print a ready-to-pipe verification
+          # command for the image it was published from. Only set
+          # here in CI; local and downstream builds leave them
+          # empty and the version printer omits the Attestation
+          # line entirely.  SIGNER_IDENTITY is constructed to
+          # exactly match the cert subject Fulcio will issue when
+          # this same workflow signs in the next step.
           make docker-build-bpfman-multiarch \
             MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch.fedora \
             EXTRA_GO_LDFLAGS="-s -w" \
+            IMAGE_REF=ttl.sh/frobware/go-bpfman \
+            SIGNER_IDENTITY=https://github.com/${{ github.repository }}/.github/workflows/image.yaml@${{ github.ref }} \
+            OIDC_ISSUER=https://token.actions.githubusercontent.com \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
             PUSH=1 \
             BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \

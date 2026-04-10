@@ -15,6 +15,19 @@ var (
 	gitState  string // "clean" or "dirty"
 	buildDate string // ISO 8601 build timestamp
 	version   string // semantic version tag, if any
+
+	// The next three are populated only by the CI image-build
+	// workflow (.github/workflows/image.yaml). Local `make
+	// build`, host-build paths via Dockerfile.bpfman.host, and
+	// downstream Konflux/RHEL/UBI builds intentionally leave
+	// them empty: they are only meaningful for binaries that
+	// were published as part of a signed multi-arch image, and
+	// the Attestation field below is omitted entirely when any
+	// of them is empty.
+
+	imageRef       string // e.g. "ttl.sh/frobware/go-bpfman"
+	signerIdentity string // e.g. "https://github.com/frobware/go-bpfman/.github/workflows/image.yaml@refs/heads/main"
+	oidcIssuer     string // e.g. "https://token.actions.githubusercontent.com"
 )
 
 // Info contains structured version information.
@@ -26,6 +39,12 @@ type Info struct {
 	BuildDate string `json:"build_date"`
 	GoVersion string `json:"go_version"`
 	Platform  string `json:"platform"`
+
+	// Attestation is the cosign verify command for the image
+	// this binary was published from. Empty unless the binary
+	// was built by the CI image workflow with all three of
+	// imageRef, signerIdentity, oidcIssuer set via -ldflags.
+	Attestation string `json:"attestation,omitempty"`
 }
 
 // Get returns the current build version information.
@@ -35,14 +54,34 @@ func Get() Info {
 		v = "(devel)"
 	}
 	return Info{
-		Version:   v,
-		GitCommit: gitCommit,
-		GitBranch: gitBranch,
-		GitState:  gitState,
-		BuildDate: buildDate,
-		GoVersion: runtime.Version(),
-		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
+		Version:     v,
+		GitCommit:   gitCommit,
+		GitBranch:   gitBranch,
+		GitState:    gitState,
+		BuildDate:   buildDate,
+		GoVersion:   runtime.Version(),
+		Platform:    runtime.GOOS + "/" + runtime.GOARCH,
+		Attestation: attestation(),
 	}
+}
+
+// attestation returns a ready-to-pipe `cosign verify` command line
+// for the published image, or an empty string if any of the three
+// build-time identity fields are unset (which is the normal case
+// for any binary not built by the CI image workflow).
+//
+// The returned string is the bare command on a single line: it is
+// designed to be readable by a human and pipeable to `sh` after
+// the human has decided whether to trust the embedded signing
+// identity. The binary itself does not perform verification.
+func attestation() string {
+	if imageRef == "" || signerIdentity == "" || oidcIssuer == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"cosign verify %s:latest --certificate-identity '%s' --certificate-oidc-issuer %s",
+		imageRef, signerIdentity, oidcIssuer,
+	)
 }
 
 // String returns a single-line summary suitable for log output.
@@ -70,12 +109,15 @@ func (i Info) String() string {
 // Long returns a multi-line version string for display.
 func (i Info) Long() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Version:    %s\n", i.Version)
-	fmt.Fprintf(&b, "Git commit: %s\n", i.GitCommit)
-	fmt.Fprintf(&b, "Git branch: %s\n", i.GitBranch)
-	fmt.Fprintf(&b, "Git state:  %s\n", i.GitState)
-	fmt.Fprintf(&b, "Build date: %s\n", i.BuildDate)
-	fmt.Fprintf(&b, "Go version: %s\n", i.GoVersion)
-	fmt.Fprintf(&b, "Platform:   %s\n", i.Platform)
+	fmt.Fprintf(&b, "Version:     %s\n", i.Version)
+	fmt.Fprintf(&b, "Git commit:  %s\n", i.GitCommit)
+	fmt.Fprintf(&b, "Git branch:  %s\n", i.GitBranch)
+	fmt.Fprintf(&b, "Git state:   %s\n", i.GitState)
+	fmt.Fprintf(&b, "Build date:  %s\n", i.BuildDate)
+	fmt.Fprintf(&b, "Go version:  %s\n", i.GoVersion)
+	fmt.Fprintf(&b, "Platform:    %s\n", i.Platform)
+	if i.Attestation != "" {
+		fmt.Fprintf(&b, "Attestation: %s\n", i.Attestation)
+	}
 	return b.String()
 }
