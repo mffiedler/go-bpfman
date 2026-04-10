@@ -86,11 +86,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile.bpfman.multi-arch
+          file: ./Dockerfile.bpfman.host
           platforms: linux/${{ matrix.goarch }}
           # Policy: upstream ships a static binary on a scratch base.
-          # The Dockerfile's BASE_IMAGE arg is mechanism; this is where
-          # the upstream choice is recorded.
+          # The Dockerfile's BASE_IMAGE arg defaults to scratch; this
+          # explicit assignment records the policy at the call site.
           build-args: |
             BASE_IMAGE=scratch
           outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
