@@ -4,8 +4,8 @@ bin/
 dispatcher/*.bpf.o
 # Exclude the BPF build stamp: if the host has one and the .bpf.o
 # files are excluded above, a self-contained builder (e.g.
-# Dockerfile.bpfman) would see a stale stamp newer than the
-# sources and skip the in-container BPF build, leaving go vet
+# Dockerfile.bpfman.multiarch) would see a stale stamp newer than
+# the sources and skip the in-container BPF build, leaving go vet
 # unable to resolve //go:embed patterns.
 .bpf-build-stamp
 

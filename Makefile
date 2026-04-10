@@ -56,7 +56,7 @@ help:
 	@echo "  bpfman-operator-deploy      Deploy Go bpfman to bpfman-operator cluster"
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
-	@echo "  docker-build-bpfman         Build bpfman container image"
+	@echo "  build-image                 Build a local bpfman image (alias for docker-build-bpfman-multiarch)"
 	@echo "  docker-build-bpfman-local   Build bpfman image from host-built binary"
 	@echo "  docker-build-bpfman-multiarch  Buildx multi-arch build (PLATFORMS=, PUSH=)"
 	@echo ""
@@ -91,7 +91,7 @@ help:
 	@echo "    go build -tags cgo_sqlite ./..."
 	@echo "    go test -tags cgo_sqlite ./..."
 
-docker-build-all: docker-build-bpfman docker-build-bpfman-local docker-build-stats-reader docker-build-csi-sanity
+docker-build-all: docker-build-bpfman-local docker-build-stats-reader docker-build-csi-sanity
 
 clean: bpfman-clean bpf-clean coverage-clean
 	$(RM) -r $(BIN_DIR)
@@ -277,9 +277,6 @@ $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: $(BPFMAN_PROTO
 		--proto_path=$(BPFMAN_PROTO_DIR) \
 		$<
 
-docker-build-bpfman:
-	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) -f Dockerfile.bpfman .
-
 # Build bpfman image from the host-built binary, using ubi9-minimal
 # as the runtime base. Intended for local development and operator
 # integration testing: the binary may be dynamically linked, and
@@ -347,6 +344,11 @@ BUILDX_OUTPUT := $(if $(PUSH),--push,$(if $(findstring $(comma),$(PLATFORMS)),,-
 # attest. Gating on PUSH avoids confusing buildx warnings.
 BUILDX_ATTEST := $(if $(PUSH),--provenance=mode=max --sbom=true)
 
+# Short alias: `make build-image` is the obvious thing to type when
+# you just want a local bpfman image. It is identical to running
+# docker-build-bpfman-multiarch with no overrides.
+build-image: docker-build-bpfman-multiarch
+
 docker-build-bpfman-multiarch:
 	docker buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
@@ -360,7 +362,7 @@ docker-build-bpfman-multiarch:
 		-f Dockerfile.bpfman.multiarch \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
 
-bpfman-kind-load: docker-build-bpfman
+bpfman-kind-load: docker-build-bpfman-local
 	kind load docker-image $(BPFMAN_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
 
 bpfman-deploy: bpfman-kind-load
@@ -387,7 +389,7 @@ bpfman-operator-deploy: docker-build-bpfman-local
 	kubectl rollout restart daemonset/bpfman-daemon -n $(NAMESPACE)
 	kubectl rollout status daemonset/bpfman-daemon -n $(NAMESPACE) --timeout=60s
 
-bpfman-test-grpc: docker-build-bpfman
+bpfman-test-grpc: docker-build-bpfman-local
 	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
 
 # stats-reader example app
@@ -487,7 +489,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	doc \
 	doc-text \
 	docker-build-all \
-	docker-build-bpfman \
+	build-image \
 	docker-build-bpfman-local \
 	docker-build-bpfman-multiarch \
 	docker-build-csi-sanity \
