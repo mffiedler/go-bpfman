@@ -1,0 +1,159 @@
+# syntax=docker/dockerfile:1.7
+#
+# Experimental: all-Fedora variant of Dockerfile.bpfman.multiarch.
+#
+# Where the production Dockerfile.bpfman.multiarch uses Debian
+# bookworm for the Go cross-compile stage (because Debian ships
+# pre-packaged libc6-dev-*-cross sysroots that "just work"), this
+# variant stays on Fedora 43 for both stages and builds the
+# foreign-arch sysroots itself at image-build time. The mechanism is
+# `dnf install --installroot=/sysroots/${arch} --forcearch=${arch}
+# --use-host-config`, which downloads foreign-arch
+# glibc/libgcc/kernel-headers from Fedora's regular per-arch
+# repositories. The cross gcc is then pointed at the populated
+# sysroot via --sysroot.
+#
+# Why this exists: to demonstrate that an all-Fedora multi-arch
+# build *is* possible without giving up static linking, and to
+# document the trade-offs against the bookworm path. The bookworm
+# path remains the production CI default because it is faster,
+# requires fewer build-time tricks, and has less surface area for
+# breakage when Fedora updates dnf or the rpm scriptlet machinery.
+#
+# Usage is identical to Dockerfile.bpfman.multiarch:
+#
+#   docker buildx build \
+#     --builder cgo-test-builder \
+#     --platform linux/amd64 \
+#     -f Dockerfile.bpfman.multiarch.fedora \
+#     --load \
+#     -t bpfman:multiarch-fedora-amd64 .
+
+ARG FEDORA_VERSION=43
+
+# ---------------------------------------------------------------------------
+# BPF objects: identical to the production multiarch Dockerfile.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
+
+# hadolint ignore=DL3041
+RUN dnf update -y && \
+    dnf install -y \
+        clang \
+        llvm \
+        libbpf-devel \
+        pkg-config \
+        make \
+        kernel-headers && \
+    dnf clean all
+
+WORKDIR /build
+COPY dispatcher/ dispatcher/
+RUN make -C dispatcher
+
+# ---------------------------------------------------------------------------
+# Go cross-build stage (Fedora). Cross gcc on Fedora is just the
+# compiler binary, with no target sysroot, so we build per-target
+# sysroots ourselves below using `dnf --installroot --forcearch`.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS go-builder
+
+# hadolint ignore=DL3041
+RUN dnf update -y && \
+    dnf install -y \
+        gcc \
+        gcc-aarch64-linux-gnu \
+        gcc-powerpc64le-linux-gnu \
+        gcc-s390x-linux-gnu \
+        glibc-static \
+        golang \
+        make \
+        git \
+        file \
+        ca-certificates && \
+    dnf clean all
+
+# Build foreign-arch sysroots. Each one is a minimal Fedora
+# installroot containing just the C runtime, kernel headers, and
+# their dependencies for the target architecture, populated from
+# Fedora's foreign-arch repositories via --forcearch.
+#
+# Notes:
+#
+#   --use-host-config tells dnf to read /etc/yum.repos.d from the
+#   build container rather than expecting an already-populated repo
+#   tree inside the (empty) installroot. dnf5 made this explicit;
+#   without it the install fails with "no repositories were loaded
+#   from the installroot".
+#
+#   tsflags=noscripts skips post-install rpm scriptlets. This is
+#   necessary because the foreign-arch glibc post-install runs
+#   ldconfig, and ldconfig in a foreign-arch sysroot is the foreign
+#   ELF binary -- not executable on the build host without QEMU
+#   binfmt_misc registration. The scriptlets are not needed for a
+#   sysroot whose only purpose is to be linked against; ldconfig at
+#   runtime on the target machine handles its own cache.
+#
+#   install_weak_deps=False keeps the installroot lean.
+ARG FEDORA_VERSION
+RUN set -eux; \
+    for arch in aarch64 ppc64le s390x; do \
+        sysroot="/sysroots/${arch}"; \
+        mkdir -p "${sysroot}"; \
+        dnf install -y \
+            --use-host-config \
+            --installroot="${sysroot}" \
+            --forcearch="${arch}" \
+            --releasever="${FEDORA_VERSION}" \
+            --setopt=install_weak_deps=False \
+            --setopt=tsflags=noscripts \
+            --nodocs \
+            glibc glibc-devel glibc-static libgcc kernel-headers; \
+        rm -rf "${sysroot}/var/cache" "${sysroot}/var/log" "${sysroot}/var/lib/dnf"; \
+    done
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . .
+COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
+
+ARG GIT_COMMIT=
+ARG GIT_BRANCH=
+ARG GIT_VERSION=
+ARG BUILD_DATE=
+
+ARG TARGETOS
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    set -eux; \
+    case "$TARGETARCH" in \
+        amd64)   CC="gcc"                                                       ;; \
+        arm64)   CC="aarch64-linux-gnu-gcc --sysroot=/sysroots/aarch64"         ;; \
+        ppc64le) CC="powerpc64le-linux-gnu-gcc --sysroot=/sysroots/ppc64le"     ;; \
+        s390x)   CC="s390x-linux-gnu-gcc --sysroot=/sysroots/s390x"             ;; \
+        *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    export CC CGO_ENABLED=1 GOOS="$TARGETOS" GOARCH="$TARGETARCH"; \
+    make bpfman-compile STATIC=1 \
+        GIT_COMMIT="$GIT_COMMIT" \
+        GIT_BRANCH="$GIT_BRANCH" \
+        GIT_VERSION="$GIT_VERSION" \
+        BUILD_DATE="$BUILD_DATE"; \
+    file bin/bpfman
+
+# ---------------------------------------------------------------------------
+# Final image: scratch + the static bpfman binary.
+# ---------------------------------------------------------------------------
+FROM scratch
+
+COPY --from=go-builder /src/bin/bpfman /bpfman
+
+ENV BPFMAN_MODE=bpfman-rpc
+ENV BPFMAN_PPROF_ADDRESS=localhost:6060
+ENTRYPOINT ["/bpfman"]
