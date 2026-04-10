@@ -1,11 +1,20 @@
-# Multi-arch runtime image for go-bpfman.
+# Multi-arch upstream runtime image for go-bpfman.
 #
-# The bpfman binary is statically linked, so no base OS is needed.
-# This Dockerfile expects a pre-built binary at bin/bpfman. The CI
-# workflow builds these per-architecture and passes them via the
-# build context.
+# This Dockerfile expects a pre-built binary at bin/bpfman; the
+# caller (CI workflow, dev script, etc.) decides what to put there.
+#
+# Mechanism, not policy: BASE_IMAGE is parameterised. The default
+# (scratch) matches the upstream CI policy of `make bpfman-compile
+# STATIC=1`. Callers building dynamically (e.g. local KIND
+# development without glibc-static) override BASE_IMAGE to a base
+# whose glibc is compatible with the build host's, e.g.:
+#
+#   docker build \
+#     -f Dockerfile.bpfman.multi-arch \
+#     --build-arg BASE_IMAGE=fedora:latest .
 
-FROM scratch
+ARG BASE_IMAGE=scratch
+FROM ${BASE_IMAGE}
 
 COPY bin/bpfman /bpfman
 

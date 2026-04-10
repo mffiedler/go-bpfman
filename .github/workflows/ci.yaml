@@ -81,7 +81,7 @@ jobs:
         run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: Build
-        run: make
+        run: make STATIC=1
 
   test:
     needs: build-bpf

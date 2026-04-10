@@ -5,21 +5,16 @@ on:
 
 jobs:
   unit-test:
-    name: Unit tests (${{ matrix.name }})
+    name: Unit tests (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: amd64
+          - arch: amd64
             runner: ubuntu-latest
-            make_args: ""
-          - name: amd64 static
-            runner: ubuntu-latest
-            make_args: "STATIC=1"
-          - name: arm64
+          - arch: arm64
             runner: ubuntu-24.04-arm
-            make_args: ""
     steps:
       - uses: actions/checkout@v6
 
@@ -32,11 +27,11 @@ jobs:
           cache: false
 
       - name: Set Go cache date
-        if: matrix.name == 'amd64'
+        if: matrix.arch == 'amd64'
         run: echo "GO_CACHE_DATE=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
 
       - name: Restore Go cache
-        if: matrix.name == 'amd64'
+        if: matrix.arch == 'amd64'
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -56,14 +51,14 @@ jobs:
         run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: Unit tests
-        run: make test PARALLEL=1 ${{ matrix.make_args }}
+        run: make test PARALLEL=1 STATIC=1
 
       - name: Trim Go build cache
-        if: matrix.name == 'amd64' && github.ref == 'refs/heads/main'
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
         run: find ~/.cache/go-build -type f -mmin +90 -delete
 
       - name: Save Go cache
-        if: matrix.name == 'amd64' && github.ref == 'refs/heads/main'
+        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v5
         with:
           path: |
@@ -72,21 +67,16 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('go.mod') }}-${{ env.GO_CACHE_DATE }}
 
   test-e2e:
-    name: E2E tests (${{ matrix.name }})
+    name: E2E tests (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: amd64
+          - arch: amd64
             runner: ubuntu-latest
-            make_args: ""
-          - name: amd64 static
-            runner: ubuntu-latest
-            make_args: "STATIC=1"
-          - name: arm64
+          - arch: arm64
             runner: ubuntu-24.04-arm
-            make_args: ""
     steps:
       - uses: actions/checkout@v6
 
@@ -118,4 +108,4 @@ jobs:
         run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
       - name: E2E tests
-        run: make test-e2e PARALLEL=1 ${{ matrix.make_args }}
+        run: make test-e2e PARALLEL=1 STATIC=1

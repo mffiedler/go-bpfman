@@ -100,6 +100,13 @@ clean: bpfman-clean bpf-clean coverage-clean
 
 PARALLEL ?=
 
+# Static linking is opt-in via STATIC=1. The upstream container
+# image enables it because the runtime base is scratch, which ships
+# no libc; downstream consumers building with a FIPS Go toolchain
+# (Red Hat go-toolset, Microsoft Go FIPS) must leave it off, since
+# FIPS crypto requires dynamic linkage to a validated OpenSSL. To
+# disable explicitly, use `make STATIC=`.
+
 test: bpf-build
 	go test -race $(if $(STATIC),-tags '$(STATIC_TAGS)' -ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
 
