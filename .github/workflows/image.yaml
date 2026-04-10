@@ -13,125 +13,34 @@ jobs:
     uses: ./.github/workflows/test.yaml
 
   build-and-push:
-    name: Build and push (${{ matrix.goarch }})
+    name: Build and push (multiarch)
     runs-on: ubuntu-24.04
-    needs: build-bpf
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goarch: amd64
-            cc: gcc
-            pkgs: ""
-            expect_file: "x86-64"
-          - goarch: arm64
-            cc: aarch64-linux-gnu-gcc
-            pkgs: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-            expect_file: "aarch64"
-          - goarch: ppc64le
-            cc: powerpc64le-linux-gnu-gcc
-            pkgs: gcc-powerpc64le-linux-gnu libc6-dev-ppc64el-cross
-            expect_file: "64-bit.*PowerPC"
-          - goarch: s390x
-            cc: s390x-linux-gnu-gcc
-            pkgs: gcc-s390x-linux-gnu libc6-dev-s390x-cross
-            expect_file: "IBM S/390"
+    # Gate the registry push on tests passing.
+    needs: test
     steps:
       - uses: actions/checkout@v6
-
-      - name: Read Go version from Makefile
-        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Install cross-compilation toolchain
-        if: matrix.pkgs != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.pkgs }}
-
-      - name: Download BPF objects
-        uses: actions/download-artifact@v6
-        with:
-          name: bpf-objects
-
-      - name: Touch BPF objects to preserve Make freshness
-        run: touch .bpf-build-stamp dispatcher/*.bpf.o
-
-      - name: Cross-compile bpfman
-        env:
-          CGO_ENABLED: "1"
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          CC: ${{ matrix.cc }}
-          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: make bpfman-compile STATIC=1
-
-      - name: Verify binary architecture
-        run: |
-          file_output=$(file bin/bpfman)
-          echo "${file_output}"
-          echo "GIT_COMMIT=${{ github.sha }}"
-          echo "BUILD_DATE=${{ github.event.head_commit.timestamp }}"
-          echo "${file_output}" | grep -qE "${{ matrix.expect_file }}" || { echo "FAIL: binary is not ${{ matrix.goarch }}"; exit 1; }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
-        id: push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.bpfman.host
-          platforms: linux/${{ matrix.goarch }}
-          # Policy: upstream ships a static binary on a scratch base.
-          # The Dockerfile's BASE_IMAGE arg defaults to scratch; this
-          # explicit assignment records the policy at the call site.
-          build-args: |
-            BASE_IMAGE=scratch
-          outputs: type=image,name=ttl.sh/frobware/go-bpfman,push-by-digest=true,push=true
-
-      - name: Save digest
+      - name: Build and push multi-arch image
+        env:
+          # Override the Makefile's host-time default so the version
+          # metadata baked into the binary matches the commit being
+          # built rather than the runner's wall clock.
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: |
-          mkdir -p /tmp/digests
-          echo "${{ steps.push.outputs.digest }}" > "/tmp/digests/${{ matrix.goarch }}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v6
-        with:
-          name: digest-${{ matrix.goarch }}
-          path: /tmp/digests/${{ matrix.goarch }}
-
-  assemble-manifest:
-    name: Assemble manifest
-    runs-on: ubuntu-24.04
-    needs: [test, build-and-push]
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v6
-        with:
-          pattern: digest-*
-          path: /tmp/digests
-
-      - name: Create and push manifest
-        run: |
-          args=""
-          for f in /tmp/digests/digest-*/; do
-            arch=$(basename "$f" | sed 's/digest-//')
-            digest=$(cat "${f}${arch}")
-            echo "${arch}: ${digest}"
-            args="${args} ttl.sh/frobware/go-bpfman@${digest}"
-          done
-          docker buildx imagetools create -t ttl.sh/frobware/go-bpfman:latest ${args}
+          make docker-build-bpfman-multiarch \
+            PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
+            PUSH=1 \
+            BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+            IMAGE_TAG=latest \
+            BUILDX_EXTRA_ARGS="--cache-from type=gha --cache-to type=gha,mode=max"
 
   verify-image:
     name: Verify image (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    needs: assemble-manifest
+    needs: build-and-push
     strategy:
       fail-fast: false
       matrix:
@@ -150,3 +59,11 @@ jobs:
           echo "$output" | grep -q "${{ github.sha }}" || { echo "FAIL: expected git commit ${{ github.sha }}"; exit 1; }
           echo "$output" | grep -q "${{ github.event.head_commit.timestamp }}" || { echo "FAIL: expected build date ${{ github.event.head_commit.timestamp }}"; exit 1; }
           echo "$output" | grep -q "${{ matrix.platform }}" || { echo "FAIL: expected platform ${{ matrix.platform }}"; exit 1; }
+
+      - name: Inspect attestations
+        run: |
+          # Provenance and SBOM are attached as separate manifests in
+          # the OCI image index. Informational; does not gate.
+          docker buildx imagetools inspect \
+            ttl.sh/frobware/go-bpfman:latest \
+            --format '{{ json .Provenance }}' || true

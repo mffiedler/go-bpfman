@@ -58,6 +58,7 @@ help:
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo "  docker-build-bpfman         Build bpfman container image"
 	@echo "  docker-build-bpfman-local   Build bpfman image from host-built binary"
+	@echo "  docker-build-bpfman-multiarch  Buildx multi-arch build (PLATFORMS=, PUSH=)"
 	@echo ""
 	@echo "Example stats-reader app:"
 	@echo "  docker-build-stats-reader   Build stats-reader container image"
@@ -289,6 +290,76 @@ docker-build-bpfman-local: bpfman-build
 		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
 		-f Dockerfile.bpfman.host .
 
+# Multi-architecture buildx-native image build.
+#
+# Modes (selected automatically by the variable knobs below):
+#
+#   make docker-build-bpfman-multiarch
+#       Default: native arch only, loaded into the local Docker
+#       store. Suitable for daily KIND work that does not require a
+#       shell-in-pod (use docker-build-bpfman-local for that).
+#
+#   make docker-build-bpfman-multiarch PLATFORMS=linux/arm64
+#       Single foreign arch, loaded into the local Docker store
+#       (requires host binfmt support to actually run the binary).
+#
+#   make docker-build-bpfman-multiarch \
+#       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+#       Multi-arch, cache-only build (no output). Useful as a "does
+#       it all compile?" sanity check; the manifest stays in the
+#       BuildKit cache because the local Docker store cannot hold a
+#       multi-arch manifest.
+#
+#   make docker-build-bpfman-multiarch \
+#       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
+#       PUSH=1 \
+#       BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#       IMAGE_TAG=$(GIT_COMMIT)
+#       CI publish: pushes a multi-arch manifest to the registry,
+#       with SLSA build provenance (mode=max) and SBOM attestations
+#       attached per platform.
+#
+# STATIC linkage is intentionally NOT a knob here. The Dockerfile
+# hardcodes `make bpfman-compile STATIC=1` because the final stage is
+# `scratch` and the two are coupled: a dynamically linked binary
+# would crash immediately on a libc-less base. If you need a
+# non-static binary (FIPS Go toolchains, dynamic-glibc bases), build
+# on the host and package via Dockerfile.bpfman.host instead.
+#
+# Multi-platform builds require a docker-container or remote buildx
+# builder. CI workflows use docker/setup-buildx-action which
+# provisions one automatically; locally, run `docker buildx create
+# --driver docker-container --use` once.
+PLATFORMS         ?=
+PUSH              ?=
+BUILDX_EXTRA_ARGS ?=
+
+# Output-flag selection. Truth table:
+#
+#   PUSH=1                            -> --push
+#   PLATFORMS contains a comma        -> no flag (cache-only)
+#   otherwise                         -> --load
+BUILDX_OUTPUT := $(if $(PUSH),--push,$(if $(findstring $(comma),$(PLATFORMS)),,--load))
+
+# Provenance and SBOM attestations are only meaningful when pushing
+# to a registry: the Docker image store strips OCI attestations on
+# --load, and a cache-only build never produces an artifact to
+# attest. Gating on PUSH avoids confusing buildx warnings.
+BUILDX_ATTEST := $(if $(PUSH),--provenance=mode=max --sbom=true)
+
+docker-build-bpfman-multiarch:
+	docker buildx build \
+		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
+		$(BUILDX_OUTPUT) \
+		$(BUILDX_ATTEST) \
+		$(BUILDX_EXTRA_ARGS) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-f Dockerfile.bpfman.multiarch \
+		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
+
 bpfman-kind-load: docker-build-bpfman
 	kind load docker-image $(BPFMAN_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
 
@@ -418,6 +489,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	docker-build-all \
 	docker-build-bpfman \
 	docker-build-bpfman-local \
+	docker-build-bpfman-multiarch \
 	docker-build-csi-sanity \
 	docker-build-stats-reader \
 	help \

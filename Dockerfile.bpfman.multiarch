@@ -1,0 +1,156 @@
+# syntax=docker/dockerfile:1.7
+#
+# Multi-architecture, buildx-native build of bpfman.
+#
+# Produces a statically linked bpfman binary on a scratch base for
+# linux/{amd64,arm64,ppc64le,s390x} from a single `docker buildx`
+# invocation. The build stages always run on the build host (via
+# `--platform=$BUILDPLATFORM`); only the final binary is
+# cross-compiled, by selecting an appropriate cross GCC at link
+# time. This avoids QEMU emulation of the entire build and is
+# significantly faster than per-arch native builds.
+#
+# This file is intentionally separate from Dockerfile.bpfman and
+# Dockerfile.bpfman.host: it is the buildx-native variant and is
+# self-contained (it builds the BPF objects itself rather than
+# relying on a pre-populated bin/ or .bpf.o tree).
+#
+# Local single-arch test (loads the result into the local Docker
+# image store):
+#
+#   docker buildx build \
+#     --builder cgo-test-builder \
+#     --platform linux/amd64 \
+#     -f Dockerfile.bpfman.multiarch \
+#     --load \
+#     -t bpfman:multiarch-amd64 .
+#
+# Full multi-arch build (manifest only, no load -- the docker image
+# store cannot hold a multi-arch manifest):
+#
+#   docker buildx build \
+#     --builder cgo-test-builder \
+#     --platform linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
+#     -f Dockerfile.bpfman.multiarch \
+#     -t bpfman:multiarch .
+
+ARG FEDORA_VERSION=43
+ARG GO_VERSION=1.25
+
+# ---------------------------------------------------------------------------
+# BPF objects: architecture-independent eBPF bytecode. Built once on
+# the build platform regardless of how many target platforms the
+# overall build is producing. Fedora is used here because the BPF
+# toolchain (clang/llvm/libbpf-devel/kernel-headers) is well known to
+# work for this project on Fedora -- matching the existing
+# Dockerfile.bpf.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
+
+# Distro rolling repos make exact version pinning brittle.
+# hadolint ignore=DL3041
+RUN dnf update -y && \
+    dnf install -y \
+        clang \
+        llvm \
+        libbpf-devel \
+        pkg-config \
+        make \
+        kernel-headers && \
+    dnf clean all
+
+WORKDIR /build
+
+# Only the dispatcher BPF objects are required for the production
+# binary; the dispatcher Go package embeds them via go:embed. The
+# e2e BPF objects are intentionally not built here.
+COPY dispatcher/ dispatcher/
+
+RUN make -C dispatcher
+
+# ---------------------------------------------------------------------------
+# Go build: cross-compile a statically linked bpfman against the
+# target arch sysroot. This stage always runs on the build platform
+# (`--platform=$BUILDPLATFORM`); the only architecture-aware step is
+# selecting CC, which is fed in via TARGETARCH.
+#
+# All four cross toolchains are installed in a single layer so the
+# layer is shared across every TARGETARCH variant of the build, and
+# the apt download cost is paid once even when building the full
+# four-arch matrix.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS go-builder
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc-aarch64-linux-gnu       libc6-dev-arm64-cross \
+        gcc-powerpc64le-linux-gnu   libc6-dev-ppc64el-cross \
+        gcc-s390x-linux-gnu         libc6-dev-s390x-cross \
+        make \
+        git \
+        file \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Module download is architecture-independent and benefits from a
+# dedicated layer + module cache mount.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Bring in the rest of the source tree. Note that .dockerignore
+# excludes dispatcher/*.bpf.o and .bpf-build-stamp, so we are
+# guaranteed not to inherit a stale BPF build from the host.
+COPY . .
+
+# Drop in the BPF objects produced by the bpf-builder stage. The
+# dispatcher Go package embeds these via go:embed, so they must be
+# present at the time `go build` runs.
+COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
+
+# Optional version metadata. The Makefile reads these via ?= and
+# falls back to `git rev-parse` (which yields empty strings inside
+# the build context, since .git is excluded by .dockerignore). Pass
+# explicit values from CI when reproducible version stamping is
+# required.
+ARG GIT_COMMIT=
+ARG GIT_BRANCH=
+ARG GIT_VERSION=
+ARG BUILD_DATE=
+
+ARG TARGETOS
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    set -eux; \
+    case "$TARGETARCH" in \
+        amd64)   CC=gcc ;; \
+        arm64)   CC=aarch64-linux-gnu-gcc ;; \
+        ppc64le) CC=powerpc64le-linux-gnu-gcc ;; \
+        s390x)   CC=s390x-linux-gnu-gcc ;; \
+        *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    export CC CGO_ENABLED=1 GOOS="$TARGETOS" GOARCH="$TARGETARCH"; \
+    make bpfman-compile STATIC=1 \
+        GIT_COMMIT="$GIT_COMMIT" \
+        GIT_BRANCH="$GIT_BRANCH" \
+        GIT_VERSION="$GIT_VERSION" \
+        BUILD_DATE="$BUILD_DATE"; \
+    file bin/bpfman
+
+# ---------------------------------------------------------------------------
+# Final image: scratch + the static bpfman binary. Matches the
+# upstream policy already encoded in Dockerfile.bpfman.host's default
+# BASE_IMAGE.
+# ---------------------------------------------------------------------------
+FROM scratch
+
+COPY --from=go-builder /src/bin/bpfman /bpfman
+
+ENV BPFMAN_MODE=bpfman-rpc
+ENV BPFMAN_PPROF_ADDRESS=localhost:6060
+ENTRYPOINT ["/bpfman"]
