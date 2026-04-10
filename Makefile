@@ -57,6 +57,7 @@ help:
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo "  build-image                 Build a local bpfman image (alias for docker-build-bpfman-multiarch)"
+	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo "  docker-build-bpfman-local   Build bpfman image from host-built binary"
 	@echo "  docker-build-bpfman-multiarch  Buildx multi-arch build (PLATFORMS=, PUSH=)"
 	@echo ""
@@ -342,6 +343,12 @@ BUILDX_EXTRA_ARGS    ?=
 # Dockerfile.bpfman.multiarch.fedora when building the all-Fedora
 # variant. Mirrors the existing BPF_DOCKERFILE convention.
 MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch
+# Optional path for buildx --metadata-file. When set, buildx writes
+# the published index digest to this path after the push completes,
+# and the cosign-sign target reads the digest from it. Empty by
+# default; CI sets it to ${RUNNER_TEMP}/buildx-meta.json. Locally,
+# any writable path works.
+BUILDX_METADATA_FILE ?=
 
 # Output-flag selection. Truth table:
 #
@@ -367,6 +374,7 @@ docker-build-bpfman-multiarch:
 		$(BUILDX_OUTPUT) \
 		$(BUILDX_ATTEST) \
 		$(BUILDX_EXTRA_ARGS) \
+		$(if $(BUILDX_METADATA_FILE),--metadata-file=$(BUILDX_METADATA_FILE)) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
@@ -374,6 +382,72 @@ docker-build-bpfman-multiarch:
 		--build-arg EXTRA_GO_LDFLAGS="$(EXTRA_GO_LDFLAGS)" \
 		-f $(MULTIARCH_DOCKERFILE) \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
+
+# Sign a published multi-arch image with cosign, anchored to the
+# immutable index digest rather than the mutable tag.
+#
+# This target reads the digest from the buildx metadata file
+# produced by the previous docker-build-bpfman-multiarch run, so
+# the same Make recipe serves both CI and local testing.
+#
+# CI usage (keyless via GitHub Actions OIDC):
+#
+#   make docker-build-bpfman-multiarch \
+#     PUSH=1 \
+#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#     IMAGE_TAG=latest \
+#     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json \
+#     ...
+#   make cosign-sign \
+#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json
+#
+# Local usage (interactive OAuth signing identity):
+#
+#   nix shell nixpkgs#cosign      # cosign is not in the dev profile
+#
+#   make build-image \
+#     PLATFORMS=linux/amd64 \
+#     PUSH=1 \
+#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman-test \
+#     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
+#
+#   make cosign-sign \
+#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman-test \
+#     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
+#
+# The local invocation triggers an interactive browser OAuth flow;
+# the resulting Rekor record is tied to the user's personal
+# identity (Google, GitHub, etc.) rather than to a workflow OIDC
+# token. The mechanics are otherwise identical to CI.
+.PHONY: cosign-sign
+cosign-sign:
+	@command -v cosign >/dev/null 2>&1 || { \
+		echo "error: cosign is not installed; try 'nix shell nixpkgs#cosign'" >&2; \
+		exit 1; \
+	}
+	@command -v jq >/dev/null 2>&1 || { \
+		echo "error: jq is not installed" >&2; \
+		exit 1; \
+	}
+	@if [ -z "$(BUILDX_METADATA_FILE)" ]; then \
+		echo "error: BUILDX_METADATA_FILE must be set" >&2; \
+		echo "       (re-run docker-build-bpfman-multiarch with the same value first)" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(BUILDX_METADATA_FILE)" ]; then \
+		echo "error: $(BUILDX_METADATA_FILE) does not exist" >&2; \
+		echo "       (run docker-build-bpfman-multiarch first to produce it)" >&2; \
+		exit 1; \
+	fi
+	@digest=$$(jq -r '."containerimage.digest" // empty' "$(BUILDX_METADATA_FILE)"); \
+	if [ -z "$$digest" ]; then \
+		echo "error: containerimage.digest missing from $(BUILDX_METADATA_FILE)" >&2; \
+		cat "$(BUILDX_METADATA_FILE)" >&2; \
+		exit 1; \
+	fi; \
+	echo "Signing $(BPFMAN_IMAGE)@$$digest"; \
+	cosign sign -y "$(BPFMAN_IMAGE)@$$digest"
 
 bpfman-kind-load: docker-build-bpfman-local
 	kind load docker-image $(BPFMAN_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
@@ -503,6 +577,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	doc-text \
 	docker-build-all \
 	build-image \
+	cosign-sign \
 	docker-build-bpfman-local \
 	docker-build-bpfman-multiarch \
 	docker-build-csi-sanity \

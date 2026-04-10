@@ -17,11 +17,27 @@ jobs:
     runs-on: ubuntu-24.04
     # Gate the registry push on tests passing.
     needs: test
+    permissions:
+      # Required for keyless cosign signing via the GitHub Actions
+      # OIDC token: cosign exchanges this token with sigstore's
+      # Fulcio CA for a short-lived signing certificate, signs the
+      # pushed image digest, and records the signature plus
+      # certificate in the Rekor transparency log.
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign
+        # Pinned by SHA (not version tag) so the action's content is
+        # immutable: a malicious tag move cannot quietly substitute
+        # a different signing binary.  This is the same SHA the
+        # upstream Rust bpfman v0.6 image-build workflow uses
+        # (sigstore/cosign-installer v3.8.2).
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb
 
       - name: Build and push multi-arch image
         env:
@@ -44,6 +60,12 @@ jobs:
           # otherwise inherits a lot of debug info from
           # glibc-static). Local builds leave this empty so
           # bin/bpfman stays debuggable.
+          #
+          # --metadata-file makes buildx write the published index
+          # digest to disk so the subsequent cosign step can sign
+          # the immutable digest rather than the mutable :latest
+          # tag. The file ends up in $RUNNER_TEMP so it is cleaned
+          # up at job teardown.
           make docker-build-bpfman-multiarch \
             MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch.fedora \
             EXTRA_GO_LDFLAGS="-s -w" \
@@ -51,7 +73,35 @@ jobs:
             PUSH=1 \
             BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
             IMAGE_TAG=latest \
-            BUILDX_EXTRA_ARGS="--cache-from type=gha --cache-to type=gha,mode=max"
+            BUILDX_EXTRA_ARGS="--cache-from type=gha --cache-to type=gha,mode=max --metadata-file=${RUNNER_TEMP}/buildx-meta.json"
+
+      - name: Sign published image with cosign
+        # Keyless signing via the cosign-sign Make target.  The
+        # target reads the index digest from the buildx metadata
+        # file produced by the previous step and runs `cosign sign
+        # -y <image>@<digest>`.  cosign uses the OIDC token granted
+        # by `id-token: write` above to fetch a short-lived
+        # certificate from sigstore's Fulcio CA, signs the digest,
+        # and uploads the signature plus certificate to the Rekor
+        # transparency log.  No long-lived secrets are involved.
+        #
+        # The same Make target also drives local signing for
+        # smoke-testing the supply-chain plumbing without
+        # round-tripping through CI; see the cosign-sign comment
+        # block in the Makefile for the local invocation.
+        #
+        # Verifiers can later confirm the image was published by
+        # this exact workflow in this exact repository:
+        #
+        #   cosign verify ttl.sh/frobware/go-bpfman:latest \
+        #     --certificate-identity-regexp \
+        #       'https://github.com/frobware/go-bpfman/.github/workflows/image\.yaml@.*' \
+        #     --certificate-oidc-issuer \
+        #       https://token.actions.githubusercontent.com
+        run: |
+          make cosign-sign \
+            BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+            BUILDX_METADATA_FILE="${RUNNER_TEMP}/buildx-meta.json"
 
   verify-image:
     name: Verify image (${{ matrix.arch }})
