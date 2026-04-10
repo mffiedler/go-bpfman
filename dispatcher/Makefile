@@ -23,7 +23,11 @@ else
   $(error Unsupported architecture: $(TARGET_ARCH))
 endif
 
-SOURCES := $(wildcard bpf/*.bpf.c)
+# xdp_dispatcher_v1.bpf.c is kept in-tree as historical reference
+# only.  It is not embedded by any Go code and is not installed into
+# the package directory, so excluding it from SOURCES skips the
+# clang invocation entirely.
+SOURCES := $(filter-out bpf/xdp_dispatcher_v1.bpf.c,$(wildcard bpf/*.bpf.c))
 # Use OUT_DIR if provided, otherwise use the directory containing this Makefile.
 OUT_DIR ?= $(CURDIR)
 OBJECTS := $(addprefix $(OUT_DIR)/,$(SOURCES:.bpf.c=.bpf.o))
@@ -44,7 +48,7 @@ $(OUT_DIR)/bpf/%.bpf.o: bpf/%.bpf.c Makefile | $(OUT_DIR)
 	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$(OUT_DIR)/bpf/$*.bpf.d $< -o $@
 
 # Explicit rules for Docker builds (matches pattern rule)
-tc_dispatcher.bpf.o xdp_dispatcher_v1.bpf.o xdp_dispatcher_v2.bpf.o: %.bpf.o: bpf/%.bpf.c Makefile
+tc_dispatcher.bpf.o xdp_dispatcher_v2.bpf.o: %.bpf.o: bpf/%.bpf.c Makefile
 	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) -MD -MP -MF$*.bpf.d $< -o $@
 
 $(OUT_DIR):
