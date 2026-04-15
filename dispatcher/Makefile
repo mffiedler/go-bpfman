@@ -15,6 +15,8 @@ else ifeq ($(TARGET_ARCH),i686)
   TARGET_ARCH_DEFINE := -D__TARGET_ARCH_x86
 else ifeq ($(TARGET_ARCH),aarch64)
   TARGET_ARCH_DEFINE := -D__TARGET_ARCH_arm64
+else ifeq ($(TARGET_ARCH),ppc64le)
+  TARGET_ARCH_DEFINE := -D__TARGET_ARCH_powerpc
 else ifeq ($(TARGET_ARCH),powerpc64le)
   TARGET_ARCH_DEFINE := -D__TARGET_ARCH_powerpc
 else ifeq ($(TARGET_ARCH),s390x)

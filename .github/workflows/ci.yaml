@@ -164,7 +164,13 @@ jobs:
   ci-complete:
     name: CI complete
     needs: [check-vendor, check-fmt, build, test, lint, test-nsenter-qemu]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: CI complete
-        run: echo "All checks passed"
+      - name: Check results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "Some checks failed"
+            exit 1
+          fi
+          echo "All checks passed"

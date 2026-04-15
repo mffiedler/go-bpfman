@@ -60,6 +60,7 @@ help:
 	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo "  docker-build-bpfman-local   Build bpfman image from host-built binary"
 	@echo "  docker-build-bpfman-multiarch  Buildx multi-arch build (PLATFORMS=, PUSH=)"
+	@echo "  docker-build-openshift        Build via OpenShift Containerfile (local test)"
 	@echo ""
 	@echo "Example stats-reader app:"
 	@echo "  docker-build-stats-reader   Build stats-reader container image"
@@ -276,9 +277,11 @@ bpfman-vet: bpf-build
 # container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
 STATIC_TAGS := osusergo,netgo
+EXTRA_TAGS ?=
+BUILD_TAGS = $(if $(STATIC),$(STATIC_TAGS))$(if $(EXTRA_TAGS),$(if $(STATIC),$(comma))$(EXTRA_TAGS))
 
 bpfman-compile: | $(BIN_DIR)
-	CGO_ENABLED=1 go build $(if $(STATIC),-tags '$(STATIC_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
+	CGO_ENABLED=1 go build $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
 
 # Ensure bin directory exists
 $(BIN_DIR):
@@ -531,6 +534,30 @@ kind-create:
 
 kind-delete:
 	kind delete cluster --name $(KIND_CLUSTER)
+
+# OpenShift Containerfile build (local testing)
+#
+# Build via the same Containerfile that Konflux uses. The BPF
+# builder stage defaults to UBI9 but can be overridden with Fedora
+# for local testing without RHEL entitlements:
+#
+#   make docker-build-openshift \
+#     OPENSHIFT_BPF_BASE_IMAGE=fedora:43 \
+#     OPENSHIFT_BPF_INSTALL_CMD="dnf install -y clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && dnf clean all"
+OPENSHIFT_CONTAINERFILE ?= Containerfile.bpfman.openshift
+OPENSHIFT_BPF_BASE_IMAGE ?=
+OPENSHIFT_BPF_INSTALL_CMD ?=
+
+docker-build-openshift:
+	docker build \
+		-f $(OPENSHIFT_CONTAINERFILE) \
+		$(if $(OPENSHIFT_BPF_BASE_IMAGE),--build-arg BPF_BASE_IMAGE=$(OPENSHIFT_BPF_BASE_IMAGE)) \
+		$(if $(OPENSHIFT_BPF_INSTALL_CMD),--build-arg BPF_INSTALL_CMD="$(OPENSHIFT_BPF_INSTALL_CMD)") \
+		--build-arg BUILD_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_BRANCH=$(GIT_BRANCH) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg BUILD_VERSION=$(GIT_VERSION) \
+		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
 
 # BPF build targets
 #

@@ -1,0 +1,108 @@
+# Containerfile.bpfman.openshift
+#
+# Downstream container build for Konflux/OpenShift pipelines.
+#
+# Multi-stage build:
+#   1. bpf-builder:  compile dispatcher BPF objects
+#   2. go-builder:   compile go-bpfman with CGO_ENABLED=1
+#   3. runtime:      minimal UBI9 image with the bpfman binary
+#
+# The build requires CGO_ENABLED=1 because the nsenter package uses
+# a C constructor to call setns() before the Go runtime starts.
+#
+# The BPF builder base image is parameterised because libbpf-devel
+# lives in CodeReady Builder (subscription-required). For local
+# testing without entitlements, override with Fedora:
+#
+#   make docker-build-openshift \
+#     OPENSHIFT_BPF_BASE_IMAGE=fedora:43 \
+#     OPENSHIFT_BPF_INSTALL_CMD="dnf install -y clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && dnf clean all"
+
+# ---------------------------------------------------------------------------
+# Stage 1: BPF objects
+#
+# Compile the dispatcher eBPF programs. Only the dispatcher objects
+# are needed for the production binary; the dispatcher Go package
+# embeds them via go:embed.
+# ---------------------------------------------------------------------------
+ARG BPF_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+FROM ${BPF_BASE_IMAGE} AS bpf-builder
+
+ARG BPF_INSTALL_CMD="microdnf install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && microdnf clean all"
+RUN sh -c "${BPF_INSTALL_CMD}"
+
+WORKDIR /build
+COPY dispatcher/ dispatcher/
+RUN make -C dispatcher
+
+# ---------------------------------------------------------------------------
+# Stage 2: Go build
+#
+# Compile go-bpfman against the target architecture. Uses vendored
+# dependencies and strict FIPS runtime for Red Hat compliance.
+# ---------------------------------------------------------------------------
+FROM registry.access.redhat.com/ubi9/go-toolset:latest AS go-builder
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+# Build metadata passed from the Konflux pipeline.
+ARG BUILD_COMMIT
+ARG BUILD_BRANCH
+ARG BUILD_DATE
+ARG BUILD_VERSION
+
+USER root
+
+# Static linking with CGO requires glibc-static (libc.a).
+RUN dnf install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs \
+    glibc-static && dnf clean all
+
+WORKDIR /src
+
+COPY . .
+
+# Drop in the BPF objects from stage 1.
+COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
+
+ENV GOEXPERIMENT=strictfipsruntime
+
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    make bpfman-compile STATIC=1 \
+    EXTRA_TAGS=strictfipsruntime \
+    GIT_COMMIT="${BUILD_COMMIT}" \
+    GIT_BRANCH="${BUILD_BRANCH}" \
+    GIT_STATE=clean \
+    BUILD_DATE="${BUILD_DATE}" \
+    GIT_VERSION="${BUILD_VERSION}" \
+    EXTRA_GO_LDFLAGS="-s -w"
+
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime
+# ---------------------------------------------------------------------------
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+ARG BUILDVERSION
+ARG CPE_VERSION
+
+COPY --from=go-builder /src/bin/bpfman /bpfman
+COPY LICENSE /licenses/
+
+LABEL name="go-bpfman" \
+      com.redhat.component="go-bpfman" \
+      summary="eBPF manager daemon (Go implementation)" \
+      description="go-bpfman is a reimplementation of bpfman in Go." \
+      io.k8s.display-name="go-bpfman" \
+      io.k8s.description="go-bpfman is a reimplementation of bpfman in Go." \
+      io.openshift.tags="go-bpfman" \
+      maintainer="support@redhat.com" \
+      version=$BUILDVERSION \
+      cpe="cpe:/a:redhat:openshift_bpfman_operator:${CPE_VERSION}::el9" \
+      vendor="Red Hat, Inc."
+
+USER 65532:65532
+
+ENV BPFMAN_MODE=bpfman-rpc
+ENV BPFMAN_PPROF_ADDRESS=localhost:6060
+ENTRYPOINT ["/bpfman"]
