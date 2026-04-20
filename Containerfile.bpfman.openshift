@@ -101,8 +101,6 @@ LABEL name="go-bpfman" \
       cpe="cpe:/a:redhat:openshift_bpfman_operator:${CPE_VERSION}::el9" \
       vendor="Red Hat, Inc."
 
-USER 65532:65532
-
 ENV BPFMAN_MODE=bpfman-rpc
 ENV BPFMAN_PPROF_ADDRESS=localhost:6060
 ENTRYPOINT ["/bpfman"]
