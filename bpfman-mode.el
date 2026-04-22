@@ -1,32 +1,39 @@
 ;;; bpfman-mode.el --- Major mode for bpfman REPL scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
 ;; This file provides a major mode for editing bpfman REPL scripts
-;; (.bpfman files).  The bpfman REPL language supports variable
-;; assignment, structured field access, string literals, flags, and
-;; comments.  See docs/REPL-LANG.md for the full specification.
+;; (.bpfman files).  The bpfman REPL language has typed let-bindings,
+;; conditional blocks, command substitution, variable references with
+;; path access, string literals, flags, and comments.  See
+;; docs/repl/language.md for the full specification.
 
 ;;; Commentary:
 
 ;; bpfman-mode provides syntax highlighting and editing support for
-;; bpfman REPL scripts.  The language is line-oriented: one line, one
-;; command, one result.
+;; bpfman REPL scripts.  Statements are separated by ';' or newline;
+;; if/elif/else blocks span multiple lines through brace-delimited
+;; bodies.
 ;;
 ;; Language features:
 ;;
 ;;   Comments:     # to end of line (not inside quotes)
-;;   Assignment:   let prog = bpfman load file --path foo.o
+;;   Binding:      let prog = [bpfman load file --path foo.o ...]
+;;   Literal RHS:  let iface = "eth0" / let pid = $prog.record.id
+;;   Cmdsub:       let r = [exec ip link show]
+;;   Control:      if EXPR { ... } elif EXPR { ... } else { ... }
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
 ;;   Strings:      "double quoted", 'single quoted'
 ;;   Flags:        --path, -m, --dry-run
-;;   Commands:     bpfman (domain gateway), assert, exec, etc.
+;;   Commands:     bpfman (domain gateway), assert, exec, json, file, ...
 ;;
 ;; Highlighting uses a custom font-lock matcher that parses each line
 ;; structurally, so tokens are fontified according to their position
-;; and role rather than by pattern-matching keywords anywhere.
+;; and role rather than by pattern-matching keywords anywhere.  Bracket
+;; and brace openers reset the state machine so the first word inside
+;; is highlighted as a command.
 ;;
 ;; Usage:
 ;;
@@ -46,13 +53,17 @@
 
 (defconst bpfman--commands
   (let ((ht (make-hash-table :test 'equal)))
-    (dolist (w '("assert" "bpfman" "dump" "exec" "file"
-                 "help" "json" "let"
-                 "require" "set" "source"
-                 "unset" "vars" "version"))
+    (dolist (w '(;; binding and control flow
+                 "let" "if" "elif" "else"
+                 ;; domain gateway
+                 "bpfman"
+                 ;; shell-language builtins
+                 "alias" "aliases" "assert" "dump" "exec" "file"
+                 "help" "json" "require" "source"
+                 "unalias" "unset" "vars" "version"))
       (puthash w t ht))
     ht)
-  "Hash table of top-level bpfman REPL commands.")
+  "Hash table of top-level bpfman REPL keywords and commands.")
 
 (defconst bpfman--subcommands
   (let ((ht (make-hash-table :test 'equal)))
@@ -68,16 +79,16 @@
                  "uprobe" "xdp"
                  ;; show subviews
                  "links" "maps" "paths" "summary"
-                 ;; assertion verbs (assert/require): prefix unary
+                 ;; assertion verbs (prefix unary / command-status)
                  "contains" "fail" "false" "nil" "not" "not-empty"
                  "ok" "path" "true"
-                 ;; assertion operators: infix textual (lexicographic)
+                 ;; comparison operators: textual (lexicographic)
                  "eq" "ne" "lt" "le" "gt" "ge"
-                 ;; assertion operators: infix numeric
+                 ;; comparison operators: numeric
                  "==" "!=" "<" "<=" ">" ">="))
       (puthash w t ht))
     ht)
-  "Hash table of bpfman subcommands, attach types, and subviews.")
+  "Hash table of bpfman subcommands, attach types, subviews, and operators.")
 
 ;; ---- Token kind constants ----
 
@@ -88,6 +99,8 @@
 (defconst bpfman--tok-string 4)
 (defconst bpfman--tok-select 5)
 (defconst bpfman--tok-adapter-ref 6)
+(defconst bpfman--tok-delim 7)   ; [ ] { } ; — resets state to command
+(defconst bpfman--tok-block 8)   ; {  } — same role but block-scoped
 
 (defconst bpfman--adapter-prefixes '("file")
   "Known adapter prefixes for inline file:$var syntax.")
@@ -123,6 +136,15 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
               (when (< pos eol)
                 (setq pos (1+ pos)))   ; consume closing quote
               (push (list bpfman--tok-string start pos) tokens)))
+
+           ;; Statement separator or command-substitution / block
+           ;; delimiter.  These reset the structural state so the
+           ;; next word is treated as a command.
+           ((or (= ch ?\[) (= ch ?\])
+                (= ch ?{)  (= ch ?})
+                (= ch ?\;))
+            (push (list bpfman--tok-delim pos (1+ pos)) tokens)
+            (setq pos (1+ pos)))
 
            ;; Variable reference: $name.path or ${name.path}.
            ((= ch ?$)
@@ -207,7 +229,7 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
            (t
             (let ((start pos))
               (goto-char pos)
-              (skip-chars-forward "^ \t\n#'\"$" eol)
+              (skip-chars-forward "^ \t\n#'\"$[](){};" eol)
               (setq pos (point))
               (when (> pos start)
                 ;; Check for adapter prefix: word ends with
@@ -267,7 +289,9 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
 TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
   (when tokens
     (let ((rest tokens)
-          (state 'start)  ; start -> saw-ident -> command -> args
+          ;; Possible states: start, let-name, let-eq, command,
+          ;; subcommand, args.
+          (state 'start)
           tok kind beg end)
       (while rest
         (setq tok (car rest)
@@ -283,8 +307,6 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
          ;; Variable references are always variable-name face.
          ((= kind bpfman--tok-varref)
           (put-text-property beg end 'face 'font-lock-variable-name-face)
-          ;; A varref in start position means this is a command line,
-          ;; not an assignment.
           (when (eq state 'start)
             (setq state 'args)))
 
@@ -305,13 +327,19 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (put-text-property beg end 'face 'font-lock-keyword-face)
           (setq state 'args))
 
+         ;; Delimiter: [ ] { } ;.  Resets to command position so the
+         ;; next word inside a command substitution or block body is
+         ;; treated as a command.
+         ((= kind bpfman--tok-delim)
+          (setq state 'start))
+
          ;; Assignment operator.
          ((= kind bpfman--tok-assign)
           (if (eq state 'let-eq)
               (progn
                 (put-text-property beg end 'face 'font-lock-keyword-face)
-                (setq state 'command))
-            ;; Equals outside let/set context; treat as plain.
+                (setq state 'start))
+            ;; Equals outside let context; treat as plain.
             (setq state 'args)))
 
          ;; Plain word: face depends on position.
@@ -319,23 +347,25 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (let ((text (buffer-substring-no-properties beg end)))
             (pcase state
               ('start
-               ;; First word.  "let" starts a let-assignment;
-               ;; "set" starts a set-binding; everything else is
-               ;; a command.
+               ;; First word of a statement or block.  "let" starts
+               ;; a binding; "if"/"elif"/"else" are control flow;
+               ;; everything else is a command.
                (cond
                 ((string= text "let")
                  (put-text-property beg end 'face 'font-lock-keyword-face)
                  (setq state 'let-name))
-                ((string= text "set")
+                ((or (string= text "if")
+                     (string= text "elif")
+                     (string= text "else"))
                  (put-text-property beg end 'face 'font-lock-keyword-face)
-                 (setq state 'let-name))
+                 (setq state 'args))
                 (t
                  (when (gethash text bpfman--commands)
                    (put-text-property beg end 'face 'font-lock-keyword-face))
                  (setq state 'subcommand))))
 
               ('let-name
-               ;; Word after "let"/"set": variable name.
+               ;; Word after "let": variable name.
                (when (bpfman--ident-p text)
                  (put-text-property beg end 'face 'font-lock-variable-name-face))
                (setq state 'let-eq))
@@ -345,12 +375,6 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                ;; Fall through to args.
                (setq state 'args))
 
-              ('command
-               ;; First word after `=': command position.
-               (when (gethash text bpfman--commands)
-                 (put-text-property beg end 'face 'font-lock-keyword-face))
-               (setq state 'subcommand))
-
               ('subcommand
                ;; Second word after command: subcommand position.
                (when (gethash text bpfman--subcommands)
@@ -358,9 +382,12 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                (setq state 'args))
 
               ('args
-               ;; In argument position: no special highlighting for
-               ;; plain words.
-               nil)))))))))
+               ;; In argument position: subcommands (comparison
+               ;; operators and assertion verbs) still get the
+               ;; builtin face so `$a eq $b' and `assert not-empty
+               ;; $x' read right.
+               (when (gethash text bpfman--subcommands)
+                 (put-text-property beg end 'face 'font-lock-builtin-face)))))))))))
 
 (defun bpfman--ident-p (str)
   "Return non-nil if STR is a valid bpfman identifier."
@@ -392,6 +419,11 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
     (modify-syntax-entry ?' "\"" st)
     ;; Underscores are word constituents.
     (modify-syntax-entry ?_ "w" st)
+    ;; Brackets and braces are paired delimiters for show-paren-mode.
+    (modify-syntax-entry ?\[ "(]" st)
+    (modify-syntax-entry ?\] ")[" st)
+    (modify-syntax-entry ?{ "(}" st)
+    (modify-syntax-entry ?} "){" st)
     st)
   "Syntax table for `bpfman-mode'.")
 
@@ -401,13 +433,15 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
 (define-derived-mode bpfman-mode prog-mode "Bpfman"
   "Major mode for editing bpfman REPL scripts.
 
-The bpfman REPL language is line-oriented.  Each line is either a
-let-assignment (let name = command ...), a set-binding
-(set name = value), an assertion, or a plain command.  Comments
-begin with # and extend to end of line.
+Statements are let-bindings (let name = expr), if-blocks
+(if EXPR { ... } elif EXPR { ... } else { ... }), or plain
+commands.  Statements are separated by a newline or ';'.
+Comments begin with # and extend to end of line.
 
-Variable references use the $ sigil: $prog.id, ${prog.maps[0].name}.
-Strings may be single- or double-quoted; $ is literal inside quotes.
+Commands inside a let RHS or if-condition are wrapped in square
+brackets: `let r = [exec ip link show]'.  Variable references use
+the $ sigil: $prog.id, ${prog.maps[0].name}.  Strings may be
+single- or double-quoted; $ is literal inside quotes.
 
 \\{bpfman-mode-map}"
   :syntax-table bpfman-mode-syntax-table
