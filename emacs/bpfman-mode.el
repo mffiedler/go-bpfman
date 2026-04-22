@@ -33,6 +33,9 @@
 ;;   Threading:    $xs |> jq ".foo" |> assert not-empty
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
 ;;   Strings:      "double quoted", 'single quoted'
+;;                 Interpolation inside double quotes via
+;;                 "${name}", "${name.path}", "${[[expr]]}", or
+;;                 "${[cmd args]}"; single quotes keep $ literal.
 ;;   Flags:        --path, -m, --dry-run
 ;;   Commands:     bpfman (domain gateway), assert, exec, jq, file, ...
 ;;
@@ -519,8 +522,15 @@ primary expressions that terminate polling.
 
 Commands inside a let RHS or if-condition are wrapped in square
 brackets: `let r = [exec ip link show]'.  Variable references use
-the $ sigil: $prog.id, ${prog.maps[0].name}.  Strings may be
-single- or double-quoted; $ is literal inside quotes.
+the $ sigil: $prog.id, ${prog.maps[0].name}.
+
+Strings are single- or double-quoted.  Single quotes are fully
+literal; double-quoted strings support "${...}" interpolation
+where the braces contain a variable reference ("${name}"), an
+expression substitution ("${[[expr]]}"), or a command
+substitution ("${[cmd args]}").  A bare "$" inside a double-
+quoted string is a lex-time error; use single quotes when you
+need a literal "$".
 
 \\{bpfman-mode-map}"
   :syntax-table bpfman-mode-syntax-table
