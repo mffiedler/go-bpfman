@@ -3175,6 +3175,30 @@ func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "60s")
 }
 
+func TestReplLoop_JQNullBinding(t *testing.T) {
+	// A jq filter that selects a missing field returns a present
+	// null.  The user should be able to bind it, print it, and
+	// interpolate it without tripping "produced no assignable
+	// value" — the whole point of OriginNull.
+	input := strings.Join([]string{
+		`let r = [jq "." '{"a":1}']`,
+		`let x = [jq ".missing" $r]`,
+		`print $x`,
+		`print "missing=${x}"`,
+		``,
+	}, "\n")
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String(), "expected no REPL error")
+	out := outBuf.String()
+	assert.Contains(t, out, "null")
+	assert.Contains(t, out, "missing=null")
+}
+
 func TestReplLoop_InterpString_BareDollarRejected(t *testing.T) {
 	input := "let x = \"$foo\"\n"
 	var errBuf bytes.Buffer

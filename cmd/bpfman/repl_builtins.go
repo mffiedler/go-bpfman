@@ -166,7 +166,12 @@ func normaliseJQValue(x any) any {
 // OriginBool, scalar → OriginScalar, structured → OriginUnknown.
 func wrapJQResult(x any) shell.Value {
 	if x == nil {
-		return shell.Value{}
+		// jq produced an explicit null (for example, ".name"
+		// against an object without a name field).  Return a
+		// present null rather than a zero Value so downstream
+		// substitution, assignment, interpolation, and
+		// comparisons treat it as a real value.
+		return shell.NullValue()
 	}
 	if b, ok := x.(bool); ok {
 		return shell.BoolValue(b)

@@ -107,14 +107,42 @@ func BoolValue(b bool) Value {
 	return Value{v: b, kind: OriginBool}
 }
 
-// IsNil reports whether the underlying value is nil.
-func (v Value) IsNil() bool {
-	return v.v == nil
+// NullValue returns a Value that represents an explicit JSON null
+// — a present value with null content, distinct from an absent
+// (zero) Value.  Use this where a command or filter produced a
+// null result by design (for example, gojq evaluating a filter
+// against a missing field) rather than as a stand-in for "no
+// result".
+func NullValue() Value {
+	return Value{kind: OriginNull}
 }
 
-// IsScalar reports whether the value is a scalar (string, number,
-// bool) rather than a structured type (map, slice) or nil.
+// IsNil reports whether the Value is absent — a zero/uninitialised
+// Value that signals "no result", as distinct from a present
+// value whose content happens to be null.  A Value constructed
+// via NullValue has kind OriginNull and IsNil returns false for
+// it; a Value{} returned by a failed lookup or an unproduced
+// command has kind OriginUnknown and IsNil returns true.
+// Callers deciding whether to error with "produced no value"
+// should use IsNil; callers asking "is this content null"
+// should use IsNull.
+func (v Value) IsNil() bool {
+	return v.v == nil && v.kind != OriginNull
+}
+
+// IsNull reports whether the Value represents an explicit JSON
+// null.  See NullValue.
+func (v Value) IsNull() bool {
+	return v.kind == OriginNull
+}
+
+// IsScalar reports whether the value stringifies as a single
+// token: string, number, bool, or the null marker.  Structured
+// types (map, slice) and absent values are not scalars.
 func (v Value) IsScalar() bool {
+	if v.kind == OriginNull {
+		return true
+	}
 	switch v.v.(type) {
 	case string, json.Number, float64, bool:
 		return true
@@ -165,6 +193,9 @@ func (v Value) Keys() []string {
 // It handles string, json.Number, float64, and bool. It returns
 // an error for nil, map, and slice values.
 func (v Value) Scalar() (string, error) {
+	if v.kind == OriginNull {
+		return "null", nil
+	}
 	switch x := v.v.(type) {
 	case string:
 		return x, nil

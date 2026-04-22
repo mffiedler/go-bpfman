@@ -143,14 +143,23 @@ func TestReplJQ_BooleanResultIsOriginBool(t *testing.T) {
 	assert.True(t, b)
 }
 
-func TestReplJQ_NullResultIsNilValue(t *testing.T) {
+func TestReplJQ_NullResultIsPresentNull(t *testing.T) {
+	// gojq producing a single null result (for example when a
+	// filter selects a missing field) returns a present null
+	// Value — not an absent Value — so that downstream
+	// substitution, assignment, and interpolation all see a real
+	// value rather than tripping "produced no assignable value".
 	input := shell.ValueFromMap(map[string]any{"a": "apple"})
 	v, err := replJQ([]shell.Arg{
 		shell.WordArg{Text: ".missing"},
 		shell.StructuredValueArg{Value: input},
 	})
 	require.NoError(t, err)
-	assert.True(t, v.IsNil())
+	assert.False(t, v.IsNil(), "null result must be a present value, not absent")
+	assert.True(t, v.IsNull(), "kind should be OriginNull for jq null results")
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "null", s)
 }
 
 func TestReplJQ_InvalidFilter(t *testing.T) {
