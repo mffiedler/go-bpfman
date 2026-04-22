@@ -52,9 +52,9 @@ let braced_idx = ${items[3].field}
 # ---- 4. Command substitution (single and nested) ----
 
 let one       = [bpfman program list]
-let nested    = [exec echo [json parse '"world"']]
-let deeper    = [exec echo [json parse [json parse '"\"three\""']]]
-let adjacent  = [exec echo [json parse '"a"'] [json parse '"b"']]
+let nested    = [exec echo [jq "." '"world"']]
+let deeper    = [exec echo [jq "." [jq "." '"three"']]]
+let adjacent  = [exec echo [jq "." '"a"'] [jq "." '"b"']]
 let arg_after = [exec diff file:$a file:$b]
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
@@ -157,8 +157,8 @@ exec ip link add dummy0 type dummy
 exec ip link set dummy0 up
 exec status diff -u file:$raw1.stdout file:$raw2.stdout
 
-let parsed = [json parse '{"name":"xdp_pass","id":42}']
-json parse '{"a":1}'     # bare form prints the parsed value
+let parsed = [jq "." '{"name":"xdp_pass","id":42}']
+jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
 let tmp_path = [file temp data]
@@ -248,5 +248,68 @@ assert $x eq 5       # `eq' is textual equality
 
 bpfman list programs select name,program_id,kernel_seen
 bpfman link list     select id,kind,program_id
+
+# ---- 19. Logical operators and parenthesised expressions ----
+
+# `and', `or' short-circuit; `not' is a unary prefix.  Parens
+# group sub-expressions; they do not introduce a new command.
+assert $ready and $healthy
+assert $ready or  $booting
+assert not $failing
+assert not ($a eq 1 and $b eq 2)
+assert ($x > 0 and $x < 10) or $unbounded
+if (not-empty $progs) and ($count gt 0) { dump progs }
+
+# ---- 20. Value-threading with `|>' ----
+
+# LHS becomes the last arg of the RHS command.  Chains are common.
+let n = $count |> assert gt 0
+let f = $progs |> jq ".[] | select(.kind == \"xdp\")"
+let g = [bpfman program list -o json] |> jq ".[].name" |> assert not-empty
+
+# ---- 21. foreach iteration ----
+
+# Iterate a materialised list; the iteration variable is in scope
+# only inside the block.  `break' stops early; `continue' skips.
+let ids = [bpfman program list -o json] |> jq ".[].program_id"
+foreach id in $ids {
+    bpfman show program $id summary
+}
+
+foreach item in $progs {
+    if $item.kind eq xdp {
+        continue
+    }
+    if $item.kind eq blacklisted {
+        break
+    }
+    dump item
+}
+
+# ---- 22. retry / until with timeout and iteration ----
+
+# The until-expression is a normal boolean expression.  `timeout
+# DURATION' and `iteration N' are retry-scoped primaries that let
+# polling terminate on wall-clock or attempt count.
+retry {
+    let status = [bpfman program get 42 -o json]
+} until $status.ready eq true or timeout 60s
+
+retry {
+    let status = [bpfman program get 42 -o json]
+    if $status.ready eq true { break }
+} until iteration 10
+
+retry {
+    let link = [bpfman link get 8801 -o json]
+} until ($link.state eq active) or timeout 2m or iteration 20
+
+# ---- 23. jq as a higher-order operator over structured data ----
+
+let raw     = [bpfman program list -o json]
+let xdp     = [jq ".[] | select(.kind == \"xdp\")" $raw]
+let names   = [jq "[ .[].name ]" $raw]
+let first   = [jq ".[0]" $raw]
+let scalar  = [jq "." '{"answer": 42}']
 
 # ---- End of gallery ----

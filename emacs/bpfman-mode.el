@@ -1,14 +1,17 @@
 ;;; bpfman-mode.el --- Major mode for bpfman REPL scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
 ;; This file provides a major mode for editing bpfman REPL scripts
 ;; (.bpfman files).  The bpfman REPL language has typed let-bindings,
-;; conditional blocks, command substitution, variable references with
-;; path access, string literals, flags, and comments.  See
-;; docs/repl/language.md for the full specification.
+;; conditional blocks, foreach/break/continue iteration,
+;; retry/until/timeout polling, logical operators (and/or/not),
+;; parenthesised expressions, command substitution, value-threading
+;; (|>), variable references with path access, string literals,
+;; flags, and comments.  See docs/repl/language.md for the full
+;; specification.
 
 ;;; Commentary:
 
@@ -24,16 +27,22 @@
 ;;   Literal RHS:  let iface = "eth0" / let pid = $prog.record.id
 ;;   Cmdsub:       let r = [exec ip link show]
 ;;   Control:      if EXPR { ... } elif EXPR { ... } else { ... }
+;;   Iteration:    foreach item in $list { ... break/continue }
+;;   Polling:      retry { ... } until EXPR (timeout 60s, iteration 5)
+;;   Logical:      and, or, not, parenthesised (EXPR)
+;;   Threading:    $xs |> jq ".foo" |> assert not-empty
 ;;   Variables:    $prog.id, $prog.maps[0].name, ${prog.id}
 ;;   Strings:      "double quoted", 'single quoted'
 ;;   Flags:        --path, -m, --dry-run
-;;   Commands:     bpfman (domain gateway), assert, exec, json, file, ...
+;;   Commands:     bpfman (domain gateway), assert, exec, jq, file, ...
 ;;
 ;; Highlighting uses a custom font-lock matcher that parses each line
 ;; structurally, so tokens are fontified according to their position
 ;; and role rather than by pattern-matching keywords anywhere.  Bracket
 ;; and brace openers reset the state machine so the first word inside
-;; is highlighted as a command.
+;; is highlighted as a command.  The thread operator |> does the same
+;; for the command on its right-hand side.  Parentheses group
+;; expressions without disturbing the surrounding state.
 ;;
 ;; Usage:
 ;;
@@ -55,11 +64,12 @@
   (let ((ht (make-hash-table :test 'equal)))
     (dolist (w '(;; binding and control flow
                  "let" "if" "elif" "else"
+                 "foreach" "retry" "until" "break" "continue"
                  ;; domain gateway
                  "bpfman"
                  ;; shell-language builtins
                  "alias" "aliases" "assert" "dump" "exec" "file"
-                 "help" "json" "require" "source"
+                 "help" "jq" "require" "source"
                  "unalias" "unset" "vars" "version"))
       (puthash w t ht))
     ht)
@@ -72,7 +82,7 @@
                  "program" "programs" "show"
                  ;; subcommands
                  "attach" "checkup" "delete" "detach" "explain" "file"
-                 "get" "image" "parse"
+                 "get" "image"
                  "status" "temp" "unload"
                  ;; attach types
                  "fentry" "fexit" "kprobe" "tc" "tcx" "tracepoint"
@@ -82,6 +92,10 @@
                  ;; assertion verbs (prefix unary / command-status)
                  "contains" "fail" "false" "nil" "not" "not-empty"
                  "ok" "path" "true"
+                 ;; logical operators
+                 "and" "or"
+                 ;; foreach / retry auxiliaries
+                 "in" "timeout" "iteration"
                  ;; comparison operators: textual (lexicographic)
                  "eq" "ne" "lt" "le" "gt" "ge"
                  ;; comparison operators: numeric
@@ -137,11 +151,24 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
                 (setq pos (1+ pos)))   ; consume closing quote
               (push (list bpfman--tok-string start pos) tokens)))
 
-           ;; Statement separator or command-substitution / block
-           ;; delimiter.  These reset the structural state so the
-           ;; next word is treated as a command.
+           ;; Thread operator: |>.  Two-char token routed through the
+           ;; delimiter channel so the state machine can both fontify
+           ;; it and reset to command position (the RHS of |> is a
+           ;; command).
+           ((and (= ch ?|)
+                 (< (1+ pos) eol)
+                 (= (char-after (1+ pos)) ?>))
+            (push (list bpfman--tok-delim pos (+ pos 2)) tokens)
+            (setq pos (+ pos 2)))
+
+           ;; Statement separator, command-substitution, block, or
+           ;; expression-group delimiter.  Most of these reset the
+           ;; structural state so the next word is treated as a
+           ;; command; ( ) are expression grouping and leave state
+           ;; alone (handled in the fontifier).
            ((or (= ch ?\[) (= ch ?\])
                 (= ch ?{)  (= ch ?})
+                (= ch ?\() (= ch ?\))
                 (= ch ?\;))
             (push (list bpfman--tok-delim pos (1+ pos)) tokens)
             (setq pos (1+ pos)))
@@ -229,7 +256,7 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
            (t
             (let ((start pos))
               (goto-char pos)
-              (skip-chars-forward "^ \t\n#'\"$[](){};" eol)
+              (skip-chars-forward "^ \t\n#'\"$[](){}|;" eol)
               (setq pos (point))
               (when (> pos start)
                 ;; Check for adapter prefix: word ends with
@@ -327,17 +354,28 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (put-text-property beg end 'face 'font-lock-keyword-face)
           (setq state 'args))
 
-         ;; Delimiter: [ ] { } ;.  Open delimiters ([ { ;) and block
-         ;; close } reset to command position so the next word inside
-         ;; a command substitution or block body -- or the first word
-         ;; after a statement separator or an elif/else keyword -- is
-         ;; treated as a command.  The close bracket `]' returns to
-         ;; argument position so words trailing a nested cmdsub in
-         ;; its outer command's arg list are not mistaken for
-         ;; commands (e.g. `[outer [inner] arg]' -- `arg' is an arg
-         ;; to outer, not a new command).
+         ;; Delimiter: [ ] { } ; ( ) |>.  Most open delimiters ([ { ;)
+         ;; and block close } reset to command position so the next
+         ;; word inside a command substitution or block body -- or
+         ;; the first word after a statement separator, elif/else, or
+         ;; a thread operator -- is treated as a command.  The close
+         ;; bracket `]' returns to argument position so words trailing
+         ;; a nested cmdsub are not mistaken for commands.  Parens
+         ;; ( ) are expression grouping and leave the surrounding
+         ;; state untouched.  `|>' is the thread operator: highlight
+         ;; as a keyword and reset to command position (the RHS of
+         ;; a thread is a command).
          ((= kind bpfman--tok-delim)
-          (setq state (if (= (char-after beg) ?\]) 'args 'start)))
+          (let ((dch (char-after beg)))
+            (cond
+             ((= dch ?|)
+              (put-text-property beg end 'face 'font-lock-keyword-face)
+              (setq state 'start))
+             ((= dch ?\])
+              (setq state 'args))
+             ((or (= dch ?\() (= dch ?\))))
+             (t
+              (setq state 'start)))))
 
          ;; Assignment operator.
          ((= kind bpfman--tok-assign)
@@ -354,15 +392,26 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
             (pcase state
               ('start
                ;; First word of a statement or block.  "let" starts
-               ;; a binding; "if"/"elif"/"else" are control flow;
-               ;; everything else is a command.
+               ;; a binding; "foreach" binds an iteration variable;
+               ;; "if"/"elif"/"else"/"retry"/"until" are control
+               ;; flow; "break"/"continue" are standalone; everything
+               ;; else is a command.
                (cond
                 ((string= text "let")
                  (put-text-property beg end 'face 'font-lock-keyword-face)
                  (setq state 'let-name))
+                ((string= text "foreach")
+                 (put-text-property beg end 'face 'font-lock-keyword-face)
+                 (setq state 'foreach-name))
                 ((or (string= text "if")
                      (string= text "elif")
-                     (string= text "else"))
+                     (string= text "else")
+                     (string= text "retry")
+                     (string= text "until"))
+                 (put-text-property beg end 'face 'font-lock-keyword-face)
+                 (setq state 'args))
+                ((or (string= text "break")
+                     (string= text "continue"))
                  (put-text-property beg end 'face 'font-lock-keyword-face)
                  (setq state 'args))
                 (t
@@ -375,6 +424,12 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                (when (bpfman--ident-p text)
                  (put-text-property beg end 'face 'font-lock-variable-name-face))
                (setq state 'let-eq))
+
+              ('foreach-name
+               ;; Word after "foreach": iteration variable name.
+               (when (bpfman--ident-p text)
+                 (put-text-property beg end 'face 'font-lock-variable-name-face))
+               (setq state 'args))
 
               ('let-eq
                ;; Expected = after variable name; got a word instead.
@@ -425,11 +480,14 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
     (modify-syntax-entry ?' "\"" st)
     ;; Underscores are word constituents.
     (modify-syntax-entry ?_ "w" st)
-    ;; Brackets and braces are paired delimiters for show-paren-mode.
+    ;; Brackets, braces, and parens are paired delimiters for
+    ;; show-paren-mode.
     (modify-syntax-entry ?\[ "(]" st)
     (modify-syntax-entry ?\] ")[" st)
     (modify-syntax-entry ?{ "(}" st)
     (modify-syntax-entry ?} "){" st)
+    (modify-syntax-entry ?\( "()" st)
+    (modify-syntax-entry ?\) ")(" st)
     st)
   "Syntax table for `bpfman-mode'.")
 
@@ -440,9 +498,17 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
   "Major mode for editing bpfman REPL scripts.
 
 Statements are let-bindings (let name = expr), if-blocks
-(if EXPR { ... } elif EXPR { ... } else { ... }), or plain
-commands.  Statements are separated by a newline or ';'.
-Comments begin with # and extend to end of line.
+(if EXPR { ... } elif EXPR { ... } else { ... }), foreach
+iteration (foreach name in EXPR { ... }), retry/until polling
+(retry { ... } until EXPR), or plain commands.  Statements are
+separated by a newline or ';'.  Comments begin with # and
+extend to end of line.
+
+Expressions support logical operators (`and', `or', `not'),
+parenthesised grouping, and the thread operator `|>' which
+feeds the LHS as the last argument of the RHS command.  Within
+a retry block, `timeout DURATION' and `iteration N' are
+primary expressions that terminate polling.
 
 Commands inside a let RHS or if-condition are wrapped in square
 brackets: `let r = [exec ip link show]'.  Variable references use
