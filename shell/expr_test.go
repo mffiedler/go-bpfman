@@ -3,6 +3,7 @@ package shell
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -896,12 +897,141 @@ func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	_, err := EvalExpr(&LogicalExpr{
-		Op:   "and",
-		Left: &VarRefExpr{Name: "x"},
+		Op:    "and",
+		Left:  &VarRefExpr{Name: "x"},
 		Right: &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
 	}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "and")
+}
+
+// --- retry / timeout / iteration -----------------------------------
+
+func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
+	// Body succeeds every iteration; until becomes true when
+	// iteration count reaches 3.
+	s := NewSession()
+	callCount := 0
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			callCount++
+			return Value{}, nil
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &IterationExpr{Count: 3},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, 3, callCount)
+}
+
+func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
+	// Body always errors; until iteration 5 fires; the body's
+	// last error propagates out.
+	s := NewSession()
+	sentinel := errors.New("not yet")
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			return Value{}, sentinel
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &IterationExpr{Count: 5},
+		},
+	}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Same(t, sentinel, err, "last body error should propagate unwrapped")
+}
+
+func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
+	// Body always errors; timeout is tiny so we exit in a few
+	// iterations.  Verify the last body error propagates.
+	s := NewSession()
+	sentinel := errors.New("not yet")
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			return Value{}, sentinel
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &TimeoutExpr{Duration: 50 * time.Millisecond},
+		},
+	}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Same(t, sentinel, err)
+}
+
+func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
+	// Body succeeds on first iteration; until iteration 1 fires.
+	s := NewSession()
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &IterationExpr{Count: 1},
+		},
+	}}
+	assert.NoError(t, EvalProgram(prog, env))
+}
+
+func TestEvalExpr_Timeout_OutsideRetryIsError(t *testing.T) {
+	s := NewSession()
+	_, err := EvalExpr(&TimeoutExpr{Duration: time.Second}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout")
+}
+
+func TestEvalExpr_Iteration_OutsideRetryIsError(t *testing.T) {
+	s := NewSession()
+	_, err := EvalExpr(&IterationExpr{Count: 3}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "iteration")
+}
+
+func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
+	// Nested retry: inner's timeout / iteration tracks the
+	// inner clock, not the outer.  We set both with very
+	// different thresholds and ensure the inner exits first.
+	s := NewSession()
+	seq := []string{}
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			seq = append(seq, args[0].(WordArg).Text)
+			return Value{}, nil
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body: []Stmt{
+				&CommandStmt{Args: []Expr{&LiteralExpr{Text: "outer"}}},
+				&RetryStmt{
+					Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}},
+					Until: &IterationExpr{Count: 2},
+				},
+			},
+			Until: &IterationExpr{Count: 2},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	// Outer runs twice.  Each outer iteration runs two inner
+	// iterations.  Expected: outer inner inner outer inner inner.
+	assert.Equal(t, []string{"outer", "inner", "inner", "outer", "inner", "inner"}, seq)
 }
 
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {

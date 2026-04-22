@@ -1,6 +1,28 @@
 package shell
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
+
+// parseDurationLiteral wraps time.ParseDuration with a clearer
+// error phrasing.  Accepted forms are whatever Go accepts: "30s",
+// "200ms", "1h30m", "500us".  An empty string or a bare number
+// without a unit is rejected; the DSL insists on explicit units.
+func parseDurationLiteral(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q (try 30s, 5m, 200ms)", s)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("duration must be non-negative, got %q", s)
+	}
+	return d, nil
+}
 
 // Program is the root of a parsed source unit: an ordered sequence
 // of statements with the source location of the first token.
@@ -71,12 +93,33 @@ type ContinueStmt struct {
 	Loc
 }
 
+// RetryStmt runs Body repeatedly until the Until expression
+// evaluates true.  On each iteration, two magic variables are
+// rebound in the session before Body runs: $iter (1-based
+// iteration count) and $elapsed (seconds since the retry
+// started, as a number).  After the body runs, the Until
+// expression is evaluated; its value must be a boolean.  If
+// true, the retry exits, returning the body's last error (if
+// any) so timeout-style exits surface the reason the body was
+// failing.  If false, the evaluator sleeps a short backoff and
+// iterates again.
+//
+// There is no built-in timeout clause — Until is the single
+// termination signal, and $elapsed makes a time budget
+// expressible as "$elapsed > 30" inside the expression.
+type RetryStmt struct {
+	Body  []Stmt
+	Until Expr
+	Loc
+}
+
 func (*LetStmt) stmtNode()      {}
 func (*IfStmt) stmtNode()       {}
 func (*CommandStmt) stmtNode()  {}
 func (*ForEachStmt) stmtNode()  {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
+func (*RetryStmt) stmtNode()    {}
 
 // Parse turns a token stream into a *Program. Every parse error
 // carries a source location derived from the offending token.
@@ -158,6 +201,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseLetStmt()
 		case "foreach":
 			return p.parseForEachStmt()
+		case "retry":
+			return p.parseRetryStmt()
 		case "break":
 			return p.parseBreakStmt()
 		case "continue":
@@ -280,6 +325,34 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		return nil, err
 	}
 	return &CommandStmt{Args: args, Loc: startLoc}, nil
+}
+
+func (p *parser) parseRetryStmt() (Stmt, error) {
+	retryTok := p.advance() // "retry"
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, fmt.Errorf("retry: %w", err)
+	}
+	// Skip separators between `}` and `until`.
+	for !p.atEOF() && p.peek().Kind == TokenSep {
+		p.pos++
+	}
+	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "until") {
+		return nil, locErrorf(retryTok.Loc, "retry requires 'until' after the body")
+	}
+	p.advance() // "until"
+	exprTokens, err := p.takeStmtTokens(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(exprTokens) == 0 {
+		return nil, locErrorf(retryTok.Loc, "retry until requires an expression")
+	}
+	until, err := parseExpression(exprTokens)
+	if err != nil {
+		return nil, err
+	}
+	return &RetryStmt{Body: body, Until: until, Loc: retryTok.Loc}, nil
 }
 
 func (p *parser) parseForEachStmt() (Stmt, error) {
@@ -435,11 +508,11 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 // recursive-descent parser.  Each precedence level has its own
 // method, loosest to tightest:
 //
-//   parseComparison   -- binary comparison (eq, ne, <, >= ...)
-//   parseUnaryOr      -- unary predicate (not-empty, true, false)
-//   parseThread       -- threading chain (|>)
-//   parseTerm         -- primary token (literal, varref, adapter,
-//                                       cmdsub)
+//	parseComparison   -- binary comparison (eq, ne, <, >= ...)
+//	parseUnaryOr      -- unary predicate (not-empty, true, false)
+//	parseThread       -- threading chain (|>)
+//	parseTerm         -- primary token (literal, varref, adapter,
+//	                                    cmdsub)
 //
 // Each level calls the next-tighter level for its operands and
 // loops for any left-associative operator of its own.  The shape
@@ -602,8 +675,11 @@ func (p *exprParser) parseUnaryOr() (Expr, error) {
 
 // operandFollowsPred reports whether the token immediately after
 // the current one could syntactically be a unary predicate's
-// operand: neither a binary-comparison word, a '|>', nor the
-// end of input.
+// operand.  It rejects binary-comparison words, logical
+// operators (and / or), '|>', and end of input — anything that
+// would belong to a higher precedence level, so that a pred word
+// at a comparison or logical RHS parses as a literal instead of
+// greedily swallowing an operator as its operand.
 func (p *exprParser) operandFollowsPred() bool {
 	if p.pos+1 >= len(p.tokens) {
 		return false
@@ -613,6 +689,9 @@ func (p *exprParser) operandFollowsPred() bool {
 		return false
 	}
 	if _, isBinOp := binaryOpFromToken(next); isBinOp {
+		return false
+	}
+	if isKeywordWord(next, "and") || isKeywordWord(next, "or") {
 		return false
 	}
 	return true
@@ -668,10 +747,11 @@ func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 }
 
 // parseTerm consumes one primary expression — a single literal,
-// varref, adapter, or command-substitution token, or a
+// varref, adapter, or command-substitution token, a
 // parenthesised sub-expression that recurses back into the full
-// expression grammar at the 'or' level.  Unmatched ')' is
-// rejected at the outer "unexpected trailing token" check.
+// expression grammar at the 'or' level, or a 'timeout DURATION'
+// primary that evaluates to a boolean against the enclosing
+// retry's elapsed-time clock.
 func (p *exprParser) parseTerm() (Expr, error) {
 	if p.eof() {
 		return nil, fmt.Errorf("expected expression, got end of input")
@@ -689,8 +769,60 @@ func (p *exprParser) parseTerm() (Expr, error) {
 		p.advance() // consume ')'
 		return inner, nil
 	}
+	if isKeywordWord(t, "timeout") {
+		return p.parseTimeoutExpr()
+	}
+	if isKeywordWord(t, "iteration") {
+		return p.parseIterationExpr()
+	}
 	p.advance()
 	return parsePrimary(t)
+}
+
+// parseTimeoutExpr consumes a 'timeout' keyword followed by a
+// duration literal (e.g. 30s, 200ms, 1h30m — anything
+// time.ParseDuration accepts).  The result is a primary-level
+// boolean expression: it can participate in any comparison or
+// logical combinator at higher precedence.
+func (p *exprParser) parseTimeoutExpr() (Expr, error) {
+	tok := p.advance() // "timeout"
+	if p.eof() {
+		return nil, locErrorf(tok.Loc, "timeout requires a duration (e.g. timeout 30s)")
+	}
+	durTok := p.peek()
+	if durTok.Kind != TokenWord {
+		return nil, locErrorf(durTok.Loc, "timeout requires a duration, got %q", durTok.Text)
+	}
+	d, err := parseDurationLiteral(durTok.Text)
+	if err != nil {
+		return nil, locErrorf(durTok.Loc, "timeout: %v", err)
+	}
+	p.advance()
+	return &TimeoutExpr{Duration: d, Loc: tok.Loc}, nil
+}
+
+// parseIterationExpr consumes an 'iteration' keyword followed
+// by a non-negative integer.  The result is a primary-level
+// boolean expression that evaluates to true when the enclosing
+// retry has executed at least Count iterations.
+func (p *exprParser) parseIterationExpr() (Expr, error) {
+	tok := p.advance() // "iteration"
+	if p.eof() {
+		return nil, locErrorf(tok.Loc, "iteration requires a count (e.g. iteration 10)")
+	}
+	countTok := p.peek()
+	if countTok.Kind != TokenWord {
+		return nil, locErrorf(countTok.Loc, "iteration requires an integer, got %q", countTok.Text)
+	}
+	n, err := strconv.Atoi(countTok.Text)
+	if err != nil {
+		return nil, locErrorf(countTok.Loc, "iteration: invalid integer %q", countTok.Text)
+	}
+	if n < 0 {
+		return nil, locErrorf(countTok.Loc, "iteration count must be non-negative, got %d", n)
+	}
+	p.advance()
+	return &IterationExpr{Count: n, Loc: tok.Loc}, nil
 }
 
 // parseCommandArgs turns a command's token run into argument

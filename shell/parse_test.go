@@ -4,6 +4,7 @@ package shell
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -496,6 +497,100 @@ func TestParse_Logical_UnmatchedParen(t *testing.T) {
 func TestParse_Logical_StrayCloseParen(t *testing.T) {
 	_, err := parseSource(t, "if $a) { help }")
 	require.Error(t, err)
+}
+
+// --- retry / timeout -----------------------------------------------
+
+func TestParse_Retry_Basic(t *testing.T) {
+	prog, err := parseSource(t, "retry { help } until $done eq true")
+	require.NoError(t, err)
+	rs, ok := firstStmt(t, prog).(*RetryStmt)
+	require.True(t, ok, "expected RetryStmt, got %T", prog.Stmts[0])
+	require.Len(t, rs.Body, 1)
+	_, ok = rs.Until.(*BinaryExpr)
+	assert.True(t, ok, "expected BinaryExpr for until, got %T", rs.Until)
+}
+
+func TestParse_Retry_MissingUntil(t *testing.T) {
+	_, err := parseSource(t, "retry { help }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "retry requires 'until'")
+}
+
+func TestParse_Retry_MissingExpression(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires an expression")
+}
+
+func TestParse_Retry_TimeoutExpr(t *testing.T) {
+	prog, err := parseSource(t, "retry { help } until timeout 30s")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	to, ok := rs.Until.(*TimeoutExpr)
+	require.True(t, ok, "expected TimeoutExpr, got %T", rs.Until)
+	assert.Equal(t, 30*time.Second, to.Duration)
+}
+
+func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
+	prog, err := parseSource(t, "retry { help } until $done eq true or timeout 60s")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	or, ok := rs.Until.(*LogicalExpr)
+	require.True(t, ok, "top of until should be 'or', got %T", rs.Until)
+	assert.Equal(t, "or", or.Op)
+	_, ok = or.Right.(*TimeoutExpr)
+	assert.True(t, ok, "or's right operand should be a TimeoutExpr, got %T", or.Right)
+}
+
+func TestParse_Timeout_BadDuration(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until timeout banana")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid duration")
+}
+
+func TestParse_Timeout_MissingDuration(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until timeout")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout requires a duration")
+}
+
+func TestParse_Timeout_NotTimeoutFlips(t *testing.T) {
+	// Ensure precedence: "not timeout 1s" is NotExpr(TimeoutExpr).
+	prog, err := parseSource(t, "retry { help } until not timeout 1s")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	notExpr, ok := rs.Until.(*NotExpr)
+	require.True(t, ok, "top should be NotExpr, got %T", rs.Until)
+	_, ok = notExpr.Operand.(*TimeoutExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_Iteration_Basic(t *testing.T) {
+	prog, err := parseSource(t, "retry { help } until iteration 10")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	it, ok := rs.Until.(*IterationExpr)
+	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
+	assert.Equal(t, 10, it.Count)
+}
+
+func TestParse_Iteration_MissingCount(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until iteration")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "iteration requires")
+}
+
+func TestParse_Iteration_NegativeCount(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until iteration -3")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-negative")
+}
+
+func TestParse_Iteration_NonInteger(t *testing.T) {
+	_, err := parseSource(t, "retry { help } until iteration banana")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid integer")
 }
 
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {

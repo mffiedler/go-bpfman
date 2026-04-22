@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // Expr is the sealed sum type for REPL expressions. The evaluator
@@ -103,15 +104,41 @@ type NotExpr struct {
 	Loc
 }
 
-func (*LiteralExpr) exprNode() {}
-func (*VarRefExpr) exprNode()  {}
-func (*AdapterExpr) exprNode() {}
-func (*CmdSubExpr) exprNode()  {}
-func (*BinaryExpr) exprNode()  {}
-func (*UnaryExpr) exprNode()   {}
-func (*ThreadExpr) exprNode()  {}
-func (*LogicalExpr) exprNode() {}
-func (*NotExpr) exprNode()     {}
+// TimeoutExpr is a retry-scoped primary expression that evaluates
+// to true when the enclosing retry loop has been running for at
+// least Duration.  Outside a retry context it is a runtime error,
+// cited at the 'timeout' token.
+//
+//	until $phase eq ready or timeout 60s
+//	until not timeout 5s and $converged
+type TimeoutExpr struct {
+	Duration time.Duration
+	Loc
+}
+
+// IterationExpr is a retry-scoped primary expression that
+// evaluates to true when the enclosing retry loop has executed
+// at least Count iterations.  Outside a retry context it is a
+// runtime error, cited at the 'iteration' token.
+//
+//	until iteration 10                 -- cap at ten attempts
+//	until $done or iteration 100       -- success or give up
+type IterationExpr struct {
+	Count int
+	Loc
+}
+
+func (*LiteralExpr) exprNode()   {}
+func (*VarRefExpr) exprNode()    {}
+func (*AdapterExpr) exprNode()   {}
+func (*CmdSubExpr) exprNode()    {}
+func (*BinaryExpr) exprNode()    {}
+func (*UnaryExpr) exprNode()     {}
+func (*ThreadExpr) exprNode()    {}
+func (*LogicalExpr) exprNode()   {}
+func (*NotExpr) exprNode()       {}
+func (*TimeoutExpr) exprNode()   {}
+func (*IterationExpr) exprNode() {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand and ExecSubstitution
@@ -134,6 +161,19 @@ type Env struct {
 	// expression. Output is suppressed; the returned Value must
 	// be non-nil or the evaluator reports an error.
 	ExecSubstitution func(args []Arg) (Value, error)
+
+	// retryStart is the time when the current retry loop began,
+	// or the zero value when no retry is active.  TimeoutExpr
+	// reads it to decide whether a duration has elapsed.
+	// evalRetryStmt owns the save / set / restore dance so
+	// nested retries behave sensibly.
+	retryStart time.Time
+
+	// retryIter is the current retry iteration (1-based,
+	// incremented before each body run), or zero outside a
+	// retry.  IterationExpr reads it.  evalRetryStmt manages
+	// the save / set / restore dance alongside retryStart.
+	retryIter int
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -237,6 +277,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalCommandStmt(s, env)
 	case *ForEachStmt:
 		return evalForEachStmt(s, env)
+	case *RetryStmt:
+		return evalRetryStmt(s, env)
 	case *BreakStmt:
 		return errBreak
 	case *ContinueStmt:
@@ -253,6 +295,94 @@ func evalStmt(stmt Stmt, env *Env) error {
 // binding persists after the loop ends, matching shell-style
 // for-each semantics — callers that want the previous value
 // back must save it explicitly.
+// retryBackoff is the fixed sleep between retry iterations.
+// Small enough to keep short condition windows responsive, large
+// enough to avoid pegging the CPU for long-running checks.  A
+// future enhancement could expose this via a CLI flag or
+// environment variable.
+const retryBackoff = 100 * time.Millisecond
+
+// evalRetryStmt runs s.Body repeatedly until s.Until evaluates
+// to true.  Each iteration rebinds $iter (1-based iteration
+// count) in the session so Until expressions can cap by
+// iteration count.  Elapsed-time checks go through the
+// TimeoutExpr primary ("timeout 30s") rather than a magic
+// variable; Env.retryStart carries the clock.
+//
+// A failing body does not halt the retry; the body's error is
+// carried across iterations and returned only when Until
+// finally becomes true.  That way a timeout-style exit
+// surfaces the reason the body was failing at the moment the
+// budget ran out.  Until runs after each body regardless of
+// whether the body errored, so a time cap fires even when
+// every attempt is failing.
+//
+// Nested retries are supported: Env.retryStart is saved and
+// restored, so an inner retry's 'timeout' evaluates against
+// the inner's clock.
+//
+// Ctrl-C interrupts the process; there is no context plumbing
+// through the evaluator yet, so a retry with a never-satisfied
+// Until loops until the process is killed.  Users writing
+// long-running retries are expected to include a cap in their
+// Until expression ("$x eq done or timeout 60s").
+func evalRetryStmt(s *RetryStmt, env *Env) error {
+	prevStart := env.retryStart
+	prevIter := env.retryIter
+	env.retryStart = time.Now()
+	env.retryIter = 0
+	defer func() {
+		env.retryStart = prevStart
+		env.retryIter = prevIter
+	}()
+
+	var bodyErr error
+	for {
+		env.retryIter++
+		bodyErr = nil
+		for _, stmt := range s.Body {
+			if err := evalStmt(stmt, env); err != nil {
+				bodyErr = err
+				break
+			}
+		}
+
+		untilV, err := EvalExpr(s.Until, env)
+		if err != nil {
+			return err
+		}
+		untilB, err := AsBool(untilV)
+		if err != nil {
+			return locErrorf(s.Loc, "retry: until expression: %v", err)
+		}
+		if untilB {
+			return bodyErr
+		}
+		time.Sleep(retryBackoff)
+	}
+}
+
+// evalTimeoutExpr returns true when the current retry has been
+// running for at least e.Duration.  Outside a retry context
+// (Env.retryStart zero) it errors, since there is no clock to
+// measure against.
+func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
+	if env.retryStart.IsZero() {
+		return Value{}, locErrorf(e.Loc, "timeout expression is only valid inside a retry body or its until clause")
+	}
+	return BoolValue(time.Since(env.retryStart) >= e.Duration), nil
+}
+
+// evalIterationExpr returns true when the current retry has
+// executed at least e.Count iterations.  Outside a retry context
+// (Env.retryIter zero) it errors.
+func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
+	if env.retryIter == 0 {
+		return Value{}, locErrorf(e.Loc, "iteration expression is only valid inside a retry body or its until clause")
+	}
+	return BoolValue(env.retryIter >= e.Count), nil
+}
+
 func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	v, err := EvalExpr(s.List, env)
 	if err != nil {
@@ -361,6 +491,10 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalLogical(e, env)
 	case *NotExpr:
 		return evalNot(e, env)
+	case *TimeoutExpr:
+		return evalTimeoutExpr(e, env)
+	case *IterationExpr:
+		return evalIterationExpr(e, env)
 	default:
 		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
 	}
@@ -480,7 +614,7 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 			return nil, locErrorf(e.Loc, "thread: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
-	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr:
+	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *TimeoutExpr, *IterationExpr:
 		return nil, locErrorf(exprLoc(expr), "boolean/comparison expression cannot be used as a command argument")
 	default:
 		return nil, locErrorf(exprLoc(expr), "cannot use %T as command argument", expr)
@@ -847,6 +981,10 @@ func exprLoc(e Expr) Loc {
 	case *LogicalExpr:
 		return v.Loc
 	case *NotExpr:
+		return v.Loc
+	case *TimeoutExpr:
+		return v.Loc
+	case *IterationExpr:
 		return v.Loc
 	}
 	return Loc{}

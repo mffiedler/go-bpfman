@@ -28,22 +28,23 @@ work, see `implementation-notes.md`.
 
 - A general-purpose shell. No pipelines, redirects, globbing, or job
   control.
-- A full programming language. No `while`, no user-defined
-  functions, no closures, no modules.  `foreach` iterates a block
-  over an already-materialised list (typically produced by `jq`)
-  — it does not cover open-ended polling, which is a separate
-  future primitive.
+- A full programming language. No user-defined functions, no
+  closures, no modules.  `foreach` iterates a block over an
+  already-materialised list (typically produced by `jq`); `retry
+  { } until EXPR` handles open-ended polling with
+  `timeout DURATION` and `iteration N` as retry-scoped primaries.
 - A foreign runtime (Lua, TCL, Python, Starlark).
 
 ## Grammar
 
 ```
 program      := { stmt (SEP stmt)* }
-stmt         := let-stmt | if-stmt | foreach-stmt | command-stmt
-              | 'break' | 'continue'
+stmt         := let-stmt | if-stmt | foreach-stmt | retry-stmt
+              | command-stmt | 'break' | 'continue'
 let-stmt     := 'let' IDENT '=' expr
 if-stmt      := 'if' expr block { 'elif' expr block } [ 'else' block ]
 foreach-stmt := 'foreach' IDENT 'in' expr block
+retry-stmt   := 'retry' block 'until' expr
 block        := '{' { stmt (SEP stmt)* } '}'
 command      := IDENT arg*
 arg          := WORD | QUOTED | varref | cmdsub | adapter
@@ -56,6 +57,7 @@ comparison   := unary (BINOP unary)?
 unary        := UNARY-PRED term | thread
 thread       := term ('|>' command)*
 term         := literal | varref | cmdsub | adapter | '(' expr ')'
+              | 'timeout' DURATION | 'iteration' INTEGER
 literal      := WORD | QUOTED
 varref       := '$' IDENT path? | '${' IDENT path '}'
 cmdsub       := '[' command ']'
@@ -162,6 +164,61 @@ foreach p in [bpfman program list -o json] {
     assert ok bpfman program get $p.record.program_id
 }
 ```
+
+### retry / until
+
+```
+retry { STMTS } until EXPR
+```
+
+Runs the body repeatedly with a small backoff between iterations
+until `EXPR` evaluates to true.  Body errors do **not** halt the
+retry — they are expected during polling.  The body's most recent
+error is carried across iterations and returned as the statement's
+error if and when `EXPR` finally becomes true; a timeout-style exit
+therefore surfaces the reason the body was failing at the moment
+the budget ran out.
+
+Two retry-scoped primary expressions keep `EXPR` purely
+expression-based:
+
+- `timeout DURATION` — true once the retry has been running for at
+  least `DURATION`.  `DURATION` is any Go duration literal
+  (`30s`, `5m`, `200ms`, `1h30m`).
+- `iteration INTEGER` — true once the retry has executed at least
+  `INTEGER` iterations.
+
+Both compose with the full expression grammar, so combined
+conditions read naturally:
+
+```
+retry {
+    let c = [exec bpftool map dump id $mid -j] |> jq "..."
+    assert $c > 100
+} until timeout 30s                                      # pure timeout
+
+retry { let phase = [bpfman doctor checkup] |> jq ".phase" }
+until $phase eq ready or timeout 60s                     # condition or timeout
+
+retry { require ok exec ping -W 1 198.51.100.2 }
+until iteration 5                                        # retry up to five times
+
+retry { ... }
+until $done and not timeout 10s                          # "done within 10s"
+```
+
+Outside a retry body (or an `until` clause attached to one),
+`timeout` and `iteration` are runtime errors with a source
+location, since there is no retry clock to measure against.
+
+Nested `retry` is supported: the inner retry gets its own clock
+and iteration counter, independent of any outer retry.
+
+Ctrl-C interrupts the process; there is no context plumbing
+through the evaluator yet, so a retry whose `until` never
+becomes true loops until the process is killed.  Always include
+a cap (`or timeout DURATION` or `or iteration N`) in long-running
+retries.
 
 ### Plain commands
 
