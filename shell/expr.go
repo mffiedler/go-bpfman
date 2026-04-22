@@ -242,6 +242,8 @@ func stmtLoc(s Stmt) Loc {
 		return v.Loc
 	case *ForEachStmt:
 		return v.Loc
+	case *RetryStmt:
+		return v.Loc
 	case *BreakStmt:
 		return v.Loc
 	case *ContinueStmt:

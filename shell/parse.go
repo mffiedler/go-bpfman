@@ -94,19 +94,18 @@ type ContinueStmt struct {
 }
 
 // RetryStmt runs Body repeatedly until the Until expression
-// evaluates true.  On each iteration, two magic variables are
-// rebound in the session before Body runs: $iter (1-based
-// iteration count) and $elapsed (seconds since the retry
-// started, as a number).  After the body runs, the Until
-// expression is evaluated; its value must be a boolean.  If
-// true, the retry exits, returning the body's last error (if
-// any) so timeout-style exits surface the reason the body was
-// failing.  If false, the evaluator sleeps a short backoff and
-// iterates again.
+// evaluates true.  Body errors do not halt the retry — they are
+// expected during polling; the most recent body error is carried
+// across iterations and returned as the statement's error if and
+// when Until becomes true.  Until is evaluated after each body
+// run regardless of whether the body errored, so time-based
+// exits fire even when every attempt is failing.
 //
-// There is no built-in timeout clause — Until is the single
-// termination signal, and $elapsed makes a time budget
-// expressible as "$elapsed > 30" inside the expression.
+// There is no dedicated timeout or iteration clause; those are
+// primary-level expressions (TimeoutExpr and IterationExpr) that
+// compose into Until via the full expression grammar.  Retry
+// scope bookkeeping (start time, iteration counter) lives on
+// Env so no magic variables leak into the session.
 type RetryStmt struct {
 	Body  []Stmt
 	Until Expr
