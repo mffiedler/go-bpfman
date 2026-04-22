@@ -320,7 +320,7 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 //     command substitution.
 //
 // Binary operators appear at most once per expression; they live
-// outside any pipe chain.  Pipes are only recognised in
+// outside any thread chain.  Threads are only recognised in
 // expression position (let RHS, if/elif conditions, and cmdsub
 // inner text that itself reaches this parser), never in a
 // CommandStmt's argument list.
@@ -352,10 +352,10 @@ func parseExpression(tokens []Token) (Expr, error) {
 
 	// Level 2: unary predicate prefix.  Only matches when the
 	// first token is a recognised pred word AND the remainder
-	// is a single primary; multi-token operands (e.g. a pipe
+	// is a single primary; multi-token operands (e.g. a thread
 	// chain) aren't supported for unary preds today because no
 	// use case needs it.
-	if len(tokens) == 2 && !containsPipe(tokens) {
+	if len(tokens) == 2 && !containsThread(tokens) {
 		pred, ok := unaryPredFromToken(tokens[0])
 		if !ok {
 			return nil, locErrorf(tokens[0].Loc, "expected unary predicate as first operand, got %q", tokens[0].Text)
@@ -367,15 +367,15 @@ func parseExpression(tokens []Token) (Expr, error) {
 		return &UnaryExpr{Pred: pred, Operand: operand, Loc: tokens[0].Loc}, nil
 	}
 	if len(tokens) >= 2 {
-		if pred, ok := unaryPredFromToken(tokens[0]); ok && !containsPipe(tokens) {
+		if pred, ok := unaryPredFromToken(tokens[0]); ok && !containsThread(tokens) {
 			return nil, locErrorf(tokens[0].Loc, "unary predicate %q takes a single operand", pred)
 		}
 	}
 
-	// Level 3: pipe chain.  If there's at least one pipe token,
+	// Level 3: thread chain.  If there's at least one thread token,
 	// split on them and fold left-to-right.
-	if containsPipe(tokens) {
-		return parsePipeChain(tokens)
+	if containsThread(tokens) {
+		return parseThreadChain(tokens)
 	}
 
 	// Level 4: a single primary.  Anything else is an arity
@@ -383,35 +383,35 @@ func parseExpression(tokens []Token) (Expr, error) {
 	if len(tokens) == 1 {
 		return parsePrimary(tokens[0])
 	}
-	return nil, locErrorf(tokens[0].Loc, "expression has %d tokens; expected primary, unary, binary, or pipe chain", len(tokens))
+	return nil, locErrorf(tokens[0].Loc, "expression has %d tokens; expected primary, unary, binary, or thread chain", len(tokens))
 }
 
-// containsPipe reports whether tokens has a TokenPipe anywhere in
+// containsThread reports whether tokens has a TokenThread anywhere in
 // it. Used by parseExpression to decide between the legacy
-// primary/unary/binary paths and a pipe chain.
-func containsPipe(tokens []Token) bool {
+// primary/unary/binary paths and a thread chain.
+func containsThread(tokens []Token) bool {
 	for _, t := range tokens {
-		if t.Kind == TokenPipe {
+		if t.Kind == TokenThread {
 			return true
 		}
 	}
 	return false
 }
 
-// parsePipeChain builds a left-associative PipeExpr tree from a
-// token slice that contains at least one TokenPipe.  The first
+// parseThreadChain builds a left-associative ThreadExpr tree from a
+// token slice that contains at least one TokenThread.  The first
 // segment (before the first '|') must be a single primary; each
 // subsequent segment is a command call (one or more tokens
 // parsed as primary Exprs) whose arguments will receive the
 // running pipeline value as their last element at eval time.
-func parsePipeChain(tokens []Token) (Expr, error) {
-	segments, pipeLocs, err := splitPipeSegments(tokens)
+func parseThreadChain(tokens []Token) (Expr, error) {
+	segments, threadLocs, err := splitThreadSegments(tokens)
 	if err != nil {
 		return nil, err
 	}
 	if len(segments[0]) != 1 {
 		loc := tokens[0].Loc
-		return nil, locErrorf(loc, "pipe LHS must be a single primary expression; got %d tokens", len(segments[0]))
+		return nil, locErrorf(loc, "thread LHS must be a single primary expression; got %d tokens", len(segments[0]))
 	}
 	lhs, err := parsePrimary(segments[0][0])
 	if err != nil {
@@ -419,7 +419,7 @@ func parsePipeChain(tokens []Token) (Expr, error) {
 	}
 	for i, seg := range segments[1:] {
 		if len(seg) == 0 {
-			return nil, locErrorf(pipeLocs[i], "pipe requires a command on the right-hand side")
+			return nil, locErrorf(threadLocs[i], "thread requires a command on the right-hand side")
 		}
 		args := make([]Expr, 0, len(seg))
 		for _, t := range seg {
@@ -429,33 +429,33 @@ func parsePipeChain(tokens []Token) (Expr, error) {
 			}
 			args = append(args, e)
 		}
-		lhs = &PipeExpr{LHS: lhs, Args: args, Loc: pipeLocs[i]}
+		lhs = &ThreadExpr{LHS: lhs, Args: args, Loc: threadLocs[i]}
 	}
 	return lhs, nil
 }
 
-// splitPipeSegments divides tokens on TokenPipe tokens and
+// splitThreadSegments divides tokens on TokenThread tokens and
 // returns the segments together with the Loc of each '|' that
-// produced a boundary.  An empty LHS (leading pipe) is a syntax
-// error; trailing pipes yield an empty trailing segment that the
+// produced a boundary.  An empty LHS (leading thread) is a syntax
+// error; trailing threads yield an empty trailing segment that the
 // caller flags.
-func splitPipeSegments(tokens []Token) ([][]Token, []Loc, error) {
+func splitThreadSegments(tokens []Token) ([][]Token, []Loc, error) {
 	var segments [][]Token
-	var pipeLocs []Loc
+	var threadLocs []Loc
 	start := 0
 	for i, t := range tokens {
-		if t.Kind != TokenPipe {
+		if t.Kind != TokenThread {
 			continue
 		}
 		if start == i {
-			return nil, nil, locErrorf(t.Loc, "pipe has no left-hand side")
+			return nil, nil, locErrorf(t.Loc, "thread has no left-hand side")
 		}
 		segments = append(segments, tokens[start:i])
-		pipeLocs = append(pipeLocs, t.Loc)
+		threadLocs = append(threadLocs, t.Loc)
 		start = i + 1
 	}
 	segments = append(segments, tokens[start:])
-	return segments, pipeLocs, nil
+	return segments, threadLocs, nil
 }
 
 // parseCommandArgs turns a command's token run into argument

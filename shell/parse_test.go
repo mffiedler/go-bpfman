@@ -171,94 +171,94 @@ func TestParse_LocPropagation(t *testing.T) {
 	assert.Equal(t, 2, second.Loc.Line)
 }
 
-func TestParse_Pipe_Basic(t *testing.T) {
-	prog, err := parseSource(t, "let r = $x | jq \"add\"")
+func TestParse_Thread_Basic(t *testing.T) {
+	prog, err := parseSource(t, "let r = $x |> jq \"add\"")
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
 	require.True(t, ok)
-	pipe, ok := let.RHS.(*PipeExpr)
-	require.True(t, ok, "RHS should be a PipeExpr, got %T", let.RHS)
+	thread, ok := let.RHS.(*ThreadExpr)
+	require.True(t, ok, "RHS should be a ThreadExpr, got %T", let.RHS)
 	// LHS is the value expression producing $x.
-	lhs, ok := pipe.LHS.(*VarRefExpr)
+	lhs, ok := thread.LHS.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "x", lhs.Name)
-	// Cmd is the pipe's right-hand command: jq "add" (2 args).
-	require.Len(t, pipe.Args, 2)
-	jqLit, ok := pipe.Args[0].(*LiteralExpr)
+	// Args is the thread's right-hand command: jq "add" (2 args).
+	require.Len(t, thread.Args, 2)
+	jqLit, ok := thread.Args[0].(*LiteralExpr)
 	require.True(t, ok)
 	assert.Equal(t, "jq", jqLit.Text)
-	filterLit, ok := pipe.Args[1].(*LiteralExpr)
+	filterLit, ok := thread.Args[1].(*LiteralExpr)
 	require.True(t, ok)
 	assert.Equal(t, "add", filterLit.Text)
 	assert.True(t, filterLit.Quoted)
 }
 
-func TestParse_Pipe_Chain_LeftAssociative(t *testing.T) {
-	// a | b | c should parse as (a | b) | c.
-	prog, err := parseSource(t, "let r = $x | jq \".a\" | jq \"add\"")
+func TestParse_Thread_Chain_LeftAssociative(t *testing.T) {
+	// a |> b |> c should parse as (a |> b) |> c.
+	prog, err := parseSource(t, "let r = $x |> jq \".a\" |> jq \"add\"")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
-	outer, ok := let.RHS.(*PipeExpr)
+	outer, ok := let.RHS.(*ThreadExpr)
 	require.True(t, ok)
-	// Outer's LHS is itself a PipeExpr (the inner one).
-	inner, ok := outer.LHS.(*PipeExpr)
-	require.True(t, ok, "outer.LHS should be a PipeExpr (left-assoc), got %T", outer.LHS)
+	// Outer's LHS is itself a ThreadExpr (the inner one).
+	inner, ok := outer.LHS.(*ThreadExpr)
+	require.True(t, ok, "outer.LHS should be a ThreadExpr (left-assoc), got %T", outer.LHS)
 	innerLHS, ok := inner.LHS.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "x", innerLHS.Name)
 }
 
-func TestParse_Pipe_TighterThanComparison(t *testing.T) {
-	// $x | jq "..." > 0 should parse as ($x | jq "...") > 0.
-	prog, err := parseSource(t, "let r = $x | jq \".n\" > 0")
+func TestParse_Thread_TighterThanComparison(t *testing.T) {
+	// $x |> jq "..." > 0 should parse as ($x |> jq "...") > 0.
+	prog, err := parseSource(t, "let r = $x |> jq \".n\" > 0")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
 	bin, ok := let.RHS.(*BinaryExpr)
 	require.True(t, ok, "RHS should be BinaryExpr, got %T", let.RHS)
 	assert.Equal(t, ">", bin.Op)
-	// LHS of comparison is the pipe chain.
-	_, ok = bin.Left.(*PipeExpr)
-	assert.True(t, ok, "binary LHS should be PipeExpr, got %T", bin.Left)
+	// LHS of comparison is the thread chain.
+	_, ok = bin.Left.(*ThreadExpr)
+	assert.True(t, ok, "binary LHS should be ThreadExpr, got %T", bin.Left)
 	// RHS is the literal 0.
 	_, ok = bin.Right.(*LiteralExpr)
 	assert.True(t, ok)
 }
 
-func TestParse_Pipe_CmdSubLHS(t *testing.T) {
-	// [cmd] | jq "FILTER" is valid: LHS is a CmdSubExpr, RHS is a pipe.
-	prog, err := parseSource(t, "let r = [bpfman program list] | jq \"length\"")
+func TestParse_Thread_CmdSubLHS(t *testing.T) {
+	// [cmd] |> jq "FILTER" is valid: LHS is a CmdSubExpr, RHS is a thread.
+	prog, err := parseSource(t, "let r = [bpfman program list] |> jq \"length\"")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
-	pipe, ok := let.RHS.(*PipeExpr)
+	thread, ok := let.RHS.(*ThreadExpr)
 	require.True(t, ok)
-	_, ok = pipe.LHS.(*CmdSubExpr)
-	assert.True(t, ok, "pipe LHS should be CmdSubExpr, got %T", pipe.LHS)
+	_, ok = thread.LHS.(*CmdSubExpr)
+	assert.True(t, ok, "thread LHS should be CmdSubExpr, got %T", thread.LHS)
 }
 
-func TestParse_Pipe_LocPointsAtPipeToken(t *testing.T) {
-	// The Loc on a PipeExpr identifies the `|` itself so errors
-	// about the pipe can point at the operator rather than at the
-	// LHS or RHS.
-	prog, err := parseSource(t, "let r = $x | jq \"add\"")
+func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
+	// The Loc on a ThreadExpr identifies the `|>` itself so errors
+	// about the threading step can point at the operator rather
+	// than at the LHS or RHS.
+	prog, err := parseSource(t, "let r = $x |> jq \"add\"")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
-	pipe := let.RHS.(*PipeExpr)
-	assert.Equal(t, 1, pipe.Loc.Line)
-	// Column of the `|` in "let r = $x | jq \"add\"":
+	thread := let.RHS.(*ThreadExpr)
+	assert.Equal(t, 1, thread.Loc.Line)
+	// Column of the `|>` in "let r = $x |> jq \"add\"":
 	//   columns 1..9 = "let r = $"
-	//   column 9 = 'x' end of varref at col 10... the `|` is
+	//   column 10 = 'x' (end of varref) — the `|>` is
 	//   after `$x ` so at column 12.
-	assert.Equal(t, 12, pipe.Loc.Col)
+	assert.Equal(t, 12, thread.Loc.Col)
 }
 
-func TestParse_Pipe_RejectsTrailingPipe(t *testing.T) {
-	_, err := parseSource(t, "let r = $x |")
+func TestParse_Thread_RejectsTrailingThread(t *testing.T) {
+	_, err := parseSource(t, "let r = $x |>")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pipe")
+	assert.Contains(t, err.Error(), "thread")
 }
 
-func TestParse_Pipe_RejectsLeadingPipe(t *testing.T) {
-	_, err := parseSource(t, "let r = | jq \"add\"")
+func TestParse_Thread_RejectsLeadingThread(t *testing.T) {
+	_, err := parseSource(t, "let r = |> jq \"add\"")
 	require.Error(t, err)
 }
 

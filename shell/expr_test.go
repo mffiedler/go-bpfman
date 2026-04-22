@@ -386,10 +386,10 @@ func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
 	assert.Equal(t, OriginProgram, sva.Value.Kind())
 }
 
-// PipeExpr evaluation: LHS's Value is appended as the last arg to
+// ThreadExpr evaluation: LHS's Value is appended as the last arg to
 // the pipe's command, which then dispatches via ExecSubstitution.
 
-func TestEvalExpr_Pipe_AppendsScalarValueAsLastArg(t *testing.T) {
+func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	s := NewSession()
 	s.Set("x", StringValue("42"))
 	var captured []Arg
@@ -400,7 +400,7 @@ func TestEvalExpr_Pipe_AppendsScalarValueAsLastArg(t *testing.T) {
 			return StringValue("ok"), nil
 		},
 	}
-	pipe := &PipeExpr{
+	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "jq"}, &LiteralExpr{Text: ".", Quoted: true}},
 	}
@@ -418,7 +418,7 @@ func TestEvalExpr_Pipe_AppendsScalarValueAsLastArg(t *testing.T) {
 	assert.Equal(t, "42", scalar.Text)
 }
 
-func TestEvalExpr_Pipe_AppendsStructuredValueAsLastArg(t *testing.T) {
+func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	s := NewSession()
 	s.Set("p", ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram))
 	var captured []Arg
@@ -429,7 +429,7 @@ func TestEvalExpr_Pipe_AppendsStructuredValueAsLastArg(t *testing.T) {
 			return StringValue("ok"), nil
 		},
 	}
-	pipe := &PipeExpr{
+	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "p"},
 		Args: []Expr{&LiteralExpr{Text: "jq"}, &LiteralExpr{Text: ".id", Quoted: true}},
 	}
@@ -441,7 +441,7 @@ func TestEvalExpr_Pipe_AppendsStructuredValueAsLastArg(t *testing.T) {
 	assert.Equal(t, OriginProgram, sva.Value.Kind())
 }
 
-func TestEvalExpr_Pipe_NilLHSIsError(t *testing.T) {
+func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
 	s := NewSession()
 	s.Set("x", Value{}) // nil value
 	env := &Env{
@@ -450,7 +450,7 @@ func TestEvalExpr_Pipe_NilLHSIsError(t *testing.T) {
 			return StringValue("should-not-run"), nil
 		},
 	}
-	pipe := &PipeExpr{
+	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "jq"}},
 	}
@@ -459,20 +459,20 @@ func TestEvalExpr_Pipe_NilLHSIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "null")
 }
 
-func TestEvalExpr_Pipe_NoSubstitutionRunnerIsError(t *testing.T) {
+func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	s := NewSession()
 	s.Set("x", StringValue("42"))
 	env := &Env{Session: s}
-	pipe := &PipeExpr{
+	e := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "jq"}},
 	}
-	_, err := EvalExpr(pipe, env)
+	_, err := EvalExpr(e, env)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pipe")
+	assert.Contains(t, err.Error(), "thread")
 }
 
-func TestEvalExpr_Pipe_Chain_FeedsSuccessively(t *testing.T) {
+func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	// Build ((x | stage1) | stage2) manually; each stage's runner
 	// returns a known Value, and the outer stage asserts that its
 	// last arg is the inner stage's return.
@@ -487,11 +487,11 @@ func TestEvalExpr_Pipe_Chain_FeedsSuccessively(t *testing.T) {
 			return StringValue("<" + last + ">"), nil
 		},
 	}
-	inner := &PipeExpr{
+	inner := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "stage1"}},
 	}
-	outer := &PipeExpr{
+	outer := &ThreadExpr{
 		LHS:  inner,
 		Args: []Expr{&LiteralExpr{Text: "stage2"}},
 	}
@@ -502,8 +502,8 @@ func TestEvalExpr_Pipe_Chain_FeedsSuccessively(t *testing.T) {
 	assert.Equal(t, "<<start>>", got)
 }
 
-func TestEvalArgs_Pipe_WrapsPipeResultAsArg(t *testing.T) {
-	// A PipeExpr used as a command argument: the evaluator should
+func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
+	// A ThreadExpr used as a command argument: the evaluator should
 	// dispatch the pipe, then wrap the returned Value as a
 	// ScalarValueArg or StructuredValueArg just like CmdSubExpr.
 	s := NewSession()
@@ -514,7 +514,7 @@ func TestEvalArgs_Pipe_WrapsPipeResultAsArg(t *testing.T) {
 			return StringValue("piped"), nil
 		},
 	}
-	pipe := &PipeExpr{
+	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "stage"}},
 	}

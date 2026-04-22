@@ -137,14 +137,19 @@ let data = [jq "." $raw.stdout]
 dump data[0].name
 ```
 
-Combined with the `|` pipe operator it reads left-to-right, which
-is almost always easier on the eye than nested brackets:
+Combined with the `|>` thread operator it reads left-to-right,
+which is almost always easier on the eye than nested brackets:
 
 ```
-let total  = $raw | jq ".items | map(.v) | add"
-let big    = $raw | jq ".items | length > 2"
+let total  = $raw |> jq ".items | map(.v) | add"
+let big    = $raw |> jq ".items | length > 2"
 assert $big eq true
 ```
+
+Note that `|` inside a `jq` filter string is jq's own pipe
+operator — unrelated to the DSL's `|>`. The DSL only treats `|>`
+(with the trailing `>`) as a threading operator; a lone `|` at a
+token boundary is ordinary word content.
 
 ### Result shapes
 
@@ -174,7 +179,7 @@ assert $big eq true
   single-field reach-in on an already-structured value.
 - **`jq "."`** on a JSON-text scalar decodes it into a structured
   Value — use it to ingest output from tools that emit JSON
-  (`jq "." $stdout`, or `$stdout | jq "."`).
+  (`jq "." $stdout`, or `$stdout |> jq "."`).
 - **`jq FILTER`** is the tool for transformations indexing alone
   can't express: aggregation (`add`, `length`), projection
   (`map`), filtering (`select`), reshaping, or any multi-step

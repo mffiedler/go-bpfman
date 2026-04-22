@@ -44,10 +44,14 @@ const (
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
-	// TokenPipe is a standalone '|' at a token boundary: the
-	// value-threading composition operator. Inside a bare word or
-	// quoted string, '|' stays part of the surrounding literal.
-	TokenPipe
+	// TokenThread is the '|>' operator at a token boundary — the
+	// value-threading composition operator that feeds the LHS
+	// Value into the RHS command's last argument slot.  Matches
+	// the '|>' sigil used by F#, OCaml, Elixir, Julia, and R;
+	// semantically equivalent to Clojure's `->>` thread-last
+	// macro.  Inside a bare word or quoted string, '|>' stays
+	// part of the surrounding literal.
+	TokenThread
 )
 
 // Token is a single lexical element produced by Tokenise.
@@ -139,13 +143,13 @@ func Tokenise(input string) ([]Token, error) {
 		case ch == ']':
 			return nil, fmt.Errorf("unmatched ']'")
 
-		case ch == '|':
+		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was
-			// whitespace or absent, so '|' sits at a token
+			// whitespace or absent, so '|>' sits at a token
 			// boundary.  The lexWord path keeps '|' as an
-			// interior word character, so 'a|b' stays a word.
-			tokens = emit(tokens, start, Token{Kind: TokenPipe, Text: "|"})
-			i++
+			// interior word character, so 'a|>b' stays a word.
+			tokens = emit(tokens, start, Token{Kind: TokenThread, Text: "|>"})
+			i += 2
 
 		default:
 			if tok, n, ok := lexAdapterRef(input, i); ok {

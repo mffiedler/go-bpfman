@@ -444,45 +444,55 @@ func TestTokenise(t *testing.T) {
 			},
 		},
 
-		// Pipe operator.  A `|` at a token boundary is a standalone
-		// TokenPipe; inside a bare word or a quoted string it stays
-		// part of the word/string.
+		// Thread operator.  A `|>` at a token boundary is a
+		// standalone TokenThread; inside a bare word or quoted
+		// string the characters stay part of the word/string.
+		// A lone `|` is ordinary word content.
 
 		{
-			name:  "pipe between tokens",
-			input: "$x | jq .a",
+			name:  "thread between tokens",
+			input: "$x |> jq .a",
 			want: []Token{
 				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-				{Kind: TokenPipe, Text: "|"},
+				{Kind: TokenThread, Text: "|>"},
 				{Kind: TokenWord, Text: "jq"},
 				{Kind: TokenWord, Text: ".a"},
 			},
 		},
 		{
-			name:  "pipe chain",
-			input: "$x | jq .a | jq add",
+			name:  "thread chain",
+			input: "$x |> jq .a |> jq add",
 			want: []Token{
 				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-				{Kind: TokenPipe, Text: "|"},
+				{Kind: TokenThread, Text: "|>"},
 				{Kind: TokenWord, Text: "jq"},
 				{Kind: TokenWord, Text: ".a"},
-				{Kind: TokenPipe, Text: "|"},
+				{Kind: TokenThread, Text: "|>"},
 				{Kind: TokenWord, Text: "jq"},
 				{Kind: TokenWord, Text: "add"},
 			},
 		},
 		{
-			name:  "pipe inside bare word stays part of word",
-			input: "a|b",
+			name:  "thread inside bare word stays part of word",
+			input: "a|>b",
 			want: []Token{
-				{Kind: TokenWord, Text: "a|b"},
+				{Kind: TokenWord, Text: "a|>b"},
 			},
 		},
 		{
-			name:  "pipe inside quoted string is literal",
-			input: `"a | b"`,
+			name:  "thread inside quoted string is literal",
+			input: `"a |> b"`,
 			want: []Token{
-				{Kind: TokenQuoted, Text: "a | b"},
+				{Kind: TokenQuoted, Text: "a |> b"},
+			},
+		},
+		{
+			name:  "bare pipe without arrow is word content",
+			input: "a | b",
+			want: []Token{
+				{Kind: TokenWord, Text: "a"},
+				{Kind: TokenWord, Text: "|"},
+				{Kind: TokenWord, Text: "b"},
 			},
 		},
 	}

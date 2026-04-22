@@ -75,12 +75,12 @@ type UnaryExpr struct {
 	Loc
 }
 
-// PipeExpr is a value-threading composition: evaluate LHS to a
+// ThreadExpr is a value-threading composition: evaluate LHS to a
 // Value, append that Value as the last argument of the command
 // described by Args, and dispatch. The operator binds tighter than
 // comparison operators but looser than the primary forms. Loc
-// identifies the '|' token itself.
-type PipeExpr struct {
+// identifies the '|>' token itself.
+type ThreadExpr struct {
 	LHS  Expr
 	Args []Expr
 	Loc
@@ -92,7 +92,7 @@ func (*AdapterExpr) exprNode() {}
 func (*CmdSubExpr) exprNode()  {}
 func (*BinaryExpr) exprNode()  {}
 func (*UnaryExpr) exprNode()   {}
-func (*PipeExpr) exprNode()    {}
+func (*ThreadExpr) exprNode()    {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand and ExecSubstitution
@@ -247,8 +247,8 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
 	case *CmdSubExpr:
 		return dispatchCmdSub(e, env)
-	case *PipeExpr:
-		return dispatchPipe(e, env)
+	case *ThreadExpr:
+		return dispatchThread(e, env)
 	case *BinaryExpr:
 		return evalBinary(e, env)
 	case *UnaryExpr:
@@ -302,20 +302,20 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 			return nil, locErrorf(e.Loc, "nested command substitution: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
-	case *PipeExpr:
-		val, err := dispatchPipe(e, env)
+	case *ThreadExpr:
+		val, err := dispatchThread(e, env)
 		if err != nil {
 			return nil, err
 		}
 		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "pipe produced no value")
+			return nil, locErrorf(e.Loc, "thread produced no value")
 		}
 		if val.IsStructured() {
 			return StructuredValueArg{Value: val}, nil
 		}
 		s, err := val.Scalar()
 		if err != nil {
-			return nil, locErrorf(e.Loc, "pipe: %v", err)
+			return nil, locErrorf(e.Loc, "thread: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
 	case *BinaryExpr, *UnaryExpr:
@@ -389,21 +389,21 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 	}, nil
 }
 
-// dispatchPipe evaluates a pipe expression by threading the LHS's
+// dispatchThread evaluates a threading expression by threading the LHS's
 // Value into the command described by Args.  The LHS Value
 // becomes the last element of the evaluated argument list so it
 // matches the convention used by jq, file temp, and most
 // shell-style "CMD ARGS VALUE" invocations.
-func dispatchPipe(e *PipeExpr, env *Env) (Value, error) {
+func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if env.ExecSubstitution == nil {
-		return Value{}, locErrorf(e.Loc, "pipe requires a substitution runner; none configured")
+		return Value{}, locErrorf(e.Loc, "thread requires a substitution runner; none configured")
 	}
 	lhsVal, err := EvalExpr(e.LHS, env)
 	if err != nil {
 		return Value{}, err
 	}
 	if lhsVal.IsNil() {
-		return Value{}, locErrorf(e.Loc, "pipe: left-hand side is null")
+		return Value{}, locErrorf(e.Loc, "thread: left-hand side is null")
 	}
 	args, err := EvalArgs(e.Args, env)
 	if err != nil {
@@ -411,7 +411,7 @@ func dispatchPipe(e *PipeExpr, env *Env) (Value, error) {
 	}
 	lhsArg, err := valueToArg(lhsVal)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "pipe: %v", err)
+		return Value{}, locErrorf(e.Loc, "thread: %v", err)
 	}
 	return env.ExecSubstitution(append(args, lhsArg))
 }
@@ -680,7 +680,7 @@ func exprLoc(e Expr) Loc {
 		return v.Loc
 	case *UnaryExpr:
 		return v.Loc
-	case *PipeExpr:
+	case *ThreadExpr:
 		return v.Loc
 	}
 	return Loc{}
