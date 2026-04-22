@@ -336,17 +336,15 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	}
 }
 
-// replEval processes a single input line: tokenise, parse, expand
-// variables, dispatch, and optionally bind the result. Shell-language
-// commands (assert, require, dump, help, source, unset, vars, version)
-// are handled directly. Domain commands flow to replDispatch. In
-// interactive mode (loc has no file), non-fatal errors are printed and
-// return nil so the session continues. In script mode (loc has a
-// file), errors return errScriptError to halt execution.
+// replEval processes a single input line or block: tokenise, parse
+// to an AST, and evaluate against the session. Shell-language
+// commands (assert, require, dump, help, source, unset, vars,
+// version) flow through ExecCommand on the evaluator's Env; domain
+// commands are dispatched via replDispatch from the same hook. In
+// interactive mode (loc has no file), non-fatal errors are printed
+// and replEval returns nil so the session continues. In script mode
+// (loc has a file), errors return errScriptError to halt execution.
 func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
-	// scriptErr prints an error and returns the appropriate
-	// sentinel: errScriptError in file mode, nil in interactive
-	// mode.
 	scriptErr := func(format string, args ...any) error {
 		_ = cli.PrintErrf(format, args...)
 		if loc.file != "" {
@@ -363,217 +361,79 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		return nil
 	}
 
-	stmts, err := shell.ParseProgram(tokens)
+	prog, err := shell.Parse(tokens)
 	if err != nil {
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
-	for _, stmt := range stmts {
-		if err := execStmt(ctx, cli, mgr, session, stmt, loc, scriptErr); err != nil {
+
+	env := &shell.Env{
+		Session:          session,
+		ExecCommand:      makeExecCommand(ctx, cli, mgr, session, loc),
+		ExecSubstitution: makeExecSubstitution(ctx, cli, mgr, session, loc),
+	}
+
+	if err := shell.EvalProgram(prog, env); err != nil {
+		if errors.Is(err, errRequireFailed) {
 			return err
 		}
+		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
 	return nil
 }
 
-// execStmt executes a single parsed statement against the session.
-// The scriptErr closure uniformly reports errors according to
-// interactive vs script mode (see replEval).
-func execStmt(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, stmt shell.Stmt, loc sourceLoc, scriptErr func(format string, args ...any) error) error {
-	switch s := stmt.(type) {
-	case *shell.LetStmt:
-		expanded, err := session.Expand(s.Command)
-		if err != nil {
-			return scriptErr("%s[repl] error: %v\n", loc, err)
-		}
-		expanded = applyAlias(session, expanded)
-		expr, err := shell.ParseExpr(expanded)
-		if err != nil {
-			return scriptErr("%s[repl] error: let: %v (wrap commands in [ ])\n", loc, err)
-		}
-		runner := makeCmdRunner(ctx, cli, mgr, session, loc)
-		val, err := shell.Eval(expr, session, runner)
-		if err != nil {
-			if errors.Is(err, errRequireFailed) {
-				return err
-			}
-			return scriptErr("%s[repl] error: %v\n", loc, err)
-		}
-		if val.IsNil() {
-			return scriptErr("%s[repl] error: expression produced no result to assign\n", loc)
-		}
-		session.Set(s.Name, val)
-		return nil
-
-	case *shell.IfStmt:
-		return execIfStmt(ctx, cli, mgr, session, s, loc, scriptErr)
-
-	case *shell.CommandStmt:
-		expanded, err := session.Expand(s.Tokens)
-		if err != nil {
-			return scriptErr("%s[repl] error: %v\n", loc, err)
-		}
-		expanded = applyAlias(session, expanded)
-		handled, _, err := replShellCmd(ctx, cli, mgr, session, expanded, loc)
-		if err != nil {
-			if errors.Is(err, errRequireFailed) {
-				return err
-			}
-			return scriptErr("%s[repl] error: %v\n", loc, err)
-		}
-		if handled {
-			return nil
-		}
-		_, err = replDispatch(ctx, cli, mgr, expanded)
-		if err != nil {
-			if errors.Is(err, errRequireFailed) {
-				return err
-			}
-			return scriptErr("%s[repl] error: %v\n", loc, err)
-		}
-		return nil
-
-	default:
-		return scriptErr("%s[repl] error: unknown statement type %T\n", loc, stmt)
-	}
-}
-
-// execIfStmt evaluates an if/elif/else chain. Conditions must
-// evaluate to a BoolValue (no truthiness). The first branch whose
-// condition is true runs; if none match, the else branch (possibly
-// empty) runs.
-func execIfStmt(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, s *shell.IfStmt, loc sourceLoc, scriptErr func(format string, args ...any) error) error {
-	runner := makeCmdRunner(ctx, cli, mgr, session, loc)
-
-	check := func(condTokens []shell.Token) (bool, error) {
-		args, err := session.Expand(condTokens)
-		if err != nil {
-			return false, err
+// makeExecCommand bridges the evaluator's top-level CommandStmt
+// dispatch into the REPL pipeline. Output is visible on the CLI.
+// Alias expansion applies to the first argument before dispatch.
+// The returned Value is ignored by the evaluator for top-level
+// commands; it is still produced so shell builtins can compute
+// values that callers happen to observe in tests.
+func makeExecCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
+	return func(args []shell.Arg) (shell.Value, error) {
+		if len(args) == 0 {
+			return shell.Value{}, nil
 		}
 		args = applyAlias(session, args)
-		expr, err := shell.ParseExpr(args)
-		if err != nil {
-			return false, err
-		}
-		v, err := shell.Eval(expr, session, runner)
-		if err != nil {
-			return false, err
-		}
-		return shell.AsBool(v)
-	}
-
-	runBody := func(body []shell.Stmt) error {
-		for _, stmt := range body {
-			if err := execStmt(ctx, cli, mgr, session, stmt, loc, scriptErr); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	primary, err := check(s.Cond)
-	if err != nil {
-		return scriptErr("%s[repl] error: if: %v\n", loc, err)
-	}
-	if primary {
-		return runBody(s.Then)
-	}
-	for _, br := range s.Elifs {
-		match, err := check(br.Cond)
-		if err != nil {
-			return scriptErr("%s[repl] error: elif: %v\n", loc, err)
-		}
-		if match {
-			return runBody(br.Body)
-		}
-	}
-	if len(s.Else) > 0 {
-		return runBody(s.Else)
-	}
-	return nil
-}
-
-// makeCmdRunner builds a shell.CmdRunner that dispatches command
-// substitutions through the same pipeline used for bare commands:
-// shell builtins first (so [exec ...], [json parse ...], [file
-// temp ...] work inside let RHS and future if conditions), then
-// domain-command dispatch. Output from the inner command is
-// suppressed so binding does not clutter the terminal.
-//
-// The runner is self-referential: it uses itself to resolve nested
-// command substitutions that appear in an outer command's argument
-// list (e.g. `let x = [outer [inner args]]'), so nesting composes
-// naturally with the rest of the grammar.
-func makeCmdRunner(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) shell.CmdRunner {
-	var runner shell.CmdRunner
-	runner = func(innerArgs []shell.Arg) (shell.Value, error) {
-		resolved, err := resolveCmdSubs(innerArgs, runner)
+		handled, val, err := replShellCmd(ctx, cli, mgr, session, args, loc)
 		if err != nil {
 			return shell.Value{}, err
 		}
-		resolved = applyAlias(session, resolved)
-		if len(resolved) == 0 {
+		if handled {
+			return val, nil
+		}
+		return replDispatch(ctx, cli, mgr, args)
+	}
+}
+
+// makeExecSubstitution bridges the evaluator's CmdSubExpr dispatch.
+// Output is suppressed so bindings do not clutter the terminal; the
+// returned Value must be non-nil or the caller reports an error.
+// Alias expansion applies to the first argument before dispatch.
+func makeExecSubstitution(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
+	return func(args []shell.Arg) (shell.Value, error) {
+		args = applyAlias(session, args)
+		if len(args) == 0 {
 			return shell.Value{}, fmt.Errorf("empty command substitution")
 		}
 		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, resolved, loc)
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, args, loc)
 		if err != nil {
 			return shell.Value{}, err
 		}
 		if handled {
 			if val.IsNil() {
-				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(resolved[0]))
+				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(args[0]))
 			}
 			return val, nil
 		}
-		val, err = replDispatch(ctx, quiet, mgr, resolved)
+		val, err = replDispatch(ctx, quiet, mgr, args)
 		if err != nil {
 			return shell.Value{}, err
 		}
 		if val.IsNil() {
-			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(resolved[0]))
+			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(args[0]))
 		}
 		return val, nil
 	}
-	return runner
-}
-
-// resolveCmdSubs walks an argument list and evaluates any nested
-// shell.CmdSubArg entries via the supplied runner, replacing each
-// one with a ScalarValueArg or StructuredValueArg depending on the
-// inner command's return shape. Scalar results (strings, numbers,
-// booleans) flatten into argv text; structured results are
-// preserved so typed command parsers can still apply origin checks
-// and capability-interface extraction against them.
-//
-// A nested command that produces no assignable value or fails is
-// propagated as an error so the outer command does not execute
-// against a partial argument list.
-func resolveCmdSubs(args []shell.Arg, runner shell.CmdRunner) ([]shell.Arg, error) {
-	out := make([]shell.Arg, 0, len(args))
-	for _, a := range args {
-		cs, ok := a.(shell.CmdSubArg)
-		if !ok {
-			out = append(out, a)
-			continue
-		}
-		val, err := runner(cs.InnerArgs)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, fmt.Errorf("nested command substitution produced no value")
-		}
-		if val.IsStructured() {
-			out = append(out, shell.StructuredValueArg{Value: val})
-			continue
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, fmt.Errorf("nested command substitution: %w", err)
-		}
-		out = append(out, shell.ScalarValueArg{Text: s})
-	}
-	return out, nil
 }
 
 // argText extracts the text from a single Arg. For text-bearing
@@ -1830,15 +1690,17 @@ func isExprAssertion(args []shell.Arg) bool {
 	return false
 }
 
-// evalExprAssertion parses args as an expression, evaluates it, and
-// wraps the boolean result with an assertion-appropriate failure
-// message that describes the operands involved.
+// evalExprAssertion rebuilds an expression from the evaluated args,
+// evaluates it, and wraps the boolean result with an
+// assertion-appropriate failure message that describes the operands
+// involved.
 func evalExprAssertion(session *shell.Session, args []shell.Arg) (assertResult, error) {
-	expr, err := shell.ParseExpr(args)
+	expr, err := shell.ExprFromArgs(args)
 	if err != nil {
 		return assertResult{}, err
 	}
-	v, err := shell.Eval(expr, session, nil)
+	env := &shell.Env{Session: session}
+	v, err := shell.EvalExpr(expr, env)
 	if err != nil {
 		return assertResult{}, err
 	}
@@ -1891,12 +1753,12 @@ func formatExprFailure(e shell.Expr, session *shell.Session) string {
 
 // exprScalar is a best-effort scalar stringification of an expression
 // for inclusion in error messages. Non-scalar values render as their
-// kind; evaluation errors render as "<err>". Command substitutions
-// are not re-executed here (nil runner) — their result is already
-// part of the evaluated top-level; this helper is only called for
-// reconstructing operand text.
+// kind; evaluation errors render as "<err>". The Env has no
+// substitution runner, so any CmdSubExpr reached here would error —
+// this helper is only called on operand sub-expressions that have
+// already been evaluated once via EvalExpr at the top level.
 func exprScalar(e shell.Expr, session *shell.Session) string {
-	v, err := shell.Eval(e, session, nil)
+	v, err := shell.EvalExpr(e, &shell.Env{Session: session})
 	if err != nil {
 		return "<err>"
 	}

@@ -9,195 +9,173 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseStmt(t *testing.T) {
-	tests := []struct {
+// parseSource is a convenience that drives tokenisation and parsing
+// so tests can speak in terms of surface syntax.
+func parseSource(t *testing.T, src string) (*Program, error) {
+	t.Helper()
+	tokens, err := Tokenise(src)
+	require.NoError(t, err)
+	return Parse(tokens)
+}
+
+// firstStmt returns the single statement of a program, failing the
+// test if the program contains zero or more than one statement.
+func firstStmt(t *testing.T, prog *Program) Stmt {
+	t.Helper()
+	require.Len(t, prog.Stmts, 1)
+	return prog.Stmts[0]
+}
+
+func TestParse_SingleWordCommand(t *testing.T) {
+	prog, err := parseSource(t, "help")
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 1)
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "help", lit.Text)
+	assert.False(t, lit.Quoted)
+}
+
+func TestParse_PlainCommand(t *testing.T) {
+	prog, err := parseSource(t, "show program 123")
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 3)
+	for i, want := range []string{"show", "program", "123"} {
+		lit, ok := cmd.Args[i].(*LiteralExpr)
+		require.True(t, ok, "arg %d", i)
+		assert.Equal(t, want, lit.Text)
+	}
+}
+
+func TestParse_LetAssignment_Literal(t *testing.T) {
+	prog, err := parseSource(t, "let prog = 42")
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok)
+	assert.Equal(t, "prog", let.Name)
+	lit, ok := let.RHS.(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "42", lit.Text)
+}
+
+func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
+	// "load file" is two tokens, not a primary/unary/binary; the
+	// new parser surfaces this at parse time rather than at eval
+	// time as the legacy pipeline did.
+	_, err := parseSource(t, "let prog = load file")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unary predicate")
+}
+
+func TestParse_LetWithVarRef(t *testing.T) {
+	prog, err := parseSource(t, "let link = $prog")
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok)
+	assert.Equal(t, "link", let.Name)
+	ref, ok := let.RHS.(*VarRefExpr)
+	require.True(t, ok)
+	assert.Equal(t, "prog", ref.Name)
+}
+
+func TestParse_LetWithCmdSub(t *testing.T) {
+	prog, err := parseSource(t, "let x = [load file --path p]")
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok)
+	sub, ok := let.RHS.(*CmdSubExpr)
+	require.True(t, ok)
+	require.NotNil(t, sub.Inner)
+	require.Len(t, sub.Inner.Stmts, 1)
+	inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, inner.Args, 4)
+}
+
+func TestParse_LetErrors(t *testing.T) {
+	cases := []struct {
 		name    string
-		tokens  []Token
-		want    Stmt
+		input   string
 		wantErr string
 	}{
-		{
-			name:   "empty",
-			tokens: nil,
-			want:   nil,
-		},
-		{
-			name:   "single word command",
-			tokens: []Token{{Kind: TokenWord, Text: "help"}},
-			want:   &CommandStmt{Tokens: []Token{{Kind: TokenWord, Text: "help"}}},
-		},
-		{
-			name: "plain command",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "show"},
-				{Kind: TokenWord, Text: "program"},
-				{Kind: TokenWord, Text: "123"},
-			},
-			want: &CommandStmt{
-				Tokens: []Token{
-					{Kind: TokenWord, Text: "show"},
-					{Kind: TokenWord, Text: "program"},
-					{Kind: TokenWord, Text: "123"},
-				},
-			},
-		},
-		{
-			name: "let assignment",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "prog"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "load"},
-				{Kind: TokenWord, Text: "file"},
-			},
-			want: &LetStmt{
-				Name: "prog",
-				Command: []Token{
-					{Kind: TokenWord, Text: "load"},
-					{Kind: TokenWord, Text: "file"},
-				},
-			},
-		},
-		{
-			name: "let assignment with varrefs in command",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "link"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "attach"},
-				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
-			},
-			want: &LetStmt{
-				Name: "link",
-				Command: []Token{
-					{Kind: TokenWord, Text: "attach"},
-					{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
-				},
-			},
-		},
-		{
-			name: "let no command after equals",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "x"},
-				{Kind: TokenAssign, Text: "="},
-			},
-			wantErr: "let requires",
-		},
-		{
-			name: "let too few tokens",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "x"},
-			},
-			wantErr: "let requires",
-		},
-		{
-			name: "let missing equals",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "x"},
-				{Kind: TokenWord, Text: "load"},
-				{Kind: TokenWord, Text: "file"},
-			},
-			wantErr: "missing '='",
-		},
-		{
-			name: "let non-identifier LHS",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "let requires an identifier",
-		},
-		{
-			name: "let invalid identifier",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "let"},
-				{Kind: TokenWord, Text: "0bad"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "invalid variable name",
-		},
-		{
-			name: "bare ident-equals is a parse error",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "prog"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "load"},
-				{Kind: TokenWord, Text: "file"},
-			},
-			wantErr: "unexpected '='",
-		},
-		{
-			name: "varref then equals is a parse error",
-			tokens: []Token{
-				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "unexpected '='",
-		},
-		{
-			name: "quoted then equals is a parse error",
-			tokens: []Token{
-				{Kind: TokenQuoted, Text: "name"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "unexpected '='",
-		},
-		{
-			// Defensive: the tokeniser cannot produce a leading
-			// TokenAssign (isTokenStart requires at least one
-			// preceding token), but the parser rejects it anyway
-			// as a safety net.
-			name: "leading equals is a parse error (defensive)",
-			tokens: []Token{
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "unexpected '='",
-		},
-		{
-			name: "command with only varref",
-			tokens: []Token{
-				{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
-			},
-			want: &CommandStmt{
-				Tokens: []Token{
-					{Kind: TokenVarRef, Text: "$prog.id", VarName: "prog", VarPath: "id"},
-				},
-			},
-		},
-		{
-			name: "word without = is plain command",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "prog"},
-				{Kind: TokenWord, Text: "load"},
-			},
-			want: &CommandStmt{
-				Tokens: []Token{
-					{Kind: TokenWord, Text: "prog"},
-					{Kind: TokenWord, Text: "load"},
-				},
-			},
-		},
+		{"no command after equals", "let x =", "let requires"},
+		{"too few tokens", "let x", "let requires"},
+		{"missing equals", "let x load file", "missing '='"},
+		{"non-identifier LHS", "let $x = foo", "let requires an identifier"},
+		{"invalid identifier", "let 0bad = foo", "invalid variable name"},
+		{"second assign in RHS", "let x = a = b", "unexpected '='"},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseStmt(tt.tokens)
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestParse_BareAssignIsError(t *testing.T) {
+	_, err := parseSource(t, "prog = load file")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected '='")
+}
+
+func TestParse_AliasKeepsAssignAsLiteral(t *testing.T) {
+	// alias uses the = sigil syntactically; the parser must allow
+	// it through as a LiteralExpr so the alias command handler can
+	// see the classic "alias name = expansion" shape.
+	prog, err := parseSource(t, "alias b = bpfman")
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 4)
+	lit, ok := cmd.Args[2].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "=", lit.Text)
+}
+
+func TestParse_VarRefOnlyCommand(t *testing.T) {
+	prog, err := parseSource(t, "$prog.id")
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 1)
+	ref, ok := cmd.Args[0].(*VarRefExpr)
+	require.True(t, ok)
+	assert.Equal(t, "prog", ref.Name)
+	assert.Equal(t, "id", ref.Path)
+}
+
+func TestParse_EmptyProgram(t *testing.T) {
+	prog, err := parseSource(t, "")
+	require.NoError(t, err)
+	assert.Empty(t, prog.Stmts)
+}
+
+func TestParse_LocPropagation(t *testing.T) {
+	// Statements and expressions should carry Loc from their first
+	// token.  A multi-line program has different lines on each
+	// statement.
+	prog, err := parseSource(t, "help\nshow program")
+	require.NoError(t, err)
+	require.Len(t, prog.Stmts, 2)
+	first, ok := prog.Stmts[0].(*CommandStmt)
+	require.True(t, ok)
+	assert.Equal(t, 1, first.Loc.Line)
+	second, ok := prog.Stmts[1].(*CommandStmt)
+	require.True(t, ok)
+	assert.Equal(t, 2, second.Loc.Line)
+}
+
+func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
+	// A syntax error inside [ ... ] surfaces at the outer Parse
+	// call: eager inner parsing is a deliberate behavioural change
+	// documented in the refactor plan.
+	_, err := parseSource(t, "let x = [let y = ]")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "command substitution")
 }

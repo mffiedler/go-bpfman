@@ -201,9 +201,14 @@ func TestTokenise(t *testing.T) {
 			wantErr: "unterminated variable reference: missing }",
 		},
 		{
-			name:    "empty dollar",
-			input:   "$ ",
+			name:    "bare dollar at end of input",
+			input:   "$",
 			wantErr: "unexpected end of input after $",
+		},
+		{
+			name:    "dollar followed by whitespace",
+			input:   "$ ",
+			wantErr: "expected identifier after $",
 		},
 		{
 			name:    "empty braced varref",
@@ -449,7 +454,95 @@ func TestTokenise(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, stripLocs(got))
+		})
+	}
+}
+
+// stripLocs zeroes Loc fields on a slice of tokens so tests that
+// care about kind/text/etc. can compare against literals without
+// having to spell out every token's position. Dedicated Loc
+// assertions belong in TestTokeniseLoc.
+func stripLocs(tokens []Token) []Token {
+	if tokens == nil {
+		return nil
+	}
+	out := make([]Token, len(tokens))
+	for i, t := range tokens {
+		t.Loc = Loc{}
+		out[i] = t
+	}
+	return out
+}
+
+func TestTokeniseLoc(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		// wantLocs maps a token's 0-based index to its expected
+		// Loc. Only the listed tokens are checked.
+		wantLocs map[int]Loc
+	}{
+		{
+			name:     "single word starts at 1:1",
+			input:    "help",
+			wantLocs: map[int]Loc{0: {Line: 1, Col: 1}},
+		},
+		{
+			name:  "second word on same line",
+			input: "show program 123",
+			wantLocs: map[int]Loc{
+				0: {Line: 1, Col: 1},  // show
+				1: {Line: 1, Col: 6},  // program
+				2: {Line: 1, Col: 14}, // 123
+			},
+		},
+		{
+			name:  "tokens on later lines",
+			input: "first\nsecond\nthird",
+			wantLocs: map[int]Loc{
+				0: {Line: 1, Col: 1}, // first
+				1: {Line: 1, Col: 6}, // \n
+				2: {Line: 2, Col: 1}, // second
+				3: {Line: 2, Col: 7}, // \n
+				4: {Line: 3, Col: 1}, // third
+			},
+		},
+		{
+			name:  "leading whitespace shifts column",
+			input: "   help",
+			wantLocs: map[int]Loc{
+				0: {Line: 1, Col: 4},
+			},
+		},
+		{
+			name:  "varref and cmdsub carry start column",
+			input: "show $prog [inner cmd]",
+			wantLocs: map[int]Loc{
+				0: {Line: 1, Col: 1},  // show
+				1: {Line: 1, Col: 6},  // $prog
+				2: {Line: 1, Col: 12}, // [inner cmd]
+			},
+		},
+		{
+			name:  "token after comment preserves column",
+			input: "show # c\nnext",
+			wantLocs: map[int]Loc{
+				0: {Line: 1, Col: 1}, // show
+				1: {Line: 1, Col: 9}, // \n (comment body replaced with spaces)
+				2: {Line: 2, Col: 1}, // next
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Tokenise(tt.input)
+			require.NoError(t, err)
+			for idx, want := range tt.wantLocs {
+				require.Greater(t, len(got), idx, "token index %d out of range; got %d tokens", idx, len(got))
+				assert.Equal(t, want, got[idx].Loc, "token %d (%q)", idx, got[idx].Text)
+			}
 		})
 	}
 }

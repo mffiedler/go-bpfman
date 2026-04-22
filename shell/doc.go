@@ -1,81 +1,91 @@
 // Package shell implements the REPL language layer: tokenisation,
-// statement parsing, variable binding, structured field access, and
-// typed argument expansion.
+// parsing to an AST, expression evaluation, variable binding, and
+// structured field access.
 //
-// The package is pure -- it performs no I/O and depends only on the
+// The package is pure — it performs no I/O and depends only on the
 // standard library. It provides the language mechanics that sit
 // between the line editor and command dispatch.
 //
+// # Pipeline
+//
+// Input flows through three stages:
+//
+//	source → Tokenise → []Token → Parse → *Program → EvalProgram
+//
+//   - [Tokenise] produces a flat stream of [Token]s, each carrying
+//     its source line/column in a [Loc].
+//   - [Parse] builds a [Program] of typed AST nodes. Command
+//     substitutions are parsed eagerly so syntax errors inside [ ]
+//     surface at parse time.
+//   - [EvalProgram] walks the AST against an [Env] that bundles a
+//     [Session] with the callbacks that dispatch commands.
+//
 // # Statements
 //
-// Input lines are tokenised by [Tokenise] and parsed by [ParseStmt]
-// into one of three statement variants:
+// The parser produces three statement variants, all reachable via
+// the sealed [Stmt] interface:
 //
-//   - [LetStmt]: let name = command...
-//     Binds the result of a command to a variable. The command tokens
-//     are passed to the client for execution; the client stores the
-//     result back into the session.
+//   - [LetStmt]: let name = expr — bind the result of evaluating
+//     the RHS expression to a variable.
+//   - [IfStmt]: if cond { ... } [elif cond { ... }]* [else { ... }]
+//     — conditional branching, one primary branch plus any number
+//     of elifs and an optional else.
+//   - [CommandStmt]: a plain command invocation; the first arg
+//     names the command.
 //
-//   - [SetStmt]: set name = value
-//     Binds a scalar literal to a variable. The value is a single
-//     token (word, quoted string, or variable reference).
+// # Expressions
 //
-//   - [CommandStmt]: command arg...
-//     A plain command with no variable binding.
+// Expression nodes are reachable via the sealed [Expr] interface:
+//
+//   - [LiteralExpr], [VarRefExpr], [AdapterExpr], [CmdSubExpr] —
+//     primary forms.
+//   - [UnaryExpr] — a single-operand predicate (true, false,
+//     not-empty).
+//   - [BinaryExpr] — a two-operand comparison (eq/ne/lt/le/gt/ge,
+//     ==/!=/</</=/>/>=).
+//
+// Every AST node carries a [Loc] for diagnostic reporting.
 //
 // # Variable naming vs substitution
 //
-// A variable has a name and a value. The REPL distinguishes between
-// contexts that operate on the name and contexts that substitute the
-// value, using the $ sigil to mark the boundary:
+// A variable has a name and a value. The REPL distinguishes
+// contexts that operate on the name from contexts that substitute
+// the value, using the $ sigil to mark the boundary:
 //
-//   - Bare words name variables. The left-hand side of let and set
-//     uses the variable name directly. No $ prefix is needed because
-//     the statement operates on the variable itself, not its value.
+//   - Bare words name variables. The left-hand side of `let` uses
+//     the variable name directly.
+//   - The $ sigil substitutes a value. $prog means "replace this
+//     with the value prog holds".
+//   - Dotted paths reach into structure: $prog.record.program_id
+//     traverses a structured value to reach a scalar. Braced syntax
+//     ${prog.record.program_id} is also accepted.
 //
-//   - The $ sigil substitutes a value. When a command expects a
-//     concrete argument such as a program ID, $prog means "replace
-//     this with the value that prog holds".
+// # Args as the dispatch boundary
 //
-//   - Dotted paths reach into structure. $prog.record.program_id
-//     traverses the structured value and resolves to a scalar.
-//     Braced syntax ${prog.record.program_id} is also accepted.
-//
-// # Expansion and the Arg types
-//
-// [Session.Expand] resolves variable references in a token slice and
-// returns []Arg, a typed representation of the expanded arguments.
-// The [Arg] interface is a sealed sum type with four variants:
+// When the evaluator hands a command to [Env.ExecCommand] or
+// [Env.ExecSubstitution], it supplies a []Arg — a typed
+// post-evaluation representation whose variants preserve useful
+// distinctions that a plain []string would lose:
 //
 //   - [WordArg]: literal command text (command names, flags, paths,
 //     numeric IDs). Never came from a variable reference.
-//
-//   - [QuotedArg]: a quoted string literal, preserving the syntactic
-//     distinction from unquoted words.
-//
-//   - [ScalarValueArg]: a value produced by variable expansion. The
-//     original variable reference has been resolved to a string. This
-//     covers both scalar variables ($count) and dotted paths into
-//     structured values ($prog.record.program_id).
-//
-//   - [StructuredValueArg]: a bare reference to a structured variable
-//     ($prog with no field path). The resolved [Value] is carried
-//     directly so that command parsers can extract the relevant field
-//     without re-parsing dollar prefixes or calling session.Get.
-//
+//   - [QuotedArg]: a quoted string literal, preserving the
+//     syntactic distinction from unquoted words.
+//   - [ScalarValueArg]: a value produced by variable expansion, now
+//     resolved to a string. Covers both scalar variables ($count)
+//     and dotted paths ($prog.record.program_id).
+//   - [StructuredValueArg]: a bare reference to a structured
+//     variable. The resolved [Value] is carried directly so command
+//     parsers can apply typed extraction without re-parsing.
 //   - [AdapterArg]: an inline adapter invocation (file:$var.path).
-//     The adapter name, variable name, path, and resolved [Value]
-//     are carried so that command handlers can render the value to
-//     the appropriate transport form (e.g. a temporary file).
 //
-// This is the contract between shell and its clients. Clients
-// receive typed, structured arguments and never need to re-discover
-// variable references from strings.
+// This is the contract between the evaluator and its clients.
 //
 // # Session
 //
-// [Session] holds variable bindings for the REPL. Values are stored
-// as [Value], which may be scalar (a single string) or structured
-// (a JSON-like tree with optional origin metadata). The session
-// provides Set, Get, Delete, and Names for variable management.
+// [Session] holds variable bindings and first-token aliases for the
+// REPL. Values are stored as [Value], which may be scalar or
+// structured. The session provides Set, Get, Delete, and Names for
+// variables, plus SetAlias, GetAlias, DeleteAlias, and AliasNames
+// for aliases.
 package shell

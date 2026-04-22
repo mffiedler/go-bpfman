@@ -7,143 +7,87 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseExpr_Empty(t *testing.T) {
-	_, err := ParseExpr(nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "empty expression")
+// evalEnv returns an Env with the given session and no command
+// runners.  Suitable for expression tests that stay inside the
+// pure-evaluation layer.
+func evalEnv(s *Session) *Env {
+	return &Env{Session: s}
 }
 
-func TestParseExpr_Primary(t *testing.T) {
-	t.Run("word literal", func(t *testing.T) {
-		e, err := ParseExpr([]Arg{WordArg{Text: "foo"}})
-		require.NoError(t, err)
-		lit, ok := e.(*LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "foo", lit.Text)
-		assert.False(t, lit.Quoted)
-	})
-
-	t.Run("quoted literal", func(t *testing.T) {
-		e, err := ParseExpr([]Arg{QuotedArg{Text: "hello world"}})
-		require.NoError(t, err)
-		lit, ok := e.(*LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "hello world", lit.Text)
-		assert.True(t, lit.Quoted)
-	})
-
-	t.Run("scalar var reference", func(t *testing.T) {
-		e, err := ParseExpr([]Arg{ScalarValueArg{Text: "42"}})
-		require.NoError(t, err)
-		lit, ok := e.(*LiteralExpr)
-		require.True(t, ok)
-		assert.Equal(t, "42", lit.Text)
-	})
-
-	t.Run("bare structured reference", func(t *testing.T) {
-		e, err := ParseExpr([]Arg{StructuredValueArg{Name: "prog", Value: ValueFromMap(map[string]any{"x": 1})}})
-		require.NoError(t, err)
-		ref, ok := e.(*VarRefExpr)
-		require.True(t, ok)
-		assert.Equal(t, "prog", ref.Name)
-		assert.Empty(t, ref.Path)
-	})
-}
-
-func TestParseExpr_Unary(t *testing.T) {
-	e, err := ParseExpr([]Arg{
-		WordArg{Text: "not-empty"},
-		ScalarValueArg{Text: "foo"},
-	})
-	require.NoError(t, err)
-	unary, ok := e.(*UnaryExpr)
-	require.True(t, ok)
-	assert.Equal(t, "not-empty", unary.Pred)
-}
-
-func TestParseExpr_UnaryRejectsNonPred(t *testing.T) {
-	_, err := ParseExpr([]Arg{
-		WordArg{Text: "notapred"},
-		WordArg{Text: "operand"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unary predicate")
-}
-
-func TestParseExpr_Binary(t *testing.T) {
-	cases := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
-	for _, op := range cases {
-		t.Run(op, func(t *testing.T) {
-			e, err := ParseExpr([]Arg{
-				ScalarValueArg{Text: "1"},
-				WordArg{Text: op},
-				ScalarValueArg{Text: "2"},
-			})
-			require.NoError(t, err)
-			bin, ok := e.(*BinaryExpr)
-			require.True(t, ok)
-			assert.Equal(t, op, bin.Op)
-		})
-	}
-}
-
-func TestParseExpr_BinaryRejectsNonOp(t *testing.T) {
-	_, err := ParseExpr([]Arg{
-		WordArg{Text: "a"},
-		WordArg{Text: "bogus"},
-		WordArg{Text: "b"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "binary operator")
-}
-
-func TestParseExpr_TooManyArgs(t *testing.T) {
-	_, err := ParseExpr([]Arg{
-		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "4 operands")
-}
-
-func TestEval_Literal(t *testing.T) {
+func TestEvalExpr_Literal(t *testing.T) {
 	s := NewSession()
-	v, err := Eval(&LiteralExpr{Text: "hello"}, s, nil)
+	v, err := EvalExpr(&LiteralExpr{Text: "hello"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "hello", got)
 }
 
-func TestEval_VarRef_Bare(t *testing.T) {
+func TestEvalExpr_VarRef_Bare(t *testing.T) {
 	s := NewSession()
 	s.Set("x", StringValue("bound"))
-	v, err := Eval(&VarRefExpr{Name: "x"}, s, nil)
+	v, err := EvalExpr(&VarRefExpr{Name: "x"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "bound", got)
 }
 
-func TestEval_VarRef_Path(t *testing.T) {
+func TestEvalExpr_VarRef_Path(t *testing.T) {
 	s := NewSession()
 	s.Set("prog", ValueFromMap(map[string]any{
 		"record": map[string]any{"program_id": "42"},
 	}))
-	v, err := Eval(&VarRefExpr{Name: "prog", Path: "record.program_id"}, s, nil)
+	v, err := EvalExpr(&VarRefExpr{Name: "prog", Path: "record.program_id"}, evalEnv(s))
 	require.NoError(t, err)
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "42", got)
 }
 
-func TestEval_VarRef_Undefined(t *testing.T) {
+func TestEvalExpr_VarRef_Undefined(t *testing.T) {
 	s := NewSession()
-	_, err := Eval(&VarRefExpr{Name: "missing"}, s, nil)
+	_, err := EvalExpr(&VarRefExpr{Name: "missing"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `undefined variable "missing"`)
 }
 
-func TestEval_Binary_Textual(t *testing.T) {
+func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("hi"))
+	_, err := EvalExpr(&AdapterExpr{Adapter: "file", Name: "x"}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "adapter")
+}
+
+func TestEvalExpr_CmdSub_NoRunner(t *testing.T) {
+	s := NewSession()
+	e := &CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "foo"}}}}}}
+	_, err := EvalExpr(e, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not permitted")
+}
+
+func TestEvalExpr_CmdSub_DispatchesViaEnv(t *testing.T) {
+	s := NewSession()
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			require.Len(t, args, 1)
+			w, ok := args[0].(WordArg)
+			require.True(t, ok)
+			return StringValue("hello-" + w.Text), nil
+		},
+	}
+	e := &CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "foo"}}}}}}
+	v, err := EvalExpr(e, env)
+	require.NoError(t, err)
+	s2, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello-foo", s2)
+}
+
+func TestEvalExpr_Binary_Textual(t *testing.T) {
 	s := NewSession()
 	cases := []struct {
 		op         string
@@ -168,7 +112,7 @@ func TestEval_Binary_Textual(t *testing.T) {
 				Op:    tc.op,
 				Right: &LiteralExpr{Text: tc.right},
 			}
-			v, err := Eval(e, s, nil)
+			v, err := EvalExpr(e, evalEnv(s))
 			require.NoError(t, err)
 			assert.Equal(t, OriginBool, v.Kind())
 			b, err := AsBool(v)
@@ -178,7 +122,7 @@ func TestEval_Binary_Textual(t *testing.T) {
 	}
 }
 
-func TestEval_Binary_Numeric(t *testing.T) {
+func TestEvalExpr_Binary_Numeric(t *testing.T) {
 	s := NewSession()
 	cases := []struct {
 		op         string
@@ -193,7 +137,6 @@ func TestEval_Binary_Numeric(t *testing.T) {
 		{"<=", "3", "3", true},
 		{">", "5", "4", true},
 		{">=", "5", "5", true},
-		// Lexicographic would disagree with numeric on these.
 		{"<", "9", "10", true},
 		{">", "10", "9", true},
 	}
@@ -204,7 +147,7 @@ func TestEval_Binary_Numeric(t *testing.T) {
 				Op:    tc.op,
 				Right: &LiteralExpr{Text: tc.right},
 			}
-			v, err := Eval(e, s, nil)
+			v, err := EvalExpr(e, evalEnv(s))
 			require.NoError(t, err)
 			b, err := AsBool(v)
 			require.NoError(t, err)
@@ -213,54 +156,149 @@ func TestEval_Binary_Numeric(t *testing.T) {
 	}
 }
 
-func TestEval_Binary_NumericNonNumericError(t *testing.T) {
+func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
 	s := NewSession()
 	e := &BinaryExpr{
 		Left:  &LiteralExpr{Text: "abc"},
 		Op:    "<",
 		Right: &LiteralExpr{Text: "5"},
 	}
-	_, err := Eval(e, s, nil)
+	_, err := EvalExpr(e, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not numeric")
 }
 
-func TestEval_Unary_NotEmpty(t *testing.T) {
+func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	s.Set("y", StringValue(""))
 
 	e := &UnaryExpr{Pred: "not-empty", Operand: &VarRefExpr{Name: "x"}}
-	v, err := Eval(e, s, nil)
+	v, err := EvalExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err := AsBool(v)
 	require.NoError(t, err)
 	assert.True(t, b)
 
 	e = &UnaryExpr{Pred: "not-empty", Operand: &VarRefExpr{Name: "y"}}
-	v, err = Eval(e, s, nil)
+	v, err = EvalExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err = AsBool(v)
 	require.NoError(t, err)
 	assert.False(t, b)
 }
 
-func TestEval_Unary_TrueFalse(t *testing.T) {
+func TestEvalExpr_Unary_TrueFalse(t *testing.T) {
 	s := NewSession()
 	s.Set("flag", StringValue("true"))
 	e := &UnaryExpr{Pred: "true", Operand: &VarRefExpr{Name: "flag"}}
-	v, err := Eval(e, s, nil)
+	v, err := EvalExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err := AsBool(v)
 	require.NoError(t, err)
 	assert.True(t, b)
 
 	e = &UnaryExpr{Pred: "false", Operand: &VarRefExpr{Name: "flag"}}
-	v, err = Eval(e, s, nil)
+	v, err = EvalExpr(e, evalEnv(s))
 	require.NoError(t, err)
 	b, err = AsBool(v)
 	require.NoError(t, err)
 	assert.False(t, b)
+}
+
+func TestExprFromArgs_Primary(t *testing.T) {
+	t.Run("word literal", func(t *testing.T) {
+		e, err := ExprFromArgs([]Arg{WordArg{Text: "foo"}})
+		require.NoError(t, err)
+		lit, ok := e.(*LiteralExpr)
+		require.True(t, ok)
+		assert.Equal(t, "foo", lit.Text)
+		assert.False(t, lit.Quoted)
+	})
+	t.Run("quoted literal", func(t *testing.T) {
+		e, err := ExprFromArgs([]Arg{QuotedArg{Text: "hello world"}})
+		require.NoError(t, err)
+		lit, ok := e.(*LiteralExpr)
+		require.True(t, ok)
+		assert.Equal(t, "hello world", lit.Text)
+		assert.True(t, lit.Quoted)
+	})
+	t.Run("scalar var reference", func(t *testing.T) {
+		e, err := ExprFromArgs([]Arg{ScalarValueArg{Text: "42"}})
+		require.NoError(t, err)
+		lit, ok := e.(*LiteralExpr)
+		require.True(t, ok)
+		assert.Equal(t, "42", lit.Text)
+	})
+	t.Run("bare structured reference", func(t *testing.T) {
+		e, err := ExprFromArgs([]Arg{StructuredValueArg{Name: "prog", Value: ValueFromMap(map[string]any{"x": 1})}})
+		require.NoError(t, err)
+		ref, ok := e.(*VarRefExpr)
+		require.True(t, ok)
+		assert.Equal(t, "prog", ref.Name)
+		assert.Empty(t, ref.Path)
+	})
+}
+
+func TestExprFromArgs_Unary(t *testing.T) {
+	e, err := ExprFromArgs([]Arg{
+		WordArg{Text: "not-empty"},
+		ScalarValueArg{Text: "foo"},
+	})
+	require.NoError(t, err)
+	unary, ok := e.(*UnaryExpr)
+	require.True(t, ok)
+	assert.Equal(t, "not-empty", unary.Pred)
+}
+
+func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
+	_, err := ExprFromArgs([]Arg{
+		WordArg{Text: "notapred"},
+		WordArg{Text: "operand"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unary predicate")
+}
+
+func TestExprFromArgs_Binary(t *testing.T) {
+	ops := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
+	for _, op := range ops {
+		t.Run(op, func(t *testing.T) {
+			e, err := ExprFromArgs([]Arg{
+				ScalarValueArg{Text: "1"},
+				WordArg{Text: op},
+				ScalarValueArg{Text: "2"},
+			})
+			require.NoError(t, err)
+			bin, ok := e.(*BinaryExpr)
+			require.True(t, ok)
+			assert.Equal(t, op, bin.Op)
+		})
+	}
+}
+
+func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
+	_, err := ExprFromArgs([]Arg{
+		WordArg{Text: "a"},
+		WordArg{Text: "bogus"},
+		WordArg{Text: "b"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "binary operator")
+}
+
+func TestExprFromArgs_TooManyArgs(t *testing.T) {
+	_, err := ExprFromArgs([]Arg{
+		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "4 operands")
+}
+
+func TestExprFromArgs_Empty(t *testing.T) {
+	_, err := ExprFromArgs(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty expression")
 }
 
 func TestAsBool_RejectsNonBool(t *testing.T) {
@@ -296,4 +334,70 @@ func TestIsUnaryPred(t *testing.T) {
 	for _, s := range false_ {
 		assert.False(t, IsUnaryPred(s), s)
 	}
+}
+
+// Coverage for nested CmdSub dispatch via EvalArgs (replaces the
+// old resolveCmdSubs unit tests).
+
+func TestEvalArgs_CmdSub_FlattensScalar(t *testing.T) {
+	s := NewSession()
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			require.Len(t, args, 1)
+			w, ok := args[0].(WordArg)
+			require.True(t, ok)
+			assert.Equal(t, "inner", w.Text)
+			return StringValue("hello"), nil
+		},
+	}
+	exprs := []Expr{
+		&LiteralExpr{Text: "outer"},
+		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
+	}
+	out, err := EvalArgs(exprs, env)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	assert.Equal(t, WordArg{Text: "outer"}, out[0])
+	scalar, ok := out[1].(ScalarValueArg)
+	require.True(t, ok)
+	assert.Equal(t, "hello", scalar.Text)
+}
+
+func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
+	s := NewSession()
+	structured := ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram)
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			return structured, nil
+		},
+	}
+	exprs := []Expr{
+		&LiteralExpr{Text: "outer"},
+		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
+	}
+	out, err := EvalArgs(exprs, env)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	sva, ok := out[1].(StructuredValueArg)
+	require.True(t, ok)
+	assert.Equal(t, "", sva.Name)
+	assert.Equal(t, OriginProgram, sva.Value.Kind())
+}
+
+func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
+	s := NewSession()
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			return Value{}, nil
+		},
+	}
+	exprs := []Expr{
+		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
+	}
+	_, err := EvalArgs(exprs, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "produced no value")
 }

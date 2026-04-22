@@ -1,9 +1,6 @@
 package shell
 
-import (
-	"fmt"
-	"sort"
-)
+import "sort"
 
 // Session holds variable bindings and aliases for the REPL. It is
 // the runtime state that persists across commands within a session.
@@ -84,101 +81,4 @@ func (s *Session) AliasNames() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// Expand resolves all variable references in the token slice against
-// this session's bindings and returns typed arguments. Scalar
-// references are resolved eagerly to ScalarValueArg. Bare structured
-// references become StructuredValueArg, preserving the Value for
-// typed consumption by command parsers. Command substitutions
-// [cmd args...] recursively tokenise and expand their inner text,
-// producing a CmdSubArg that the evaluator dispatches via a
-// CmdRunner. Non-variable tokens become WordArg or QuotedArg.
-func (s *Session) Expand(tokens []Token) ([]Arg, error) {
-	result := make([]Arg, 0, len(tokens))
-	for _, tok := range tokens {
-		if tok.Kind == TokenCmdSub {
-			innerTokens, err := Tokenise(tok.Inner)
-			if err != nil {
-				return nil, fmt.Errorf("command substitution: %w", err)
-			}
-			innerArgs, err := s.Expand(innerTokens)
-			if err != nil {
-				return nil, fmt.Errorf("command substitution: %w", err)
-			}
-			result = append(result, CmdSubArg{InnerArgs: innerArgs})
-			continue
-		}
-
-		if tok.Kind == TokenAdapterRef {
-			v, ok := s.vars[tok.VarName]
-			if !ok {
-				return nil, fmt.Errorf("undefined variable: %s", tok.VarName)
-			}
-			resolved := v
-			if tok.VarPath != "" {
-				var err error
-				resolved, err = v.LookupValue(tok.VarName, tok.VarPath)
-				if err != nil {
-					return nil, err
-				}
-			}
-			if resolved.IsNil() {
-				return nil, fmt.Errorf("adapter %s: variable %s is null", tok.Adapter, tok.VarName)
-			}
-			result = append(result, AdapterArg{
-				Adapter: tok.Adapter,
-				Name:    tok.VarName,
-				Path:    tok.VarPath,
-				Value:   resolved,
-			})
-			continue
-		}
-
-		if tok.Kind != TokenVarRef {
-			switch tok.Kind {
-			case TokenQuoted:
-				result = append(result, QuotedArg{Text: tok.Text})
-			default:
-				result = append(result, WordArg{Text: tok.Text})
-			}
-			continue
-		}
-
-		v, ok := s.vars[tok.VarName]
-		if !ok {
-			return nil, fmt.Errorf("undefined variable: %s", tok.VarName)
-		}
-
-		if tok.VarPath == "" {
-			// Bare reference to variable.
-			if v.IsStructured() {
-				result = append(result, StructuredValueArg{
-					Name:  tok.VarName,
-					Value: v,
-				})
-				continue
-			}
-			if v.IsNil() {
-				return nil, fmt.Errorf("variable %s is null", tok.VarName)
-			}
-			str, err := v.Scalar()
-			if err != nil {
-				return nil, fmt.Errorf("variable %s: %w", tok.VarName, err)
-			}
-			result = append(result, ScalarValueArg{Text: str})
-			continue
-		}
-
-		resolved, err := v.Lookup(tok.VarName, tok.VarPath)
-		if err != nil {
-			return nil, err
-		}
-		str, err := resolved.Scalar()
-		if err != nil {
-			return nil, fmt.Errorf("variable %s.%s: %w", tok.VarName, tok.VarPath, err)
-		}
-		result = append(result, ScalarValueArg{Text: str})
-	}
-	return result, nil
 }

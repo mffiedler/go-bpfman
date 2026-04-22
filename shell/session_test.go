@@ -243,7 +243,7 @@ func TestSessionExpand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newSession()
-			got, err := s.Expand(tt.tokens)
+			got, err := evalArgsForTest(s, tt.tokens)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -253,6 +253,29 @@ func TestSessionExpand(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// evalArgsForTest mirrors the old Session.Expand surface: it turns a
+// token slice into evaluated []Arg by building a primary expression
+// per token and running them through EvalArgs. Tests use this to keep
+// their table-driven shape — the production pipeline goes
+// tokens → Parse → EvalArgs, which exercises the same helpers.
+func evalArgsForTest(s *Session, tokens []Token) ([]Arg, error) {
+	exprs := make([]Expr, 0, len(tokens))
+	for _, tok := range tokens {
+		e, err := parsePrimary(tok)
+		if err != nil {
+			return nil, err
+		}
+		exprs = append(exprs, e)
+	}
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func([]Arg) (Value, error) {
+			return Value{}, nil
+		},
+	}
+	return EvalArgs(exprs, env)
 }
 
 func TestSessionAssertFailures(t *testing.T) {
@@ -289,7 +312,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref with scalar value", func(t *testing.T) {
 		s := newSession()
-		got, err := s.Expand([]Token{
+		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$simple", Adapter: "file", VarName: "simple"},
 		})
 		require.NoError(t, err)
@@ -306,7 +329,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref with bare structured value", func(t *testing.T) {
 		s := newSession()
-		got, err := s.Expand([]Token{
+		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog", Adapter: "file", VarName: "prog"},
 		})
 		require.NoError(t, err)
@@ -318,7 +341,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref with pathed structured subtree", func(t *testing.T) {
 		s := newSession()
-		got, err := s.Expand([]Token{
+		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog.details", Adapter: "file", VarName: "prog", VarPath: "details"},
 		})
 		require.NoError(t, err)
@@ -330,7 +353,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref with pathed scalar leaf", func(t *testing.T) {
 		s := newSession()
-		got, err := s.Expand([]Token{
+		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog.name", Adapter: "file", VarName: "prog", VarPath: "name"},
 		})
 		require.NoError(t, err)
@@ -345,7 +368,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref with undefined variable", func(t *testing.T) {
 		s := newSession()
-		_, err := s.Expand([]Token{
+		_, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$unknown", Adapter: "file", VarName: "unknown"},
 		})
 		require.Error(t, err)
@@ -355,7 +378,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	t.Run("adapter ref with null value", func(t *testing.T) {
 		s := newSession()
 		s.Set("n", Value{})
-		_, err := s.Expand([]Token{
+		_, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$n", Adapter: "file", VarName: "n"},
 		})
 		require.Error(t, err)
@@ -364,7 +387,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 
 	t.Run("adapter ref mixed with normal tokens", func(t *testing.T) {
 		s := newSession()
-		got, err := s.Expand([]Token{
+		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenWord, Text: "diff"},
 			{Kind: TokenAdapterRef, Text: "file:$prog.name", Adapter: "file", VarName: "prog", VarPath: "name"},
 			{Kind: TokenAdapterRef, Text: "file:$simple", Adapter: "file", VarName: "simple"},
@@ -381,7 +404,7 @@ func TestSessionExpandNilVariable(t *testing.T) {
 	s := NewSession()
 	s.Set("n", Value{}) // nil value
 
-	_, err := s.Expand([]Token{
+	_, err := evalArgsForTest(s, []Token{
 		{Kind: TokenVarRef, Text: "$n", VarName: "n"},
 	})
 	require.Error(t, err)

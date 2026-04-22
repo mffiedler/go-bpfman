@@ -50,17 +50,8 @@ type AdapterArg struct {
 	Value   Value
 }
 
-// CmdSubArg is a command substitution [cmd args...]. The inner args
-// are the result of recursively tokenising and expanding the raw
-// content between the brackets against the current session. The
-// evaluator dispatches them via a CmdRunner to produce a Value.
-type CmdSubArg struct {
-	InnerArgs []Arg
-}
-
 func (WordArg) isArg()            {}
 func (QuotedArg) isArg()          {}
 func (ScalarValueArg) isArg()     {}
 func (StructuredValueArg) isArg() {}
 func (AdapterArg) isArg()         {}
-func (CmdSubArg) isArg()          {}

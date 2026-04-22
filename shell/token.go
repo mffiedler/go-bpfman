@@ -11,6 +11,14 @@ import (
 // token recognition.
 var adapterPrefixes = []string{"file"}
 
+// Loc is a source location. Line and Col are 1-based; Col is a byte
+// offset within the line, not a rune offset. The zero value means
+// "unknown location".
+type Loc struct {
+	Line int
+	Col  int
+}
+
 // TokenKind classifies a lexed token.
 type TokenKind int
 
@@ -46,6 +54,7 @@ type Token struct {
 	VarPath string // field path for TokenVarRef and TokenAdapterRef (empty if bare)
 	Adapter string // adapter name for TokenAdapterRef (e.g. "file")
 	Inner   string // raw inner text for TokenCmdSub (between brackets)
+	Loc     Loc    // source location of the token's first byte
 }
 
 // Tokenise lexes input into tokens. It strips comments (# and
@@ -53,11 +62,19 @@ type Token struct {
 // recognises variable references, quoted strings, standalone = at
 // token boundaries, and plain words.
 func Tokenise(input string) ([]Token, error) {
-	// Strip comment: find first unquoted #.
+	// stripComment preserves offsets by replacing stripped bytes
+	// with spaces, so positions into the returned string still map
+	// back to the original input's line/column.
 	input = stripComment(input)
-	input = strings.TrimSpace(input)
-	if input == "" {
+	if strings.TrimSpace(input) == "" {
 		return nil, nil
+	}
+
+	lineStarts := buildLineStarts(input)
+
+	emit := func(tokens []Token, start int, tok Token) []Token {
+		tok.Loc = locAt(start, lineStarts)
+		return append(tokens, tok)
 	}
 
 	var tokens []Token
@@ -71,22 +88,23 @@ func Tokenise(input string) ([]Token, error) {
 			continue
 		}
 
+		start := i
 		switch {
 		case ch == '\n' || ch == ';':
-			tokens = append(tokens, Token{Kind: TokenSep, Text: string(ch)})
+			tokens = emit(tokens, start, Token{Kind: TokenSep, Text: string(ch)})
 			i++
 
 		case ch == '{' || ch == '}':
-			tokens = append(tokens, Token{Kind: TokenWord, Text: string(ch)})
+			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
 		case ch == '=' && isTokenStart(tokens):
 			// Distinguish == (comparison) from = (assignment).
 			if i+1 < len(input) && input[i+1] == '=' {
-				tokens = append(tokens, Token{Kind: TokenWord, Text: "=="})
+				tokens = emit(tokens, start, Token{Kind: TokenWord, Text: "=="})
 				i += 2
 			} else {
-				tokens = append(tokens, Token{Kind: TokenAssign, Text: "="})
+				tokens = emit(tokens, start, Token{Kind: TokenAssign, Text: "="})
 				i++
 			}
 
@@ -95,7 +113,7 @@ func Tokenise(input string) ([]Token, error) {
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, tok)
+			tokens = emit(tokens, start, tok)
 			i += n
 
 		case ch == '"' || ch == '\'':
@@ -103,7 +121,7 @@ func Tokenise(input string) ([]Token, error) {
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, tok)
+			tokens = emit(tokens, start, tok)
 			i += n
 
 		case ch == '[':
@@ -111,7 +129,7 @@ func Tokenise(input string) ([]Token, error) {
 			if err != nil {
 				return nil, err
 			}
-			tokens = append(tokens, tok)
+			tokens = emit(tokens, start, tok)
 			i += n
 
 		case ch == ']':
@@ -119,17 +137,46 @@ func Tokenise(input string) ([]Token, error) {
 
 		default:
 			if tok, n, ok := lexAdapterRef(input, i); ok {
-				tokens = append(tokens, tok)
+				tokens = emit(tokens, start, tok)
 				i += n
 			} else {
 				tok, n := lexWord(input, i)
-				tokens = append(tokens, tok)
+				tokens = emit(tokens, start, tok)
 				i += n
 			}
 		}
 	}
 
 	return tokens, nil
+}
+
+// buildLineStarts returns the byte offset at which each line begins.
+// Line 1 starts at offset 0; line k+1 starts at the byte following
+// the (k)th newline.
+func buildLineStarts(input string) []int {
+	starts := []int{0}
+	for i := 0; i < len(input); i++ {
+		if input[i] == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	return starts
+}
+
+// locAt returns the 1-based line/column for a byte offset. The
+// column is a byte offset within the line, counting from 1.
+func locAt(pos int, lineStarts []int) Loc {
+	// Binary search for the largest k with lineStarts[k] <= pos.
+	lo, hi := 0, len(lineStarts)-1
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if lineStarts[mid] <= pos {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return Loc{Line: lo + 1, Col: pos - lineStarts[lo] + 1}
 }
 
 // isTokenStart returns true when the current position is at a token
@@ -145,36 +192,38 @@ func isTokenStart(tokens []Token) bool {
 	return len(tokens) > 0
 }
 
-// stripComment removes inline comments from input. A comment starts
-// at an unquoted '#' and extends to the next newline (or end of
-// input). Newlines themselves are preserved so accumulated
-// multi-line input (e.g. an if block spanning lines) survives.
+// stripComment replaces inline comments with spaces while preserving
+// byte offsets so downstream line/column tracking still matches the
+// original input. A comment starts at an unquoted '#' and extends to
+// (but does not include) the next newline, which is left intact so
+// accumulated multi-line input (e.g. an if block spanning lines) still
+// sees the separator.
 func stripComment(input string) string {
-	var b strings.Builder
-	b.Grow(len(input))
+	b := make([]byte, 0, len(input))
 	inSingle := false
 	inDouble := false
-	for i := 0; i < len(input); i++ {
+	for i := 0; i < len(input); {
 		ch := input[i]
 		switch {
 		case ch == '\'' && !inDouble:
 			inSingle = !inSingle
-			b.WriteByte(ch)
+			b = append(b, ch)
+			i++
 		case ch == '"' && !inSingle:
 			inDouble = !inDouble
-			b.WriteByte(ch)
+			b = append(b, ch)
+			i++
 		case ch == '#' && !inSingle && !inDouble:
 			for i < len(input) && input[i] != '\n' {
+				b = append(b, ' ')
 				i++
 			}
-			if i < len(input) {
-				b.WriteByte('\n')
-			}
 		default:
-			b.WriteByte(ch)
+			b = append(b, ch)
+			i++
 		}
 	}
-	return b.String()
+	return string(b)
 }
 
 // lexVarRef lexes a variable reference starting at input[pos] which
