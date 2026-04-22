@@ -41,6 +41,14 @@ const (
 	// Inner field carries the raw inner text (without the outer
 	// brackets); Expand recursively tokenises and expands it.
 	TokenCmdSub
+	// TokenExprSub is an expression substitution [[expr]]. The
+	// Inner field carries the raw inner text (without the outer
+	// double brackets); the parser retokenises it in strict mode
+	// via TokeniseStrict and parses as a single expression.  The
+	// strict mode treats '-' and '/' as operator tokens regardless
+	// of whitespace, so [[4/2]] and [[$x - 1]] split the way
+	// arithmetic expects rather than the way paths and flags do.
+	TokenExprSub
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
@@ -65,11 +73,28 @@ type Token struct {
 	Loc     Loc    // source location of the token's first byte
 }
 
-// Tokenise lexes input into tokens. It strips comments (# and
-// everything after it, unless the # appears inside a quoted string),
-// recognises variable references, quoted strings, standalone = at
-// token boundaries, and plain words.
+// Tokenise lexes input in shell mode: '-' and '/' are valid
+// word-interior characters so paths like /sys/fs/bpf and flags
+// like -x and --long stay whole.  Arithmetic operators '+', '*',
+// and '%' still split without whitespace, matching the status
+// quo.  See TokeniseStrict for the mode used inside [[...]] where
+// '-' and '/' are also operators.
 func Tokenise(input string) ([]Token, error) {
+	return tokenise(input, false)
+}
+
+// TokeniseStrict lexes input in strict expression mode: '-', '/',
+// '+', '*', and '%' all emit as single-character tokens regardless
+// of surrounding whitespace.  This is the mode used inside
+// [[...]] so expressions like [[4/2]] and [[$x-1]] split
+// arithmetically rather than keeping '/' and '-' as word-interior
+// characters.  Paths and flags appearing inside [[...]] must be
+// quoted — "/sys/fs/bpf" rather than /sys/fs/bpf.
+func TokeniseStrict(input string) ([]Token, error) {
+	return tokenise(input, true)
+}
+
+func tokenise(input string, strict bool) ([]Token, error) {
 	// stripComment preserves offsets by replacing stripped bytes
 	// with spaces, so positions into the returned string still map
 	// back to the original input's line/column.
@@ -116,6 +141,14 @@ func Tokenise(input string) ([]Token, error) {
 			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
+		case strict && (ch == '-' || ch == '/'):
+			// In strict mode '-' and '/' join '+', '*', '%' as
+			// single-char operator tokens.  Callers that reach
+			// strict mode are inside [[...]] where paths and
+			// negative literals do not appear bare.
+			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
+			i++
+
 		case ch == '=' && isTokenStart(tokens):
 			// Distinguish == (comparison) from = (assignment).
 			if i+1 < len(input) && input[i+1] == '=' {
@@ -143,12 +176,21 @@ func Tokenise(input string) ([]Token, error) {
 			i += n
 
 		case ch == '[':
-			tok, n, err := lexCmdSub(input, i)
-			if err != nil {
-				return nil, err
+			if i+1 < len(input) && input[i+1] == '[' {
+				tok, n, err := lexExprSub(input, i)
+				if err != nil {
+					return nil, err
+				}
+				tokens = emit(tokens, start, tok)
+				i += n
+			} else {
+				tok, n, err := lexCmdSub(input, i)
+				if err != nil {
+					return nil, err
+				}
+				tokens = emit(tokens, start, tok)
+				i += n
 			}
-			tokens = emit(tokens, start, tok)
-			i += n
 
 		case ch == ']':
 			return nil, fmt.Errorf("unmatched ']'")
@@ -166,7 +208,7 @@ func Tokenise(input string) ([]Token, error) {
 				tokens = emit(tokens, start, tok)
 				i += n
 			} else {
-				tok, n := lexWord(input, i)
+				tok, n := lexWord(input, i, strict)
 				tokens = emit(tokens, start, tok)
 				i += n
 			}
@@ -397,6 +439,65 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 	return tok, i - pos, nil
 }
 
+// lexExprSub lexes an expression substitution [[expr]].  The
+// caller guarantees input[pos:pos+2] == "[[".  Nested "[[...]]"
+// and "[...]" are both recognised so the inner span may contain
+// further substitutions; quoted strings are skipped so a ']' or
+// ']]' inside a string does not close the substitution.  The
+// returned token's Inner field carries the raw content between
+// the outer double brackets, which the parser retokenises via
+// TokeniseStrict at parse time.
+func lexExprSub(input string, pos int) (Token, int, error) {
+	depth := 1
+	i := pos + 2
+	for i < len(input) {
+		// Prefer the two-character sigils over single brackets
+		// so "[[" and "]]" are recognised before a lone '[' /
+		// ']' handler has a chance to fire.
+		if i+1 < len(input) && input[i] == '[' && input[i+1] == '[' {
+			depth++
+			i += 2
+			continue
+		}
+		if i+1 < len(input) && input[i] == ']' && input[i+1] == ']' {
+			depth--
+			if depth == 0 {
+				inner := input[pos+2 : i]
+				tok := Token{
+					Kind:  TokenExprSub,
+					Text:  input[pos : i+2],
+					Inner: inner,
+				}
+				return tok, i + 2 - pos, nil
+			}
+			i += 2
+			continue
+		}
+		switch input[i] {
+		case '[':
+			// A lone '[' opens a nested command substitution.
+			// Delegate to lexCmdSub so its own depth counter
+			// matches the nested brackets correctly.
+			_, n, err := lexCmdSub(input, i)
+			if err != nil {
+				return Token{}, 0, err
+			}
+			i += n
+		case ']':
+			return Token{}, 0, fmt.Errorf("unmatched ']' inside [[...]]; closing brackets must come in pairs")
+		case '"', '\'':
+			_, n, err := lexQuoted(input, i)
+			if err != nil {
+				return Token{}, 0, err
+			}
+			i += n
+		default:
+			i++
+		}
+	}
+	return Token{}, 0, fmt.Errorf("unterminated expression substitution: missing ']]'")
+}
+
 // lexCmdSub lexes a command substitution [cmd args...]. The brackets
 // nest; quoted strings inside are skipped so a `]` inside a string
 // does not close the substitution. The returned token's Inner field
@@ -459,12 +560,14 @@ func lexQuoted(input string, pos int) (Token, int, error) {
 // Brackets and braces are terminators because they introduce or
 // close command substitution and block syntax respectively.
 // '+', '*', and '%' are terminators so "1+1" and "$x*2" split
-// without requiring whitespace around the operator.  '-' and
-// '/' stay as word-interior characters: '-' is part of negative
-// literals ("-3"), flags ("-x", "--long"); '/' is part of file
-// paths ("/sys/fs/bpf").  Expressions using '-' or '/' as
-// binary operators therefore still need whitespace around them.
-func lexWord(input string, pos int) (Token, int) {
+// without requiring whitespace around the operator.
+//
+// In shell mode '-' and '/' stay as word-interior characters: '-'
+// is part of negative literals ("-3") and flags ("-x", "--long");
+// '/' is part of file paths ("/sys/fs/bpf").  In strict mode (set
+// inside [[...]]) '-' and '/' are terminators too so "4/2" and
+// "$x-1" split arithmetically.
+func lexWord(input string, pos int, strict bool) (Token, int) {
 	i := pos
 	for i < len(input) {
 		ch := input[i]
@@ -473,6 +576,9 @@ func lexWord(input string, pos int) (Token, int) {
 			ch == '[' || ch == ']' || ch == '{' || ch == '}' ||
 			ch == '(' || ch == ')' ||
 			ch == '+' || ch == '*' || ch == '%' {
+			break
+		}
+		if strict && (ch == '-' || ch == '/') {
 			break
 		}
 		i++

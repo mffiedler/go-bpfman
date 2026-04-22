@@ -262,11 +262,14 @@ if (not-empty $progs) and ($count gt 0) { dump progs }
 
 # ---- 19a. Arithmetic operators ----
 
-# Binary arithmetic: '+', '-', '*', '/', '%'.  Whitespace is
-# required around each operator; the tokeniser treats the
-# characters as word-constituents so `$x+1' tokenises as a
-# single word and fails to parse.  Unary '-' negates any
-# expression.
+# Binary arithmetic: '+', '-', '*', '/', '%'.  In shell-mode
+# (everywhere outside `[[...]]') '+', '*', '%' split without
+# surrounding whitespace because they cannot appear in paths,
+# flags, or negative literals; '-' and '/' stay word-interior
+# there so `/sys/fs/bpf' and `-x' tokenise whole, which means
+# arithmetic using '-' or '/' at shell-mode level requires
+# whitespace or the `[[...]]' expression-sub form.  Unary '-'
+# negates any expression.
 
 let count    = 10
 let doubled  = $count * 2
@@ -284,6 +287,33 @@ if $count + 1 > $halved * 3 { dump $count }
 # Auto-printed expression statements.
 $count + 1
 -$count
+
+# ---- 19b. Expression substitution `[[...]]' ----
+
+# `[[expr]]' evaluates an expression with strict tokenisation:
+# '-' and '/' split without whitespace so arithmetic reads the
+# way a calculator expects.  Use it wherever you want a value
+# from a computation — as a `let' RHS, a command argument, or
+# typed bare at the prompt (auto-printed).
+
+let half     = [[1 / 2]]           # 0.5
+let quarter  = [[1/4]]             # 0.25 — no whitespace needed
+let diff     = [[10-3]]            # 7
+let scaled   = [[$count * 2 + 1]]  # mixed precedence
+
+# Expression in command-argument position.
+dump [[$count * 2]]
+
+# Expression in a condition, auto-entering expression grammar.
+if [[$count - 1]] gt 0 { dump $count }
+
+# `[cmd args]' stays command substitution; the parser rejects
+# misuse at parse time and points at `[[...]]'.  `[1/2]' and
+# `[1 + 1]' are errors now — see `dump [[1/2]]' above.  A
+# command substitution may still be used as an operand inside
+# `[[...]]' provided the command produces a scalar; structured
+# results (e.g. `[exec echo 5]', which binds a record with
+# stdout/stderr/exit_code) need a field accessor first.
 
 # ---- 20. Value-threading with `|>' ----
 

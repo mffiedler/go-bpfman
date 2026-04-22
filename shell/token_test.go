@@ -511,6 +511,124 @@ func TestTokenise(t *testing.T) {
 	}
 }
 
+func TestTokeniseExprSub(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []Token
+		wantErr string
+	}{
+		{
+			name:  "bare double brackets around arithmetic",
+			input: "[[1 + 2]]",
+			want: []Token{
+				{Kind: TokenExprSub, Text: "[[1 + 2]]", Inner: "1 + 2"},
+			},
+		},
+		{
+			name:  "no whitespace around slash",
+			input: "[[4/2]]",
+			want: []Token{
+				{Kind: TokenExprSub, Text: "[[4/2]]", Inner: "4/2"},
+			},
+		},
+		{
+			name:  "nested command substitution is consumed",
+			input: "[[1 + [count]]]",
+			want: []Token{
+				{Kind: TokenExprSub, Text: "[[1 + [count]]]", Inner: "1 + [count]"},
+			},
+		},
+		{
+			name:  "quoted right bracket does not close sigil",
+			input: `[[$x eq "]]"]]`,
+			want: []Token{
+				{Kind: TokenExprSub, Text: `[[$x eq "]]"]]`, Inner: `$x eq "]]"`},
+			},
+		},
+		{
+			name:    "unterminated",
+			input:   "[[1 + 2",
+			wantErr: "unterminated expression substitution",
+		},
+		{
+			name:    "unmatched single close inside",
+			input:   "[[a ] b]]",
+			wantErr: "unmatched ']'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Tokenise(tt.input)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, stripLocs(got))
+		})
+	}
+}
+
+func TestTokeniseStrict(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []Token
+	}{
+		{
+			name:  "slash splits without whitespace",
+			input: "4/2",
+			want: []Token{
+				{Kind: TokenWord, Text: "4"},
+				{Kind: TokenWord, Text: "/"},
+				{Kind: TokenWord, Text: "2"},
+			},
+		},
+		{
+			name:  "minus splits without whitespace",
+			input: "$x-1",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$x", VarName: "x"},
+				{Kind: TokenWord, Text: "-"},
+				{Kind: TokenWord, Text: "1"},
+			},
+		},
+		{
+			name:  "all arithmetic operators split",
+			input: "1+2-3*4/5%6",
+			want: []Token{
+				{Kind: TokenWord, Text: "1"},
+				{Kind: TokenWord, Text: "+"},
+				{Kind: TokenWord, Text: "2"},
+				{Kind: TokenWord, Text: "-"},
+				{Kind: TokenWord, Text: "3"},
+				{Kind: TokenWord, Text: "*"},
+				{Kind: TokenWord, Text: "4"},
+				{Kind: TokenWord, Text: "/"},
+				{Kind: TokenWord, Text: "5"},
+				{Kind: TokenWord, Text: "%"},
+				{Kind: TokenWord, Text: "6"},
+			},
+		},
+		{
+			name:  "quoted path stays whole",
+			input: `"/sys/fs/bpf"`,
+			want: []Token{
+				{Kind: TokenQuoted, Text: "/sys/fs/bpf"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := TokeniseStrict(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, stripLocs(got))
+		})
+	}
+}
+
 // stripLocs zeroes Loc fields on a slice of tokens so tests that
 // care about kind/text/etc. can compare against literals without
 // having to spell out every token's position. Dedicated Loc

@@ -1187,3 +1187,104 @@ func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "11", got)
 }
+
+func TestEvalExpr_ExprSub_Arithmetic(t *testing.T) {
+	// [[expr]] uses strict tokenisation so '-' and '/' split
+	// without surrounding whitespace.  Each case here would
+	// either error or return a string under the shell
+	// tokenisation used inside [cmd].
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"division no whitespace", "[[4/2]]", "2"},
+		{"division fractional", "[[1/2]]", "0.5"},
+		{"subtraction no whitespace", "[[3-1]]", "2"},
+		{"modulo no whitespace", "[[8%3]]", "2"},
+		{"multiplication", "[[10*5]]", "50"},
+		{"addition with whitespace still works", "[[4 + 2]]", "6"},
+		{"mixed precedence", "[[2+3*4]]", "14"},
+		{"grouping with parens", "[[(2+3)*4]]", "20"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog, err := parseSource(t, "let x = "+tc.input)
+			require.NoError(t, err)
+			s := NewSession()
+			require.NoError(t, EvalProgram(prog, evalEnv(s)))
+			v, ok := s.Get("x")
+			require.True(t, ok)
+			got, err := v.Scalar()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestEvalExpr_ExprSub_VarRef(t *testing.T) {
+	// Expression substitutions read session variables and
+	// combine them with arithmetic just like any other
+	// expression.
+	prog, err := parseSource(t, "let count = 21\nlet n = [[$count*2]]")
+	require.NoError(t, err)
+	s := NewSession()
+	require.NoError(t, EvalProgram(prog, evalEnv(s)))
+	v, ok := s.Get("n")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "42", got)
+}
+
+func TestEvalExpr_ExprSub_InCondition(t *testing.T) {
+	// `if [[$count - 1]] gt 0 { ... }`: condition grammar is
+	// already expression-mode at the parser level, so an
+	// expression substitution is a legal primary whose numeric
+	// result feeds into the comparison.
+	s := NewSession()
+	s.Set("count", StringValue("5"))
+	prog, err := parseSource(t, "let out = 0\nif [[$count - 1]] gt 0 { let out = 1 }")
+	require.NoError(t, err)
+	require.NoError(t, EvalProgram(prog, evalEnv(s)))
+	v, ok := s.Get("out")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "1", got)
+}
+
+func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
+	// [cmd] is still allowed as an operand inside [[expr]]
+	// so expressions can combine arithmetic with command
+	// results.
+	s := NewSession()
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			return StringValue("5"), nil
+		},
+	}
+	prog, err := parseSource(t, "let n = [[[count] + 1]]")
+	require.NoError(t, err)
+	require.NoError(t, EvalProgram(prog, env))
+	v, ok := s.Get("n")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "6", got)
+}
+
+func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {
+	// [1/2] no longer masquerades as an expression.  The parser
+	// must reject it and point the user at the [[...]] form.
+	_, err := parseSource(t, "dump [1/2]")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "[[")
+}
+
+func TestEvalExpr_CmdSub_RejectsBareArithmetic(t *testing.T) {
+	_, err := parseSource(t, "dump [1 + 1]")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "[[")
+}

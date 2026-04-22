@@ -166,7 +166,7 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 		{"varref with path", "$x.a.b", "expr"},
 		{"varref with comparison", "$x eq 5", "expr"},
 		{"varref with thread", "$x |> jq \".\"", "expr"},
-		{"cmdsub", "[1 eq 1]", "expr"},
+		{"exprsub", "[[1 eq 1]]", "expr"},
 		{"quoted", "\"hello\"", "expr"},
 		{"single-quoted", "'hello'", "expr"},
 		{"paren expression", "(1 eq 1)", "expr"},

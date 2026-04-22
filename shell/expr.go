@@ -60,6 +60,18 @@ type CmdSubExpr struct {
 	Loc
 }
 
+// ExprSubExpr is an expression substitution [[expr]].  The grammar
+// inside double brackets is the same expression grammar used
+// everywhere else, but the tokeniser runs in strict mode so '-'
+// and '/' split as operators.  At evaluation time the node
+// delegates to its Inner expression; the wrapper exists so source
+// locations point at the '[[' rather than at whatever primary
+// happens to sit at the head of the inner expression.
+type ExprSubExpr struct {
+	Inner Expr
+	Loc
+}
+
 // BinaryExpr is a two-operand comparison. Op is one of the
 // recognised binary operators (word ops for textual comparison,
 // symbol ops for numeric). Evaluation produces a BoolValue.
@@ -143,6 +155,7 @@ func (*LiteralExpr) exprNode()   {}
 func (*VarRefExpr) exprNode()    {}
 func (*AdapterExpr) exprNode()   {}
 func (*CmdSubExpr) exprNode()    {}
+func (*ExprSubExpr) exprNode()   {}
 func (*BinaryExpr) exprNode()    {}
 func (*UnaryExpr) exprNode()     {}
 func (*ThreadExpr) exprNode()    {}
@@ -526,6 +539,8 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
 	case *CmdSubExpr:
 		return dispatchCmdSub(e, env)
+	case *ExprSubExpr:
+		return EvalExpr(e.Inner, env)
 	case *ThreadExpr:
 		return dispatchThread(e, env)
 	case *BinaryExpr:
@@ -643,6 +658,22 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		s, err := val.Scalar()
 		if err != nil {
 			return nil, locErrorf(e.Loc, "nested command substitution: %v", err)
+		}
+		return ScalarValueArg{Text: s}, nil
+	case *ExprSubExpr:
+		val, err := EvalExpr(e.Inner, env)
+		if err != nil {
+			return nil, err
+		}
+		if val.IsNil() {
+			return nil, locErrorf(e.Loc, "expression substitution produced no value")
+		}
+		if val.IsStructured() {
+			return StructuredValueArg{Value: val}, nil
+		}
+		s, err := val.Scalar()
+		if err != nil {
+			return nil, locErrorf(e.Loc, "expression substitution: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
 	case *ThreadExpr:
@@ -1118,6 +1149,8 @@ func exprLoc(e Expr) Loc {
 	case *AdapterExpr:
 		return v.Loc
 	case *CmdSubExpr:
+		return v.Loc
+	case *ExprSubExpr:
 		return v.Loc
 	case *BinaryExpr:
 		return v.Loc

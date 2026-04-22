@@ -239,7 +239,7 @@ func (p *parser) parseStmt() (Stmt, error) {
 // listed explicitly.
 func leadsExpression(t Token) bool {
 	switch t.Kind {
-	case TokenVarRef, TokenCmdSub, TokenQuoted, TokenAdapterRef:
+	case TokenVarRef, TokenCmdSub, TokenExprSub, TokenQuoted, TokenAdapterRef:
 		return true
 	case TokenWord:
 		switch t.Text {
@@ -634,15 +634,32 @@ func smushedArithmeticHint(t Token) (string, bool) {
 // expression.  It returns (expr, true) only when the expression
 // grammar matches and every non-separator token is consumed; any
 // parse error or trailing token returns (nil, false).  Used by the
-// cmd-sub primary to distinguish "[EXPR]" (expression form) from
-// "[cmd args...]" (command-invocation form) without leaking an
-// error on the command path.
+// cmd-sub primary to detect "[EXPR]" misuse and point the user at
+// the "[[EXPR]]" form.
 func tryParseExpression(tokens []Token) (Expr, bool) {
 	e, err := parseExpression(tokens)
 	if err != nil {
 		return nil, false
 	}
 	return e, true
+}
+
+// isCompoundExpr reports whether e is anything other than a bare
+// primary (literal, variable reference, adapter reference, or
+// substitution).  Compound forms — binary, unary, logical, not,
+// negation, thread, or the retry-scoped timeout/iteration
+// predicates — are the shapes the user can only have meant as an
+// expression rather than as a command invocation, so the command
+// substitution primary rejects them at parse time with a "use
+// [[...]]" hint.  Bare primaries fall through to command parsing
+// because a single word or "$var" is indistinguishable from a
+// no-argument command invocation without runtime context.
+func isCompoundExpr(e Expr) bool {
+	switch e.(type) {
+	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *CmdSubExpr, *ExprSubExpr:
+		return false
+	}
+	return true
 }
 
 // exprParser is a cursor over a pre-collected token slice used by
@@ -1071,24 +1088,39 @@ func parsePrimary(t Token) (Expr, error) {
 		if err != nil {
 			return nil, locErrorf(t.Loc, "command substitution: %v", err)
 		}
-		// "[EXPR]" first: try the expression grammar.  If the inner
-		// tokens parse cleanly as a single expression (all tokens
-		// consumed), wrap the result in an ExprStmt so dispatchCmdSub
-		// can evaluate and use the value.  Falling back to Parse
-		// preserves "[cmd args...]" — a command invocation whose
-		// result becomes the substitution value — and rejects
-		// anything that is neither an expression nor a single
-		// well-formed command.
-		if expr, ok := tryParseExpression(innerTokens); ok {
-			exprStmt := &ExprStmt{Expr: expr, Loc: t.Loc}
-			inner := &Program{Stmts: []Stmt{exprStmt}, Loc: t.Loc}
-			return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
+		// "[cmd args...]" is the command-substitution form.  If
+		// the inner parses as a compound expression under strict
+		// tokenisation — arithmetic, comparison, boolean, or
+		// threading — then [[...]] is what the user meant.  A
+		// single primary (literal or $var) falls through and is
+		// treated as a no-argument command name; the runtime will
+		// error cleanly if no such command exists.
+		if strictTokens, terr := TokeniseStrict(t.Inner); terr == nil {
+			if expr, ok := tryParseExpression(strictTokens); ok && isCompoundExpr(expr) {
+				return nil, locErrorf(t.Loc, "command substitution [%s]: inner is an expression, not a command; use [[%s]] for expression substitution", t.Inner, t.Inner)
+			}
 		}
 		inner, err := Parse(innerTokens)
 		if err != nil {
 			return nil, locErrorf(t.Loc, "command substitution: %v", err)
 		}
+		if len(inner.Stmts) != 1 {
+			return nil, locErrorf(t.Loc, "command substitution must contain exactly one command; got %d statements", len(inner.Stmts))
+		}
+		if _, isCmd := inner.Stmts[0].(*CommandStmt); !isCmd {
+			return nil, locErrorf(t.Loc, "command substitution must contain a command invocation")
+		}
 		return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
+	case TokenExprSub:
+		innerTokens, err := TokeniseStrict(t.Inner)
+		if err != nil {
+			return nil, locErrorf(t.Loc, "expression substitution: %v", err)
+		}
+		expr, ok := tryParseExpression(innerTokens)
+		if !ok {
+			return nil, locErrorf(t.Loc, "expression substitution [[%s]]: inner is not a valid expression", t.Inner)
+		}
+		return &ExprSubExpr{Inner: expr, Loc: t.Loc}, nil
 	default:
 		return nil, locErrorf(t.Loc, "unexpected token %q", t.Text)
 	}

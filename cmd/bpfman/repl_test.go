@@ -3123,12 +3123,12 @@ func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
 }
 
 func TestReplLoop_Arithmetic_DumpBracketedExpr(t *testing.T) {
-	// dump [EXPR] evaluates the bracketed expression (widened to
-	// "[EXPR]" form) and prints the resulting scalar.  Exercises
-	// an arithmetic expression inside a command-sub bracket,
+	// dump [[EXPR]] evaluates the double-bracketed expression and
+	// prints the resulting scalar.  Exercises an arithmetic
+	// expression inside an expression-substitution bracket,
 	// confirming the same precedence chain feeds through
-	// bracketed contexts.
-	input := "let count = 21\ndump [$count * 2]\n"
+	// [[...]] contexts.
+	input := "let count = 21\ndump [[$count * 2]]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
