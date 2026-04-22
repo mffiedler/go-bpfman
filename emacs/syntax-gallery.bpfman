@@ -1,0 +1,252 @@
+# -*- mode: bpfman -*-
+# Syntax gallery for bpfman-mode.el highlighting.
+#
+# This file is NOT intended to be evaluated. It exists so every
+# construct in the REPL language has a representative line to
+# stress-test the Emacs major mode. Open it, scan top to bottom, and
+# confirm every token is fontified according to its role.
+#
+# Expected faces (with Emacs default face mapping):
+#
+#   keywords           font-lock-keyword-face    (let, if, elif, else,
+#                                                 alias, assert, exec, ...)
+#   domain subcommands font-lock-builtin-face    (program, link, attach,
+#                                                 eq, ==, lt, not-empty, ...)
+#   variables          font-lock-variable-name-face ($foo, file:$bar, the
+#                                                    identifier after `let')
+#   strings            font-lock-string-face      ("double", 'single')
+#   comments           font-lock-comment-face     (# to end of line)
+#   flags              font-lock-constant-face    (--flag, -x)
+#
+# Plain arg-position words (file paths, numeric IDs, attach points)
+# stay unfontified. Delimiters ([ ] { } ;) are not highlighted.
+
+# ---- 1. Comments and quoting ----
+
+# A full-line comment.
+let cmt_a = foo   # trailing comment after a statement
+let cmt_b = "a # inside double quotes is literal"
+let cmt_c = 'a # inside single quotes is literal'
+let cmt_d = "the $ here is literal too"
+
+# ---- 2. Scalar and quoted literal bindings ----
+
+let bare_word  = eth0
+let int_lit    = 42
+let hex_lit    = 0x1a
+let float_lit  = 3.14
+let dq_string  = "hello world"
+let sq_string  = 'single quoted'
+let empty_str  = ""
+let path_lit   = /sys/fs/bpf/bpfman
+
+# ---- 3. Variable references (every form) ----
+
+let by_name    = $bare_word
+let field      = $prog.record.program_id
+let indexed    = $items[0]
+let deep_path  = $data.maps[0].name
+let braced     = ${prog.record.program_id}
+let braced_idx = ${items[3].field}
+
+# ---- 4. Command substitution (single and nested) ----
+
+let one       = [bpfman program list]
+let nested    = [exec echo [json parse '"world"']]
+let deeper    = [exec echo [json parse [json parse '"\"three\""']]]
+let adjacent  = [exec echo [json parse '"a"'] [json parse '"b"']]
+let arg_after = [exec diff file:$a file:$b]
+
+# ---- 5. Binary comparisons (textual vs numeric) ----
+
+assert $prog.record.name eq xdp_pass
+assert $prog.record.name ne tc_ingress
+assert $name lt $other
+assert $name le $other
+assert $name gt $other
+assert $name ge $other
+
+assert $count == 5
+assert $count != 5
+assert $count <  10
+assert $count <= 10
+assert $count >  0
+assert $count >= 0
+
+# Mixed: numeric and textual on the same page.
+assert 9 lt 10            # textual: true  (`9' < `10' lexicographically)
+assert 9 <  10            # numeric: true
+assert 9 gt 10            # textual: true  (again lexicographically)
+assert 9 >  10            # numeric: false
+
+# ---- 6. Unary predicates (expression grammar) ----
+
+assert not-empty $name
+assert true      $flag
+assert false     $flag
+
+# ---- 7. Prefix-verb assertions (outside expression grammar) ----
+
+assert nil maybe
+assert ok       bpfman show program 42
+assert fail     bpfman link get 9999
+assert path     exists /sys/fs/bpf/bpfman
+assert contains "hello world" world
+
+# Negation with `not'.
+assert not nil               maybe
+assert not not-empty         $dry_run
+assert not ok                exec false
+assert not path exists       /does/not/exist
+assert not contains $haystack needle
+
+# `require' is the fatal counterpart; same grammar otherwise.
+require ok      bpfman program get 42
+require not nil prog
+require $count gt 0
+
+# ---- 8. if / elif / else blocks ----
+
+if $count > 0 {
+    bpfman program list
+}
+
+if $count > 0 {
+    let took = then
+} else {
+    let took = else
+}
+
+if $x == 1 {
+    let label = one
+} elif $x == 2 {
+    let label = two
+} elif $x == 3 {
+    let label = three
+} else {
+    let label = other
+}
+
+# ---- 9. Nested if ----
+
+if $outer eq yes {
+    if $inner eq yes {
+        bpfman show program 42
+    } elif not-empty $maybe {
+        bpfman show program 42 maps
+    } else {
+        require fail
+    }
+}
+
+# ---- 10. One-liner blocks with `;' separator ----
+
+if $x > 0 { let a = 1; let b = 2; dump a }
+if $ready eq true { bpfman list programs; bpfman link list } else { require fail }
+
+# ---- 11. Aliases ----
+
+alias b  = bpfman
+alias bp = bpfman program
+aliases                # list
+unalias b
+
+# ---- 12. Shell builtins ----
+
+exec ip link add dummy0 type dummy
+exec ip link set dummy0 up
+exec status diff -u file:$raw1.stdout file:$raw2.stdout
+
+let parsed = [json parse '{"name":"xdp_pass","id":42}']
+json parse '{"a":1}'     # bare form prints the parsed value
+
+let data     = hello
+let tmp_path = [file temp data]
+exec cat file:$data
+exec cat file:$parsed.name
+
+dump parsed
+vars
+unset parsed tmp_path
+help
+version
+# source setup.bpfman       # would evaluate a script file at path
+
+# ---- 13. Domain commands (every noun and verb we recognise) ----
+
+bpfman list programs
+bpfman program list
+bpfman program get 42
+bpfman program unload 42
+bpfman program delete 42 43 -r
+
+bpfman link list
+bpfman link get 8801
+bpfman link detach 8801
+bpfman link delete 8801
+
+bpfman show program 42
+bpfman show program 42 summary
+bpfman show program 42 links
+bpfman show program 42 maps
+bpfman show program 42 paths
+
+bpfman dispatcher
+bpfman doctor checkup
+bpfman doctor explain
+bpfman doctor explain orphan-fs-entries
+bpfman gc
+bpfman gc --dry-run
+
+# ---- 14. Load and attach: every attach kind ----
+
+let p_file  = [bpfman load file --path ./foo.o --programs xdp:xdp_pass]
+let p_image = [bpfman load image -i quay.io/example/xdp:latest --programs xdp:pass]
+
+let l_xdp        = [bpfman link attach xdp        -i eth0 $p_file]
+let l_tc         = [bpfman link attach tc         -i eth0 $p_file]
+let l_tcx        = [bpfman link attach tcx        -i eth0 $p_file]
+let l_tracepoint = [bpfman link attach tracepoint --tracepoint syscalls/sys_enter_kill $p_file]
+let l_kprobe     = [bpfman link attach kprobe     --function vfs_read $p_file]
+let l_uprobe     = [bpfman link attach uprobe     --function __libc_start_main $p_file]
+let l_fentry     = [bpfman link attach fentry     --function vfs_read $p_file]
+let l_fexit      = [bpfman link attach fexit      --function vfs_read $p_file]
+
+# ---- 15. Every flag shape ----
+
+bpfman load file                     \
+    --path ./prog.o                  \
+    --programs xdp:xdp_stats         \
+    -m      app=stats                \
+    -m      team=networking          \
+    -g      SAMPLING_RATE=0x0a000000 \
+    -g      VERBOSE=0x01             \
+    -a      stats                    \
+    --map-owner-id 42                \
+    -o      json
+
+bpfman program list -o wide
+bpfman program list -o jsonpath='{.items[*].name}'
+bpfman program delete 42 -r
+bpfman gc --dry-run
+
+# ---- 16. File adapter (inline `file:$var') ----
+
+let lhs = "aaa"
+let rhs = "bbb"
+exec diff file:$lhs file:$rhs
+exec wc -c file:$parsed.name
+exec sha256sum file:${parsed.name}
+
+# ---- 17. Assignment vs comparison on adjacent lines ----
+
+let x = 5            # `=' is assignment
+assert $x == 5       # `==' is numeric equality
+assert $x eq 5       # `eq' is textual equality
+
+# ---- 18. The `select' projection keyword ----
+
+bpfman list programs select name,program_id,kernel_seen
+bpfman link list     select id,kind,program_id
+
+# ---- End of gallery ----

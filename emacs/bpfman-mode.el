@@ -327,11 +327,17 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (put-text-property beg end 'face 'font-lock-keyword-face)
           (setq state 'args))
 
-         ;; Delimiter: [ ] { } ;.  Resets to command position so the
-         ;; next word inside a command substitution or block body is
-         ;; treated as a command.
+         ;; Delimiter: [ ] { } ;.  Open delimiters ([ { ;) and block
+         ;; close } reset to command position so the next word inside
+         ;; a command substitution or block body -- or the first word
+         ;; after a statement separator or an elif/else keyword -- is
+         ;; treated as a command.  The close bracket `]' returns to
+         ;; argument position so words trailing a nested cmdsub in
+         ;; its outer command's arg list are not mistaken for
+         ;; commands (e.g. `[outer [inner] arg]' -- `arg' is an arg
+         ;; to outer, not a new command).
          ((= kind bpfman--tok-delim)
-          (setq state 'start))
+          (setq state (if (= (char-after beg) ?\]) 'args 'start)))
 
          ;; Assignment operator.
          ((= kind bpfman--tok-assign)

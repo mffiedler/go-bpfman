@@ -498,32 +498,82 @@ func execIfStmt(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 // temp ...] work inside let RHS and future if conditions), then
 // domain-command dispatch. Output from the inner command is
 // suppressed so binding does not clutter the terminal.
+//
+// The runner is self-referential: it uses itself to resolve nested
+// command substitutions that appear in an outer command's argument
+// list (e.g. `let x = [outer [inner args]]'), so nesting composes
+// naturally with the rest of the grammar.
 func makeCmdRunner(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) shell.CmdRunner {
-	return func(innerArgs []shell.Arg) (shell.Value, error) {
-		innerArgs = applyAlias(session, innerArgs)
-		if len(innerArgs) == 0 {
+	var runner shell.CmdRunner
+	runner = func(innerArgs []shell.Arg) (shell.Value, error) {
+		resolved, err := resolveCmdSubs(innerArgs, runner)
+		if err != nil {
+			return shell.Value{}, err
+		}
+		resolved = applyAlias(session, resolved)
+		if len(resolved) == 0 {
 			return shell.Value{}, fmt.Errorf("empty command substitution")
 		}
 		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, innerArgs, loc)
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, resolved, loc)
 		if err != nil {
 			return shell.Value{}, err
 		}
 		if handled {
 			if val.IsNil() {
-				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(innerArgs[0]))
+				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(resolved[0]))
 			}
 			return val, nil
 		}
-		val, err = replDispatch(ctx, quiet, mgr, innerArgs)
+		val, err = replDispatch(ctx, quiet, mgr, resolved)
 		if err != nil {
 			return shell.Value{}, err
 		}
 		if val.IsNil() {
-			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(innerArgs[0]))
+			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(resolved[0]))
 		}
 		return val, nil
 	}
+	return runner
+}
+
+// resolveCmdSubs walks an argument list and evaluates any nested
+// shell.CmdSubArg entries via the supplied runner, replacing each
+// one with a ScalarValueArg or StructuredValueArg depending on the
+// inner command's return shape. Scalar results (strings, numbers,
+// booleans) flatten into argv text; structured results are
+// preserved so typed command parsers can still apply origin checks
+// and capability-interface extraction against them.
+//
+// A nested command that produces no assignable value or fails is
+// propagated as an error so the outer command does not execute
+// against a partial argument list.
+func resolveCmdSubs(args []shell.Arg, runner shell.CmdRunner) ([]shell.Arg, error) {
+	out := make([]shell.Arg, 0, len(args))
+	for _, a := range args {
+		cs, ok := a.(shell.CmdSubArg)
+		if !ok {
+			out = append(out, a)
+			continue
+		}
+		val, err := runner(cs.InnerArgs)
+		if err != nil {
+			return nil, err
+		}
+		if val.IsNil() {
+			return nil, fmt.Errorf("nested command substitution produced no value")
+		}
+		if val.IsStructured() {
+			out = append(out, shell.StructuredValueArg{Value: val})
+			continue
+		}
+		s, err := val.Scalar()
+		if err != nil {
+			return nil, fmt.Errorf("nested command substitution: %w", err)
+		}
+		out = append(out, shell.ScalarValueArg{Text: s})
+	}
+	return out, nil
 }
 
 // argText extracts the text from a single Arg. For text-bearing
@@ -1457,20 +1507,30 @@ func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, err
 
 	resolved := make([]shell.Arg, len(args))
 	for i, a := range args {
-		aa, ok := a.(shell.AdapterArg)
-		if !ok {
+		switch aa := a.(type) {
+		case shell.AdapterArg:
+			if aa.Adapter != "file" {
+				return shell.Value{}, fmt.Errorf("unknown adapter %q", aa.Adapter)
+			}
+			path, err := writeValueToTemp(aa.Value)
+			if err != nil {
+				return shell.Value{}, fmt.Errorf("adapter file: %w", err)
+			}
+			tempFiles = append(tempFiles, path)
+			resolved[i] = shell.ScalarValueArg{Text: path}
+		case shell.StructuredValueArg:
+			// A structured value (program, link, exec.result, ...)
+			// cannot be flattened into argv text. This most often
+			// arises when a nested command substitution returned a
+			// structured result; the fix is to access a scalar
+			// field (e.g. $result.stdout) or use the file adapter
+			// (file:$result).
+			return shell.Value{}, fmt.Errorf(
+				"exec: argument %d is a %s value; use a scalar path (e.g. $name.field) or the file adapter (file:$name)",
+				i+1, aa.Value.Kind())
+		default:
 			resolved[i] = a
-			continue
 		}
-		if aa.Adapter != "file" {
-			return shell.Value{}, fmt.Errorf("unknown adapter %q", aa.Adapter)
-		}
-		path, err := writeValueToTemp(aa.Value)
-		if err != nil {
-			return shell.Value{}, fmt.Errorf("adapter file: %w", err)
-		}
-		tempFiles = append(tempFiles, path)
-		resolved[i] = shell.ScalarValueArg{Text: path}
 	}
 
 	argv := argTexts(resolved)

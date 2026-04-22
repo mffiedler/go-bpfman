@@ -2648,6 +2648,91 @@ func TestReplLoop_JSONParseAssertFail(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
+func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
+	// Inner json parse returns a scalar string; the outer echo
+	// should receive that string as a literal argv word.
+	input := `let out = [exec echo [json parse '"world"']]` + "\nassert contains $out.stdout world\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
+	input := `let out = [exec echo [json parse [json parse '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
+	// Inner json parse fails with malformed input. The outer exec
+	// should never run; the error from the inner propagates out of
+	// the let binding with its json-parse context intact.
+	input := "let out = [exec echo [json parse not-json]]\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "json parse")
+	_, bound := session.Get("out")
+	assert.False(t, bound, "let must not bind when the nested cmdsub fails")
+}
+
+func TestReplLoop_NestedCmdSub_StructuredRejectedByExec(t *testing.T) {
+	// Inner exec returns an exec.result (structured). The outer
+	// exec cannot flatten that into argv; the error should name
+	// the kind and suggest a scalar path or the file adapter, not
+	// leak "$" or panic.
+	input := "let out = [exec echo [exec echo hello]]\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	msg := errBuf.String()
+	assert.Contains(t, msg, "is a exec.result value")
+	assert.Contains(t, msg, "scalar path")
+	assert.Contains(t, msg, "file adapter")
+	_, bound := session.Get("out")
+	assert.False(t, bound, "let must not bind on structured-argv rejection")
+}
+
+func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
+	// Workaround demonstrated in the error above: use a scalar path.
+	input := "let out = [exec echo [exec echo hello].stdout]\n"
+	// Note: this form depends on path access on a cmdsub result,
+	// which is deferred (see implementation-notes.md). For now the
+	// user must bind the inner to a variable; this test records
+	// the current state so the limitation is visible.
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	// Today: the `.stdout' suffix makes lexWord stop -- `]` ends
+	// the cmdsub, and `.stdout' trails as a separate word.
+	// Document the current failure mode so a future relaxation of
+	// cmdsub-path access has a test to flip.
+	assert.NotEmpty(t, errBuf.String())
+}
+
 func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
 	input := `let data = [json parse '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer

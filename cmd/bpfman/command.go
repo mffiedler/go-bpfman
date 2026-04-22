@@ -159,7 +159,8 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 	case shell.ScalarValueArg:
 		return parseProgramIDText(v.Text)
 	case shell.StructuredValueArg:
-		if err := shell.ExpectOrigin(v.Value, "$"+v.Name, shell.OriginProgram); err != nil {
+		display := displayName(v.Name)
+		if err := shell.ExpectOrigin(v.Value, display, shell.OriginProgram); err != nil {
 			return 0, err
 		}
 		if origin := v.Value.Origin(); origin != nil {
@@ -170,7 +171,7 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 		// Fallback for origin-less structured values (OriginUnknown).
 		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
 		if err != nil {
-			return 0, fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
+			return 0, fmt.Errorf("%s is structured but has no .record.program_id field", display)
 		}
 		s, err := resolved.Scalar()
 		if err != nil {
@@ -180,6 +181,18 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 	default:
 		return 0, fmt.Errorf("unexpected argument type %T", a)
 	}
+}
+
+// displayName produces a user-facing reference for a structured
+// Value that appears in an argument position. Named variables
+// display as "$name"; anonymous values (e.g. the result of a
+// nested command substitution) display as "<command result>" so
+// that error messages remain intelligible.
+func displayName(name string) string {
+	if name == "" {
+		return "<command result>"
+	}
+	return "$" + name
 }
 
 // parseProgramIDText parses a program ID from text into a
@@ -207,7 +220,8 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 	case shell.ScalarValueArg:
 		return parseLinkIDText(v.Text)
 	case shell.StructuredValueArg:
-		if err := shell.ExpectOrigin(v.Value, "$"+v.Name, shell.OriginLink); err != nil {
+		display := displayName(v.Name)
+		if err := shell.ExpectOrigin(v.Value, display, shell.OriginLink); err != nil {
 			return 0, err
 		}
 		if origin := v.Value.Origin(); origin != nil {
@@ -218,7 +232,7 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 		// Fallback for origin-less structured values (OriginUnknown).
 		resolved, err := v.Value.LookupValue(v.Name, "record.id")
 		if err != nil {
-			return 0, fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)
+			return 0, fmt.Errorf("%s is structured but has no .record.id field", display)
 		}
 		s, err := resolved.Scalar()
 		if err != nil {
