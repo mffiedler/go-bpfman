@@ -265,13 +265,56 @@ Shell-language commands are bare: `assert`, `require`, `exec`,
 
 ### Literals
 
-Bare words and quoted strings are literals. Quoted strings preserve
-internal whitespace; `$` is literal inside quotes.
+Bare words and quoted strings are literals. Single-quoted strings
+are fully literal — nothing inside them is interpreted, including
+`$`. Double-quoted strings preserve internal whitespace and
+support `${...}` interpolation; a bare `$` in a double-quoted
+string that is not the start of a `${...}` form is a lex-time
+error. Use single quotes when you want a literal `$`.
 
 ```
 let a = foo
 let b = "hello world"
+let c = 'literal $ and # and ${...} inside single quotes'
 ```
+
+### String interpolation
+
+`"${...}"` splices a value into a double-quoted string. The body
+inside the braces is one of three shapes:
+
+1. A bare variable reference: `${name}`, `${name.path}`,
+   `${name[0]}`. No `$` prefix — the braces are the signal that
+   the content is a variable name. This matches bash, zsh, Perl,
+   Tcl, Ruby, and Python f-strings.
+2. An expression substitution: `${[[expr]]}`. Used when the
+   interpolated value is arithmetic or a comparison, since the
+   bare-identifier form does not accept operators.
+3. A command substitution: `${[cmd args]}`. Used when the
+   interpolated value comes from a command's output.
+
+```
+let n    = 60
+let wait = "${n}s"                         # "60s"  (form 1)
+let path = "/sys/fs/bpf/prog-${id}/map"    # path with a variable slot
+let mix  = "${[[$n * 2]]}s"                # arithmetic via [[...]] (form 2)
+let cap  = "count=${[jq '.total' $data]}"  # command result (form 3)
+```
+
+Rules:
+
+- Only the `${...}` form is recognised. Bare `$var` inside double
+  quotes errors with a pointer to the braced form.
+- Writing `${$name}` is a parse error — use `${name}`. Every
+  shell-flavoured language spells it that way, and having two
+  spellings of the same thing is a maintenance tax for readers.
+- Single-quoted strings never interpolate. `'${x}'` is five
+  characters, not a lookup of `x`.
+- Structured values in an interpolation slot are a type error:
+  `"${r}"` where `$r` is a record errors rather than pasting a
+  JSON-ish rendering into the string.
+- No escape sequence for `$`, `"`, or any other character. Use
+  single quotes if a literal `$` or `${` needs to appear.
 
 ### Variable references
 
@@ -569,6 +612,5 @@ The following are deliberately out of scope:
 - Loops (`for`, `while`), early return, non-local control flow.
 - User-defined functions, closures, or modules.
 - Operator overloading, user-defined operators.
-- String interpolation. `$` is literal inside quoted strings.
 - Truthiness. Conditions must be booleans.
 - A foreign runtime.

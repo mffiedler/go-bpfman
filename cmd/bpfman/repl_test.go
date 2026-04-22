@@ -3138,3 +3138,50 @@ func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 	assert.Contains(t, outBuf.String(), "42")
 }
+
+func TestReplLoop_InterpString_SimpleVar(t *testing.T) {
+	input := "let n = 60\nlet wait = \"${n}s\"\nprint $wait\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "60s")
+}
+
+func TestReplLoop_InterpString_PathConstruction(t *testing.T) {
+	input := "let id = 42\nlet path = \"/sys/fs/bpf/prog-${id}/map\"\nprint $path\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "/sys/fs/bpf/prog-42/map")
+}
+
+func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
+	input := "let n = 30\nlet wait = \"${[[$n * 2]]}s\"\nprint $wait\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "60s")
+}
+
+func TestReplLoop_InterpString_BareDollarRejected(t *testing.T) {
+	input := "let x = \"$foo\"\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err) // REPL reports parse errors through errBuf, not by returning
+	assert.Contains(t, errBuf.String(), "followed by '{...}'")
+}

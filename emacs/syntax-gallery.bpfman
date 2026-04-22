@@ -27,7 +27,7 @@
 let cmt_a = foo   # trailing comment after a statement
 let cmt_b = "a # inside double quotes is literal"
 let cmt_c = 'a # inside single quotes is literal'
-let cmt_d = "the $ here is literal too"
+let cmt_d = 'the $ here is literal (single quotes keep $ literal)'
 
 # ---- 2. Scalar and quoted literal bindings ----
 
@@ -48,6 +48,19 @@ let indexed    = $items[0]
 let deep_path  = $data.maps[0].name
 let braced     = ${prog.record.program_id}
 let braced_idx = ${items[3].field}
+
+# ---- 3a. String interpolation in double-quoted strings ----
+
+# "${EXPR}" splices a scalar value into a double-quoted string.
+# Single-quoted strings never interpolate; a bare '$' inside a
+# double-quoted string is a lex-time error (use single quotes for
+# a literal '$').
+
+let n          = 60
+let interp_v   = "${n}s"                          # variable slot
+let interp_p   = "/sys/fs/bpf/prog-${int_lit}"    # path construction
+let interp_m   = "pre-${int_lit}-mid-${n}-suf"   # multiple slots
+let interp_a   = "${[[$n * 2]]}s"                  # arithmetic via [[...]]
 
 # ---- 4. Command substitution (single and nested) ----
 

@@ -137,11 +137,16 @@ func TestTokenise(t *testing.T) {
 			},
 		},
 		{
-			name:  "dollar is literal inside quotes",
-			input: `"$prog.id"`,
+			name:  "dollar is literal inside single quotes",
+			input: `'$prog.id'`,
 			want: []Token{
 				{Kind: TokenQuoted, Text: "$prog.id"},
 			},
+		},
+		{
+			name:    "bare dollar in double quotes errors",
+			input:   `"$prog.id"`,
+			wantErr: "'$' in double-quoted string must be followed by '{...}'",
 		},
 		{
 			name:  "comment strips trailing text",
@@ -567,6 +572,143 @@ func TestTokeniseExprSub(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, stripLocs(got))
+		})
+	}
+}
+
+func TestTokeniseInterpString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantKind TokenKind
+		wantText string
+		wantSegs []InterpSegment
+		wantErr  string
+	}{
+		{
+			name:     "plain double-quoted string stays TokenQuoted",
+			input:    `"hello"`,
+			wantKind: TokenQuoted,
+			wantText: "hello",
+		},
+		{
+			name:     "empty double-quoted string stays TokenQuoted",
+			input:    `""`,
+			wantKind: TokenQuoted,
+			wantText: "",
+		},
+		{
+			name:     "single interpolation",
+			input:    `"${x}"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Inner: "x"},
+			},
+		},
+		{
+			name:     "literal before interpolation",
+			input:    `"pre-${x}"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Literal: "pre-", IsLit: true},
+				{Inner: "x"},
+			},
+		},
+		{
+			name:     "literal after interpolation",
+			input:    `"${x}-suf"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Inner: "x"},
+				{Literal: "-suf", IsLit: true},
+			},
+		},
+		{
+			name:     "adjacent interpolations",
+			input:    `"${a}${b}"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Inner: "a"},
+				{Inner: "b"},
+			},
+		},
+		{
+			name:     "mixed literal and interpolations",
+			input:    `"pre-${a}-mid-${b}-suf"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Literal: "pre-", IsLit: true},
+				{Inner: "a"},
+				{Literal: "-mid-", IsLit: true},
+				{Inner: "b"},
+				{Literal: "-suf", IsLit: true},
+			},
+		},
+		{
+			name:     "expression inside interpolation",
+			input:    `"${$x + 1}"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Inner: "$x + 1"},
+			},
+		},
+		{
+			name:     "single-quoted interp body keeps '}' literal",
+			input:    `"${$x eq 'a}b'}"`,
+			wantKind: TokenInterpString,
+			wantSegs: []InterpSegment{
+				{Inner: "$x eq 'a}b'"},
+			},
+		},
+		{
+			name:     "single-quoted string is never interpolated",
+			input:    `'${x}'`,
+			wantKind: TokenQuoted,
+			wantText: "${x}",
+		},
+		{
+			name:    "bare $ in double quotes is rejected",
+			input:   `"hello $world"`,
+			wantErr: "'$' in double-quoted string must be followed by '{...}'",
+		},
+		{
+			name:    "empty interpolation is rejected",
+			input:   `"${}"`,
+			wantErr: "empty interpolation",
+		},
+		{
+			name:    "unterminated interpolation",
+			input:   `"${x"`,
+			wantErr: "unterminated",
+		},
+		{
+			name:    "nested double-quote inside interpolation rejected",
+			input:   `"${$x eq "b"}"`,
+			wantErr: "unterminated interpolation",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Tokenise(tt.input)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tt.wantKind, got[0].Kind)
+			if tt.wantKind == TokenQuoted {
+				assert.Equal(t, tt.wantText, got[0].Text)
+				return
+			}
+			require.Len(t, got[0].Segments, len(tt.wantSegs))
+			for i, want := range tt.wantSegs {
+				gotSeg := got[0].Segments[i]
+				assert.Equal(t, want.IsLit, gotSeg.IsLit, "segment %d IsLit", i)
+				assert.Equal(t, want.Literal, gotSeg.Literal, "segment %d Literal", i)
+				assert.Equal(t, want.Inner, gotSeg.Inner, "segment %d Inner", i)
+			}
 		})
 	}
 }

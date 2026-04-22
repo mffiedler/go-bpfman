@@ -60,17 +60,41 @@ const (
 	// macro.  Inside a bare word or quoted string, '|>' stays
 	// part of the surrounding literal.
 	TokenThread
+	// TokenInterpString is a double-quoted string containing one
+	// or more ${...} interpolation points.  Segments carries the
+	// alternation of literal text and raw expression text; the
+	// parser retokenises each expression inner, parses it as a
+	// single expression, and the evaluator concatenates the
+	// resolved scalars at run time.  Double-quoted strings with
+	// no interpolation stay as TokenQuoted so the common case
+	// pays no extra cost.
+	TokenInterpString
 )
+
+// InterpSegment is one piece of an interpolated double-quoted
+// string.  IsLit true means Literal carries the text verbatim and
+// Inner is unused; IsLit false means Inner carries the raw source
+// of an "${expr}" interpolation (without the '${' and '}'
+// delimiters) and the parser tokenises and parses it at parse
+// time.  Loc points at the segment's first byte in the enclosing
+// input so diagnostics cite the right column.
+type InterpSegment struct {
+	Literal string
+	Inner   string
+	Loc     Loc
+	IsLit   bool
+}
 
 // Token is a single lexical element produced by Tokenise.
 type Token struct {
-	Kind    TokenKind
-	Text    string // content (stripped quotes for TokenQuoted)
-	VarName string // variable name for TokenVarRef and TokenAdapterRef
-	VarPath string // field path for TokenVarRef and TokenAdapterRef (empty if bare)
-	Adapter string // adapter name for TokenAdapterRef (e.g. "file")
-	Inner   string // raw inner text for TokenCmdSub (between brackets)
-	Loc     Loc    // source location of the token's first byte
+	Kind     TokenKind
+	Text     string          // content (stripped quotes for TokenQuoted)
+	VarName  string          // variable name for TokenVarRef and TokenAdapterRef
+	VarPath  string          // field path for TokenVarRef and TokenAdapterRef (empty if bare)
+	Adapter  string          // adapter name for TokenAdapterRef (e.g. "file")
+	Inner    string          // raw inner text for TokenCmdSub (between brackets)
+	Segments []InterpSegment // literal/interp pieces for TokenInterpString
+	Loc      Loc             // source location of the token's first byte
 }
 
 // Tokenise lexes input in shell mode: '-' and '/' are valid
@@ -541,17 +565,147 @@ func lexCmdSub(input string, pos int) (Token, int, error) {
 // inside quotes; no backslash escapes.
 func lexQuoted(input string, pos int) (Token, int, error) {
 	quote := input[pos]
+	if quote == '\'' {
+		return lexSingleQuoted(input, pos)
+	}
+	return lexDoubleQuoted(input, pos)
+}
+
+// lexSingleQuoted lexes a single-quoted string.  Single quotes
+// are fully literal: no '$' recognition, no escapes.  The result
+// is always a plain TokenQuoted.
+func lexSingleQuoted(input string, pos int) (Token, int, error) {
 	i := pos + 1
-	for i < len(input) && input[i] != quote {
+	for i < len(input) && input[i] != '\'' {
 		i++
 	}
 	if i >= len(input) {
-		return Token{}, 0, fmt.Errorf("unterminated %c-quoted string", quote)
+		return Token{}, 0, fmt.Errorf("unterminated '-quoted string")
 	}
 	text := input[pos+1 : i]
 	i++ // skip closing quote
-	tok := Token{Kind: TokenQuoted, Text: text}
-	return tok, i - pos, nil
+	return Token{Kind: TokenQuoted, Text: text}, i - pos, nil
+}
+
+// lexDoubleQuoted lexes a double-quoted string, splitting on
+// "${...}" interpolation points.  A string with no interpolation
+// emits TokenQuoted so downstream code paths for plain literals
+// do not need to know about segments.  A string with at least one
+// "${...}" emits TokenInterpString whose Segments alternate
+// literal and interp pieces; a bare '$' inside a double-quoted
+// string that is not followed by '{' is a lex-time error so the
+// "$ here is literal" bash habit fails loudly rather than
+// silently mis-parsing.
+func lexDoubleQuoted(input string, pos int) (Token, int, error) {
+	lineStarts := buildLineStarts(input)
+	i := pos + 1
+	literalStart := i
+	var segments []InterpSegment
+
+	flushLiteral := func(end int) {
+		if end <= literalStart {
+			return
+		}
+		segments = append(segments, InterpSegment{
+			Literal: input[literalStart:end],
+			Loc:     locAt(literalStart, lineStarts),
+			IsLit:   true,
+		})
+	}
+
+	for i < len(input) {
+		ch := input[i]
+		if ch == '"' {
+			flushLiteral(i)
+			i++ // skip closing quote
+			if len(segments) == 0 {
+				return Token{Kind: TokenQuoted, Text: ""}, i - pos, nil
+			}
+			if len(segments) == 1 && segments[0].IsLit {
+				return Token{
+					Kind: TokenQuoted,
+					Text: segments[0].Literal,
+				}, i - pos, nil
+			}
+			return Token{
+				Kind:     TokenInterpString,
+				Text:     input[pos:i],
+				Segments: segments,
+			}, i - pos, nil
+		}
+		if ch == '$' {
+			if i+1 >= len(input) || input[i+1] != '{' {
+				return Token{}, 0, fmt.Errorf("'$' in double-quoted string must be followed by '{...}' (use single quotes for a literal '$')")
+			}
+			flushLiteral(i)
+			start := i
+			innerEnd, err := scanInterpBody(input, i+2)
+			if err != nil {
+				return Token{}, 0, err
+			}
+			inner := input[start+2 : innerEnd]
+			if strings.TrimSpace(inner) == "" {
+				return Token{}, 0, fmt.Errorf("empty interpolation '${}' in string")
+			}
+			segments = append(segments, InterpSegment{
+				Inner: inner,
+				Loc:   locAt(start, lineStarts),
+				IsLit: false,
+			})
+			i = innerEnd + 1 // skip past closing '}'
+			literalStart = i
+			continue
+		}
+		i++
+	}
+
+	return Token{}, 0, fmt.Errorf("unterminated \"-quoted string")
+}
+
+// scanInterpBody returns the offset of the '}' that closes an
+// interpolation whose contents start at pos.  Single-quoted
+// strings inside the body are skipped so a stray '}' inside a
+// literal does not close the interpolation prematurely; nested
+// braces are counted so future features (block-shaped expressions,
+// structured literals) fit without changing the scanner.  A bare
+// '"' inside the body is rejected — the simple rule "use single
+// quotes inside ${...}" keeps the lexer linear and avoids an
+// escape mechanism.
+func scanInterpBody(input string, pos int) (int, error) {
+	depth := 1
+	j := pos
+	for j < len(input) {
+		switch input[j] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return j, nil
+			}
+		case '\'':
+			k := j + 1
+			for k < len(input) && input[k] != '\'' {
+				k++
+			}
+			if k >= len(input) {
+				return 0, fmt.Errorf("unterminated '-quoted string inside interpolation")
+			}
+			j = k
+		case '"':
+			// A '"' inside the interp body is either a
+			// missing '}' (user forgot to close the
+			// interpolation and the next '"' is the outer
+			// string's close) or a nested double-quoted
+			// string (unsupported — use single quotes).
+			// Either way the user needs to fix it; the
+			// more actionable diagnostic is "unterminated
+			// interpolation" since that is the common case.
+			return 0, fmt.Errorf("unterminated interpolation in string: missing '}' (use single quotes for strings inside ${...})")
+		}
+		j++
+	}
+	return 0, fmt.Errorf("unterminated interpolation in string: missing '}'")
 }
 
 // lexWord consumes a word token: everything until whitespace, a

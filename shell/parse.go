@@ -2,7 +2,7 @@ package shell
 
 import (
 	"fmt"
-	"strconv"
+	"strings"
 	"time"
 )
 
@@ -239,7 +239,7 @@ func (p *parser) parseStmt() (Stmt, error) {
 // listed explicitly.
 func leadsExpression(t Token) bool {
 	switch t.Kind {
-	case TokenVarRef, TokenCmdSub, TokenExprSub, TokenQuoted, TokenAdapterRef:
+	case TokenVarRef, TokenCmdSub, TokenExprSub, TokenQuoted, TokenInterpString, TokenAdapterRef:
 		return true
 	case TokenWord:
 		switch t.Text {
@@ -630,6 +630,55 @@ func smushedArithmeticHint(t Token) (string, bool) {
 	return fmt.Sprintf("arithmetic '%c' requires whitespace (e.g. \"%c %s\" not %q)", c, c, t.Text[1:], t.Text), true
 }
 
+// parseInterpBody turns the raw contents of a "${...}"
+// interpolation into the Expr that will be evaluated at run time.
+// The rule is intentionally narrow so the common case stays
+// short: a bare identifier with an optional dotted or indexed
+// path ("name", "name.path", "name[0]") is treated as a
+// variable reference — callers do not write "$name" inside the
+// braces.  Anything more involved must start with "[": "[[expr]]"
+// for a general expression, "[cmd args]" for command
+// substitution.  This matches the ${name} / ${...} shape used by
+// bash, zsh, Perl, Tcl, Ruby, and Python f-strings rather than
+// requiring the double sigil "${$name}" that falls out of a naive
+// "body is a general expression" rule.
+func parseInterpBody(inner string, loc Loc) (Expr, error) {
+	trimmed := strings.TrimSpace(inner)
+	if trimmed == "" {
+		return nil, locErrorf(loc, "empty interpolation")
+	}
+	if trimmed[0] == '[' {
+		// "[[expr]]" and "[cmd args]" are the escape hatches for
+		// everything beyond a simple variable reference.  Run
+		// the whole body through the normal tokeniser and
+		// expression parser.
+		tokens, err := Tokenise(inner)
+		if err != nil {
+			return nil, locErrorf(loc, "string interpolation: %v", err)
+		}
+		expr, ok := tryParseExpression(tokens)
+		if !ok {
+			return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference, [[expr]], or [cmd args]", inner)
+		}
+		return expr, nil
+	}
+	// Bare variable reference.  Synthesise a "$" prefix and run
+	// it through the main tokeniser so the identifier + path
+	// grammar stays in one place; anything that is not exactly a
+	// VarRef token (e.g. two tokens because of whitespace, or a
+	// malformed identifier) surfaces as a user-facing error
+	// rather than a silent misparse.
+	tokens, err := Tokenise("$" + trimmed)
+	if err != nil {
+		return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
+	}
+	if len(tokens) != 1 || tokens[0].Kind != TokenVarRef {
+		return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference, [[expr]], or [cmd args]", inner)
+	}
+	t := tokens[0]
+	return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
+}
+
 // tryParseExpression attempts to interpret tokens as a single
 // expression.  It returns (expr, true) only when the expression
 // grammar matches and every non-separator token is consumed; any
@@ -1008,42 +1057,30 @@ func (p *exprParser) parseTerm() (Expr, error) {
 func (p *exprParser) parseTimeoutExpr() (Expr, error) {
 	tok := p.advance() // "timeout"
 	if p.eof() {
-		return nil, locErrorf(tok.Loc, "timeout requires a duration (e.g. timeout 30s)")
+		return nil, locErrorf(tok.Loc, "timeout requires a duration (e.g. timeout 30s, timeout $max_wait)")
 	}
-	durTok := p.peek()
-	if durTok.Kind != TokenWord {
-		return nil, locErrorf(durTok.Loc, "timeout requires a duration, got %q", durTok.Text)
-	}
-	d, err := parseDurationLiteral(durTok.Text)
+	arg, err := p.parseTerm()
 	if err != nil {
-		return nil, locErrorf(durTok.Loc, "timeout: %v", err)
+		return nil, locErrorf(tok.Loc, "timeout: %v", err)
 	}
-	p.advance()
-	return &TimeoutExpr{Duration: d, Loc: tok.Loc}, nil
+	return &TimeoutExpr{Arg: arg, Loc: tok.Loc}, nil
 }
 
 // parseIterationExpr consumes an 'iteration' keyword followed
-// by a non-negative integer.  The result is a primary-level
-// boolean expression that evaluates to true when the enclosing
-// retry has executed at least Count iterations.
+// by an argument sub-expression producing a non-negative integer
+// at evaluation time.  Literal counts still work ("iteration 10")
+// but the argument may also be a variable reference or any
+// primary that reduces to a scalar.
 func (p *exprParser) parseIterationExpr() (Expr, error) {
 	tok := p.advance() // "iteration"
 	if p.eof() {
-		return nil, locErrorf(tok.Loc, "iteration requires a count (e.g. iteration 10)")
+		return nil, locErrorf(tok.Loc, "iteration requires a count (e.g. iteration 10, iteration $max)")
 	}
-	countTok := p.peek()
-	if countTok.Kind != TokenWord {
-		return nil, locErrorf(countTok.Loc, "iteration requires an integer, got %q", countTok.Text)
-	}
-	n, err := strconv.Atoi(countTok.Text)
+	arg, err := p.parseTerm()
 	if err != nil {
-		return nil, locErrorf(countTok.Loc, "iteration: invalid integer %q", countTok.Text)
+		return nil, locErrorf(tok.Loc, "iteration: %v", err)
 	}
-	if n < 0 {
-		return nil, locErrorf(countTok.Loc, "iteration count must be non-negative, got %d", n)
-	}
-	p.advance()
-	return &IterationExpr{Count: n, Loc: tok.Loc}, nil
+	return &IterationExpr{Arg: arg, Loc: tok.Loc}, nil
 }
 
 // parseCommandArgs turns a command's token run into argument
@@ -1121,6 +1158,20 @@ func parsePrimary(t Token) (Expr, error) {
 			return nil, locErrorf(t.Loc, "expression substitution [[%s]]: inner is not a valid expression", t.Inner)
 		}
 		return &ExprSubExpr{Inner: expr, Loc: t.Loc}, nil
+	case TokenInterpString:
+		segs := make([]InterpStringSegment, 0, len(t.Segments))
+		for _, s := range t.Segments {
+			if s.IsLit {
+				segs = append(segs, InterpStringSegment{Literal: s.Literal})
+				continue
+			}
+			expr, err := parseInterpBody(s.Inner, s.Loc)
+			if err != nil {
+				return nil, err
+			}
+			segs = append(segs, InterpStringSegment{Expr: expr})
+		}
+		return &InterpStringExpr{Segments: segs, Loc: t.Loc}, nil
 	default:
 		return nil, locErrorf(t.Loc, "unexpected token %q", t.Text)
 	}

@@ -3,7 +3,6 @@ package shell
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -922,7 +921,7 @@ func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
 			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Count: 3},
+			Until: &IterationExpr{Arg: &LiteralExpr{Text: "3"}},
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
@@ -943,7 +942,7 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
 			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Count: 5},
+			Until: &IterationExpr{Arg: &LiteralExpr{Text: "5"}},
 		},
 	}}
 	err := EvalProgram(prog, env)
@@ -965,7 +964,7 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
 			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &TimeoutExpr{Duration: 50 * time.Millisecond},
+			Until: &TimeoutExpr{Arg: &LiteralExpr{Text: "50ms"}},
 		},
 	}}
 	err := EvalProgram(prog, env)
@@ -983,22 +982,85 @@ func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
 			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Count: 1},
+			Until: &IterationExpr{Arg: &LiteralExpr{Text: "1"}},
 		},
 	}}
 	assert.NoError(t, EvalProgram(prog, env))
 }
 
+func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
+	// The iteration count comes from a session variable, not a
+	// literal.  This is the whole point of the relaxed grammar:
+	// retry caps are configurable at run time.
+	s := NewSession()
+	s.Set("max", StringValue("3"))
+	callCount := 0
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			callCount++
+			return Value{}, nil
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &IterationExpr{Arg: &VarRefExpr{Name: "max"}},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, 3, callCount)
+}
+
+func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
+	s := NewSession()
+	s.Set("max_wait", StringValue("50ms"))
+	sentinel := errors.New("not yet")
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			return Value{}, sentinel
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &TimeoutExpr{Arg: &VarRefExpr{Name: "max_wait"}},
+		},
+	}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Same(t, sentinel, err)
+}
+
+func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
+	s := NewSession()
+	s.Set("max", StringValue("-3"))
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&RetryStmt{
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
+			Until: &IterationExpr{Arg: &VarRefExpr{Name: "max"}},
+		},
+	}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "negative")
+}
+
 func TestEvalExpr_Timeout_OutsideRetryIsError(t *testing.T) {
 	s := NewSession()
-	_, err := EvalExpr(&TimeoutExpr{Duration: time.Second}, evalEnv(s))
+	_, err := EvalExpr(&TimeoutExpr{Arg: &LiteralExpr{Text: "1s"}}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
 
 func TestEvalExpr_Iteration_OutsideRetryIsError(t *testing.T) {
 	s := NewSession()
-	_, err := EvalExpr(&IterationExpr{Count: 3}, evalEnv(s))
+	_, err := EvalExpr(&IterationExpr{Arg: &LiteralExpr{Text: "3"}}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "iteration")
 }
@@ -1022,10 +1084,10 @@ func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
 				&CommandStmt{Args: []Expr{&LiteralExpr{Text: "outer"}}},
 				&RetryStmt{
 					Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}},
-					Until: &IterationExpr{Count: 2},
+					Until: &IterationExpr{Arg: &LiteralExpr{Text: "2"}},
 				},
 			},
-			Until: &IterationExpr{Count: 2},
+			Until: &IterationExpr{Arg: &LiteralExpr{Text: "2"}},
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
@@ -1235,6 +1297,159 @@ func TestEvalExpr_ExprSub_VarRef(t *testing.T) {
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "42", got)
+}
+
+func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
+	// An InterpStringExpr with only literal segments (rare in
+	// practice — the lexer emits TokenQuoted for that case —
+	// but the evaluator is happy to concatenate literals if a
+	// caller constructs the node directly).
+	s := NewSession()
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Literal: "hello "},
+			{Literal: "world"},
+		},
+	}
+	v, err := EvalExpr(e, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "hello world", got)
+}
+
+func TestEvalExpr_InterpString_VarRef(t *testing.T) {
+	s := NewSession()
+	s.Set("n", StringValue("60"))
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Expr: &VarRefExpr{Name: "n"}},
+			{Literal: "s"},
+		},
+	}
+	v, err := EvalExpr(e, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "60s", got)
+}
+
+func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
+	s := NewSession()
+	s.Set("prog", StringValue("42"))
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Literal: "/sys/fs/bpf/prog-"},
+			{Expr: &VarRefExpr{Name: "prog"}},
+			{Literal: "/map"},
+		},
+	}
+	v, err := EvalExpr(e, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "/sys/fs/bpf/prog-42/map", got)
+}
+
+func TestEvalExpr_InterpString_StructuredValueRejected(t *testing.T) {
+	s := NewSession()
+	s.Set("r", ValueFromMap(map[string]any{"stdout": "hi", "exit_code": 0}))
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Expr: &VarRefExpr{Name: "r"}},
+		},
+	}
+	_, err := EvalExpr(e, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot splice")
+}
+
+func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*Session)
+		input string
+		want  string
+	}{
+		{
+			name:  "plain literal stays a literal",
+			input: `let x = "hello"`,
+			want:  "hello",
+		},
+		{
+			name:  "single variable interpolation",
+			setup: func(s *Session) { s.Set("n", StringValue("60")) },
+			input: `let x = "${n}s"`,
+			want:  "60s",
+		},
+		{
+			name:  "path construction",
+			setup: func(s *Session) { s.Set("id", StringValue("42")) },
+			input: `let x = "/sys/fs/bpf/prog-${id}/map"`,
+			want:  "/sys/fs/bpf/prog-42/map",
+		},
+		{
+			name: "adjacent interpolations",
+			setup: func(s *Session) {
+				s.Set("a", StringValue("hello"))
+				s.Set("b", StringValue("world"))
+			},
+			input: `let x = "${a}${b}"`,
+			want:  "helloworld",
+		},
+		{
+			name:  "arithmetic inside interpolation via [[...]]",
+			setup: func(s *Session) { s.Set("n", StringValue("30")) },
+			input: `let x = "${[[$n * 2]]}s"`,
+			want:  "60s",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewSession()
+			if tc.setup != nil {
+				tc.setup(s)
+			}
+			prog, err := parseSource(t, tc.input)
+			require.NoError(t, err)
+			require.NoError(t, EvalProgram(prog, evalEnv(s)))
+			v, ok := s.Get("x")
+			require.True(t, ok)
+			got, err := v.Scalar()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestEvalExpr_InterpString_DoubleSigilRejected(t *testing.T) {
+	// "${$n}" was the shape a naive "body is a general expression"
+	// rule would have exposed; the bash-style "${name}" rule rejects
+	// it so there is one spelling of variable interpolation.
+	_, err := parseSource(t, `let x = "${$n}"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "variable reference")
+}
+
+func TestEvalExpr_InterpString_ExpressionWithoutBrackets(t *testing.T) {
+	// Inside ${...} the body must be a var ref or start with "[".
+	// Bare arithmetic is rejected so users reach for the explicit
+	// ${[[...]]} form.
+	_, err := parseSource(t, `let x = "${n + 1}"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "variable reference")
+}
+
+func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
+	s := NewSession()
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Expr: &VarRefExpr{Name: "missing"}},
+		},
+	}
+	_, err := EvalExpr(e, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable")
 }
 
 func TestEvalExpr_ExprSub_InCondition(t *testing.T) {

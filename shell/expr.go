@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -72,6 +73,29 @@ type ExprSubExpr struct {
 	Loc
 }
 
+// InterpStringExpr is a double-quoted string with one or more
+// "${expr}" interpolation points.  Segments alternates literal
+// text and parsed sub-expressions in source order.  Evaluation
+// walks the segments, evaluates each expression to a scalar, and
+// concatenates the pieces into a single StringValue.  A plain
+// double-quoted string with no interpolation is a LiteralExpr, so
+// an InterpStringExpr always carries at least one non-literal
+// segment.
+type InterpStringExpr struct {
+	Segments []InterpStringSegment
+	Loc
+}
+
+// InterpStringSegment is one alternation inside an
+// InterpStringExpr.  Exactly one of Literal / Expr is the
+// meaningful field: if Expr is nil, the segment is a run of
+// literal text carried in Literal; otherwise it is an
+// interpolation whose value replaces the "${...}" at eval time.
+type InterpStringSegment struct {
+	Literal string
+	Expr    Expr
+}
+
 // BinaryExpr is a two-operand comparison. Op is one of the
 // recognised binary operators (word ops for textual comparison,
 // symbol ops for numeric). Evaluation produces a BoolValue.
@@ -129,41 +153,53 @@ type NegateExpr struct {
 
 // TimeoutExpr is a retry-scoped primary expression that evaluates
 // to true when the enclosing retry loop has been running for at
-// least Duration.  Outside a retry context it is a runtime error,
-// cited at the 'timeout' token.
+// least the duration produced by Arg.  Arg is a sub-expression
+// evaluated at check time, so the duration can be a literal
+// ("timeout 60s"), a variable ("timeout $max_wait"), an
+// interpolated string ('timeout "${n}s"'), or any other primary
+// that reduces to a scalar string acceptable to
+// time.ParseDuration.  Outside a retry context evaluation is a
+// runtime error, cited at the 'timeout' token.
 //
 //	until $phase eq ready or timeout 60s
 //	until not timeout 5s and $converged
+//	until $ready or timeout $max_wait
 type TimeoutExpr struct {
-	Duration time.Duration
+	Arg Expr
 	Loc
 }
 
 // IterationExpr is a retry-scoped primary expression that
 // evaluates to true when the enclosing retry loop has executed
-// at least Count iterations.  Outside a retry context it is a
-// runtime error, cited at the 'iteration' token.
+// at least the count produced by Arg.  Arg is a sub-expression
+// evaluated at check time, so the count can be a literal
+// ("iteration 10"), a variable ("iteration $max"), or any other
+// primary that reduces to a non-negative integer scalar.
+// Outside a retry context evaluation is a runtime error, cited at
+// the 'iteration' token.
 //
 //	until iteration 10                 -- cap at ten attempts
 //	until $done or iteration 100       -- success or give up
+//	until $done or iteration $max      -- configurable cap
 type IterationExpr struct {
-	Count int
+	Arg Expr
 	Loc
 }
 
-func (*LiteralExpr) exprNode()   {}
-func (*VarRefExpr) exprNode()    {}
-func (*AdapterExpr) exprNode()   {}
-func (*CmdSubExpr) exprNode()    {}
-func (*ExprSubExpr) exprNode()   {}
-func (*BinaryExpr) exprNode()    {}
-func (*UnaryExpr) exprNode()     {}
-func (*ThreadExpr) exprNode()    {}
-func (*LogicalExpr) exprNode()   {}
-func (*NotExpr) exprNode()       {}
-func (*NegateExpr) exprNode()    {}
-func (*TimeoutExpr) exprNode()   {}
-func (*IterationExpr) exprNode() {}
+func (*LiteralExpr) exprNode()      {}
+func (*VarRefExpr) exprNode()       {}
+func (*AdapterExpr) exprNode()      {}
+func (*CmdSubExpr) exprNode()       {}
+func (*ExprSubExpr) exprNode()      {}
+func (*InterpStringExpr) exprNode() {}
+func (*BinaryExpr) exprNode()       {}
+func (*UnaryExpr) exprNode()        {}
+func (*ThreadExpr) exprNode()       {}
+func (*LogicalExpr) exprNode()      {}
+func (*NotExpr) exprNode()          {}
+func (*NegateExpr) exprNode()       {}
+func (*TimeoutExpr) exprNode()      {}
+func (*IterationExpr) exprNode()    {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand and ExecSubstitution
@@ -409,17 +445,44 @@ func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 	if env.retryStart.IsZero() {
 		return Value{}, locErrorf(e.Loc, "timeout expression is only valid inside a retry body or its until clause")
 	}
-	return BoolValue(time.Since(env.retryStart) >= e.Duration), nil
+	v, err := EvalExpr(e.Arg, env)
+	if err != nil {
+		return Value{}, err
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "timeout: argument must be a scalar duration: %v", err)
+	}
+	d, err := parseDurationLiteral(s)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "timeout: %v", err)
+	}
+	return BoolValue(time.Since(env.retryStart) >= d), nil
 }
 
 // evalIterationExpr returns true when the current retry has
-// executed at least e.Count iterations.  Outside a retry context
-// (Env.retryIter zero) it errors.
+// executed at least the iteration count produced by e.Arg.
+// Outside a retry context (Env.retryIter zero) it errors.
 func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
 	if env.retryIter == 0 {
 		return Value{}, locErrorf(e.Loc, "iteration expression is only valid inside a retry body or its until clause")
 	}
-	return BoolValue(env.retryIter >= e.Count), nil
+	v, err := EvalExpr(e.Arg, env)
+	if err != nil {
+		return Value{}, err
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "iteration: argument must be a scalar count: %v", err)
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "iteration: %q is not a valid integer count", s)
+	}
+	if n < 0 {
+		return Value{}, locErrorf(e.Loc, "iteration: count %d is negative", n)
+	}
+	return BoolValue(env.retryIter >= n), nil
 }
 
 func evalForEachStmt(s *ForEachStmt, env *Env) error {
@@ -541,6 +604,8 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return dispatchCmdSub(e, env)
 	case *ExprSubExpr:
 		return EvalExpr(e.Inner, env)
+	case *InterpStringExpr:
+		return evalInterpString(e, env)
 	case *ThreadExpr:
 		return dispatchThread(e, env)
 	case *BinaryExpr:
@@ -616,6 +681,38 @@ func evalNot(e *NotExpr, env *Env) (Value, error) {
 	return BoolValue(!b), nil
 }
 
+// evalInterpString walks an InterpStringExpr's segments, evaluates
+// each expression segment to a scalar, and concatenates the
+// results with the literal runs into a single StringValue.  A
+// structured or nil value in an interpolation slot is a type
+// error cited at the interpolation's Loc — the language will not
+// guess a string shape for a record.
+func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
+	var b strings.Builder
+	for _, seg := range e.Segments {
+		if seg.Expr == nil {
+			b.WriteString(seg.Literal)
+			continue
+		}
+		v, err := EvalExpr(seg.Expr, env)
+		if err != nil {
+			return Value{}, err
+		}
+		if v.IsNil() {
+			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation produced null")
+		}
+		if v.IsStructured() {
+			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: cannot splice a %s value into a string; format it first", v.Kind())
+		}
+		s, err := v.Scalar()
+		if err != nil {
+			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: %v", err)
+		}
+		b.WriteString(s)
+	}
+	return StringValue(b.String()), nil
+}
+
 // EvalArgs evaluates each Expr in exprs as a command argument and
 // returns the resulting []Arg, suitable for dispatch. Command
 // substitutions nested inside the list are evaluated via
@@ -674,6 +771,16 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		s, err := val.Scalar()
 		if err != nil {
 			return nil, locErrorf(e.Loc, "expression substitution: %v", err)
+		}
+		return ScalarValueArg{Text: s}, nil
+	case *InterpStringExpr:
+		val, err := evalInterpString(e, env)
+		if err != nil {
+			return nil, err
+		}
+		s, err := val.Scalar()
+		if err != nil {
+			return nil, locErrorf(e.Loc, "interpolated string: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
 	case *ThreadExpr:
@@ -1151,6 +1258,8 @@ func exprLoc(e Expr) Loc {
 	case *CmdSubExpr:
 		return v.Loc
 	case *ExprSubExpr:
+		return v.Loc
+	case *InterpStringExpr:
 		return v.Loc
 	case *BinaryExpr:
 		return v.Loc

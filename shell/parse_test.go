@@ -4,7 +4,6 @@ package shell
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -591,7 +590,9 @@ func TestParse_Retry_TimeoutExpr(t *testing.T) {
 	rs := firstStmt(t, prog).(*RetryStmt)
 	to, ok := rs.Until.(*TimeoutExpr)
 	require.True(t, ok, "expected TimeoutExpr, got %T", rs.Until)
-	assert.Equal(t, 30*time.Second, to.Duration)
+	lit, ok := to.Arg.(*LiteralExpr)
+	require.True(t, ok, "expected literal Arg, got %T", to.Arg)
+	assert.Equal(t, "30s", lit.Text)
 }
 
 func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
@@ -605,10 +606,16 @@ func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
 	assert.True(t, ok, "or's right operand should be a TimeoutExpr, got %T", or.Right)
 }
 
-func TestParse_Timeout_BadDuration(t *testing.T) {
-	_, err := parseSource(t, "retry { help } until timeout banana")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid duration")
+func TestParse_Timeout_BadDuration_ParsesButFailsAtEval(t *testing.T) {
+	// Under the relaxed grammar the argument is an arbitrary
+	// expression evaluated at check time.  The parse itself
+	// succeeds; the "banana is not a duration" complaint lands
+	// when the retry loop evaluates the until clause.
+	prog, err := parseSource(t, "retry { help } until timeout banana")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	_, ok := rs.Until.(*TimeoutExpr)
+	require.True(t, ok, "expected TimeoutExpr, got %T", rs.Until)
 }
 
 func TestParse_Timeout_MissingDuration(t *testing.T) {
@@ -634,7 +641,9 @@ func TestParse_Iteration_Basic(t *testing.T) {
 	rs := firstStmt(t, prog).(*RetryStmt)
 	it, ok := rs.Until.(*IterationExpr)
 	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
-	assert.Equal(t, 10, it.Count)
+	lit, ok := it.Arg.(*LiteralExpr)
+	require.True(t, ok, "expected literal Arg, got %T", it.Arg)
+	assert.Equal(t, "10", lit.Text)
 }
 
 func TestParse_Iteration_MissingCount(t *testing.T) {
@@ -643,16 +652,24 @@ func TestParse_Iteration_MissingCount(t *testing.T) {
 	assert.Contains(t, err.Error(), "iteration requires")
 }
 
-func TestParse_Iteration_NegativeCount(t *testing.T) {
-	_, err := parseSource(t, "retry { help } until iteration -3")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "non-negative")
+func TestParse_Iteration_NegativeCount_ParsesButFailsAtEval(t *testing.T) {
+	// Relaxed grammar: negative counts reach the evaluator,
+	// which errors.  Parse itself accepts the token run.
+	prog, err := parseSource(t, "retry { help } until iteration -3")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	_, ok := rs.Until.(*IterationExpr)
+	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
 }
 
-func TestParse_Iteration_NonInteger(t *testing.T) {
-	_, err := parseSource(t, "retry { help } until iteration banana")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid integer")
+func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
+	// Same story for a non-numeric argument: the parse succeeds,
+	// the eval-time coercion fails.
+	prog, err := parseSource(t, "retry { help } until iteration banana")
+	require.NoError(t, err)
+	rs := firstStmt(t, prog).(*RetryStmt)
+	_, ok := rs.Until.(*IterationExpr)
+	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
 }
 
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
