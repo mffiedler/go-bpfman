@@ -62,6 +62,43 @@ let data = [json parse '{"a":1,"b":2}']
 let r    = [exec jq '.a' file:$data]
 ```
 
+### Quoting when shelling to bash or sh
+
+The REPL's own string syntax is deliberately simple: inside a
+`"..."` or `'...'` literal every character is kept verbatim, with
+no backslash escapes. `$` is therefore literal inside any DSL
+quoted string, and only starts a variable reference when it
+appears *unquoted* in argument position. In practice this means
+shelling to `bash` composes cleanly as long as the DSL quote style
+differs from the inner shell's:
+
+```
+# DSL single-quoted; bash sees the literal script unchanged and
+# interprets its own $$, $1, $(...) etc.
+let r = [exec bash -c 'echo "pid=$$"; jq ". | length" "$1"' sh file:$data]
+
+# DSL double-quoted is fine too, provided the inner script does
+# not use double quotes. The DSL passes the contents through to
+# bash verbatim, so bash's own $$ still expands.
+let r = [exec bash -c "echo hi; echo pid=$$"]
+```
+
+Do **not** try to backslash-escape inner quotes of the same type:
+`"\"inner\""` ends the outer string at the first `\"` (because
+`\` is a literal character, not an escape), so everything after
+it is tokenised outside a string — a following `$` with no
+identifier then trips the tokeniser. Pick a different outer quote
+style instead.
+
+If a variable has to reach the shell, hand it to `bash -c` as a
+positional argument and read it inside the script as `$1`, `$2`,
+and so on. That keeps DSL expansion and shell expansion separate:
+
+```
+let mid = $prog.status.maps[0].id
+let sum = [exec bash -c 'bpftool map dump id "$1" -j | jq -j "[.[0].formatted.values[].value] | add"' sh $mid]
+```
+
 ### What exec does not do
 
 - No pipelines, redirects, globbing, or job control.
