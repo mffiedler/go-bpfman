@@ -638,21 +638,21 @@ func TestReplCompleteVarPath(t *testing.T) {
 			name:        "empty token dump lists all vars",
 			token:       "",
 			sigil:       false,
-			wantAny:     []string{"pid ", "prog.", "prog2."},
+			wantAny:     []string{"pid ", "prog", "prog2"},
 			wantReplace: 0,
 		},
 		{
 			name:        "empty $ sigil lists all $vars",
 			token:       "$",
 			sigil:       true,
-			wantAny:     []string{"$pid ", "$prog.", "$prog2."},
+			wantAny:     []string{"$pid ", "$prog", "$prog2"},
 			wantReplace: 1,
 		},
 		{
 			name:        "partial variable name bare",
 			token:       "pro",
 			sigil:       false,
-			wantAny:     []string{"prog.", "prog2."},
+			wantAny:     []string{"prog", "prog2"},
 			wantNone:    []string{"pid "},
 			wantReplace: 3,
 		},
@@ -660,37 +660,37 @@ func TestReplCompleteVarPath(t *testing.T) {
 			name:        "partial variable name sigil",
 			token:       "$pro",
 			sigil:       true,
-			wantAny:     []string{"$prog.", "$prog2."},
+			wantAny:     []string{"$prog", "$prog2"},
 			wantNone:    []string{"$pid "},
 			wantReplace: 4,
 		},
 		{
-			name:        "exact variable name bare structured",
+			name:        "exact variable name bare structured drills one level",
 			token:       "prog",
 			sigil:       false,
-			wantAny:     []string{"prog."},
+			wantAny:     []string{"prog", "prog.record", "prog.name ", "prog.maps"},
 			wantReplace: 4,
 		},
 		{
 			name:        "top-level fields of structured var",
 			token:       "prog.",
 			sigil:       false,
-			wantAny:     []string{"prog.record.", "prog.name ", "prog.maps["},
+			wantAny:     []string{"prog.record", "prog.name ", "prog.maps"},
 			wantReplace: 5,
 		},
 		{
 			name:        "top-level fields with sigil",
 			token:       "$prog.",
 			sigil:       true,
-			wantAny:     []string{"$prog.record.", "$prog.name ", "$prog.maps["},
+			wantAny:     []string{"$prog.record", "$prog.name ", "$prog.maps"},
 			wantReplace: 6,
 		},
 		{
 			name:        "partial top-level field",
 			token:       "prog.re",
 			sigil:       false,
-			wantAny:     []string{"prog.record."},
-			wantNone:    []string{"prog.name ", "prog.maps["},
+			wantAny:     []string{"prog.record"},
+			wantNone:    []string{"prog.name ", "prog.maps"},
 			wantReplace: 7,
 		},
 		{
@@ -719,14 +719,14 @@ func TestReplCompleteVarPath(t *testing.T) {
 			name:        "array index completion",
 			token:       "prog.maps[",
 			sigil:       false,
-			wantAny:     []string{"prog.maps[0].", "prog.maps[1]."},
+			wantAny:     []string{"prog.maps[0]", "prog.maps[1]"},
 			wantReplace: 10,
 		},
 		{
 			name:        "array index completion with sigil",
 			token:       "$prog.maps[",
 			sigil:       true,
-			wantAny:     []string{"$prog.maps[0].", "$prog.maps[1]."},
+			wantAny:     []string{"$prog.maps[0]", "$prog.maps[1]"},
 			wantReplace: 11,
 		},
 		{
@@ -734,6 +734,33 @@ func TestReplCompleteVarPath(t *testing.T) {
 			token:       "prog.maps[0].",
 			sigil:       false,
 			wantAny:     []string{"prog.maps[0].name ", "prog.maps[0].pin "},
+			wantReplace: 13,
+		},
+		{
+			name:        "closed bracket index drills one level",
+			token:       "prog.maps[0]",
+			sigil:       false,
+			wantAny:     []string{"prog.maps[0]", "prog.maps[0].name ", "prog.maps[0].pin "},
+			wantReplace: 12,
+		},
+		{
+			// Regression: "maps.<tab>" used to produce
+			// "maps.[0]" because the child-completion loop
+			// unconditionally prepended '.' to the key, even
+			// for bracketed array indices.  The correct form
+			// is "maps[0]" (no leading dot before '[').
+			name:        "trailing dot on array field produces bracketed index without dot",
+			token:       "prog.maps.",
+			sigil:       false,
+			wantAny:     []string{"prog.maps[0]"},
+			wantNone:    []string{"prog.maps.[0]"},
+			wantReplace: 10,
+		},
+		{
+			name:        "closed bracket index with sigil drills one level",
+			token:       "$prog.maps[0]",
+			sigil:       true,
+			wantAny:     []string{"$prog.maps[0]", "$prog.maps[0].name ", "$prog.maps[0].pin "},
 			wantReplace: 13,
 		},
 		{
@@ -790,6 +817,11 @@ func TestReplCompleteVarPath_NilSession(t *testing.T) {
 }
 
 func TestReplComplete_DumpCompletion(t *testing.T) {
+	// dump's argument is any expression that evaluates to a
+	// value; bare-word args are literal strings at runtime
+	// ("dump foo" prints "foo", not $foo), so completion only
+	// offers variable paths when the prefix is sigil-led.  This
+	// keeps the completer honest with the parser's sigil rule.
 	session := shell.NewSession()
 	v, err := shell.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
 	require.NoError(t, err)
@@ -800,40 +832,57 @@ func TestReplComplete_DumpCompletion(t *testing.T) {
 		name        string
 		line        string
 		wantAny     []string
+		wantNone    []string
 		wantReplace int
 	}{
 		{
-			name:        "dump with space lists all vars",
+			name:        "dump with space lists all sigil vars",
 			line:        "dump ",
-			wantAny:     []string{"pid ", "prog."},
+			wantAny:     []string{"$pid ", "$prog"},
 			wantReplace: 0,
 		},
 		{
-			name:        "dump with partial var name",
-			line:        "dump pro",
-			wantAny:     []string{"prog."},
-			wantReplace: 3,
+			name:        "dump with bare $ lists all sigil vars",
+			line:        "dump $",
+			wantAny:     []string{"$pid ", "$prog"},
+			wantReplace: 1,
 		},
 		{
-			name:        "dump with dotted path",
-			line:        "dump prog.",
-			wantAny:     []string{"prog.record.", "prog.name "},
-			wantReplace: 5,
+			name:        "dump with partial sigil var name",
+			line:        "dump $pro",
+			wantAny:     []string{"$prog"},
+			wantReplace: 4,
 		},
 		{
-			name:        "dump with nested path",
-			line:        "dump prog.record.",
-			wantAny:     []string{"prog.record.program_id "},
-			wantReplace: 12,
+			name:        "dump with sigil dotted path",
+			line:        "dump $prog.",
+			wantAny:     []string{"$prog.record", "$prog.name "},
+			wantReplace: 6,
+		},
+		{
+			name:        "dump with sigil nested path",
+			line:        "dump $prog.record.",
+			wantAny:     []string{"$prog.record.program_id "},
+			wantReplace: 13,
+		},
+		{
+			name:     "dump with bare prefix does not offer variable paths",
+			line:     "dump pro",
+			wantNone: []string{"prog", "prog.record"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
-			assert.Equal(t, tt.wantReplace, replace, "replace")
+			if tt.wantAny != nil {
+				assert.Equal(t, tt.wantReplace, replace, "replace")
+			}
 			for _, want := range tt.wantAny {
 				assert.Contains(t, candidates, want, "expected candidate %q", want)
+			}
+			for _, unwanted := range tt.wantNone {
+				assert.NotContains(t, candidates, unwanted, "unexpected candidate %q", unwanted)
 			}
 		})
 	}
@@ -854,7 +903,7 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 		{
 			name:        "bpfman show program $prog. completes fields",
 			line:        "bpfman show program $prog.",
-			wantAny:     []string{"$prog.record.", "$prog.name "},
+			wantAny:     []string{"$prog.record", "$prog.name "},
 			wantReplace: 6,
 		},
 		{
@@ -866,7 +915,7 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 		{
 			name:        "bpfman program delete $prog. completes fields",
 			line:        "bpfman program delete $prog.",
-			wantAny:     []string{"$prog.record.", "$prog.name "},
+			wantAny:     []string{"$prog.record", "$prog.name "},
 			wantReplace: 6,
 		},
 	}
@@ -2998,6 +3047,64 @@ func TestReplComplete_FileSubcommands(t *testing.T) {
 func TestReplComplete_JQInCommandNames(t *testing.T) {
 	_, candidates := replComplete(context.Background(), nil, nil, "j", len("j"))
 	assert.Contains(t, candidates, "jq ")
+}
+
+func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
+	// At the top-level prompt a '$'-led first token is an
+	// expression statement: the completer should walk variable
+	// paths just like inside a command argument, so typing
+	// "$prog.<tab>" offers the object's fields.  Bare "prog."
+	// stays on the command-name path (it is a literal).
+	session := shell.NewSession()
+	progVal, err := shell.ValueFromJSON([]byte(`{
+		"record": {"program_id": 42, "name": "my_prog"}
+	}`))
+	require.NoError(t, err)
+	session.Set("prog", progVal)
+	session.Set("pid", shell.StringValue("99"))
+
+	t.Run("dollar alone lists all sigil-prefixed vars", func(t *testing.T) {
+		replace, cands := replComplete(context.Background(), nil, session, "$", len("$"))
+		assert.Equal(t, 1, replace)
+		assert.Contains(t, cands, "$prog")
+		assert.Contains(t, cands, "$pid ")
+	})
+	t.Run("dollar-name partial completes variable names", func(t *testing.T) {
+		_, cands := replComplete(context.Background(), nil, session, "$pr", len("$pr"))
+		assert.Contains(t, cands, "$prog")
+	})
+	t.Run("dollar-name-dot walks fields", func(t *testing.T) {
+		_, cands := replComplete(context.Background(), nil, session, "$prog.", len("$prog."))
+		assert.Contains(t, cands, "$prog.record")
+	})
+	t.Run("dollar-name-nested-dot walks nested fields", func(t *testing.T) {
+		_, cands := replComplete(context.Background(), nil, session, "$prog.record.", len("$prog.record."))
+		assert.Contains(t, cands, "$prog.record.program_id ")
+	})
+	t.Run("bare-word first token stays on command path", func(t *testing.T) {
+		// "prog." is a literal string argument at statement
+		// position, not a variable reference; no variable
+		// paths should leak into the candidate list.
+		_, cands := replComplete(context.Background(), nil, session, "prog.", len("prog."))
+		assert.NotContains(t, cands, "prog.record")
+	})
+	t.Run("exact sigil name drills one level for discovery", func(t *testing.T) {
+		// "$prog" on its own is a valid expression; completion
+		// also surfaces its immediate children so a single tab
+		// on a structured variable makes drillable fields
+		// discoverable without requiring the user to type ".".
+		_, cands := replComplete(context.Background(), nil, session, "$prog", len("$prog"))
+		assert.Contains(t, cands, "$prog")
+		assert.Contains(t, cands, "$prog.record")
+	})
+	t.Run("exact path field drills one level for discovery", func(t *testing.T) {
+		// Same discovery behaviour one level deeper: tabbing
+		// on a fully-typed path whose value is structured
+		// reveals its immediate children.
+		_, cands := replComplete(context.Background(), nil, session, "$prog.record", len("$prog.record"))
+		assert.Contains(t, cands, "$prog.record")
+		assert.Contains(t, cands, "$prog.record.program_id ")
+	})
 }
 
 func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {

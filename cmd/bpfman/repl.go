@@ -639,6 +639,16 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 		if len(tokens) == 1 {
 			prefix = tokens[0]
 		}
+		// A '$'-led first token is an expression statement
+		// starting with a variable reference: offer variable
+		// path completions so "$prog.<tab>" walks through an
+		// object's fields.  Bare-word first tokens stay on the
+		// command-name path — a literal "prog" is a command
+		// invocation, not a variable lookup.
+		if strings.HasPrefix(prefix, "$") {
+			candidates, replace = replCompleteVarPath(session, prefix, true)
+			return
+		}
 		for _, cmd := range replCommandNames {
 			if strings.HasPrefix(cmd, prefix) {
 				candidates = append(candidates, cmd+" ")
@@ -656,13 +666,25 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 			}
 			return
 		}
-		// "dump" takes a variable path (bare, no $ prefix).
+		// "dump" takes any expression — including a variable
+		// reference — as its argument.  Bare-word arguments
+		// are literal strings at runtime ("dump foo" prints
+		// "foo", not the variable foo), so completion only
+		// offers variable paths when the prefix is
+		// sigil-led.  An empty or "$"-only prefix lists every
+		// variable; a partial sigil-led prefix narrows by
+		// name; a bare partial token defers to the
+		// command-path fallback (no variable completions, and
+		// no shadowing of the literal-string semantics).
 		if tokens[0] == "dump" {
 			prefix := ""
 			if len(tokens) == 2 {
 				prefix = tokens[1]
 			}
-			candidates, replace = replCompleteVarPath(session, prefix, false)
+			if prefix == "" || strings.HasPrefix(prefix, "$") {
+				candidates, replace = replCompleteVarPath(session, prefix, true)
+				return
+			}
 			return
 		}
 		// "unset" takes bare variable names.
@@ -1026,8 +1048,17 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 			if sigil {
 				candidate = "$" + name
 			}
-			candidate += varPathSuffix(v)
-			candidates = append(candidates, candidate)
+			candidates = append(candidates, candidate+varPathSuffix(v))
+			// Discovery: when the token exactly matches a
+			// structured variable name, also enumerate its
+			// immediate children so a single "$prog<tab>"
+			// surfaces drillable fields without forcing the
+			// user through a trailing-separator candidate.
+			// Each child candidate is itself a valid
+			// expression, so Enter works at any level.
+			if name == stripped && v.IsStructured() {
+				candidates = append(candidates, enumerateChildren(candidate, name, v)...)
+			}
 		}
 		return
 	}
@@ -1040,9 +1071,12 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 
 	pathPart := stripped[sepIdx:]
 
-	// Determine the resolved prefix (complete segments) and the
-	// tail (partial last segment after the final '.' or '[').
+	// Determine the resolved prefix (complete segments), the
+	// tail (partial last segment after the final '.' or '['),
+	// and whether the input is a fully-resolved path with no
+	// partial tail at all.
 	var resolvedPath, tail string
+	atResolved := false
 	if strings.HasSuffix(pathPart, ".") {
 		// e.g. "record." -- walk to "record", enumerate keys
 		resolvedPath = strings.TrimPrefix(pathPart, ".")
@@ -1053,6 +1087,14 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 		resolvedPath = strings.TrimPrefix(pathPart, ".")
 		resolvedPath = strings.TrimSuffix(resolvedPath, "[")
 		tail = "["
+	} else if strings.HasSuffix(pathPart, "]") {
+		// e.g. "maps[0]" -- fully resolved to an array
+		// element.  No partial tail; offer the resolved path
+		// itself, plus child-discovery if the value is
+		// structured.
+		resolvedPath = strings.TrimPrefix(pathPart, ".")
+		tail = ""
+		atResolved = true
 	} else {
 		// e.g. "record.prog" -- walk to "record", match "prog"
 		lastDot := strings.LastIndex(pathPart, ".")
@@ -1080,6 +1122,19 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 	candidatePrefix += varName
 	if resolvedPath != "" {
 		candidatePrefix += "." + resolvedPath
+	}
+
+	if atResolved {
+		// Fully-resolved bracketed path (e.g. "maps[0]").
+		// Emit the resolved candidate itself, plus its
+		// children when structured — mirrors the discovery
+		// rule applied at the variable-name and partial-field
+		// levels.
+		candidates = append(candidates, candidatePrefix+varPathSuffix(target))
+		if target.IsStructured() {
+			candidates = append(candidates, enumerateChildren(candidatePrefix, varName, target)...)
+		}
+		return
 	}
 
 	keys := target.Keys()
@@ -1110,15 +1165,28 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 		return
 	}
 
-	// Map field completion: match keys against tail prefix.
+	// Child completion: match keys against tail prefix.  The
+	// separator between candidatePrefix and key depends on the
+	// key shape — map field names take a leading '.', array
+	// indices arrive as "[n]" and glue directly on.  target is
+	// usually a map here (so keys are field names), but a
+	// trailing-dot path on an array variable (e.g. "maps.")
+	// reaches this loop with array-shaped keys; without the
+	// per-key separator choice the candidate would be
+	// "maps.[0]", which is not a valid variable reference.
 	for _, key := range keys {
 		if !strings.HasPrefix(key, tail) {
 			continue
 		}
+		isIndex := strings.HasPrefix(key, "[")
+		sep := "."
+		if isIndex {
+			sep = ""
+		}
 		// Walk to the field to determine its trailing character.
 		fieldPath := resolvedPath
 		if fieldPath != "" {
-			fieldPath += "." + key
+			fieldPath += sep + key
 		} else {
 			fieldPath = key
 		}
@@ -1126,10 +1194,50 @@ func replCompleteVarPath(session *shell.Session, token string, sigil bool) (cand
 		if err != nil {
 			continue
 		}
-		candidate := candidatePrefix + "." + key + varPathSuffix(child)
-		candidates = append(candidates, candidate)
+		base := candidatePrefix + sep + key
+		candidates = append(candidates, base+varPathSuffix(child))
+		// Discovery: when the tail exactly matches a field
+		// whose value is structured, also enumerate its
+		// children so a second tab on "$prog.record<tab>"
+		// surfaces "$prog.record.program_id" etc.
+		if key == tail && child.IsStructured() {
+			candidates = append(candidates, enumerateChildren(base, varName, child)...)
+		}
 	}
 	return
+}
+
+// enumerateChildren returns candidate strings for each direct
+// child of v, each formed as `base + key + varPathSuffix(child)`
+// with the appropriate separator: "." for map fields and "" for
+// array indices (since Keys() already returns bracketed tokens
+// like "[0]").  Errors during per-key lookup are skipped — the
+// completer never bails out just because one child is
+// unreachable.  varName seeds LookupValue's error messages; it
+// does not affect the candidate text.
+func enumerateChildren(base, varName string, v shell.Value) []string {
+	var out []string
+	for _, key := range v.Keys() {
+		// Determine the path segment used both for lookup
+		// (relative to v) and for the separator in the
+		// emitted candidate.  Map keys are bare idents; array
+		// keys arrive pre-bracketed as "[n]".
+		isIndex := strings.HasPrefix(key, "[")
+		lookupPath := key
+		if !isIndex {
+			lookupPath = key
+		}
+		child, err := v.LookupValue(varName, lookupPath)
+		if err != nil {
+			continue
+		}
+		sep := "."
+		if isIndex {
+			sep = ""
+		}
+		out = append(out, base+sep+key+varPathSuffix(child))
+	}
+	return out
 }
 
 // replCompleteVarNames offers bare variable name completions with a
@@ -1149,15 +1257,18 @@ func replCompleteVarNames(session *shell.Session, prefix string) (candidates []s
 }
 
 // varPathSuffix returns the trailing character for a completion
-// candidate based on the value type: "." for maps (invites deeper
-// traversal), "[" for arrays (invites indexing), " " for scalars
-// and nil (terminal).
+// candidate based on the value type.  Scalars get " " (terminal
+// leaf — commit and move on).  Maps and arrays get "" so the
+// completed token stays a valid expression the user can press
+// Enter on; drilling one more level requires typing "." or "["
+// explicitly.  A trailing "." or "[" would be a parse error on
+// its own ("expected identifier after '.'"), so appending it
+// forces a backspace to stop at any given level — the friction
+// this no-suffix rule avoids.
 func varPathSuffix(v shell.Value) string {
 	switch v.Raw().(type) {
-	case map[string]any:
-		return "."
-	case []any:
-		return "["
+	case map[string]any, []any:
+		return ""
 	default:
 		return " "
 	}
