@@ -21,7 +21,6 @@ func TestOriginKind_String(t *testing.T) {
 		{OriginDispatcher, "dispatcher"},
 		{OriginMap, "map"},
 		{OriginExecResult, "exec.result"},
-		{OriginJSONParsed, "json.parsed"},
 		{OriginKind(999), "OriginKind(999)"},
 	}
 	for _, tc := range cases {

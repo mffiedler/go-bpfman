@@ -392,8 +392,8 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 // dispatchPipe evaluates a pipe expression by threading the LHS's
 // Value into the command described by Args.  The LHS Value
 // becomes the last element of the evaluated argument list so it
-// matches the convention used by jq, json parse, file temp, and
-// most shell-style "CMD ARGS VALUE" invocations.
+// matches the convention used by jq, file temp, and most
+// shell-style "CMD ARGS VALUE" invocations.
 func dispatchPipe(e *PipeExpr, env *Env) (Value, error) {
 	if env.ExecSubstitution == nil {
 		return Value{}, locErrorf(e.Loc, "pipe requires a substitution runner; none configured")

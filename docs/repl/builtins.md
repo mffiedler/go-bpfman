@@ -58,7 +58,7 @@ if $r.exit_code != 0 { dump r.stdout }
 File adapters (see below) are recognised in argument position:
 
 ```
-let data = [json parse '{"a":1,"b":2}']
+let data = [jq "fromjson" '{"a":1,"b":2}']
 let r    = [exec jq '.a' file:$data]
 ```
 
@@ -106,48 +106,29 @@ let sum = [exec bash -c 'bpftool map dump id "$1" -j | jq -j "[.[0].formatted.va
 - No implicit variable expansion of `$`-prefixed strings inside
   quotes; that is the REPL's concern, not the host shell's.
 
-## json parse
-
-`json parse TEXT` decodes a JSON string into a structured value
-tagged `OriginJSONParsed`. Combined with `exec`, it handles tools
-that produce JSON output (`bpftool prog show --json`, `ip -j link
-show`, `tc -j`).
-
-```
-let raw  = [exec bpftool prog show --json]
-let data = [json parse $raw.stdout]
-dump data[0].name
-```
-
-Numbers in the decoded tree are preserved as `json.Number` to avoid
-float precision loss during round-trips.
-
-### Errors
-
-- Malformed JSON → parse error.
-- Trailing data after a valid value → error (JSON must be a single
-  top-level value).
-- Empty input → decode error.
-
-### Output formatting
-
-Used as a top-level command (not in a `let` RHS), `json parse`
-prints the decoded tree as indented JSON. Used in a `let` RHS, it
-returns the structured value silently.
-
 ## jq
 
 `jq FILTER VALUE` runs a jq filter against a Value using an
 embedded gojq interpreter. This is the REPL's primitive for
-higher-order operations over structured data — `map`, `filter`,
-`select`, `reduce`, `add`, `length`, `group_by`, `any`/`all`, and
+both decoding JSON text (`fromjson`) and expressing higher-order
+operations over structured data — `map`, `filter`, `select`,
+`reduce`, `add`, `length`, `group_by`, `any`/`all`, and
 everything else jq provides — without shelling out.
 
 ```
-let raw    = [json parse '{"items":[{"v":10},{"v":20},{"v":12}]}']
+let raw    = [jq "fromjson" '{"items":[{"v":10},{"v":20},{"v":12}]}']
 let total  = [jq ".items | map(.v) | add" $raw]
 let names  = [jq ".items | map(.name)" $raw]
 let exists = [jq ".items | any(.v == 20)" $raw]
+```
+
+Combined with `exec`, jq handles any tool that produces JSON
+output (`bpftool prog show --json`, `ip -j link show`, `tc -j`):
+
+```
+let raw  = [exec bpftool prog show -j]
+let data = [jq "fromjson" $raw.stdout]
+dump data[0].name
 ```
 
 Combined with the `|` pipe operator it reads left-to-right, which
@@ -181,16 +162,16 @@ assert $big eq true
 - Wrong argument count (`jq requires exactly filter + value`)
   surfaces at dispatch.
 
-### When to use `jq` vs `json parse` vs path access
+### When to use `jq` vs path access
 
 - **Path access** (`$var.a.b[0]`) is the simplest; prefer it for
-  single-field reach-in.
-- **`json parse`** turns a string into a structured Value — the
-  precursor for anything else.
-- **`jq`** is the tool when you need a transformation that
-  indexing alone can't express: aggregation (`add`, `length`),
-  projection (`map`), filtering (`select`), reshaping, or any
-  multi-step pipeline over nested data.
+  single-field reach-in on an already-structured value.
+- **`jq "fromjson"`** converts a JSON string into a structured
+  Value — use it to ingest output from tools that emit JSON.
+- **`jq FILTER`** is the tool for transformations indexing alone
+  can't express: aggregation (`add`, `length`), projection
+  (`map`), filtering (`select`), reshaping, or any multi-step
+  pipeline over nested data.
 
 ## file adapters
 
@@ -206,7 +187,7 @@ verbatim; structured values are rendered as indented JSON with a
 trailing newline.
 
 ```
-let data = [json parse '{"b":2,"a":1}']
+let data = [jq "fromjson" '{"b":2,"a":1}']
 let path = [file temp data]
 ```
 
@@ -251,7 +232,7 @@ require ok bpfman link attach xdp -i dummy0 $prog
 
 # Exercise.
 let stats = [exec bpftool map dump pinned /sys/fs/bpf/bpfman/maps/$prog.record.program_id/stats --json]
-let data  = [json parse $stats.stdout]
+let data  = [jq "fromjson" $stats.stdout]
 assert $data[0].packets >= 0
 
 # Cleanup.

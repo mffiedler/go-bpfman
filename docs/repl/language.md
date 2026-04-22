@@ -162,7 +162,7 @@ builtins are both legal inside the brackets.
 
 ```
 let p = [bpfman program get 123]
-let j = [json parse '{"name":"test"}']
+let j = [jq "fromjson" '{"name":"test"}']
 let r = [exec echo hello]
 ```
 
@@ -209,8 +209,7 @@ what it represents. Origin is a closed set:
 | `dispatcher`      | (reserved for future use)                 |
 | `map`             | (reserved for future use)                 |
 | `exec.result`     | `exec` and `exec status`                  |
-| `json.parsed`     | `json parse`                              |
-| `unknown`         | `ValueFromJSON`, `ValueFromMap`, untagged |
+| `unknown`         | `ValueFromJSON`, `ValueFromMap`, `jq`, untagged |
 
 Command parsers that accept typed references (e.g. `bpfman program
 get $var`) check the origin. `$link` passed where a program is

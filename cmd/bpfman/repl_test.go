@@ -2531,10 +2531,10 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 	assert.Contains(t, candidates, "exec ")
 }
 
-// --- json parse shell command tests ---
+// --- jq fromjson / structured data tests ---
 
-func TestReplLoop_JSONParseObject(t *testing.T) {
-	input := `let data = [json parse '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
+func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
+	input := `let data = [jq "fromjson" '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2543,17 +2543,15 @@ func TestReplLoop_JSONParseObject(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	// Bound form should not print.
-	assert.Empty(t, outBuf.String())
+	assert.Empty(t, outBuf.String(), "bound form should not print")
 
 	val, ok := session.Get("data")
 	require.True(t, ok)
 	assert.True(t, val.IsStructured())
 }
 
-func TestReplLoop_JSONParseArray(t *testing.T) {
-	input := `let arr = [json parse '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
+func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
+	input := `let arr = [jq "fromjson" '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2564,8 +2562,8 @@ func TestReplLoop_JSONParseArray(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_JSONParseScalar(t *testing.T) {
-	input := "let v = [json parse 123]\nassert $v eq 123\n"
+func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
+	input := `let v = [jq "fromjson" 123]` + "\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2576,54 +2574,30 @@ func TestReplLoop_JSONParseScalar(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_JSONParsePlainForm(t *testing.T) {
-	input := `json parse '{"a":1}'` + "\n"
-	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-	// Plain form should print indented JSON.
-	assert.Contains(t, outBuf.String(), "\"a\": 1")
-}
-
-func TestReplLoop_JSONParseInvalidJSON(t *testing.T) {
-	input := "let data = [json parse not-json]\n"
+func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
+	input := `let data = [jq "fromjson" not-json]` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "json parse")
+	assert.Contains(t, errBuf.String(), "jq")
 }
 
-func TestReplLoop_JSONParseNoArgs(t *testing.T) {
-	input := "json parse\n"
+func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
+	input := "jq\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "json parse requires exactly one argument")
+	assert.Contains(t, errBuf.String(), "usage: jq")
 }
 
-func TestReplLoop_JSONParseNoSubcommand(t *testing.T) {
-	input := "json\n"
-	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "usage: json parse")
-}
-
-func TestReplLoop_JSONParseAssertOk(t *testing.T) {
-	input := `assert ok json parse '{"a":1}'` + "\n"
+func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
+	input := `assert ok jq "fromjson" '{"a":1}'` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2635,8 +2609,8 @@ func TestReplLoop_JSONParseAssertOk(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
-func TestReplLoop_JSONParseAssertFail(t *testing.T) {
-	input := "assert fail json parse not-json\n"
+func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
+	input := `assert fail jq "fromjson" not-json` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2649,9 +2623,9 @@ func TestReplLoop_JSONParseAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
-	// Inner json parse returns a scalar string; the outer echo
+	// Inner jq fromjson returns a scalar string; the outer echo
 	// should receive that string as a literal argv word.
-	input := `let out = [exec echo [json parse '"world"']]` + "\nassert contains $out.stdout world\n"
+	input := `let out = [exec echo [jq "fromjson" '"world"']]` + "\nassert contains $out.stdout world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2663,7 +2637,7 @@ func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
-	input := `let out = [exec echo [json parse [json parse '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
+	input := `let out = [exec echo [jq "fromjson" [jq "fromjson" '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2675,10 +2649,9 @@ func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
-	// Inner json parse fails with malformed input. The outer exec
-	// should never run; the error from the inner propagates out of
-	// the let binding with its json-parse context intact.
-	input := "let out = [exec echo [json parse not-json]]\n"
+	// Inner jq fails on malformed input.  The outer exec must
+	// never run, and the let must not bind.
+	input := `let out = [exec echo [jq "fromjson" not-json]]` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2686,7 +2659,7 @@ func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "json parse")
+	assert.Contains(t, errBuf.String(), "jq")
 	_, bound := session.Get("out")
 	assert.False(t, bound, "let must not bind when the nested cmdsub fails")
 }
@@ -2733,8 +2706,8 @@ func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
 	assert.NotEmpty(t, errBuf.String())
 }
 
-func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
-	input := `let data = [json parse '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
+func TestReplLoop_JQ_NestedAccess(t *testing.T) {
+	input := `let data = [jq "fromjson" '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2745,9 +2718,10 @@ func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_JSONParseWithExec(t *testing.T) {
-	// End-to-end: exec produces JSON text, json parse makes it structured.
-	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [json parse $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
+func TestReplLoop_JQ_WithExec(t *testing.T) {
+	// End-to-end: exec produces JSON text, jq fromjson makes it
+	// structured.
+	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \"fromjson\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2758,7 +2732,7 @@ func TestReplLoop_JSONParseWithExec(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_JSONParseCannotBindNonValueShellCmd(t *testing.T) {
+func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
 	// Other non-value shell commands should still be rejected.
 	input := "let x = [vars]\n"
 	var errBuf bytes.Buffer
@@ -2795,7 +2769,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempStructured(t *testing.T) {
-	input := `let data = [json parse '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
+	input := `let data = [jq "fromjson" '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2843,7 +2817,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
-	input := `let data = [json parse '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
+	input := `let data = [jq "fromjson" '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2927,7 +2901,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
-	input := `let data = [json parse '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
+	input := `let data = [jq "fromjson" '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2990,7 +2964,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
-	input := `let data = [json parse '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
+	input := `let data = [jq "fromjson" '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3013,12 +2987,7 @@ func TestReplComplete_FileSubcommands(t *testing.T) {
 	assert.Contains(t, candidates, "temp ")
 }
 
-func TestReplComplete_JSONInCommandNames(t *testing.T) {
-	_, candidates := replComplete(context.Background(), nil, nil, "js", len("js"))
-	assert.Contains(t, candidates, "json ")
-}
-
-func TestReplComplete_JSONSubcommands(t *testing.T) {
-	_, candidates := replComplete(context.Background(), nil, nil, "json ", len("json "))
-	assert.Contains(t, candidates, "parse ")
+func TestReplComplete_JQInCommandNames(t *testing.T) {
+	_, candidates := replComplete(context.Background(), nil, nil, "j", len("j"))
+	assert.Contains(t, candidates, "jq ")
 }

@@ -29,7 +29,6 @@ const (
 	OriginDispatcher
 	OriginMap
 	OriginExecResult
-	OriginJSONParsed
 )
 
 // String returns the canonical name used in error messages.
@@ -51,8 +50,6 @@ func (k OriginKind) String() string {
 		return "map"
 	case OriginExecResult:
 		return "exec.result"
-	case OriginJSONParsed:
-		return "json.parsed"
 	default:
 		return fmt.Sprintf("OriginKind(%d)", int(k))
 	}

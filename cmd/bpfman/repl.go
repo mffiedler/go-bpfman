@@ -36,7 +36,7 @@ type ReplCmd struct {
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "jq", "json", "let", "require", "source", "unalias", "unset", "vars", "version"}
+var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "jq", "let", "require", "source", "unalias", "unset", "vars", "version"}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -47,7 +47,6 @@ var replSubcommands = map[string][]string{
 	"bpfman":  {"dispatcher", "doctor", "gc", "link", "list", "load", "program", "programs", "show"},
 	"exec":    {"status"},
 	"file":    {"temp"},
-	"json":    {"parse"},
 	"require": replAssertVerbs,
 }
 
@@ -383,7 +382,6 @@ var shellCommands = map[string]bool{
 	"exec":    true,
 	"file":    true,
 	"jq":      true,
-	"json":    true,
 	"require": true,
 	"dump":    true,
 	"help":    true,
@@ -423,9 +421,6 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, val, err
 	case "jq":
 		val, err := replJQ(args[1:])
-		return true, val, err
-	case "json":
-		val, err := replJSON(cli, args[1:])
 		return true, val, err
 	case "require":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
@@ -1305,7 +1300,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  exec <command> [args|file:$var...]        Run a host command (assignable)\n")
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
 	b.WriteString("  file temp <variable>[.path]               Write value to temp file (assignable)\n")
-	b.WriteString("  json parse <string>                       Parse JSON into a value (assignable)\n")
+	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
 	b.WriteString("  dump <variable>[.path]                    Display variable contents\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
@@ -1353,33 +1348,6 @@ func replHistoryPath() (string, error) {
 		return "", fmt.Errorf("create state directory: %w", err)
 	}
 	return filepath.Join(dir, "repl-history"), nil
-}
-
-// replJSON implements the json shell command. Currently the only
-// subcommand is "parse", which converts a JSON string into a
-// structured shell.Value. In plain form the parsed value is printed
-// as indented JSON. In bound form the value is returned for
-// assignment.
-func replJSON(cli *CLI, args []shell.Arg) (shell.Value, error) {
-	if len(args) == 0 || argText(args[0]) != "parse" {
-		return shell.Value{}, fmt.Errorf("usage: json parse <string>")
-	}
-	if len(args) != 2 {
-		return shell.Value{}, fmt.Errorf("json parse requires exactly one argument")
-	}
-	text := argText(args[1])
-	val, err := shell.ValueFromJSON([]byte(text))
-	if err != nil {
-		return shell.Value{}, fmt.Errorf("json parse: %w", err)
-	}
-	b, err := json.MarshalIndent(val.Raw(), "", "  ")
-	if err != nil {
-		return shell.Value{}, fmt.Errorf("json parse: %w", err)
-	}
-	if err := cli.PrintOut(string(b) + "\n"); err != nil {
-		return shell.Value{}, err
-	}
-	return val.WithKind(shell.OriginJSONParsed), nil
 }
 
 // replJQ runs a jq filter against a Value using an embedded gojq

@@ -47,7 +47,7 @@ func ValueFromAny(x any) Value {
 // ValueFromJSON decodes JSON bytes into a Value. Numbers are
 // preserved as json.Number to avoid float64 precision loss. The
 // resulting Value has OriginUnknown; callers that need a declared
-// kind (e.g. the json parse builtin) should chain WithKind.
+// kind should chain WithKind.
 func ValueFromJSON(b []byte) (Value, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
