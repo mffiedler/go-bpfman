@@ -87,13 +87,31 @@ type ThreadExpr struct {
 	Loc
 }
 
+// LogicalExpr is a short-circuit boolean combinator.  Op is
+// either "and" or "or"; both operands must evaluate to a
+// BoolValue at runtime.  Loc identifies the operator token.
+type LogicalExpr struct {
+	Op          string
+	Left, Right Expr
+	Loc
+}
+
+// NotExpr is boolean negation.  The operand must evaluate to a
+// BoolValue at runtime.  Loc identifies the 'not' token.
+type NotExpr struct {
+	Operand Expr
+	Loc
+}
+
 func (*LiteralExpr) exprNode() {}
 func (*VarRefExpr) exprNode()  {}
 func (*AdapterExpr) exprNode() {}
 func (*CmdSubExpr) exprNode()  {}
 func (*BinaryExpr) exprNode()  {}
 func (*UnaryExpr) exprNode()   {}
-func (*ThreadExpr) exprNode()    {}
+func (*ThreadExpr) exprNode()  {}
+func (*LogicalExpr) exprNode() {}
+func (*NotExpr) exprNode()     {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand and ExecSubstitution
@@ -339,9 +357,67 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalBinary(e, env)
 	case *UnaryExpr:
 		return evalUnary(e, env)
+	case *LogicalExpr:
+		return evalLogical(e, env)
+	case *NotExpr:
+		return evalNot(e, env)
 	default:
 		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
 	}
+}
+
+// evalLogical evaluates 'and' / 'or' with short-circuit
+// semantics.  Both operands must yield BoolValue; anything else
+// is a type error cited at the operator's location.  For 'and',
+// a false LHS returns false without evaluating RHS; for 'or', a
+// true LHS returns true without evaluating RHS.  This matches
+// every mainstream language's expectation for logical
+// combinators.
+func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
+	leftV, err := EvalExpr(e.Left, env)
+	if err != nil {
+		return Value{}, err
+	}
+	leftB, err := AsBool(leftV)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "%s: left: %v", e.Op, err)
+	}
+	switch e.Op {
+	case "and":
+		if !leftB {
+			return BoolValue(false), nil
+		}
+	case "or":
+		if leftB {
+			return BoolValue(true), nil
+		}
+	default:
+		return Value{}, locErrorf(e.Loc, "unknown logical operator %q", e.Op)
+	}
+	rightV, err := EvalExpr(e.Right, env)
+	if err != nil {
+		return Value{}, err
+	}
+	rightB, err := AsBool(rightV)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "%s: right: %v", e.Op, err)
+	}
+	return BoolValue(rightB), nil
+}
+
+// evalNot evaluates a boolean negation.  The operand must yield
+// a BoolValue or the evaluator reports a type error at the
+// 'not' location.
+func evalNot(e *NotExpr, env *Env) (Value, error) {
+	v, err := EvalExpr(e.Operand, env)
+	if err != nil {
+		return Value{}, err
+	}
+	b, err := AsBool(v)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "not: %v", err)
+	}
+	return BoolValue(!b), nil
 }
 
 // EvalArgs evaluates each Expr in exprs as a command argument and
@@ -404,8 +480,8 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 			return nil, locErrorf(e.Loc, "thread: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
-	case *BinaryExpr, *UnaryExpr:
-		return nil, locErrorf(exprLoc(expr), "comparison expression cannot be used as a command argument")
+	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr:
+		return nil, locErrorf(exprLoc(expr), "boolean/comparison expression cannot be used as a command argument")
 	default:
 		return nil, locErrorf(exprLoc(expr), "cannot use %T as command argument", expr)
 	}
@@ -767,6 +843,10 @@ func exprLoc(e Expr) Loc {
 	case *UnaryExpr:
 		return v.Loc
 	case *ThreadExpr:
+		return v.Loc
+	case *LogicalExpr:
+		return v.Loc
+	case *NotExpr:
 		return v.Loc
 	}
 	return Loc{}

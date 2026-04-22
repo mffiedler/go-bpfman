@@ -382,6 +382,122 @@ func TestParse_Continue_RejectsArguments(t *testing.T) {
 	assert.Contains(t, err.Error(), "continue")
 }
 
+// --- logical operators + parens ------------------------------------
+
+func TestParse_LogicalOr(t *testing.T) {
+	prog, err := parseSource(t, "if $a or $b { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	orExpr, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok, "expected LogicalExpr, got %T", ifStmt.Cond)
+	assert.Equal(t, "or", orExpr.Op)
+}
+
+func TestParse_LogicalAnd(t *testing.T) {
+	prog, err := parseSource(t, "if $a and $b { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	andExpr, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok, "expected LogicalExpr, got %T", ifStmt.Cond)
+	assert.Equal(t, "and", andExpr.Op)
+}
+
+func TestParse_LogicalNot(t *testing.T) {
+	prog, err := parseSource(t, "if not $a { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	notExpr, ok := ifStmt.Cond.(*NotExpr)
+	require.True(t, ok, "expected NotExpr, got %T", ifStmt.Cond)
+	_, ok = notExpr.Operand.(*VarRefExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_Logical_Precedence_AndTighterThanOr(t *testing.T) {
+	// "$a or $b and $c" should parse as "$a or ($b and $c)".
+	prog, err := parseSource(t, "if $a or $b and $c { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	or, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok)
+	assert.Equal(t, "or", or.Op)
+	rhs, ok := or.Right.(*LogicalExpr)
+	require.True(t, ok, "or's right operand should be an 'and' expr, got %T", or.Right)
+	assert.Equal(t, "and", rhs.Op)
+}
+
+func TestParse_Logical_Precedence_NotTighterThanAnd(t *testing.T) {
+	// "not $a and $b" should parse as "(not $a) and $b".
+	prog, err := parseSource(t, "if not $a and $b { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	and, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok)
+	assert.Equal(t, "and", and.Op)
+	_, ok = and.Left.(*NotExpr)
+	assert.True(t, ok, "and's left operand should be 'not', got %T", and.Left)
+}
+
+func TestParse_Logical_Precedence_NotLooserThanComparison(t *testing.T) {
+	// "not $a eq $b" should parse as "not ($a eq $b)" per SQL /
+	// Python convention, not "(not $a) eq $b" per C.
+	prog, err := parseSource(t, "if not $a eq $b { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	notExpr, ok := ifStmt.Cond.(*NotExpr)
+	require.True(t, ok, "top should be NotExpr, got %T", ifStmt.Cond)
+	_, ok = notExpr.Operand.(*BinaryExpr)
+	assert.True(t, ok, "not's operand should be a BinaryExpr, got %T", notExpr.Operand)
+}
+
+func TestParse_Logical_DoubleNot(t *testing.T) {
+	// "not not $a" parses via right-associative recursion as
+	// NotExpr(NotExpr($a)).
+	prog, err := parseSource(t, "if not not $a { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	outer, ok := ifStmt.Cond.(*NotExpr)
+	require.True(t, ok)
+	inner, ok := outer.Operand.(*NotExpr)
+	require.True(t, ok)
+	_, ok = inner.Operand.(*VarRefExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_Logical_ParensOverridePrecedence(t *testing.T) {
+	// "($a or $b) and $c" should parse with 'and' at the top.
+	prog, err := parseSource(t, "if ($a or $b) and $c { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	and, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok, "top should be 'and', got %T", ifStmt.Cond)
+	assert.Equal(t, "and", and.Op)
+	or, ok := and.Left.(*LogicalExpr)
+	require.True(t, ok)
+	assert.Equal(t, "or", or.Op)
+}
+
+func TestParse_Logical_ParenthesisedPrimary(t *testing.T) {
+	// A single parenthesised expression is equivalent to the
+	// inner expression at the same precedence; the AST has no
+	// dedicated ParenExpr node.
+	prog, err := parseSource(t, "if ($a) { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	_, ok := ifStmt.Cond.(*VarRefExpr)
+	assert.True(t, ok, "expected VarRefExpr from parenthesised primary, got %T", ifStmt.Cond)
+}
+
+func TestParse_Logical_UnmatchedParen(t *testing.T) {
+	_, err := parseSource(t, "if ($a or $b { help }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "')'")
+}
+
+func TestParse_Logical_StrayCloseParen(t *testing.T) {
+	_, err := parseSource(t, "if $a) { help }")
+	require.Error(t, err)
+}
+
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
 	// A syntax error inside [ ... ] surfaces at the outer Parse
 	// call: eager inner parsing is a deliberate behavioural change

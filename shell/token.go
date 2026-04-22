@@ -102,7 +102,7 @@ func Tokenise(input string) ([]Token, error) {
 			tokens = emit(tokens, start, Token{Kind: TokenSep, Text: string(ch)})
 			i++
 
-		case ch == '{' || ch == '}':
+		case ch == '{' || ch == '}' || ch == '(' || ch == ')':
 			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
@@ -453,7 +453,8 @@ func lexWord(input string, pos int) (Token, int) {
 		ch := input[i]
 		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ';' ||
 			ch == '$' || ch == '"' || ch == '\'' || ch == '#' ||
-			ch == '[' || ch == ']' || ch == '{' || ch == '}' {
+			ch == '[' || ch == ']' || ch == '{' || ch == '}' ||
+			ch == '(' || ch == ')' {
 			break
 		}
 		i++

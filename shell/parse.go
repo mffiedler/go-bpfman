@@ -453,7 +453,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 		return nil, fmt.Errorf("empty expression")
 	}
 	ep := &exprParser{tokens: tokens}
-	e, err := ep.parseComparison()
+	e, err := ep.parseOr()
 	if err != nil {
 		return nil, err
 	}
@@ -490,6 +490,69 @@ func (p *exprParser) advance() Token {
 
 func (p *exprParser) eof() bool {
 	return p.pos >= len(p.tokens)
+}
+
+// parseOr recognises left-associative 'or' chains.  'or' is the
+// loosest logical connective; it binds looser than 'and' and
+// looser than the comparison level.  Short-circuit evaluation is
+// handled at eval time.
+func (p *exprParser) parseOr() (Expr, error) {
+	left, err := p.parseAnd()
+	if err != nil {
+		return nil, err
+	}
+	for !p.eof() && isKeywordWord(p.peek(), "or") {
+		opTok := p.advance()
+		right, err := p.parseAnd()
+		if err != nil {
+			return nil, err
+		}
+		left = &LogicalExpr{Op: "or", Left: left, Right: right, Loc: opTok.Loc}
+	}
+	return left, nil
+}
+
+// parseAnd recognises left-associative 'and' chains.  'and' is
+// tighter than 'or' and looser than 'not'.
+func (p *exprParser) parseAnd() (Expr, error) {
+	left, err := p.parseNot()
+	if err != nil {
+		return nil, err
+	}
+	for !p.eof() && isKeywordWord(p.peek(), "and") {
+		opTok := p.advance()
+		right, err := p.parseNot()
+		if err != nil {
+			return nil, err
+		}
+		left = &LogicalExpr{Op: "and", Left: left, Right: right, Loc: opTok.Loc}
+	}
+	return left, nil
+}
+
+// parseNot recognises the 'not' prefix.  It binds tighter than
+// 'and' / 'or' but looser than the comparison level, matching
+// SQL and Python conventions (so "not $a eq $b" parses as
+// "not ($a eq $b)", not "(not $a) eq $b").  Multiple 'not's are
+// accepted via right-associative recursion.
+func (p *exprParser) parseNot() (Expr, error) {
+	if isKeywordWord(p.peek(), "not") {
+		notTok := p.advance()
+		operand, err := p.parseNot()
+		if err != nil {
+			return nil, err
+		}
+		return &NotExpr{Operand: operand, Loc: notTok.Loc}, nil
+	}
+	return p.parseComparison()
+}
+
+// isKeywordWord reports whether t is a plain word token whose
+// text equals kw.  Used at precedence levels to recognise
+// keyword operators (and / or / not) without colliding with
+// tokens that happen to have the same text inside other positions.
+func isKeywordWord(t Token, kw string) bool {
+	return t.Kind == TokenWord && t.Text == kw
 }
 
 // parseComparison recognises the optional binary-comparison infix
@@ -604,13 +667,29 @@ func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 	return args, nil
 }
 
-// parseTerm consumes a single token as a primary expression —
-// literal, varref, adapter, or command substitution.
+// parseTerm consumes one primary expression — a single literal,
+// varref, adapter, or command-substitution token, or a
+// parenthesised sub-expression that recurses back into the full
+// expression grammar at the 'or' level.  Unmatched ')' is
+// rejected at the outer "unexpected trailing token" check.
 func (p *exprParser) parseTerm() (Expr, error) {
 	if p.eof() {
 		return nil, fmt.Errorf("expected expression, got end of input")
 	}
-	t := p.advance()
+	t := p.peek()
+	if t.Kind == TokenWord && t.Text == "(" {
+		openTok := p.advance()
+		inner, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == ")") {
+			return nil, locErrorf(openTok.Loc, "missing ')' to close parenthesised expression")
+		}
+		p.advance() // consume ')'
+		return inner, nil
+	}
+	p.advance()
 	return parsePrimary(t)
 }
 

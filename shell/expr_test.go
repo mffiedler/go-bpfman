@@ -818,6 +818,92 @@ func TestEvalProgram_Continue_OutsideLoopIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "outside")
 }
 
+// --- logical operators ---------------------------------------------
+
+func TestEvalExpr_And_BothTrue(t *testing.T) {
+	v, err := EvalExpr(&LogicalExpr{
+		Op:    "and",
+		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
+		Right: &BinaryExpr{Left: &LiteralExpr{Text: "2"}, Op: "==", Right: &LiteralExpr{Text: "2"}},
+	}, evalEnv(NewSession()))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.True(t, b)
+}
+
+func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
+	// Right operand would error on Scalar() — if the short-circuit
+	// fires correctly, it's never evaluated.
+	s := NewSession()
+	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
+	v, err := EvalExpr(&LogicalExpr{
+		Op:    "and",
+		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "2"}},
+		Right: &VarRefExpr{Name: "m"},
+	}, evalEnv(s))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.False(t, b)
+}
+
+func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
+	s := NewSession()
+	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
+	v, err := EvalExpr(&LogicalExpr{
+		Op:    "or",
+		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
+		Right: &VarRefExpr{Name: "m"},
+	}, evalEnv(s))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.True(t, b)
+}
+
+func TestEvalExpr_Or_BothFalse(t *testing.T) {
+	v, err := EvalExpr(&LogicalExpr{
+		Op:    "or",
+		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "2"}},
+		Right: &BinaryExpr{Left: &LiteralExpr{Text: "3"}, Op: "==", Right: &LiteralExpr{Text: "4"}},
+	}, evalEnv(NewSession()))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.False(t, b)
+}
+
+func TestEvalExpr_Not_Negates(t *testing.T) {
+	v, err := EvalExpr(&NotExpr{
+		Operand: &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
+	}, evalEnv(NewSession()))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.False(t, b)
+}
+
+func TestEvalExpr_Not_RejectsNonBool(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("hello"))
+	_, err := EvalExpr(&NotExpr{Operand: &VarRefExpr{Name: "x"}}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not")
+}
+
+func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("hello"))
+	_, err := EvalExpr(&LogicalExpr{
+		Op:   "and",
+		Left: &VarRefExpr{Name: "x"},
+		Right: &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
+	}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "and")
+}
+
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
 	s := NewSession()
 	env := &Env{

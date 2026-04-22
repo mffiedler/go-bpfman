@@ -48,11 +48,14 @@ block        := '{' { stmt (SEP stmt)* } '}'
 command      := IDENT arg*
 arg          := WORD | QUOTED | varref | cmdsub | adapter
 
-expr         := primary | unary | binary | thread
-primary      := literal | varref | cmdsub
-unary        := UNARY-PRED primary
-binary       := primary BINOP primary
-thread       := expr '|>' command
+expr         := or
+or           := and ('or' and)*
+and          := not ('and' not)*
+not          := 'not' not | comparison
+comparison   := unary (BINOP unary)?
+unary        := UNARY-PRED term | thread
+thread       := term ('|>' command)*
+term         := literal | varref | cmdsub | adapter | '(' expr ')'
 literal      := WORD | QUOTED
 varref       := '$' IDENT path? | '${' IDENT path '}'
 cmdsub       := '[' command ']'
@@ -243,6 +246,28 @@ command substitutions: `assert $count > [length $items]`.
   `"false"`.
 - `not-empty OPERAND` — tests whether the operand is a non-empty
   string.
+
+### Logical operators
+
+`and`, `or`, `not` combine boolean expressions.  Both operands
+of `and`/`or` must evaluate to a boolean; `not` takes a single
+boolean operand.  Evaluation short-circuits: `true or X` never
+evaluates `X`, and `false and X` never evaluates `X`.
+
+Precedence, loosest to tightest: `or` → `and` → `not` →
+comparison → unary predicate → `|>` → primary.  Parentheses
+`(` `)` override precedence:
+
+```
+if $count > 0 and $count < 100 { ... }
+if not $ready eq true { ... }                 # not ($ready eq true)
+if $count == 0 or $count > 100 { ... }
+if ($flag1 or $flag2) and $enabled { ... }    # parens invert the default
+```
+
+`not $a` binds looser than `$a eq b`, so `not $a eq b` reads as
+`not ($a eq b)` — SQL / Python convention rather than C
+convention.
 
 ## Values and origin types
 

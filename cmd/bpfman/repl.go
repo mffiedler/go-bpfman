@@ -327,8 +327,8 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 // unterminated strings themselves are surfaced by the tokeniser
 // when the accumulated chunk is eventually parsed.
 type contState struct {
-	braces, brackets   int
-	inSingle, inDouble bool
+	braces, brackets, parens int
+	inSingle, inDouble       bool
 }
 
 // advance walks one line of input, updating the brace and bracket
@@ -361,14 +361,20 @@ func (c *contState) advance(line string) {
 			if c.brackets > 0 {
 				c.brackets--
 			}
+		case ch == '(':
+			c.parens++
+		case ch == ')':
+			if c.parens > 0 {
+				c.parens--
+			}
 		}
 	}
 }
 
 // open reports whether the accumulated input is still inside an
-// open brace or bracket block.
+// open brace, bracket, or parenthesised group.
 func (c *contState) open() bool {
-	return c.braces > 0 || c.brackets > 0
+	return c.braces > 0 || c.brackets > 0 || c.parens > 0
 }
 
 // shellCommands is the set of commands that are shell-language or
