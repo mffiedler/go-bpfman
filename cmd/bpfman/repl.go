@@ -423,7 +423,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		val, err := replExec(ctx, cli, args[1:])
 		return true, val, err
 	case "file":
-		val, err := replFile(cli, session, args[1:])
+		val, err := replFile(cli, args[1:])
 		return true, val, err
 	case "jq":
 		val, err := replJQ(args[1:])
@@ -431,7 +431,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	case "require":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
 	case "dump":
-		return true, shell.Value{}, replDump(cli, session, args[1:])
+		return true, shell.Value{}, replDump(cli, args[1:])
 	case "help":
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
@@ -1324,9 +1324,9 @@ func replHelp(cli *CLI) error {
 	b.WriteString("\n")
 	b.WriteString("  exec <command> [args|file:$var...]        Run a host command (assignable)\n")
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
-	b.WriteString("  file temp <variable>[.path]               Write value to temp file (assignable)\n")
+	b.WriteString("  file temp $var[.path] | [expr]            Write value to temp file (assignable)\n")
 	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
-	b.WriteString("  dump <variable>[.path] | <expr>           Print a binding or a value\n")
+	b.WriteString("  dump $var[.path] | [expr]                 Print a resolved value\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")
@@ -1511,17 +1511,19 @@ func wrapJQResult(x any) shell.Value {
 
 // replFile implements the file shell command. The only subcommand is
 // "temp", which writes a REPL value to a private temporary file and
-// returns the path as a scalar string. The argument is a bare
-// variable name with optional field path (no $ prefix), the same
-// form accepted by dump.
-func replFile(cli *CLI, session *shell.Session, args []shell.Arg) (shell.Value, error) {
+// returns the path as a scalar string. The single argument is any
+// value-producing expression: a variable reference ($var, $var.path),
+// a command substitution ([...]), or a quoted literal. A bare word
+// is treated as a literal string -- to write the contents of a
+// variable, pass $name, not the bare name.
+func replFile(cli *CLI, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 || argText(args[0]) != "temp" {
-		return shell.Value{}, fmt.Errorf("usage: file temp <variable>[.path]")
+		return shell.Value{}, fmt.Errorf("usage: file temp $var[.path] | [expr] | \"literal\"")
 	}
 	if len(args) != 2 {
 		return shell.Value{}, fmt.Errorf("file temp requires exactly one argument")
 	}
-	v, err := lookupBareVar(session, argText(args[1]))
+	v, err := dumpValue(args[1])
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("file temp: %w", err)
 	}
@@ -1778,32 +1780,36 @@ func replUnset(cli *CLI, session *shell.Session, args []string) error {
 	return nil
 }
 
-// replDump prints a value to stdout. The single argument may be a
-// bare identifier (with optional dotted/indexed path), in which case
-// it is resolved against the session; or any expression that already
-// evaluates to a value ($var, [cmd], a quoted literal), in which
-// case its resolved value is printed directly. Scalars print as
-// plain text, structured values as indented JSON, nil as "null".
-func replDump(cli *CLI, session *shell.Session, args []shell.Arg) error {
+// replDump prints a value to stdout. Its single argument is any
+// expression that evaluates to a value: a variable reference
+// ($var, $var.path), a command substitution ([...]), a quoted
+// string, or a bare word (which is a literal string — "dump foo"
+// prints the word "foo", not the variable foo).  To print a
+// variable, write "dump $foo".  Scalars print as plain text,
+// structured values as indented JSON, and nil as "null".
+func replDump(cli *CLI, args []shell.Arg) error {
 	if len(args) != 1 {
-		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path] | $var | [cmd] | \"literal\"")
+		return fmt.Errorf("dump requires exactly one argument: dump $var[.path] | [expr] | \"literal\"")
 	}
 
-	v, err := dumpValue(session, args[0])
+	v, err := dumpValue(args[0])
 	if err != nil {
 		return err
 	}
 	return writeValue(cli, v)
 }
 
-// dumpValue resolves a single dump argument into a shell.Value. A
-// WordArg is treated as a variable name (the historical dump
-// contract); every other arg kind is already a value produced by
-// expansion and is passed through unchanged.
-func dumpValue(session *shell.Session, arg shell.Arg) (shell.Value, error) {
+// dumpValue resolves a single dump argument into a shell.Value.
+// Every arg kind is treated as a value: WordArg and QuotedArg are
+// literal strings; ScalarValueArg and StructuredValueArg are
+// already-resolved values from variable expansion or command
+// substitution; AdapterArg carries its resolved Value.  Bare
+// identifiers are NOT looked up in the session -- callers must
+// write $name to dereference a variable.
+func dumpValue(arg shell.Arg) (shell.Value, error) {
 	switch a := arg.(type) {
 	case shell.WordArg:
-		return lookupBareVar(session, a.Text)
+		return shell.StringValue(a.Text), nil
 	case shell.QuotedArg:
 		return shell.StringValue(a.Text), nil
 	case shell.ScalarValueArg:

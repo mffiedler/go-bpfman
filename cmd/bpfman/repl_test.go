@@ -2252,7 +2252,7 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
-	input := "let out = [exec echo testing123]\ndump out.stdout\n"
+	input := "let out = [exec echo testing123]\ndump $out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2347,7 +2347,7 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 }
 
 func TestReplLoop_ExecArgvField(t *testing.T) {
-	input := "let out = [exec echo a b c]\ndump out.argv\n"
+	input := "let out = [exec echo a b c]\ndump $out.argv\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2755,7 +2755,7 @@ func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
 // file temp tests
 
 func TestReplLoop_FileTempScalar(t *testing.T) {
-	input := "let data = hello\nlet f = [file temp data]\nassert not-empty $f\n"
+	input := "let data = hello\nlet f = [file temp $data]\nassert not-empty $f\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2777,7 +2777,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempStructured(t *testing.T) {
-	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
+	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp $data]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2803,7 +2803,7 @@ func TestReplLoop_FileTempStructured(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathScalar(t *testing.T) {
-	input := "let raw = [exec echo hello]\nlet f = [file temp raw.stdout]\n"
+	input := "let raw = [exec echo hello]\nlet f = [file temp $raw.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2825,7 +2825,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
-	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
+	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp $data.items]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2859,7 +2859,7 @@ func TestReplLoop_FileTempNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
-	input := "let f = [file temp undefined_var]\n"
+	input := "let f = [file temp $undefined_var]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2870,7 +2870,7 @@ func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
-	input := "let data = hello\nfile temp data\n"
+	input := "let data = hello\nfile temp $data\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()

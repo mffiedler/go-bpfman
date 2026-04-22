@@ -141,7 +141,7 @@ foreach p in [bpfman program list -o json] {
 }
 
 foreach item in [jq "." '{"items":[{"v":1},{"v":2},{"v":3}]}'] |> jq ".items" {
-    dump item.v
+    dump $item.v
 }
 ```
 
@@ -452,8 +452,11 @@ on failure. Both share the same surface grammar.
 
 - `let NAME = EXPR` binds.
 - `vars` lists bound variables.
-- `dump NAME` pretty-prints a variable.
-- `unset NAME` removes a binding.
+- `dump $NAME` pretty-prints a variable's value.  `dump` takes an
+  expression, not a name: `dump foo` prints the literal string
+  `foo`; to see a binding, dereference with `$`.
+- `unset NAME` removes a binding.  `unset` operates on *names*, so
+  the bare form is the correct one here; `$` is not used.
 - Variables persist for the life of the session.
 
 ## Running scripts

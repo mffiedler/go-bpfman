@@ -641,28 +641,34 @@ func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 	if !ok {
 		return nil, locErrorf(e.Loc, "undefined variable: %s", e.Name)
 	}
-	if e.Path == "" {
-		if v.IsStructured() {
-			return StructuredValueArg{Name: e.Name, Value: v}, nil
-		}
-		if v.IsNil() {
-			return nil, locErrorf(e.Loc, "variable %s is null", e.Name)
-		}
-		s, err := v.Scalar()
+	resolved := v
+	if e.Path != "" {
+		lv, err := v.LookupValue(e.Name, e.Path)
 		if err != nil {
-			return nil, locErrorf(e.Loc, "variable %s: %v", e.Name, err)
+			return nil, err
 		}
-		return ScalarValueArg{Text: s}, nil
+		resolved = lv
 	}
-	resolved, err := v.Lookup(e.Name, e.Path)
-	if err != nil {
-		return nil, err
+	if resolved.IsNil() {
+		return nil, locErrorf(e.Loc, "variable %s is null", qualify(e.Name, e.Path))
+	}
+	if resolved.IsStructured() {
+		return StructuredValueArg{Name: e.Name, Value: resolved}, nil
 	}
 	s, err := resolved.Scalar()
 	if err != nil {
-		return nil, locErrorf(e.Loc, "variable %s.%s: %v", e.Name, e.Path, err)
+		return nil, locErrorf(e.Loc, "variable %s: %v", qualify(e.Name, e.Path), err)
 	}
 	return ScalarValueArg{Text: s}, nil
+}
+
+// qualify produces a "name.path" string for error messages, or
+// just "name" when path is empty.
+func qualify(name, path string) string {
+	if path == "" {
+		return name
+	}
+	return name + "." + path
 }
 
 func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {

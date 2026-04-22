@@ -216,18 +216,33 @@ func TestSessionExpand(t *testing.T) {
 			wantErr: "variable prog.extra is null",
 		},
 		{
-			name: "non-scalar leaf (object)",
+			name: "non-scalar leaf (object) preserved as structured arg",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.details", VarName: "prog", VarPath: "details"},
 			},
-			wantErr: "variable prog.details is an object; use field access to reach a scalar value",
+			want: []Arg{
+				StructuredValueArg{
+					Name: "prog",
+					Value: ValueFromMap(map[string]any{
+						"kernel_id": json.Number("99"),
+					}),
+				},
+			},
 		},
 		{
-			name: "non-scalar leaf (array)",
+			name: "non-scalar leaf (array) preserved as structured arg",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.maps", VarName: "prog", VarPath: "maps"},
 			},
-			wantErr: "variable prog.maps is an array; use indexing to reach a scalar value",
+			want: []Arg{
+				StructuredValueArg{
+					Name: "prog",
+					Value: ValueFromAny([]any{
+						map[string]any{"name": "counts", "pin": "/sys/fs/bpf/counts"},
+						map[string]any{"name": "events", "pin": "/sys/fs/bpf/events"},
+					}),
+				},
+			},
 		},
 		{
 			name: "string field from struct",

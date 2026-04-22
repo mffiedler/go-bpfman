@@ -161,11 +161,11 @@ let parsed = [jq "." '{"name":"xdp_pass","id":42}']
 jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
-let tmp_path = [file temp data]
+let tmp_path = [file temp $data]
 exec cat file:$data
 exec cat file:$parsed.name
 
-dump parsed
+dump $parsed
 vars
 unset parsed tmp_path
 help
@@ -283,7 +283,7 @@ foreach item in $progs {
     if $item.kind eq blacklisted {
         break
     }
-    dump item
+    dump $item
 }
 
 # ---- 22. retry / until with timeout and iteration ----
