@@ -68,6 +68,19 @@ type CommandStmt struct {
 	Loc
 }
 
+// ExprStmt is an expression appearing in statement position.  It is
+// only produced inside a command substitution "[EXPR]" when the
+// bracketed content parses as an expression (e.g. "[1 eq 1]" or
+// "[$x eq $y]").  At the program level the parser never emits
+// ExprStmt; the only statement forms are the named ones above plus
+// a plain CommandStmt.  dispatchCmdSub treats an ExprStmt as
+// "evaluate this expression and use its value as the substitution
+// result".
+type ExprStmt struct {
+	Expr Expr
+	Loc
+}
+
 // ForEachStmt iterates a block over the elements of a list.  At
 // eval time List is evaluated to a Value; it must be a structured
 // list, and each element is bound to Name in the Session for the
@@ -115,6 +128,7 @@ type RetryStmt struct {
 func (*LetStmt) stmtNode()      {}
 func (*IfStmt) stmtNode()       {}
 func (*CommandStmt) stmtNode()  {}
+func (*ExprStmt) stmtNode()     {}
 func (*ForEachStmt) stmtNode()  {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
@@ -536,6 +550,21 @@ func parseExpression(tokens []Token) (Expr, error) {
 	return e, nil
 }
 
+// tryParseExpression attempts to interpret tokens as a single
+// expression.  It returns (expr, true) only when the expression
+// grammar matches and every non-separator token is consumed; any
+// parse error or trailing token returns (nil, false).  Used by the
+// cmd-sub primary to distinguish "[EXPR]" (expression form) from
+// "[cmd args...]" (command-invocation form) without leaking an
+// error on the command path.
+func tryParseExpression(tokens []Token) (Expr, bool) {
+	e, err := parseExpression(tokens)
+	if err != nil {
+		return nil, false
+	}
+	return e, true
+}
+
 // exprParser is a cursor over a pre-collected token slice used by
 // parseExpression's recursive-descent methods.  Each level calls
 // the next-tighter level and loops for any left-associative
@@ -870,6 +899,19 @@ func parsePrimary(t Token) (Expr, error) {
 		innerTokens, err := Tokenise(t.Inner)
 		if err != nil {
 			return nil, locErrorf(t.Loc, "command substitution: %v", err)
+		}
+		// "[EXPR]" first: try the expression grammar.  If the inner
+		// tokens parse cleanly as a single expression (all tokens
+		// consumed), wrap the result in an ExprStmt so dispatchCmdSub
+		// can evaluate and use the value.  Falling back to Parse
+		// preserves "[cmd args...]" — a command invocation whose
+		// result becomes the substitution value — and rejects
+		// anything that is neither an expression nor a single
+		// well-formed command.
+		if expr, ok := tryParseExpression(innerTokens); ok {
+			exprStmt := &ExprStmt{Expr: expr, Loc: t.Loc}
+			inner := &Program{Stmts: []Stmt{exprStmt}, Loc: t.Loc}
+			return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
 		}
 		inner, err := Parse(innerTokens)
 		if err != nil {

@@ -296,16 +296,19 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 }
 
 func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
-	// "help" is a shell command that produces no value, so
-	// assigning should produce an error.
-	input := "let x = [help]\n"
+	// "alias" is a shell command that produces no value, so
+	// assigning its result should produce an error.  The multi-token
+	// form forces the cmdsub parser down the command-invocation
+	// path; a bare "[alias]" would now parse as an expression
+	// literal under the widened "[EXPR]" grammar.
+	input := "let x = [alias a = b]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), `command "help" produces no assignable value`)
+	assert.Contains(t, errBuf.String(), `command "alias" produces no assignable value`)
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
@@ -2405,8 +2408,10 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 
 func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 	// Shell commands that do not produce values should still be
-	// rejected in let bindings.
-	input := "let x = [help]\n"
+	// rejected in let bindings.  Using a multi-token form so the
+	// cmdsub parses as a command invocation rather than a bare
+	// expression literal.
+	input := "let x = [alias a = b]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2733,8 +2738,11 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 }
 
 func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
-	// Other non-value shell commands should still be rejected.
-	input := "let x = [vars]\n"
+	// Other non-value shell commands should still be rejected.  We
+	// bind a variable first and then try to bind the result of
+	// "dump" on it; "dump" prints its argument but produces no
+	// value, so the assignment is rejected.
+	input := "let y = 1\nlet x = [dump y]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)

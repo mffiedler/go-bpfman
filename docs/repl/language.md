@@ -60,7 +60,7 @@ term         := literal | varref | cmdsub | adapter | '(' expr ')'
               | 'timeout' DURATION | 'iteration' INTEGER
 literal      := WORD | QUOTED
 varref       := '$' IDENT path? | '${' IDENT path '}'
-cmdsub       := '[' command ']'
+cmdsub       := '[' (expr | command) ']'
 path         := ('.' IDENT | '[' DIGITS ']')+
 adapter      := 'file' ':' varref
 
@@ -263,21 +263,31 @@ passes the full value to a typed command parser. For example, `bpfman
 show program $prog` is shorthand for `bpfman show program
 $prog.record.program_id` when `$prog` is an `OriginProgram` value.
 
-### Command substitution
+### Bracketed evaluation `[...]`
 
-`[cmd args...]` dispatches a command inside an expression and
-resolves to the command's return value. Domain commands and shell
-builtins are both legal inside the brackets.
+Square brackets are the universal "evaluate this, give me the
+value" form. The content is parsed first as an expression; if that
+parse matches, the expression's value is the bracket's result. If
+it does not match (for example, because the content starts with a
+command name followed by its own arguments), the content is parsed
+as a command invocation and dispatched — the command's return
+value is the bracket's result. Domain commands and shell builtins
+are both legal command forms.
 
 ```
-let p = [bpfman program get 123]
-let j = [jq "." '{"name":"test"}']
-let r = [exec echo hello]
+let p = [bpfman program get 123]        # command invocation
+let j = [jq "." '{"name":"test"}']      # command invocation
+let r = [exec echo hello]               # command invocation
+let a = [1 eq 1]                        # expression: true
+let b = [$count > 0]                    # expression: boolean
+let c = [$prog.id + 1]                  # expression: arithmetic
 ```
 
-Command substitution is mandatory when binding a command's result:
-`let p = bpfman program get 123` is a parse error (operand count
-too large); wrap in brackets.
+Bracketed evaluation is mandatory when binding a command's result
+(`let p = bpfman program get 123` is a parse error — commands as
+bare RHS are not allowed). It is also the canonical way to embed
+an expression where the surrounding grammar expects a value:
+`dump [1 eq 1]`, `foreach x in [jq ".[]" $data] { ... }`.
 
 ### Comparisons
 

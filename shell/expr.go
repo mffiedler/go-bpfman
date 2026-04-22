@@ -240,6 +240,8 @@ func stmtLoc(s Stmt) Loc {
 		return v.Loc
 	case *CommandStmt:
 		return v.Loc
+	case *ExprStmt:
+		return v.Loc
 	case *ForEachStmt:
 		return v.Loc
 	case *RetryStmt:
@@ -732,28 +734,34 @@ func valueToArg(v Value) (Arg, error) {
 }
 
 // dispatchCmdSub evaluates a command-substitution expression and
-// returns the Value produced by the inner command. The inner
-// program must contain exactly one CommandStmt — multiple
-// statements or any non-command statement is a runtime error.
+// returns its value.  The inner program must contain exactly one
+// statement.  An ExprStmt is a bracketed expression ("[1 eq 1]",
+// "[$x eq $y]") and is evaluated directly.  A CommandStmt is a
+// command invocation ("[bpfman ...]", "[jq ...]") and is dispatched
+// via env.ExecSubstitution.  Any other statement form — let, if,
+// foreach, retry, break, continue — is rejected.
 func dispatchCmdSub(e *CmdSubExpr, env *Env) (Value, error) {
-	if env.ExecSubstitution == nil {
-		return Value{}, locErrorf(e.Loc, "command substitution is not permitted in this context")
-	}
 	if e.Inner == nil || len(e.Inner.Stmts) == 0 {
 		return Value{}, locErrorf(e.Loc, "empty command substitution")
 	}
 	if len(e.Inner.Stmts) != 1 {
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a single command")
+		return Value{}, locErrorf(e.Loc, "command substitution must contain a single command or expression")
 	}
-	cmd, ok := e.Inner.Stmts[0].(*CommandStmt)
-	if !ok {
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a command, got %T", e.Inner.Stmts[0])
+	switch stmt := e.Inner.Stmts[0].(type) {
+	case *ExprStmt:
+		return EvalExpr(stmt.Expr, env)
+	case *CommandStmt:
+		if env.ExecSubstitution == nil {
+			return Value{}, locErrorf(e.Loc, "command substitution is not permitted in this context")
+		}
+		args, err := EvalArgs(stmt.Args, env)
+		if err != nil {
+			return Value{}, err
+		}
+		return env.ExecSubstitution(args)
+	default:
+		return Value{}, locErrorf(e.Loc, "command substitution must contain a command or expression, got %T", stmt)
 	}
-	args, err := EvalArgs(cmd.Args, env)
-	if err != nil {
-		return Value{}, err
-	}
-	return env.ExecSubstitution(args)
 }
 
 func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
