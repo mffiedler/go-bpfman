@@ -1243,6 +1243,22 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 	}
 }
 
+// domainNouns is the set of top-level words that parseCommand
+// recognises after a leading "bpfman". It exists so replDispatch can
+// distinguish "forgot the bpfman prefix" (suggest prefixing) from
+// "this word is not a command at all" (just say unknown).
+var domainNouns = map[string]bool{
+	"list":       true,
+	"program":    true,
+	"programs":   true,
+	"load":       true,
+	"show":       true,
+	"link":       true,
+	"dispatcher": true,
+	"gc":         true,
+	"doctor":     true,
+}
+
 // replDispatch routes expanded domain command arguments to the
 // appropriate bpfman command handler. Shell-language commands (assert,
 // require, dump, help, source, unset, vars, version) are handled by
@@ -1257,7 +1273,10 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []sh
 	}
 	first := argText(args[0])
 	if first != "bpfman" {
-		return shell.Value{}, fmt.Errorf("unknown command %q; domain commands require a \"bpfman\" prefix (e.g. \"bpfman program list\")", first)
+		if domainNouns[first] {
+			return shell.Value{}, fmt.Errorf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
+		}
+		return shell.Value{}, fmt.Errorf("unknown command: %s", first)
 	}
 	cmd, err := parseCommand(args[1:])
 	if err != nil {
