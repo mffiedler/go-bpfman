@@ -681,6 +681,27 @@ func evalNot(e *NotExpr, env *Env) (Value, error) {
 	return BoolValue(!b), nil
 }
 
+// structuredShape returns a short description of a structured
+// Value suitable for error messages.  The declared OriginKind is
+// used when it is anything other than OriginUnknown (so "program"
+// or "exec.result" read as such); otherwise the raw Go shape is
+// inspected so an untagged record or array still reports
+// meaningfully as "object" or "array" rather than the useless
+// "unknown".
+func structuredShape(v Value) string {
+	if k := v.Kind(); k != OriginUnknown && k != OriginScalar {
+		return k.String()
+	}
+	switch v.Raw().(type) {
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	default:
+		return "structured"
+	}
+}
+
 // evalInterpString walks an InterpStringExpr's segments, evaluates
 // each expression segment to a scalar, and concatenates the
 // results with the literal runs into a single StringValue.  A
@@ -702,7 +723,7 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation produced null")
 		}
 		if v.IsStructured() {
-			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: cannot splice a %s value into a string; format it first", v.Kind())
+			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: cannot splice a structured value (%s) into a string; extract a scalar field first with ${name.path}", structuredShape(v))
 		}
 		s, err := v.Scalar()
 		if err != nil {

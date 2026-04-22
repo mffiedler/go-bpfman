@@ -1362,6 +1362,8 @@ func TestEvalExpr_InterpString_StructuredValueRejected(t *testing.T) {
 	_, err := EvalExpr(e, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot splice")
+	assert.Contains(t, err.Error(), "object", "error should name the shape, not 'unknown'")
+	assert.NotContains(t, err.Error(), "a unknown", "grammar: 'a' before 'unknown' is wrong")
 }
 
 func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
