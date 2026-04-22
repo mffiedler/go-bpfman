@@ -90,11 +90,26 @@ func (s *Session) AliasNames() []string {
 // this session's bindings and returns typed arguments. Scalar
 // references are resolved eagerly to ScalarValueArg. Bare structured
 // references become StructuredValueArg, preserving the Value for
-// typed consumption by command parsers. Non-variable tokens become
-// WordArg or QuotedArg.
+// typed consumption by command parsers. Command substitutions
+// [cmd args...] recursively tokenise and expand their inner text,
+// producing a CmdSubArg that the evaluator dispatches via a
+// CmdRunner. Non-variable tokens become WordArg or QuotedArg.
 func (s *Session) Expand(tokens []Token) ([]Arg, error) {
 	result := make([]Arg, 0, len(tokens))
 	for _, tok := range tokens {
+		if tok.Kind == TokenCmdSub {
+			innerTokens, err := Tokenise(tok.Inner)
+			if err != nil {
+				return nil, fmt.Errorf("command substitution: %w", err)
+			}
+			innerArgs, err := s.Expand(innerTokens)
+			if err != nil {
+				return nil, fmt.Errorf("command substitution: %w", err)
+			}
+			result = append(result, CmdSubArg{InnerArgs: innerArgs})
+			continue
+		}
+
 		if tok.Kind == TokenAdapterRef {
 			v, ok := s.vars[tok.VarName]
 			if !ok {

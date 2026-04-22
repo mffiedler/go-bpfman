@@ -29,6 +29,13 @@ const (
 	// file:$var.path. It carries the adapter name, the variable
 	// name, and the optional field path.
 	TokenAdapterRef
+	// TokenCmdSub is a command substitution [cmd args...]. The
+	// Inner field carries the raw inner text (without the outer
+	// brackets); Expand recursively tokenises and expands it.
+	TokenCmdSub
+	// TokenSep is a statement separator: a newline or a semicolon.
+	// Consecutive separators are collapsed at parse time.
+	TokenSep
 )
 
 // Token is a single lexical element produced by Tokenise.
@@ -38,6 +45,7 @@ type Token struct {
 	VarName string // variable name for TokenVarRef and TokenAdapterRef
 	VarPath string // field path for TokenVarRef and TokenAdapterRef (empty if bare)
 	Adapter string // adapter name for TokenAdapterRef (e.g. "file")
+	Inner   string // raw inner text for TokenCmdSub (between brackets)
 }
 
 // Tokenise lexes input into tokens. It strips comments (# and
@@ -57,13 +65,21 @@ func Tokenise(input string) ([]Token, error) {
 	for i < len(input) {
 		ch := input[i]
 
-		// Skip whitespace.
-		if ch == ' ' || ch == '\t' {
+		// Skip whitespace (but not newlines, which are separators).
+		if ch == ' ' || ch == '\t' || ch == '\r' {
 			i++
 			continue
 		}
 
 		switch {
+		case ch == '\n' || ch == ';':
+			tokens = append(tokens, Token{Kind: TokenSep, Text: string(ch)})
+			i++
+
+		case ch == '{' || ch == '}':
+			tokens = append(tokens, Token{Kind: TokenWord, Text: string(ch)})
+			i++
+
 		case ch == '=' && isTokenStart(tokens):
 			// Distinguish == (comparison) from = (assignment).
 			if i+1 < len(input) && input[i+1] == '=' {
@@ -89,6 +105,17 @@ func Tokenise(input string) ([]Token, error) {
 			}
 			tokens = append(tokens, tok)
 			i += n
+
+		case ch == '[':
+			tok, n, err := lexCmdSub(input, i)
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, tok)
+			i += n
+
+		case ch == ']':
+			return nil, fmt.Errorf("unmatched ']'")
 
 		default:
 			if tok, n, ok := lexAdapterRef(input, i); ok {
@@ -118,9 +145,13 @@ func isTokenStart(tokens []Token) bool {
 	return len(tokens) > 0
 }
 
-// stripComment removes the portion of input from the first unquoted
-// # to the end.
+// stripComment removes inline comments from input. A comment starts
+// at an unquoted '#' and extends to the next newline (or end of
+// input). Newlines themselves are preserved so accumulated
+// multi-line input (e.g. an if block spanning lines) survives.
 func stripComment(input string) string {
+	var b strings.Builder
+	b.Grow(len(input))
 	inSingle := false
 	inDouble := false
 	for i := 0; i < len(input); i++ {
@@ -128,13 +159,22 @@ func stripComment(input string) string {
 		switch {
 		case ch == '\'' && !inDouble:
 			inSingle = !inSingle
+			b.WriteByte(ch)
 		case ch == '"' && !inSingle:
 			inDouble = !inDouble
+			b.WriteByte(ch)
 		case ch == '#' && !inSingle && !inDouble:
-			return input[:i]
+			for i < len(input) && input[i] != '\n' {
+				i++
+			}
+			if i < len(input) {
+				b.WriteByte('\n')
+			}
+		default:
+			b.WriteByte(ch)
 		}
 	}
-	return input
+	return b.String()
 }
 
 // lexVarRef lexes a variable reference starting at input[pos] which
@@ -282,6 +322,45 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 	return tok, i - pos, nil
 }
 
+// lexCmdSub lexes a command substitution [cmd args...]. The brackets
+// nest; quoted strings inside are skipped so a `]` inside a string
+// does not close the substitution. The returned token's Inner field
+// carries the raw content between the outer brackets; Expand
+// recursively tokenises and expands it at evaluation time.
+func lexCmdSub(input string, pos int) (Token, int, error) {
+	depth := 1
+	i := pos + 1
+	for i < len(input) && depth > 0 {
+		ch := input[i]
+		switch ch {
+		case '[':
+			depth++
+			i++
+		case ']':
+			depth--
+			i++
+		case '"', '\'':
+			_, n, err := lexQuoted(input, i)
+			if err != nil {
+				return Token{}, 0, err
+			}
+			i += n
+		default:
+			i++
+		}
+	}
+	if depth > 0 {
+		return Token{}, 0, fmt.Errorf("unterminated command substitution: missing ']'")
+	}
+	inner := input[pos+1 : i-1]
+	tok := Token{
+		Kind:  TokenCmdSub,
+		Text:  input[pos:i],
+		Inner: inner,
+	}
+	return tok, i - pos, nil
+}
+
 // lexQuoted lexes a single- or double-quoted string. $ is literal
 // inside quotes; no backslash escapes.
 func lexQuoted(input string, pos int) (Token, int, error) {
@@ -299,12 +378,17 @@ func lexQuoted(input string, pos int) (Token, int, error) {
 	return tok, i - pos, nil
 }
 
-// lexWord consumes a word token: everything until whitespace, $, ", ', or #.
+// lexWord consumes a word token: everything until whitespace, a
+// separator (newline or semicolon), $, ", ', #, [, ], {, or }.
+// Brackets and braces are terminators because they introduce or
+// close command substitution and block syntax respectively.
 func lexWord(input string, pos int) (Token, int) {
 	i := pos
 	for i < len(input) {
 		ch := input[i]
-		if ch == ' ' || ch == '\t' || ch == '$' || ch == '"' || ch == '\'' || ch == '#' {
+		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ';' ||
+			ch == '$' || ch == '"' || ch == '\'' || ch == '#' ||
+			ch == '[' || ch == ']' || ch == '{' || ch == '}' {
 			break
 		}
 		i++

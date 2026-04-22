@@ -16,9 +16,16 @@ import (
 // When created via ValueFromStruct, the original Go value is
 // preserved in the origin field so that callers can recover type
 // information that the JSON round-trip erases.
+//
+// The kind field declares what the Value represents (see OriginKind).
+// Producers set it at construction time via WithKind; consumers
+// check it via ExpectOrigin. OriginUnknown is the default and acts
+// as a wildcard for origin-less values (e.g. JSON parsed without
+// explicit tagging, map literals, path-lookup results).
 type Value struct {
-	v      any // JSON-decoded tree (map[string]any, etc.)
-	origin any // original Go value, nil for non-struct values
+	v      any        // JSON-decoded tree (map[string]any, etc.)
+	origin any        // original Go value, nil for non-struct values
+	kind   OriginKind // declared origin kind, OriginUnknown by default
 }
 
 // ValueFromMap wraps an existing map as a Value.
@@ -27,7 +34,9 @@ func ValueFromMap(data map[string]any) Value {
 }
 
 // ValueFromJSON decodes JSON bytes into a Value. Numbers are
-// preserved as json.Number to avoid float64 precision loss.
+// preserved as json.Number to avoid float64 precision loss. The
+// resulting Value has OriginUnknown; callers that need a declared
+// kind (e.g. the json parse builtin) should chain WithKind.
 func ValueFromJSON(b []byte) (Value, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
@@ -42,7 +51,9 @@ func ValueFromJSON(b []byte) (Value, error) {
 }
 
 // ValueFromStruct converts a struct to a Value via JSON round-trip,
-// preserving the original Go value for type checking.
+// preserving the original Go value for type checking. The resulting
+// Value has OriginUnknown; callers that know the domain kind should
+// chain WithKind (e.g. WithKind(OriginProgram) for a program record).
 func ValueFromStruct(s any) (Value, error) {
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -62,14 +73,27 @@ func (v Value) Origin() any {
 	return v.origin
 }
 
-// StringValue wraps a plain string as a Value.
-func StringValue(s string) Value {
-	return Value{v: s}
+// Kind returns the declared origin kind. OriginUnknown is the
+// default for values whose producer did not tag them.
+func (v Value) Kind() OriginKind {
+	return v.kind
 }
 
-// BoolValue wraps a boolean as a Value.
+// WithKind returns a copy of the Value with its origin kind set to
+// k. Use at the construction site: `shell.ValueFromStruct(p).WithKind(shell.OriginProgram)`.
+func (v Value) WithKind(k OriginKind) Value {
+	v.kind = k
+	return v
+}
+
+// StringValue wraps a plain string as a Value with OriginScalar.
+func StringValue(s string) Value {
+	return Value{v: s, kind: OriginScalar}
+}
+
+// BoolValue wraps a boolean as a Value with OriginBool.
 func BoolValue(b bool) Value {
-	return Value{v: b}
+	return Value{v: b, kind: OriginBool}
 }
 
 // IsNil reports whether the underlying value is nil.

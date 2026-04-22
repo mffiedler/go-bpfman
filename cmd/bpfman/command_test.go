@@ -20,7 +20,7 @@ func structuredProgram(name string, progID kernel.ProgramID) shell.Arg {
 	if err != nil {
 		panic(err)
 	}
-	return shell.StructuredValueArg{Name: name, Value: val}
+	return shell.StructuredValueArg{Name: name, Value: val.WithKind(shell.OriginProgram)}
 }
 
 func structuredLink(name string, linkID kernel.LinkID) shell.Arg {
@@ -30,7 +30,7 @@ func structuredLink(name string, linkID kernel.LinkID) shell.Arg {
 	if err != nil {
 		panic(err)
 	}
-	return shell.StructuredValueArg{Name: name, Value: val}
+	return shell.StructuredValueArg{Name: name, Value: val.WithKind(shell.OriginLink)}
 }
 
 func word(s string) shell.Arg { return shell.WordArg{Text: s} }
@@ -46,6 +46,7 @@ func TestParseShowProgram(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+	linkVal = linkVal.WithKind(shell.OriginLink)
 
 	tests := []struct {
 		name       string
@@ -187,7 +188,7 @@ func TestParseShowProgram(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
-			wantErr: "does not provide a program ID",
+			wantErr: `variable "$mylink" is a link; expected program`,
 		},
 		{
 			name: "duplicate view positional rejected",
@@ -719,7 +720,7 @@ func TestParseLinkAttachFentry(t *testing.T) {
 		{
 			name:    "wrong origin type",
 			args:    []shell.Arg{word("fentry"), structuredLink("lnk", 10)},
-			wantErr: "does not provide a program ID",
+			wantErr: `variable "$lnk" is a link; expected program`,
 		},
 		{
 			name:    "metadata flag rejected",
@@ -936,7 +937,7 @@ func TestParseLinkDetach(t *testing.T) {
 		{
 			name:    "wrong origin type",
 			args:    []shell.Arg{structuredProgram("prog", 42)},
-			wantErr: "does not provide a link ID",
+			wantErr: `variable "$prog" is a program; expected link`,
 		},
 	}
 	for _, tt := range tests {
@@ -964,6 +965,7 @@ func TestParseGetProgram(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
+	linkVal = linkVal.WithKind(shell.OriginLink)
 
 	tests := []struct {
 		name       string
@@ -1044,7 +1046,7 @@ func TestParseGetProgram(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "mylink", Value: linkVal},
 			},
-			wantErr: "does not provide a program ID",
+			wantErr: `variable "$mylink" is a link; expected program`,
 		},
 	}
 
@@ -1071,6 +1073,7 @@ func TestParseGetLink(t *testing.T) {
 		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
 	})
 	require.NoError(t, err)
+	progVal = progVal.WithKind(shell.OriginProgram)
 
 	tests := []struct {
 		name       string
@@ -1149,7 +1152,7 @@ func TestParseGetLink(t *testing.T) {
 			args: []shell.Arg{
 				shell.StructuredValueArg{Name: "myprog", Value: progVal},
 			},
-			wantErr: "does not provide a link ID",
+			wantErr: `variable "$myprog" is a program; expected link`,
 		},
 	}
 

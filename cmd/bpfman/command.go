@@ -159,15 +159,15 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 	case shell.ScalarValueArg:
 		return parseProgramIDText(v.Text)
 	case shell.StructuredValueArg:
+		if err := shell.ExpectOrigin(v.Value, "$"+v.Name, shell.OriginProgram); err != nil {
+			return 0, err
+		}
 		if origin := v.Value.Origin(); origin != nil {
 			if x, ok := origin.(bpfman.HasKernelProgramID); ok {
 				return x.KernelProgramID(), nil
 			}
-			return 0, fmt.Errorf(
-				"variable %q holds a %T, which does not provide a program ID (use $%s.record.program_id to be explicit)",
-				v.Name, origin, v.Name)
 		}
-		// Fallback for origin-less structured values.
+		// Fallback for origin-less structured values (OriginUnknown).
 		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
 		if err != nil {
 			return 0, fmt.Errorf("variable %q is structured but has no .record.program_id field", v.Name)
@@ -207,15 +207,15 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 	case shell.ScalarValueArg:
 		return parseLinkIDText(v.Text)
 	case shell.StructuredValueArg:
+		if err := shell.ExpectOrigin(v.Value, "$"+v.Name, shell.OriginLink); err != nil {
+			return 0, err
+		}
 		if origin := v.Value.Origin(); origin != nil {
 			if x, ok := origin.(bpfman.HasKernelLinkID); ok {
 				return x.KernelLinkID(), nil
 			}
-			return 0, fmt.Errorf(
-				"variable %q holds a %T, which does not provide a link ID (use $%s.record.id to be explicit)",
-				v.Name, origin, v.Name)
 		}
-		// Fallback for origin-less structured values.
+		// Fallback for origin-less structured values (OriginUnknown).
 		resolved, err := v.Value.LookupValue(v.Name, "record.id")
 		if err != nil {
 			return 0, fmt.Errorf("variable %q is structured but has no .record.id field", v.Name)
@@ -530,7 +530,7 @@ func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Load
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val, nil
+	return val.WithKind(shell.OriginProgram), nil
 }
 
 // LinkAttachCommand represents a fully parsed "link attach" command.
@@ -1280,7 +1280,7 @@ func execLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Li
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val, nil
+	return val.WithKind(shell.OriginLink), nil
 }
 
 // LinkDetachCommand represents a fully parsed "link detach" command
@@ -1539,7 +1539,7 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val, nil
+	return val.WithKind(shell.OriginProgram), nil
 }
 
 // GetProgramCommand represents a fully parsed "program get" command
@@ -1618,7 +1618,7 @@ func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Ge
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val, nil
+	return val.WithKind(shell.OriginProgram), nil
 }
 
 // GetLinkCommand represents a fully parsed "link get" command with a
@@ -1706,7 +1706,7 @@ func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLi
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val, nil
+	return val.WithKind(shell.OriginLink), nil
 }
 
 // UnloadProgramCommand represents a fully parsed "program unload"

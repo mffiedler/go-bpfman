@@ -1,5 +1,7 @@
 package shell
 
+// Note: additional if-statement parse tests live in parse_if_test.go.
+
 import (
 	"testing"
 
@@ -117,58 +119,6 @@ func TestParseStmt(t *testing.T) {
 				{Kind: TokenWord, Text: "0bad"},
 				{Kind: TokenAssign, Text: "="},
 				{Kind: TokenWord, Text: "foo"},
-			},
-			wantErr: "invalid variable name",
-		},
-		{
-			name: "set binding",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "set"},
-				{Kind: TokenWord, Text: "pid"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "42"},
-			},
-			want: &SetStmt{
-				Name:  "pid",
-				Value: Token{Kind: TokenWord, Text: "42"},
-			},
-		},
-		{
-			name: "set rejects multiple values",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "set"},
-				{Kind: TokenWord, Text: "x"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "a"},
-				{Kind: TokenWord, Text: "b"},
-			},
-			wantErr: "exactly one value",
-		},
-		{
-			name: "set too few tokens",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "set"},
-				{Kind: TokenWord, Text: "x"},
-			},
-			wantErr: "set requires",
-		},
-		{
-			name: "set missing equals",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "set"},
-				{Kind: TokenWord, Text: "x"},
-				{Kind: TokenWord, Text: "42"},
-				{Kind: TokenWord, Text: "extra"},
-			},
-			wantErr: "missing '='",
-		},
-		{
-			name: "set invalid identifier",
-			tokens: []Token{
-				{Kind: TokenWord, Text: "set"},
-				{Kind: TokenWord, Text: "0bad"},
-				{Kind: TokenAssign, Text: "="},
-				{Kind: TokenWord, Text: "val"},
 			},
 			wantErr: "invalid variable name",
 		},

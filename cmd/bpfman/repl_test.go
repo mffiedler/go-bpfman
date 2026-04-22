@@ -298,14 +298,14 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 	// "help" is a shell command that produces no value, so
 	// assigning should produce an error.
-	input := "let x = help\n"
+	input := "let x = [help]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "cannot bind result of \"help\" to a variable")
+	assert.Contains(t, errBuf.String(), `command "help" produces no assignable value`)
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
@@ -1251,7 +1251,6 @@ func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
 	}{
 		{"assert", "alias assert = bpfman\n", "shell command"},
 		{"let", "alias let = bpfman\n", "shell keyword"},
-		{"set", "alias set = bpfman\n", "shell keyword"},
 		{"bpfman", "alias bpfman = b\n", "domain prefix"},
 		{"exec", "alias exec = bpfman\n", "shell command"},
 		{"alias", "alias alias = bpfman\n", "shell command"},
@@ -1329,14 +1328,14 @@ func TestReplLoop_AliasInLetBinding(t *testing.T) {
 	// "let x = b doctor explain" should fail to bind (doctor
 	// produces no assignable value) but should reach the domain
 	// dispatcher, proving alias expansion works in let context.
-	input := "alias b = bpfman\nlet x = b doctor explain\n"
+	input := "alias b = bpfman\nlet x = [b doctor explain]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "command produced no result to assign")
+	assert.Contains(t, errBuf.String(), "produces no assignable value")
 }
 
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
@@ -1397,10 +1396,14 @@ func TestParseProgramIDArg_RejectsLinkVariable(t *testing.T) {
 	}
 	v, err := shell.ValueFromStruct(link)
 	require.NoError(t, err)
+	v = v.WithKind(shell.OriginLink)
 
 	_, err = parseProgramIDArg(shell.StructuredValueArg{Name: "mylink", Value: v})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not provide a program ID")
+	var mismatch *shell.OriginMismatchError
+	require.ErrorAs(t, err, &mismatch)
+	assert.Equal(t, shell.OriginLink, mismatch.Got)
+	assert.Equal(t, []shell.OriginKind{shell.OriginProgram}, mismatch.Want)
 }
 
 func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
@@ -1411,120 +1414,23 @@ func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 	}
 	v, err := shell.ValueFromStruct(prog)
 	require.NoError(t, err)
+	v = v.WithKind(shell.OriginProgram)
 
 	_, err = parseLinkIDArg(shell.StructuredValueArg{Name: "myprog", Value: v})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not provide a link ID")
+	var mismatch *shell.OriginMismatchError
+	require.ErrorAs(t, err, &mismatch)
+	assert.Equal(t, shell.OriginProgram, mismatch.Got)
+	assert.Equal(t, []shell.OriginKind{shell.OriginLink}, mismatch.Want)
 }
 
 // ---- Assert/Require/Set tests ----
-
-func TestInfixTextualComparison(t *testing.T) {
-	tests := []struct {
-		left, op, right string
-		pass            bool
-	}{
-		{"hello", "eq", "hello", true},
-		{"hello", "eq", "world", false},
-		{"a", "ne", "b", true},
-		{"a", "ne", "a", false},
-		{"a", "lt", "b", true},
-		{"b", "lt", "a", false},
-		{"a", "lt", "a", false},
-		{"a", "le", "a", true},
-		{"b", "le", "a", false},
-		{"b", "gt", "a", true},
-		{"a", "gt", "b", false},
-		{"a", "ge", "a", true},
-		{"a", "ge", "b", false},
-		// Lexicographic: "9" > "10" because "9" > "1".
-		{"9", "lt", "10", false},
-		{"9", "gt", "10", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.left+"_"+tt.op+"_"+tt.right, func(t *testing.T) {
-			r, err := evalInfixAssertion(tt.left, tt.op, tt.right)
-			require.NoError(t, err)
-			assert.Equal(t, tt.pass, r.pass)
-		})
-	}
-}
-
-func TestInfixNumericComparison(t *testing.T) {
-	tests := []struct {
-		left, op, right string
-		pass            bool
-	}{
-		{"3", "==", "3", true},
-		{"3", "==", "4", false},
-		{"03", "==", "3", true},
-		{"3", "!=", "4", true},
-		{"3", "!=", "3", false},
-		{"1", "<", "2", true},
-		{"2", "<", "1", false},
-		{"1", "<", "1", false},
-		{"1", "<=", "1", true},
-		{"2", "<=", "1", false},
-		{"2", ">", "1", true},
-		{"1", ">", "2", false},
-		{"1", ">=", "1", true},
-		{"0", ">=", "1", false},
-		// Numeric: 9 < 10.
-		{"9", "<", "10", true},
-		// Float support.
-		{"3.14", "<", "3.15", true},
-		{"1e2", "==", "100", true},
-		{"-1", "<", "0", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.left+"_"+tt.op+"_"+tt.right, func(t *testing.T) {
-			r, err := evalInfixAssertion(tt.left, tt.op, tt.right)
-			require.NoError(t, err)
-			assert.Equal(t, tt.pass, r.pass)
-		})
-	}
-}
-
-func TestInfixNumericNonNumericError(t *testing.T) {
-	_, err := evalInfixAssertion("abc", ">", "2")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not numeric")
-
-	_, err = evalInfixAssertion("1", "==", "xyz")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not numeric")
-}
-
-func TestAssertNil(t *testing.T) {
-	session := shell.NewSession()
-	session.Set("n", shell.Value{}) // nil value
-	session.Set("s", shell.StringValue("hello"))
-
-	r, err := assertNil(session, []string{"n"})
-	require.NoError(t, err)
-	assert.True(t, r.pass)
-
-	r, err = assertNil(session, []string{"s"})
-	require.NoError(t, err)
-	assert.False(t, r.pass)
-}
-
-func TestAssertNil_Undefined(t *testing.T) {
-	session := shell.NewSession()
-	_, err := assertNil(session, []string{"novar"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined")
-}
-
-func TestAssertNotEmpty(t *testing.T) {
-	r, err := assertNotEmpty([]string{"hello"})
-	require.NoError(t, err)
-	assert.True(t, r.pass)
-
-	r, err = assertNotEmpty([]string{""})
-	require.NoError(t, err)
-	assert.False(t, r.pass)
-}
+//
+// Binary comparison and unary predicate semantics moved to the
+// shell package (see shell/expr_test.go: TestEval_Binary_Textual,
+// TestEval_Binary_Numeric, TestEval_Unary_*). The cmd/bpfman tests
+// below cover the assertion verbs that remain outside the
+// expression grammar: contains, path, ok, fail.
 
 func TestAssertContains(t *testing.T) {
 	r, err := assertContains([]string{"hello world", "world"})
@@ -1534,20 +1440,6 @@ func TestAssertContains(t *testing.T) {
 	r, err = assertContains([]string{"hello", "xyz"})
 	require.NoError(t, err)
 	assert.False(t, r.pass)
-}
-
-func TestAssertBool(t *testing.T) {
-	r, err := assertBool([]string{"true"}, true)
-	require.NoError(t, err)
-	assert.True(t, r.pass)
-
-	r, err = assertBool([]string{"false"}, true)
-	require.NoError(t, err)
-	assert.False(t, r.pass)
-
-	r, err = assertBool([]string{"false"}, false)
-	require.NoError(t, err)
-	assert.True(t, r.pass)
 }
 
 func TestAssertPath(t *testing.T) {
@@ -1568,15 +1460,6 @@ func TestAssertPath_BadArgs(t *testing.T) {
 	_, err := assertPath([]string{"nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "path requires")
-}
-
-func TestIsInfixOp(t *testing.T) {
-	for _, op := range []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="} {
-		assert.True(t, isInfixOp(op), "expected %q to be an infix op", op)
-	}
-	for _, op := range []string{"contains", "nil", "true", "false", "ok", "fail", "+", "&&"} {
-		assert.False(t, isInfixOp(op), "expected %q not to be an infix op", op)
-	}
 }
 
 // wordArgs converts string slices to []shell.Arg for test convenience.
@@ -1725,9 +1608,105 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 	assert.Equal(t, 2, session.AssertFailures())
 }
 
-func TestReplLoop_SetAndAssert(t *testing.T) {
+func TestReplLoop_IfThenBranch(t *testing.T) {
+	input := "let x = 5\nif $x > 3 {\n  let out = took-then\n}"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("out")
+	require.True(t, ok)
+	s, _ := v.Scalar()
+	assert.Equal(t, "took-then", s)
+}
+
+func TestReplLoop_IfElseBranch(t *testing.T) {
+	input := "let x = 1\nif $x > 3 {\n  let out = took-then\n} else {\n  let out = took-else\n}"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, _ := session.Get("out")
+	s, _ := v.Scalar()
+	assert.Equal(t, "took-else", s)
+}
+
+func TestReplLoop_IfElifChain(t *testing.T) {
+	input := "let x = 2\nif $x == 1 { let out = one } elif $x == 2 { let out = two } elif $x == 3 { let out = three } else { let out = other }"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, _ := session.Get("out")
+	s, _ := v.Scalar()
+	assert.Equal(t, "two", s)
+}
+
+func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
+	input := "let x = 5\nif $x { let out = wrong }"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "not a boolean")
+	_, ok := session.Get("out")
+	assert.False(t, ok, "body should not run when condition errors")
+}
+
+func TestReplLoop_IfNested(t *testing.T) {
+	input := "let a = 1\nlet b = 2\nif $a == 1 {\n  if $b == 2 {\n    let out = both\n  } else {\n    let out = only-a\n  }\n}"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, _ := session.Get("out")
+	s, _ := v.Scalar()
+	assert.Equal(t, "both", s)
+}
+
+func TestReplLoop_IfWithCmdSubCondition(t *testing.T) {
+	// Unary predicates inside if work.
+	input := "let x = hello\nif not-empty $x {\n  let out = ok\n}"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, _ := session.Get("out")
+	s, _ := v.Scalar()
+	assert.Equal(t, "ok", s)
+}
+
+func TestReplLoop_LetScalarAndAssert(t *testing.T) {
 	input := strings.Join([]string{
-		"set x = 42",
+		"let x = 42",
 		"assert $x eq 42",
 	}, "\n")
 	var errBuf bytes.Buffer
@@ -1746,8 +1725,8 @@ func TestReplLoop_SetAndAssert(t *testing.T) {
 	assert.Equal(t, "42", s)
 }
 
-func TestReplLoop_SetMissingEquals(t *testing.T) {
-	input := "set x 42 val\n"
+func TestReplLoop_LetMissingEquals(t *testing.T) {
+	input := "let x 42 val\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1757,30 +1736,19 @@ func TestReplLoop_SetMissingEquals(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "missing '='")
 }
 
-func TestReplLoop_SetTooFewArgs(t *testing.T) {
-	input := "set x\n"
+func TestReplLoop_LetTooFewArgs(t *testing.T) {
+	input := "let x\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "set requires")
+	assert.Contains(t, errBuf.String(), "let requires")
 }
 
-func TestReplLoop_SetTooManyArgs(t *testing.T) {
-	input := "set x = a b\n"
-	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exactly one value")
-}
-
-func TestReplLoop_SetInvalidName(t *testing.T) {
-	input := "set 0bad = val\n"
+func TestReplLoop_LetInvalidName(t *testing.T) {
+	input := "let 0bad = val\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1979,7 +1947,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 		},
 	}))
 
-	input := "set pid = $prog.record.program_id\nassert $pid eq 199421\n"
+	input := "let pid = $prog.record.program_id\nassert $pid eq 199421\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2042,9 +2010,11 @@ func TestReplComplete_RequireVerbs(t *testing.T) {
 	assert.NotContains(t, candidates, "eq ")
 }
 
-func TestReplComplete_SetInCommandNames(t *testing.T) {
+func TestReplComplete_SetIsRetired(t *testing.T) {
+	// Completion must not offer "set " — the keyword was removed;
+	// let subsumes it.
 	_, candidates := replComplete(context.Background(), nil, nil, "se", len("se"))
-	assert.Contains(t, candidates, "set ")
+	assert.NotContains(t, candidates, "set ")
 }
 
 func TestLookupBareVar(t *testing.T) {
@@ -2252,7 +2222,7 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBinding(t *testing.T) {
-	input := "let out = exec echo hello\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
+	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2279,7 +2249,7 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
-	input := "let out = exec echo testing123\ndump out.stdout\n"
+	input := "let out = [exec echo testing123]\ndump out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2293,7 +2263,7 @@ func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
 
 func TestReplLoop_ExecLetFailure(t *testing.T) {
 	// Let binding with a failing command should produce an error.
-	input := "let out = exec false\n"
+	input := "let out = [exec false]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2361,7 +2331,7 @@ func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
-	input := "let out = exec echo \"hello world\"\nassert contains $out.stdout hello\n"
+	input := "let out = [exec echo \"hello world\"]\nassert contains $out.stdout hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2374,7 +2344,7 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 }
 
 func TestReplLoop_ExecArgvField(t *testing.T) {
-	input := "let out = exec echo a b c\ndump out.argv\n"
+	input := "let out = [exec echo a b c]\ndump out.argv\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2392,7 +2362,7 @@ func TestReplLoop_ExecArgvField(t *testing.T) {
 func TestReplLoop_ExecStderrCaptured(t *testing.T) {
 	// Use sh -c to produce stderr output. The exec command runs
 	// argv[0] directly, so we invoke sh as the command.
-	input := "let out = exec sh -c \"echo errout >&2\"\nassert contains $out.stderr errout\n"
+	input := "let out = [exec sh -c \"echo errout >&2\"]\nassert contains $out.stderr errout\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2408,7 +2378,7 @@ func TestReplLoop_ExecVariableExpansion(t *testing.T) {
 	session := shell.NewSession()
 	session.Set("msg", shell.StringValue("expanded"))
 
-	input := "let out = exec echo $msg\nassert contains $out.stdout expanded\n"
+	input := "let out = [exec echo $msg]\nassert contains $out.stdout expanded\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2436,21 +2406,21 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 	// Shell commands that do not produce values should still be
 	// rejected in let bindings.
-	input := "let x = help\n"
+	input := "let x = [help]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "cannot bind result of")
+	assert.Contains(t, errBuf.String(), "produces no assignable value")
 }
 
 // --- exec status tests ---
 
 func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 	// exec status captures non-zero exit as data, not error.
-	input := "let r = exec status false\nassert $r.exit_code eq 1\n"
+	input := "let r = [exec status false]\nassert $r.exit_code eq 1\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2467,7 +2437,7 @@ func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 
 func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 	// exec status also works for exit 0.
-	input := "let r = exec status true\nassert $r.exit_code eq 0\n"
+	input := "let r = [exec status true]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2479,7 +2449,7 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
-	input := "let r = exec status echo hello\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
+	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2492,7 +2462,7 @@ func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
 
 func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
 	// Launch failures are still errors even in status mode.
-	input := "let r = exec status __nonexistent_command_12345__\n"
+	input := "let r = [exec status __nonexistent_command_12345__]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2515,7 +2485,7 @@ func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 
 func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 	// exec status works with file adapters.
-	input := "set a = hello\nset b = world\nlet r = exec status diff file:$a file:$b\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
+	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2528,7 +2498,7 @@ func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 
 func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
 	// diff exits 0 when files are identical.
-	input := "set a = same\nset b = same\nlet r = exec status diff file:$a file:$b\nassert $r.exit_code eq 0\n"
+	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2564,7 +2534,7 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 // --- json parse shell command tests ---
 
 func TestReplLoop_JSONParseObject(t *testing.T) {
-	input := `let data = json parse '{"name":"test","id":42}'` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
+	input := `let data = [json parse '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2583,7 +2553,7 @@ func TestReplLoop_JSONParseObject(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseArray(t *testing.T) {
-	input := `let arr = json parse '[1,2,3]'` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
+	input := `let arr = [json parse '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2595,7 +2565,7 @@ func TestReplLoop_JSONParseArray(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseScalar(t *testing.T) {
-	input := "let v = json parse 123\nassert $v eq 123\n"
+	input := "let v = [json parse 123]\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2620,7 +2590,7 @@ func TestReplLoop_JSONParsePlainForm(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseInvalidJSON(t *testing.T) {
-	input := "let data = json parse not-json\n"
+	input := "let data = [json parse not-json]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2679,7 +2649,7 @@ func TestReplLoop_JSONParseAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
-	input := `let data = json parse '{"a":{"b":{"c":"deep"}}}'` + "\nassert $data.a.b.c eq deep\n"
+	input := `let data = [json parse '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2692,7 +2662,7 @@ func TestReplLoop_JSONParseNestedAccess(t *testing.T) {
 
 func TestReplLoop_JSONParseWithExec(t *testing.T) {
 	// End-to-end: exec produces JSON text, json parse makes it structured.
-	input := `let raw = exec echo '{"status":"ok","count":3}'` + "\nlet data = json parse $raw.stdout\nassert $data.status eq ok\nassert $data.count eq 3\n"
+	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [json parse $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2705,20 +2675,20 @@ func TestReplLoop_JSONParseWithExec(t *testing.T) {
 
 func TestReplLoop_JSONParseCannotBindNonValueShellCmd(t *testing.T) {
 	// Other non-value shell commands should still be rejected.
-	input := "let x = vars\n"
+	input := "let x = [vars]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "cannot bind result of")
+	assert.Contains(t, errBuf.String(), "produces no assignable value")
 }
 
 // file temp tests
 
 func TestReplLoop_FileTempScalar(t *testing.T) {
-	input := "set data = hello\nlet f = file temp data\nassert not-empty $f\n"
+	input := "let data = hello\nlet f = [file temp data]\nassert not-empty $f\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2740,7 +2710,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempStructured(t *testing.T) {
-	input := `let data = json parse '{"b":2,"a":1}'` + "\nlet f = file temp data\n"
+	input := `let data = [json parse '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2766,7 +2736,7 @@ func TestReplLoop_FileTempStructured(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathScalar(t *testing.T) {
-	input := "let raw = exec echo hello\nlet f = file temp raw.stdout\n"
+	input := "let raw = [exec echo hello]\nlet f = [file temp raw.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2788,7 +2758,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
-	input := `let data = json parse '{"items":[{"id":1},{"id":2}]}'` + "\nlet f = file temp data.items\n"
+	input := `let data = [json parse '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2822,7 +2792,7 @@ func TestReplLoop_FileTempNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
-	input := "let f = file temp undefined_var\n"
+	input := "let f = [file temp undefined_var]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2833,7 +2803,7 @@ func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
-	input := "set data = hello\nfile temp data\n"
+	input := "let data = hello\nfile temp data\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2860,7 +2830,7 @@ func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
 // Inline file adapter tests
 
 func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
-	input := "let raw = exec echo hello\nlet out = exec wc -c file:$raw.stdout\nassert contains $out.stdout 6\n"
+	input := "let raw = [exec echo hello]\nlet out = [exec wc -c file:$raw.stdout]\nassert contains $out.stdout 6\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2872,7 +2842,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
-	input := `let data = json parse '{"name":"test"}'` + "\nlet out = exec cat file:$data\nassert contains $out.stdout name\n"
+	input := `let data = [json parse '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2884,7 +2854,7 @@ func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
-	input := "let a = exec echo aaa\nlet b = exec echo bbb\nlet out = exec diff file:$a.stdout file:$b.stdout\n"
+	input := "let a = [exec echo aaa]\nlet b = [exec echo bbb]\nlet out = [exec diff file:$a.stdout file:$b.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2898,7 +2868,7 @@ func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
-	input := "let raw = exec echo hello\nlet out = exec wc -l file:$raw.stdout\nassert $out.exit_code eq 0\n"
+	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2911,7 +2881,7 @@ func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
 
 func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 	// Verify that adapter temp files are cleaned up after exec.
-	input := "set data = hello\nlet out = exec cat file:$data\nassert contains $out.stdout hello\n"
+	input := "let data = hello\nlet out = [exec cat file:$data]\nassert contains $out.stdout hello\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2935,7 +2905,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
-	input := `let data = json parse '{"a":1}'` + "\nlet out = exec cat file:$data\nassert contains $out.stdout '\"a\": 1'\n"
+	input := `let data = [json parse '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()

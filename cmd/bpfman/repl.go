@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -34,7 +33,7 @@ type ReplCmd struct {
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "set", "source", "unalias", "unset", "vars", "version"}
+var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "source", "unalias", "unset", "vars", "version"}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -169,25 +168,100 @@ func (l sourceLoc) String() string {
 // file:line: prefix for compiler-style diagnostics.
 func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
 	var lineNo int
+	var buf strings.Builder
+	var startLine int
+	var cs contState
 	for {
 		input, err := lr.Readline()
 		if err != nil {
 			if err == ErrInterrupt || err == io.EOF {
+				if buf.Len() > 0 {
+					loc := sourceLoc{}
+					if file != "" {
+						loc = sourceLoc{file: file, line: startLine}
+					}
+					_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
+				}
 				return nil
 			}
 			return err
 		}
 		lineNo++
 
-		var loc sourceLoc
-		if file != "" {
-			loc = sourceLoc{file: file, line: lineNo}
+		if buf.Len() == 0 {
+			startLine = lineNo
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(input)
+		cs.advance(input)
+
+		if cs.open() {
+			continue
 		}
 
-		if err := replEval(ctx, cli, mgr, session, input, loc); err != nil {
+		accumulated := buf.String()
+		buf.Reset()
+		cs = contState{}
+
+		var loc sourceLoc
+		if file != "" {
+			loc = sourceLoc{file: file, line: startLine}
+		}
+
+		if err := replEval(ctx, cli, mgr, session, accumulated, loc); err != nil {
 			return err
 		}
 	}
+}
+
+// contState tracks brace and bracket depth across accumulated input
+// lines so the REPL knows when a multi-line if-block or command
+// substitution is complete. Quoted strings are assumed to close on
+// their own line; an unterminated string on a line is surfaced by
+// the tokeniser when the accumulated input is eventually parsed.
+type contState struct {
+	braces, brackets int
+}
+
+// advance walks one line of input, updating the brace and bracket
+// counters. Comments (`#` to end of line) are ignored; quoted
+// content is skipped so braces and brackets inside strings do not
+// count.
+func (c *contState) advance(line string) {
+	inSingle, inDouble := false, false
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		switch {
+		case ch == '\'' && !inDouble:
+			inSingle = !inSingle
+		case ch == '"' && !inSingle:
+			inDouble = !inDouble
+		case inSingle || inDouble:
+			// ignore content inside strings
+		case ch == '#':
+			return
+		case ch == '{':
+			c.braces++
+		case ch == '}':
+			if c.braces > 0 {
+				c.braces--
+			}
+		case ch == '[':
+			c.brackets++
+		case ch == ']':
+			if c.brackets > 0 {
+				c.brackets--
+			}
+		}
+	}
+}
+
+// open reports whether the accumulated input is still inside an
+// open brace or bracket block.
+func (c *contState) open() bool {
+	return c.braces > 0 || c.brackets > 0
 }
 
 // shellCommands is the set of commands that are shell-language or
@@ -289,48 +363,35 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		return nil
 	}
 
-	stmt, err := shell.ParseStmt(tokens)
+	stmts, err := shell.ParseProgram(tokens)
 	if err != nil {
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
-	if stmt == nil {
-		return nil
-	}
-
-	switch s := stmt.(type) {
-	case *shell.SetStmt:
-		expanded, err := session.Expand([]shell.Token{s.Value})
-		if err != nil {
-			return scriptErr("%s[repl] error: %v\n", loc, err)
+	for _, stmt := range stmts {
+		if err := execStmt(ctx, cli, mgr, session, stmt, loc, scriptErr); err != nil {
+			return err
 		}
-		session.Set(s.Name, argToValue(expanded[0]))
-		return nil
+	}
+	return nil
+}
 
+// execStmt executes a single parsed statement against the session.
+// The scriptErr closure uniformly reports errors according to
+// interactive vs script mode (see replEval).
+func execStmt(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, stmt shell.Stmt, loc sourceLoc, scriptErr func(format string, args ...any) error) error {
+	switch s := stmt.(type) {
 	case *shell.LetStmt:
 		expanded, err := session.Expand(s.Command)
 		if err != nil {
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
 		expanded = applyAlias(session, expanded)
-		// Try shell commands first — some (like exec) produce
-		// assignable values. Use WithDiscardOutput so that
-		// bound commands do not print their normal output.
-		var val shell.Value
-		handled, val, err := replShellCmd(ctx, cli.WithDiscardOutput(), mgr, session, expanded, loc)
+		expr, err := shell.ParseExpr(expanded)
 		if err != nil {
-			if errors.Is(err, errRequireFailed) {
-				return err
-			}
-			return scriptErr("%s[repl] error: %v\n", loc, err)
+			return scriptErr("%s[repl] error: let: %v (wrap commands in [ ])\n", loc, err)
 		}
-		if handled {
-			if val.IsNil() {
-				return scriptErr("%s[repl] error: cannot bind result of %q to a variable\n", loc, argText(expanded[0]))
-			}
-			session.Set(s.Name, val)
-			return nil
-		}
-		val, err = replDispatch(ctx, cli, mgr, expanded)
+		runner := makeCmdRunner(ctx, cli, mgr, session, loc)
+		val, err := shell.Eval(expr, session, runner)
 		if err != nil {
 			if errors.Is(err, errRequireFailed) {
 				return err
@@ -338,10 +399,13 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 			return scriptErr("%s[repl] error: %v\n", loc, err)
 		}
 		if val.IsNil() {
-			return scriptErr("%s[repl] error: command produced no result to assign\n", loc)
+			return scriptErr("%s[repl] error: expression produced no result to assign\n", loc)
 		}
 		session.Set(s.Name, val)
 		return nil
+
+	case *shell.IfStmt:
+		return execIfStmt(ctx, cli, mgr, session, s, loc, scriptErr)
 
 	case *shell.CommandStmt:
 		expanded, err := session.Expand(s.Tokens)
@@ -370,6 +434,95 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 
 	default:
 		return scriptErr("%s[repl] error: unknown statement type %T\n", loc, stmt)
+	}
+}
+
+// execIfStmt evaluates an if/elif/else chain. Conditions must
+// evaluate to a BoolValue (no truthiness). The first branch whose
+// condition is true runs; if none match, the else branch (possibly
+// empty) runs.
+func execIfStmt(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, s *shell.IfStmt, loc sourceLoc, scriptErr func(format string, args ...any) error) error {
+	runner := makeCmdRunner(ctx, cli, mgr, session, loc)
+
+	check := func(condTokens []shell.Token) (bool, error) {
+		args, err := session.Expand(condTokens)
+		if err != nil {
+			return false, err
+		}
+		args = applyAlias(session, args)
+		expr, err := shell.ParseExpr(args)
+		if err != nil {
+			return false, err
+		}
+		v, err := shell.Eval(expr, session, runner)
+		if err != nil {
+			return false, err
+		}
+		return shell.AsBool(v)
+	}
+
+	runBody := func(body []shell.Stmt) error {
+		for _, stmt := range body {
+			if err := execStmt(ctx, cli, mgr, session, stmt, loc, scriptErr); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	primary, err := check(s.Cond)
+	if err != nil {
+		return scriptErr("%s[repl] error: if: %v\n", loc, err)
+	}
+	if primary {
+		return runBody(s.Then)
+	}
+	for _, br := range s.Elifs {
+		match, err := check(br.Cond)
+		if err != nil {
+			return scriptErr("%s[repl] error: elif: %v\n", loc, err)
+		}
+		if match {
+			return runBody(br.Body)
+		}
+	}
+	if len(s.Else) > 0 {
+		return runBody(s.Else)
+	}
+	return nil
+}
+
+// makeCmdRunner builds a shell.CmdRunner that dispatches command
+// substitutions through the same pipeline used for bare commands:
+// shell builtins first (so [exec ...], [json parse ...], [file
+// temp ...] work inside let RHS and future if conditions), then
+// domain-command dispatch. Output from the inner command is
+// suppressed so binding does not clutter the terminal.
+func makeCmdRunner(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) shell.CmdRunner {
+	return func(innerArgs []shell.Arg) (shell.Value, error) {
+		innerArgs = applyAlias(session, innerArgs)
+		if len(innerArgs) == 0 {
+			return shell.Value{}, fmt.Errorf("empty command substitution")
+		}
+		quiet := cli.WithDiscardOutput()
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, innerArgs, loc)
+		if err != nil {
+			return shell.Value{}, err
+		}
+		if handled {
+			if val.IsNil() {
+				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(innerArgs[0]))
+			}
+			return val, nil
+		}
+		val, err = replDispatch(ctx, quiet, mgr, innerArgs)
+		if err != nil {
+			return shell.Value{}, err
+		}
+		if val.IsNil() {
+			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(innerArgs[0]))
+		}
+		return val, nil
 	}
 }
 
@@ -409,25 +562,6 @@ func argTexts(args []shell.Arg) []string {
 		ss[i] = argText(a)
 	}
 	return ss
-}
-
-// argToValue converts a single Arg to a shell.Value for variable
-// assignment. For structured args the Value is passed through
-// directly; for all text-bearing args the text becomes a string
-// value.
-func argToValue(a shell.Arg) shell.Value {
-	switch v := a.(type) {
-	case shell.WordArg:
-		return shell.StringValue(v.Text)
-	case shell.QuotedArg:
-		return shell.StringValue(v.Text)
-	case shell.ScalarValueArg:
-		return shell.StringValue(v.Text)
-	case shell.StructuredValueArg:
-		return v.Value
-	default:
-		return shell.StringValue("")
-	}
 }
 
 // replCompleter returns a CompleteFunc that has access to the manager
@@ -1223,7 +1357,7 @@ func replJSON(cli *CLI, args []shell.Arg) (shell.Value, error) {
 	if err := cli.PrintOut(string(b) + "\n"); err != nil {
 		return shell.Value{}, err
 	}
-	return val, nil
+	return val.WithKind(shell.OriginJSONParsed), nil
 }
 
 // replFile implements the file shell command. The only subcommand is
@@ -1381,7 +1515,7 @@ func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, err
 		}
 	}
 
-	return val, nil
+	return val.WithKind(shell.OriginExecResult), nil
 }
 
 // replVars lists all session variables and their types.
@@ -1565,17 +1699,21 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		}
 	}
 
-	// Try infix binary assertion: <left> <op> <right>.
-	if len(args) >= 3 && isInfixOp(argText(args[1])) {
-		if negate {
-			return fmt.Errorf("\"not\" is not supported with infix assertions; use the complementary operator (ne, le, ge, !=, <=, >=)")
+	// Value-based assertion: binary comparison or unary predicate.
+	// These route through the expression grammar. "not" is legal
+	// before unary predicates but banned before binary comparisons
+	// (use the complementary operator instead).
+	if isExprAssertion(args) {
+		if negate && len(args) == 3 {
+			return fmt.Errorf("\"not\" is not supported with infix comparisons; use the complementary operator (ne, le, ge, !=, <=, >=)")
 		}
-		if len(args) != 3 {
-			return fmt.Errorf("infix assertion requires exactly two operands: <left> <op> <right>")
-		}
-		result, err := evalInfixAssertion(argText(args[0]), argText(args[1]), argText(args[2]))
+		result, err := evalExprAssertion(session, args)
 		if err != nil {
 			return err
+		}
+		if negate {
+			result.pass = !result.pass
+			result.message = negateMessage(result.message)
 		}
 		if result.pass {
 			return nil
@@ -1588,7 +1726,8 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		return nil
 	}
 
-	// Prefix verb dispatch (unary predicates and command assertions).
+	// Prefix verb dispatch (command assertions and remaining special
+	// verbs: ok, fail, path, contains).
 	verb := argText(args[0])
 	verbArgs := args[1:]
 
@@ -1617,16 +1756,105 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 	return nil
 }
 
-// evalAssertVerb dispatches to the appropriate prefix verb evaluator.
-// Binary comparison verbs (eq, ne, lt, le, gt, ge) are handled by
-// infix dispatch in replAssertRequire and are not valid here.
+// isExprAssertion reports whether args matches the shape of a
+// value-based assertion that should be routed through the expression
+// grammar: either [lhs op rhs] with a binary operator, or [pred
+// operand] with a unary predicate.
+func isExprAssertion(args []shell.Arg) bool {
+	switch len(args) {
+	case 2:
+		return shell.IsUnaryPred(argText(args[0]))
+	case 3:
+		return shell.IsBinaryOp(argText(args[1]))
+	}
+	return false
+}
+
+// evalExprAssertion parses args as an expression, evaluates it, and
+// wraps the boolean result with an assertion-appropriate failure
+// message that describes the operands involved.
+func evalExprAssertion(session *shell.Session, args []shell.Arg) (assertResult, error) {
+	expr, err := shell.ParseExpr(args)
+	if err != nil {
+		return assertResult{}, err
+	}
+	v, err := shell.Eval(expr, session, nil)
+	if err != nil {
+		return assertResult{}, err
+	}
+	pass, err := shell.AsBool(v)
+	if err != nil {
+		return assertResult{}, err
+	}
+	return assertResult{
+		pass:    pass,
+		message: formatExprFailure(expr, session),
+	}, nil
+}
+
+// formatExprFailure produces an assertion failure message describing
+// the expression and its operand values. Evaluation errors in the
+// operands surface as-is; they should not occur here because Eval
+// already succeeded on the top-level expression.
+func formatExprFailure(e shell.Expr, session *shell.Session) string {
+	switch x := e.(type) {
+	case *shell.BinaryExpr:
+		left := exprScalar(x.Left, session)
+		right := exprScalar(x.Right, session)
+		switch x.Op {
+		case "eq":
+			return fmt.Sprintf("expected %q to equal %q", left, right)
+		case "ne":
+			return fmt.Sprintf("expected %q to not equal %q", left, right)
+		case "lt", "le", "gt", "ge":
+			return fmt.Sprintf("expected %q %s %q (lexicographic)", left, x.Op, right)
+		default:
+			return fmt.Sprintf("expected %s %s %s", left, x.Op, right)
+		}
+	case *shell.UnaryExpr:
+		operand := exprScalar(x.Operand, session)
+		switch x.Pred {
+		case "nil":
+			return fmt.Sprintf("expected %s to be nil", operand)
+		case "not-empty":
+			return fmt.Sprintf("expected non-empty string, got %q", operand)
+		case "true":
+			return fmt.Sprintf("expected %s to be true", operand)
+		case "false":
+			return fmt.Sprintf("expected %s to be false", operand)
+		default:
+			return fmt.Sprintf("expected predicate %s to hold on %s", x.Pred, operand)
+		}
+	}
+	return "assertion failed"
+}
+
+// exprScalar is a best-effort scalar stringification of an expression
+// for inclusion in error messages. Non-scalar values render as their
+// kind; evaluation errors render as "<err>". Command substitutions
+// are not re-executed here (nil runner) — their result is already
+// part of the evaluated top-level; this helper is only called for
+// reconstructing operand text.
+func exprScalar(e shell.Expr, session *shell.Session) string {
+	v, err := shell.Eval(e, session, nil)
+	if err != nil {
+		return "<err>"
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return "<" + v.Kind().String() + ">"
+	}
+	return s
+}
+
+// evalAssertVerb dispatches to the prefix verb evaluators that are
+// not part of the expression grammar: command status checks (ok,
+// fail), filesystem checks (path), and string containment
+// (contains). Value-based comparisons and unary predicates go
+// through the expression path (see evalExprAssertion).
 func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
 	switch verb {
-	case "nil":
-		return assertNil(session, ss)
-	case "not-empty":
-		return assertNotEmpty(ss)
 	case "ok":
 		return assertOk(ctx, cli, mgr, session, args)
 	case "fail":
@@ -1635,102 +1863,22 @@ func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session
 		return assertPath(ss)
 	case "contains":
 		return assertContains(ss)
-	case "true":
-		return assertBool(ss, true)
-	case "false":
-		return assertBool(ss, false)
+	case "nil":
+		return assertNil(session, ss)
 	case "eq", "ne", "lt", "le", "gt", "ge":
 		return assertResult{}, fmt.Errorf("%q is not a prefix verb; use infix form: assert <left> %s <right>", verb, verb)
+	case "true", "false", "not-empty":
+		return assertResult{}, fmt.Errorf("%q requires exactly one operand: assert %s <operand>", verb, verb)
 	default:
 		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
 	}
 }
 
-// isInfixOp reports whether s is a recognised infix comparison
-// operator. Word operators (eq, ne, lt, le, gt, ge) perform textual
-// (lexicographic) comparison; symbol operators (==, !=, <, <=, >, >=)
-// perform numeric comparison.
-func isInfixOp(s string) bool {
-	switch s {
-	case "eq", "ne", "lt", "le", "gt", "ge",
-		"==", "!=", "<", "<=", ">", ">=":
-		return true
-	}
-	return false
-}
-
-// evalInfixAssertion evaluates a binary comparison in infix form:
-// <left> <op> <right>. Word operators compare textually; symbol
-// operators compare numerically.
-func evalInfixAssertion(left, op, right string) (assertResult, error) {
-	switch op {
-	// Textual (lexicographic) operators.
-	case "eq":
-		return assertResult{
-			pass:    left == right,
-			message: fmt.Sprintf("expected %q to equal %q", left, right),
-		}, nil
-	case "ne":
-		return assertResult{
-			pass:    left != right,
-			message: fmt.Sprintf("expected %q to not equal %q", left, right),
-		}, nil
-	case "lt":
-		return assertResult{
-			pass:    left < right,
-			message: fmt.Sprintf("expected %q lt %q (lexicographic)", left, right),
-		}, nil
-	case "le":
-		return assertResult{
-			pass:    left <= right,
-			message: fmt.Sprintf("expected %q le %q (lexicographic)", left, right),
-		}, nil
-	case "gt":
-		return assertResult{
-			pass:    left > right,
-			message: fmt.Sprintf("expected %q gt %q (lexicographic)", left, right),
-		}, nil
-	case "ge":
-		return assertResult{
-			pass:    left >= right,
-			message: fmt.Sprintf("expected %q ge %q (lexicographic)", left, right),
-		}, nil
-
-	// Numeric operators.
-	case "==", "!=", "<", "<=", ">", ">=":
-		a, err := strconv.ParseFloat(left, 64)
-		if err != nil {
-			return assertResult{}, fmt.Errorf("left operand %q is not numeric", left)
-		}
-		b, err := strconv.ParseFloat(right, 64)
-		if err != nil {
-			return assertResult{}, fmt.Errorf("right operand %q is not numeric", right)
-		}
-		var pass bool
-		switch op {
-		case "==":
-			pass = a == b
-		case "!=":
-			pass = a != b
-		case "<":
-			pass = a < b
-		case "<=":
-			pass = a <= b
-		case ">":
-			pass = a > b
-		case ">=":
-			pass = a >= b
-		}
-		return assertResult{
-			pass:    pass,
-			message: fmt.Sprintf("expected %s %s %s", left, op, right),
-		}, nil
-
-	default:
-		return assertResult{}, fmt.Errorf("unknown infix operator %q", op)
-	}
-}
-
+// assertNil checks whether a variable holds a nil Value. The operand
+// is a bare variable name, not a value expression: the runtime
+// Session can hold nil values but variable expansion refuses to
+// carry them through, so the only way to inspect nil-ness is by
+// name.
 func assertNil(session *shell.Session, args []string) (assertResult, error) {
 	if len(args) != 1 {
 		return assertResult{}, fmt.Errorf("nil requires exactly 1 argument (bare variable name, no $)")
@@ -1742,17 +1890,6 @@ func assertNil(session *shell.Session, args []string) (assertResult, error) {
 	return assertResult{
 		pass:    v.IsNil(),
 		message: fmt.Sprintf("expected %s to be nil", args[0]),
-	}, nil
-}
-
-func assertNotEmpty(args []string) (assertResult, error) {
-	if len(args) != 1 {
-		return assertResult{}, fmt.Errorf("not-empty requires exactly 1 argument")
-	}
-	pass := args[0] != ""
-	return assertResult{
-		pass:    pass,
-		message: fmt.Sprintf("expected non-empty string, got %q", args[0]),
 	}, nil
 }
 
@@ -1825,18 +1962,6 @@ func assertContains(args []string) (assertResult, error) {
 	return assertResult{
 		pass:    pass,
 		message: fmt.Sprintf("expected %q to contain %q", args[0], args[1]),
-	}, nil
-}
-
-func assertBool(args []string, want bool) (assertResult, error) {
-	if len(args) != 1 {
-		return assertResult{}, fmt.Errorf("true/false requires exactly 1 argument")
-	}
-	wantStr := strconv.FormatBool(want)
-	pass := args[0] == wantStr
-	return assertResult{
-		pass:    pass,
-		message: fmt.Sprintf("expected %q to be %q", args[0], wantStr),
 	}, nil
 }
 
