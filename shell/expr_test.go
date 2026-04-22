@@ -386,6 +386,147 @@ func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
 	assert.Equal(t, OriginProgram, sva.Value.Kind())
 }
 
+// PipeExpr evaluation: LHS's Value is appended as the last arg to
+// the pipe's command, which then dispatches via ExecSubstitution.
+
+func TestEvalExpr_Pipe_AppendsScalarValueAsLastArg(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("42"))
+	var captured []Arg
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			captured = args
+			return StringValue("ok"), nil
+		},
+	}
+	pipe := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "x"},
+		Args: []Expr{&LiteralExpr{Text: "jq"}, &LiteralExpr{Text: ".", Quoted: true}},
+	}
+	v, err := EvalExpr(pipe, env)
+	require.NoError(t, err)
+	s2, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "ok", s2)
+	// Captured args: [jq, ".", "42"] — LHS value becomes last arg.
+	require.Len(t, captured, 3)
+	assert.Equal(t, WordArg{Text: "jq"}, captured[0])
+	assert.Equal(t, QuotedArg{Text: "."}, captured[1])
+	scalar, ok := captured[2].(ScalarValueArg)
+	require.True(t, ok)
+	assert.Equal(t, "42", scalar.Text)
+}
+
+func TestEvalExpr_Pipe_AppendsStructuredValueAsLastArg(t *testing.T) {
+	s := NewSession()
+	s.Set("p", ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram))
+	var captured []Arg
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			captured = args
+			return StringValue("ok"), nil
+		},
+	}
+	pipe := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "p"},
+		Args: []Expr{&LiteralExpr{Text: "jq"}, &LiteralExpr{Text: ".id", Quoted: true}},
+	}
+	_, err := EvalExpr(pipe, env)
+	require.NoError(t, err)
+	require.Len(t, captured, 3)
+	sva, ok := captured[2].(StructuredValueArg)
+	require.True(t, ok, "structured LHS should produce StructuredValueArg, got %T", captured[2])
+	assert.Equal(t, OriginProgram, sva.Value.Kind())
+}
+
+func TestEvalExpr_Pipe_NilLHSIsError(t *testing.T) {
+	s := NewSession()
+	s.Set("x", Value{}) // nil value
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			return StringValue("should-not-run"), nil
+		},
+	}
+	pipe := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "x"},
+		Args: []Expr{&LiteralExpr{Text: "jq"}},
+	}
+	_, err := EvalExpr(pipe, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "null")
+}
+
+func TestEvalExpr_Pipe_NoSubstitutionRunnerIsError(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("42"))
+	env := &Env{Session: s}
+	pipe := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "x"},
+		Args: []Expr{&LiteralExpr{Text: "jq"}},
+	}
+	_, err := EvalExpr(pipe, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pipe")
+}
+
+func TestEvalExpr_Pipe_Chain_FeedsSuccessively(t *testing.T) {
+	// Build ((x | stage1) | stage2) manually; each stage's runner
+	// returns a known Value, and the outer stage asserts that its
+	// last arg is the inner stage's return.
+	s := NewSession()
+	s.Set("x", StringValue("start"))
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			// Return the last arg's text with a prefix so a chain
+			// accumulates visible stages.
+			last := args[len(args)-1].(ScalarValueArg).Text
+			return StringValue("<" + last + ">"), nil
+		},
+	}
+	inner := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "x"},
+		Args: []Expr{&LiteralExpr{Text: "stage1"}},
+	}
+	outer := &PipeExpr{
+		LHS:  inner,
+		Args: []Expr{&LiteralExpr{Text: "stage2"}},
+	}
+	v, err := EvalExpr(outer, env)
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "<<start>>", got)
+}
+
+func TestEvalArgs_Pipe_WrapsPipeResultAsArg(t *testing.T) {
+	// A PipeExpr used as a command argument: the evaluator should
+	// dispatch the pipe, then wrap the returned Value as a
+	// ScalarValueArg or StructuredValueArg just like CmdSubExpr.
+	s := NewSession()
+	s.Set("x", StringValue("42"))
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			return StringValue("piped"), nil
+		},
+	}
+	pipe := &PipeExpr{
+		LHS:  &VarRefExpr{Name: "x"},
+		Args: []Expr{&LiteralExpr{Text: "stage"}},
+	}
+	exprs := []Expr{&LiteralExpr{Text: "outer"}, pipe}
+	out, err := EvalArgs(exprs, env)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	scalar, ok := out[1].(ScalarValueArg)
+	require.True(t, ok)
+	assert.Equal(t, "piped", scalar.Text)
+}
+
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
 	s := NewSession()
 	env := &Env{

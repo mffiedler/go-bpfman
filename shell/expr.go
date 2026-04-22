@@ -75,12 +75,24 @@ type UnaryExpr struct {
 	Loc
 }
 
+// PipeExpr is a value-threading composition: evaluate LHS to a
+// Value, append that Value as the last argument of the command
+// described by Args, and dispatch. The operator binds tighter than
+// comparison operators but looser than the primary forms. Loc
+// identifies the '|' token itself.
+type PipeExpr struct {
+	LHS  Expr
+	Args []Expr
+	Loc
+}
+
 func (*LiteralExpr) exprNode() {}
 func (*VarRefExpr) exprNode()  {}
 func (*AdapterExpr) exprNode() {}
 func (*CmdSubExpr) exprNode()  {}
 func (*BinaryExpr) exprNode()  {}
 func (*UnaryExpr) exprNode()   {}
+func (*PipeExpr) exprNode()    {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand and ExecSubstitution
@@ -235,6 +247,8 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
 	case *CmdSubExpr:
 		return dispatchCmdSub(e, env)
+	case *PipeExpr:
+		return dispatchPipe(e, env)
 	case *BinaryExpr:
 		return evalBinary(e, env)
 	case *UnaryExpr:
@@ -286,6 +300,22 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		s, err := val.Scalar()
 		if err != nil {
 			return nil, locErrorf(e.Loc, "nested command substitution: %v", err)
+		}
+		return ScalarValueArg{Text: s}, nil
+	case *PipeExpr:
+		val, err := dispatchPipe(e, env)
+		if err != nil {
+			return nil, err
+		}
+		if val.IsNil() {
+			return nil, locErrorf(e.Loc, "pipe produced no value")
+		}
+		if val.IsStructured() {
+			return StructuredValueArg{Value: val}, nil
+		}
+		s, err := val.Scalar()
+		if err != nil {
+			return nil, locErrorf(e.Loc, "pipe: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
 	case *BinaryExpr, *UnaryExpr:
@@ -357,6 +387,50 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 		Path:    e.Path,
 		Value:   resolved,
 	}, nil
+}
+
+// dispatchPipe evaluates a pipe expression by threading the LHS's
+// Value into the command described by Args.  The LHS Value
+// becomes the last element of the evaluated argument list so it
+// matches the convention used by jq, json parse, file temp, and
+// most shell-style "CMD ARGS VALUE" invocations.
+func dispatchPipe(e *PipeExpr, env *Env) (Value, error) {
+	if env.ExecSubstitution == nil {
+		return Value{}, locErrorf(e.Loc, "pipe requires a substitution runner; none configured")
+	}
+	lhsVal, err := EvalExpr(e.LHS, env)
+	if err != nil {
+		return Value{}, err
+	}
+	if lhsVal.IsNil() {
+		return Value{}, locErrorf(e.Loc, "pipe: left-hand side is null")
+	}
+	args, err := EvalArgs(e.Args, env)
+	if err != nil {
+		return Value{}, err
+	}
+	lhsArg, err := valueToArg(lhsVal)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "pipe: %v", err)
+	}
+	return env.ExecSubstitution(append(args, lhsArg))
+}
+
+// valueToArg wraps a Value in the most specific Arg variant for
+// the dispatch boundary: structured values stay structured,
+// scalars become ScalarValueArg, nil is a caller problem.
+func valueToArg(v Value) (Arg, error) {
+	if v.IsNil() {
+		return nil, fmt.Errorf("value is null")
+	}
+	if v.IsStructured() {
+		return StructuredValueArg{Value: v}, nil
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return nil, err
+	}
+	return ScalarValueArg{Text: s}, nil
 }
 
 // dispatchCmdSub evaluates a command-substitution expression and
@@ -605,6 +679,8 @@ func exprLoc(e Expr) Loc {
 	case *BinaryExpr:
 		return v.Loc
 	case *UnaryExpr:
+		return v.Loc
+	case *PipeExpr:
 		return v.Loc
 	}
 	return Loc{}

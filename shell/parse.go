@@ -306,18 +306,56 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 	return stmts, nil
 }
 
-// parseExpression handles the single-expression grammar used by let
-// RHS and if/elif conditions: primary (1 token), unary predicate
-// (2 tokens), or binary comparison (3 tokens). Any other token
-// count is a syntax error.
+// parseExpression parses the expression used by let RHS and
+// if/elif conditions.  Precedence, loosest to tightest:
+//
+//  1. Binary comparison (eq, ne, ==, < ...): a single top-level op
+//     token splits the slice into two sub-expressions, each of
+//     which is parsed recursively.
+//  2. Unary predicate (true, false, not-empty): a pred at the head
+//     consumes the remainder of the slice as its operand.
+//  3. Pipe chain (|): a primary followed by one or more
+//     '|' command-call segments; left-associative.
+//  4. Primary: a single token — literal, varref, adapter, or
+//     command substitution.
+//
+// Binary operators appear at most once per expression; they live
+// outside any pipe chain.  Pipes are only recognised in
+// expression position (let RHS, if/elif conditions, and cmdsub
+// inner text that itself reaches this parser), never in a
+// CommandStmt's argument list.
 func parseExpression(tokens []Token) (Expr, error) {
 	tokens = stripSeps(tokens)
-	switch len(tokens) {
-	case 0:
+	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty expression")
-	case 1:
-		return parsePrimary(tokens[0])
-	case 2:
+	}
+
+	// Level 1: scan for a top-level binary operator.  A binary
+	// op must have at least one token on each side.  Pipes are
+	// tighter, so a binary op token sitting anywhere in the
+	// slice is necessarily the outermost operator.
+	for i := 1; i < len(tokens)-1; i++ {
+		op, ok := binaryOpFromToken(tokens[i])
+		if !ok {
+			continue
+		}
+		left, err := parseExpression(tokens[:i])
+		if err != nil {
+			return nil, err
+		}
+		right, err := parseExpression(tokens[i+1:])
+		if err != nil {
+			return nil, err
+		}
+		return &BinaryExpr{Left: left, Op: op, Right: right, Loc: tokens[0].Loc}, nil
+	}
+
+	// Level 2: unary predicate prefix.  Only matches when the
+	// first token is a recognised pred word AND the remainder
+	// is a single primary; multi-token operands (e.g. a pipe
+	// chain) aren't supported for unary preds today because no
+	// use case needs it.
+	if len(tokens) == 2 && !containsPipe(tokens) {
 		pred, ok := unaryPredFromToken(tokens[0])
 		if !ok {
 			return nil, locErrorf(tokens[0].Loc, "expected unary predicate as first operand, got %q", tokens[0].Text)
@@ -327,23 +365,97 @@ func parseExpression(tokens []Token) (Expr, error) {
 			return nil, err
 		}
 		return &UnaryExpr{Pred: pred, Operand: operand, Loc: tokens[0].Loc}, nil
-	case 3:
-		op, ok := binaryOpFromToken(tokens[1])
-		if !ok {
-			return nil, locErrorf(tokens[1].Loc, "expected binary operator as middle operand, got %q", tokens[1].Text)
-		}
-		left, err := parsePrimary(tokens[0])
-		if err != nil {
-			return nil, err
-		}
-		right, err := parsePrimary(tokens[2])
-		if err != nil {
-			return nil, err
-		}
-		return &BinaryExpr{Left: left, Op: op, Right: right, Loc: tokens[0].Loc}, nil
-	default:
-		return nil, locErrorf(tokens[0].Loc, "expression has %d operands; expected 1 (primary), 2 (unary) or 3 (binary)", len(tokens))
 	}
+	if len(tokens) >= 2 {
+		if pred, ok := unaryPredFromToken(tokens[0]); ok && !containsPipe(tokens) {
+			return nil, locErrorf(tokens[0].Loc, "unary predicate %q takes a single operand", pred)
+		}
+	}
+
+	// Level 3: pipe chain.  If there's at least one pipe token,
+	// split on them and fold left-to-right.
+	if containsPipe(tokens) {
+		return parsePipeChain(tokens)
+	}
+
+	// Level 4: a single primary.  Anything else is an arity
+	// error left over from the binary/unary grammar.
+	if len(tokens) == 1 {
+		return parsePrimary(tokens[0])
+	}
+	return nil, locErrorf(tokens[0].Loc, "expression has %d tokens; expected primary, unary, binary, or pipe chain", len(tokens))
+}
+
+// containsPipe reports whether tokens has a TokenPipe anywhere in
+// it. Used by parseExpression to decide between the legacy
+// primary/unary/binary paths and a pipe chain.
+func containsPipe(tokens []Token) bool {
+	for _, t := range tokens {
+		if t.Kind == TokenPipe {
+			return true
+		}
+	}
+	return false
+}
+
+// parsePipeChain builds a left-associative PipeExpr tree from a
+// token slice that contains at least one TokenPipe.  The first
+// segment (before the first '|') must be a single primary; each
+// subsequent segment is a command call (one or more tokens
+// parsed as primary Exprs) whose arguments will receive the
+// running pipeline value as their last element at eval time.
+func parsePipeChain(tokens []Token) (Expr, error) {
+	segments, pipeLocs, err := splitPipeSegments(tokens)
+	if err != nil {
+		return nil, err
+	}
+	if len(segments[0]) != 1 {
+		loc := tokens[0].Loc
+		return nil, locErrorf(loc, "pipe LHS must be a single primary expression; got %d tokens", len(segments[0]))
+	}
+	lhs, err := parsePrimary(segments[0][0])
+	if err != nil {
+		return nil, err
+	}
+	for i, seg := range segments[1:] {
+		if len(seg) == 0 {
+			return nil, locErrorf(pipeLocs[i], "pipe requires a command on the right-hand side")
+		}
+		args := make([]Expr, 0, len(seg))
+		for _, t := range seg {
+			e, err := parsePrimary(t)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, e)
+		}
+		lhs = &PipeExpr{LHS: lhs, Args: args, Loc: pipeLocs[i]}
+	}
+	return lhs, nil
+}
+
+// splitPipeSegments divides tokens on TokenPipe tokens and
+// returns the segments together with the Loc of each '|' that
+// produced a boundary.  An empty LHS (leading pipe) is a syntax
+// error; trailing pipes yield an empty trailing segment that the
+// caller flags.
+func splitPipeSegments(tokens []Token) ([][]Token, []Loc, error) {
+	var segments [][]Token
+	var pipeLocs []Loc
+	start := 0
+	for i, t := range tokens {
+		if t.Kind != TokenPipe {
+			continue
+		}
+		if start == i {
+			return nil, nil, locErrorf(t.Loc, "pipe has no left-hand side")
+		}
+		segments = append(segments, tokens[start:i])
+		pipeLocs = append(pipeLocs, t.Loc)
+		start = i + 1
+	}
+	segments = append(segments, tokens[start:])
+	return segments, pipeLocs, nil
 }
 
 // parseCommandArgs turns a command's token run into argument

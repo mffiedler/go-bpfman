@@ -44,6 +44,10 @@ const (
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
+	// TokenPipe is a standalone '|' at a token boundary: the
+	// value-threading composition operator. Inside a bare word or
+	// quoted string, '|' stays part of the surrounding literal.
+	TokenPipe
 )
 
 // Token is a single lexical element produced by Tokenise.
@@ -134,6 +138,14 @@ func Tokenise(input string) ([]Token, error) {
 
 		case ch == ']':
 			return nil, fmt.Errorf("unmatched ']'")
+
+		case ch == '|':
+			// Reaching this case means the previous byte was
+			// whitespace or absent, so '|' sits at a token
+			// boundary.  The lexWord path keeps '|' as an
+			// interior word character, so 'a|b' stays a word.
+			tokens = emit(tokens, start, Token{Kind: TokenPipe, Text: "|"})
+			i++
 
 		default:
 			if tok, n, ok := lexAdapterRef(input, i); ok {
