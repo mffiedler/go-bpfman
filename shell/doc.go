@@ -10,15 +10,15 @@
 //
 // Input flows through three stages:
 //
-//	source → Tokenise → []Token → Parse → *Program → EvalProgram
+//		source → Tokenise → []Token → Parse → *Program → EvalProgram
 //
-//   - [Tokenise] produces a flat stream of [Token]s, each carrying
-//     its source line/column in a [Loc].
-//   - [Parse] builds a [Program] of typed AST nodes. Command
-//     substitutions are parsed eagerly so syntax errors inside [ ]
-//     surface at parse time.
-//   - [EvalProgram] walks the AST against an [Env] that bundles a
-//     [Session] with the callbacks that dispatch commands.
+//	  - [Tokenise] produces a flat stream of [Token]s, each carrying
+//	    its source line/column in a [Loc].
+//	  - [Parse] builds a [Program] of typed AST nodes. Command
+//	    substitutions are parsed eagerly so syntax errors inside [ ]
+//	    surface at parse time.
+//	  - [EvalProgram] walks the AST against an [Env] that bundles a
+//	    [Session] with the callbacks that dispatch commands.
 //
 // # Statements
 //

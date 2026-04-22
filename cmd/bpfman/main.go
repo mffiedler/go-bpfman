@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"slices"
 	"syscall"
 
 	"github.com/frobware/go-bpfman/ns/nsenter"
@@ -33,9 +32,24 @@ func RunNamespaceSwitcher() NamespaceSwitcherResult {
 	return NamespaceSwitcherResult{Ran: true, Err: runNamespaceHelper(inv)}
 }
 
+// rootExempt reports whether the argument vector indicates an
+// invocation that does not need root: "version" as a positional
+// (the version subcommand) or --check / -c (repl in syntax-check
+// mode).
+func rootExempt(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "version", "--check", "-c":
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
-	// Allow version to run without root.
-	if os.Geteuid() != 0 && !slices.Contains(os.Args[1:], "version") {
+	// Allow version and syntax-only repl checks to run without
+	// root.  Neither touches kernel, store, or filesystem state.
+	if os.Geteuid() != 0 && !rootExempt(os.Args[1:]) {
 		fmt.Fprintln(os.Stderr, "bpfman: error: must run as root")
 		os.Exit(1)
 	}

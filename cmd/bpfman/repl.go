@@ -27,7 +27,8 @@ import (
 // stdin is not a terminal, commands are read from stdin. Otherwise an
 // interactive readline prompt is started.
 type ReplCmd struct {
-	File string `name:"file" short:"f" help:"Read commands from a file (use '-' for stdin)."`
+	File  string `name:"file" short:"f" help:"Read commands from a file (use '-' for stdin)."`
+	Check bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
 }
 
 // replCommandNames lists the top-level command tokens for completion.
@@ -80,8 +81,14 @@ type assertResult struct {
 }
 
 // Run starts the read-eval-print loop. A single manager is held open
-// for the session lifetime to avoid repeated store open/close.
+// for the session lifetime to avoid repeated store open/close. When
+// --check is set, Run short-circuits to a parse-only mode that reads
+// the same input, reports syntax errors, and exits without touching
+// the manager, session, or evaluator.
 func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
+	if c.Check {
+		return c.runCheck(cli)
+	}
 	mgr, cleanup, err := cli.NewManagerWithPuller(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -131,6 +138,102 @@ func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *
 		return nil, fmt.Errorf("history path: %w", err)
 	}
 	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
+}
+
+// runCheck drives the --check pipeline: read chunks of input, feed
+// each completed chunk through Tokenise and Parse, and report the
+// first error from each stage with a file:line: prefix. No Session,
+// Manager, or evaluator is involved. Returns ErrSilent when any
+// error was reported so the process exits non-zero without an extra
+// message from Kong.
+func (c *ReplCmd) runCheck(cli *CLI) error {
+	reader, err := c.checkReader()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	file := c.File
+	if file == "-" || (file == "" && !term.IsTerminal(int(os.Stdin.Fd()))) {
+		file = "<stdin>"
+	}
+	if replCheckInput(reader, cli.Err, file) {
+		return ErrSilent
+	}
+	return nil
+}
+
+// checkReader chooses the input source for --check: the named file,
+// or stdin. Unlike Run's newReader it never falls back to an
+// interactive line editor because --check is a batch operation.
+func (c *ReplCmd) checkReader() (LineReader, error) {
+	if c.File != "" {
+		return openScriptReader(c.File)
+	}
+	return NewScannerReader(os.Stdin, nil), nil
+}
+
+// replCheckInput reads from r, accumulates lines until brace and
+// bracket depth balances (mirroring replLoop), and checks each
+// accumulated chunk via shell.Tokenise and shell.Parse. Errors are
+// written to errOut with a file:line: prefix. Returns true when any
+// error was emitted so the caller can signal a non-zero exit.
+func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
+	var lineNo int
+	var buf strings.Builder
+	var startLine int
+	var cs contState
+	hadErrors := false
+
+	reportErr := func(line int, err error) {
+		hadErrors = true
+		loc := sourceLoc{file: file, line: line}
+		fmt.Fprintf(errOut, "%s[check] error: %v\n", loc, err)
+	}
+
+	for {
+		input, err := r.Readline()
+		if err != nil {
+			if err == ErrInterrupt || err == io.EOF {
+				if buf.Len() > 0 {
+					reportErr(startLine, fmt.Errorf("unterminated block at end of input"))
+				}
+				break
+			}
+			reportErr(lineNo, err)
+			break
+		}
+		lineNo++
+
+		if buf.Len() == 0 {
+			startLine = lineNo
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(input)
+		cs.advance(input)
+		if cs.open() {
+			continue
+		}
+
+		accumulated := buf.String()
+		buf.Reset()
+		cs = contState{}
+
+		tokens, tokErr := shell.Tokenise(accumulated)
+		if tokErr != nil {
+			reportErr(startLine, tokErr)
+			continue
+		}
+		if len(tokens) == 0 {
+			continue
+		}
+		if _, parseErr := shell.Parse(tokens); parseErr != nil {
+			reportErr(startLine, parseErr)
+		}
+	}
+	return hadErrors
 }
 
 // openScriptReader opens a file for reading commands. Use "-" to

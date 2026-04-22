@@ -188,9 +188,13 @@ func NewCLI() (*CLI, error) {
 		c.Err = os.Stderr
 	}
 
-	// Initialise logger eagerly so errors surface immediately
-	if err := c.initLogger(); err != nil {
-		return nil, fmt.Errorf("create logger: %w", err)
+	// Initialise logger eagerly so errors surface immediately.
+	// Skip it for repl --check, which does no I/O and must be
+	// runnable without access to the system config file.
+	if !c.Repl.Check {
+		if err := c.initLogger(); err != nil {
+			return nil, fmt.Errorf("create logger: %w", err)
+		}
 	}
 
 	return &c, nil
