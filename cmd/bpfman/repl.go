@@ -431,7 +431,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 	case "require":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
 	case "dump":
-		return true, shell.Value{}, replDump(cli, session, argTexts(args[1:]))
+		return true, shell.Value{}, replDump(cli, session, args[1:])
 	case "help":
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
@@ -1326,7 +1326,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
 	b.WriteString("  file temp <variable>[.path]               Write value to temp file (assignable)\n")
 	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
-	b.WriteString("  dump <variable>[.path]                    Display variable contents\n")
+	b.WriteString("  dump <variable>[.path] | <expr>           Print a binding or a value\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")
@@ -1778,24 +1778,52 @@ func replUnset(cli *CLI, session *shell.Session, args []string) error {
 	return nil
 }
 
-// replDump displays the contents of a session variable. The argument
-// is a bare variable name with an optional dotted/indexed path (no $
-// prefix). Scalars are printed as plain text, structured values as
-// indented JSON, and nil as "null".
-func replDump(cli *CLI, session *shell.Session, args []string) error {
+// replDump prints a value to stdout. The single argument may be a
+// bare identifier (with optional dotted/indexed path), in which case
+// it is resolved against the session; or any expression that already
+// evaluates to a value ($var, [cmd], a quoted literal), in which
+// case its resolved value is printed directly. Scalars print as
+// plain text, structured values as indented JSON, nil as "null".
+func replDump(cli *CLI, session *shell.Session, args []shell.Arg) error {
 	if len(args) != 1 {
-		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path]")
+		return fmt.Errorf("dump requires exactly one argument: dump <variable>[.path] | $var | [cmd] | \"literal\"")
 	}
 
-	v, err := lookupBareVar(session, args[0])
+	v, err := dumpValue(session, args[0])
 	if err != nil {
 		return err
 	}
+	return writeValue(cli, v)
+}
 
+// dumpValue resolves a single dump argument into a shell.Value. A
+// WordArg is treated as a variable name (the historical dump
+// contract); every other arg kind is already a value produced by
+// expansion and is passed through unchanged.
+func dumpValue(session *shell.Session, arg shell.Arg) (shell.Value, error) {
+	switch a := arg.(type) {
+	case shell.WordArg:
+		return lookupBareVar(session, a.Text)
+	case shell.QuotedArg:
+		return shell.StringValue(a.Text), nil
+	case shell.ScalarValueArg:
+		return shell.StringValue(a.Text), nil
+	case shell.StructuredValueArg:
+		return a.Value, nil
+	case shell.AdapterArg:
+		return a.Value, nil
+	default:
+		return shell.Value{}, fmt.Errorf("dump: unsupported argument kind %T", arg)
+	}
+}
+
+// writeValue renders a shell.Value onto cli: nil as "null", scalars
+// as plain text, structured values as indented JSON. Shared between
+// dump and any other "print me this value" caller.
+func writeValue(cli *CLI, v shell.Value) error {
 	if v.IsNil() {
 		return cli.PrintOut("null\n")
 	}
-
 	if v.IsScalar() {
 		s, err := v.Scalar()
 		if err != nil {
@@ -1803,7 +1831,6 @@ func replDump(cli *CLI, session *shell.Session, args []string) error {
 		}
 		return cli.PrintOut(s + "\n")
 	}
-
 	b, err := json.MarshalIndent(v.Raw(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal value: %w", err)
