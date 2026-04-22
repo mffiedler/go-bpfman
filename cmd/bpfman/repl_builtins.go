@@ -21,6 +21,20 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
+// firstFlagArg returns the text of the first "-x" or "--long"
+// argument in args, or ("", false) if none appear.  Used to craft
+// specific error messages when a user passes shell-jq-style flags
+// to the filter-only replJQ.
+func firstFlagArg(args []shell.Arg) (string, bool) {
+	for _, a := range args {
+		text := argText(a)
+		if len(text) >= 2 && text[0] == '-' && text[1] != '0' && (text[1] < '0' || text[1] > '9') && text[1] != '.' {
+			return text, true
+		}
+	}
+	return "", false
+}
+
 // replJQ runs a jq filter against a Value using an embedded gojq
 // interpreter.  It is the DSL's "higher-order ops over JSON-shaped
 // data" primitive.  Shape: jq <filter> <value>.
@@ -34,6 +48,15 @@ import (
 // OriginBool so AsBool works on them for assertions.
 func replJQ(args []shell.Arg) (shell.Value, error) {
 	if len(args) != 2 {
+		// Users reaching for standalone jq reflexively include
+		// output-formatting flags (-c, -r, --tab).  Ours is
+		// filter-only — rendering is done by the consumer
+		// (compact via "${...}" interpolation, indented via the
+		// REPL's auto-print).  Surface that explicitly so the
+		// user is not left guessing why -c was rejected.
+		if flag, ok := firstFlagArg(args); ok {
+			return shell.Value{}, fmt.Errorf("usage: jq <filter> <value>; our jq is filter-only (no %q flag); use \"${expr}\" for compact JSON or run the real jq via [exec jq ...]", flag)
+		}
 		return shell.Value{}, fmt.Errorf("usage: jq <filter> <value>")
 	}
 	filterText := argText(args[0])

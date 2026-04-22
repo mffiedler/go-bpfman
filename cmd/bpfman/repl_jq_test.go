@@ -175,6 +175,22 @@ func TestReplJQ_WrongArgCount(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestReplJQ_FlagArgGetsHint(t *testing.T) {
+	// Passing a standalone-jq style flag like "-c" should not land
+	// the user with a bare "usage" message; it should explain that
+	// output formatting is a consumer concern ("${...}" for compact,
+	// auto-print for pretty, shell-out for the real thing).
+	_, err := replJQ([]shell.Arg{
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "."},
+		shell.ScalarValueArg{Text: "1"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `-c`)
+	assert.Contains(t, err.Error(), "filter-only")
+	assert.Contains(t, err.Error(), "compact JSON")
+}
+
 func TestReplJQ_NormalisesIntsToJSONNumber(t *testing.T) {
 	// gojq produces int for integer arithmetic.  We want
 	// downstream Value.Scalar() to render the result as digits,
