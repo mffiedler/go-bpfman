@@ -1,0 +1,117 @@
+# -*- mode: bpfman -*-
+# example.bpfman
+#
+# A broader tour of the REPL language than the three existing
+# scripts demonstrate.  Exercises (in one flow):
+#
+#   - if/elif/else control flow driven by exec exit codes.
+#   - alias / unalias to keep command prefixes terse.
+#   - Multi-program XDP chaining through a dispatcher, with
+#     numeric priority comparison.
+#   - Dispatcher inspection via bpfman dispatcher list.
+#   - Cross-validation against bpftool using exec + jq +
+#     path access on structured values.
+#   - Negative assertions (assert fail, assert not nil) to check
+#     that resources really have gone after teardown.
+#   - Ordered cleanup: reverse-order detach, then unload, then
+#     host-side interface removal.
+#
+# Runs against a dummy interface so it is safe on any host.  Needs
+# root and bpftool.  Run with:
+#
+#   sudo bpfman repl -f example.bpfman
+
+# ---- Prerequisite probes -------------------------------------------
+
+# Feature-detect bpftool; it is optional for load/attach but we use
+# it for the cross-validation section below.
+let bpftool = [exec status which bpftool]
+if $bpftool.exit_code eq 0 {
+    let have_bpftool = yes
+} else {
+    let have_bpftool = no
+}
+dump have_bpftool
+
+# Report the kernel version for the record.
+let uname = [exec uname -r]
+dump uname.stdout
+
+# ---- Alias ----------------------------------------------------------
+
+alias b = bpfman
+
+# ---- Interface set-up ----------------------------------------------
+
+require ok exec ip link add bpfman-example type dummy
+require ok exec ip link set bpfman-example up
+
+# ---- Load and attach two XDP programs via a dispatcher --------------
+
+# Two kernel program IDs from the same object file; bpfman assigns
+# each its own ID, and the dispatcher multiplexes by priority.
+let p1 = [b load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m role=first]
+let p2 = [b load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m role=second]
+require not nil p1
+require not nil p2
+assert $p1.record.program_id ne $p2.record.program_id
+
+let l1 = [b link attach xdp -i bpfman-example --priority 50  $p1]
+let l2 = [b link attach xdp -i bpfman-example --priority 100 $p2]
+require not nil l1
+require not nil l2
+
+# Numeric priority comparison through if/elif/else.  The dispatcher
+# carries each member's priority in record.details.priority; lower
+# priorities run first.
+if $l1.record.details.priority < $l2.record.details.priority {
+    let order = l1-runs-first
+} elif $l1.record.details.priority > $l2.record.details.priority {
+    let order = l2-runs-first
+} else {
+    let order = same-priority
+}
+dump order
+assert $order eq l1-runs-first
+
+# ---- bpfman inspection ---------------------------------------------
+
+b dispatcher list --type xdp
+b link list
+
+# ---- Cross-validate with bpftool (if available) --------------------
+
+if $have_bpftool eq yes {
+    # bpftool's view should include at least the two user programs
+    # plus the dispatcher.  We parse its JSON output and assert
+    # the stdout isn't empty; deeper structural checks would need a
+    # loop (not in the language today).
+    let raw = [exec bpftool prog show -j]
+    assert not-empty $raw.stdout
+    let progs = [jq "." $raw.stdout]
+    # progs is a list; demonstrate index access.
+    assert not-empty $progs[0].type
+}
+
+# ---- Teardown -------------------------------------------------------
+
+# Reverse order: detach higher priority first.
+b link detach $l2
+assert fail b link get $l2
+
+b link detach $l1
+assert fail b link get $l1
+
+b program unload $p1
+b program unload $p2
+assert fail b program get $p1
+assert fail b program get $p2
+
+# With both member programs gone, the dispatcher is torn down by
+# bpfman as part of the last detach.
+b dispatcher list --type xdp
+
+exec ip link del bpfman-example
+
+unalias b
+unset bpftool have_bpftool uname p1 p2 l1 l2 order

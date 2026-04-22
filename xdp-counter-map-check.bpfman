@@ -38,7 +38,7 @@ exec sleep 1
 
 # Snapshot the counters after the first burst.
 let raw1  = [exec bpftool map dump id $prog.status.maps[0].id]
-let snap1 = [jq "fromjson" $raw1.stdout]
+let snap1 = [jq "." $raw1.stdout]
 
 # Second burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -48,7 +48,7 @@ exec sleep 1
 # on different CPUs across bursts, so compare the full dump rather than
 # a single CPU slot.
 let raw2  = [exec bpftool map dump id $prog.status.maps[0].id]
-let snap2 = [jq "fromjson" $raw2.stdout]
+let snap2 = [jq "." $raw2.stdout]
 assert $raw1.stdout ne $raw2.stdout
 
 # Show the actual differences between the two snapshots. Use exec

@@ -14,15 +14,41 @@ import (
 // through, structured values are walked, and aggregation filters
 // (add, length, map, select, group_by) all reduce to a Value.
 
-func TestReplJQ_IdentityScalar(t *testing.T) {
+func TestReplJQ_IdentityOnJSONScalar(t *testing.T) {
+	// A bare scalar input is parsed as JSON — matching bash jq
+	// semantics — so a JSON-quoted string flows through as a
+	// string and the identity filter returns it intact.
 	v, err := replJQ([]shell.Arg{
 		shell.WordArg{Text: "."},
-		shell.ScalarValueArg{Text: "hello"},
+		shell.QuotedArg{Text: `"hello"`},
 	})
 	require.NoError(t, err)
 	s, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "hello", s)
+}
+
+func TestReplJQ_IdentityOnJSONNumber(t *testing.T) {
+	v, err := replJQ([]shell.Arg{
+		shell.WordArg{Text: "."},
+		shell.WordArg{Text: "42"},
+	})
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "42", s)
+}
+
+func TestReplJQ_ScalarNotValidJSONIsError(t *testing.T) {
+	// 'hello' on its own isn't JSON — users who want a string
+	// wrap it in JSON quotes.  Matches the error the standalone
+	// jq CLI produces on non-JSON stdin.
+	_, err := replJQ([]shell.Arg{
+		shell.WordArg{Text: "."},
+		shell.ScalarValueArg{Text: "hello"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid JSON")
 }
 
 func TestReplJQ_PathOnStructured(t *testing.T) {

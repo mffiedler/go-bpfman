@@ -2531,10 +2531,10 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 	assert.Contains(t, candidates, "exec ")
 }
 
-// --- jq fromjson / structured data tests ---
+// --- jq on JSON text / structured data tests ---
 
 func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
+	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2551,7 +2551,7 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
-	input := `let arr = [jq "fromjson" '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
+	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2563,7 +2563,7 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
-	input := `let v = [jq "fromjson" 123]` + "\nassert $v eq 123\n"
+	input := `let v = [jq "." 123]` + "\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2575,7 +2575,7 @@ func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
-	input := `let data = [jq "fromjson" not-json]` + "\n"
+	input := `let data = [jq "." not-json]` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2597,7 +2597,7 @@ func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
-	input := `assert ok jq "fromjson" '{"a":1}'` + "\n"
+	input := `assert ok jq "." '{"a":1}'` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2610,7 +2610,7 @@ func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
-	input := `assert fail jq "fromjson" not-json` + "\n"
+	input := `assert fail jq "." not-json` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2623,9 +2623,9 @@ func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
-	// Inner jq fromjson returns a scalar string; the outer echo
+	// Inner jq on JSON text returns a scalar string; the outer echo
 	// should receive that string as a literal argv word.
-	input := `let out = [exec echo [jq "fromjson" '"world"']]` + "\nassert contains $out.stdout world\n"
+	input := `let out = [exec echo [jq "." '"world"']]` + "\nassert contains $out.stdout world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2637,7 +2637,7 @@ func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
-	input := `let out = [exec echo [jq "fromjson" [jq "fromjson" '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
+	input := `let out = [exec echo [jq "." [jq "." '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2651,7 +2651,7 @@ func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
 func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
 	// Inner jq fails on malformed input.  The outer exec must
 	// never run, and the let must not bind.
-	input := `let out = [exec echo [jq "fromjson" not-json]]` + "\n"
+	input := `let out = [exec echo [jq "." not-json]]` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2707,7 +2707,7 @@ func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
 }
 
 func TestReplLoop_JQ_NestedAccess(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
+	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2719,9 +2719,9 @@ func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 }
 
 func TestReplLoop_JQ_WithExec(t *testing.T) {
-	// End-to-end: exec produces JSON text, jq fromjson makes it
+	// End-to-end: exec produces JSON text, jq on JSON text makes it
 	// structured.
-	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \"fromjson\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
+	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2769,7 +2769,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempStructured(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
+	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp data]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2817,7 +2817,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
+	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp data.items]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2901,7 +2901,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
+	input := `let data = [jq "." '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2964,7 +2964,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
-	input := `let data = [jq "fromjson" '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
+	input := `let data = [jq "." '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()

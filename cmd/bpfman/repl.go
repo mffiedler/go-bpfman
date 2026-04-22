@@ -1398,17 +1398,20 @@ func replJQ(args []shell.Arg) (shell.Value, error) {
 }
 
 // argToJQInput extracts a JSON-compatible any from a shell.Arg.
-// Scalar-shaped args yield their text; structured args unwrap to
-// their underlying Raw representation; adapter args expose their
-// resolved Value.  Anything else is a type error.
+// Structured args pass through as their Raw representation;
+// scalar args are parsed as JSON text, matching the default
+// behaviour of the standalone jq CLI (which reads stdin as
+// JSON).  A scalar that isn't valid JSON is an error — users who
+// want to pass a literal string wrap it in JSON quotes
+// ('"hello"' rather than 'hello').
 func argToJQInput(a shell.Arg) (any, error) {
 	switch v := a.(type) {
 	case shell.WordArg:
-		return v.Text, nil
+		return decodeJQScalar(v.Text)
 	case shell.QuotedArg:
-		return v.Text, nil
+		return decodeJQScalar(v.Text)
 	case shell.ScalarValueArg:
-		return v.Text, nil
+		return decodeJQScalar(v.Text)
 	case shell.StructuredValueArg:
 		return v.Value.Raw(), nil
 	case shell.AdapterArg:
@@ -1416,6 +1419,23 @@ func argToJQInput(a shell.Arg) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported input type %T", a)
 	}
+}
+
+// decodeJQScalar parses a scalar as a single JSON value.  Numbers
+// come back as json.Number so Value.Scalar() renders them
+// losslessly; trailing data after the value is rejected so
+// sloppy inputs fail fast.
+func decodeJQScalar(text string) (any, error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, fmt.Errorf("input is not valid JSON: %w", err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("input is not valid JSON: trailing data after value")
+	}
+	return v, nil
 }
 
 // normaliseJQValue walks a jq output and converts Go-native

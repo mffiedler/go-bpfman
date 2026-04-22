@@ -162,7 +162,7 @@ builtins are both legal inside the brackets.
 
 ```
 let p = [bpfman program get 123]
-let j = [jq "fromjson" '{"name":"test"}']
+let j = [jq "." '{"name":"test"}']
 let r = [exec echo hello]
 ```
 

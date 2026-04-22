@@ -58,7 +58,7 @@ if $r.exit_code != 0 { dump r.stdout }
 File adapters (see below) are recognised in argument position:
 
 ```
-let data = [jq "fromjson" '{"a":1,"b":2}']
+let data = [jq "." '{"a":1,"b":2}']
 let r    = [exec jq '.a' file:$data]
 ```
 
@@ -109,14 +109,20 @@ let sum = [exec bash -c 'bpftool map dump id "$1" -j | jq -j "[.[0].formatted.va
 ## jq
 
 `jq FILTER VALUE` runs a jq filter against a Value using an
-embedded gojq interpreter. This is the REPL's primitive for
-both decoding JSON text (`fromjson`) and expressing higher-order
-operations over structured data — `map`, `filter`, `select`,
-`reduce`, `add`, `length`, `group_by`, `any`/`all`, and
+embedded gojq interpreter.  It is the REPL's primitive for
+higher-order operations over structured data — `map`, `filter`,
+`select`, `reduce`, `add`, `length`, `group_by`, `any`/`all`, and
 everything else jq provides — without shelling out.
 
+Scalar inputs are parsed as JSON before the filter runs, matching
+the standalone `jq` CLI's default of reading stdin as JSON.  A
+scalar that isn't valid JSON is an error; pass a literal string
+by wrapping it in JSON quotes (`'"hello"'`, not `hello`).
+Structured inputs pass through to gojq directly with no parsing
+step.
+
 ```
-let raw    = [jq "fromjson" '{"items":[{"v":10},{"v":20},{"v":12}]}']
+let raw    = [jq "." '{"items":[{"v":10},{"v":20},{"v":12}]}']
 let total  = [jq ".items | map(.v) | add" $raw]
 let names  = [jq ".items | map(.name)" $raw]
 let exists = [jq ".items | any(.v == 20)" $raw]
@@ -127,7 +133,7 @@ output (`bpftool prog show --json`, `ip -j link show`, `tc -j`):
 
 ```
 let raw  = [exec bpftool prog show -j]
-let data = [jq "fromjson" $raw.stdout]
+let data = [jq "." $raw.stdout]
 dump data[0].name
 ```
 
@@ -166,8 +172,9 @@ assert $big eq true
 
 - **Path access** (`$var.a.b[0]`) is the simplest; prefer it for
   single-field reach-in on an already-structured value.
-- **`jq "fromjson"`** converts a JSON string into a structured
-  Value — use it to ingest output from tools that emit JSON.
+- **`jq "."`** on a JSON-text scalar decodes it into a structured
+  Value — use it to ingest output from tools that emit JSON
+  (`jq "." $stdout`, or `$stdout | jq "."`).
 - **`jq FILTER`** is the tool for transformations indexing alone
   can't express: aggregation (`add`, `length`), projection
   (`map`), filtering (`select`), reshaping, or any multi-step
@@ -187,7 +194,7 @@ verbatim; structured values are rendered as indented JSON with a
 trailing newline.
 
 ```
-let data = [jq "fromjson" '{"b":2,"a":1}']
+let data = [jq "." '{"b":2,"a":1}']
 let path = [file temp data]
 ```
 
@@ -232,7 +239,7 @@ require ok bpfman link attach xdp -i dummy0 $prog
 
 # Exercise.
 let stats = [exec bpftool map dump pinned /sys/fs/bpf/bpfman/maps/$prog.record.program_id/stats --json]
-let data  = [jq "fromjson" $stats.stdout]
+let data  = [jq "." $stats.stdout]
 assert $data[0].packets >= 0
 
 # Cleanup.
