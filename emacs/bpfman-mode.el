@@ -321,6 +321,66 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
 
 ;; ---- Structural font-lock ----
 
+(defun bpfman--fontify-interp-string (beg end)
+  "Fontify a string token in [BEG, END) with interpolation awareness.
+Literal runs (including the enclosing quote marks) get
+`font-lock-string-face'.  The \"${\" and \"}\" delimiters of an
+interpolation get `font-lock-keyword-face' so they read as
+operators against the surrounding string; the body in between
+gets `font-lock-variable-name-face' — typical bodies are
+variable references, and the three-shape rule keeps expression
+forms under their own sigils (\"[[...]]\", \"[...]\") which the
+normal structural fontifier handles.  Only touches double-quoted
+strings; single-quoted strings are fully literal and stay pure
+`font-lock-string-face'."
+  (if (and (> end beg) (/= (char-after beg) ?\"))
+      ;; Single-quoted (or the degenerate empty range): keep the
+      ;; simple behaviour.
+      (put-text-property beg end 'face 'font-lock-string-face)
+    (let ((pos beg)
+          (lit-start beg))
+      (while (< pos end)
+        (if (and (= (char-after pos) ?$)
+                 (< (1+ pos) end)
+                 (= (char-after (1+ pos)) ?{))
+            (progn
+              ;; Flush the literal run that precedes this "${".
+              (when (< lit-start pos)
+                (put-text-property lit-start pos 'face 'font-lock-string-face))
+              ;; Face the "${" opener.
+              (put-text-property pos (+ pos 2) 'face 'font-lock-keyword-face)
+              ;; Locate the matching "}" using a brace-depth counter
+              ;; so nested braces (unlikely today, but cheap to
+              ;; support) do not close the interpolation early.
+              (let ((body-start (+ pos 2))
+                    (body-end (+ pos 2))
+                    (depth 1))
+                (while (and (< body-end end) (> depth 0))
+                  (let ((c (char-after body-end)))
+                    (cond
+                     ((= c ?{) (setq depth (1+ depth)))
+                     ((= c ?}) (setq depth (1- depth)))))
+                  (unless (= depth 0)
+                    (setq body-end (1+ body-end))))
+                (if (and (< body-end end) (= depth 0))
+                    (progn
+                      (when (> body-end body-start)
+                        (put-text-property body-start body-end
+                                           'face 'font-lock-variable-name-face))
+                      (put-text-property body-end (1+ body-end)
+                                         'face 'font-lock-keyword-face)
+                      (setq pos (1+ body-end))
+                      (setq lit-start pos))
+                  ;; Unterminated "${..." — keep the remainder as a
+                  ;; string so the line still reads as a string in
+                  ;; the common case of mid-edit state.
+                  (put-text-property pos end 'face 'font-lock-string-face)
+                  (setq pos end)
+                  (setq lit-start end))))
+          (setq pos (1+ pos))))
+      (when (< lit-start end)
+        (put-text-property lit-start end 'face 'font-lock-string-face)))))
+
 (defun bpfman--fontify-line-tokens (tokens)
   "Apply faces to TOKENS based on their structural role in the line.
 TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
@@ -337,9 +397,12 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
               end (nth 2 tok)
               rest (cdr rest))
         (cond
-         ;; Strings are always string face.
+         ;; Strings.  Double-quoted strings get interp-aware
+         ;; fontification so "${...}" segments stand out from the
+         ;; surrounding literal runs; single-quoted strings and the
+         ;; degenerate empty case stay pure string-face.
          ((= kind bpfman--tok-string)
-          (put-text-property beg end 'face 'font-lock-string-face))
+          (bpfman--fontify-interp-string beg end))
 
          ;; Variable references are always variable-name face.
          ((= kind bpfman--tok-varref)
@@ -525,12 +588,12 @@ brackets: `let r = [exec ip link show]'.  Variable references use
 the $ sigil: $prog.id, ${prog.maps[0].name}.
 
 Strings are single- or double-quoted.  Single quotes are fully
-literal; double-quoted strings support "${...}" interpolation
-where the braces contain a variable reference ("${name}"), an
-expression substitution ("${[[expr]]}"), or a command
-substitution ("${[cmd args]}").  A bare "$" inside a double-
+literal; double-quoted strings support \"${...}\" interpolation
+where the braces contain a variable reference (\"${name}\"), an
+expression substitution (\"${[[expr]]}\"), or a command
+substitution (\"${[cmd args]}\").  A bare \"$\" inside a double-
 quoted string is a lex-time error; use single quotes when you
-need a literal "$".
+need a literal \"$\".
 
 \\{bpfman-mode-map}"
   :syntax-table bpfman-mode-syntax-table

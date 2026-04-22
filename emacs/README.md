@@ -53,10 +53,10 @@ tokens are fontified according to this table:
 
 | Face                          | Applied to                                                      |
 |-------------------------------|-----------------------------------------------------------------|
-| `font-lock-keyword-face`      | `let`, `if`, `elif`, `else`, `alias`, `assert`, `exec`, `json`, `file`, `require`, `print`, `vars`, `unset`, `source`, `help`, `version`, `bpfman` |
+| `font-lock-keyword-face`      | `let`, `if`, `elif`, `else`, `alias`, `assert`, `exec`, `json`, `file`, `require`, `print`, `vars`, `unset`, `source`, `help`, `version`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
 | `font-lock-builtin-face`      | domain subcommands (`program`, `link`, `show`, `attach`, ...), attach kinds (`xdp`, `tc`, `tracepoint`, ...), comparison operators (`eq`, `==`, `<`, ...), assertion verbs (`not-empty`, `ok`, `fail`, `path`, `contains`, `nil`, `not`, `true`, `false`) |
-| `font-lock-variable-name-face`| `$var` references, braced `${var}`, the identifier after `let`, adapter refs (`file:$var`) |
-| `font-lock-string-face`       | `"double-quoted"` and `'single-quoted'` strings                 |
+| `font-lock-variable-name-face`| `$var` references, braced `${var}`, the identifier after `let`, adapter refs (`file:$var`), the body inside a `"${...}"` interpolation |
+| `font-lock-string-face`       | literal runs of `"double-quoted"` and `'single-quoted'` strings (including the quote marks themselves) |
 | `font-lock-comment-face`      | `# to end of line` (outside quotes)                             |
 | `font-lock-constant-face`     | `--long` and `-x` flags                                         |
 | (no face)                     | plain argument-position words (paths, numeric IDs), `[ ] { } ;` delimiters |
