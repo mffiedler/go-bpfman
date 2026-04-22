@@ -114,24 +114,47 @@ func replUnset(cli *CLI, session *shell.Session, args []string) error {
 	return nil
 }
 
-// replPrint prints a value to stdout. Its single argument is any
-// expression that evaluates to a value: a variable reference
-// ($var, $var.path), a command substitution ([cmd]), an
-// expression substitution ([[expr]]), a quoted string, or a bare
-// word (which is a literal string — "print foo" prints the word
-// "foo", not the variable foo).  To print a variable, write
-// "print $foo".  Scalars print as plain text, structured values
-// as indented JSON, and nil as "null".
+// replPrint prints one or more values to stdout.  Each argument
+// is any expression that evaluates to a value: a variable
+// reference ($var, $var.path), a command substitution ([cmd]),
+// an expression substitution ([[expr]]), a quoted string, or a
+// bare word (which is a literal string — "print foo" prints the
+// word "foo", not the variable foo).  To print a variable, write
+// "print $foo".
+//
+// With a single argument the output matches the REPL's
+// auto-print rendering — scalars as plain text, structured
+// values as indented JSON, absent values as "null", each
+// followed by a newline — so "print $r" and "$r" produce the
+// same output.  With multiple arguments each value renders
+// compactly (scalar text, compact JSON, "null") and the pieces
+// are joined by a single space and terminated by one newline,
+// matching how Python and JavaScript spread multiple arguments
+// across a print call.
 func replPrint(cli *CLI, args []shell.Arg) error {
-	if len(args) != 1 {
-		return fmt.Errorf("print requires exactly one argument: print $var[.path] | [cmd] | [[expr]] | \"literal\"")
+	if len(args) == 0 {
+		return fmt.Errorf("print requires at least one argument: print $var[.path] | [cmd] | [[expr]] | \"literal\" ...")
 	}
-
-	v, err := printValue(args[0])
-	if err != nil {
-		return err
+	if len(args) == 1 {
+		v, err := printValue(args[0])
+		if err != nil {
+			return err
+		}
+		return writeValue(cli, v)
 	}
-	return writeValue(cli, v)
+	parts := make([]string, len(args))
+	for i, a := range args {
+		v, err := printValue(a)
+		if err != nil {
+			return err
+		}
+		s, err := shell.RenderCompact(v)
+		if err != nil {
+			return fmt.Errorf("print: argument %d: %v", i+1, err)
+		}
+		parts[i] = s
+	}
+	return cli.PrintOut(strings.Join(parts, " ") + "\n")
 }
 
 // printValue resolves a single print argument into a shell.Value.

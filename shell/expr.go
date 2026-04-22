@@ -726,7 +726,7 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		s, err := renderInterpValue(v)
+		s, err := RenderCompact(v)
 		if err != nil {
 			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: %v", err)
 		}
@@ -735,12 +735,15 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 	return StringValue(b.String()), nil
 }
 
-// renderInterpValue renders a Value to the string form used when
-// it appears in an interpolation slot.  Scalars use their text
-// form; structured values marshal to compact JSON; nil becomes
-// "null" so a missing field in a format string surfaces as
-// visible "null" text rather than silently vanishing or erroring.
-func renderInterpValue(v Value) (string, error) {
+// RenderCompact renders a Value to a single-line string form.
+// Scalars (including OriginNull, which renders as "null") use
+// their text form; structured values marshal to compact JSON;
+// an absent Value renders as "null" so a missing slot surfaces as
+// visible "null" rather than silently vanishing or erroring.
+// Used wherever a Value must flatten onto a single line — string
+// interpolation and multi-argument print both feed through it
+// so formatting stays consistent across those paths.
+func RenderCompact(v Value) (string, error) {
 	if v.IsNil() {
 		return "null", nil
 	}

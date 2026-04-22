@@ -3175,6 +3175,44 @@ func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "60s")
 }
 
+func TestReplLoop_PrintMultipleArgs(t *testing.T) {
+	// Multiple arguments render compactly and join with a single
+	// space; a single trailing newline closes the line.  Structured
+	// values render as compact JSON (the interpolation form) so a
+	// mix of scalars and records fits on one line.
+	input := strings.Join([]string{
+		`let n = 42`,
+		`let r = [jq "." '{"a":1,"b":2}']`,
+		`print 1 2 3`,
+		`print "count=" $n`,
+		`print "r=" $r`,
+		``,
+	}, "\n")
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	lines := strings.Split(strings.TrimRight(outBuf.String(), "\n"), "\n")
+	require.Len(t, lines, 3)
+	assert.Equal(t, "1 2 3", lines[0])
+	assert.Equal(t, "count= 42", lines[1])
+	assert.Equal(t, `r= {"a":1,"b":2}`, lines[2])
+}
+
+func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
+	input := "print\n"
+	var errBuf bytes.Buffer
+	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "at least one argument")
+}
+
 func TestReplLoop_JQNullBinding(t *testing.T) {
 	// A jq filter that selects a missing field returns a present
 	// null.  The user should be able to bind it, print it, and

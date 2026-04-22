@@ -544,7 +544,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
 	b.WriteString("  file temp $var[.path] | [expr]            Write value to temp file (assignable)\n")
 	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
-	b.WriteString("  print $var[.path] | [[expr]]              Print a resolved value\n")
+	b.WriteString("  print <value>...                          Print one or more values (one pretty, many compact space-joined)\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")

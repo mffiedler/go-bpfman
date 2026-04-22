@@ -1393,7 +1393,7 @@ func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
 	// produces a bare nil Value today — VarRefExpr with a missing
 	// path errors at lookup time rather than falling through to
 	// nil.
-	got, err := renderInterpValue(Value{})
+	got, err := RenderCompact(Value{})
 	require.NoError(t, err)
 	assert.Equal(t, "null", got)
 }
