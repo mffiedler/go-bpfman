@@ -11,9 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/itchyny/gojq"
 	"golang.org/x/term"
 
 	"github.com/frobware/go-bpfman/manager"
@@ -34,7 +36,7 @@ type ReplCmd struct {
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "json", "let", "require", "source", "unalias", "unset", "vars", "version"}
+var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "jq", "json", "let", "require", "source", "unalias", "unset", "vars", "version"}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -380,6 +382,7 @@ var shellCommands = map[string]bool{
 	"assert":  true,
 	"exec":    true,
 	"file":    true,
+	"jq":      true,
 	"json":    true,
 	"require": true,
 	"dump":    true,
@@ -417,6 +420,9 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, val, err
 	case "file":
 		val, err := replFile(cli, session, args[1:])
+		return true, val, err
+	case "jq":
+		val, err := replJQ(args[1:])
 		return true, val, err
 	case "json":
 		val, err := replJSON(cli, args[1:])
@@ -1374,6 +1380,120 @@ func replJSON(cli *CLI, args []shell.Arg) (shell.Value, error) {
 		return shell.Value{}, err
 	}
 	return val.WithKind(shell.OriginJSONParsed), nil
+}
+
+// replJQ runs a jq filter against a Value using an embedded gojq
+// interpreter.  It is the DSL's "higher-order ops over JSON-shaped
+// data" primitive.  Shape: jq <filter> <value>.
+//
+// The filter is a scalar (Word/Quoted/ScalarValue); the value may
+// be scalar or structured.  Multiple jq results are collected into
+// a list Value; zero results yield a nil Value; a single result is
+// returned directly.  Integer outputs from gojq are normalised to
+// json.Number so downstream Scalar() and path access treat them
+// like any other numeric value in the pipeline.  Bool results get
+// OriginBool so AsBool works on them for assertions.
+func replJQ(args []shell.Arg) (shell.Value, error) {
+	if len(args) != 2 {
+		return shell.Value{}, fmt.Errorf("usage: jq <filter> <value>")
+	}
+	filterText := argText(args[0])
+	query, err := gojq.Parse(filterText)
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("jq: parse filter: %w", err)
+	}
+	input, err := argToJQInput(args[1])
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("jq: %w", err)
+	}
+
+	iter := query.Run(input)
+	var results []any
+	for {
+		v, hasMore := iter.Next()
+		if !hasMore {
+			break
+		}
+		if iterErr, ok := v.(error); ok {
+			return shell.Value{}, fmt.Errorf("jq: %w", iterErr)
+		}
+		results = append(results, normaliseJQValue(v))
+	}
+	switch len(results) {
+	case 0:
+		return shell.Value{}, nil
+	case 1:
+		return wrapJQResult(results[0]), nil
+	default:
+		return wrapJQResult(results), nil
+	}
+}
+
+// argToJQInput extracts a JSON-compatible any from a shell.Arg.
+// Scalar-shaped args yield their text; structured args unwrap to
+// their underlying Raw representation; adapter args expose their
+// resolved Value.  Anything else is a type error.
+func argToJQInput(a shell.Arg) (any, error) {
+	switch v := a.(type) {
+	case shell.WordArg:
+		return v.Text, nil
+	case shell.QuotedArg:
+		return v.Text, nil
+	case shell.ScalarValueArg:
+		return v.Text, nil
+	case shell.StructuredValueArg:
+		return v.Value.Raw(), nil
+	case shell.AdapterArg:
+		return v.Value.Raw(), nil
+	default:
+		return nil, fmt.Errorf("unsupported input type %T", a)
+	}
+}
+
+// normaliseJQValue walks a jq output and converts Go-native
+// integer types to json.Number so the result lines up with the
+// rest of the pipeline, which carries numbers as json.Number
+// throughout.  float64 is left alone; nested maps and slices are
+// rewritten recursively.
+func normaliseJQValue(x any) any {
+	switch v := x.(type) {
+	case int:
+		return json.Number(strconv.Itoa(v))
+	case int64:
+		return json.Number(strconv.FormatInt(v, 10))
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = normaliseJQValue(e)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			out[k] = normaliseJQValue(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// wrapJQResult turns a single jq output into a shell.Value,
+// preferring the most specific origin kind so assertions and
+// other origin-aware consumers see the shape they expect: bool →
+// OriginBool, scalar → OriginScalar, structured → OriginUnknown.
+func wrapJQResult(x any) shell.Value {
+	if x == nil {
+		return shell.Value{}
+	}
+	if b, ok := x.(bool); ok {
+		return shell.BoolValue(b)
+	}
+	v := shell.ValueFromAny(x)
+	if v.IsScalar() {
+		return v.WithKind(shell.OriginScalar)
+	}
+	return v
 }
 
 // replFile implements the file shell command. The only subcommand is

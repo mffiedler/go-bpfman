@@ -33,6 +33,17 @@ func ValueFromMap(data map[string]any) Value {
 	return Value{v: data}
 }
 
+// ValueFromAny wraps an arbitrary JSON-compatible value as a
+// Value. Unlike ValueFromJSON it does not parse anything; it
+// stores x directly.  Suitable for integration points (e.g. gojq)
+// that already produce Go-native types matching the Value's
+// internal vocabulary (map[string]any, []any, string, json.Number,
+// float64, bool, nil).  Callers that know the domain kind should
+// chain WithKind.
+func ValueFromAny(x any) Value {
+	return Value{v: x}
+}
+
 // ValueFromJSON decodes JSON bytes into a Value. Numbers are
 // preserved as json.Number to avoid float64 precision loss. The
 // resulting Value has OriginUnknown; callers that need a declared

@@ -135,6 +135,63 @@ Used as a top-level command (not in a `let` RHS), `json parse`
 prints the decoded tree as indented JSON. Used in a `let` RHS, it
 returns the structured value silently.
 
+## jq
+
+`jq FILTER VALUE` runs a jq filter against a Value using an
+embedded gojq interpreter. This is the REPL's primitive for
+higher-order operations over structured data — `map`, `filter`,
+`select`, `reduce`, `add`, `length`, `group_by`, `any`/`all`, and
+everything else jq provides — without shelling out.
+
+```
+let raw    = [json parse '{"items":[{"v":10},{"v":20},{"v":12}]}']
+let total  = [jq ".items | map(.v) | add" $raw]
+let names  = [jq ".items | map(.name)" $raw]
+let exists = [jq ".items | any(.v == 20)" $raw]
+```
+
+Combined with the `|` pipe operator it reads left-to-right, which
+is almost always easier on the eye than nested brackets:
+
+```
+let total  = $raw | jq ".items | map(.v) | add"
+let big    = $raw | jq ".items | length > 2"
+assert $big eq true
+```
+
+### Result shapes
+
+- A filter that emits **one value** returns that value as a scalar
+  or structured Value. Integer outputs are normalised to
+  `json.Number` so downstream path access and comparisons work.
+- A filter that emits **zero values** (e.g. `.missing` on an
+  object without that key yielding `null`, or an empty `select`)
+  returns a nil Value.
+- A filter that emits **multiple values** (e.g. `.items[]`) is
+  collected into a list Value so the pipeline has a single
+  bindable result.
+- A boolean result gets `OriginBool`, so `assert`/`require` work
+  directly on it (`assert $big eq true`).
+
+### Errors
+
+- A malformed filter reports `jq: parse filter: ...`.
+- A runtime error from gojq (e.g. indexing a number) propagates
+  as `jq: ...` with the underlying message.
+- Wrong argument count (`jq requires exactly filter + value`)
+  surfaces at dispatch.
+
+### When to use `jq` vs `json parse` vs path access
+
+- **Path access** (`$var.a.b[0]`) is the simplest; prefer it for
+  single-field reach-in.
+- **`json parse`** turns a string into a structured Value — the
+  precursor for anything else.
+- **`jq`** is the tool when you need a transformation that
+  indexing alone can't express: aggregation (`add`, `length`),
+  projection (`map`), filtering (`select`), reshaping, or any
+  multi-step pipeline over nested data.
+
 ## file adapters
 
 Many host tools (`diff`, `jq`, `wc`, `sha256sum`) expect inputs as
