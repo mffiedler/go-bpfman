@@ -31,11 +31,11 @@ if $bpftool.exit_code eq 0 {
 } else {
     let have_bpftool = no
 }
-dump $have_bpftool
+print $have_bpftool
 
 # Report the kernel version for the record.
 let uname = [exec uname -r]
-dump $uname.stdout
+print $uname.stdout
 
 # ---- Alias ----------------------------------------------------------
 
@@ -71,7 +71,7 @@ if $l1.record.details.priority < $l2.record.details.priority {
 } else {
     let order = same-priority
 }
-dump $order
+print $order
 assert $order eq l1-runs-first
 
 # ---- bpfman inspection ---------------------------------------------

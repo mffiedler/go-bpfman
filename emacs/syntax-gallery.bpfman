@@ -141,7 +141,7 @@ if $outer eq yes {
 
 # ---- 10. One-liner blocks with `;' separator ----
 
-if $x > 0 { let a = 1; let b = 2; dump a }
+if $x > 0 { let a = 1; let b = 2; print a }
 if $ready eq true { bpfman list programs; bpfman link list } else { require fail }
 
 # ---- 11. Aliases ----
@@ -165,7 +165,7 @@ let tmp_path = [file temp $data]
 exec cat file:$data
 exec cat file:$parsed.name
 
-dump $parsed
+print $parsed
 vars
 unset parsed tmp_path
 help
@@ -258,7 +258,7 @@ assert $ready or  $booting
 assert not $failing
 assert not ($a eq 1 and $b eq 2)
 assert ($x > 0 and $x < 10) or $unbounded
-if (not-empty $progs) and ($count gt 0) { dump progs }
+if (not-empty $progs) and ($count gt 0) { print progs }
 
 # ---- 19a. Arithmetic operators ----
 
@@ -282,7 +282,7 @@ let nest     = ($count + 5) * 2
 
 # Arithmetic may appear as a comparison operand; precedence
 # binds the arithmetic tighter than the comparison.
-if $count + 1 > $halved * 3 { dump $count }
+if $count + 1 > $halved * 3 { print $count }
 
 # Auto-printed expression statements.
 $count + 1
@@ -302,14 +302,14 @@ let diff     = [[10-3]]            # 7
 let scaled   = [[$count * 2 + 1]]  # mixed precedence
 
 # Expression in command-argument position.
-dump [[$count * 2]]
+print [[$count * 2]]
 
 # Expression in a condition, auto-entering expression grammar.
-if [[$count - 1]] gt 0 { dump $count }
+if [[$count - 1]] gt 0 { print $count }
 
 # `[cmd args]' stays command substitution; the parser rejects
 # misuse at parse time and points at `[[...]]'.  `[1/2]' and
-# `[1 + 1]' are errors now — see `dump [[1/2]]' above.  A
+# `[1 + 1]' are errors now — see `print [[1/2]]' above.  A
 # command substitution may still be used as an operand inside
 # `[[...]]' provided the command produces a scalar; structured
 # results (e.g. `[exec echo 5]', which binds a record with
@@ -338,7 +338,7 @@ foreach item in $progs {
     if $item.kind eq blacklisted {
         break
     }
-    dump $item
+    print $item
 }
 
 # ---- 22. retry / until with timeout and iteration ----

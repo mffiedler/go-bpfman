@@ -256,7 +256,7 @@ wrapped in a `Value` to match how jq-emitted numbers arrive.
 ### cmd/bpfman/repl_test.go
 
 - End-to-end at the REPL: `let x = 5; $x + 1` auto-prints `6`.
-- `dump [$count * 2]` prints the doubled value.
+- `print [[$count * 2]]` prints the doubled value.
 
 ## Documentation
 

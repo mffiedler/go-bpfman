@@ -1278,13 +1278,13 @@ func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
 func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {
 	// [1/2] no longer masquerades as an expression.  The parser
 	// must reject it and point the user at the [[...]] form.
-	_, err := parseSource(t, "dump [1/2]")
+	_, err := parseSource(t, "print [1/2]")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "[[")
 }
 
 func TestEvalExpr_CmdSub_RejectsBareArithmetic(t *testing.T) {
-	_, err := parseSource(t, "dump [1 + 1]")
+	_, err := parseSource(t, "print [1 + 1]")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "[[")
 }

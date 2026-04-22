@@ -1,5 +1,5 @@
 // Session-manipulating REPL commands: list variables (vars),
-// define / list / remove aliases, remove variables, dump a
+// define / list / remove aliases, remove variables, print a
 // resolved value to stdout, and the internal value-lookup helper.
 // None of these touch the bpfman manager; they all operate on the
 // shell.Session and on the CLI writer.
@@ -114,33 +114,34 @@ func replUnset(cli *CLI, session *shell.Session, args []string) error {
 	return nil
 }
 
-// replDump prints a value to stdout. Its single argument is any
+// replPrint prints a value to stdout. Its single argument is any
 // expression that evaluates to a value: a variable reference
-// ($var, $var.path), a command substitution ([...]), a quoted
-// string, or a bare word (which is a literal string — "dump foo"
-// prints the word "foo", not the variable foo).  To print a
-// variable, write "dump $foo".  Scalars print as plain text,
-// structured values as indented JSON, and nil as "null".
-func replDump(cli *CLI, args []shell.Arg) error {
+// ($var, $var.path), a command substitution ([cmd]), an
+// expression substitution ([[expr]]), a quoted string, or a bare
+// word (which is a literal string — "print foo" prints the word
+// "foo", not the variable foo).  To print a variable, write
+// "print $foo".  Scalars print as plain text, structured values
+// as indented JSON, and nil as "null".
+func replPrint(cli *CLI, args []shell.Arg) error {
 	if len(args) != 1 {
-		return fmt.Errorf("dump requires exactly one argument: dump $var[.path] | [expr] | \"literal\"")
+		return fmt.Errorf("print requires exactly one argument: print $var[.path] | [cmd] | [[expr]] | \"literal\"")
 	}
 
-	v, err := dumpValue(args[0])
+	v, err := printValue(args[0])
 	if err != nil {
 		return err
 	}
 	return writeValue(cli, v)
 }
 
-// dumpValue resolves a single dump argument into a shell.Value.
+// printValue resolves a single print argument into a shell.Value.
 // Every arg kind is treated as a value: WordArg and QuotedArg are
 // literal strings; ScalarValueArg and StructuredValueArg are
 // already-resolved values from variable expansion or command
 // substitution; AdapterArg carries its resolved Value.  Bare
 // identifiers are NOT looked up in the session -- callers must
 // write $name to dereference a variable.
-func dumpValue(arg shell.Arg) (shell.Value, error) {
+func printValue(arg shell.Arg) (shell.Value, error) {
 	switch a := arg.(type) {
 	case shell.WordArg:
 		return shell.StringValue(a.Text), nil
@@ -153,13 +154,13 @@ func dumpValue(arg shell.Arg) (shell.Value, error) {
 	case shell.AdapterArg:
 		return a.Value, nil
 	default:
-		return shell.Value{}, fmt.Errorf("dump: unsupported argument kind %T", arg)
+		return shell.Value{}, fmt.Errorf("print: unsupported argument kind %T", arg)
 	}
 }
 
 // writeValue renders a shell.Value onto cli: nil as "null", scalars
 // as plain text, structured values as indented JSON. Shared between
-// dump and any other "print me this value" caller.
+// print and any other "print me this value" caller.
 func writeValue(cli *CLI, v shell.Value) error {
 	if v.IsNil() {
 		return cli.PrintOut("null\n")
@@ -180,7 +181,7 @@ func writeValue(cli *CLI, v shell.Value) error {
 
 // lookupBareVar resolves a bare variable name (no $ prefix) with an
 // optional dotted path into a shell.Value. This is the shared logic
-// used by dump and assert nil.
+// used by print and assert nil.
 func lookupBareVar(session *shell.Session, arg string) (shell.Value, error) {
 	varName := arg
 	path := ""

@@ -509,7 +509,7 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 // is how "$x" and "$x eq 5" typed at the prompt get their
 // auto-printed values: the parser wraps expression-led statements
 // in ExprStmt, and the REPL's PrintResult handler renders the
-// value through the same path dump uses.  When PrintResult is nil
+// value through the same path print uses.  When PrintResult is nil
 // (embedded use, tests) the value is evaluated for side effects
 // and discarded, matching Python's script-mode semantics.
 func evalExprStmt(s *ExprStmt, env *Env) error {

@@ -313,7 +313,7 @@ func TestParse_Thread_RejectsLeadingThread(t *testing.T) {
 // --- foreach ------------------------------------------------------
 
 func TestParse_ForEach_Basic(t *testing.T) {
-	prog, err := parseSource(t, "foreach p in $list { dump p }")
+	prog, err := parseSource(t, "foreach p in $list { print p }")
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
 	require.True(t, ok, "expected ForEachStmt, got %T", prog.Stmts[0])
@@ -329,7 +329,7 @@ func TestParse_ForEach_Basic(t *testing.T) {
 func TestParse_ForEach_ListFromPipe(t *testing.T) {
 	// Ensure the list expression can be an arbitrary expression,
 	// including a threading pipeline like [bpfman ... ] |> jq "..."
-	prog, err := parseSource(t, "foreach p in $raw |> jq \".items\" { dump p }")
+	prog, err := parseSource(t, "foreach p in $raw |> jq \".items\" { print p }")
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
 	require.True(t, ok)
@@ -338,7 +338,7 @@ func TestParse_ForEach_ListFromPipe(t *testing.T) {
 }
 
 func TestParse_ForEach_MultiStatementBody(t *testing.T) {
-	input := "foreach p in $items {\n  let x = $p.name\n  dump x\n}"
+	input := "foreach p in $items {\n  let x = $p.name\n  print x\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
@@ -351,7 +351,7 @@ func TestParse_ForEach_MultiStatementBody(t *testing.T) {
 }
 
 func TestParse_ForEach_Nested(t *testing.T) {
-	input := "foreach a in $xs {\n  foreach b in $ys {\n    dump b\n  }\n}"
+	input := "foreach a in $xs {\n  foreach b in $ys {\n    print b\n  }\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
 	outer, ok := firstStmt(t, prog).(*ForEachStmt)
@@ -368,12 +368,12 @@ func TestParse_ForEach_Errors(t *testing.T) {
 		input   string
 		wantErr string
 	}{
-		{"missing identifier", "foreach in $list { dump x }", "foreach requires"},
-		{"invalid identifier", "foreach 1bad in $list { dump x }", "invalid variable name"},
-		{"missing in", "foreach p $list { dump x }", "foreach requires 'in'"},
-		{"missing expression", "foreach p in { dump x }", "foreach requires"},
-		{"missing block", "foreach p in $list dump x", "expected '{'"},
-		{"unterminated block", "foreach p in $list { dump x", "unterminated block"},
+		{"missing identifier", "foreach in $list { print x }", "foreach requires"},
+		{"invalid identifier", "foreach 1bad in $list { print x }", "invalid variable name"},
+		{"missing in", "foreach p $list { print x }", "foreach requires 'in'"},
+		{"missing expression", "foreach p in { print x }", "foreach requires"},
+		{"missing block", "foreach p in $list print x", "expected '{'"},
+		{"unterminated block", "foreach p in $list { print x", "unterminated block"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -403,7 +403,7 @@ func TestParse_Continue_Simple(t *testing.T) {
 }
 
 func TestParse_Break_InsideIf(t *testing.T) {
-	prog, err := parseSource(t, "foreach x in $xs {\n  if $x eq skip { break }\n  dump x\n}")
+	prog, err := parseSource(t, "foreach x in $xs {\n  if $x eq skip { break }\n  print x\n}")
 	require.NoError(t, err)
 	fe := firstStmt(t, prog).(*ForEachStmt)
 	require.Len(t, fe.Body, 2)

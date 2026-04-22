@@ -218,7 +218,7 @@ var shellCommands = map[string]bool{
 	"file":    true,
 	"jq":      true,
 	"require": true,
-	"dump":    true,
+	"print":   true,
 	"help":    true,
 	"source":  true,
 	"unalias": true,
@@ -259,8 +259,8 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, val, err
 	case "require":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
-	case "dump":
-		return true, shell.Value{}, replDump(cli, args[1:])
+	case "print":
+		return true, shell.Value{}, replPrint(cli, args[1:])
 	case "help":
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
@@ -280,7 +280,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 
 // replEval processes a single input line or block: tokenise, parse
 // to an AST, and evaluate against the session. Shell-language
-// commands (assert, require, dump, help, source, unset, vars,
+// commands (assert, require, print, help, source, unset, vars,
 // version) flow through ExecCommand on the evaluator's Env; domain
 // commands are dispatched via replDispatch from the same hook. In
 // interactive mode (loc has no file), non-fatal errors are printed
@@ -479,7 +479,7 @@ var domainNouns = map[string]bool{
 
 // replDispatch routes expanded domain command arguments to the
 // appropriate bpfman command handler. Shell-language commands (assert,
-// require, dump, help, source, unset, vars, version) are handled by
+// require, print, help, source, unset, vars, version) are handled by
 // replShellCmd before reaching this function.
 //
 // Parsing and execution are fully decoupled: parseCommand routes
@@ -544,7 +544,7 @@ func replHelp(cli *CLI) error {
 	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
 	b.WriteString("  file temp $var[.path] | [expr]            Write value to temp file (assignable)\n")
 	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
-	b.WriteString("  dump $var[.path] | [expr]                 Print a resolved value\n")
+	b.WriteString("  print $var[.path] | [[expr]]              Print a resolved value\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
 	b.WriteString("  unset <var>...                           Remove variable bindings\n")
 	b.WriteString("  vars                                     List session variables\n")

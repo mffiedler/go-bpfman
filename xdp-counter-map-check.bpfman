@@ -56,7 +56,7 @@ assert $raw1.stdout ne $raw2.stdout
 # result rather than an execution failure.
 let d = [exec status diff -u file:$raw1.stdout file:$raw2.stdout]
 assert $d.exit_code <= 1
-dump $d.stdout
+print $d.stdout
 
 # Clean up: detach, unload, remove network resources.
 bpfman link detach $link

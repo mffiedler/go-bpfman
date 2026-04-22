@@ -169,7 +169,7 @@ func replFile(cli *CLI, args []shell.Arg) (shell.Value, error) {
 	if len(args) != 2 {
 		return shell.Value{}, fmt.Errorf("file temp requires exactly one argument")
 	}
-	v, err := dumpValue(args[1])
+	v, err := printValue(args[1])
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("file temp: %w", err)
 	}

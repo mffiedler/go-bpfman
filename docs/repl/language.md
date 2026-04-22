@@ -167,7 +167,7 @@ foreach p in [bpfman program list -o json] {
 }
 
 foreach item in [jq "." '{"items":[{"v":1},{"v":2},{"v":3}]}'] |> jq ".items" {
-    dump $item.v
+    print $item.v
 }
 ```
 
@@ -258,7 +258,7 @@ bpfman doctor checkup
 ```
 
 Shell-language commands are bare: `assert`, `require`, `exec`,
-`json`, `file`, `dump`, `vars`, `unset`, `source`, `alias`,
+`json`, `file`, `print`, `vars`, `unset`, `source`, `alias`,
 `aliases`, `unalias`, `help`, `version`.
 
 ## Expressions
@@ -313,7 +313,7 @@ Bracketed evaluation is mandatory when binding a command's result
 (`let p = bpfman program get 123` is a parse error — commands as
 bare RHS are not allowed). It is also the canonical way to embed
 an expression where the surrounding grammar expects a value:
-`dump [1 eq 1]`, `foreach x in [jq ".[]" $data] { ... }`.
+`print [[1 eq 1]]`, `foreach x in [jq ".[]" $data] { ... }`.
 
 ### Comparisons
 
@@ -546,8 +546,8 @@ on failure. Both share the same surface grammar.
 
 - `let NAME = EXPR` binds.
 - `vars` lists bound variables.
-- `dump $NAME` pretty-prints a variable's value.  `dump` takes an
-  expression, not a name: `dump foo` prints the literal string
+- `print $NAME` pretty-prints a variable's value.  `print` takes an
+  expression, not a name: `print foo` prints the literal string
   `foo`; to see a binding, dereference with `$`.
 - `unset NAME` removes a binding.  `unset` operates on *names*, so
   the bare form is the correct one here; `$` is not used.

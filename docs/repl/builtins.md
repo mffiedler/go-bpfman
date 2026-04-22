@@ -49,7 +49,7 @@ Accessible via path: `$r.stdout`, `$r.exit_code`, `$r.argv[0]`.
 ```
 exec ip link add dummy0 type dummy       # must succeed
 let r = [exec status diff file:$a file:$b]
-if $r.exit_code != 0 { dump $r.stdout }
+if $r.exit_code != 0 { print $r.stdout }
 ```
 
 ### Variable expansion and file adapters
@@ -134,7 +134,7 @@ output (`bpftool prog show --json`, `ip -j link show`, `tc -j`):
 ```
 let raw  = [exec bpftool prog show -j]
 let data = [jq "." $raw.stdout]
-dump $data[0].name
+print $data[0].name
 ```
 
 Combined with the `|>` thread operator it reads left-to-right,

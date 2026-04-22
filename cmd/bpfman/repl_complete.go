@@ -19,7 +19,7 @@ import (
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "dump", "exec", "file", "help", "jq", "let", "require", "source", "unalias", "unset", "vars", "version"}
+var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "exec", "file", "help", "jq", "let", "print", "require", "source", "unalias", "unset", "vars", "version"}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -128,9 +128,9 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 			}
 			return
 		}
-		// "dump" takes any expression — including a variable
+		// "print" takes any expression — including a variable
 		// reference — as its argument.  Bare-word arguments
-		// are literal strings at runtime ("dump foo" prints
+		// are literal strings at runtime ("print foo" prints
 		// "foo", not the variable foo), so completion only
 		// offers variable paths when the prefix is
 		// sigil-led.  An empty or "$"-only prefix lists every
@@ -138,7 +138,7 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 		// name; a bare partial token defers to the
 		// command-path fallback (no variable completions, and
 		// no shadowing of the literal-string semantics).
-		if tokens[0] == "dump" {
+		if tokens[0] == "print" {
 			prefix := ""
 			if len(tokens) == 2 {
 				prefix = tokens[1]
@@ -526,7 +526,7 @@ func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *she
 // replCompleteVarPath completes dotted variable paths. The token is
 // the partial text (e.g. "$prog.rec" or "prog.record."). When sigil
 // is true, variable names carry a '$' prefix (program ID contexts);
-// when false they are bare (dump context). Returns candidates and the
+// when false they are bare (print context). Returns candidates and the
 // number of characters to replace (the full token length).
 func replCompleteVarPath(session *shell.Session, token string, sigil bool) (candidates []string, replace int) {
 	if session == nil {

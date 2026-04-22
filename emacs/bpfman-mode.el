@@ -68,8 +68,8 @@
                  ;; domain gateway
                  "bpfman"
                  ;; shell-language builtins
-                 "alias" "aliases" "assert" "dump" "exec" "file"
-                 "help" "jq" "require" "source"
+                 "alias" "aliases" "assert" "exec" "file"
+                 "help" "jq" "print" "require" "source"
                  "unalias" "unset" "vars" "version"))
       (puthash w t ht))
     ht)

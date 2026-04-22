@@ -635,7 +635,7 @@ func TestReplCompleteVarPath(t *testing.T) {
 		wantReplace int
 	}{
 		{
-			name:        "empty token dump lists all vars",
+			name:        "empty token print lists all vars",
 			token:       "",
 			sigil:       false,
 			wantAny:     []string{"pid ", "prog", "prog2"},
@@ -816,10 +816,10 @@ func TestReplCompleteVarPath_NilSession(t *testing.T) {
 	assert.Equal(t, 0, replace)
 }
 
-func TestReplComplete_DumpCompletion(t *testing.T) {
-	// dump's argument is any expression that evaluates to a
+func TestReplComplete_PrintCompletion(t *testing.T) {
+	// print's argument is any expression that evaluates to a
 	// value; bare-word args are literal strings at runtime
-	// ("dump foo" prints "foo", not $foo), so completion only
+	// ("print foo" prints "foo", not $foo), so completion only
 	// offers variable paths when the prefix is sigil-led.  This
 	// keeps the completer honest with the parser's sigil rule.
 	session := shell.NewSession()
@@ -836,38 +836,38 @@ func TestReplComplete_DumpCompletion(t *testing.T) {
 		wantReplace int
 	}{
 		{
-			name:        "dump with space lists all sigil vars",
-			line:        "dump ",
+			name:        "print with space lists all sigil vars",
+			line:        "print ",
 			wantAny:     []string{"$pid ", "$prog"},
 			wantReplace: 0,
 		},
 		{
-			name:        "dump with bare $ lists all sigil vars",
-			line:        "dump $",
+			name:        "print with bare $ lists all sigil vars",
+			line:        "print $",
 			wantAny:     []string{"$pid ", "$prog"},
 			wantReplace: 1,
 		},
 		{
-			name:        "dump with partial sigil var name",
-			line:        "dump $pro",
+			name:        "print with partial sigil var name",
+			line:        "print $pro",
 			wantAny:     []string{"$prog"},
 			wantReplace: 4,
 		},
 		{
-			name:        "dump with sigil dotted path",
-			line:        "dump $prog.",
+			name:        "print with sigil dotted path",
+			line:        "print $prog.",
 			wantAny:     []string{"$prog.record", "$prog.name "},
 			wantReplace: 6,
 		},
 		{
-			name:        "dump with sigil nested path",
-			line:        "dump $prog.record.",
+			name:        "print with sigil nested path",
+			line:        "print $prog.record.",
 			wantAny:     []string{"$prog.record.program_id "},
 			wantReplace: 13,
 		},
 		{
-			name:     "dump with bare prefix does not offer variable paths",
-			line:     "dump pro",
+			name:     "print with bare prefix does not offer variable paths",
+			line:     "print pro",
 			wantNone: []string{"prog", "prog.record"},
 		},
 	}
@@ -2301,7 +2301,7 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
-	input := "let out = [exec echo testing123]\ndump $out.stdout\n"
+	input := "let out = [exec echo testing123]\nprint $out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2396,7 +2396,7 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 }
 
 func TestReplLoop_ExecArgvField(t *testing.T) {
-	input := "let out = [exec echo a b c]\ndump $out.argv\n"
+	input := "let out = [exec echo a b c]\nprint $out.argv\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2789,9 +2789,9 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
 	// Other non-value shell commands should still be rejected.  We
 	// bind a variable first and then try to bind the result of
-	// "dump" on it; "dump" prints its argument but produces no
+	// "print" on it; "print" prints its argument but produces no
 	// value, so the assignment is rejected.
-	input := "let y = 1\nlet x = [dump y]\n"
+	input := "let y = 1\nlet x = [print y]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -3122,13 +3122,13 @@ func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "6")
 }
 
-func TestReplLoop_Arithmetic_DumpBracketedExpr(t *testing.T) {
-	// dump [[EXPR]] evaluates the double-bracketed expression and
+func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
+	// print [[EXPR]] evaluates the double-bracketed expression and
 	// prints the resulting scalar.  Exercises an arithmetic
 	// expression inside an expression-substitution bracket,
 	// confirming the same precedence chain feeds through
 	// [[...]] contexts.
-	input := "let count = 21\ndump [[$count * 2]]\n"
+	input := "let count = 21\nprint [[$count * 2]]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
