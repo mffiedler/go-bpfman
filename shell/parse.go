@@ -674,11 +674,13 @@ func (p *exprParser) parseUnaryOr() (Expr, error) {
 
 // operandFollowsPred reports whether the token immediately after
 // the current one could syntactically be a unary predicate's
-// operand.  It rejects binary-comparison words, logical
-// operators (and / or), '|>', and end of input — anything that
-// would belong to a higher precedence level, so that a pred word
-// at a comparison or logical RHS parses as a literal instead of
-// greedily swallowing an operator as its operand.
+// operand.  It rejects anything that belongs to a higher
+// precedence level or ends the current expression: binary-
+// comparison words, logical operators (and / or), '|>', a
+// closing ')' that would terminate a parenthesised sub-
+// expression, and end of input.  That lets a pred word sitting
+// at a comparison-RHS or logical-RHS position parse as a
+// literal instead of greedily swallowing the next token.
 func (p *exprParser) operandFollowsPred() bool {
 	if p.pos+1 >= len(p.tokens) {
 		return false
@@ -691,6 +693,9 @@ func (p *exprParser) operandFollowsPred() bool {
 		return false
 	}
 	if isKeywordWord(next, "and") || isKeywordWord(next, "or") {
+		return false
+	}
+	if next.Kind == TokenWord && next.Text == ")" {
 		return false
 	}
 	return true

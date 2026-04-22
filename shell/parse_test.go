@@ -477,6 +477,22 @@ func TestParse_Logical_ParensOverridePrecedence(t *testing.T) {
 	assert.Equal(t, "or", or.Op)
 }
 
+func TestParse_Logical_PredBeforeCloseParen(t *testing.T) {
+	// "($a eq true) and $b": the 'true' inside the parens is
+	// on the RHS of a comparison, and the next token is ')' —
+	// not an operand.  operandFollowsPred must treat ')' as an
+	// expression terminator so 'true' parses as a literal, not
+	// a UnaryExpr that greedily eats the ')'.
+	prog, err := parseSource(t, "if ($a eq true) and $b { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	and, ok := ifStmt.Cond.(*LogicalExpr)
+	require.True(t, ok, "top should be and, got %T", ifStmt.Cond)
+	assert.Equal(t, "and", and.Op)
+	_, ok = and.Left.(*BinaryExpr)
+	assert.True(t, ok, "and.Left should be BinaryExpr from the parens, got %T", and.Left)
+}
+
 func TestParse_Logical_ParenthesisedPrimary(t *testing.T) {
 	// A single parenthesised expression is equivalent to the
 	// inner expression at the same precedence; the AST has no
