@@ -2,6 +2,7 @@ package shell
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1521,6 +1522,56 @@ func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "6", got)
+}
+
+func TestEvalExpr_ExprSub_ThreadWithFlagHintsCmdSubForm(t *testing.T) {
+	// Threading with a flagged command inside "[[...]]" fails
+	// because strict tokenisation splits "-c" into "-" and "c".
+	// The error should point the user at "[...]" where shell
+	// tokenisation keeps "-c" whole.
+	_, err := parseSource(t, `let out = [[$prog |> jq -c "."]]`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "threading with flags")
+	assert.Contains(t, err.Error(), "use [$prog |> jq -c \".\"]")
+}
+
+func TestEvalExpr_CmdSub_AcceptsThreadExpr(t *testing.T) {
+	// "[$x |> cmd -c arg]" is the command-shaped thread form; the
+	// parser must accept it under shell tokenisation so flags like
+	// "-c" stay whole.  The strict-mode "[[...]]" alternative would
+	// split "-c" into "-" and "c" and break the invocation.
+	s := NewSession()
+	s.Set("prog", StringValue("input"))
+	env := &Env{
+		Session: s,
+		ExecSubstitution: func(args []Arg) (Value, error) {
+			require.Len(t, args, 4)
+			got := make([]string, len(args))
+			for i, a := range args {
+				switch v := a.(type) {
+				case WordArg:
+					got[i] = v.Text
+				case QuotedArg:
+					got[i] = v.Text
+				case ScalarValueArg:
+					got[i] = v.Text
+				default:
+					got[i] = fmt.Sprintf("%T", a)
+				}
+			}
+			// jq receives: "jq", "-c", ".", then the threaded LHS.
+			assert.Equal(t, []string{"jq", "-c", ".", "input"}, got)
+			return StringValue("\"input\""), nil
+		},
+	}
+	prog, err := parseSource(t, `let out = [$prog |> jq -c "."]`)
+	require.NoError(t, err)
+	require.NoError(t, EvalProgram(prog, env))
+	v, ok := s.Get("out")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, `"input"`, got)
 }
 
 func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {

@@ -694,18 +694,23 @@ func tryParseExpression(tokens []Token) (Expr, bool) {
 }
 
 // isCompoundExpr reports whether e is anything other than a bare
-// primary (literal, variable reference, adapter reference, or
-// substitution).  Compound forms — binary, unary, logical, not,
-// negation, thread, or the retry-scoped timeout/iteration
-// predicates — are the shapes the user can only have meant as an
-// expression rather than as a command invocation, so the command
-// substitution primary rejects them at parse time with a "use
-// [[...]]" hint.  Bare primaries fall through to command parsing
-// because a single word or "$var" is indistinguishable from a
-// no-argument command invocation without runtime context.
+// primary or a command-shaped composite.  Compound forms —
+// binary, unary, logical, not, negation, or the retry-scoped
+// timeout/iteration predicates — are the shapes the user can
+// only have meant as an expression rather than as a command
+// invocation, so the command substitution primary rejects them
+// at parse time with a "use [[...]]" hint.
+//
+// ThreadExpr is deliberately NOT compound by this definition: a
+// "$x |> cmd args" form is syntactically an expression but its
+// RHS is a command call whose arguments (paths, flags, negative
+// literals) need shell tokenisation to tokenise correctly.
+// Accepting it in "[...]" lets users write "[$prog |> jq -c '.']"
+// without being forced into "[[...]]" where strict tokenisation
+// would split "-c" into "-" and "c" and break the flag.
 func isCompoundExpr(e Expr) bool {
 	switch e.(type) {
-	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *CmdSubExpr, *ExprSubExpr:
+	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *CmdSubExpr, *ExprSubExpr, *ThreadExpr:
 		return false
 	}
 	return true
@@ -1145,6 +1150,18 @@ func parsePrimary(t Token) (Expr, error) {
 			return nil, locErrorf(t.Loc, "command substitution must contain exactly one command; got %d statements", len(inner.Stmts))
 		}
 		if _, isCmd := inner.Stmts[0].(*CommandStmt); !isCmd {
+			// An ExprStmt whose expression is a ThreadExpr is
+			// command-shaped — "$x |> cmd args" runs the RHS
+			// command with the LHS threaded as its last
+			// argument — so accept it here.  Strict
+			// tokenisation inside "[[...]]" would split "-c"
+			// flags in the RHS, so "[...]" is the correct
+			// form for this pattern.
+			if es, ok := inner.Stmts[0].(*ExprStmt); ok {
+				if _, isThread := es.Expr.(*ThreadExpr); isThread {
+					return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
+				}
+			}
 			return nil, locErrorf(t.Loc, "command substitution must contain a command invocation")
 		}
 		return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
@@ -1155,6 +1172,20 @@ func parsePrimary(t Token) (Expr, error) {
 		}
 		expr, ok := tryParseExpression(innerTokens)
 		if !ok {
+			// The strict tokeniser splits "-" and "/" as
+			// operators, which breaks flags and paths on the
+			// RHS of a thread.  If the same body parses as a
+			// ThreadExpr under shell tokenisation, the user
+			// meant "[...]" — point them there rather than
+			// leaving them with a bare "not a valid expression"
+			// message.
+			if shellTokens, terr := Tokenise(t.Inner); terr == nil {
+				if alt, altOK := tryParseExpression(shellTokens); altOK {
+					if _, isThread := alt.(*ThreadExpr); isThread {
+						return nil, locErrorf(t.Loc, "expression substitution [[%s]]: threading with flags does not fit strict tokenisation; use [%s] instead", t.Inner, t.Inner)
+					}
+				}
+			}
 			return nil, locErrorf(t.Loc, "expression substitution [[%s]]: inner is not a valid expression", t.Inner)
 		}
 		return &ExprSubExpr{Inner: expr, Loc: t.Loc}, nil

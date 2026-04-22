@@ -356,6 +356,12 @@ let b = [$count > 0]                    # expression: boolean
 let c = [$prog.id + 1]                  # expression: arithmetic
 ```
 
+Threading with `|>` (see below) stays in single brackets
+because the RHS is a command call whose flags and paths need
+shell tokenisation: `[$x |> jq -c "."]` works; the strict
+tokeniser inside `[[...]]` would split `-c` into `-` and `c`
+and break the flag.
+
 Bracketed evaluation is mandatory when binding a command's result
 (`let p = bpfman program get 123` is a parse error — commands as
 bare RHS are not allowed). It is also the canonical way to embed
