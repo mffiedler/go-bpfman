@@ -321,27 +321,30 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 
 // contState tracks brace and bracket depth across accumulated input
 // lines so the REPL knows when a multi-line if-block or command
-// substitution is complete. Quoted strings are assumed to close on
-// their own line; an unterminated string on a line is surfaced by
-// the tokeniser when the accumulated input is eventually parsed.
+// substitution is complete. Quote state persists across lines so
+// multi-line quoted strings are treated as a single literal span;
+// unterminated strings themselves are surfaced by the tokeniser
+// when the accumulated chunk is eventually parsed.
 type contState struct {
-	braces, brackets int
+	braces, brackets   int
+	inSingle, inDouble bool
 }
 
 // advance walks one line of input, updating the brace and bracket
-// counters. Comments (`#` to end of line) are ignored; quoted
-// content is skipped so braces and brackets inside strings do not
-// count.
+// counters. Comments (`#` to end of line) outside a quoted string
+// are ignored; quoted content is skipped so braces and brackets
+// inside strings do not count. The in-string flags are fields on
+// the struct so they survive across line boundaries, matching how
+// the tokeniser actually treats multi-line quoted literals.
 func (c *contState) advance(line string) {
-	inSingle, inDouble := false, false
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 		switch {
-		case ch == '\'' && !inDouble:
-			inSingle = !inSingle
-		case ch == '"' && !inSingle:
-			inDouble = !inDouble
-		case inSingle || inDouble:
+		case ch == '\'' && !c.inDouble:
+			c.inSingle = !c.inSingle
+		case ch == '"' && !c.inSingle:
+			c.inDouble = !c.inDouble
+		case c.inSingle || c.inDouble:
 			// ignore content inside strings
 		case ch == '#':
 			return
