@@ -106,6 +106,16 @@ func Tokenise(input string) ([]Token, error) {
 			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
+		case ch == '+' || ch == '*' || ch == '%':
+			// Arithmetic operators that cannot appear inside a
+			// bare word (unlike '-' and '/', which are valid
+			// word-interior characters because of negative
+			// literals, flags, and paths).  Emitting them as
+			// single-char tokens lets "1+1", "$x*2", "7%3" split
+			// cleanly without requiring surrounding whitespace.
+			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
+			i++
+
 		case ch == '=' && isTokenStart(tokens):
 			// Distinguish == (comparison) from = (assignment).
 			if i+1 < len(input) && input[i+1] == '=' {
@@ -444,9 +454,16 @@ func lexQuoted(input string, pos int) (Token, int, error) {
 }
 
 // lexWord consumes a word token: everything until whitespace, a
-// separator (newline or semicolon), $, ", ', #, [, ], {, or }.
+// separator (newline or semicolon), $, ", ', #, [, ], {, }, (,
+// ), or one of the arithmetic operators '+' / '*' / '%'.
 // Brackets and braces are terminators because they introduce or
 // close command substitution and block syntax respectively.
+// '+', '*', and '%' are terminators so "1+1" and "$x*2" split
+// without requiring whitespace around the operator.  '-' and
+// '/' stay as word-interior characters: '-' is part of negative
+// literals ("-3"), flags ("-x", "--long"); '/' is part of file
+// paths ("/sys/fs/bpf").  Expressions using '-' or '/' as
+// binary operators therefore still need whitespace around them.
 func lexWord(input string, pos int) (Token, int) {
 	i := pos
 	for i < len(input) {
@@ -454,7 +471,8 @@ func lexWord(input string, pos int) (Token, int) {
 		if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ';' ||
 			ch == '$' || ch == '"' || ch == '\'' || ch == '#' ||
 			ch == '[' || ch == ']' || ch == '{' || ch == '}' ||
-			ch == '(' || ch == ')' {
+			ch == '(' || ch == ')' ||
+			ch == '+' || ch == '*' || ch == '%' {
 			break
 		}
 		i++

@@ -99,7 +99,14 @@
                  ;; comparison operators: textual (lexicographic)
                  "eq" "ne" "lt" "le" "gt" "ge"
                  ;; comparison operators: numeric
-                 "==" "!=" "<" "<=" ">" ">="))
+                 "==" "!=" "<" "<=" ">" ">="
+                 ;; arithmetic operators (binary '+', '-', '*',
+                 ;; '/', '%'; unary '-' reuses the same token).
+                 ;; '-' appears here too: the line tokeniser only
+                 ;; emits a bare '-' when it is not part of a flag
+                 ;; ('-x', '--long'), so a standalone dash in
+                 ;; expression position fontifies as an operator.
+                 "+" "-" "*" "/" "%"))
       (puthash w t ht))
     ht)
   "Hash table of bpfman subcommands, attach types, subviews, and operators.")

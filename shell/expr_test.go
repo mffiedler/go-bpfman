@@ -1049,3 +1049,141 @@ func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "produced no value")
 }
+
+// --- arithmetic ----------------------------------------------------
+
+// scalarTextEval is a small helper that evaluates an expression
+// and returns its scalar-formatted result.  Every arithmetic
+// test reduces to "evaluate, compare the rendered string" — the
+// helper keeps the call sites short.
+func scalarTextEval(t *testing.T, e Expr) string {
+	t.Helper()
+	v, err := EvalExpr(e, evalEnv(NewSession()))
+	require.NoError(t, err)
+	s, err := v.Scalar()
+	require.NoError(t, err)
+	return s
+}
+
+func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
+	cases := []struct {
+		op    string
+		left  string
+		right string
+		want  string
+	}{
+		// integer-valued operands render without a trailing ".0".
+		{"+", "1", "2", "3"},
+		{"-", "5", "3", "2"},
+		{"*", "4", "3", "12"},
+		{"/", "10", "4", "2.5"},
+		{"%", "7", "3", "1"},
+		// float operands keep their precision.
+		{"+", "1.5", "2.25", "3.75"},
+		{"*", "2.0", "3.0", "6"},
+		// mixed (int + float) still lands on float semantics.
+		{"/", "5", "2", "2.5"},
+		{"%", "7.5", "2.0", "1.5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.op+"_"+tc.left+"_"+tc.right, func(t *testing.T) {
+			e := &BinaryExpr{
+				Left:  &LiteralExpr{Text: tc.left},
+				Op:    tc.op,
+				Right: &LiteralExpr{Text: tc.right},
+			}
+			assert.Equal(t, tc.want, scalarTextEval(t, e))
+		})
+	}
+}
+
+func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
+	for _, op := range []string{"/", "%"} {
+		t.Run(op, func(t *testing.T) {
+			e := &BinaryExpr{
+				Left:  &LiteralExpr{Text: "1"},
+				Op:    op,
+				Right: &LiteralExpr{Text: "0"},
+			}
+			_, err := EvalExpr(e, evalEnv(NewSession()))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "division by zero")
+		})
+	}
+}
+
+func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
+	// "abc" + 1: Python-style string concat is deliberately out
+	// of scope, so this must surface as a numeric-operand error
+	// rather than producing a string.
+	e := &BinaryExpr{
+		Left:  &LiteralExpr{Text: "abc"},
+		Op:    "+",
+		Right: &LiteralExpr{Text: "1"},
+	}
+	_, err := EvalExpr(e, evalEnv(NewSession()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not numeric")
+}
+
+func TestEvalExpr_Negate_Literal(t *testing.T) {
+	e := &NegateExpr{Operand: &LiteralExpr{Text: "5"}}
+	assert.Equal(t, "-5", scalarTextEval(t, e))
+}
+
+func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
+	// -(-5) → 5: stacks resolve inside-out.
+	e := &NegateExpr{Operand: &NegateExpr{Operand: &LiteralExpr{Text: "5"}}}
+	assert.Equal(t, "5", scalarTextEval(t, e))
+}
+
+func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
+	// Negating a map is nonsense — must error rather than panic.
+	s := NewSession()
+	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
+	_, err := EvalExpr(&NegateExpr{Operand: &VarRefExpr{Name: "m"}}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "negate")
+}
+
+func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
+	s := NewSession()
+	s.Set("x", StringValue("hello"))
+	_, err := EvalExpr(&NegateExpr{Operand: &VarRefExpr{Name: "x"}}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not numeric")
+}
+
+func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
+	// 3 + 4 > 5 → true.  Exercises the full chain:
+	// comparison evaluates additive on both sides, reduces each
+	// to a numeric scalar, then compares as floats.
+	e := &BinaryExpr{
+		Left: &BinaryExpr{
+			Left:  &LiteralExpr{Text: "3"},
+			Op:    "+",
+			Right: &LiteralExpr{Text: "4"},
+		},
+		Op:    ">",
+		Right: &LiteralExpr{Text: "5"},
+	}
+	v, err := EvalExpr(e, evalEnv(NewSession()))
+	require.NoError(t, err)
+	b, err := AsBool(v)
+	require.NoError(t, err)
+	assert.True(t, b)
+}
+
+func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
+	// let n = $count + 1: parse, evaluate, confirm the session
+	// carries a numeric scalar whose text is "11".
+	prog, err := parseSource(t, "let count = 10\nlet n = $count + 1")
+	require.NoError(t, err)
+	s := NewSession()
+	require.NoError(t, EvalProgram(prog, evalEnv(s)))
+	v, ok := s.Get("n")
+	require.True(t, ok)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "11", got)
+}

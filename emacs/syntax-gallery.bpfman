@@ -260,6 +260,31 @@ assert not ($a eq 1 and $b eq 2)
 assert ($x > 0 and $x < 10) or $unbounded
 if (not-empty $progs) and ($count gt 0) { dump progs }
 
+# ---- 19a. Arithmetic operators ----
+
+# Binary arithmetic: '+', '-', '*', '/', '%'.  Whitespace is
+# required around each operator; the tokeniser treats the
+# characters as word-constituents so `$x+1' tokenises as a
+# single word and fails to parse.  Unary '-' negates any
+# expression.
+
+let count    = 10
+let doubled  = $count * 2
+let doubled2 = $count + $count
+let halved   = $count / 2
+let mod7     = 7 % 3
+let neg      = -$count
+let ws_sub   = $count - 1
+let nest     = ($count + 5) * 2
+
+# Arithmetic may appear as a comparison operand; precedence
+# binds the arithmetic tighter than the comparison.
+if $count + 1 > $halved * 3 { dump $count }
+
+# Auto-printed expression statements.
+$count + 1
+-$count
+
 # ---- 20. Value-threading with `|>' ----
 
 # LHS becomes the last arg of the RHS command.  Chains are common.

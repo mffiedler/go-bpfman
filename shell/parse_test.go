@@ -663,3 +663,155 @@ func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "command substitution")
 }
+
+// --- arithmetic ----------------------------------------------------
+
+func TestParse_Arithmetic_AdditivePrecedence(t *testing.T) {
+	// 1 + 2 * 3 should parse as 1 + (2 * 3): the '+' is at the
+	// root, with the '*' nested inside its right operand.
+	prog, err := parseSource(t, "let r = 1 + 2 * 3")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	bin, ok := let.RHS.(*BinaryExpr)
+	require.True(t, ok, "root should be BinaryExpr, got %T", let.RHS)
+	assert.Equal(t, "+", bin.Op)
+	right, ok := bin.Right.(*BinaryExpr)
+	require.True(t, ok, "right operand should be BinaryExpr (*), got %T", bin.Right)
+	assert.Equal(t, "*", right.Op)
+}
+
+func TestParse_Arithmetic_ParensOverridePrecedence(t *testing.T) {
+	// (1 + 2) * 3: parens force '+' inside the left operand of '*'.
+	prog, err := parseSource(t, "let r = (1 + 2) * 3")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	bin, ok := let.RHS.(*BinaryExpr)
+	require.True(t, ok, "root should be BinaryExpr, got %T", let.RHS)
+	assert.Equal(t, "*", bin.Op)
+	left, ok := bin.Left.(*BinaryExpr)
+	require.True(t, ok, "left operand should be BinaryExpr (+), got %T", bin.Left)
+	assert.Equal(t, "+", left.Op)
+}
+
+func TestParse_Arithmetic_LeftAssociativeChain(t *testing.T) {
+	// 1 - 2 - 3 should parse as (1 - 2) - 3.
+	prog, err := parseSource(t, "let r = 1 - 2 - 3")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	outer, ok := let.RHS.(*BinaryExpr)
+	require.True(t, ok)
+	assert.Equal(t, "-", outer.Op)
+	inner, ok := outer.Left.(*BinaryExpr)
+	require.True(t, ok, "left-assoc: left operand should be BinaryExpr, got %T", outer.Left)
+	assert.Equal(t, "-", inner.Op)
+}
+
+func TestParse_Arithmetic_LooserThanComparison(t *testing.T) {
+	// $x + 1 eq 5: 'eq' at the root, additive as the left operand.
+	prog, err := parseSource(t, "let r = $x + 1 eq 5")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	cmp, ok := let.RHS.(*BinaryExpr)
+	require.True(t, ok)
+	assert.Equal(t, "eq", cmp.Op)
+	add, ok := cmp.Left.(*BinaryExpr)
+	require.True(t, ok, "comparison LHS should be BinaryExpr (additive), got %T", cmp.Left)
+	assert.Equal(t, "+", add.Op)
+}
+
+func TestParse_Arithmetic_UnaryNegate_VarRef(t *testing.T) {
+	prog, err := parseSource(t, "let r = - $x")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	neg, ok := let.RHS.(*NegateExpr)
+	require.True(t, ok, "expected NegateExpr, got %T", let.RHS)
+	_, ok = neg.Operand.(*VarRefExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_Arithmetic_UnaryNegate_ParenExpr(t *testing.T) {
+	// -(1 + 2) — negation of a parenthesised additive expression.
+	prog, err := parseSource(t, "let r = -(1 + 2)")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	neg, ok := let.RHS.(*NegateExpr)
+	require.True(t, ok, "expected NegateExpr, got %T", let.RHS)
+	add, ok := neg.Operand.(*BinaryExpr)
+	require.True(t, ok)
+	assert.Equal(t, "+", add.Op)
+}
+
+func TestParse_Arithmetic_UnaryNegate_Stacked(t *testing.T) {
+	// - - 3 (with spaces) stacks two negations.  "-3" alone
+	// tokenises as a single WORD, so we force separation.
+	prog, err := parseSource(t, "let r = - - $x")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	outer, ok := let.RHS.(*NegateExpr)
+	require.True(t, ok)
+	inner, ok := outer.Operand.(*NegateExpr)
+	require.True(t, ok, "stacked negation should nest, got %T", outer.Operand)
+	_, ok = inner.Operand.(*VarRefExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_Arithmetic_NegativeLiteralUnchanged(t *testing.T) {
+	// A negative numeric literal with no space still tokenises
+	// as a single WORD, not as "negate token + literal".
+	prog, err := parseSource(t, "let r = -3")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	lit, ok := let.RHS.(*LiteralExpr)
+	require.True(t, ok, "expected LiteralExpr, got %T", let.RHS)
+	assert.Equal(t, "-3", lit.Text)
+}
+
+func TestParse_Arithmetic_TrailingOperatorIsError(t *testing.T) {
+	_, err := parseSource(t, "let r = $x +")
+	require.Error(t, err)
+}
+
+func TestParse_Arithmetic_NoWhitespace_PlusStarPercent(t *testing.T) {
+	// The tokeniser splits '+', '*', and '%' even without
+	// surrounding whitespace, so the compact forms that users
+	// naturally type work identically to the spaced forms.
+	cases := []struct {
+		name string
+		src  string
+		op   string
+	}{
+		{"plus no space", "let r = $x+1", "+"},
+		{"plus mixed space", "let r = $x +1", "+"},
+		{"star no space", "let r = $x*2", "*"},
+		{"percent no space", "let r = 7%3", "%"},
+		{"literal plus literal", "let r = 1+1", "+"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog, err := parseSource(t, tc.src)
+			require.NoError(t, err)
+			let := firstStmt(t, prog).(*LetStmt)
+			bin, ok := let.RHS.(*BinaryExpr)
+			require.True(t, ok, "RHS should be BinaryExpr, got %T", let.RHS)
+			assert.Equal(t, tc.op, bin.Op)
+		})
+	}
+}
+
+func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
+	// '-' and '/' stay word-interior (negative literals, flags,
+	// paths), so "$x -1" still tokenises as "$x" + "-1" and
+	// fails to parse.  The error should point at whitespace
+	// rather than the generic "wrap in [...]" suggestion.
+	_, err := parseSource(t, "let r = $x -1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "whitespace")
+	assert.Contains(t, err.Error(), "'-'")
+}
+
+func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
+	_, err := parseSource(t, "let r = $x /2")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "whitespace")
+	assert.Contains(t, err.Error(), "'/'")
+}

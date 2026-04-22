@@ -569,11 +569,14 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 // recursive-descent parser.  Each precedence level has its own
 // method, loosest to tightest:
 //
-//	parseComparison   -- binary comparison (eq, ne, <, >= ...)
-//	parseUnaryOr      -- unary predicate (not-empty, true, false)
-//	parseThread       -- threading chain (|>)
-//	parseTerm         -- primary token (literal, varref, adapter,
-//	                                    cmdsub)
+//	parseComparison     -- binary comparison (eq, ne, <, >= ...)
+//	parseAdditive       -- '+' / '-' left-associative
+//	parseMultiplicative -- '*' / '/' / '%' left-associative
+//	parsePredicate      -- unary predicate (not-empty, true, false)
+//	parseNegate         -- unary '-' right-associative
+//	parseThread         -- threading chain (|>)
+//	parseTerm           -- primary token (literal, varref, adapter,
+//	                                      cmdsub)
 //
 // Each level calls the next-tighter level for its operands and
 // loops for any left-associative operator of its own.  The shape
@@ -593,9 +596,38 @@ func parseExpression(tokens []Token) (Expr, error) {
 	}
 	if !ep.eof() {
 		t := ep.peek()
+		if hint, ok := smushedArithmeticHint(t); ok {
+			return nil, locErrorf(t.Loc, "unexpected token %q after expression; %s", t.Text, hint)
+		}
 		return nil, locErrorf(t.Loc, "unexpected token %q after expression; wrap commands in [...] for substitution", t.Text)
 	}
 	return e, nil
+}
+
+// smushedArithmeticHint returns a user-facing hint when the
+// trailing token looks like a binary '-' or '/' fused to its
+// right operand (e.g. "-1", "/2").  The tokeniser keeps '-' and
+// '/' as word-constituents because they appear inside negative
+// literals, flags, and paths, so the common "$x -1" / "$x /2"
+// shapes tokenise as two adjacent primaries rather than as
+// binary arithmetic.  When that shape is the reason parsing
+// failed, point at whitespace rather than the generic
+// "wrap in [...]" suggestion, which does not apply here.
+func smushedArithmeticHint(t Token) (string, bool) {
+	if t.Kind != TokenWord || len(t.Text) < 2 {
+		return "", false
+	}
+	c := t.Text[0]
+	if c != '-' && c != '/' {
+		return "", false
+	}
+	next := t.Text[1]
+	isOperand := (next >= '0' && next <= '9') || next == '.' || next == '$' ||
+		(next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z') || next == '_'
+	if !isOperand {
+		return "", false
+	}
+	return fmt.Sprintf("arithmetic '%c' requires whitespace (e.g. \"%c %s\" not %q)", c, c, t.Text[1:], t.Text), true
 }
 
 // tryParseExpression attempts to interpret tokens as a single
@@ -710,7 +742,7 @@ func isKeywordWord(t Token, kw string) bool {
 // caller flags via the "unexpected trailing token" check in
 // parseExpression.
 func (p *exprParser) parseComparison() (Expr, error) {
-	left, err := p.parseUnaryOr()
+	left, err := p.parseAdditive()
 	if err != nil {
 		return nil, err
 	}
@@ -722,22 +754,72 @@ func (p *exprParser) parseComparison() (Expr, error) {
 		return left, nil
 	}
 	opTok := p.advance()
-	right, err := p.parseUnaryOr()
+	right, err := p.parseAdditive()
 	if err != nil {
 		return nil, err
 	}
 	return &BinaryExpr{Left: left, Op: op, Right: right, Loc: opTok.Loc}, nil
 }
 
-// parseUnaryOr recognises a unary-predicate prefix applied to a
+// parseAdditive recognises left-associative '+' and '-' chains.
+// The operands live at the multiplicative level so that
+// "1 + 2 * 3" parses as "1 + (2 * 3)".  The '-' here is always
+// binary subtraction; unary negation is handled at the negate
+// level, below the predicate rung.
+func (p *exprParser) parseAdditive() (Expr, error) {
+	left, err := p.parseMultiplicative()
+	if err != nil {
+		return nil, err
+	}
+	for !p.eof() {
+		t := p.peek()
+		if t.Kind != TokenWord || (t.Text != "+" && t.Text != "-") {
+			break
+		}
+		opTok := p.advance()
+		right, err := p.parseMultiplicative()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Loc: opTok.Loc}
+	}
+	return left, nil
+}
+
+// parseMultiplicative recognises left-associative '*', '/', and
+// '%' chains.  Operands live at the predicate level.  Division
+// by zero and non-numeric operands are caught at evaluation
+// time, not here.
+func (p *exprParser) parseMultiplicative() (Expr, error) {
+	left, err := p.parsePredicate()
+	if err != nil {
+		return nil, err
+	}
+	for !p.eof() {
+		t := p.peek()
+		if t.Kind != TokenWord || (t.Text != "*" && t.Text != "/" && t.Text != "%") {
+			break
+		}
+		opTok := p.advance()
+		right, err := p.parsePredicate()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Loc: opTok.Loc}
+	}
+	return left, nil
+}
+
+// parsePredicate recognises a unary-predicate prefix applied to a
 // primary operand.  Because "true" and "false" are both
 // unary-predicate words AND common literals (e.g. the RHS of
 // "eq true"), the rule is context-sensitive: a pred word
 // becomes a UnaryExpr only when the following token could be
 // its operand — a primary position, not a binary operator,
-// thread, or end of input.  Otherwise it falls through to the
-// tighter thread level where it is parsed as a literal.
-func (p *exprParser) parseUnaryOr() (Expr, error) {
+// arithmetic operator, thread, or end of input.  Otherwise it
+// falls through to the tighter negate level where it is parsed
+// as a literal.
+func (p *exprParser) parsePredicate() (Expr, error) {
 	if pred, ok := unaryPredFromToken(p.peek()); ok && p.operandFollowsPred() {
 		predTok := p.advance()
 		operand, err := p.parseTerm()
@@ -746,6 +828,24 @@ func (p *exprParser) parseUnaryOr() (Expr, error) {
 		}
 		return &UnaryExpr{Pred: pred, Operand: operand, Loc: predTok.Loc}, nil
 	}
+	return p.parseNegate()
+}
+
+// parseNegate recognises a unary '-' prefix.  Right-associative
+// recursion supports stacked negations ("- -$x").  The bare '-'
+// WORD token is produced only when whitespace surrounds it;
+// "-3" tokenises as a single WORD (a negative literal) and
+// never reaches this rule.
+func (p *exprParser) parseNegate() (Expr, error) {
+	t := p.peek()
+	if t.Kind == TokenWord && t.Text == "-" {
+		negTok := p.advance()
+		operand, err := p.parseNegate()
+		if err != nil {
+			return nil, err
+		}
+		return &NegateExpr{Operand: operand, Loc: negTok.Loc}, nil
+	}
 	return p.parseThread()
 }
 
@@ -753,11 +853,12 @@ func (p *exprParser) parseUnaryOr() (Expr, error) {
 // the current one could syntactically be a unary predicate's
 // operand.  It rejects anything that belongs to a higher
 // precedence level or ends the current expression: binary-
-// comparison words, logical operators (and / or), '|>', a
-// closing ')' that would terminate a parenthesised sub-
-// expression, and end of input.  That lets a pred word sitting
-// at a comparison-RHS or logical-RHS position parse as a
-// literal instead of greedily swallowing the next token.
+// comparison words, arithmetic operators, logical operators
+// (and / or), '|>', a closing ')' that would terminate a
+// parenthesised sub-expression, and end of input.  That lets a
+// pred word sitting at a comparison-RHS, arithmetic-RHS, or
+// logical-RHS position parse as a literal instead of greedily
+// swallowing the next token.
 func (p *exprParser) operandFollowsPred() bool {
 	if p.pos+1 >= len(p.tokens) {
 		return false
@@ -769,6 +870,9 @@ func (p *exprParser) operandFollowsPred() bool {
 	if _, isBinOp := binaryOpFromToken(next); isBinOp {
 		return false
 	}
+	if isArithmeticOp(next) {
+		return false
+	}
 	if isKeywordWord(next, "and") || isKeywordWord(next, "or") {
 		return false
 	}
@@ -776,6 +880,22 @@ func (p *exprParser) operandFollowsPred() bool {
 		return false
 	}
 	return true
+}
+
+// isArithmeticOp reports whether t is a bare WORD carrying one
+// of the five arithmetic operators.  The tokeniser does not
+// give these tokens a dedicated kind, so recognition is by
+// text.  Used at precedence boundaries to keep arithmetic
+// operators from being absorbed as operands at a tighter level.
+func isArithmeticOp(t Token) bool {
+	if t.Kind != TokenWord {
+		return false
+	}
+	switch t.Text {
+	case "+", "-", "*", "/", "%":
+		return true
+	}
+	return false
 }
 
 // parseThread consumes a primary then zero or more '|>
@@ -800,10 +920,10 @@ func (p *exprParser) parseThread() (Expr, error) {
 }
 
 // parseThreadRHS consumes the command-call tokens that follow a
-// '|>'.  It stops at the next '|>', at a binary-op word (so the
-// comparison level can pick it up), or at end of input.  A
-// literal binary-op word used as a command argument must be
-// quoted.
+// '|>'.  It stops at the next '|>', at a binary-op word, at an
+// arithmetic operator (so the comparison or additive level can
+// pick it up), or at end of input.  A literal binary-op or
+// arithmetic word used as a command argument must be quoted.
 func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 	var args []Expr
 	for !p.eof() {
@@ -812,6 +932,9 @@ func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 			break
 		}
 		if _, isBinOp := binaryOpFromToken(t); isBinOp {
+			break
+		}
+		if isArithmeticOp(t) {
 			break
 		}
 		p.advance()

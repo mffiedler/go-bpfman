@@ -2999,3 +2999,35 @@ func TestReplComplete_JQInCommandNames(t *testing.T) {
 	_, candidates := replComplete(context.Background(), nil, nil, "j", len("j"))
 	assert.Contains(t, candidates, "jq ")
 }
+
+func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
+	// let binding plus a bare arithmetic expression statement:
+	// the second line is routed to ExprStmt (leading '$' leads
+	// expression position) and its value is auto-printed.
+	input := "let x = 5\n$x + 1\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "6")
+}
+
+func TestReplLoop_Arithmetic_DumpBracketedExpr(t *testing.T) {
+	// dump [EXPR] evaluates the bracketed expression (widened to
+	// "[EXPR]" form) and prints the resulting scalar.  Exercises
+	// an arithmetic expression inside a command-sub bracket,
+	// confirming the same precedence chain feeds through
+	// bracketed contexts.
+	input := "let count = 21\ndump [$count * 2]\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "42")
+}

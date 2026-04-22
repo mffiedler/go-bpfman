@@ -1,8 +1,10 @@
 package shell
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 )
@@ -104,6 +106,15 @@ type NotExpr struct {
 	Loc
 }
 
+// NegateExpr is arithmetic negation.  The operand must evaluate
+// to a numeric scalar at runtime; anything else is a type error
+// cited at the '-' token.  Kept distinct from NotExpr so the
+// two unary forms live in separate namespaces.
+type NegateExpr struct {
+	Operand Expr
+	Loc
+}
+
 // TimeoutExpr is a retry-scoped primary expression that evaluates
 // to true when the enclosing retry loop has been running for at
 // least Duration.  Outside a retry context it is a runtime error,
@@ -137,6 +148,7 @@ func (*UnaryExpr) exprNode()     {}
 func (*ThreadExpr) exprNode()    {}
 func (*LogicalExpr) exprNode()   {}
 func (*NotExpr) exprNode()       {}
+func (*NegateExpr) exprNode()    {}
 func (*TimeoutExpr) exprNode()   {}
 func (*IterationExpr) exprNode() {}
 
@@ -524,6 +536,8 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalLogical(e, env)
 	case *NotExpr:
 		return evalNot(e, env)
+	case *NegateExpr:
+		return evalNegate(e, env)
 	case *TimeoutExpr:
 		return evalTimeoutExpr(e, env)
 	case *IterationExpr:
@@ -647,8 +661,8 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 			return nil, locErrorf(e.Loc, "thread: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
-	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *TimeoutExpr, *IterationExpr:
-		return nil, locErrorf(exprLoc(expr), "boolean/comparison expression cannot be used as a command argument")
+	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *NegateExpr, *TimeoutExpr, *IterationExpr:
+		return nil, locErrorf(exprLoc(expr), "boolean/comparison/arithmetic expression cannot be used as a command argument")
 	default:
 		return nil, locErrorf(exprLoc(expr), "cannot use %T as command argument", expr)
 	}
@@ -816,10 +830,98 @@ func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
 	if err != nil {
 		return Value{}, locErrorf(e.Loc, "binary %s: right: %v", e.Op, err)
 	}
+	if isArithmeticOpText(e.Op) {
+		v, err := evalArithmetic(e.Op, left, right)
+		if err != nil {
+			return Value{}, locErrorf(e.Loc, "%v", err)
+		}
+		return v, nil
+	}
 	if isNumericOp(e.Op) {
 		return evalNumericComparison(e.Op, left, right)
 	}
 	return evalTextualComparison(e.Op, left, right)
+}
+
+// isArithmeticOpText reports whether op is one of the five
+// arithmetic operators.  Separate from isArithmeticOp (which
+// operates on a Token) because the evaluator works with the
+// already-extracted Op string on BinaryExpr.
+func isArithmeticOpText(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%":
+		return true
+	}
+	return false
+}
+
+// evalArithmetic parses both operands as float64 and performs
+// the requested operation.  Division and modulo by zero are
+// runtime errors; Go's math.Mod is used for '%' (which defines
+// the result's sign to match the dividend, e.g. -7 % 3 = -1).
+// Results are wrapped as numeric scalars via json.Number so
+// the scalar-formatting path matches jq-sourced numbers:
+// integer-valued floats render without a trailing ".0".
+func evalArithmetic(op, left, right string) (Value, error) {
+	a, err := strconv.ParseFloat(left, 64)
+	if err != nil {
+		return Value{}, fmt.Errorf("arithmetic %s: left operand %q is not numeric", op, left)
+	}
+	b, err := strconv.ParseFloat(right, 64)
+	if err != nil {
+		return Value{}, fmt.Errorf("arithmetic %s: right operand %q is not numeric", op, right)
+	}
+	var r float64
+	switch op {
+	case "+":
+		r = a + b
+	case "-":
+		r = a - b
+	case "*":
+		r = a * b
+	case "/":
+		if b == 0 {
+			return Value{}, fmt.Errorf("division by zero")
+		}
+		r = a / b
+	case "%":
+		if b == 0 {
+			return Value{}, fmt.Errorf("division by zero")
+		}
+		r = math.Mod(a, b)
+	default:
+		return Value{}, fmt.Errorf("unknown arithmetic operator %q", op)
+	}
+	return numericValue(r), nil
+}
+
+// numericValue wraps a float64 result as a Value whose raw
+// representation is a json.Number.  That matches how
+// jq-produced numbers land in the session and keeps
+// Value.Scalar() on a common rendering path: integer-valued
+// results print without a trailing ".0".
+func numericValue(x float64) Value {
+	text := strconv.FormatFloat(x, 'f', -1, 64)
+	return Value{v: json.Number(text), kind: OriginScalar}
+}
+
+// evalNegate evaluates a unary '-' prefix.  The operand must
+// reduce to a numeric scalar; anything else is a type error
+// cited at the '-' token.
+func evalNegate(e *NegateExpr, env *Env) (Value, error) {
+	v, err := EvalExpr(e.Operand, env)
+	if err != nil {
+		return Value{}, err
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "negate: %v", err)
+	}
+	x, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return Value{}, locErrorf(e.Loc, "negate: operand %q is not numeric", s)
+	}
+	return numericValue(-x), nil
 }
 
 func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
@@ -1026,6 +1128,8 @@ func exprLoc(e Expr) Loc {
 	case *LogicalExpr:
 		return v.Loc
 	case *NotExpr:
+		return v.Loc
+	case *NegateExpr:
 		return v.Loc
 	case *TimeoutExpr:
 		return v.Loc

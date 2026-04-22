@@ -54,8 +54,11 @@ expr         := or
 or           := and ('or' and)*
 and          := not ('and' not)*
 not          := 'not' not | comparison
-comparison   := unary (BINOP unary)?
-unary        := UNARY-PRED term | thread
+comparison   := additive (BINOP additive)?
+additive     := multiplicative (('+' | '-') multiplicative)*
+multiplicative := predicate (('*' | '/' | '%') predicate)*
+predicate    := UNARY-PRED term | negate
+negate       := '-' negate | thread
 thread       := term ('|>' command)*
 term         := literal | varref | cmdsub | adapter | '(' expr ')'
               | 'timeout' DURATION | 'iteration' INTEGER
@@ -328,6 +331,73 @@ assert $a lt $b                                        # textual
 Both operand positions may be arbitrary expressions, including
 command substitutions: `assert $count > [length $items]`.
 
+### Arithmetic
+
+Five binary operators and unary negation:
+
+- `a + b` — addition.
+- `a - b` — subtraction (with whitespace around `-`).
+- `a * b` — multiplication.
+- `a / b` — division.  `a / 0` is a runtime error.
+- `a % b` — modulo (Go's `math.Mod`; the result takes the sign of
+  the dividend, so `-7 % 3` is `-1`, not `2`).  `a % 0` is a
+  runtime error.
+- `-a` — unary negation.  Stacks right-associatively: `- -$x`.
+
+Arithmetic is **numeric only**.  Both operands are parsed via
+`strconv.ParseFloat`, so `"abc" + 1` is a runtime error rather
+than a string concatenation.  Internally every result is a
+`float64`; integer-valued results render without a trailing
+`.0` (`5 * 2` prints as `10`).  `5 / 2` is `2.5`; users who want
+integer division can pipe through `jq`
+(`[jq "(.a / .b) | floor" ...]`).
+
+Whitespace rules around binary operators are split by operator:
+
+- `+`, `*`, `%` are tokeniser-level word terminators.  `1+1`,
+  `$x*2`, and `7%3` all tokenise correctly as three tokens, so
+  whitespace around them is optional.
+- `-` and `/` stay word-interior characters.  `-` is part of
+  negative literals (`-3`), short flags (`-x`), and long flags
+  (`--path`); `/` is part of file paths (`/sys/fs/bpf`).
+  Arithmetic expressions using `-` or `/` therefore **require
+  whitespace** around the operator.  `$x - 1` parses as
+  subtraction; `$x -1` tokenises as two adjacent primaries and
+  is a parse error.  The error message points at whitespace.
+
+Unary negation follows the same rule: `-3` with no space is a
+single-WORD negative literal; `- 3` with space is
+`NegateExpr(3)`.
+
+Precedence (tightest arithmetic rung first): unary negation →
+multiplicative (`*`, `/`, `%`) → additive (`+`, `-`).  All three
+rungs bind **tighter than comparison**, so `$x + 1 eq 5` reads
+as `(($x) + 1) eq 5`.  Parenthesise to force a different shape:
+`($a + $b) / 2`.
+
+```
+let count    = 10
+let doubled  = $count * 2            # 20
+let average  = ($a + $b) / 2         # halfway between a and b
+let mod      = 7 % 3                 # 1
+let neg      = -$count               # -10
+
+$count + 1                           # auto-prints 11
+$count > $doubled / 3                # auto-prints a boolean
+```
+
+**Not included** (deliberately, to keep the language small):
+
+- String concatenation via `+` (`"a" + "b"` is a runtime error).
+  Concat stays via `jq` or future interpolation.
+- Integer division (`//`) or power (`**`).
+- Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`).
+- In-place forms (`+=`, `-=`, etc.).  The language has no
+  mutation story beyond `let`.
+- Arithmetic builtins (`min`, `max`, `abs`, `floor`, `ceil`).
+  Covered by `jq` for now.
+- Comparison chains (`1 < $x < 10`).  Comparison stays binary.
+
 ### Unary predicates
 
 - `true OPERAND` — tests whether the operand equals the string
@@ -345,8 +415,9 @@ boolean operand.  Evaluation short-circuits: `true or X` never
 evaluates `X`, and `false and X` never evaluates `X`.
 
 Precedence, loosest to tightest: `or` → `and` → `not` →
-comparison → unary predicate → `|>` → primary.  Parentheses
-`(` `)` override precedence:
+comparison → additive (`+`, `-`) → multiplicative (`*`, `/`,
+`%`) → unary predicate → unary negate (`-`) → `|>` → primary.
+Parentheses `(` `)` override precedence:
 
 ```
 if $count > 0 and $count < 100 { ... }
