@@ -702,12 +702,19 @@ func structuredShape(v Value) string {
 	}
 }
 
-// evalInterpString walks an InterpStringExpr's segments, evaluates
-// each expression segment to a scalar, and concatenates the
-// results with the literal runs into a single StringValue.  A
-// structured or nil value in an interpolation slot is a type
-// error cited at the interpolation's Loc — the language will not
-// guess a string shape for a record.
+// evalInterpString walks an InterpStringExpr's segments,
+// evaluates each expression segment, renders it to a string, and
+// concatenates the pieces with the literal runs into a single
+// StringValue.  Scalars render via Value.Scalar (plain text);
+// structured values render as compact one-line JSON — "{"a":1}"
+// or "[1,2,3]" — matching the "str(obj)"/"to_s" convention that
+// Python, Ruby, and JavaScript use for interpolated containers.
+// Nil renders as "null" so the output is always well-formed.
+// Multi-line JSON is deliberately avoided: interpolation is a
+// line-shaped output context (log lines, path construction,
+// flag values) and an indented block in the middle of a line is
+// actively harmful.  Users who want pretty formatting reach for
+// "${[jq "." $r]}" or pipe through jq explicitly.
 func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 	var b strings.Builder
 	for _, seg := range e.Segments {
@@ -719,19 +726,32 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		if v.IsNil() {
-			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation produced null")
-		}
-		if v.IsStructured() {
-			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: cannot splice a structured value (%s) into a string; extract a scalar field first with ${name.path}", structuredShape(v))
-		}
-		s, err := v.Scalar()
+		s, err := renderInterpValue(v)
 		if err != nil {
 			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: %v", err)
 		}
 		b.WriteString(s)
 	}
 	return StringValue(b.String()), nil
+}
+
+// renderInterpValue renders a Value to the string form used when
+// it appears in an interpolation slot.  Scalars use their text
+// form; structured values marshal to compact JSON; nil becomes
+// "null" so a missing field in a format string surfaces as
+// visible "null" text rather than silently vanishing or erroring.
+func renderInterpValue(v Value) (string, error) {
+	if v.IsNil() {
+		return "null", nil
+	}
+	if v.IsStructured() {
+		b, err := json.Marshal(v.Raw())
+		if err != nil {
+			return "", fmt.Errorf("render %s: %v", structuredShape(v), err)
+		}
+		return string(b), nil
+	}
+	return v.Scalar()
 }
 
 // EvalArgs evaluates each Expr in exprs as a command argument and

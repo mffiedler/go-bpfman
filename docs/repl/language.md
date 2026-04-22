@@ -310,9 +310,13 @@ Rules:
   spellings of the same thing is a maintenance tax for readers.
 - Single-quoted strings never interpolate. `'${x}'` is five
   characters, not a lookup of `x`.
-- Structured values in an interpolation slot are a type error:
-  `"${r}"` where `$r` is a record errors rather than pasting a
-  JSON-ish rendering into the string.
+- Structured values render as compact one-line JSON:
+  `"${r}"` where `$r` is `{"a":1,"b":2}` splices that exact text.
+  Arrays render as `[1,2,3]`. Use `${r.path}` to splice a single
+  field instead; use `${[jq "." $r]}` if you want pretty-printed
+  output.
+- Nil renders as `null` so the output string is always
+  well-formed.
 - No escape sequence for `$`, `"`, or any other character. Use
   single quotes if a literal `$` or `${` needs to appear.
 

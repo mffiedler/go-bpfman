@@ -1351,19 +1351,50 @@ func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
 	assert.Equal(t, "/sys/fs/bpf/prog-42/map", got)
 }
 
-func TestEvalExpr_InterpString_StructuredValueRejected(t *testing.T) {
+func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 	s := NewSession()
-	s.Set("r", ValueFromMap(map[string]any{"stdout": "hi", "exit_code": 0}))
+	s.Set("r", ValueFromMap(map[string]any{"exit_code": 0, "stdout": "hi"}))
 	e := &InterpStringExpr{
 		Segments: []InterpStringSegment{
 			{Expr: &VarRefExpr{Name: "r"}},
 		},
 	}
-	_, err := EvalExpr(e, evalEnv(s))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot splice")
-	assert.Contains(t, err.Error(), "object", "error should name the shape, not 'unknown'")
-	assert.NotContains(t, err.Error(), "a unknown", "grammar: 'a' before 'unknown' is wrong")
+	v, err := EvalExpr(e, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	// json.Marshal sorts map keys alphabetically, so the output is
+	// stable regardless of the input map's iteration order.  One
+	// line, no indentation.
+	assert.Equal(t, `{"exit_code":0,"stdout":"hi"}`, got)
+}
+
+func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{float64(1), float64(2), float64(3)}))
+	e := &InterpStringExpr{
+		Segments: []InterpStringSegment{
+			{Literal: "items="},
+			{Expr: &VarRefExpr{Name: "xs"}},
+		},
+	}
+	v, err := EvalExpr(e, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "items=[1,2,3]", got)
+}
+
+func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
+	// A nil Value in the interpolation slot renders as "null" so
+	// the output string stays well-formed.  We exercise the
+	// helper directly because nothing in the expression grammar
+	// produces a bare nil Value today — VarRefExpr with a missing
+	// path errors at lookup time rather than falling through to
+	// nil.
+	got, err := renderInterpValue(Value{})
+	require.NoError(t, err)
+	assert.Equal(t, "null", got)
 }
 
 func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
