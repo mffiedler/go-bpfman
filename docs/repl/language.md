@@ -40,6 +40,7 @@ work, see `implementation-notes.md`.
 ```
 program      := { stmt (SEP stmt)* }
 stmt         := let-stmt | if-stmt | foreach-stmt | command-stmt
+              | 'break' | 'continue'
 let-stmt     := 'let' IDENT '=' expr
 if-stmt      := 'if' expr block { 'elif' expr block } [ 'else' block ]
 foreach-stmt := 'foreach' IDENT 'in' expr block
@@ -143,6 +144,21 @@ The loop variable persists after the loop ends, holding the last
 element's value, matching shell-style for-each semantics.  An
 empty list runs the body zero times and leaves the loop variable
 untouched.  Nested `foreach` is legal and iterates naturally.
+
+`break` terminates the nearest enclosing `foreach`; `continue`
+skips the remainder of the current iteration and advances to the
+next element.  Both take no arguments and error at parse time on
+trailing tokens (`break 2` is not supported).  Used outside a
+`foreach`, either keyword is a runtime error citing the source
+location.
+
+```
+foreach p in [bpfman program list -o json] {
+    if $p.record.meta.stale eq true { continue }
+    if $p.record.program_id eq $target        { break }
+    assert ok bpfman program get $p.record.program_id
+}
+```
 
 ### Plain commands
 

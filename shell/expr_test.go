@@ -664,6 +664,160 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	assert.Equal(t, 2, seen, "loop must stop at the first failing iteration")
 }
 
+func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["a","b","c","d"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	var captured []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			scalar := args[0].(ScalarValueArg)
+			captured = append(captured, scalar.Text)
+			return Value{}, nil
+		},
+	}
+	// foreach x in $xs {
+	//   if $x eq c { break }
+	//   $x
+	// }
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "x",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{
+				&IfStmt{
+					Cond: &BinaryExpr{
+						Left:  &VarRefExpr{Name: "x"},
+						Op:    "eq",
+						Right: &LiteralExpr{Text: "c"},
+					},
+					Then: []Stmt{&BreakStmt{}},
+				},
+				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "x"}}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, []string{"a", "b"}, captured)
+}
+
+func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["a","b","c","d"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	var captured []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			scalar := args[0].(ScalarValueArg)
+			captured = append(captured, scalar.Text)
+			return Value{}, nil
+		},
+	}
+	// foreach x in $xs {
+	//   if $x eq b { continue }
+	//   $x
+	// }
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "x",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{
+				&IfStmt{
+					Cond: &BinaryExpr{
+						Left:  &VarRefExpr{Name: "x"},
+						Op:    "eq",
+						Right: &LiteralExpr{Text: "b"},
+					},
+					Then: []Stmt{&ContinueStmt{}},
+				},
+				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "x"}}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, []string{"a", "c", "d"}, captured)
+}
+
+func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
+	// Nested foreach: break in the inner loop must not escape
+	// the outer loop.
+	s := NewSession()
+	outer, err := ValueFromJSON([]byte(`[1,2,3]`))
+	require.NoError(t, err)
+	inner, err := ValueFromJSON([]byte(`["x","y","z"]`))
+	require.NoError(t, err)
+	s.Set("outer", outer)
+	s.Set("inner", inner)
+	var captured []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			scalar := args[0].(ScalarValueArg)
+			captured = append(captured, scalar.Text)
+			return Value{}, nil
+		},
+	}
+	// foreach a in $outer {
+	//   foreach b in $inner {
+	//     if $b eq y { break }
+	//     $b
+	//   }
+	//   $a
+	// }
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "a",
+			List: &VarRefExpr{Name: "outer"},
+			Body: []Stmt{
+				&ForEachStmt{
+					Name: "b",
+					List: &VarRefExpr{Name: "inner"},
+					Body: []Stmt{
+						&IfStmt{
+							Cond: &BinaryExpr{
+								Left:  &VarRefExpr{Name: "b"},
+								Op:    "eq",
+								Right: &LiteralExpr{Text: "y"},
+							},
+							Then: []Stmt{&BreakStmt{}},
+						},
+						&CommandStmt{Args: []Expr{&VarRefExpr{Name: "b"}}},
+					},
+				},
+				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "a"}}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	// For each outer iteration: inner emits "x", breaks on "y",
+	// then the outer body emits the outer value.
+	assert.Equal(t, []string{"x", "1", "x", "2", "x", "3"}, captured)
+}
+
+func TestEvalProgram_Break_OutsideLoopIsError(t *testing.T) {
+	s := NewSession()
+	env := &Env{Session: s}
+	prog := &Program{Stmts: []Stmt{&BreakStmt{}}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "break")
+	assert.Contains(t, err.Error(), "outside")
+}
+
+func TestEvalProgram_Continue_OutsideLoopIsError(t *testing.T) {
+	s := NewSession()
+	env := &Env{Session: s}
+	prog := &Program{Stmts: []Stmt{&ContinueStmt{}}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "continue")
+	assert.Contains(t, err.Error(), "outside")
+}
+
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
 	s := NewSession()
 	env := &Env{

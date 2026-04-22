@@ -58,10 +58,25 @@ type ForEachStmt struct {
 	Loc
 }
 
-func (*LetStmt) stmtNode()     {}
-func (*IfStmt) stmtNode()      {}
-func (*CommandStmt) stmtNode() {}
-func (*ForEachStmt) stmtNode() {}
+// BreakStmt terminates the nearest enclosing ForEachStmt. Outside
+// a loop it is a runtime error.
+type BreakStmt struct {
+	Loc
+}
+
+// ContinueStmt skips the remainder of the current ForEachStmt
+// iteration and advances to the next element.  Outside a loop it
+// is a runtime error.
+type ContinueStmt struct {
+	Loc
+}
+
+func (*LetStmt) stmtNode()      {}
+func (*IfStmt) stmtNode()       {}
+func (*CommandStmt) stmtNode()  {}
+func (*ForEachStmt) stmtNode()  {}
+func (*BreakStmt) stmtNode()    {}
+func (*ContinueStmt) stmtNode() {}
 
 // Parse turns a token stream into a *Program. Every parse error
 // carries a source location derived from the offending token.
@@ -143,9 +158,48 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseLetStmt()
 		case "foreach":
 			return p.parseForEachStmt()
+		case "break":
+			return p.parseBreakStmt()
+		case "continue":
+			return p.parseContinueStmt()
 		}
 	}
 	return p.parseCommandStmt()
+}
+
+func (p *parser) parseBreakStmt() (Stmt, error) {
+	t := p.advance()
+	if err := p.rejectTrailingArgs("break"); err != nil {
+		return nil, err
+	}
+	return &BreakStmt{Loc: t.Loc}, nil
+}
+
+func (p *parser) parseContinueStmt() (Stmt, error) {
+	t := p.advance()
+	if err := p.rejectTrailingArgs("continue"); err != nil {
+		return nil, err
+	}
+	return &ContinueStmt{Loc: t.Loc}, nil
+}
+
+// rejectTrailingArgs errors when a bare-keyword statement
+// (break, continue) has extra tokens on the same statement
+// before the next separator or block marker.  Silent tolerance
+// would let "break 2" tokenise as if "break" were a command,
+// which is not what the user wrote.
+func (p *parser) rejectTrailingArgs(name string) error {
+	if p.atEOF() {
+		return nil
+	}
+	t := p.peek()
+	if t.Kind == TokenSep {
+		return nil
+	}
+	if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+		return nil
+	}
+	return locErrorf(t.Loc, "%s takes no arguments; got %q", name, t.Text)
 }
 
 func (p *parser) parseLetStmt() (Stmt, error) {

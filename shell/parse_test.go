@@ -336,6 +336,51 @@ func TestParse_ForEach_Errors(t *testing.T) {
 	}
 }
 
+func TestParse_Break_Simple(t *testing.T) {
+	prog, err := parseSource(t, "foreach x in $xs { break }")
+	require.NoError(t, err)
+	fe := firstStmt(t, prog).(*ForEachStmt)
+	require.Len(t, fe.Body, 1)
+	_, ok := fe.Body[0].(*BreakStmt)
+	assert.True(t, ok, "expected BreakStmt, got %T", fe.Body[0])
+}
+
+func TestParse_Continue_Simple(t *testing.T) {
+	prog, err := parseSource(t, "foreach x in $xs { continue }")
+	require.NoError(t, err)
+	fe := firstStmt(t, prog).(*ForEachStmt)
+	require.Len(t, fe.Body, 1)
+	_, ok := fe.Body[0].(*ContinueStmt)
+	assert.True(t, ok, "expected ContinueStmt, got %T", fe.Body[0])
+}
+
+func TestParse_Break_InsideIf(t *testing.T) {
+	prog, err := parseSource(t, "foreach x in $xs {\n  if $x eq skip { break }\n  dump x\n}")
+	require.NoError(t, err)
+	fe := firstStmt(t, prog).(*ForEachStmt)
+	require.Len(t, fe.Body, 2)
+	ifStmt, ok := fe.Body[0].(*IfStmt)
+	require.True(t, ok)
+	require.Len(t, ifStmt.Then, 1)
+	_, ok = ifStmt.Then[0].(*BreakStmt)
+	assert.True(t, ok)
+}
+
+func TestParse_Break_RejectsArguments(t *testing.T) {
+	// break and continue take no arguments — a trailing token
+	// is a parse-time error so "break 2"-style multi-level
+	// escapes don't silently tokenise as a command.
+	_, err := parseSource(t, "foreach x in $xs { break 2 }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "break")
+}
+
+func TestParse_Continue_RejectsArguments(t *testing.T) {
+	_, err := parseSource(t, "foreach x in $xs { continue now }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "continue")
+}
+
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
 	// A syntax error inside [ ... ] surfaces at the outer Parse
 	// call: eager inner parsing is a deliberate behavioural change

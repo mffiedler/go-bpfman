@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -150,15 +151,55 @@ func isNumericOp(op string) bool {
 
 // EvalProgram executes each statement in prog against env in order.
 // The first error halts evaluation and is returned to the caller,
-// which decorates it with source-file context.
+// which decorates it with source-file context.  A break or
+// continue that escapes every enclosing ForEachStmt is reported
+// as a runtime error rather than silently swallowed.
 func EvalProgram(prog *Program, env *Env) error {
 	for _, stmt := range prog.Stmts {
-		if err := evalStmt(stmt, env); err != nil {
+		err := evalStmt(stmt, env)
+		switch {
+		case err == nil:
+			continue
+		case errors.Is(err, errBreak):
+			return locErrorf(stmtLoc(stmt), "break outside a foreach loop")
+		case errors.Is(err, errContinue):
+			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
+		default:
 			return err
 		}
 	}
 	return nil
 }
+
+// stmtLoc returns the Loc on any Stmt variant.  Used by
+// EvalProgram to cite a source location when break / continue
+// reach the top level without being caught by a loop.
+func stmtLoc(s Stmt) Loc {
+	switch v := s.(type) {
+	case *LetStmt:
+		return v.Loc
+	case *IfStmt:
+		return v.Loc
+	case *CommandStmt:
+		return v.Loc
+	case *ForEachStmt:
+		return v.Loc
+	case *BreakStmt:
+		return v.Loc
+	case *ContinueStmt:
+		return v.Loc
+	}
+	return Loc{}
+}
+
+// errBreak and errContinue are sentinel errors that carry a
+// ForEachStmt control-flow signal up through evalStmt and its
+// helpers.  evalForEachStmt catches them; anything else that sees
+// them converts to a user-facing "outside loop" error.
+var (
+	errBreak    = fmt.Errorf("break outside a foreach loop")
+	errContinue = fmt.Errorf("continue outside a foreach loop")
+)
 
 func evalStmt(stmt Stmt, env *Env) error {
 	switch s := stmt.(type) {
@@ -178,6 +219,10 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalCommandStmt(s, env)
 	case *ForEachStmt:
 		return evalForEachStmt(s, env)
+	case *BreakStmt:
+		return errBreak
+	case *ContinueStmt:
+		return errContinue
 	default:
 		return fmt.Errorf("unknown statement type %T", stmt)
 	}
@@ -202,10 +247,19 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	if !ok {
 		return locErrorf(s.Loc, "foreach: expected a list, got %s", v.Kind())
 	}
+iter:
 	for _, elem := range list {
 		env.Session.Set(s.Name, ValueFromAny(elem))
 		for _, stmt := range s.Body {
-			if err := evalStmt(stmt, env); err != nil {
+			err := evalStmt(stmt, env)
+			switch {
+			case err == nil:
+				continue
+			case errors.Is(err, errBreak):
+				break iter
+			case errors.Is(err, errContinue):
+				continue iter
+			default:
 				return err
 			}
 		}
