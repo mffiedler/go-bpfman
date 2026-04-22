@@ -483,6 +483,9 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 		Session:          session,
 		ExecCommand:      makeExecCommand(ctx, cli, mgr, session, loc),
 		ExecSubstitution: makeExecSubstitution(ctx, cli, mgr, session, loc),
+		PrintResult: func(v shell.Value) error {
+			return writeValue(cli, v)
+		},
 	}
 
 	if err := shell.EvalProgram(prog, env); err != nil {

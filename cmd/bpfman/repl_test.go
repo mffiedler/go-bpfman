@@ -324,18 +324,18 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 
 func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	// A '#' inside double quotes should not be treated as a
-	// comment. The tokeniser preserves it, so the dispatched
-	// command should include the hash.
+	// comment.  A quoted literal at statement position is an
+	// expression statement and is auto-printed, so the hash must
+	// appear in stdout to prove it survived tokenisation.
 	input := "\"bogus#notcomment\"\n"
-	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	// The unknown command error should contain the hash character,
-	// proving it was not stripped as a comment.
-	assert.Contains(t, errBuf.String(), "bogus#notcomment")
+	assert.Empty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "bogus#notcomment")
 }
 
 func TestReplComplete_VarsCommand(t *testing.T) {

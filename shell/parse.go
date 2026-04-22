@@ -222,7 +222,55 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseContinueStmt()
 		}
 	}
+	if leadsExpression(t) {
+		return p.parseExprStmt()
+	}
 	return p.parseCommandStmt()
+}
+
+// leadsExpression reports whether a token can only start an
+// expression at statement position.  These tokens would otherwise
+// be mis-routed into the command-statement grammar and produce
+// unhelpful errors (unknown command names that are actually
+// variable references, quoted literals, bracketed expressions,
+// etc.).  Bare WORDs are excluded because they are the normal
+// command-name form; the few WORD texts that can only appear in
+// expression position ("(", "not", and the unary predicates) are
+// listed explicitly.
+func leadsExpression(t Token) bool {
+	switch t.Kind {
+	case TokenVarRef, TokenCmdSub, TokenQuoted, TokenAdapterRef:
+		return true
+	case TokenWord:
+		switch t.Text {
+		case "(", "not", "not-empty", "true", "false":
+			return true
+		}
+	}
+	return false
+}
+
+// parseExprStmt consumes the current statement as an expression
+// and wraps it in an ExprStmt.  The tokens between the current
+// cursor and the next separator (or end-of-input) are collected
+// and handed to parseExpression verbatim, so every construct the
+// expression grammar understands -- comparisons, logical
+// combinators, threading, unary predicates, parens -- works
+// unchanged at the top level.
+func (p *parser) parseExprStmt() (Stmt, error) {
+	startLoc := p.peek().Loc
+	tokens, err := p.takeStmtTokens(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, locErrorf(startLoc, "empty expression statement")
+	}
+	expr, err := parseExpression(tokens)
+	if err != nil {
+		return nil, err
+	}
+	return &ExprStmt{Expr: expr, Loc: startLoc}, nil
 }
 
 func (p *parser) parseBreakStmt() (Stmt, error) {

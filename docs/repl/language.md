@@ -40,7 +40,8 @@ work, see `implementation-notes.md`.
 ```
 program      := { stmt (SEP stmt)* }
 stmt         := let-stmt | if-stmt | foreach-stmt | retry-stmt
-              | command-stmt | 'break' | 'continue'
+              | expr-stmt | command-stmt | 'break' | 'continue'
+expr-stmt    := expr    (* when the first token leads expression *)
 let-stmt     := 'let' IDENT '=' expr
 if-stmt      := 'if' expr block { 'elif' expr block } [ 'else' block ]
 foreach-stmt := 'foreach' IDENT 'in' expr block
@@ -72,6 +73,28 @@ SEP          := newline | ';'
 
 Comments begin with `#` (outside quoted strings) and run to the end
 of the line.
+
+A line is parsed as an **expression statement** when its first
+token can only start an expression: `$var`, `[cmd]` or `[expr]`,
+`"string"`, `'string'`, `(`, `not`, `not-empty`, `true`, or
+`false`.  The whole line is then parsed against the expression
+grammar and, at the REPL prompt, its resulting value is
+auto-printed.  Scripts run by `source` or `-f` auto-print too --
+bare expression lines are only ever written intentionally.  Every
+other leading token (bare words, keywords) routes to the command
+grammar.
+
+```
+$prog                    # prints the binding
+$prog.record.program_id  # prints the scalar
+$prog.kind eq "xdp"      # prints a boolean
+[1 eq 1]                 # prints true
+(not-empty $name)        # prints a boolean
+```
+
+To print a bare literal (or an expression whose first token does
+not lead an expression), wrap it: `[1 eq 1]`, `["hello"]`.  To run
+a command, start the line with its name as usual.
 
 ## Statements
 

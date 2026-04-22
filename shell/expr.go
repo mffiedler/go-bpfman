@@ -162,6 +162,14 @@ type Env struct {
 	// be non-nil or the evaluator reports an error.
 	ExecSubstitution func(args []Arg) (Value, error)
 
+	// PrintResult is called when a top-level ExprStmt produces a
+	// value.  It is the "REPL-style auto-print" hook: typing "$x"
+	// or "$x eq 5" at the prompt lands here.  A nil callback
+	// discards the value silently, which is the right behaviour
+	// for embedded evaluators and for tests that do not care
+	// about side output.
+	PrintResult func(Value) error
+
 	// retryStart is the time when the current retry loop began,
 	// or the zero value when no retry is active.  TimeoutExpr
 	// reads it to decide whether a duration has elapsed.
@@ -279,6 +287,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalIfStmt(s, env)
 	case *CommandStmt:
 		return evalCommandStmt(s, env)
+	case *ExprStmt:
+		return evalExprStmt(s, env)
 	case *ForEachStmt:
 		return evalForEachStmt(s, env)
 	case *RetryStmt:
@@ -467,6 +477,25 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	}
 	_, err = env.ExecCommand(args)
 	return err
+}
+
+// evalExprStmt evaluates a top-level expression statement and, when
+// a PrintResult callback is wired, forwards the result to it.  This
+// is how "$x" and "$x eq 5" typed at the prompt get their
+// auto-printed values: the parser wraps expression-led statements
+// in ExprStmt, and the REPL's PrintResult handler renders the
+// value through the same path dump uses.  When PrintResult is nil
+// (embedded use, tests) the value is evaluated for side effects
+// and discarded, matching Python's script-mode semantics.
+func evalExprStmt(s *ExprStmt, env *Env) error {
+	v, err := EvalExpr(s.Expr, env)
+	if err != nil {
+		return err
+	}
+	if env.PrintResult == nil {
+		return nil
+	}
+	return env.PrintResult(v)
 }
 
 // EvalExpr evaluates expr as a value-producing expression and

@@ -140,16 +140,62 @@ func TestParse_AliasKeepsAssignAsLiteral(t *testing.T) {
 	assert.Equal(t, "=", lit.Text)
 }
 
-func TestParse_VarRefOnlyCommand(t *testing.T) {
+func TestParse_VarRefOnlyExprStmt(t *testing.T) {
+	// A leading varref is treated as an expression statement so the
+	// evaluator can auto-print its value at the REPL prompt.
 	prog, err := parseSource(t, "$prog.id")
 	require.NoError(t, err)
-	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	es, ok := firstStmt(t, prog).(*ExprStmt)
 	require.True(t, ok)
-	require.Len(t, cmd.Args, 1)
-	ref, ok := cmd.Args[0].(*VarRefExpr)
+	ref, ok := es.Expr.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "prog", ref.Name)
 	assert.Equal(t, "id", ref.Path)
+}
+
+func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
+	// Each leading token in the trigger set must route to
+	// ExprStmt, not CommandStmt.  Bare words keep routing to
+	// CommandStmt.
+	cases := []struct {
+		name  string
+		input string
+		want  string // "expr" or "command"
+	}{
+		{"varref", "$x", "expr"},
+		{"varref with path", "$x.a.b", "expr"},
+		{"varref with comparison", "$x eq 5", "expr"},
+		{"varref with thread", "$x |> jq \".\"", "expr"},
+		{"cmdsub", "[1 eq 1]", "expr"},
+		{"quoted", "\"hello\"", "expr"},
+		{"single-quoted", "'hello'", "expr"},
+		{"paren expression", "(1 eq 1)", "expr"},
+		{"not prefix", "not $x", "expr"},
+		{"unary pred with operand", "not-empty $x", "expr"},
+		{"bare word", "foo", "command"},
+		{"bare number", "1", "command"},
+		{"command invocation", "bpfman program list", "command"},
+		{"keyword let", "let x = 1", "command"}, // actually LetStmt, not CommandStmt
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog, err := parseSource(t, tc.input)
+			require.NoError(t, err)
+			require.NotEmpty(t, prog.Stmts)
+			stmt := prog.Stmts[0]
+			switch tc.want {
+			case "expr":
+				_, ok := stmt.(*ExprStmt)
+				assert.True(t, ok, "expected ExprStmt, got %T", stmt)
+			case "command":
+				// Either a CommandStmt or a keyword-led statement
+				// (LetStmt, IfStmt, ...) -- anything that is not
+				// ExprStmt is acceptable.
+				_, isExpr := stmt.(*ExprStmt)
+				assert.False(t, isExpr, "expected non-ExprStmt, got %T", stmt)
+			}
+		})
+	}
 }
 
 func TestParse_EmptyProgram(t *testing.T) {
