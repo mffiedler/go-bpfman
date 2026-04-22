@@ -28,35 +28,40 @@ work, see `implementation-notes.md`.
 
 - A general-purpose shell. No pipelines, redirects, globbing, or job
   control.
-- A full programming language. No loops, user-defined functions,
-  closures, or modules.
+- A full programming language. No `while`, no user-defined
+  functions, no closures, no modules.  `foreach` iterates a block
+  over an already-materialised list (typically produced by `jq`)
+  — it does not cover open-ended polling, which is a separate
+  future primitive.
 - A foreign runtime (Lua, TCL, Python, Starlark).
 
 ## Grammar
 
 ```
-program    := { stmt (SEP stmt)* }
-stmt       := let-stmt | if-stmt | command-stmt
-let-stmt   := 'let' IDENT '=' expr
-if-stmt    := 'if' expr block { 'elif' expr block } [ 'else' block ]
-block      := '{' { stmt (SEP stmt)* } '}'
-command    := IDENT arg*
-arg        := WORD | QUOTED | varref | cmdsub | adapter
+program      := { stmt (SEP stmt)* }
+stmt         := let-stmt | if-stmt | foreach-stmt | command-stmt
+let-stmt     := 'let' IDENT '=' expr
+if-stmt      := 'if' expr block { 'elif' expr block } [ 'else' block ]
+foreach-stmt := 'foreach' IDENT 'in' expr block
+block        := '{' { stmt (SEP stmt)* } '}'
+command      := IDENT arg*
+arg          := WORD | QUOTED | varref | cmdsub | adapter
 
-expr       := primary | unary | binary
-primary    := literal | varref | cmdsub
-unary      := UNARY-PRED primary
-binary     := primary BINOP primary
-literal    := WORD | QUOTED
-varref     := '$' IDENT path? | '${' IDENT path '}'
-cmdsub     := '[' command ']'
-path       := ('.' IDENT | '[' DIGITS ']')+
-adapter    := 'file' ':' varref
+expr         := primary | unary | binary | thread
+primary      := literal | varref | cmdsub
+unary        := UNARY-PRED primary
+binary       := primary BINOP primary
+thread       := expr '|>' command
+literal      := WORD | QUOTED
+varref       := '$' IDENT path? | '${' IDENT path '}'
+cmdsub       := '[' command ']'
+path         := ('.' IDENT | '[' DIGITS ']')+
+adapter      := 'file' ':' varref
 
-BINOP      := 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
-            | '==' | '!=' | '<' | '<=' | '>' | '>='
-UNARY-PRED := 'true' | 'false' | 'not-empty'
-SEP        := newline | ';'
+BINOP        := 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
+              | '==' | '!=' | '<' | '<=' | '>' | '>='
+UNARY-PRED   := 'true' | 'false' | 'not-empty'
+SEP          := newline | ';'
 ```
 
 Comments begin with `#` (outside quoted strings) and run to the end
@@ -110,6 +115,34 @@ if $prog.record.status.kernel_seen eq true {
     require fail
 }
 ```
+
+### foreach
+
+```
+foreach NAME in EXPR { STMTS }
+```
+
+Iterates a block over the elements of a list.  `EXPR` is
+evaluated once, and the resulting value must be a structured
+list; anything else (a scalar, a map, a nil value) is a runtime
+error.  For each element, `NAME` is bound to that element in the
+session and the body runs; an error from any iteration halts the
+loop and propagates.
+
+```
+foreach p in [bpfman program list -o json] {
+    assert ok bpfman program get $p.record.program_id
+}
+
+foreach item in [jq "." '{"items":[{"v":1},{"v":2},{"v":3}]}'] |> jq ".items" {
+    dump item.v
+}
+```
+
+The loop variable persists after the loop ends, holding the last
+element's value, matching shell-style for-each semantics.  An
+empty list runs the body zero times and leaves the loop variable
+untouched.  Nested `foreach` is legal and iterates naturally.
 
 ### Plain commands
 

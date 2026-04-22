@@ -262,6 +262,80 @@ func TestParse_Thread_RejectsLeadingThread(t *testing.T) {
 	require.Error(t, err)
 }
 
+// --- foreach ------------------------------------------------------
+
+func TestParse_ForEach_Basic(t *testing.T) {
+	prog, err := parseSource(t, "foreach p in $list { dump p }")
+	require.NoError(t, err)
+	fe, ok := firstStmt(t, prog).(*ForEachStmt)
+	require.True(t, ok, "expected ForEachStmt, got %T", prog.Stmts[0])
+	assert.Equal(t, "p", fe.Name)
+	ref, ok := fe.List.(*VarRefExpr)
+	require.True(t, ok)
+	assert.Equal(t, "list", ref.Name)
+	require.Len(t, fe.Body, 1)
+	_, ok = fe.Body[0].(*CommandStmt)
+	assert.True(t, ok)
+}
+
+func TestParse_ForEach_ListFromPipe(t *testing.T) {
+	// Ensure the list expression can be an arbitrary expression,
+	// including a threading pipeline like [bpfman ... ] |> jq "..."
+	prog, err := parseSource(t, "foreach p in $raw |> jq \".items\" { dump p }")
+	require.NoError(t, err)
+	fe, ok := firstStmt(t, prog).(*ForEachStmt)
+	require.True(t, ok)
+	_, ok = fe.List.(*ThreadExpr)
+	assert.True(t, ok, "list expression should be a ThreadExpr, got %T", fe.List)
+}
+
+func TestParse_ForEach_MultiStatementBody(t *testing.T) {
+	input := "foreach p in $items {\n  let x = $p.name\n  dump x\n}"
+	prog, err := parseSource(t, input)
+	require.NoError(t, err)
+	fe, ok := firstStmt(t, prog).(*ForEachStmt)
+	require.True(t, ok)
+	require.Len(t, fe.Body, 2)
+	_, ok = fe.Body[0].(*LetStmt)
+	assert.True(t, ok)
+	_, ok = fe.Body[1].(*CommandStmt)
+	assert.True(t, ok)
+}
+
+func TestParse_ForEach_Nested(t *testing.T) {
+	input := "foreach a in $xs {\n  foreach b in $ys {\n    dump b\n  }\n}"
+	prog, err := parseSource(t, input)
+	require.NoError(t, err)
+	outer, ok := firstStmt(t, prog).(*ForEachStmt)
+	require.True(t, ok)
+	require.Len(t, outer.Body, 1)
+	inner, ok := outer.Body[0].(*ForEachStmt)
+	require.True(t, ok)
+	assert.Equal(t, "b", inner.Name)
+}
+
+func TestParse_ForEach_Errors(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"missing identifier", "foreach in $list { dump x }", "foreach requires"},
+		{"invalid identifier", "foreach 1bad in $list { dump x }", "invalid variable name"},
+		{"missing in", "foreach p $list { dump x }", "foreach requires 'in'"},
+		{"missing expression", "foreach p in { dump x }", "foreach requires"},
+		{"missing block", "foreach p in $list dump x", "expected '{'"},
+		{"unterminated block", "foreach p in $list { dump x", "unterminated block"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
 	// A syntax error inside [ ... ] surfaces at the outer Parse
 	// call: eager inner parsing is a deliberate behavioural change

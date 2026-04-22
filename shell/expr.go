@@ -176,9 +176,41 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalIfStmt(s, env)
 	case *CommandStmt:
 		return evalCommandStmt(s, env)
+	case *ForEachStmt:
+		return evalForEachStmt(s, env)
 	default:
 		return fmt.Errorf("unknown statement type %T", stmt)
 	}
+}
+
+// evalForEachStmt evaluates the list expression, validates that
+// it is a structured list, and runs the body once per element
+// with the loop variable bound in the Session.  An error from
+// the body halts iteration and propagates unwrapped.  The
+// binding persists after the loop ends, matching shell-style
+// for-each semantics — callers that want the previous value
+// back must save it explicitly.
+func evalForEachStmt(s *ForEachStmt, env *Env) error {
+	v, err := EvalExpr(s.List, env)
+	if err != nil {
+		return err
+	}
+	if v.IsNil() {
+		return locErrorf(s.Loc, "foreach: list expression is null")
+	}
+	list, ok := v.Raw().([]any)
+	if !ok {
+		return locErrorf(s.Loc, "foreach: expected a list, got %s", v.Kind())
+	}
+	for _, elem := range list {
+		env.Session.Set(s.Name, ValueFromAny(elem))
+		for _, stmt := range s.Body {
+			if err := evalStmt(stmt, env); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func evalIfStmt(s *IfStmt, env *Env) error {

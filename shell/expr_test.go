@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -525,6 +526,142 @@ func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 	scalar, ok := out[1].(ScalarValueArg)
 	require.True(t, ok)
 	assert.Equal(t, "piped", scalar.Text)
+}
+
+// --- foreach ------------------------------------------------------
+
+func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["a","b","c"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+
+	var captured []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			require.Len(t, args, 1)
+			scalar, ok := args[0].(ScalarValueArg)
+			require.True(t, ok)
+			captured = append(captured, scalar.Text)
+			return Value{}, nil
+		},
+	}
+
+	// foreach p in $xs { $p }  — the body is a single command
+	// statement whose only arg is the loop variable, so the
+	// runner captures each element's text.
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "p",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{
+				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "p"}}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, []string{"a", "b", "c"}, captured)
+}
+
+func TestEvalProgram_ForEach_LoopVarPersistsAfterLoop(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`[1,2,3]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "i",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	// After the loop, $i should hold the last element.
+	v, ok := s.Get("i")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "3", str)
+}
+
+func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`[]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	callCount := 0
+	env := &Env{
+		Session: s,
+		ExecCommand: func([]Arg) (Value, error) {
+			callCount++
+			return Value{}, nil
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "x",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "body"}}}},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, 0, callCount, "body must not run for an empty list")
+	_, ok := s.Get("x")
+	assert.False(t, ok, "loop variable should not be set when the list is empty")
+}
+
+func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
+	s := NewSession()
+	s.Set("notalist", StringValue("hello"))
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "x",
+			List: &VarRefExpr{Name: "notalist"},
+			Body: []Stmt{},
+		},
+	}}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "foreach")
+}
+
+func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["a","b","c"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	seen := 0
+	boom := errors.New("boom")
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg) (Value, error) {
+			seen++
+			if seen == 2 {
+				return Value{}, boom
+			}
+			return Value{}, nil
+		},
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "x",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "x"}}}},
+		},
+	}}
+	evErr := EvalProgram(prog, env)
+	require.Error(t, evErr)
+	assert.Same(t, boom, evErr, "body error should propagate unwrapped")
+	assert.Equal(t, 2, seen, "loop must stop at the first failing iteration")
 }
 
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {

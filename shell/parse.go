@@ -46,9 +46,22 @@ type CommandStmt struct {
 	Loc
 }
 
+// ForEachStmt iterates a block over the elements of a list.  At
+// eval time List is evaluated to a Value; it must be a structured
+// list, and each element is bound to Name in the Session for the
+// duration of its iteration.  The binding persists after the loop
+// ends, matching shell-style for-each semantics.
+type ForEachStmt struct {
+	Name string
+	List Expr
+	Body []Stmt
+	Loc
+}
+
 func (*LetStmt) stmtNode()     {}
 func (*IfStmt) stmtNode()      {}
 func (*CommandStmt) stmtNode() {}
+func (*ForEachStmt) stmtNode() {}
 
 // Parse turns a token stream into a *Program. Every parse error
 // carries a source location derived from the offending token.
@@ -128,6 +141,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseIfStmt()
 		case "let":
 			return p.parseLetStmt()
+		case "foreach":
+			return p.parseForEachStmt()
 		}
 	}
 	return p.parseCommandStmt()
@@ -211,6 +226,62 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		return nil, err
 	}
 	return &CommandStmt{Args: args, Loc: startLoc}, nil
+}
+
+func (p *parser) parseForEachStmt() (Stmt, error) {
+	feTok := p.advance() // "foreach"
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return nil, locErrorf(feTok.Loc, "foreach requires: foreach <name> in <expr> { ... }")
+	}
+	nameTok := p.advance()
+	name := nameTok.Text
+	if name == "in" {
+		return nil, locErrorf(nameTok.Loc, "foreach requires a variable name before 'in'")
+	}
+	if !IsIdent(name) {
+		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
+	}
+	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "in" {
+		return nil, locErrorf(feTok.Loc, "foreach requires 'in' after the loop variable")
+	}
+	p.advance() // "in"
+	listTokens, err := p.takeUntilOpenBrace()
+	if err != nil {
+		return nil, err
+	}
+	if len(listTokens) == 0 {
+		return nil, locErrorf(feTok.Loc, "foreach requires: foreach <name> in <expr> { ... }")
+	}
+	list, err := parseExpression(listTokens)
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &ForEachStmt{Name: name, List: list, Body: body, Loc: feTok.Loc}, nil
+}
+
+// takeUntilOpenBrace collects tokens up to (but not including) the
+// next '{'.  Separator tokens inside the range are skipped so
+// multi-line list expressions work.  Returns an error if no '{'
+// appears before EOF.
+func (p *parser) takeUntilOpenBrace() ([]Token, error) {
+	var buf []Token
+	for !p.atEOF() {
+		t := p.peek()
+		if t.Kind == TokenSep {
+			p.pos++
+			continue
+		}
+		if t.Kind == TokenWord && t.Text == "{" {
+			return buf, nil
+		}
+		buf = append(buf, t)
+		p.pos++
+	}
+	return nil, fmt.Errorf("expected '{' after expression")
 }
 
 func (p *parser) parseIfStmt() (Stmt, error) {
