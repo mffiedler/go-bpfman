@@ -431,156 +431,187 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 	return stmts, nil
 }
 
-// parseExpression parses the expression used by let RHS and
-// if/elif conditions.  Precedence, loosest to tightest:
+// parseExpression parses an expression via a cursor-based
+// recursive-descent parser.  Each precedence level has its own
+// method, loosest to tightest:
 //
-//  1. Binary comparison (eq, ne, ==, < ...): a single top-level op
-//     token splits the slice into two sub-expressions, each of
-//     which is parsed recursively.
-//  2. Unary predicate (true, false, not-empty): a pred at the head
-//     consumes the remainder of the slice as its operand.
-//  3. Pipe chain (|): a primary followed by one or more
-//     '|' command-call segments; left-associative.
-//  4. Primary: a single token — literal, varref, adapter, or
-//     command substitution.
+//   parseComparison   -- binary comparison (eq, ne, <, >= ...)
+//   parseUnaryOr      -- unary predicate (not-empty, true, false)
+//   parseThread       -- threading chain (|>)
+//   parseTerm         -- primary token (literal, varref, adapter,
+//                                       cmdsub)
 //
-// Binary operators appear at most once per expression; they live
-// outside any thread chain.  Threads are only recognised in
-// expression position (let RHS, if/elif conditions, and cmdsub
-// inner text that itself reaches this parser), never in a
-// CommandStmt's argument list.
+// Each level calls the next-tighter level for its operands and
+// loops for any left-associative operator of its own.  The shape
+// makes errors self-locating: a mismatched token triggers an
+// error from the level that was expecting something else, and
+// trailing tokens after a complete expression get a single
+// "unexpected token" message at the outer call.
 func parseExpression(tokens []Token) (Expr, error) {
 	tokens = stripSeps(tokens)
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty expression")
 	}
-
-	// Level 1: scan for a top-level binary operator.  A binary
-	// op must have at least one token on each side.  Pipes are
-	// tighter, so a binary op token sitting anywhere in the
-	// slice is necessarily the outermost operator.
-	for i := 1; i < len(tokens)-1; i++ {
-		op, ok := binaryOpFromToken(tokens[i])
-		if !ok {
-			continue
-		}
-		left, err := parseExpression(tokens[:i])
-		if err != nil {
-			return nil, err
-		}
-		right, err := parseExpression(tokens[i+1:])
-		if err != nil {
-			return nil, err
-		}
-		return &BinaryExpr{Left: left, Op: op, Right: right, Loc: tokens[0].Loc}, nil
-	}
-
-	// Level 2: unary predicate prefix.  Only matches when the
-	// first token is a recognised pred word AND the remainder
-	// is a single primary; multi-token operands (e.g. a thread
-	// chain) aren't supported for unary preds today because no
-	// use case needs it.
-	if len(tokens) == 2 && !containsThread(tokens) {
-		pred, ok := unaryPredFromToken(tokens[0])
-		if !ok {
-			return nil, locErrorf(tokens[0].Loc, "expected unary predicate as first operand, got %q", tokens[0].Text)
-		}
-		operand, err := parsePrimary(tokens[1])
-		if err != nil {
-			return nil, err
-		}
-		return &UnaryExpr{Pred: pred, Operand: operand, Loc: tokens[0].Loc}, nil
-	}
-	if len(tokens) >= 2 {
-		if pred, ok := unaryPredFromToken(tokens[0]); ok && !containsThread(tokens) {
-			return nil, locErrorf(tokens[0].Loc, "unary predicate %q takes a single operand", pred)
-		}
-	}
-
-	// Level 3: thread chain.  If there's at least one thread token,
-	// split on them and fold left-to-right.
-	if containsThread(tokens) {
-		return parseThreadChain(tokens)
-	}
-
-	// Level 4: a single primary.  Anything else is an arity
-	// error left over from the binary/unary grammar.
-	if len(tokens) == 1 {
-		return parsePrimary(tokens[0])
-	}
-	return nil, locErrorf(tokens[0].Loc, "expression has %d tokens; expected primary, unary, binary, or thread chain", len(tokens))
-}
-
-// containsThread reports whether tokens has a TokenThread anywhere in
-// it. Used by parseExpression to decide between the legacy
-// primary/unary/binary paths and a thread chain.
-func containsThread(tokens []Token) bool {
-	for _, t := range tokens {
-		if t.Kind == TokenThread {
-			return true
-		}
-	}
-	return false
-}
-
-// parseThreadChain builds a left-associative ThreadExpr tree from a
-// token slice that contains at least one TokenThread.  The first
-// segment (before the first '|') must be a single primary; each
-// subsequent segment is a command call (one or more tokens
-// parsed as primary Exprs) whose arguments will receive the
-// running pipeline value as their last element at eval time.
-func parseThreadChain(tokens []Token) (Expr, error) {
-	segments, threadLocs, err := splitThreadSegments(tokens)
+	ep := &exprParser{tokens: tokens}
+	e, err := ep.parseComparison()
 	if err != nil {
 		return nil, err
 	}
-	if len(segments[0]) != 1 {
-		loc := tokens[0].Loc
-		return nil, locErrorf(loc, "thread LHS must be a single primary expression; got %d tokens", len(segments[0]))
+	if !ep.eof() {
+		t := ep.peek()
+		return nil, locErrorf(t.Loc, "unexpected token %q after expression; wrap commands in [...] for substitution", t.Text)
 	}
-	lhs, err := parsePrimary(segments[0][0])
+	return e, nil
+}
+
+// exprParser is a cursor over a pre-collected token slice used by
+// parseExpression's recursive-descent methods.  Each level calls
+// the next-tighter level and loops for any left-associative
+// operator of its own.
+type exprParser struct {
+	tokens []Token
+	pos    int
+}
+
+func (p *exprParser) peek() Token {
+	if p.pos >= len(p.tokens) {
+		return Token{}
+	}
+	return p.tokens[p.pos]
+}
+
+func (p *exprParser) advance() Token {
+	t := p.peek()
+	if p.pos < len(p.tokens) {
+		p.pos++
+	}
+	return t
+}
+
+func (p *exprParser) eof() bool {
+	return p.pos >= len(p.tokens)
+}
+
+// parseComparison recognises the optional binary-comparison infix
+// around a tighter sub-expression.  At most one binary operator
+// per expression matches the current grammar; anything else the
+// caller flags via the "unexpected trailing token" check in
+// parseExpression.
+func (p *exprParser) parseComparison() (Expr, error) {
+	left, err := p.parseUnaryOr()
 	if err != nil {
 		return nil, err
 	}
-	for i, seg := range segments[1:] {
-		if len(seg) == 0 {
-			return nil, locErrorf(threadLocs[i], "thread requires a command on the right-hand side")
+	if p.eof() {
+		return left, nil
+	}
+	op, ok := binaryOpFromToken(p.peek())
+	if !ok {
+		return left, nil
+	}
+	opTok := p.advance()
+	right, err := p.parseUnaryOr()
+	if err != nil {
+		return nil, err
+	}
+	return &BinaryExpr{Left: left, Op: op, Right: right, Loc: opTok.Loc}, nil
+}
+
+// parseUnaryOr recognises a unary-predicate prefix applied to a
+// primary operand.  Because "true" and "false" are both
+// unary-predicate words AND common literals (e.g. the RHS of
+// "eq true"), the rule is context-sensitive: a pred word
+// becomes a UnaryExpr only when the following token could be
+// its operand — a primary position, not a binary operator,
+// thread, or end of input.  Otherwise it falls through to the
+// tighter thread level where it is parsed as a literal.
+func (p *exprParser) parseUnaryOr() (Expr, error) {
+	if pred, ok := unaryPredFromToken(p.peek()); ok && p.operandFollowsPred() {
+		predTok := p.advance()
+		operand, err := p.parseTerm()
+		if err != nil {
+			return nil, err
 		}
-		args := make([]Expr, 0, len(seg))
-		for _, t := range seg {
-			e, err := parsePrimary(t)
-			if err != nil {
-				return nil, err
-			}
-			args = append(args, e)
+		return &UnaryExpr{Pred: pred, Operand: operand, Loc: predTok.Loc}, nil
+	}
+	return p.parseThread()
+}
+
+// operandFollowsPred reports whether the token immediately after
+// the current one could syntactically be a unary predicate's
+// operand: neither a binary-comparison word, a '|>', nor the
+// end of input.
+func (p *exprParser) operandFollowsPred() bool {
+	if p.pos+1 >= len(p.tokens) {
+		return false
+	}
+	next := p.tokens[p.pos+1]
+	if next.Kind == TokenThread {
+		return false
+	}
+	if _, isBinOp := binaryOpFromToken(next); isBinOp {
+		return false
+	}
+	return true
+}
+
+// parseThread consumes a primary then zero or more '|>
+// command-call' segments, folding left-associatively into a
+// chain of ThreadExprs.  The RHS is read by parseThreadRHS,
+// which stops at the next '|>' or a binary-op word so the
+// comparison level can pick up operators at its own precedence.
+func (p *exprParser) parseThread() (Expr, error) {
+	lhs, err := p.parseTerm()
+	if err != nil {
+		return nil, err
+	}
+	for !p.eof() && p.peek().Kind == TokenThread {
+		threadTok := p.advance()
+		args, err := p.parseThreadRHS(threadTok.Loc)
+		if err != nil {
+			return nil, err
 		}
-		lhs = &ThreadExpr{LHS: lhs, Args: args, Loc: threadLocs[i]}
+		lhs = &ThreadExpr{LHS: lhs, Args: args, Loc: threadTok.Loc}
 	}
 	return lhs, nil
 }
 
-// splitThreadSegments divides tokens on TokenThread tokens and
-// returns the segments together with the Loc of each '|' that
-// produced a boundary.  An empty LHS (leading thread) is a syntax
-// error; trailing threads yield an empty trailing segment that the
-// caller flags.
-func splitThreadSegments(tokens []Token) ([][]Token, []Loc, error) {
-	var segments [][]Token
-	var threadLocs []Loc
-	start := 0
-	for i, t := range tokens {
-		if t.Kind != TokenThread {
-			continue
+// parseThreadRHS consumes the command-call tokens that follow a
+// '|>'.  It stops at the next '|>', at a binary-op word (so the
+// comparison level can pick it up), or at end of input.  A
+// literal binary-op word used as a command argument must be
+// quoted.
+func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
+	var args []Expr
+	for !p.eof() {
+		t := p.peek()
+		if t.Kind == TokenThread {
+			break
 		}
-		if start == i {
-			return nil, nil, locErrorf(t.Loc, "thread has no left-hand side")
+		if _, isBinOp := binaryOpFromToken(t); isBinOp {
+			break
 		}
-		segments = append(segments, tokens[start:i])
-		threadLocs = append(threadLocs, t.Loc)
-		start = i + 1
+		p.advance()
+		e, err := parsePrimary(t)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, e)
 	}
-	segments = append(segments, tokens[start:])
-	return segments, threadLocs, nil
+	if len(args) == 0 {
+		return nil, locErrorf(threadLoc, "thread requires a command on the right-hand side")
+	}
+	return args, nil
+}
+
+// parseTerm consumes a single token as a primary expression —
+// literal, varref, adapter, or command substitution.
+func (p *exprParser) parseTerm() (Expr, error) {
+	if p.eof() {
+		return nil, fmt.Errorf("expected expression, got end of input")
+	}
+	t := p.advance()
+	return parsePrimary(t)
 }
 
 // parseCommandArgs turns a command's token run into argument

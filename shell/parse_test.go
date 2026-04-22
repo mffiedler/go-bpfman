@@ -64,11 +64,12 @@ func TestParse_LetAssignment_Literal(t *testing.T) {
 
 func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 	// "load file" is two tokens, not a primary/unary/binary; the
-	// new parser surfaces this at parse time rather than at eval
-	// time as the legacy pipeline did.
+	// recursive-descent parser surfaces this as "unexpected
+	// token" with a hint to wrap commands in [...].
 	_, err := parseSource(t, "let prog = load file")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unary predicate")
+	assert.Contains(t, err.Error(), "unexpected token")
+	assert.Contains(t, err.Error(), "[...]")
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
