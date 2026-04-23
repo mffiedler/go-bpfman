@@ -119,13 +119,13 @@ func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Comman
 	case *DeleteProgramCommand:
 		return shell.Value{}, execDeleteProgram(ctx, cli, mgr, c)
 	case *ListProgramsCommand:
-		return shell.Value{}, execListPrograms(ctx, cli, mgr, c)
+		return execListPrograms(ctx, cli, mgr, c)
 	case *LinkAttachCommand:
 		return execLinkAttach(ctx, cli, mgr, c)
 	case *LinkDetachCommand:
 		return shell.Value{}, execLinkDetach(ctx, cli, mgr, c)
 	case *ListLinksCommand:
-		return shell.Value{}, execListLinks(ctx, cli, mgr, c)
+		return execListLinks(ctx, cli, mgr, c)
 	case *DeleteLinkCommand:
 		return shell.Value{}, execDeleteLink(ctx, cli, mgr, c)
 	case *DispatcherListCommand:
@@ -1978,8 +1978,10 @@ func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 }
 
 // execListPrograms executes a parsed ListProgramsCommand, listing
-// programs from the store and rendering output.
-func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListProgramsCommand) error {
+// programs from the store, rendering output, and returning the
+// result as a bindable value so REPL scripts can inspect the list
+// structurally.
+func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListProgramsCommand) (shell.Value, error) {
 	var opts []bpfman.ListOption
 
 	if cmd.Attached {
@@ -1991,7 +1993,7 @@ func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *
 	if len(cmd.Types) > 0 {
 		types, err := ParseProgramTypesSlice(cmd.Types)
 		if err != nil {
-			return err
+			return shell.Value{}, err
 		}
 		opts = append(opts, bpfman.WithTypes(types...))
 	}
@@ -1999,33 +2001,41 @@ func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *
 	if s := strings.TrimSpace(cmd.Selector); s != "" {
 		sel, err := labels.Parse(s)
 		if err != nil {
-			return fmt.Errorf("invalid label selector: %w", err)
+			return shell.Value{}, fmt.Errorf("invalid label selector: %w", err)
 		}
 		opts = append(opts, bpfman.MatchingSelector(sel))
 	}
 
 	result, err := mgr.ListPrograms(ctx, opts...)
 	if err != nil {
-		return err
+		return shell.Value{}, err
 	}
 
-	if len(result.Programs) == 0 && !cmd.Output.IsStructured() {
-		return nil
-	}
-
-	if cmd.Quiet {
-		var b strings.Builder
-		for _, p := range result.Programs {
-			fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+	if len(result.Programs) > 0 || cmd.Output.IsStructured() {
+		if cmd.Quiet {
+			var b strings.Builder
+			for _, p := range result.Programs {
+				fmt.Fprintf(&b, "program/%d\n", p.Record.ProgramID)
+			}
+			if err := cli.PrintOut(b.String()); err != nil {
+				return shell.Value{}, err
+			}
+		} else {
+			output, err := FormatProgramsComposite(result, &cmd.Output)
+			if err != nil {
+				return shell.Value{}, err
+			}
+			if err := cli.PrintOut(output); err != nil {
+				return shell.Value{}, err
+			}
 		}
-		return cli.PrintOut(b.String())
 	}
 
-	output, err := FormatProgramsComposite(result, &cmd.Output)
+	val, err := shell.ValueFromStruct(result)
 	if err != nil {
-		return err
+		return shell.Value{}, nil
 	}
-	return cli.PrintOut(output)
+	return val, nil
 }
 
 // ListLinksCommand represents a fully parsed "link list" command with
@@ -2091,7 +2101,7 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 
 // execListLinks executes a parsed ListLinksCommand, listing links
 // from the store and rendering output.
-func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListLinksCommand) error {
+func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListLinksCommand) (shell.Value, error) {
 	var opts []bpfman.LinkListOption
 
 	if cmd.ProgramID != nil {
@@ -2101,33 +2111,41 @@ func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Lis
 	if len(cmd.Kinds) > 0 {
 		kinds, err := ParseLinkKindsSlice(cmd.Kinds)
 		if err != nil {
-			return err
+			return shell.Value{}, err
 		}
 		opts = append(opts, bpfman.WithKinds(kinds...))
 	}
 
 	links, err := mgr.ListLinks(ctx, opts...)
 	if err != nil {
-		return err
+		return shell.Value{}, err
 	}
 
-	if len(links) == 0 && !cmd.Output.IsStructured() {
-		return nil
-	}
-
-	if cmd.Quiet {
-		var b strings.Builder
-		for _, l := range links {
-			fmt.Fprintf(&b, "link/%d\n", l.ID)
+	if len(links) > 0 || cmd.Output.IsStructured() {
+		if cmd.Quiet {
+			var b strings.Builder
+			for _, l := range links {
+				fmt.Fprintf(&b, "link/%d\n", l.ID)
+			}
+			if err := cli.PrintOut(b.String()); err != nil {
+				return shell.Value{}, err
+			}
+		} else {
+			output, err := FormatLinkList(links, &cmd.Output)
+			if err != nil {
+				return shell.Value{}, err
+			}
+			if err := cli.PrintOut(output); err != nil {
+				return shell.Value{}, err
+			}
 		}
-		return cli.PrintOut(b.String())
 	}
 
-	output, err := FormatLinkList(links, &cmd.Output)
+	val, err := shell.ValueFromStruct(bpfman.LinkListResult{Links: links})
 	if err != nil {
-		return err
+		return shell.Value{}, nil
 	}
-	return cli.PrintOut(output)
+	return val, nil
 }
 
 // DispatcherListCommand represents a fully parsed "dispatcher list"
