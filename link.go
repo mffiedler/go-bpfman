@@ -27,15 +27,13 @@ func IsSyntheticLinkID(id kernel.LinkID) bool {
 // This type maps to cilium/ebpf's link.Anchor for kernel attachment.
 type TCXAttachOrder struct {
 	// First attaches at the head of the chain (runs before all others).
-	First bool `json:"first,omitempty"`
+	First bool `json:"first"`
 	// Last attaches at the tail of the chain (runs after all others).
-	Last bool `json:"last,omitempty"`
-	// BeforeProgID attaches before the program with this kernel ID.
-	// Zero means not set.
-	BeforeProgID kernel.ProgramID `json:"before_prog_id,omitempty"`
-	// AfterProgID attaches after the program with this kernel ID.
-	// Zero means not set.
-	AfterProgID kernel.ProgramID `json:"after_prog_id,omitempty"`
+	Last bool `json:"last"`
+	// BeforeProgID attaches before the program with this kernel ID. Zero means not set.
+	BeforeProgID kernel.ProgramID `json:"before_prog_id"`
+	// AfterProgID attaches after the program with this kernel ID. Zero means not set.
+	AfterProgID kernel.ProgramID `json:"after_prog_id"`
 }
 
 // TCXAttachFirst returns an order that attaches at the head of the chain.
@@ -97,8 +95,8 @@ func (TracepointDetails) Kind() LinkKind { return LinkKindTracepoint }
 // KprobeDetails contains fields specific to kprobe/kretprobe attachments.
 type KprobeDetails struct {
 	FnName   string `json:"fn_name"`
-	Offset   uint64 `json:"offset,omitempty"`
-	Retprobe bool   `json:"retprobe,omitempty"`
+	Offset   uint64 `json:"offset"`
+	Retprobe bool   `json:"retprobe"`
 }
 
 func (KprobeDetails) linkDetails() {}
@@ -110,13 +108,17 @@ func (d KprobeDetails) Kind() LinkKind {
 }
 
 // UprobeDetails contains fields specific to uprobe/uretprobe attachments.
+// FnName and Offset form two attach modes: a non-empty FnName attaches by
+// symbol; an empty FnName with a non-zero Offset attaches at that offset
+// within Target. PID 0 means attach system-wide; a non-zero PID restricts
+// the probe to that process. ContainerPid 0 means not container-scoped.
 type UprobeDetails struct {
 	Target       string `json:"target"`
-	FnName       string `json:"fn_name,omitempty"`
-	Offset       uint64 `json:"offset,omitempty"`
-	PID          int32  `json:"pid,omitempty"`
-	Retprobe     bool   `json:"retprobe,omitempty"`
-	ContainerPid int32  `json:"container_pid,omitempty"`
+	FnName       string `json:"fn_name"`
+	Offset       uint64 `json:"offset"`
+	PID          int32  `json:"pid"`
+	Retprobe     bool   `json:"retprobe"`
+	ContainerPid int32  `json:"container_pid"`
 }
 
 func (UprobeDetails) linkDetails() {}
@@ -144,13 +146,14 @@ func (FexitDetails) linkDetails()   {}
 func (FexitDetails) Kind() LinkKind { return LinkKindFexit }
 
 // XDPDetails contains fields specific to XDP attachments.
+// Netns empty means the root network namespace.
 type XDPDetails struct {
 	Interface    string           `json:"interface"`
 	Ifindex      uint32           `json:"ifindex"`
 	Priority     int32            `json:"priority"`
 	Position     int32            `json:"position"`
 	ProceedOn    []int32          `json:"proceed_on"`
-	Netns        string           `json:"netns,omitempty"`
+	Netns        string           `json:"netns"`
 	Nsid         uint64           `json:"nsid"`
 	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
 	Revision     uint32           `json:"revision"`
@@ -195,6 +198,7 @@ func (d *TCDirection) UnmarshalText(b []byte) error {
 }
 
 // TCDetails contains fields specific to TC attachments.
+// Netns empty means the root network namespace.
 type TCDetails struct {
 	Interface    string           `json:"interface"`
 	Ifindex      uint32           `json:"ifindex"`
@@ -202,7 +206,7 @@ type TCDetails struct {
 	Priority     int32            `json:"priority"`
 	Position     int32            `json:"position"`
 	ProceedOn    []int32          `json:"proceed_on"`
-	Netns        string           `json:"netns,omitempty"`
+	Netns        string           `json:"netns"`
 	Nsid         uint64           `json:"nsid"`
 	DispatcherID kernel.ProgramID `json:"dispatcher_id"`
 	Revision     uint32           `json:"revision"`
@@ -212,14 +216,15 @@ func (TCDetails) linkDetails()   {}
 func (TCDetails) Kind() LinkKind { return LinkKindTC }
 
 // TCXDetails contains fields specific to TCX attachments.
+// Netns empty means the root network namespace.
 type TCXDetails struct {
 	Interface string      `json:"interface"`
 	Ifindex   uint32      `json:"ifindex"`
 	Direction TCDirection `json:"direction"`
 	Priority  int32       `json:"priority"`
 	Position  int32       `json:"position"`
-	Netns     string      `json:"netns,omitempty"`
-	Nsid      uint64      `json:"nsid,omitempty"`
+	Netns     string      `json:"netns"`
+	Nsid      uint64      `json:"nsid"`
 }
 
 func (TCXDetails) linkDetails()   {}
@@ -329,9 +334,13 @@ type LinkRecord struct {
 	ID        kernel.LinkID    `json:"id"`
 	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
 	Kind      LinkKind         `json:"kind"`
-	PinPath   *LinkPath        `json:"pin_path,omitempty"` // nil == ephemeral
-	Details   LinkDetails      `json:"details,omitempty"`
-	CreatedAt time.Time        `json:"created_at"`
+	// PinPath nil distinguishes an ephemeral link from one with a pin. Kept as a
+	// pointer so absence is representable at the type level; omitempty reflects that.
+	PinPath *LinkPath `json:"pin_path,omitempty"`
+	// Details nil means "no per-kind detail available"; omitempty mirrors the
+	// nil-interface semantics the rest of the code already relies on.
+	Details   LinkDetails `json:"details,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
 
@@ -407,9 +416,12 @@ func (r LinkRecord) HasPin() bool { return r.PinPath != nil }
 // LinkStatus is observed state (kernel + fs).
 // This is "what actually exists right now".
 type LinkStatus struct {
-	Kernel     *kernel.Link `json:"kernel,omitempty"` // nil if not in kernel or synthetic
-	KernelSeen bool         `json:"kernel_seen"`      // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
-	PinPresent bool         `json:"pin_present"`      // true if pin path exists on filesystem
+	// Kernel nil means the link is not currently in the kernel's link list or is
+	// a synthetic perf_event link with no kernel link ID. Pointer + omitempty
+	// encodes that absence; a present pointer carries the kernel-reported view.
+	Kernel     *kernel.Link `json:"kernel,omitempty"`
+	KernelSeen bool         `json:"kernel_seen"` // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
+	PinPresent bool         `json:"pin_present"` // true if pin path exists on filesystem
 }
 
 // HasKernelLinkID is a capability interface for domain objects that

@@ -130,11 +130,17 @@ A future lint should enforce the rule mechanically: flag any
 
 ### Known gaps at time of writing
 
-- `link.go` `KprobeDetails.Offset`, `KprobeDetails.Retprobe`,
-  `UprobeDetails.Offset`, `UprobeDetails.Retprobe`, `UprobeDetails.PID`,
-  `UprobeDetails.ContainerPid` — all carry `,omitempty` on scalar
-  fields where the zero value is a legitimate domain observation.
-  Surfaced by `e2e/scripts/TestKprobe_LoadAttachDetachUnload.bpfman`
-  being unable to assert `offset == 0` or `retprobe == false`.
+- `link.go` — cleared. Scalar fields on link-details structs
+  (`KprobeDetails`, `UprobeDetails`, `XDPDetails`, `TCDetails`,
+  `TCXDetails`, `TCXAttachOrder`) now emit explicitly. Pointer and
+  interface fields (`LinkRecord.PinPath`, `LinkRecord.Details`,
+  `LinkStatus.Kernel`) keep `,omitempty` with inline justification.
+- `program.go`, `kernel/link.go`, `kernel/map.go`, `kernel/program.go`,
+  `inspect/inspect.go`, `load_spec.go`, `attach_target.go`,
+  `config/config.go`, `logging/spec.go`,
+  `platform/store/sqlite/programs.go`,
+  `platform/image/oci/puller.go`, `version/version.go` — not yet
+  audited against this policy. First-party occurrences remaining:
+  roughly 80.
 
 Update this section as violations are cleared.
