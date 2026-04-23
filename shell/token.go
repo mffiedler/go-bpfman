@@ -599,24 +599,35 @@ func lexSingleQuoted(input string, pos int) (Token, int, error) {
 func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 	lineStarts := buildLineStarts(input)
 	i := pos + 1
-	literalStart := i
 	var segments []InterpSegment
+	var lit strings.Builder
+	var litLoc Loc
+	litOpen := false
 
-	flushLiteral := func(end int) {
-		if end <= literalStart {
+	startLiteral := func(at int) {
+		if !litOpen {
+			litLoc = locAt(at, lineStarts)
+			litOpen = true
+		}
+	}
+	flushLiteral := func() {
+		if !litOpen {
 			return
 		}
 		segments = append(segments, InterpSegment{
-			Literal: input[literalStart:end],
-			Loc:     locAt(literalStart, lineStarts),
+			Literal: lit.String(),
+			Loc:     litLoc,
 			IsLit:   true,
 		})
+		lit.Reset()
+		litOpen = false
 	}
 
 	for i < len(input) {
 		ch := input[i]
-		if ch == '"' {
-			flushLiteral(i)
+		switch ch {
+		case '"':
+			flushLiteral()
 			i++ // skip closing quote
 			if len(segments) == 0 {
 				return Token{Kind: TokenQuoted, Text: ""}, i - pos, nil
@@ -632,12 +643,35 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 				Text:     input[pos:i],
 				Segments: segments,
 			}, i - pos, nil
-		}
-		if ch == '$' {
-			if i+1 >= len(input) || input[i+1] != '{' {
-				return Token{}, 0, fmt.Errorf("'$' in double-quoted string must be followed by '{...}' (use single quotes for a literal '$')")
+		case '\\':
+			if i+1 >= len(input) {
+				return Token{}, 0, fmt.Errorf("unterminated escape sequence at end of string")
 			}
-			flushLiteral(i)
+			var decoded byte
+			switch input[i+1] {
+			case 'n':
+				decoded = '\n'
+			case 't':
+				decoded = '\t'
+			case 'r':
+				decoded = '\r'
+			case '\\':
+				decoded = '\\'
+			case '"':
+				decoded = '"'
+			case '$':
+				decoded = '$'
+			default:
+				return Token{}, 0, fmt.Errorf("unknown escape sequence '\\%c' in double-quoted string; recognised escapes are \\n, \\t, \\r, \\\\, \\\", \\$", input[i+1])
+			}
+			startLiteral(i)
+			lit.WriteByte(decoded)
+			i += 2
+		case '$':
+			if i+1 >= len(input) || input[i+1] != '{' {
+				return Token{}, 0, fmt.Errorf("'$' in double-quoted string must be followed by '{...}' (use single quotes or '\\$' for a literal '$')")
+			}
+			flushLiteral()
 			start := i
 			innerEnd, err := scanInterpBody(input, i+2)
 			if err != nil {
@@ -653,10 +687,11 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 				IsLit: false,
 			})
 			i = innerEnd + 1 // skip past closing '}'
-			literalStart = i
-			continue
+		default:
+			startLiteral(i)
+			lit.WriteByte(ch)
+			i++
 		}
-		i++
 	}
 
 	return Token{}, 0, fmt.Errorf("unterminated \"-quoted string")

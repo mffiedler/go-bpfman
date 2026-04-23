@@ -317,6 +317,9 @@ Rules:
   output.
 - Nil renders as `null` so the output string is always
   well-formed.
+- Double-quoted strings support C-style escape sequences:
+  `\n`, `\t`, `\r`, `\\`, `\"`, `\$`. Single-quoted strings
+  are fully literal — nothing is interpreted.
 - No escape sequence for `$`, `"`, or any other character. Use
   single quotes if a literal `$` or `${` needs to appear.
 

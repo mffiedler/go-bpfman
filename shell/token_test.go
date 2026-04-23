@@ -713,6 +713,107 @@ func TestTokeniseInterpString(t *testing.T) {
 	}
 }
 
+func TestTokeniseDoubleQuotedEscapes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantKind TokenKind
+		wantText string   // for TokenQuoted
+		wantSegs []string // for TokenInterpString: literal segments only (non-lit shown as "")
+		wantErr  string
+	}{
+		{
+			name:     "newline escape",
+			input:    `"a\nb"`,
+			wantKind: TokenQuoted,
+			wantText: "a\nb",
+		},
+		{
+			name:     "tab escape",
+			input:    `"a\tb"`,
+			wantKind: TokenQuoted,
+			wantText: "a\tb",
+		},
+		{
+			name:     "carriage return escape",
+			input:    `"a\rb"`,
+			wantKind: TokenQuoted,
+			wantText: "a\rb",
+		},
+		{
+			name:     "backslash escape",
+			input:    `"a\\b"`,
+			wantKind: TokenQuoted,
+			wantText: `a\b`,
+		},
+		{
+			name:     "double-quote escape",
+			input:    `"he said \"hi\""`,
+			wantKind: TokenQuoted,
+			wantText: `he said "hi"`,
+		},
+		{
+			name:     "dollar escape keeps literal dollar",
+			input:    `"price=\$5"`,
+			wantKind: TokenQuoted,
+			wantText: `price=$5`,
+		},
+		{
+			name:     "escape inside interpolated string",
+			input:    `"line1\n${n}\n"`,
+			wantKind: TokenInterpString,
+			wantSegs: []string{"line1\n", "", "\n"},
+		},
+		{
+			name:    "unknown escape rejected",
+			input:   `"\q"`,
+			wantErr: `unknown escape sequence '\q'`,
+		},
+		{
+			name:    "trailing backslash rejected",
+			input:   `"\\`,
+			wantErr: "unterminated",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Tokenise(tt.input)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tt.wantKind, got[0].Kind)
+			if tt.wantKind == TokenQuoted {
+				assert.Equal(t, tt.wantText, got[0].Text)
+				return
+			}
+			require.Len(t, got[0].Segments, len(tt.wantSegs))
+			for i, want := range tt.wantSegs {
+				got := got[0].Segments[i]
+				if want == "" {
+					assert.False(t, got.IsLit, "segment %d should be interp", i)
+				} else {
+					assert.True(t, got.IsLit, "segment %d should be literal", i)
+					assert.Equal(t, want, got.Literal)
+				}
+			}
+		})
+	}
+}
+
+func TestTokeniseSingleQuotedIsLiteral(t *testing.T) {
+	// Single quotes are fully literal: no escape processing.
+	// "\n" inside single quotes stays two characters.
+	got, err := Tokenise(`'a\nb'`)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, TokenQuoted, got[0].Kind)
+	assert.Equal(t, `a\nb`, got[0].Text)
+}
+
 func TestTokeniseStrict(t *testing.T) {
 	tests := []struct {
 		name  string

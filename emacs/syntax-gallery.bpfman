@@ -53,14 +53,24 @@ let braced_idx = ${items[3].field}
 
 # "${EXPR}" splices a scalar value into a double-quoted string.
 # Single-quoted strings never interpolate; a bare '$' inside a
-# double-quoted string is a lex-time error (use single quotes for
-# a literal '$').
+# double-quoted string is a lex-time error (use single quotes or
+# '\$' for a literal '$').
 
 let n          = 60
 let interp_v   = "${n}s"                          # variable slot
 let interp_p   = "/sys/fs/bpf/prog-${int_lit}"    # path construction
 let interp_m   = "pre-${int_lit}-mid-${n}-suf"   # multiple slots
 let interp_a   = "${[[$n * 2]]}s"                  # arithmetic via [[...]]
+
+# Double-quoted strings support C-style escapes: \n, \t, \r,
+# \\, \", and \$ (for a literal dollar sign).  Single-quoted
+# strings are fully literal — backslashes and everything else
+# pass through unchanged.
+let esc_nl     = "line1\nline2"                    # newline in the middle
+let esc_tab    = "col1\tcol2"                      # tab separator
+let esc_quote  = "he said \"hi\""                  # embedded double-quote
+let esc_bs     = "path\\sub"                       # literal backslash
+let esc_dollar = "price=\$5"                       # literal $ without ${...}
 
 # ---- 4. Command substitution (single and nested) ----
 
