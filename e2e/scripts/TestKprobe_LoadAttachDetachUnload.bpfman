@@ -1,0 +1,68 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestKprobe_LoadAttachDetachUnload.
+#
+# Loads a kprobe counter, attaches it to try_to_wake_up, gives the
+# scheduler a moment to fire the probe, verifies the map counter
+# advanced, and cleans up.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestKprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root and bpftool.
+
+# Load the kprobe counter.  The _nopin variant uses LIBBPF_PIN_NONE
+# so the counter map is private to this program and the delta we
+# read is attributable to OUR program's execution window, not the
+# cumulative hits of every copy sharing a pinned map.
+let prog = [bpfman load file --path testdata/bpf/kprobe_counter_nopin.bpf.o --programs kprobe:kprobe_counter]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to try_to_wake_up.  The scheduler invokes this function on
+# every transition from sleeping/waiting to runnable, so any system
+# activity at all will fire the probe.
+let link = [bpfman link attach kprobe --fn-name try_to_wake_up $prog]
+require not nil link
+
+# Verify the program and link are visible and the link carries the
+# expected kprobe-specific details.
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq kprobe
+assert $link.record.details.fn_name eq try_to_wake_up
+assert $link.record.details.offset == 0
+assert $link.record.details.retprobe eq false
+
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU counter before and after a short sleep.
+# try_to_wake_up fires incidentally on background scheduler activity,
+# so we cannot assert an exact count — only that the probe fired at
+# least once during the window.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+require ok exec sleep 0.1
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta > 0
+
+# Clean up: detach the link, then unload the program.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
