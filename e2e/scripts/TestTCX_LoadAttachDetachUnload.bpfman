@@ -1,0 +1,90 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestTCX_LoadAttachDetachUnload.
+#
+# Loads a TCX counter, creates a veth pair straddling the root
+# netns and a test netns, attaches the counter to the root side's
+# ingress, pings across the pair, and verifies the counter
+# advanced by the number of packets generated.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestTCX_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool, and kernel 6.6+ for native TCX multi-prog
+# support. On older kernels the load/attach will fail with a
+# meaningful error rather than silently corrupting state.
+
+# Best-effort cleanup of any leftover netns/veth from a prior run.
+# exec status swallows non-zero exits (missing resources) as data,
+# so this line succeeds whether or not the resources exist.
+exec status ip link del veth-tcx-host
+exec status ip netns del bpfman-tcx
+
+# Set up a veth pair. veth-tcx-host lives in the root netns where
+# the TCX program attaches; veth-tcx-ns moves into the test netns
+# so ping traffic actually crosses the wire rather than looping
+# through the host stack.
+require ok exec ip netns add bpfman-tcx
+require ok exec ip link add veth-tcx-host type veth peer name veth-tcx-ns
+require ok exec ip link set veth-tcx-ns netns bpfman-tcx
+require ok exec ip addr add 198.51.100.1/24 dev veth-tcx-host
+require ok exec ip link set veth-tcx-host up
+require ok exec ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tcx-ns
+require ok exec ip netns exec bpfman-tcx ip link set veth-tcx-ns up
+
+# Load the TCX counter. The _nopin variant isolates the counter
+# map so the delta reflects only our traffic window.
+let prog = [bpfman load file --path testdata/bpf/tcx_counter_nopin.bpf.o --programs tcx:tcx_stats]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to veth-tcx-host's ingress, priority 50. TCX uses native
+# kernel multi-prog support — no dispatcher.
+let link = [bpfman link attach tcx --iface veth-tcx-host --direction ingress --priority 50 $prog]
+require not nil link
+
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq tcx
+assert $link.record.details.interface eq veth-tcx-host
+assert $link.record.details.direction eq ingress
+assert $link.record.details.priority == 50
+
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU counter before and after a burst of pings.
+# The counter is a single-key u64 per-CPU array; summing the
+# per-CPU slots gives the total ingress packet count.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Send 5 ICMP echo requests from the test netns to the host side.
+# Each request arrives on veth-tcx-host's ingress and ticks the
+# counter, so the delta should be at least 5. ARP and other
+# control traffic may add a small amount on the first run.
+require ok exec ip netns exec bpfman-tcx ping -c 5 -i 0.05 198.51.100.1
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta >= 5
+
+# Clean up: detach, unload, remove network resources.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+exec ip link del veth-tcx-host
+exec ip netns del bpfman-tcx
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta

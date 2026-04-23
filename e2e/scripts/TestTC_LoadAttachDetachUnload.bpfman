@@ -1,0 +1,90 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestTC_LoadAttachDetachUnload.
+#
+# Loads a TC counter, creates a veth pair straddling the root
+# netns and a test netns, attaches the counter to the root side's
+# ingress via a TC dispatcher, pings across the pair, and verifies
+# the counter advanced by at least the number of packets generated.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestTC_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool, iproute2.
+
+# Best-effort cleanup of any leftover netns/veth from a prior run.
+exec status ip link del veth-tc-host
+exec status ip netns del bpfman-tc
+
+# Set up a veth pair. The TC dispatcher will attach to veth-tc-host
+# in the root netns; veth-tc-ns goes into the test netns so ping
+# traffic actually crosses the wire.
+require ok exec ip netns add bpfman-tc
+require ok exec ip link add veth-tc-host type veth peer name veth-tc-ns
+require ok exec ip link set veth-tc-ns netns bpfman-tc
+require ok exec ip addr add 198.51.100.1/24 dev veth-tc-host
+require ok exec ip link set veth-tc-host up
+require ok exec ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-ns
+require ok exec ip netns exec bpfman-tc ip link set veth-tc-ns up
+
+# Load the TC counter. The _nopin variant isolates the counter so
+# the delta reflects only our traffic window.
+let prog = [bpfman load file --path testdata/bpf/tc_counter_nopin.bpf.o --programs tc:stats]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to veth-tc-host ingress, priority 50. TC uses a
+# dispatcher program for multi-program support; the link details
+# should surface a non-zero dispatcher_id and revision.
+let link = [bpfman link attach tc --iface veth-tc-host --direction ingress --priority 50 $prog]
+require not nil link
+
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq tc
+assert $link.record.details.interface eq veth-tc-host
+assert $link.record.details.direction eq ingress
+assert $link.record.details.priority == 50
+assert $link.record.details.dispatcher_id > 0
+assert $link.record.details.revision > 0
+
+# Verify the dispatcher is visible to tc(8).
+require ok exec tc filter show dev veth-tc-host ingress
+
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU datarec counter at key 0 (TC_ACT_OK). The
+# datarec struct carries both rx_packets and rx_bytes; BTF lets
+# bpftool decode them into a nested object.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Send 5 ICMP echo requests from the test netns. Each arrives on
+# veth-tc-host ingress and ticks the counter. ARP and other
+# control traffic may add a small amount.
+require ok exec ip netns exec bpfman-tc ping -c 5 -i 0.05 198.51.100.1
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta >= 5
+
+# Clean up: detach, unload, remove network resources.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+exec ip link del veth-tc-host
+exec ip netns del bpfman-tc
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
