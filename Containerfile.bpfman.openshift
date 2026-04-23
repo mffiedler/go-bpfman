@@ -64,7 +64,7 @@ ARG BUILD_BRANCH
 ARG BUILD_DATE
 ARG BUILD_VERSION
 
-WORKDIR /src
+WORKDIR /opt/app-root/src
 
 COPY . .
 
@@ -96,7 +96,7 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 ARG BUILDVERSION
 ARG CPE_VERSION
 
-COPY --from=go-builder /src/bin/bpfman /bpfman
+COPY --from=go-builder /opt/app-root/src/bin/bpfman /bpfman
 COPY LICENSE /licenses/
 
 LABEL name="go-bpfman" \
