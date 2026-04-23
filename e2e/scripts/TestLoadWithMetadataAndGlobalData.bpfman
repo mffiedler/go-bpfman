@@ -1,0 +1,49 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestLoadWithMetadataAndGlobalData.
+#
+# Verifies that user-supplied metadata and global data are stored
+# and returned verbatim through load + Get round-trip. No attach,
+# no trigger — this script exercises the management layer only.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestLoadWithMetadataAndGlobalData.bpfman
+#
+# Requires root. Does not require bpftool.
+
+# Load xdp_pass with user metadata and global data. The program
+# itself is irrelevant — we only inspect its record.
+#
+# Global data is encoded as base64 in the JSON representation
+# because the Go type is []byte. The values below round-trip as:
+#   0x42                -> "Qg=="
+#   0xDEADBEEF (4 bytes) -> "3q2+7w=="
+let prog = [bpfman load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass -m owner=test-team -m environment=e2e-testing -g config_u8=0x42 -g config_u32=0xdeadbeef]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Assert user metadata on the freshly-loaded record.
+assert $prog.record.meta.metadata.owner eq test-team
+assert $prog.record.meta.metadata.environment eq e2e-testing
+
+# Assert global data on the freshly-loaded record.
+assert $prog.record.load.global_data.config_u8 eq "Qg=="
+assert $prog.record.load.global_data.config_u32 eq "3q2+7w=="
+
+# Round-trip via Get to confirm the same values come back from the
+# store, not just from the in-process load response.
+let got = [bpfman program get $pid]
+require not nil got
+assert $got.record.meta.metadata.owner eq test-team
+assert $got.record.meta.metadata.environment eq e2e-testing
+assert $got.record.load.global_data.config_u8 eq "Qg=="
+assert $got.record.load.global_data.config_u32 eq "3q2+7w=="
+
+# Clean up.
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset prog pid got
