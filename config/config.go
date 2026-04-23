@@ -90,6 +90,10 @@ func DefaultConfig() Config {
 //
 // Behaviour:
 //   - File missing: returns default configuration (no error)
+//   - File unreadable (permission denied, etc.): returns default
+//     configuration (no error) so non-root invocations of read-only
+//     commands like `bpfman version` are not blocked by a
+//     root-owned /etc/bpfman/bpfman.toml
 //   - File exists and valid: overlays file values onto defaults
 //   - File exists but invalid: returns error (fail fast)
 //
@@ -104,8 +108,10 @@ func Load(path string) (Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			// Config file is optional - use defaults
+		if os.IsNotExist(err) || os.IsPermission(err) {
+			// Config file is optional; fall back to embedded
+			// defaults when it is missing or the current
+			// process cannot read it.
 			return cfg, nil
 		}
 		return cfg, fmt.Errorf("failed to read config file: %w", err)

@@ -34,12 +34,13 @@ func RunNamespaceSwitcher() NamespaceSwitcherResult {
 
 // rootExempt reports whether the argument vector indicates an
 // invocation that does not need root: "version" as a positional
-// (the version subcommand) or --check / -c (repl in syntax-check
-// mode).
+// (the version subcommand), "help" / --help / -h (usage output),
+// or --check / -c (repl in syntax-check mode). None of these
+// touch kernel, store, or filesystem state.
 func rootExempt(args []string) bool {
 	for _, a := range args {
 		switch a {
-		case "version", "--check", "-c":
+		case "version", "help", "--help", "-h", "--check", "-c":
 			return true
 		}
 	}
