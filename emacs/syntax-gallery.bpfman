@@ -237,6 +237,11 @@ let l_fexit      = [bpfman link attach fexit      --function vfs_read $p_file]
 
 # ---- 15. Every flag shape ----
 
+# Backslash at end of line folds the newline into whitespace; the
+# continuation works at statement level and also inside `[...]'
+# substitutions.  Use it wherever a call has enough flags to make
+# one line unreadable.
+
 bpfman load file                     \
     --path ./prog.o                  \
     --programs xdp:xdp_stats         \
@@ -247,6 +252,15 @@ bpfman load file                     \
     -a      stats                    \
     --map-owner-id 42                \
     -o      json
+
+# Continuation inside a command substitution also works; the inner
+# text is retokenised at parse time, so the same rule applies.
+
+let p_multi = [bpfman load file                  \
+    --path ./prog.o                              \
+    --programs xdp:xdp_stats                     \
+    -m owner=test-team                           \
+    -g SAMPLING_RATE=0x0a000000]
 
 bpfman program list -o wide
 bpfman program list -o jsonpath='{.items[*].name}'

@@ -154,10 +154,13 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 // substitution is complete. Quote state persists across lines so
 // multi-line quoted strings are treated as a single literal span;
 // unterminated strings themselves are surfaced by the tokeniser
-// when the accumulated chunk is eventually parsed.
+// when the accumulated chunk is eventually parsed. lineCont records
+// whether the line just consumed ended with an unescaped backslash
+// outside quotes, which the tokeniser treats as a line continuation.
 type contState struct {
 	braces, brackets, parens int
 	inSingle, inDouble       bool
+	lineCont                 bool
 }
 
 // advance walks one line of input, updating the brace and bracket
@@ -167,6 +170,8 @@ type contState struct {
 // the struct so they survive across line boundaries, matching how
 // the tokeniser actually treats multi-line quoted literals.
 func (c *contState) advance(line string) {
+	c.lineCont = false
+	lastNonSpace := -1
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 		switch {
@@ -197,13 +202,20 @@ func (c *contState) advance(line string) {
 				c.parens--
 			}
 		}
+		if !c.inSingle && !c.inDouble && ch != ' ' && ch != '\t' && ch != '\r' {
+			lastNonSpace = i
+		}
+	}
+	if lastNonSpace >= 0 && line[lastNonSpace] == '\\' {
+		c.lineCont = true
 	}
 }
 
 // open reports whether the accumulated input is still inside an
-// open brace, bracket, or parenthesised group.
+// open brace, bracket, or parenthesised group, or the line just
+// consumed ended with a backslash continuation.
 func (c *contState) open() bool {
-	return c.braces > 0 || c.brackets > 0 || c.parens > 0
+	return c.braces > 0 || c.brackets > 0 || c.parens > 0 || c.lineCont
 }
 
 // shellCommands is the set of commands that are shell-language or

@@ -20,7 +20,13 @@
 # because the Go type is []byte. The values below round-trip as:
 #   0x42                -> "Qg=="
 #   0xDEADBEEF (4 bytes) -> "3q2+7w=="
-let prog = [bpfman load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass -m owner=test-team -m environment=e2e-testing -g config_u8=0x42 -g config_u32=0xdeadbeef]
+let prog = [bpfman load file \
+    --path testdata/bpf/xdp_pass_nopin.bpf.o \
+    --programs xdp:pass \
+    -m owner=test-team \
+    -m environment=e2e-testing \
+    -g config_u8=0x42 \
+    -g config_u32=0xdeadbeef]
 require not nil prog
 let pid = $prog.record.program_id
 assert not-empty $pid

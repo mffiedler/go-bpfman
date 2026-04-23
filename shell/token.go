@@ -145,6 +145,22 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			continue
 		}
 
+		// Backslash at end of line is a line continuation: '\' and
+		// the following '\n' together count as whitespace. '\r\n'
+		// is handled the same way for CRLF inputs. A lone '\' not
+		// followed by a newline falls through to the regular word
+		// tokeniser below.
+		if ch == '\\' && i+1 < len(input) {
+			if input[i+1] == '\n' {
+				i += 2
+				continue
+			}
+			if input[i+1] == '\r' && i+2 < len(input) && input[i+2] == '\n' {
+				i += 3
+				continue
+			}
+		}
+
 		start := i
 		switch {
 		case ch == '\n' || ch == ';':

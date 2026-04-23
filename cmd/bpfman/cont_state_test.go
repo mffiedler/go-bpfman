@@ -24,6 +24,27 @@ func TestContState_SingleLine_Balanced(t *testing.T) {
 	assert.False(t, feedLines("if $x > 0 { bpfman program list }"), "one-line if is closed")
 }
 
+func TestContState_LineContinuation(t *testing.T) {
+	assert.True(t, feedLines("bpfman program list \\"), "trailing backslash keeps buffer open")
+	assert.True(t, feedLines("foo\\"), "trailing backslash with no preceding space also opens")
+	assert.False(t,
+		feedLines("bpfman load file \\", "  --path foo.o"),
+		"continuation closes once the next line does not end with backslash",
+	)
+	assert.True(t,
+		feedLines("bpfman load file \\", "  --path foo.o \\"),
+		"chain of continuations stays open",
+	)
+	assert.False(t,
+		feedLines("echo 'literal \\'"),
+		"backslash inside a single-quoted literal is not a continuation",
+	)
+	assert.False(t,
+		feedLines("echo \"literal \\\""),
+		"backslash inside a double-quoted literal is not a continuation",
+	)
+}
+
 func TestContState_SingleLine_OpenBrace(t *testing.T) {
 	assert.True(t, feedLines("if $x > 0 {"), "unterminated if is open")
 }

@@ -77,6 +77,28 @@ SEP          := newline | ';'
 Comments begin with `#` (outside quoted strings) and run to the end
 of the line.
 
+A backslash at the very end of a line (optionally followed by `\r`)
+is a line continuation: the backslash and the following newline are
+consumed as a single whitespace run. The rule applies everywhere
+the tokeniser runs — at statement level, inside blocks, and inside
+`[...]` substitutions — so multi-line commands read the same way
+whether they are bare or bracketed:
+
+```
+bpfman load file                        \
+    --path ./prog.o                     \
+    --programs xdp:xdp_stats            \
+    -m owner=test-team
+
+let prog = [bpfman load file            \
+    --path ./prog.o                     \
+    --programs xdp:xdp_stats]
+```
+
+Inside a quoted string, `\` is an escape character (double-quoted
+strings) or a literal byte (single-quoted strings); the
+continuation rule only applies outside quotes.
+
 A line is parsed as an **expression statement** when its first
 token can only start an expression: `$var`, `[cmd]` or `[expr]`,
 `"string"`, `'string'`, `(`, `not`, `not-empty`, `true`, or

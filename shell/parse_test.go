@@ -51,6 +51,49 @@ func TestParse_PlainCommand(t *testing.T) {
 	}
 }
 
+func TestParse_LineContinuation(t *testing.T) {
+	t.Run("bare command with backslash continuation", func(t *testing.T) {
+		prog, err := parseSource(t, "show program \\\n123")
+		require.NoError(t, err)
+		cmd, ok := firstStmt(t, prog).(*CommandStmt)
+		require.True(t, ok)
+		require.Len(t, cmd.Args, 3)
+		for i, want := range []string{"show", "program", "123"} {
+			lit, ok := cmd.Args[i].(*LiteralExpr)
+			require.True(t, ok, "arg %d", i)
+			assert.Equal(t, want, lit.Text)
+		}
+	})
+
+	t.Run("continuation inside command substitution", func(t *testing.T) {
+		prog, err := parseSource(t, "let p = [show program \\\n123]")
+		require.NoError(t, err)
+		let, ok := firstStmt(t, prog).(*LetStmt)
+		require.True(t, ok)
+		assert.Equal(t, "p", let.Name)
+		sub, ok := let.RHS.(*CmdSubExpr)
+		require.True(t, ok)
+		require.Len(t, sub.Inner.Stmts, 1)
+		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
+		require.True(t, ok)
+		require.Len(t, inner.Args, 3)
+	})
+
+	t.Run("multiple continuations inside command substitution", func(t *testing.T) {
+		src := "let p = [show \\\nprogram \\\n123]"
+		prog, err := parseSource(t, src)
+		require.NoError(t, err)
+		let, ok := firstStmt(t, prog).(*LetStmt)
+		require.True(t, ok)
+		sub, ok := let.RHS.(*CmdSubExpr)
+		require.True(t, ok)
+		require.Len(t, sub.Inner.Stmts, 1)
+		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
+		require.True(t, ok)
+		require.Len(t, inner.Args, 3)
+	})
+}
+
 func TestParse_LetAssignment_Literal(t *testing.T) {
 	prog, err := parseSource(t, "let prog = 42")
 	require.NoError(t, err)

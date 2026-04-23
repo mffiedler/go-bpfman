@@ -516,6 +516,75 @@ func TestTokenise(t *testing.T) {
 	}
 }
 
+func TestTokeniseLineContinuation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []Token
+	}{
+		{
+			name:  "backslash newline folds into whitespace",
+			input: "foo \\\nbar",
+			want: []Token{
+				{Kind: TokenWord, Text: "foo"},
+				{Kind: TokenWord, Text: "bar"},
+			},
+		},
+		{
+			name:  "multiple continuations in one command",
+			input: "bpfman load file \\\n--path foo.o \\\n--programs xdp:pass",
+			want: []Token{
+				{Kind: TokenWord, Text: "bpfman"},
+				{Kind: TokenWord, Text: "load"},
+				{Kind: TokenWord, Text: "file"},
+				{Kind: TokenWord, Text: "--path"},
+				{Kind: TokenWord, Text: "foo.o"},
+				{Kind: TokenWord, Text: "--programs"},
+				{Kind: TokenWord, Text: "xdp:pass"},
+			},
+		},
+		// Continuation inside [...] is tested via TestParseCmdSubContinuation
+		// below, because the inner text is not re-tokenised at the outer
+		// tokenise step — it is captured literally into TokenCmdSub.Inner
+		// and re-tokenised at parse time.
+		{
+			name:  "CRLF continuation",
+			input: "foo \\\r\nbar",
+			want: []Token{
+				{Kind: TokenWord, Text: "foo"},
+				{Kind: TokenWord, Text: "bar"},
+			},
+		},
+		{
+			name:  "continuation does not cross a real separator after a space backslash space",
+			input: "foo \\ \nbar",
+			want: []Token{
+				{Kind: TokenWord, Text: "foo"},
+				{Kind: TokenWord, Text: "\\"},
+				{Kind: TokenSep, Text: "\n"},
+				{Kind: TokenWord, Text: "bar"},
+			},
+		},
+		{
+			name:  "continuation preserves following line separator when consumed",
+			input: "a \\\nb\nc",
+			want: []Token{
+				{Kind: TokenWord, Text: "a"},
+				{Kind: TokenWord, Text: "b"},
+				{Kind: TokenSep, Text: "\n"},
+				{Kind: TokenWord, Text: "c"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Tokenise(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, stripLocs(got))
+		})
+	}
+}
+
 func TestTokeniseExprSub(t *testing.T) {
 	tests := []struct {
 		name    string
