@@ -160,13 +160,16 @@ jobs:
         # workflow does not silently depend on the base image.
         #
         # On Ubuntu bpftool is a virtual package: the wrapper lives
-        # in linux-tools-common and the arch-specific binary in
-        # linux-tools-generic. Install both so the wrapper resolves
-        # to a working binary on both amd64 and arm64 runners.
+        # in linux-tools-common and the arch-specific binary in the
+        # linux-tools-<kernel-version> package. GitHub runners use
+        # Azure kernels, so linux-tools-generic ships a binary for
+        # the wrong kernel version and the wrapper refuses to use
+        # it. Install the exact tools package matching uname -r so
+        # the wrapper resolves to a working binary.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            linux-tools-common linux-tools-generic \
+            linux-tools-common "linux-tools-$(uname -r)" \
             iproute2 iputils-ping
 
       - name: E2E REPL scripts
