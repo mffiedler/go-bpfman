@@ -62,6 +62,15 @@ assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind eq $link.record.kind
 assert $gotLink.record.details.fn_name eq $link.record.details.fn_name
 
+# Round-trip: our link appears in the link list with the same
+# kind and id.
+let listedLinks = [bpfman link list -o json]
+let linkFilter = ".links[] | select(.id == ${linkID})"
+let ourLink = $listedLinks |> jq $linkFilter
+require not nil ourLink
+assert $ourLink.id == $link.record.id
+assert $ourLink.kind eq $link.record.kind
+
 # The counter map has two entries: key 0 for fentry, key 1 for
 # fexit. This program writes to key 0. do_unlinkat() fires on any
 # process's unlink(2), so the assertion is a lower bound.

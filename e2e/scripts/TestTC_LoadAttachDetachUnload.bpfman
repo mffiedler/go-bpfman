@@ -55,6 +55,15 @@ assert $got.status.kernel.tag eq $prog.status.kernel.tag
 assert $got.record.meta.name eq $prog.record.meta.name
 assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
 
+# Round-trip: our program appears in the program list with the
+# same meta and kernel ids.
+let listed = [bpfman program list -o json]
+let progFilter = ".programs[] | select(.record.program_id == ${pid})"
+let ours = $listed |> jq $progFilter
+require not nil ours
+assert $ours.record.meta.name eq $prog.record.meta.name
+assert $ours.status.kernel.id == $prog.status.kernel.id
+
 # Attach to veth-tc-host ingress, priority 50. TC uses a
 # dispatcher program; the link records the dispatcher's
 # program_id rather than the user extension's, so we verify
@@ -84,6 +93,16 @@ assert $gotLink.record.details.interface eq $link.record.details.interface
 assert $gotLink.record.details.direction eq $link.record.details.direction
 assert $gotLink.record.details.priority == $link.record.details.priority
 assert $gotLink.record.details.dispatcher_id == $link.record.details.dispatcher_id
+
+
+# Round-trip: our link appears in the link list with the same
+# kind and id.
+let listedLinks = [bpfman link list -o json]
+let linkFilter = ".links[] | select(.id == ${linkID})"
+let ourLink = $listedLinks |> jq $linkFilter
+require not nil ourLink
+assert $ourLink.id == $link.record.id
+assert $ourLink.kind eq $link.record.kind
 
 # Snapshot the per-CPU datarec counter at key 0 (TC_ACT_OK). The
 # datarec struct carries both rx_packets and rx_bytes; BTF lets
