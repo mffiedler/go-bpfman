@@ -10,6 +10,7 @@ require (
 	github.com/ergochat/readline v0.1.3
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-containerregistry v0.20.7
+	github.com/itchyny/gojq v0.12.19
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -128,7 +129,6 @@ require (
 	github.com/in-toto/attestation v1.1.2 // indirect
 	github.com/in-toto/in-toto-golang v0.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/itchyny/gojq v0.12.19 // indirect
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20230811132847-661be99b8267 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
