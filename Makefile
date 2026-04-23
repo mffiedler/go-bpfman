@@ -61,8 +61,12 @@ TEST ?=
 # Normalisation is required because Make's $(if cond,...) treats any
 # non-empty string as true, so without the filter below STATIC=0 would
 # enable static linking. `override` is required because command-line
-# assignments (make STATIC=0) otherwise win over file-level ones.
+# assignments (make STATIC=0) otherwise win over file-level ones. The
+# `?=` gives STATIC an empty default so `make --warn-undefined-variables`
+# does not flag the $(STATIC) reference on the next line when STATIC
+# is not set in the environment or on the command line.
 # ---------------------------------------------------------------------------
+STATIC ?=
 override STATIC := $(filter 1,$(STATIC))
 
 # ---------------------------------------------------------------------------
