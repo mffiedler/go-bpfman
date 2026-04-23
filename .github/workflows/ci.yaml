@@ -130,18 +130,19 @@ jobs:
           version: ${{ env.LINT_VERSION }}
           args: -v --timeout 5m
 
-  # Additional nix-backed sweep: run the full `make lint` via the
-  # project's devshell (which pins checkmake, shellcheck, hadolint,
-  # and the same golangci-lint version consumed above), then build
-  # the flake package. This complements the primary `lint` job above
-  # rather than replacing it: the existing golangci-lint-action stays
-  # the canonical Go-lint gate with its own PR annotations, while
-  # this job catches Make, shell, and Dockerfile regressions and
-  # verifies `nix build .` still produces a working binary.
+  # Additional nix-backed sweep: build the flake package and run the
+  # full `make lint` via the devshell, which pins checkmake,
+  # shellcheck, hadolint, and golangci-lint. This complements the
+  # primary `lint` job above rather than replacing it: the existing
+  # golangci-lint-action stays the canonical Go-lint gate with its
+  # own PR annotations; this job catches Make, shell, and Dockerfile
+  # regressions and verifies `nix build .` still produces a working
+  # binary.
   #
-  # No `needs:` dependency: the devshell includes the BPF toolchain,
-  # so `BPF_USE_HOST=1` builds the dispatcher objects in-job. Runs
-  # in parallel with every other job.
+  # BPF objects come from the bpf-objects nix derivation and are
+  # copied into the source tree before `make lint` runs, so Make's
+  # bpf-build step sees them as already-built and doesn't try to
+  # invoke docker or shell out to clang.
   nix:
     name: Nix lint and build
     runs-on: ubuntu-latest
@@ -152,9 +153,6 @@ jobs:
 
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
-      - name: Run lint
-        run: nix develop --command make lint BPF_USE_HOST=1
-
       - name: Build flake package
         run: nix build .
 
@@ -162,6 +160,16 @@ jobs:
         run: |
           file result/bin/bpfman
           ./result/bin/bpfman version
+
+      - name: Seed BPF objects from the nix derivation
+        run: |
+          bpf=$(nix build --no-link --print-out-paths .#bpf-objects)
+          cp "$bpf"/dispatcher/*.bpf.o dispatcher/
+          cp "$bpf"/e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/
+          touch .bpf-build-stamp
+
+      - name: Run lint
+        run: nix develop --command make lint
 
   test-nsenter-qemu:
     name: Test nsenter QEMU (${{ matrix.goarch }})
