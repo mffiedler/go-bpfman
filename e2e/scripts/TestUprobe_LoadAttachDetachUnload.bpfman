@@ -70,5 +70,3 @@ assert fail bpfman link get $link
 
 bpfman program unload $pid
 assert fail bpfman program get $prog
-
-unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta

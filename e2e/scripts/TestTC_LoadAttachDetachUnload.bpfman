@@ -86,5 +86,3 @@ assert fail bpfman program get $prog
 
 exec ip link del veth-tc-host
 exec ip netns del bpfman-tc
-
-unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta

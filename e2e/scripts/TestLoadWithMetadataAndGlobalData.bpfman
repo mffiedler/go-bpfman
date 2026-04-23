@@ -51,5 +51,3 @@ assert $got.record.load.global_data.config_u32 eq "3q2+7w=="
 # Clean up.
 bpfman program unload $pid
 assert fail bpfman program get $prog
-
-unset prog pid got
