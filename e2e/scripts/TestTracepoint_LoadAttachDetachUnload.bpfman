@@ -2,8 +2,9 @@
 # REPL equivalent of e2e/TestTracepoint_LoadAttachDetachUnload.
 #
 # Loads a tracepoint counter, attaches it to syscalls/sys_enter_kill,
-# triggers the syscall N times, verifies the map counter advanced by
-# exactly N, and cleans up.
+# asserts the load and attach responses round-trip through Get/
+# GetLink, triggers the syscall N times, verifies the map counter
+# advanced by exactly N, and cleans up.
 #
 # Path conventions follow the Go e2e tests: testdata is referenced
 # relative to e2e/, so invoke from e2e/:
@@ -13,31 +14,54 @@
 #
 # Requires root and bpftool.
 
-# Load the tracepoint counter from the e2e testdata directory. The
-# _nopin variant uses LIBBPF_PIN_NONE so the counter map is private
-# to this program — no other loaded copies of the same object share
-# it, which is what makes the post-trigger delta an exact count.
+# Load the tracepoint counter. The _nopin variant uses
+# LIBBPF_PIN_NONE so the counter map is private to this program.
 let prog = [bpfman load file --path testdata/bpf/tracepoint_counter_nopin.bpf.o --programs tracepoint:tracepoint_kill_recorder]
 require not nil prog
 let pid = $prog.record.program_id
-assert not-empty $pid
+
+# Structural assertions on the load response.
+assert $prog.record.load.program_type eq tracepoint
+assert $prog.status.kernel.program_type eq tracepoint
+assert $prog.record.meta.name eq tracepoint_kill_recorder
+assert $prog.status.kernel.id == $pid
+assert not-empty $prog.status.kernel.name
+assert not-empty $prog.status.kernel.tag
+assert not-empty $prog.status.kernel.loaded_at
+assert not-empty $prog.record.handles.pin_path
+
+# Round-trip: Get returns the same program record.
+let got = [bpfman program get $pid]
+require not nil got
+assert $got.status.kernel.id == $prog.status.kernel.id
+assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
+assert $got.status.kernel.name eq $prog.status.kernel.name
+assert $got.status.kernel.tag eq $prog.status.kernel.tag
+assert $got.record.meta.name eq $prog.record.meta.name
+assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
 
 # Attach to the syscalls/sys_enter_kill tracepoint.
 let link = [bpfman link attach tracepoint --tracepoint syscalls/sys_enter_kill $prog]
 require not nil link
+let linkID = $link.record.id
 
-# Verify the program and link are visible.
-assert ok bpfman show program $pid
-require ok bpfman link get $link
+# Structural assertions on the attach response.
+assert $link.record.kind eq tracepoint
+assert $link.record.program_id == $pid
+assert $link.record.details.group eq syscalls
+assert $link.record.details.name eq sys_enter_kill
+assert $link.status.kernel_seen eq true
 
-# List all managed programs and links.
-bpfman list programs
-bpfman link list
+# Round-trip: GetLink returns the same link record.
+let gotLink = [bpfman link get $linkID]
+require not nil gotLink
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind eq $link.record.kind
+assert $gotLink.record.details.group eq $link.record.details.group
+assert $gotLink.record.details.name eq $link.record.details.name
 
 # Snapshot the per-CPU counter before and after the trigger loop.
-# Because the _nopin variant gives this program its own private map,
-# the counter only reflects kill(2) entries that fired while OUR
-# program was attached, and the delta is an exact count of the
+# The _nopin map is private, so the delta is an exact count of the
 # syscalls we caused.
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
@@ -46,8 +70,8 @@ let dumpBefore = [exec bpftool map dump id $mapID -j]
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Trigger the tracepoint. kill(2) with signal 0 fires the syscall
-# (testing pid existence) without delivering anything, so the sh
-# invocation exits cleanly and require-ok is a real check.
+# without delivering anything, so the sh invocation exits cleanly
+# and require-ok is a real check.
 foreach _ in [jq "[range(5)]" '0'] {
     require ok exec sh -c 'kill -0 $$'
 }
@@ -58,9 +82,10 @@ let delta     = [[$after - $before]]
 print $delta
 assert $delta == 5
 
-# Clean up: detach the link, then unload the program.
+# Clean up: detach the link, then unload the program. Both negative
+# probes confirm the teardown actually took effect.
 bpfman link detach $link
-assert fail bpfman link get $link
+assert fail bpfman link get $linkID
 
 bpfman program unload $pid
 assert fail bpfman program get $prog

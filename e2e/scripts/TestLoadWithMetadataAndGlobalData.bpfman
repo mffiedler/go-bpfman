@@ -29,20 +29,35 @@ let prog = [bpfman load file \
     -g config_u32=0xdeadbeef]
 require not nil prog
 let pid = $prog.record.program_id
-assert not-empty $pid
 
-# Assert user metadata on the freshly-loaded record.
+# Structural assertions on the load response. The program type is
+# XDP (reported by the kernel as "extension" because XDP loads go
+# through a dispatcher).
+assert $prog.record.load.program_type eq xdp
+assert $prog.status.kernel.program_type eq extension
+assert $prog.record.meta.name eq pass
+assert $prog.status.kernel.id == $pid
+assert not-empty $prog.status.kernel.name
+assert not-empty $prog.status.kernel.tag
+assert not-empty $prog.status.kernel.loaded_at
+assert not-empty $prog.record.handles.pin_path
+
+# User metadata and global data on the freshly-loaded record.
 assert $prog.record.meta.metadata.owner eq test-team
 assert $prog.record.meta.metadata.environment eq e2e-testing
-
-# Assert global data on the freshly-loaded record.
 assert $prog.record.load.global_data.config_u8 eq "Qg=="
 assert $prog.record.load.global_data.config_u32 eq "3q2+7w=="
 
-# Round-trip via Get to confirm the same values come back from the
-# store, not just from the in-process load response.
+# Round-trip: Get returns the same values from the store, not
+# just from the in-process load response.
 let got = [bpfman program get $pid]
 require not nil got
+assert $got.status.kernel.id == $prog.status.kernel.id
+assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
+assert $got.status.kernel.name eq $prog.status.kernel.name
+assert $got.status.kernel.tag eq $prog.status.kernel.tag
+assert $got.record.meta.name eq $prog.record.meta.name
+assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
 assert $got.record.meta.metadata.owner eq test-team
 assert $got.record.meta.metadata.environment eq e2e-testing
 assert $got.record.load.global_data.config_u8 eq "Qg=="

@@ -3,8 +3,9 @@
 #
 # Loads an XDP pass program, creates a veth pair straddling the
 # root netns and a test netns, attaches the program via an XDP
-# dispatcher, pings across the pair, and verifies the counter
-# advanced by at least the number of packets generated.
+# dispatcher, asserts the load and attach responses round-trip
+# through Get/GetLink, pings across the pair, and verifies the
+# counter advanced.
 #
 # Path conventions follow the Go e2e tests: testdata is referenced
 # relative to e2e/, so invoke from e2e/:
@@ -14,13 +15,11 @@
 #
 # Requires root and bpftool.
 
-# Best-effort cleanup of any leftover netns/veth from a prior run.
+# Best-effort cleanup of leftover netns/veth from a prior run.
 exec status ip link del veth-xdp-host
 exec status ip netns del bpfman-xdp
 
-# Set up a veth pair. The XDP dispatcher attaches to veth-xdp-host
-# in the root netns; veth-xdp-ns goes into the test netns so ping
-# traffic actually ingresses at the host side.
+# Set up a veth pair.
 require ok exec ip netns add bpfman-xdp
 require ok exec ip link add veth-xdp-host type veth peer name veth-xdp-ns
 require ok exec ip link set veth-xdp-ns netns bpfman-xdp
@@ -29,41 +28,60 @@ require ok exec ip link set veth-xdp-host up
 require ok exec ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xdp-ns
 require ok exec ip netns exec bpfman-xdp ip link set veth-xdp-ns up
 
-# Load the XDP pass program. The _nopin variant isolates the
-# counter so the delta reflects only our traffic window.
+# Load the XDP pass program. The _nopin variant isolates the map.
 let prog = [bpfman load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass]
 require not nil prog
 let pid = $prog.record.program_id
-assert not-empty $pid
 
-# Attach to veth-xdp-host. XDP uses a dispatcher program for
-# multi-program support; the link details surface a non-zero
-# dispatcher_id and revision.
+# Structural assertions on the load response. XDP programs are
+# loaded as BPF_PROG_TYPE_EXT targeting a dispatcher, so the
+# kernel reports program_type "extension".
+assert $prog.record.load.program_type eq xdp
+assert $prog.status.kernel.program_type eq extension
+assert $prog.record.meta.name eq pass
+assert $prog.status.kernel.id == $pid
+assert not-empty $prog.status.kernel.name
+assert not-empty $prog.status.kernel.tag
+assert not-empty $prog.status.kernel.loaded_at
+assert not-empty $prog.record.handles.pin_path
+
+# Round-trip: Get returns the same program record.
+let got = [bpfman program get $pid]
+require not nil got
+assert $got.status.kernel.id == $prog.status.kernel.id
+assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
+assert $got.status.kernel.name eq $prog.status.kernel.name
+assert $got.status.kernel.tag eq $prog.status.kernel.tag
+assert $got.record.meta.name eq $prog.record.meta.name
+assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
+
+# Attach to veth-xdp-host. XDP uses a dispatcher program.
 let link = [bpfman link attach xdp --iface veth-xdp-host $prog]
 require not nil link
+let linkID = $link.record.id
 
-assert ok bpfman show program $pid
-require ok bpfman link get $link
+# Structural assertions on the attach response.
 assert $link.record.kind eq xdp
 assert $link.record.details.interface eq veth-xdp-host
 assert $link.record.details.dispatcher_id > 0
 assert $link.record.details.revision > 0
+assert $link.status.kernel_seen eq true
 
-bpfman list programs
-bpfman link list
+# Round-trip: GetLink returns the same link record.
+let gotLink = [bpfman link get $linkID]
+require not nil gotLink
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind eq $link.record.kind
+assert $gotLink.record.details.interface eq $link.record.details.interface
+assert $gotLink.record.details.dispatcher_id == $link.record.details.dispatcher_id
 
 # Snapshot the per-CPU counter before and after a burst of pings.
-# The map is a single-key u64 per-CPU array; summing the per-CPU
-# slots gives the total ingress packet count on veth-xdp-host.
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
 let dumpBefore = [exec bpftool map dump id $mapID -j]
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-# Send 5 ICMP echo requests from the test netns. Each arrives on
-# veth-xdp-host as an ingress packet and ticks the XDP counter.
-# ARP and other control traffic may add a small amount.
 require ok exec ip netns exec bpfman-xdp ping -c 5 -i 0.05 198.51.100.1
 
 let dumpAfter = [exec bpftool map dump id $mapID -j]
@@ -74,7 +92,7 @@ assert $delta >= 5
 
 # Clean up: detach, unload, remove network resources.
 bpfman link detach $link
-assert fail bpfman link get $link
+assert fail bpfman link get $linkID
 
 bpfman program unload $pid
 assert fail bpfman program get $prog

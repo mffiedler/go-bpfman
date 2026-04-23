@@ -2,9 +2,10 @@
 # REPL equivalent of e2e/TestUprobe_LoadAttachDetachUnload.
 #
 # Loads a uprobe counter, attaches it to do_work() in the
-# testdata/bin/call_malloc helper binary, invokes the binary N
-# times to fire the probe exactly N times, verifies the counter
-# map advanced by exactly N, and cleans up.
+# testdata/bin/call_malloc helper binary, asserts the load and
+# attach responses round-trip through Get/GetLink, invokes the
+# binary N times to fire the probe exactly N times, verifies the
+# counter map advanced by exactly N, and cleans up.
 #
 # Path conventions follow the Go e2e tests: testdata is referenced
 # relative to e2e/, so invoke from e2e/:
@@ -14,38 +15,61 @@
 #
 # Requires root and bpftool.
 
-# Load the uprobe counter. The _nopin variant gives this program
-# its own private map so the delta is attributable to our own
-# invocations of the helper binary, not to any other process that
-# happens to share a pinned map.
+# Load the uprobe counter. The _nopin variant isolates the map.
 let prog = [bpfman load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uprobe:uprobe_counter]
 require not nil prog
 let pid = $prog.record.program_id
-assert not-empty $pid
 
-# Attach to do_work() in the call_malloc helper. The Go test targets
-# a local helper binary (rather than libc) so the test does not
-# depend on finding the correct libc path across distributions
-# (NixOS, Guix, musl all shuffle that around).
+# Structural assertions on the load response. The kernel reports
+# program_type "kprobe" for uprobes.
+assert $prog.record.load.program_type eq uprobe
+assert $prog.status.kernel.program_type eq kprobe
+assert $prog.record.meta.name eq uprobe_counter
+assert $prog.status.kernel.id == $pid
+assert not-empty $prog.status.kernel.name
+assert not-empty $prog.status.kernel.tag
+assert not-empty $prog.status.kernel.loaded_at
+assert not-empty $prog.record.handles.pin_path
+
+# Round-trip: Get returns the same program record.
+let got = [bpfman program get $pid]
+require not nil got
+assert $got.status.kernel.id == $prog.status.kernel.id
+assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
+assert $got.status.kernel.name eq $prog.status.kernel.name
+assert $got.status.kernel.tag eq $prog.status.kernel.tag
+assert $got.record.meta.name eq $prog.record.meta.name
+assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
+
+# Attach to do_work() in the call_malloc helper. The Go test
+# targets a local helper binary so the test does not depend on
+# finding the correct libc path across distributions.
 let link = [bpfman link attach uprobe --target testdata/bin/call_malloc --fn-name do_work $prog]
 require not nil link
+let linkID = $link.record.id
 
-# Verify the program and link are visible and the link carries the
-# expected uprobe-specific details.
-assert ok bpfman show program $pid
-require ok bpfman link get $link
+# Structural assertions on the attach response.
 assert $link.record.kind eq uprobe
+assert $link.record.program_id == $pid
 assert $link.record.details.target eq testdata/bin/call_malloc
 assert $link.record.details.fn_name eq do_work
 assert $link.record.details.offset == 0
 assert $link.record.details.retprobe eq false
+assert $link.status.kernel_seen eq true
 
-bpfman list programs
-bpfman link list
+# Round-trip: GetLink returns the same link record.
+let gotLink = [bpfman link get $linkID]
+require not nil gotLink
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind eq $link.record.kind
+assert $gotLink.record.details.target eq $link.record.details.target
+assert $gotLink.record.details.fn_name eq $link.record.details.fn_name
+assert $gotLink.record.details.retprobe eq $link.record.details.retprobe
 
 # Snapshot the per-CPU counter before and after the trigger loop.
 # Uprobes are attached by inode; only invocations of THIS binary
-# fire the probe, so the delta is an exact count of our exec calls.
+# fire the probe, so the delta is an exact count of our exec
+# calls.
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
@@ -66,7 +90,7 @@ assert $delta == 5
 
 # Clean up: detach the link, then unload the program.
 bpfman link detach $link
-assert fail bpfman link get $link
+assert fail bpfman link get $linkID
 
 bpfman program unload $pid
 assert fail bpfman program get $prog
