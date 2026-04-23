@@ -44,7 +44,7 @@ type Info struct {
 	// this binary was published from. Empty unless the binary
 	// was built by the CI image workflow with all three of
 	// imageRef, signerIdentity, oidcIssuer set via -ldflags.
-	Attestation string `json:"attestation,omitempty"`
+	Attestation string `json:"attestation"`
 }
 
 // Get returns the current build version information.

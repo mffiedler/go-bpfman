@@ -14,37 +14,39 @@ type Program struct {
 	ID          ProgramID   `json:"id"`
 	Name        string      `json:"name"`
 	ProgramType ProgramType `json:"program_type"`
-	Tag         string      `json:"tag,omitempty"`
+	Tag         string      `json:"tag"` // kernel-assigned content hash; empty only when unavailable
 	LoadedAt    time.Time   `json:"loaded_at"`
 
-	// Ownership and BTF
+	// Ownership and BTF.
+	// Has* fields carry the kernel-version-availability discriminator; when
+	// HasX is false, X is not trustworthy regardless of its zero value.
 	UID      uint32 `json:"uid"`
-	HasUID   bool   `json:"has_uid,omitempty"` // Whether UID is available (kernel 4.15+)
-	BTFId    uint32 `json:"btf_id,omitempty"`
-	HasBTFId bool   `json:"has_btf_id,omitempty"` // Whether BTF ID is available (kernel 5.0+)
+	HasUID   bool   `json:"has_uid"` // Whether UID is available (kernel 4.15+)
+	BTFId    uint32 `json:"btf_id"`
+	HasBTFId bool   `json:"has_btf_id"` // Whether BTF ID is available (kernel 5.0+)
 
 	// Associated maps
-	MapIDs    []MapID `json:"map_ids,omitempty"`
-	HasMapIDs bool    `json:"has_map_ids,omitempty"` // Whether MapIDs is available (kernel 4.15+)
+	MapIDs    []MapID `json:"map_ids"`     // [] when none; check HasMapIDs for availability
+	HasMapIDs bool    `json:"has_map_ids"` // Whether MapIDs is available (kernel 4.15+)
 
 	// Size information
-	JitedSize            uint32 `json:"jited_size,omitempty"`
-	XlatedSize           uint32 `json:"xlated_size,omitempty"`
-	VerifiedInstructions uint32 `json:"verified_insns,omitempty"`
+	JitedSize            uint32 `json:"jited_size"`
+	XlatedSize           uint32 `json:"xlated_size"`
+	VerifiedInstructions uint32 `json:"verified_insns"`
 
 	// Memory
-	Memlock    uint64 `json:"memlock,omitempty"`
-	HasMemlock bool   `json:"has_memlock,omitempty"` // Whether Memlock is available (kernel 4.10+)
+	Memlock    uint64 `json:"memlock"`
+	HasMemlock bool   `json:"has_memlock"` // Whether Memlock is available (kernel 4.10+)
 
 	// Access restrictions
 	// Restricted is true if kernel address information is restricted by
 	// kernel.kptr_restrict and/or net.core.bpf_jit_harden sysctls.
-	Restricted bool `json:"restricted,omitempty"`
+	Restricted bool `json:"restricted"`
 
 	// GPLCompatible is true if the program was loaded with a GPL-compatible
 	// license. This is captured from the ELF at load time, not from the kernel.
 	// Only populated for programs loaded by bpfman, not for enumerated programs.
-	GPLCompatible bool `json:"gpl_compatible,omitempty"`
+	GPLCompatible bool `json:"gpl_compatible"`
 }
 
 // PinnedProgram represents a BPF program pinned on the filesystem.
@@ -53,7 +55,7 @@ type PinnedProgram struct {
 	ID         ProgramID   `json:"id"`
 	Name       string      `json:"name"`
 	Type       ProgramType `json:"type"`
-	Tag        string      `json:"tag,omitempty"`
+	Tag        string      `json:"tag"` // kernel-assigned content hash; empty only when unavailable
 	PinnedPath string      `json:"pinned_path"`
-	MapIDs     []MapID     `json:"map_ids,omitempty"`
+	MapIDs     []MapID     `json:"map_ids"` // [] when the program has no maps
 }

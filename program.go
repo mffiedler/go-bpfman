@@ -103,18 +103,22 @@ func ParseProgramType(s string) (ProgramType, error) {
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
-	PinPath    string            `json:"pin_path"`
-	MapPinPath string            `json:"map_pin_path,omitempty"`
+	PinPath    string `json:"pin_path"`
+	MapPinPath string `json:"map_pin_path"` // empty when the program has no maps
+	// MapOwnerID nil means this program is not a shared-map consumer of another
+	// program; pointer + omitempty encodes that absence.
 	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`
 }
 
 // ProgramMeta contains operator-facing management metadata.
 // Searchable/editable without affecting the loaded program.
 type ProgramMeta struct {
-	Name        string            `json:"name"`            // human-readable label
-	Owner       string            `json:"owner,omitempty"` // who manages this
-	Description string            `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"` // arbitrary key/value for selection
+	Name        string `json:"name"`        // human-readable label
+	Owner       string `json:"owner"`       // who manages this; empty means unassigned
+	Description string `json:"description"` // empty means no description
+	// Metadata nil and empty map are interchangeable; omitempty avoids emitting
+	// "metadata": null for the common unannotated case.
+	Metadata map[string]string `json:"metadata,omitempty"` // arbitrary key/value for selection
 }
 
 // ProgramRecord is the stored record of a loaded program (DB-backed).
@@ -130,7 +134,7 @@ type ProgramRecord struct {
 	// License and GPLCompatible are discovered at load time from the ELF.
 	// They live on ProgramRecord (not LoadSpec) because they're properties
 	// of the loaded program, not part of the load request.
-	License       string         `json:"license,omitempty"`
+	License       string         `json:"license"` // empty when not discovered (enumerated rather than loaded)
 	GPLCompatible bool           `json:"gpl_compatible"`
 	Handles       ProgramHandles `json:"handles"`
 	Meta          ProgramMeta    `json:"meta"`
@@ -141,15 +145,19 @@ type ProgramRecord struct {
 // ProgramStatus is observed state (kernel + filesystem).
 // This is "what actually exists right now".
 type ProgramStatus struct {
-	Kernel     *kernel.Program      `json:"kernel,omitempty"` // nil means not in kernel
-	Stats      *kernel.ProgramStats `json:"stats,omitempty"`  // runtime stats (requires kernel.bpf_stats_enabled=1)
-	ProgPin    PathPresence         `json:"prog_pin"`         // program pin path + presence
-	MapDir     PathPresence         `json:"map_dir"`          // map pin directory + presence
-	LinkDir    PathPresence         `json:"link_dir"`         // link pin directory + presence
-	Bytecode   PathPresence         `json:"bytecode"`         // bytecode.o file + presence
-	Provenance PathPresence         `json:"provenance"`       // provenance.json file + presence
-	Links      []Link               `json:"links,omitempty"`  // links with spec + status
-	Maps       []MapStatus          `json:"maps,omitempty"`   // kernel maps with pin correlation
+	// Kernel nil means the program is not loaded in the kernel (e.g. deleted
+	// out-of-band or never loaded); pointer + omitempty encodes that absence.
+	Kernel *kernel.Program `json:"kernel,omitempty"`
+	// Stats nil means kernel.bpf_stats_enabled=0 or the stats were not read;
+	// pointer + omitempty distinguishes "not collected" from zero stats.
+	Stats      *kernel.ProgramStats `json:"stats,omitempty"`
+	ProgPin    PathPresence         `json:"prog_pin"`   // program pin path + presence
+	MapDir     PathPresence         `json:"map_dir"`    // map pin directory + presence
+	LinkDir    PathPresence         `json:"link_dir"`   // link pin directory + presence
+	Bytecode   PathPresence         `json:"bytecode"`   // bytecode.o file + presence
+	Provenance PathPresence         `json:"provenance"` // provenance.json file + presence
+	Links      []Link               `json:"links"`      // links with spec + status; [] when none
+	Maps       []MapStatus          `json:"maps"`       // kernel maps with pin correlation; [] when none
 }
 
 // HasKernelProgramID is a capability interface for domain objects

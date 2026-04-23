@@ -10,21 +10,23 @@ type Map struct {
 	KeySize    uint32  `json:"key_size"`
 	ValueSize  uint32  `json:"value_size"`
 	MaxEntries uint32  `json:"max_entries"`
-	Flags      uint32  `json:"flags,omitempty"`
+	Flags      uint32  `json:"flags"`
 
-	// BTF
-	BTFId    uint32 `json:"btf_id,omitempty"`
-	HasBTFId bool   `json:"has_btf_id,omitempty"` // Whether BTF ID is available (kernel 4.18+)
+	// BTF.
+	// Has* fields carry the kernel-version-availability discriminator; when
+	// HasX is false, X is not trustworthy regardless of its zero value.
+	BTFId    uint32 `json:"btf_id"`
+	HasBTFId bool   `json:"has_btf_id"` // Whether BTF ID is available (kernel 4.18+)
 
 	// MapExtra is an opaque field whose meaning is map-specific.
 	// Available from kernel 5.16.
-	MapExtra    uint64 `json:"map_extra,omitempty"`
-	HasMapExtra bool   `json:"has_map_extra,omitempty"`
+	MapExtra    uint64 `json:"map_extra"`
+	HasMapExtra bool   `json:"has_map_extra"`
 
 	// Memory and state
-	Memlock    uint64 `json:"memlock,omitempty"`
-	HasMemlock bool   `json:"has_memlock,omitempty"` // Whether Memlock is available (kernel 4.10+)
-	Frozen     bool   `json:"frozen,omitempty"`      // Whether map was frozen (kernel 5.2+)
+	Memlock    uint64 `json:"memlock"`
+	HasMemlock bool   `json:"has_memlock"` // Whether Memlock is available (kernel 4.10+)
+	Frozen     bool   `json:"frozen"`      // Whether map was frozen (kernel 5.2+)
 }
 
 // PinnedMap represents a BPF map pinned on the filesystem.
@@ -40,13 +42,13 @@ type PinnedMap struct {
 
 // PinDirContents holds all BPF objects found in a pin directory.
 type PinDirContents struct {
-	Programs []PinnedProgram `json:"programs,omitempty"`
-	Maps     []PinnedMap     `json:"maps,omitempty"`
+	Programs []PinnedProgram `json:"programs"` // [] when the directory has no programs
+	Maps     []PinnedMap     `json:"maps"`     // [] when the directory has no maps
 }
 
 // LoadResult contains the result of loading a program via CLI.
 type LoadResult struct {
 	Program PinnedProgram `json:"program"`
-	Maps    []PinnedMap   `json:"maps,omitempty"`
+	Maps    []PinnedMap   `json:"maps"` // [] when the program has no maps
 	PinDir  string        `json:"pin_dir"`
 }

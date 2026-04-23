@@ -186,20 +186,24 @@ func (s LoadSpec) WithAttachFunc(fn string) LoadSpec {
 // Kept as a nested object for backwards compatibility with existing DB rows.
 type imageSourceJSON struct {
 	URL        string          `json:"url"`
-	Digest     string          `json:"digest,omitempty"`
+	Digest     string          `json:"digest"` // empty when the registry returned no digest
 	PullPolicy ImagePullPolicy `json:"pull_policy"`
 }
 
 // loadSpecJSON is the JSON representation of LoadSpec.
 // This allows LoadSpec to have private fields while still being serializable.
 type loadSpecJSON struct {
-	ObjectPath  string            `json:"object_path"`
-	ProgramName string            `json:"program_name"`
-	ProgramType ProgramType       `json:"program_type"`
-	GlobalData  map[string][]byte `json:"global_data,omitempty"`
-	ImageSource *imageSourceJSON  `json:"image_source,omitempty"`
-	AttachFunc  string            `json:"attach_func,omitempty"`
-	MapOwnerID  kernel.ProgramID  `json:"map_owner_id,omitempty"`
+	ObjectPath  string      `json:"object_path"`
+	ProgramName string      `json:"program_name"`
+	ProgramType ProgramType `json:"program_type"`
+	// GlobalData nil and empty map are interchangeable; omitempty hides the
+	// noisy common case where no global data was supplied.
+	GlobalData map[string][]byte `json:"global_data,omitempty"`
+	// ImageSource nil distinguishes a file-loaded program from an image-sourced
+	// one; pointer + omitempty encodes that absence.
+	ImageSource *imageSourceJSON `json:"image_source,omitempty"`
+	AttachFunc  string           `json:"attach_func"`  // empty for program types that do not use it
+	MapOwnerID  kernel.ProgramID `json:"map_owner_id"` // zero means this program does not share another's maps
 }
 
 // MarshalJSON implements json.Marshaler.

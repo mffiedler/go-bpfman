@@ -130,17 +130,36 @@ A future lint should enforce the rule mechanically: flag any
 
 ### Known gaps at time of writing
 
-- `link.go` — cleared. Scalar fields on link-details structs
-  (`KprobeDetails`, `UprobeDetails`, `XDPDetails`, `TCDetails`,
-  `TCXDetails`, `TCXAttachOrder`) now emit explicitly. Pointer and
-  interface fields (`LinkRecord.PinPath`, `LinkRecord.Details`,
-  `LinkStatus.Kernel`) keep `,omitempty` with inline justification.
-- `program.go`, `kernel/link.go`, `kernel/map.go`, `kernel/program.go`,
-  `inspect/inspect.go`, `load_spec.go`, `attach_target.go`,
-  `config/config.go`, `logging/spec.go`,
-  `platform/store/sqlite/programs.go`,
-  `platform/image/oci/puller.go`, `version/version.go` — not yet
-  audited against this policy. First-party occurrences remaining:
-  roughly 80.
+Cleared against the policy:
 
-Update this section as violations are cleared.
+- `link.go`, `program.go`, `load_spec.go`, `attach_target.go`,
+  `version/version.go` — scalar fields emit explicitly; pointer,
+  map, and discriminator-style string fields keep `,omitempty`
+  with inline justification comments.
+- `kernel/link.go`, `kernel/map.go`, `kernel/program.go` — scalar
+  fields emit explicitly. `kernel.Link` is a flat union where
+  type-specific fields only apply for certain `link_type` values;
+  `link_type` is the discriminator consumers key off. A future
+  refactor into per-kind detail structs is the long-term fix.
+- `inspect/inspect.go` — scalar fields emit explicitly; the
+  `*Managed` / `*Kernel` pointer fields keep `,omitempty` with
+  inline comments documenting what nil means.
+- `dispatcher/specs.go`, `dispatcher/state.go` — scalar fields
+  emit explicitly; the `LinkPinPath` discriminator string keeps
+  `,omitempty` with inline justification.
+
+Not yet audited:
+
+- `config/config.go` — config-file schema (dual `toml` + `json`
+  tags). Config files conventionally omit defaults; this is the
+  one category the policy does not automatically apply to. Review
+  separately.
+- `platform/store/sqlite/programs.go` — internal persistence shape,
+  not a public consumer type. Audit if these rows become
+  consumer-visible.
+- `platform/image/oci/puller.go`, `logging/spec.go` — internal
+  bookkeeping. Same caveat.
+- `server/pb/bpfman.pb.go` — generated protobuf code. The protobuf
+  toolchain owns the tags; out of scope.
+
+Update this section as further violations are cleared.

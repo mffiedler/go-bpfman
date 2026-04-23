@@ -36,5 +36,5 @@ type State struct {
 
 	// Priority is the tc filter priority.
 	// Only set for TC dispatchers (legacy netlink). Zero for XDP.
-	Priority uint16 `json:"priority,omitempty"`
+	Priority uint16 `json:"priority"`
 }

@@ -52,9 +52,11 @@ type KernelLinkGetter interface {
 
 // LinkInfo is the result of GetLink, containing record and presence.
 type LinkInfo struct {
-	Record   bpfman.LinkRecord `json:"record"`
-	Kernel   *kernel.Link      `json:"kernel,omitempty"` // may be nil if not in kernel
-	Presence Presence          `json:"presence"`
+	Record bpfman.LinkRecord `json:"record"`
+	// Kernel nil means this link is not present in the kernel's link list;
+	// pointer + omitempty encodes that absence.
+	Kernel   *kernel.Link `json:"kernel,omitempty"`
+	Presence Presence     `json:"presence"`
 }
 
 // Presence indicates where an object exists across the three sources.
@@ -78,18 +80,20 @@ func (p Presence) KernelOnly() bool { return p.InKernel && !p.InStore }
 type ProgramView struct {
 	ProgramID kernel.ProgramID `json:"program_id"`
 
-	// Store fields (valid when Presence.InStore is true)
+	// Managed nil means the program is not recorded in the store (kernel-only or
+	// FS-only observation). Pointer + omitempty encodes that absence.
 	Managed *bpfman.ProgramRecord `json:"managed,omitempty"`
 
-	// Kernel fields (valid when Presence.InKernel is true)
+	// Kernel nil means the program is not currently loaded in the kernel.
+	// Pointer + omitempty encodes that absence.
 	Kernel *kernel.Program `json:"kernel,omitempty"`
 
 	// FS fields
-	FSPinPath   string `json:"fs_pin_path,omitempty"` // from bpffs scan (may differ from store)
-	MapsPresent bool   `json:"maps_present"`          // true if map pin directory exists
+	FSPinPath   string `json:"fs_pin_path"`  // empty when no bpffs pin was found
+	MapsPresent bool   `json:"maps_present"` // true if map pin directory exists
 
 	// Links attached to this program (correlated from World.Links)
-	Links []LinkRow `json:"links,omitempty"`
+	Links []LinkRow `json:"links"` // [] when the program has no links
 
 	Presence Presence `json:"presence"`
 }
@@ -153,10 +157,12 @@ func (v ProgramView) PinPath() string {
 
 // LinkRow is a store-first view of a link with presence annotations.
 type LinkRow struct {
-	// Store fields (valid when Presence.InStore is true)
+	// Managed nil means the link is not recorded in the store (kernel-only
+	// observation). Pointer + omitempty encodes that absence.
 	Managed *bpfman.LinkRecord `json:"managed,omitempty"`
 
-	// Kernel fields (valid when Presence.InKernel is true)
+	// Kernel nil means the link is not present in the kernel's link list.
+	// Pointer + omitempty encodes that absence.
 	Kernel *kernel.Link `json:"kernel,omitempty"`
 
 	Presence Presence `json:"presence"`
@@ -239,7 +245,9 @@ type DispatcherRow struct {
 	Nsid     uint64 `json:"nsid"`
 	Ifindex  uint32 `json:"ifindex"`
 
-	// Store fields (valid when ProgPresence.InStore is true)
+	// Managed nil means the dispatcher is not recorded in the store (an orphan
+	// dispatcher observed only on the filesystem). Pointer + omitempty encodes
+	// that absence.
 	Managed   *platform.DispatcherSummary `json:"managed,omitempty"`
 	Revision  uint32                      `json:"revision"`
 	ProgramID kernel.ProgramID            `json:"program_id"`
