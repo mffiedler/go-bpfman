@@ -39,8 +39,15 @@ RUN make -C dispatcher
 # ---------------------------------------------------------------------------
 # Stage 2: Go build
 #
-# Compile go-bpfman against the target architecture. Uses vendored
-# dependencies and strict FIPS runtime for Red Hat compliance.
+# Compile go-bpfman against the target architecture. Dynamically
+# linked against the Red Hat Go toolchain's OpenSSL integration so
+# the resulting binary is FIPS-compliant when run on a RHEL host in
+# FIPS mode: static linking is forbidden by FIPS because it precludes
+# dynamic linkage to the validated OpenSSL cryptographic module, and
+# the strictfipsruntime tag aborts execution if the running binary
+# ends up using anything other than OpenSSL for crypto. The final
+# runtime stage uses ubi-minimal (which ships OpenSSL), so the
+# dynamic linkage resolves at runtime.
 # ---------------------------------------------------------------------------
 # UBI9 go-toolset is only available as a rolling :latest tag for
 # this use case; Konflux does the reproducible pin at the pipeline
@@ -57,18 +64,6 @@ ARG BUILD_BRANCH
 ARG BUILD_DATE
 ARG BUILD_VERSION
 
-# The go-builder stage runs only at build time; the final runtime
-# image below uses its own non-root UBI base. Root is required here
-# to install glibc-static via dnf.
-# hadolint ignore=DL3002
-USER root
-
-# Static linking with CGO requires glibc-static (libc.a). UBI's
-# rolling streams mean exact version pinning breaks on rebuild.
-# hadolint ignore=DL3041
-RUN dnf install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs \
-    glibc-static && dnf clean all
-
 WORKDIR /src
 
 COPY . .
@@ -78,8 +73,11 @@ COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
 
 ENV GOEXPERIMENT=strictfipsruntime
 
+# STATIC is deliberately omitted: a static bpfman binary would not
+# dynamically link to OpenSSL and would fail strictfipsruntime at
+# startup on a FIPS-enabled host.
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    make bpfman-compile STATIC=1 \
+    make bpfman-compile \
     EXTRA_TAGS=strictfipsruntime \
     GIT_COMMIT="${BUILD_COMMIT}" \
     GIT_BRANCH="${BUILD_BRANCH}" \
