@@ -1,0 +1,72 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestFexit_LoadAttachDetachUnload.
+#
+# Loads a fexit counter targeting do_unlinkat(), attaches it,
+# triggers unlink(2) N times via mktemp+rm, verifies the counter
+# advanced by at least N, and cleans up.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestFexit_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool, and kernel BTF.
+
+# Preconditions: BTF-enabled kernel. fexit requires the kernel's
+# BPF Type Format blob to resolve the target symbol.
+require path exists /sys/kernel/btf/vmlinux
+
+# Load the fexit counter nopin object. The --programs spec is
+# TYPE:NAME:ATTACH_FUNC — fentry/fexit encode the target function
+# at load time. The source is the same object as the fentry test;
+# only the section (test_fexit) and declared type differ.
+let prog = [bpfman load file --path testdata/bpf/fentry_counter_nopin.bpf.o --programs fexit:test_fexit:do_unlinkat]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach the fexit program. The target is already baked in.
+let link = [bpfman link attach fexit $prog]
+require not nil link
+
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq fexit
+assert $link.record.details.fn_name eq do_unlinkat
+
+bpfman list programs
+bpfman link list
+
+# The counter map has two entries: key 0 for fentry, key 1 for
+# fexit. This program writes to key 1 only. do_unlinkat() fires on
+# any process's unlink(2), so background system activity can
+# contribute — hence the assertion is a lower bound rather than an
+# equality.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[] | select(.formatted.key == 1) | .formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Trigger do_unlinkat by creating and removing temp files. mktemp
+# creates, rm unlinks — each iteration produces at least one
+# do_unlinkat return.
+foreach _ in [jq "[range(5)]" '0'] {
+    require ok exec sh -c 'f=$(mktemp); rm "$f"'
+}
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta >= 5
+
+# Clean up: detach the link, then unload the program.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
