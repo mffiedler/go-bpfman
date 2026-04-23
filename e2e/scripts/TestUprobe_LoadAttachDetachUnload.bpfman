@@ -1,0 +1,74 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestUprobe_LoadAttachDetachUnload.
+#
+# Loads a uprobe counter, attaches it to do_work() in the
+# testdata/bin/call_malloc helper binary, invokes the binary N
+# times to fire the probe exactly N times, verifies the counter
+# map advanced by exactly N, and cleans up.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestUprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root and bpftool.
+
+# Load the uprobe counter. The _nopin variant gives this program
+# its own private map so the delta is attributable to our own
+# invocations of the helper binary, not to any other process that
+# happens to share a pinned map.
+let prog = [bpfman load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uprobe:uprobe_counter]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to do_work() in the call_malloc helper. The Go test targets
+# a local helper binary (rather than libc) so the test does not
+# depend on finding the correct libc path across distributions
+# (NixOS, Guix, musl all shuffle that around).
+let link = [bpfman link attach uprobe --target testdata/bin/call_malloc --fn-name do_work $prog]
+require not nil link
+
+# Verify the program and link are visible and the link carries the
+# expected uprobe-specific details.
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq uprobe
+assert $link.record.details.target eq testdata/bin/call_malloc
+assert $link.record.details.fn_name eq do_work
+assert $link.record.details.offset == 0
+assert $link.record.details.retprobe eq false
+
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU counter before and after the trigger loop.
+# Uprobes are attached by inode; only invocations of THIS binary
+# fire the probe, so the delta is an exact count of our exec calls.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Each invocation of call_malloc runs main() -> do_work() once, so
+# five invocations fire the uprobe exactly five times.
+foreach _ in [jq "[range(5)]" '0'] {
+    require ok exec testdata/bin/call_malloc
+}
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta == 5
+
+# Clean up: detach the link, then unload the program.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
