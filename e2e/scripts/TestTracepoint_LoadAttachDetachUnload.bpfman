@@ -1,0 +1,68 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestTracepoint_LoadAttachDetachUnload.
+#
+# Loads a tracepoint counter, attaches it to syscalls/sys_enter_kill,
+# triggers the syscall N times, verifies the map counter advanced by
+# exactly N, and cleans up.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestTracepoint_LoadAttachDetachUnload.bpfman
+#
+# Requires root and bpftool.
+
+# Load the tracepoint counter from the e2e testdata directory. The
+# _nopin variant uses LIBBPF_PIN_NONE so the counter map is private
+# to this program — no other loaded copies of the same object share
+# it, which is what makes the post-trigger delta an exact count.
+let prog = [bpfman load file --path testdata/bpf/tracepoint_counter_nopin.bpf.o --programs tracepoint:tracepoint_kill_recorder]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to the syscalls/sys_enter_kill tracepoint.
+let link = [bpfman link attach tracepoint --tracepoint syscalls/sys_enter_kill $prog]
+require not nil link
+
+# Verify the program and link are visible.
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+
+# List all managed programs and links.
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU counter before and after the trigger loop.
+# Because the _nopin variant gives this program its own private map,
+# the counter only reflects kill(2) entries that fired while OUR
+# program was attached, and the delta is an exact count of the
+# syscalls we caused.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Trigger the tracepoint. kill(2) with signal 0 fires the syscall
+# (testing pid existence) without delivering anything, so the sh
+# invocation exits cleanly and require-ok is a real check.
+foreach _ in [jq "[range(5)]" '0'] {
+    require ok exec sh -c 'kill -0 $$'
+}
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta == 5
+
+# Clean up: detach the link, then unload the program.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
