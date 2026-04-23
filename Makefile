@@ -36,6 +36,7 @@ help:
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
+	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
 	@echo "  test-nsenter-{arch}         Run nsenter tests for a single architecture"
@@ -207,6 +208,35 @@ test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	go test -c -race -tags=e2e$(if $(STATIC),$(comma)$(STATIC_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
 	cd e2e && sudo ../e2e.test -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+
+# Run every REPL script under e2e/scripts/ against the built
+# bpfman binary. Each script executes from e2e/ so testdata paths
+# match the Go e2e tests. The target runs them sequentially,
+# reports failures as it goes, and exits non-zero at the end if
+# any script failed. Pass TEST=<name> to restrict to scripts whose
+# filename contains <name>.
+test-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+	@echo "Running REPL e2e scripts (requires root)..."
+	@fail=0; failed=""; \
+	for f in e2e/scripts/*.bpfman; do \
+		name=$$(basename $$f); \
+		if [ -n "$(TEST)" ] && ! echo "$$name" | grep -q "$(TEST)"; then continue; fi; \
+		printf "=== %s ===\n" "$$name"; \
+		if (cd e2e && sudo ../$(BIN_DIR)/bpfman repl -f scripts/$$name); then \
+			echo "    pass: $$name"; \
+		else \
+			echo "    FAIL: $$name"; \
+			fail=1; \
+			failed="$$failed $$name"; \
+		fi; \
+	done; \
+	if [ $$fail -ne 0 ]; then \
+		echo ""; \
+		echo "failed:$$failed"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "all REPL e2e scripts passed"
 
 # Documentation
 DOC_PORT ?= 6060
@@ -636,6 +666,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 	stats-reader-deploy \
 	stats-reader-logs \
 	test-e2e \
+	test-e2e-scripts \
 	test \
 	test-nsenter \
 	test-nsenter-amd64 \
