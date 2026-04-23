@@ -158,9 +158,16 @@ jobs:
         # TCX/TC/XDP counters. iproute2 and iputils-ping are usually
         # present on ubuntu-latest but we install explicitly so the
         # workflow does not silently depend on the base image.
+        #
+        # On Ubuntu bpftool is a virtual package: the wrapper lives
+        # in linux-tools-common and the arch-specific binary in
+        # linux-tools-generic. Install both so the wrapper resolves
+        # to a working binary on both amd64 and arm64 runners.
         run: |
           sudo apt-get update
-          sudo apt-get install -y bpftool iproute2 iputils-ping
+          sudo apt-get install -y \
+            linux-tools-common linux-tools-generic \
+            iproute2 iputils-ping
 
       - name: E2E REPL scripts
         run: make test-e2e-scripts STATIC=1
