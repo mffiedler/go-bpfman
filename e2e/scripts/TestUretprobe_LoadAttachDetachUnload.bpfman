@@ -1,0 +1,75 @@
+# -*- mode: bpfman -*-
+# REPL equivalent of e2e/TestUretprobe_LoadAttachDetachUnload.
+#
+# Loads the same uprobe counter object as the uprobe test but
+# declares it at program-type uretprobe, attaches it to do_work()
+# in testdata/bin/call_malloc, invokes the binary N times, and
+# asserts the counter advanced by exactly N.
+#
+# Path conventions follow the Go e2e tests: testdata is referenced
+# relative to e2e/, so invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman repl -f scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root and bpftool.
+
+# Load the uprobe counter ELF as a uretprobe program. The same
+# object serves both uprobe and uretprobe; the program type at
+# load time governs whether attaches fire on function entry or
+# return. The _nopin variant isolates the counter to this program.
+let prog = [bpfman load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uretprobe:uprobe_counter]
+require not nil prog
+let pid = $prog.record.program_id
+assert not-empty $pid
+
+# Attach to do_work() in the call_malloc helper. The attach command
+# is the same as for uprobe — retprobe semantics come from the
+# program type, not the attach spec.
+let link = [bpfman link attach uprobe --target testdata/bin/call_malloc --fn-name do_work $prog]
+require not nil link
+
+# Verify the program and link are visible. The server returns
+# kind=uretprobe with retprobe=true even though the attach API
+# itself is the generic uprobe one.
+assert ok bpfman show program $pid
+require ok bpfman link get $link
+assert $link.record.kind eq uretprobe
+assert $link.record.details.target eq testdata/bin/call_malloc
+assert $link.record.details.fn_name eq do_work
+assert $link.record.details.offset == 0
+assert $link.record.details.retprobe eq true
+
+bpfman list programs
+bpfman link list
+
+# Snapshot the per-CPU counter before and after the trigger loop.
+# Uretprobes are attached by inode; only returns from do_work() in
+# THIS binary fire the probe, so the delta is an exact count of
+# our exec calls.
+let mapID     = $prog.status.maps[0].id
+let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+
+let dumpBefore = [exec bpftool map dump id $mapID -j]
+let before     = $dumpBefore.stdout |> jq $sumFilter
+
+# Each invocation of call_malloc runs main() -> do_work() -> return
+# once, so five invocations fire the uretprobe exactly five times.
+foreach _ in [jq "[range(5)]" '0'] {
+    require ok exec testdata/bin/call_malloc
+}
+
+let dumpAfter = [exec bpftool map dump id $mapID -j]
+let after     = $dumpAfter.stdout |> jq $sumFilter
+let delta     = [[$after - $before]]
+print $delta
+assert $delta == 5
+
+# Clean up: detach the link, then unload the program.
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid mapID sumFilter dumpBefore dumpAfter before after delta
