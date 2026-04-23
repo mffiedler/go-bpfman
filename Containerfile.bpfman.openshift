@@ -80,10 +80,14 @@ ENV GOEXPERIMENT=strictfipsruntime
 # The shell prelude normalises BUILD_DATE: Konflux passes it as a
 # unix epoch (e.g. 1776962198), while every other build path uses
 # ISO 8601 (YYYY-MM-DDTHH:MM:SSZ). Detect the all-digits case and
-# reformat so `bpfman version` prints a readable timestamp.
-RUN if printf '%s' "${BUILD_DATE}" | grep -qE '^[0-9]+$'; then \
-        BUILD_DATE=$(date -u -d "@${BUILD_DATE}" +%Y-%m-%dT%H:%M:%SZ); \
-    fi; \
+# reformat so `bpfman version` prints a readable timestamp. The
+# `case` test avoids the shell pipe that would otherwise trigger
+# hadolint DL4006 without buying us anything; this stage has no
+# other pipes.
+RUN case "${BUILD_DATE}" in \
+        *[!0-9]* | '' ) ;; \
+        * ) BUILD_DATE=$(date -u -d "@${BUILD_DATE}" +%Y-%m-%dT%H:%M:%SZ) ;; \
+    esac; \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     make bpfman-compile \
     EXTRA_TAGS=strictfipsruntime \
