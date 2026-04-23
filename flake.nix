@@ -15,19 +15,22 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            # Go toolchain and CGO.
-            go_1_25
+            # Go toolchain and CGO. glibc.static supplies libc.a and
+            # libpthread.a so `make STATIC=1` can link CGO binaries
+            # against a scratch base.
             gcc
-            pkg-config
-            gnumake
             git
+            glibc.static
+            gnumake
+            go_1_25
+            pkg-config
 
             # BPF build toolchain.
-            clang
-            llvm
-            libbpf
             bpftools
+            clang
+            libbpf
             linuxHeaders
+            llvm
 
             # Proto/gRPC codegen (make bpfman-proto).
             protobuf
@@ -35,9 +38,12 @@
             protoc-gen-go-grpc
 
             # Lint, coverage, misc.
+            checkmake
             golangci-lint
-            jq
+            hadolint
             iproute2
+            jq
+            shellcheck
 
             # SQLite (CLI for inspection; dev headers for -tags cgo_sqlite).
             sqlite

@@ -1,5 +1,12 @@
-# Make helper: literal comma for use inside $(if) expansions.
+# Make helpers for use inside $(if) expansions and tag joining.
 comma := ,
+empty :=
+space := $(empty) $(empty)
+# comma-join turns a space-separated word list into a comma-separated
+# string, dropping empty words. Used to compose -tags lists without
+# producing stray leading/trailing commas when a contributor (STATIC,
+# EXTRA_TAGS) is empty.
+comma-join = $(subst $(space),$(comma),$(strip $(1)))
 
 # Tool versions — single source of truth for CI and Docker builds.
 FEDORA_VERSION ?= 43
@@ -100,6 +107,9 @@ clean: bpfman-clean bpf-clean coverage-clean
 	$(RM) -r $(BIN_DIR)
 
 PARALLEL ?=
+# Optional regex passed to `-test.run` in test-e2e / test-e2e-scripts
+# to narrow which tests execute. Empty by default = run all.
+TEST ?=
 
 # Static linking is opt-in via STATIC=1. Any other value disables it.
 # The upstream container image enables it because the runtime base is
@@ -115,10 +125,67 @@ PARALLEL ?=
 override STATIC := $(filter 1,$(STATIC))
 
 test: bpf-build
-	go test -race $(if $(STATIC),-tags '$(STATIC_TAGS)' -ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
+	go test -race $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
 
-lint: bpf-build $(BIN_DIR)/golangci-lint
+# Uber lint target: run every language-specific linter in turn.
+# Keep each sub-target independently runnable so contributors can
+# iterate on one layer at a time.
+lint: lint-go lint-make lint-hack lint-dockerfile
+
+lint-go: bpf-build $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
+
+# Lint the Makefile itself.
+#
+# Layer 1: checkmake (reads checkmake.ini for rule thresholds).
+#
+# Layer 2: GNU Make's `--warn-undefined-variables` in dry-run mode
+# against a bundle of representative targets. Variables referenced
+# only inside a recipe are deferred-expansion: a warning only fires
+# once the recipe is selected for execution. The bundle below
+# exercises every recipe that pulls a caller-tunable variable (TEST,
+# PARALLEL, PLATFORMS, EXTRA_*, etc.) so those references get
+# probed. Any warning is escalated to an error.
+LINT_MAKE_TARGETS := \
+	help \
+	test test-e2e test-e2e-scripts \
+	test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross \
+	bpfman-compile \
+	docker-build-bpfman-local docker-build-bpfman-multiarch \
+	docker-build-stats-reader docker-build-csi-sanity docker-build-openshift \
+	cosign-sign coverage clean
+
+lint-make:
+	checkmake --config=checkmake.ini Makefile
+	@echo "Probing --warn-undefined-variables across representative targets..."
+	@if $(MAKE) --warn-undefined-variables --no-print-directory -n $(LINT_MAKE_TARGETS) 2>&1 \
+	    | grep -E '^Makefile:.*warning:'; then \
+	    echo "FAIL: --warn-undefined-variables reported issues"; \
+	    exit 1; \
+	fi
+	@echo "--warn-undefined-variables: clean"
+
+# Lint every shell script under hack/ recursively so subdirectories
+# (hack/openshift/, etc.) are covered. -x lets shellcheck follow
+# source-statements to other files in the tree.
+lint-hack:
+	find hack -type f -name '*.sh' -exec shellcheck -x {} +
+
+# Lint every Dockerfile / Containerfile with hadolint. The existing
+# `# hadolint ignore=...` pragmas in the repo are already set up
+# for this tool; adding the target wires it into CI.
+LINT_DOCKERFILES := \
+	Dockerfile.bpf \
+	Dockerfile.bpf.openshift \
+	Dockerfile.bpfman.local \
+	Dockerfile.bpfman.multiarch \
+	Dockerfile.bpfman.multiarch.fedora \
+	Dockerfile.csi-sanity \
+	Containerfile.bpfman.openshift \
+	examples/stats-reader/Dockerfile
+
+lint-dockerfile:
+	hadolint $(LINT_DOCKERFILES)
 
 # Coverage targets
 COVERAGE_DIR ?= .coverage
@@ -166,37 +233,13 @@ NSENTER_TEST_BIN ?= nsenter.test
 
 test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
-	CGO_ENABLED=1 go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/
+	CGO_ENABLED=1 go test -c $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/
 	file $(NSENTER_TEST_BIN)
 	sudo ./$(NSENTER_TEST_BIN) -test.v
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
-	@goarch=$(@:test-nsenter-%=%); \
-	case $$goarch in \
-		arm64)   prefix=aarch64;     qemu_arch=aarch64 ;; \
-		ppc64le) prefix=powerpc64le; qemu_arch=ppc64le ;; \
-		s390x)   prefix=s390x;       qemu_arch=s390x ;; \
-	esac; \
-	cc=$$(command -v $${prefix}-unknown-linux-gnu-gcc 2>/dev/null || \
-	      command -v $${prefix}-linux-gnu-gcc 2>/dev/null || true); \
-	if [ -z "$$cc" ]; then \
-		echo "error: no cross-compiler for $$goarch" >&2; \
-		echo "  tried: $${prefix}-unknown-linux-gnu-gcc (nix)" >&2; \
-		echo "  tried: $${prefix}-linux-gnu-gcc (distro)" >&2; \
-		exit 1; \
-	fi; \
-	qemu="qemu-$$qemu_arch"; \
-	sysroot=""; \
-	if [ -d "/usr/$${prefix}-linux-gnu" ]; then \
-		sysroot="/usr/$${prefix}-linux-gnu"; \
-		qemu="$$qemu -L $$sysroot"; \
-	fi; \
-	echo "=== nsenter: $$goarch (CC=$$cc, exec=$$qemu) ==="; \
-	CGO_ENABLED=1 GOOS=linux GOARCH=$$goarch CC="$$cc" \
-		go test -c -tags=nsenter -o $(NSENTER_TEST_BIN) ./ns/nsenter/; \
-	file $(NSENTER_TEST_BIN); \
-	sudo QEMU_LD_PREFIX="$$sysroot" \
-		$$qemu ./$(NSENTER_TEST_BIN) -test.v
+	NSENTER_TEST_BIN=$(NSENTER_TEST_BIN) NSENTER_TAGS=$(NSENTER_TAGS) \
+		hack/test-nsenter-cross.sh $(@:test-nsenter-%=%)
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
@@ -205,7 +248,7 @@ e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
 
 test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	@echo "Compiling e2e test binary..."
-	go test -c -race -tags=e2e$(if $(STATIC),$(comma)$(STATIC_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e
+	go test -c -race $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e
 	@echo "Running e2e tests (requires root)..."
 	cd e2e && sudo ../e2e.test -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
@@ -217,26 +260,7 @@ test-e2e: bpf-build e2e/testdata/bin/call_malloc
 # filename contains <name>.
 test-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
 	@echo "Running REPL e2e scripts (requires root)..."
-	@fail=0; failed=""; \
-	for f in e2e/scripts/*.bpfman; do \
-		name=$$(basename $$f); \
-		if [ -n "$(TEST)" ] && ! echo "$$name" | grep -q "$(TEST)"; then continue; fi; \
-		printf "=== %s ===\n" "$$name"; \
-		if (cd e2e && sudo ../$(BIN_DIR)/bpfman repl -f scripts/$$name); then \
-			echo "    pass: $$name"; \
-		else \
-			echo "    FAIL: $$name"; \
-			fail=1; \
-			failed="$$failed $$name"; \
-		fi; \
-	done; \
-	if [ $$fail -ne 0 ]; then \
-		echo ""; \
-		echo "failed:$$failed"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "all REPL e2e scripts passed"
+	BIN_DIR=$(BIN_DIR) hack/test-e2e-scripts.sh $(TEST)
 
 # Documentation
 DOC_PORT ?= 6060
@@ -258,8 +282,35 @@ VERSION_PKG := github.com/frobware/go-bpfman/version
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GIT_STATE ?= $(shell if git diff --quiet 2>/dev/null; then echo clean; else echo dirty; fi)
-BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+# Captured once so every reference returns the same timestamp. ?=
+# would have been recursively-expanded and re-run `date` per use.
+ifndef BUILD_DATE
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+endif
 GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+
+# Caller-supplied additional flags forwarded to every `go build` and
+# `go test` invocation via Go's own GOFLAGS environment variable.
+# Empty by default; CI uses EXTRA_GOFLAGS=-a to force a from-scratch
+# rebuild of every package (so no stale build cache artefact can
+# poison a published binary). Also useful locally for -trimpath, -v,
+# -x, -gcflags, -count=1, etc. Go silently ignores entries that do
+# not apply to the current subcommand, so a single value can carry
+# both build- and test-only flags. Appended after any inherited
+# GOFLAGS so caller intent wins on duplicate flags.
+EXTRA_GOFLAGS ?=
+
+# Combine inherited GOFLAGS (env / command line) with EXTRA_GOFLAGS
+# and export once, so every recipe's `go` invocation picks it up
+# without a per-recipe prefix. `override` is required because
+# otherwise `make GOFLAGS=foo EXTRA_GOFLAGS=-a` would let the
+# command-line assignment win and drop the append. The `?=`
+# declares GOFLAGS with an empty default so `make
+# --warn-undefined-variables` does not flag the reference on the
+# next line when GOFLAGS is not set in the environment.
+GOFLAGS ?=
+override GOFLAGS := $(strip $(GOFLAGS) $(EXTRA_GOFLAGS))
+export GOFLAGS
 
 # Caller-supplied additional ldflags. Empty by default so local
 # development still produces unstripped binaries with full symbol
@@ -271,7 +322,7 @@ EXTRA_GO_LDFLAGS ?=
 # `bpfman version` can print a ready-to-pipe `cosign verify` command
 # for the image this binary was published from. All three default
 # to empty: local `make build`, the host-build path via
-# Dockerfile.bpfman.host, and downstream Konflux/RHEL/UBI builds
+# Dockerfile.bpfman.local, and downstream Konflux/RHEL/UBI builds
 # leave them unset, and the version printer omits the Attestation
 # line entirely when any of them is empty. Only the CI image-build
 # workflow (.github/workflows/image.yaml) populates them.
@@ -303,13 +354,18 @@ bpfman-fmt:
 bpfman-vet: bpf-build
 	go vet ./...
 
-# Compile bpfman without the dispatcher dependency. Used directly by
-# container builds where dispatcher objects are already present.
-bpfman-compile: | $(BIN_DIR)
 STATIC_TAGS := osusergo,netgo
 EXTRA_TAGS ?=
-BUILD_TAGS = $(if $(STATIC),$(STATIC_TAGS))$(if $(EXTRA_TAGS),$(if $(STATIC),$(comma))$(EXTRA_TAGS))
+# Tag sets consumed by each go build/test recipe. EXTRA_TAGS is
+# appended to every set so callers can add a tag once (e.g.
+# EXTRA_TAGS=cgo_sqlite) and have every build path pick it up.
+BUILD_TAGS   := $(call comma-join,$(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
+TEST_TAGS    := $(BUILD_TAGS)
+E2E_TAGS     := $(call comma-join,e2e $(if $(STATIC),$(STATIC_TAGS)) $(EXTRA_TAGS))
+NSENTER_TAGS := $(call comma-join,nsenter $(EXTRA_TAGS))
 
+# Compile bpfman without the dispatcher dependency. Used directly by
+# container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
 	CGO_ENABLED=1 go build $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
 
@@ -341,7 +397,8 @@ $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: $(BPFMAN_PROTO
 docker-build-bpfman-local: bpfman-build
 	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
-		-f Dockerfile.bpfman.host .
+		-f Dockerfile.bpfman.local \
+		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # Multi-architecture buildx-native image build.
 #
@@ -377,15 +434,21 @@ docker-build-bpfman-local: bpfman-build
 # `scratch` and the two are coupled: a dynamically linked binary
 # would crash immediately on a libc-less base. If you need a
 # non-static binary (FIPS Go toolchains, dynamic-glibc bases), build
-# on the host and package via Dockerfile.bpfman.host instead.
+# on the host and package via Dockerfile.bpfman.local instead.
 #
 # Multi-platform builds require a docker-container or remote buildx
 # builder. CI workflows use docker/setup-buildx-action which
 # provisions one automatically; locally, run `docker buildx create
 # --driver docker-container --use` once.
-PLATFORMS            ?=
-PUSH                 ?=
-BUILDX_EXTRA_ARGS    ?=
+PLATFORMS               ?=
+PUSH                    ?=
+BUILDX_EXTRA_ARGS       ?=
+# Caller-supplied extra args passed last to the plain `docker build`
+# targets (docker-build-bpfman-local, docker-build-stats-reader,
+# docker-build-csi-sanity, docker-build-openshift). Positioned just
+# before the build context so caller flags override any preceding
+# hard-coded flags that buildx/docker treats as last-wins.
+EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which multiarch Dockerfile the target builds. Defaults to
 # the bookworm-based production path; CI overrides this to point at
 # Dockerfile.bpfman.multiarch.fedora when building the all-Fedora
@@ -421,18 +484,19 @@ docker-build-bpfman-multiarch:
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
 		$(BUILDX_OUTPUT) \
 		$(BUILDX_ATTEST) \
-		$(BUILDX_EXTRA_ARGS) \
 		$(if $(BUILDX_METADATA_FILE),--metadata-file=$(BUILDX_METADATA_FILE)) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg EXTRA_GOFLAGS="$(EXTRA_GOFLAGS)" \
 		--build-arg EXTRA_GO_LDFLAGS="$(EXTRA_GO_LDFLAGS)" \
 		--build-arg IMAGE_REF="$(IMAGE_REF)" \
 		--build-arg SIGNER_IDENTITY="$(SIGNER_IDENTITY)" \
 		--build-arg OIDC_ISSUER="$(OIDC_ISSUER)" \
 		-f $(MULTIARCH_DOCKERFILE) \
-		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
+		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+		$(BUILDX_EXTRA_ARGS) .
 
 # Sign a published multi-arch image with cosign, anchored to the
 # immutable index digest rather than the mutable tag.
@@ -532,7 +596,7 @@ bpfman-test-grpc: docker-build-bpfman-local
 
 # stats-reader example app
 docker-build-stats-reader:
-	docker build -t $(STATS_READER_IMAGE):$(IMAGE_TAG) -f examples/stats-reader/Dockerfile .
+	docker build -t $(STATS_READER_IMAGE):$(IMAGE_TAG) -f examples/stats-reader/Dockerfile $(EXTRA_DOCKER_BUILD_ARGS) .
 
 stats-reader-kind-load: docker-build-stats-reader
 	kind load docker-image $(STATS_READER_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
@@ -551,7 +615,7 @@ stats-reader-logs:
 CSI_SANITY_IMAGE ?= csi-sanity
 
 docker-build-csi-sanity:
-	docker build -t $(CSI_SANITY_IMAGE):$(IMAGE_TAG) -f Dockerfile.csi-sanity .
+	docker build -t $(CSI_SANITY_IMAGE):$(IMAGE_TAG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
 
 # KIND cluster management
 kind-create:
@@ -587,7 +651,8 @@ docker-build-openshift:
 		--build-arg BUILD_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--build-arg BUILD_VERSION=$(GIT_VERSION) \
-		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) .
+		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # BPF build targets
 #
@@ -605,20 +670,23 @@ BPF_DOCKERFILE ?= Dockerfile.bpf
 BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c)
 BPF_STAMP := .bpf-build-stamp
 
-.PHONY: bpf-build bpf-clean
-
 bpf-build: $(BPF_STAMP)
 
+# The Dockerfile is a dependency only when the Docker path is in
+# effect; BPF_USE_HOST skips it. Both the dependency list and the
+# build command are selected here so the $(BPF_STAMP) rule below
+# has a single, checkmake-parseable recipe body.
 ifdef BPF_USE_HOST
-$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
-	$(MAKE) -C dispatcher
-	$(MAKE) -C e2e/testdata/bpf
-	touch $(BPF_STAMP)
+BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
+BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
 else
-$(BPF_STAMP): $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile $(BPF_DOCKERFILE)
-	docker build -f $(BPF_DOCKERFILE) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
-	touch $(BPF_STAMP)
+BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile $(BPF_DOCKERFILE)
+BPF_STAMP_CMD  := docker build -f $(BPF_DOCKERFILE) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
 endif
+
+$(BPF_STAMP): $(BPF_STAMP_DEPS)
+	$(BPF_STAMP_CMD)
+	touch $(BPF_STAMP)
 
 bpf-clean:
 	$(MAKE) -C dispatcher clean
@@ -628,49 +696,19 @@ bpf-clean:
 # Combined targets
 kind-undeploy-all: stats-reader-delete bpfman-delete
 
-.PHONY: \
-	bpfman-build \
-	bpfman-clean \
-	bpfman-delete \
-	bpfman-delete-test \
-	bpfman-deploy \
-	bpfman-deploy-test \
-	bpfman-kind-load \
-	bpfman-logs \
-	bpfman-proto \
-	bpfman-test-grpc \
-	build-all \
-	clean \
-	coverage \
-	coverage-clean \
-	coverage-func \
-	coverage-html \
-	coverage-open \
-	bpf-build \
-	bpf-clean \
-	doc \
-	doc-text \
-	docker-build-all \
-	build-image \
-	cosign-sign \
-	docker-build-bpfman-local \
-	docker-build-bpfman-multiarch \
-	docker-build-csi-sanity \
-	docker-build-stats-reader \
-	help \
-	kind-create \
-	kind-delete \
-	kind-undeploy-all \
-	lint \
-	stats-reader-delete \
-	stats-reader-deploy \
-	stats-reader-logs \
-	test-e2e \
-	test-e2e-scripts \
-	test \
-	test-nsenter \
-	test-nsenter-amd64 \
-	test-nsenter-arm64 \
-	test-nsenter-cross \
-	test-nsenter-ppc64le \
-	test-nsenter-s390x
+# Grouped across several lines because checkmake does not parse
+# .PHONY with backslash line continuations; each .PHONY line is a
+# stand-alone declaration.
+.PHONY: all build-all clean help lint lint-dockerfile lint-go lint-hack lint-make
+.PHONY: bpf-build bpf-clean
+.PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
+.PHONY: bpfman-delete bpfman-delete-test bpfman-deploy bpfman-deploy-test bpfman-kind-load bpfman-logs bpfman-operator-deploy
+.PHONY: build-image cosign-sign
+.PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
+.PHONY: doc doc-text
+.PHONY: docker-build-all docker-build-bpfman-local docker-build-bpfman-multiarch docker-build-csi-sanity docker-build-openshift docker-build-stats-reader
+.PHONY: kind-create kind-delete kind-undeploy-all
+.PHONY: print-fedora-version print-go-version print-golangci-lint-version
+.PHONY: stats-reader-delete stats-reader-deploy stats-reader-kind-load stats-reader-logs
+.PHONY: test test-e2e test-e2e-scripts
+.PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

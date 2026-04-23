@@ -12,7 +12,10 @@ RUN --mount=type=cache,target=/go-cache,uid=1001,gid=0 \
     --mount=type=cache,target=/go-mod-cache,uid=1001,gid=0 \
     CGO_ENABLED=0 GOCACHE=/go-cache GOMODCACHE=/go-mod-cache go build -o stats-reader .
 
-# Runtime image
+# Runtime image. This is example code; the tag is deliberately
+# floating so the sample keeps working against whatever ubi-minimal
+# ships at the time.
+# hadolint ignore=DL3007
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --from=builder /build/stats-reader /usr/local/bin/

@@ -12,7 +12,7 @@
 # BASE_IMAGE to a base that provides a compatible glibc, e.g.:
 #
 #   docker build \
-#     -f Dockerfile.bpfman.host \
+#     -f Dockerfile.bpfman.local \
 #     --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest .
 
 ARG BASE_IMAGE=scratch

@@ -10,10 +10,10 @@
 # time. This avoids QEMU emulation of the entire build and is
 # significantly faster than per-arch native builds.
 #
-# This file is intentionally separate from Dockerfile.bpfman.host:
+# This file is intentionally separate from Dockerfile.bpfman.local:
 # it is the buildx-native variant and is self-contained (it builds
 # the BPF objects itself rather than relying on a pre-populated
-# bin/ or .bpf.o tree). Dockerfile.bpfman.host stays in place for
+# bin/ or .bpf.o tree). Dockerfile.bpfman.local stays in place for
 # fast local KIND iteration via docker-build-bpfman-local.
 #
 # Local single-arch test (loads the result into the local Docker
@@ -122,6 +122,13 @@ ARG GIT_BRANCH=
 ARG GIT_VERSION=
 ARG BUILD_DATE=
 
+# Caller-supplied additional flags forwarded to `go build` / `go
+# test` via Go's own GOFLAGS environment variable. Empty by default;
+# CI sets EXTRA_GOFLAGS=-a to force a from-scratch rebuild of every
+# package, guaranteeing no stale build cache artefact ends up in a
+# published image.
+ARG EXTRA_GOFLAGS=
+
 # Caller-supplied additional Go ldflags. Empty by default; CI passes
 # `-s -w` to drop the symbol table and DWARF sections from shipped
 # images. Local development leaves it empty so that bin/bpfman
@@ -156,6 +163,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         GIT_BRANCH="$GIT_BRANCH" \
         GIT_VERSION="$GIT_VERSION" \
         BUILD_DATE="$BUILD_DATE" \
+        EXTRA_GOFLAGS="$EXTRA_GOFLAGS" \
         EXTRA_GO_LDFLAGS="$EXTRA_GO_LDFLAGS" \
         IMAGE_REF="$IMAGE_REF" \
         SIGNER_IDENTITY="$SIGNER_IDENTITY" \
@@ -164,7 +172,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 # ---------------------------------------------------------------------------
 # Final image: scratch + the static bpfman binary. Matches the
-# upstream policy already encoded in Dockerfile.bpfman.host's default
+# upstream policy already encoded in Dockerfile.bpfman.local's default
 # BASE_IMAGE.
 # ---------------------------------------------------------------------------
 FROM scratch

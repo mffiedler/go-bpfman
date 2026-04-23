@@ -96,6 +96,8 @@ RUN dnf update -y && \
 #
 #   install_weak_deps=False keeps the installroot lean.
 ARG FEDORA_VERSION
+# Distro rolling repos make exact version pinning brittle.
+# hadolint ignore=DL3041
 RUN set -eux; \
     for arch in aarch64 ppc64le s390x; do \
         sysroot="/sysroots/${arch}"; \
@@ -125,6 +127,13 @@ ARG GIT_COMMIT=
 ARG GIT_BRANCH=
 ARG GIT_VERSION=
 ARG BUILD_DATE=
+
+# Caller-supplied additional flags forwarded to `go build` / `go
+# test` via Go's own GOFLAGS environment variable. Empty by default;
+# CI sets EXTRA_GOFLAGS=-a to force a from-scratch rebuild of every
+# package, guaranteeing no stale build cache artefact ends up in a
+# published image.
+ARG EXTRA_GOFLAGS=
 
 # Caller-supplied additional Go ldflags. Empty by default; CI passes
 # `-s -w` to drop the symbol table and DWARF sections from shipped
@@ -160,6 +169,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
         GIT_BRANCH="$GIT_BRANCH" \
         GIT_VERSION="$GIT_VERSION" \
         BUILD_DATE="$BUILD_DATE" \
+        EXTRA_GOFLAGS="$EXTRA_GOFLAGS" \
         EXTRA_GO_LDFLAGS="$EXTRA_GO_LDFLAGS" \
         IMAGE_REF="$IMAGE_REF" \
         SIGNER_IDENTITY="$SIGNER_IDENTITY" \

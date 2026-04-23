@@ -42,6 +42,10 @@ RUN make -C dispatcher
 # Compile go-bpfman against the target architecture. Uses vendored
 # dependencies and strict FIPS runtime for Red Hat compliance.
 # ---------------------------------------------------------------------------
+# UBI9 go-toolset is only available as a rolling :latest tag for
+# this use case; Konflux does the reproducible pin at the pipeline
+# level, not at the Containerfile level.
+# hadolint ignore=DL3007
 FROM registry.access.redhat.com/ubi9/go-toolset:latest AS go-builder
 
 ARG TARGETOS=linux
@@ -53,9 +57,15 @@ ARG BUILD_BRANCH
 ARG BUILD_DATE
 ARG BUILD_VERSION
 
+# The go-builder stage runs only at build time; the final runtime
+# image below uses its own non-root UBI base. Root is required here
+# to install glibc-static via dnf.
+# hadolint ignore=DL3002
 USER root
 
-# Static linking with CGO requires glibc-static (libc.a).
+# Static linking with CGO requires glibc-static (libc.a). UBI's
+# rolling streams mean exact version pinning breaks on rebuild.
+# hadolint ignore=DL3041
 RUN dnf install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs \
     glibc-static && dnf clean all
 
@@ -81,6 +91,8 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime
 # ---------------------------------------------------------------------------
+# See the go-toolset FROM above for the latest-tag rationale.
+# hadolint ignore=DL3007
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG BUILDVERSION
