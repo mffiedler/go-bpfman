@@ -1,12 +1,9 @@
 { lib
 , stdenv
-, clang
+, bpf-objects
 , glibc
 , gnumake
 , go_1_25
-, libbpf
-, linuxHeaders
-, pkg-config
 , self
 , static ? true
 }:
@@ -26,21 +23,17 @@ stdenv.mkDerivation rec {
   src = ./..;
 
   nativeBuildInputs = [
-    clang
     gnumake
     go_1_25
-    pkg-config
   ];
 
-  # libbpf must be a buildInput so pkg-config-wrapper adds its .pc
-  # directory to PKG_CONFIG_PATH; linuxHeaders provides <linux/*.h>
-  # via libbpf's transitive CFLAGS. glibc.static supplies libc.a /
-  # libpthread.a so the CGO link step can produce a static binary
-  # against a scratch-compatible base when static=true.
-  buildInputs = [
-    libbpf
-    linuxHeaders
-  ] ++ lib.optional static glibc.static;
+  # glibc.static supplies libc.a / libpthread.a so the CGO link step
+  # can produce a static binary against a scratch-compatible base
+  # when static=true. The BPF toolchain is intentionally absent: the
+  # .bpf.o files come pre-built via the `bpf-objects` derivation and
+  # get copied into place in buildPhase, so this derivation only
+  # needs the Go toolchain and (when static) glibc's static archives.
+  buildInputs = lib.optional static glibc.static;
 
   # Pass flake-captured git metadata through the Makefile's existing
   # ldflags pipeline. GIT_BRANCH is not meaningful for a flake-rev
@@ -90,12 +83,10 @@ stdenv.mkDerivation rec {
     export GOCACHE=$TMPDIR/go-cache
     export GOFLAGS=-mod=vendor
 
-    # Nix's cc-wrapper injects hardening flags (-fstack-protector-strong,
-    # -fzero-call-used-regs=used-gpr, etc.) that clang rejects for
-    # the BPF target. Scope the override to just the dispatcher
-    # compile so the CGO build of ns/nsenter/nsexec.c that follows
-    # keeps the full hardening treatment.
-    NIX_HARDENING_ENABLE= make -C dispatcher
+    # Seed the BPF objects from the shared derivation. The dispatcher
+    # Go package embeds them via go:embed, so they must be present
+    # before `go build` runs.
+    cp ${bpf-objects}/dispatcher/*.bpf.o dispatcher/
 
     make bpfman-compile ${lib.optionalString static "STATIC=1"}
 

@@ -14,21 +14,27 @@
     {
       packages = forAllSystems (pkgs: rec {
         default = bpfman;
-        # Statically linked against a scratch-compatible base; this
-        # is the portable binary you can cp to any linux-x86_64 or
-        # linux-aarch64 host irrespective of its glibc version.
+        # Compiled eBPF objects (dispatcher + e2e testdata). Exposed
+        # as a package in its own right so CI can seed the source
+        # tree without rebuilding, and so `packages.bpfman` can
+        # consume it as a build input.
+        bpf-objects = pkgs.callPackage ./nix/bpf-objects.nix { };
+        # Statically linked against a scratch-compatible base; the
+        # portable binary you can cp to any linux-x86_64 or
+        # linux-aarch64 host regardless of its glibc version.
         bpfman = pkgs.callPackage ./nix/package.nix {
-          inherit self;
+          inherit self bpf-objects;
           static = true;
         };
         # Nix-native dynamic build: lighter, quicker link, but the
-        # produced binary's interpreter path points into this Nix
-        # store, so it only runs on hosts that can resolve it.
+        # produced binary's interpreter points into this Nix store
+        # so it only runs on hosts that can resolve it.
         bpfman-dynamic = pkgs.callPackage ./nix/package.nix {
-          inherit self;
+          inherit self bpf-objects;
           static = false;
         };
       });
+
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
