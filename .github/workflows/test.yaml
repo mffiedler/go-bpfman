@@ -151,33 +151,34 @@ jobs:
       - name: Touch BPF objects to preserve Make freshness
         run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
 
-      - name: Install script dependencies
-        # bpftool inspects counter maps; iproute2 provides ip and tc
-        # for veth and netns setup plus TC dispatcher checks;
-        # iputils-ping drives the packet generation that fires the
-        # TCX/TC/XDP counters.
-        #
-        # Ubuntu's bpftool wrapper in linux-tools-common looks for
-        # /usr/lib/linux-tools/<uname -r>/bpftool, but the Azure
-        # kernel's linux-tools package installs the binary under
-        # /usr/lib/linux-azure-tools-<kernel>/ instead, so the
-        # wrapper keeps complaining "bpftool not found for kernel
-        # ..." even after the correct package is installed. Bypass
-        # the wrapper by locating the real binary via dpkg -L and
-        # symlinking it onto /usr/local/bin, which precedes
-        # /usr/bin on PATH.
+      - name: Install iproute2 and iputils-ping
+        # iproute2 provides ip and tc for veth and netns setup plus
+        # TC dispatcher checks; iputils-ping drives the packet
+        # generation that fires the TCX/TC/XDP counters. Both are
+        # usually present on ubuntu-latest but we install
+        # explicitly so the workflow does not silently depend on
+        # the base image.
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            "linux-tools-$(uname -r)" \
-            iproute2 iputils-ping
-          BPFTOOL=$(dpkg -L "linux-tools-$(uname -r)" | grep -E '/bpftool$' | head -1)
-          if [ -z "$BPFTOOL" ] || [ ! -x "$BPFTOOL" ]; then
-            echo "bpftool binary missing from linux-tools-$(uname -r)" >&2
-            dpkg -L "linux-tools-$(uname -r)" >&2
-            exit 1
-          fi
-          sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
+          sudo apt-get install -y iproute2 iputils-ping
+
+      - name: Install bpftool
+        # Ubuntu's bpftool packaging for Azure kernels is
+        # effectively broken on GitHub-hosted runners: the
+        # linux-tools-<kernel>-azure package ships an empty tools
+        # directory, so the wrapper in linux-tools-common never
+        # finds a binary to dispatch to. Pull a statically linked
+        # bpftool straight from the upstream libbpf/bpftool
+        # release instead; it runs on any kernel and sidesteps
+        # the distro-packaging mess entirely. BPFTOOL_VERSION is
+        # the git tag at libbpf/bpftool.
+        env:
+          BPFTOOL_VERSION: v7.5.0
+        run: |
+          ARCH=$(dpkg --print-architecture)
+          url="https://github.com/libbpf/bpftool/releases/download/${BPFTOOL_VERSION}/bpftool-${BPFTOOL_VERSION}-${ARCH}.tar.gz"
+          curl -sSfL "$url" | sudo tar -C /usr/local/bin -xzf -
+          sudo chmod +x /usr/local/bin/bpftool
           bpftool version
 
       - name: E2E REPL scripts
