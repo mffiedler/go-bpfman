@@ -155,22 +155,30 @@ jobs:
         # bpftool inspects counter maps; iproute2 provides ip and tc
         # for veth and netns setup plus TC dispatcher checks;
         # iputils-ping drives the packet generation that fires the
-        # TCX/TC/XDP counters. iproute2 and iputils-ping are usually
-        # present on ubuntu-latest but we install explicitly so the
-        # workflow does not silently depend on the base image.
+        # TCX/TC/XDP counters.
         #
-        # On Ubuntu bpftool is a virtual package: the wrapper lives
-        # in linux-tools-common and the arch-specific binary in the
-        # linux-tools-<kernel-version> package. GitHub runners use
-        # Azure kernels, so linux-tools-generic ships a binary for
-        # the wrong kernel version and the wrapper refuses to use
-        # it. Install the exact tools package matching uname -r so
-        # the wrapper resolves to a working binary.
+        # Ubuntu's bpftool wrapper in linux-tools-common looks for
+        # /usr/lib/linux-tools/<uname -r>/bpftool, but the Azure
+        # kernel's linux-tools package installs the binary under
+        # /usr/lib/linux-azure-tools-<kernel>/ instead, so the
+        # wrapper keeps complaining "bpftool not found for kernel
+        # ..." even after the correct package is installed. Bypass
+        # the wrapper by locating the real binary via dpkg -L and
+        # symlinking it onto /usr/local/bin, which precedes
+        # /usr/bin on PATH.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            linux-tools-common "linux-tools-$(uname -r)" \
+            "linux-tools-$(uname -r)" \
             iproute2 iputils-ping
+          BPFTOOL=$(dpkg -L "linux-tools-$(uname -r)" | grep -E '/bpftool$' | head -1)
+          if [ -z "$BPFTOOL" ] || [ ! -x "$BPFTOOL" ]; then
+            echo "bpftool binary missing from linux-tools-$(uname -r)" >&2
+            dpkg -L "linux-tools-$(uname -r)" >&2
+            exit 1
+          fi
+          sudo ln -sf "$BPFTOOL" /usr/local/bin/bpftool
+          bpftool version
 
       - name: E2E REPL scripts
         run: make test-e2e-scripts STATIC=1
