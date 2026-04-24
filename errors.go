@@ -2,6 +2,7 @@ package bpfman
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -44,4 +45,23 @@ type ErrProgramNotFound struct {
 
 func (e ErrProgramNotFound) Error() string {
 	return fmt.Sprintf("program %d does not exist", e.ID)
+}
+
+// ErrTracepointNotFound is returned when an attach targets a kernel
+// tracepoint that is not present in /sys/kernel/tracing/events/.
+// Suggestions holds up to a few nearest-match tracepoints computed by
+// the manager; empty when nothing close enough was found or when the
+// kernel could not be consulted.
+type ErrTracepointNotFound struct {
+	Group       string   `json:"group"`
+	Name        string   `json:"name"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+
+func (e ErrTracepointNotFound) Error() string {
+	msg := fmt.Sprintf("tracepoint %q not found", e.Group+"/"+e.Name)
+	if len(e.Suggestions) == 0 {
+		return msg
+	}
+	return msg + "; did you mean: " + strings.Join(e.Suggestions, ", ") + "?"
 }

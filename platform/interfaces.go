@@ -334,6 +334,16 @@ type MapRepinner interface {
 	RepinMap(ctx context.Context, srcPath, dstPath string) error
 }
 
+// TracepointLister enumerates kernel tracepoints visible via tracefs.
+type TracepointLister interface {
+	// ListTracepoints returns all tracepoints as "group/name" strings
+	// read from /sys/kernel/tracing/events/. Hidden tracefs metadata
+	// files (enable, filter, header_page, etc.) are skipped. Returns
+	// an empty slice if tracefs is unavailable; callers should treat
+	// that as "cannot validate" rather than "no tracepoints exist".
+	ListTracepoints(ctx context.Context) ([]string, error)
+}
+
 // KernelOperations combines all kernel operations.
 type KernelOperations interface {
 	KernelSource
@@ -346,6 +356,7 @@ type KernelOperations interface {
 	PinRemover
 	MapRepinner
 	TCFilterDetacher
+	TracepointLister
 }
 
 // ImageRef describes an OCI image to pull.

@@ -1,54 +1,34 @@
 package ebpf
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 )
 
-const (
-	// tracingEventsPath is the base path for tracepoint events.
-	tracingEventsPath = "/sys/kernel/tracing/events"
-)
+// tracingEventsPath is the base path for tracepoint events.
+const tracingEventsPath = "/sys/kernel/tracing/events"
 
-// ErrTracepointNotFound indicates a tracepoint does not exist.
-type ErrTracepointNotFound struct {
-	Group string
-	Name  string
-}
-
-func (e ErrTracepointNotFound) Error() string {
-	groupPath := filepath.Join(tracingEventsPath, e.Group)
-	return fmt.Sprintf("tracepoint '%s/%s' does not exist; see %s for available tracepoints", e.Group, e.Name, groupPath)
-}
-
-// tracepointExists checks if a tracepoint exists in tracefs.
-func tracepointExists(group, name string) bool {
-	idPath := filepath.Join(tracingEventsPath, group, name, "id")
-	_, err := os.Stat(idPath)
-	return err == nil
-}
-
-// validateTracepoint checks if a tracepoint exists and returns a helpful
-// error if not.
-func validateTracepoint(group, name string) error {
-	if tracepointExists(group, name) {
-		return nil
+// ListTracepoints returns every kernel tracepoint visible under
+// /sys/kernel/tracing/events/, formatted as "group/name" and sorted
+// lexicographically. Entries that are not tracepoints (e.g. the
+// top-level enable/filter/header_page files, and per-group enable/
+// filter files) are skipped because they do not contain an id file.
+// Returns an empty slice when tracefs is unavailable; callers should
+// treat that as "cannot validate" rather than "no tracepoints exist".
+func (k *kernelAdapter) ListTracepoints(_ context.Context) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(tracingEventsPath, "*", "*", "id"))
+	if err != nil {
+		return nil, fmt.Errorf("scan tracepoints: %w", err)
 	}
-	return ErrTracepointNotFound{Group: group, Name: name}
-}
 
-// isTracepointNotFoundError checks if an error indicates a missing tracepoint.
-// This detects the low-level error from cilium/ebpf when the tracefs file
-// doesn't exist.
-func isTracepointNotFoundError(err error) bool {
-	if err == nil {
-		return false
+	results := make([]string, 0, len(matches))
+	for _, idPath := range matches {
+		name := filepath.Base(filepath.Dir(idPath))
+		group := filepath.Base(filepath.Dir(filepath.Dir(idPath)))
+		results = append(results, group+"/"+name)
 	}
-	// The error from cilium/ebpf contains "no such file or directory"
-	// when the tracepoint doesn't exist
-	return errors.Is(err, os.ErrNotExist) ||
-		strings.Contains(err.Error(), "no such file or directory")
+	sort.Strings(results)
+	return results, nil
 }

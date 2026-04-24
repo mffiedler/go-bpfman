@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
@@ -12,6 +13,9 @@ import (
 // attachTracepoint attaches a pinned program to a tracepoint.
 func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec) (bpfman.Link, error) {
 	group, name := spec.Group(), spec.Name()
+	if err := m.validateTracepointExists(ctx, group, name); err != nil {
+		return bpfman.Link{}, err
+	}
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
@@ -32,6 +36,32 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 			}, nil
 		},
 	})
+}
+
+// validateTracepointExists rejects attaches whose group/name pair is
+// not present in tracefs, so callers see ErrTracepointNotFound before
+// any kernel work begins. An empty list from the kernel operations
+// layer is treated as "cannot validate" (typically because tracefs is
+// unavailable) and the attach is allowed to proceed to the kernel. On
+// rejection the error carries up to three nearest-match suggestions
+// computed from the tracefs listing.
+func (m *Manager) validateTracepointExists(ctx context.Context, group, name string) error {
+	tps, err := m.kernel.ListTracepoints(ctx)
+	if err != nil {
+		return fmt.Errorf("list tracepoints: %w", err)
+	}
+	if len(tps) == 0 {
+		return nil
+	}
+	target := group + "/" + name
+	if slices.Contains(tps, target) {
+		return nil
+	}
+	return bpfman.ErrTracepointNotFound{
+		Group:       group,
+		Name:        name,
+		Suggestions: nearestTracepoints(target, tps, 3),
+	}
 }
 
 // attachKprobe attaches a pinned program to a kernel function.

@@ -188,6 +188,12 @@ type fakeKernel struct {
 	// Interface error injection
 	failOnIfname  map[string]error // fail attach if interface name matches
 	failOnIfindex map[int]error    // fail attach if interface index matches
+
+	// Tracepoint listing for pre-flight validation. When nil, ListTracepoints
+	// returns nil (the "cannot validate" contract) and the manager's
+	// pre-flight treats the attach as allowed. Tests that want to exercise
+	// the validation path set this to a canned list.
+	tracepoints []string
 }
 
 // fakeProgram stores program data for the fake kernel.
@@ -1134,4 +1140,15 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath string, ifind
 		Handle:        handle,
 		Priority:      50,
 	}, nil
+}
+
+func (f *fakeKernel) ListTracepoints(_ context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.tracepoints == nil {
+		return nil, nil
+	}
+	out := make([]string, len(f.tracepoints))
+	copy(out, f.tracepoints)
+	return out, nil
 }

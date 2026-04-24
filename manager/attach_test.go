@@ -1846,3 +1846,77 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 	}
 	assert.Equal(t, 3, count, "should have 3 programs with app=test-app")
 }
+
+// TestTracepointAttach_PreflightRejectsUnknown verifies that attaching
+// to a tracepoint that is not present in the kernel's tracepoint list
+// is rejected with bpfman.ErrTracepointNotFound before any kernel work
+// is attempted, and that the error carries nearest-match suggestions.
+func TestTracepointAttach_PreflightRejectsUnknown(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	fix.Kernel.tracepoints = []string{
+		"sched/sched_switch",
+		"syscalls/sys_enter_kill",
+	}
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tracepoint.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sched_switch")
+	require.NoError(t, err)
+	_, err = fix.Attach(ctx, attachSpec)
+	require.Error(t, err)
+
+	var tpErr bpfman.ErrTracepointNotFound
+	require.ErrorAs(t, err, &tpErr, "expected ErrTracepointNotFound, got %T: %v", err, err)
+	assert.Equal(t, "syscalls", tpErr.Group)
+	assert.Equal(t, "sched_switch", tpErr.Name)
+	assert.Contains(t, tpErr.Suggestions, "sched/sched_switch",
+		"expected sched/sched_switch among suggestions, got %v", tpErr.Suggestions)
+	assert.Contains(t, err.Error(), "did you mean")
+}
+
+// TestTracepointAttach_PreflightAllowsKnown verifies that an attach
+// whose target is in the kernel's tracepoint list proceeds normally.
+func TestTracepointAttach_PreflightAllowsKnown(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	fix.Kernel.tracepoints = []string{"syscalls/sys_enter_kill"}
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tracepoint.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "syscalls", "sys_enter_kill")
+	require.NoError(t, err)
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "attach to known tracepoint should succeed")
+	assert.NotZero(t, link.Record.ID)
+}
+
+// TestTracepointAttach_PreflightSkippedWhenListEmpty verifies that the
+// pre-flight check treats an empty tracepoint list as "cannot validate"
+// and lets the attach proceed (the fakeKernel default preserves the
+// existing behaviour of attach tests that don't stage a list).
+func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	// tracepoints left nil on purpose.
+
+	spec, err := bpfman.NewLoadSpec(fix.BytecodeFile("tracepoint.o"), "tp_prog", bpfman.ProgramTypeTracepoint)
+	require.NoError(t, err)
+	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
+	require.NoError(t, err)
+
+	attachSpec, err := bpfman.NewTracepointAttachSpec(prog.Record.ProgramID, "made_up", "tracepoint")
+	require.NoError(t, err)
+	link, err := fix.Attach(ctx, attachSpec)
+	require.NoError(t, err, "attach should succeed when tracepoint list is empty")
+	assert.NotZero(t, link.Record.ID)
+}

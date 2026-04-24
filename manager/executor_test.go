@@ -212,6 +212,11 @@ func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath, fnName, linkP
 	panic("stubKernel.AttachFexit not implemented")
 }
 
+// TracepointLister
+func (k *stubKernel) ListTracepoints(ctx context.Context) ([]string, error) {
+	panic("stubKernel.ListTracepoints not implemented")
+}
+
 // DispatcherAttacher
 func (k *stubKernel) AttachXDPDispatcher(ctx context.Context, spec dispatcher.XDPDispatcherAttachSpec) (*platform.XDPDispatcherResult, error) {
 	panic("stubKernel.AttachXDPDispatcher not implemented")
