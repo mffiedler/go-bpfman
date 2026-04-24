@@ -81,7 +81,7 @@ bpfman link attach tcx --iface lo --direction ingress "$BPFMAN_PROG_ID"
   --image-url quay.io/bpfman-bytecode/go-tracepoint-counter:latest \
   -o 'jsonpath={[0].record.program_id}')
 
-bpfman link attach tracepoint --tracepoint syscalls/sys_enter_kill "$BPFMAN_PROG_ID"
+bpfman link attach tracepoint "$BPFMAN_PROG_ID" syscalls/sys_enter_kill
 `,
 
 	"link attach kprobe": `BPFMAN_PROG_ID=$(bpfman program load image \

@@ -930,23 +930,17 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 
 // parseLinkAttachTracepoint parses "link attach tracepoint" arguments.
 //
-//	-t <group/name> [-o <format>] <program-id>
+//	[-o <format>] <program-id> <group/name>
 func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
-		tracepoint string
 		progArg    shell.Arg
+		tracepoint string
 		output     = OutputFlags{Output: OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
 		text := argText(args[i])
 		switch text {
-		case "-t", "--tracepoint":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tracepoint: %s requires a value", text)
-			}
-			tracepoint = argText(args[i])
 		case "-m", "--metadata":
 			return nil, fmt.Errorf("link attach tracepoint: metadata is not supported for attach commands")
 		case "-o":
@@ -962,23 +956,22 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach tracepoint: unknown flag %q", text)
 			}
-			if progArg != nil {
+			switch {
+			case progArg == nil:
+				progArg = args[i]
+			case tracepoint == "":
+				tracepoint = text
+			default:
 				return nil, fmt.Errorf("link attach tracepoint: unexpected argument %q", text)
 			}
-			progArg = args[i]
 		}
 	}
 
-	if tracepoint == "" {
-		return nil, fmt.Errorf("link attach tracepoint: --tracepoint is required")
-	}
 	if progArg == nil {
 		return nil, fmt.Errorf("link attach tracepoint: requires a program ID")
 	}
-
-	parts := strings.SplitN(tracepoint, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("link attach tracepoint: tracepoint must be in 'group/name' format, got %q", tracepoint)
+	if tracepoint == "" {
+		return nil, fmt.Errorf("link attach tracepoint: requires a tracepoint in group/name form")
 	}
 
 	progID, err := parseProgramIDArg(progArg)
@@ -986,7 +979,12 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	spec, err := bpfman.NewTracepointAttachSpec(progID, parts[0], parts[1])
+	tp, err := ParseTracepointName(tracepoint)
+	if err != nil {
+		return nil, fmt.Errorf("link attach tracepoint: %w", err)
+	}
+
+	spec, err := bpfman.NewTracepointAttachSpec(progID, tp.Group, tp.Name)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}

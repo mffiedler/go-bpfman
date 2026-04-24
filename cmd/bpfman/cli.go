@@ -246,6 +246,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(GlobalData{}), globalDataMapper()),
 		kong.TypeMapper(reflect.TypeOf(ObjectPath{}), objectPathMapper()),
 		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
+		kong.TypeMapper(reflect.TypeOf(TracepointName{}), tracepointNameMapper()),
 		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
 		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
 		kong.Vars{

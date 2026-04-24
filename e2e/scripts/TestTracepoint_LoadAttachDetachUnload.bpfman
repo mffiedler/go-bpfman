@@ -50,7 +50,7 @@ assert $ours.record.meta.name eq $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
 # Attach to the syscalls/sys_enter_kill tracepoint.
-let link = [bpfman link attach tracepoint --tracepoint syscalls/sys_enter_kill $prog]
+let link = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]
 require not nil link
 let linkID = $link.record.id
 

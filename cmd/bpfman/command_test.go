@@ -501,57 +501,61 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 	}{
 		{
 			name:       "minimal",
-			args:       []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("42")},
+			args:       []shell.Arg{word("tracepoint"), word("42"), word("sched/sched_switch")},
 			wantOutput: "table",
 		},
 		{
-			name: "with output flag",
+			name: "with output flag before positionals",
 			args: []shell.Arg{
-				word("tracepoint"), word("-t"), word("sched/sched_switch"),
-				word("-o"), word("json"), word("42"),
+				word("tracepoint"), word("-o"), word("json"),
+				word("42"), word("sched/sched_switch"),
 			},
 			wantOutput: "json",
 		},
 		{
 			name: "structured program ref",
 			args: []shell.Arg{
-				word("tracepoint"), word("-t"), word("sched/sched_switch"),
-				structuredProgram("prog", 99),
+				word("tracepoint"), structuredProgram("prog", 99), word("sched/sched_switch"),
 			},
 			wantOutput: "table",
 		},
 		{
-			name:    "missing tracepoint flag",
+			name:    "missing tracepoint",
 			args:    []shell.Arg{word("tracepoint"), word("42")},
-			wantErr: "--tracepoint is required",
+			wantErr: "requires a tracepoint",
 		},
 		{
 			name:    "missing program ID",
-			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch")},
+			args:    []shell.Arg{word("tracepoint")},
 			wantErr: "requires a program ID",
 		},
 		{
 			name:    "bad tracepoint format",
-			args:    []shell.Arg{word("tracepoint"), word("-t"), word("noslash"), word("42")},
-			wantErr: "group/name",
+			args:    []shell.Arg{word("tracepoint"), word("42"), word("noslash")},
+			wantErr: "expected group/name",
 		},
 		{
 			name:    "unknown flag",
-			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("--verbose"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("--verbose"), word("42"), word("sched/sched_switch")},
 			wantErr: "unknown flag",
 		},
 		{
 			name: "metadata flag rejected",
 			args: []shell.Arg{
-				word("tracepoint"), word("-t"), word("sched/sched_switch"),
-				word("-m"), word("key=val"), word("42"),
+				word("tracepoint"), word("-m"), word("key=val"),
+				word("42"), word("sched/sched_switch"),
 			},
 			wantErr: "not supported for attach",
 		},
 		{
 			name:    "duplicate -o flag",
-			args:    []shell.Arg{word("tracepoint"), word("-t"), word("sched/sched_switch"), word("-o"), word("json"), word("-o"), word("wide"), word("42")},
+			args:    []shell.Arg{word("tracepoint"), word("-o"), word("json"), word("-o"), word("wide"), word("42"), word("sched/sched_switch")},
 			wantErr: "duplicate -o flag",
+		},
+		{
+			name:    "extra positional",
+			args:    []shell.Arg{word("tracepoint"), word("42"), word("sched/sched_switch"), word("extra")},
+			wantErr: "unexpected argument",
 		},
 	}
 	for _, tt := range tests {

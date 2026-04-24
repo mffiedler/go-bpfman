@@ -242,6 +242,42 @@ func ParseProgramSpec(s string) (ProgramSpec, error) {
 	}, nil
 }
 
+// TracepointName identifies a kernel tracepoint in "group/name" form,
+// matching the layout under /sys/kernel/tracing/events/. Only shape is
+// validated here; existence is checked at attach time.
+type TracepointName struct {
+	Group string
+	Name  string
+}
+
+// ParseTracepointName parses a tracepoint identifier in "group/name"
+// form (e.g. "sched/sched_switch").
+func ParseTracepointName(s string) (TracepointName, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return TracepointName{}, fmt.Errorf("tracepoint cannot be empty")
+	}
+	if strings.ContainsAny(s, " \t\n") {
+		return TracepointName{}, fmt.Errorf("invalid tracepoint %q: whitespace not allowed", s)
+	}
+
+	group, name, ok := strings.Cut(s, "/")
+	if !ok {
+		return TracepointName{}, fmt.Errorf("invalid tracepoint %q: expected group/name (e.g. sched/sched_switch)", s)
+	}
+	if strings.Contains(name, "/") {
+		return TracepointName{}, fmt.Errorf("invalid tracepoint %q: expected group/name (only one '/' allowed)", s)
+	}
+	if group == "" {
+		return TracepointName{}, fmt.Errorf("invalid tracepoint %q: group cannot be empty", s)
+	}
+	if name == "" {
+		return TracepointName{}, fmt.Errorf("invalid tracepoint %q: name cannot be empty", s)
+	}
+
+	return TracepointName{Group: group, Name: name}, nil
+}
+
 // ImagePullPolicy represents a CLI-friendly pull policy string.
 type ImagePullPolicy struct {
 	Value string

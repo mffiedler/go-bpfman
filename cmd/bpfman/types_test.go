@@ -231,3 +231,50 @@ func TestGlobalDataMap(t *testing.T) {
 		assert.Equal(t, []byte{0x02}, result["var"])
 	})
 }
+
+func TestParseTracepointName_ValidInputs(t *testing.T) {
+	tests := []struct {
+		input         string
+		expectedGroup string
+		expectedName  string
+	}{
+		{"sched/sched_switch", "sched", "sched_switch"},
+		{"syscalls/sys_enter_kill", "syscalls", "sys_enter_kill"},
+		{"  sched/sched_switch  ", "sched", "sched_switch"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			tp, err := ParseTracepointName(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedGroup, tp.Group)
+			assert.Equal(t, tt.expectedName, tp.Name)
+		})
+	}
+}
+
+func TestParseTracepointName_InvalidInputs(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		errContains string
+	}{
+		{"empty", "", "cannot be empty"},
+		{"whitespace only", "   ", "cannot be empty"},
+		{"no slash", "sched_switch", "expected group/name"},
+		{"empty group", "/sched_switch", "group cannot be empty"},
+		{"empty name", "sched/", "name cannot be empty"},
+		{"only slash", "/", "group cannot be empty"},
+		{"extra slash", "a/b/c", "only one '/' allowed"},
+		{"internal space", "sched /sched_switch", "whitespace not allowed"},
+		{"internal tab", "sched/sched\tswitch", "whitespace not allowed"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseTracepointName(tt.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContains)
+		})
+	}
+}

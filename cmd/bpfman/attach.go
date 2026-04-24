@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/lock"
@@ -190,21 +189,15 @@ func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
 // AttachTracepointCmd attaches a program to a tracepoint.
 type AttachTracepointCmd struct {
 	OutputFlags
-	Example    ExampleFlag `name:"example" help:"Show working examples and exit."`
-	Tracepoint string      `short:"t" name:"tracepoint" required:"" help:"Tracepoint (group/name format, e.g., sched/sched_switch)."`
-	Metadata   []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
-	ProgramID  ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
+	Example    ExampleFlag    `name:"example" help:"Show working examples and exit."`
+	Metadata   []KeyValue     `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
+	ProgramID  ProgramID      `arg:"" name:"program-id" help:"Program ID to attach."`
+	Tracepoint TracepointName `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
 }
 
 func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		parts := strings.SplitN(c.Tracepoint, "/", 2)
-		if len(parts) != 2 {
-			return attachResult{}, fmt.Errorf("tracepoint must be in 'group/name' format, got %q", c.Tracepoint)
-		}
-		group, name := parts[0], parts[1]
-
-		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, group, name)
+		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint.Group, c.Tracepoint.Name)
 		if err != nil {
 			return attachResult{}, fmt.Errorf("invalid tracepoint spec: %w", err)
 		}

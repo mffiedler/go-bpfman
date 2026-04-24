@@ -103,6 +103,22 @@ func programSpecMapper() kong.MapperFunc {
 	}
 }
 
+// tracepointNameMapper creates a Kong mapper for TracepointName.
+func tracepointNameMapper() kong.MapperFunc {
+	return func(ctx *kong.DecodeContext, target reflect.Value) error {
+		var s string
+		if err := ctx.Scan.PopValueInto("group/name", &s); err != nil {
+			return err
+		}
+		tp, err := ParseTracepointName(s)
+		if err != nil {
+			return err
+		}
+		target.Set(reflect.ValueOf(tp))
+		return nil
+	}
+}
+
 // imagePullPolicyMapper creates a Kong mapper for ImagePullPolicy.
 func imagePullPolicyMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {

@@ -1,0 +1,65 @@
+# -*- mode: bpfman -*-
+# tracepoint-cli.bpfman
+#
+# Exercises the positional tracepoint attach CLI:
+#
+#   bpfman link attach tracepoint <program-id> <group/name>
+#
+# Replaces the older
+#
+#   bpfman link attach tracepoint --tracepoint <group/name> <program-id>
+#
+# which duplicated the subcommand name in the flag. This script
+# demonstrates:
+#
+#   - The happy path (load, attach with positional, detach, unload).
+#   - Shape-validation errors surfaced by the Kong mapper at parse
+#     time, before any kernel I/O runs.
+#
+# Requires root. Run with:
+#   sudo bpfman repl -f tracepoint-cli.bpfman
+
+# ---- Happy path ----------------------------------------------------
+
+let prog = [bpfman load file --path e2e/testdata/bpf/tracepoint_counter_nopin.bpf.o --programs tracepoint:tracepoint_kill_recorder]
+require not nil prog
+let pid = $prog.record.program_id
+
+# New positional form: program-id first, tracepoint second. No flag.
+let link = [bpfman link attach tracepoint $pid syscalls/sys_enter_kill]
+require not nil link
+
+assert $link.record.kind eq tracepoint
+assert $link.record.details.group eq syscalls
+assert $link.record.details.name eq sys_enter_kill
+
+# ---- Shape-validation errors ---------------------------------------
+#
+# These fail at the CLI parser; the kernel is never consulted. The
+# manager layer will add existence validation later.
+
+# Missing slash: "noslash" is not in group/name form.
+assert fail bpfman link attach tracepoint $pid noslash
+
+# Empty group (leading slash).
+assert fail bpfman link attach tracepoint $pid /sys_enter_kill
+
+# Empty name (trailing slash).
+assert fail bpfman link attach tracepoint $pid syscalls/
+
+# More than one slash: no nested categories exist in tracefs.
+assert fail bpfman link attach tracepoint $pid a/b/c
+
+# Argument order matters: tracepoint path before program id no longer
+# parses, because the program id must come first.
+assert fail bpfman link attach tracepoint syscalls/sys_enter_kill $pid
+
+# ---- Teardown ------------------------------------------------------
+
+bpfman link detach $link
+assert fail bpfman link get $link
+
+bpfman program unload $pid
+assert fail bpfman program get $prog
+
+unset link prog pid
