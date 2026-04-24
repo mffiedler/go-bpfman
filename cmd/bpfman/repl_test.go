@@ -208,19 +208,13 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 		{
 			name:        "bpfman completes domain commands",
 			line:        "bpfman ",
-			wantAny:     []string{"program ", "link ", "load "},
+			wantAny:     []string{"program ", "link ", "dispatcher "},
 			wantReplace: 0,
 		},
 		{
-			name:        "bpfman load completes to file and image",
-			line:        "bpfman load ",
+			name:        "bpfman program load completes to file and image",
+			line:        "bpfman program load ",
 			wantAny:     []string{"file ", "image "},
-			wantReplace: 0,
-		},
-		{
-			name:        "bpfman list completes to programs",
-			line:        "bpfman list ",
-			wantAny:     []string{"programs "},
 			wantReplace: 0,
 		},
 		{
@@ -1145,12 +1139,6 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			line:        "bpfman link attach xd",
 			wantAny:     []string{"xdp "},
 			wantReplace: 2,
-		},
-		{
-			name:        "bpfman load completes image subcommand",
-			line:        "bpfman load ",
-			wantAny:     []string{"file ", "image "},
-			wantReplace: 0,
 		},
 		{
 			name:        "bpfman program load completes file and image",

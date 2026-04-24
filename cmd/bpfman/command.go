@@ -47,18 +47,12 @@ func parseCommand(args []shell.Arg) (Command, error) {
 
 	switch {
 	// program commands
-	case len(args) >= 2 && cmd == "list" && arg(1) == "programs":
-		return parseListPrograms(args[2:])
 	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
 		return parseListPrograms(args[2:])
-	case len(args) >= 2 && cmd == "load" && arg(1) == "file":
-		return parseLoadFile(args[2:])
 	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
 		return parseLoadFile(args[3:])
 	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "image":
 		return parseLoadImage(args[3:])
-	case len(args) >= 2 && cmd == "load" && arg(1) == "image":
-		return parseLoadImage(args[2:])
 	case len(args) >= 2 && cmd == "program" && arg(1) == "get":
 		return parseGetProgram(args[2:])
 	case len(args) >= 2 && cmd == "program" && arg(1) == "unload":

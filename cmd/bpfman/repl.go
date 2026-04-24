@@ -478,10 +478,8 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 // distinguish "forgot the bpfman prefix" (suggest prefixing) from
 // "this word is not a command at all" (just say unknown).
 var domainNouns = map[string]bool{
-	"list":       true,
 	"program":    true,
 	"programs":   true,
-	"load":       true,
 	"show":       true,
 	"link":       true,
 	"dispatcher": true,
