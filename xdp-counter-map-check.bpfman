@@ -27,7 +27,7 @@ exec ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
 exec ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
-let prog = [bpfman load file --path testdata/xdp_counter.o --programs xdp:xdp_stats]
+let prog = [bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats]
 
 # Attach to the veth endpoint in the root namespace.
 let link = [bpfman link attach xdp -i veth-host $prog]

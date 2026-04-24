@@ -18,7 +18,7 @@
 # Load the kprobe counter ELF as a kretprobe program. The same
 # object serves both kprobe and kretprobe; the program type at
 # load time governs whether attaches fire on entry or return.
-let prog = [bpfman load file --path testdata/bpf/kprobe_counter_nopin.bpf.o --programs kretprobe:kprobe_counter]
+let prog = [bpfman program load file --path testdata/bpf/kprobe_counter_nopin.bpf.o --programs kretprobe:kprobe_counter]
 require not nil prog
 let pid = $prog.record.program_id
 

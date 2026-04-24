@@ -16,7 +16,7 @@
 # Requires root and bpftool.
 
 # Load the uprobe counter ELF as a uretprobe program.
-let prog = [bpfman load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uretprobe:uprobe_counter]
+let prog = [bpfman program load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uretprobe:uprobe_counter]
 require not nil prog
 let pid = $prog.record.program_id
 

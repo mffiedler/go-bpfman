@@ -16,7 +16,7 @@
 
 # Load the tracepoint counter. The _nopin variant uses
 # LIBBPF_PIN_NONE so the counter map is private to this program.
-let prog = [bpfman load file --path testdata/bpf/tracepoint_counter_nopin.bpf.o --programs tracepoint:tracepoint_kill_recorder]
+let prog = [bpfman program load file --path testdata/bpf/tracepoint_counter_nopin.bpf.o --programs tracepoint:tracepoint_kill_recorder]
 require not nil prog
 let pid = $prog.record.program_id
 

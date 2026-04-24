@@ -29,7 +29,7 @@ require ok exec ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xd
 require ok exec ip netns exec bpfman-xdp ip link set veth-xdp-ns up
 
 # Load the XDP pass program. The _nopin variant isolates the map.
-let prog = [bpfman load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass]
+let prog = [bpfman program load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass]
 require not nil prog
 let pid = $prog.record.program_id
 

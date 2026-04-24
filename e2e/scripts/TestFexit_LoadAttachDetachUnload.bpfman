@@ -20,7 +20,7 @@ require path exists /sys/kernel/btf/vmlinux
 # Load the fexit counter. The source is the same object as the
 # fentry test; only the section (test_fexit) and declared type
 # differ.
-let prog = [bpfman load file --path testdata/bpf/fentry_counter_nopin.bpf.o --programs fexit:test_fexit:do_unlinkat]
+let prog = [bpfman program load file --path testdata/bpf/fentry_counter_nopin.bpf.o --programs fexit:test_fexit:do_unlinkat]
 require not nil prog
 let pid = $prog.record.program_id
 

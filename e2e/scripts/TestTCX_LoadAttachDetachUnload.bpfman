@@ -30,7 +30,7 @@ require ok exec ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tc
 require ok exec ip netns exec bpfman-tcx ip link set veth-tcx-ns up
 
 # Load the TCX counter. The _nopin variant isolates the map.
-let prog = [bpfman load file --path testdata/bpf/tcx_counter_nopin.bpf.o --programs tcx:tcx_stats]
+let prog = [bpfman program load file --path testdata/bpf/tcx_counter_nopin.bpf.o --programs tcx:tcx_stats]
 require not nil prog
 let pid = $prog.record.program_id
 
