@@ -308,6 +308,7 @@ help:
 	@echo "  test                        Run all tests"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
 	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ (requires root)"
+	@echo "  test-examples               Run REPL scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
 	@echo "  test-nsenter-{arch}         Run nsenter tests for a single architecture"
@@ -472,6 +473,15 @@ test-e2e: bpf-build e2e/testdata/bin/call_malloc
 test-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
 	@echo "Running REPL e2e scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-e2e-scripts.sh $(TEST)
+
+# Run every REPL script under examples/ against the built bpfman
+# binary. The examples are load/attach/detach/unload
+# walk-throughs; running them in CI catches drift between the
+# shipped examples and the actual CLI surface. Pass TEST=<name> to
+# restrict to scripts whose filename contains <name>.
+test-examples: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+	@echo "Running REPL example scripts (requires root)..."
+	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
 # ---------------------------------------------------------------------------
 # Coverage.
@@ -793,5 +803,5 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 .PHONY: kind-create kind-delete kind-undeploy-all
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
 .PHONY: stats-reader-delete stats-reader-deploy stats-reader-kind-load stats-reader-logs
-.PHONY: test test-e2e test-e2e-scripts
+.PHONY: test test-e2e test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
