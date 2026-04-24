@@ -2,6 +2,8 @@ package ebpf
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,4 +42,25 @@ func TestKernelAdapter_ListTracepoints(t *testing.T) {
 			t.Errorf("expected exactly one '/' in %q", tp)
 		}
 	}
+}
+
+func TestIsTracepointNotFoundError(t *testing.T) {
+	t.Run("os err not exist", func(t *testing.T) {
+		if !isTracepointNotFoundError(os.ErrNotExist) {
+			t.Fatal("expected os.ErrNotExist to be treated as tracepoint not found")
+		}
+	})
+
+	t.Run("wrapped os err not exist", func(t *testing.T) {
+		err := fmt.Errorf("attach tracepoint: %w", os.ErrNotExist)
+		if !isTracepointNotFoundError(err) {
+			t.Fatal("expected wrapped ENOENT to be treated as tracepoint not found")
+		}
+	})
+
+	t.Run("other error", func(t *testing.T) {
+		if isTracepointNotFoundError(errors.New("permission denied")) {
+			t.Fatal("did not expect unrelated errors to be treated as tracepoint not found")
+		}
+	})
 }

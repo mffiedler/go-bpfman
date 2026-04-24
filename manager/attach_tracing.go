@@ -13,14 +13,14 @@ import (
 // attachTracepoint attaches a pinned program to a tracepoint.
 func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAttachSpec) (bpfman.Link, error) {
 	group, name := spec.Group(), spec.Name()
-	if err := m.validateTracepointExists(ctx, group, name); err != nil {
-		return bpfman.Link{}, err
-	}
 	target := group + "/" + name
 	return m.simpleAttach(ctx, attachParams{
 		programID:     spec.ProgramID(),
 		defaultTarget: target,
 		prepare: func(_ bpfman.ProgramRecord, progPinPath string) (attachPlan, error) {
+			if err := m.validateTracepointExists(ctx, group, name); err != nil {
+				return attachPlan{}, err
+			}
 			return attachPlan{
 				target:   target,
 				linkName: fmt.Sprintf("%s_%s", group, name),

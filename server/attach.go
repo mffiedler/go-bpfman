@@ -91,6 +91,10 @@ func (s *Server) attachTracepoint(ctx context.Context, writeLock lock.WriterScop
 		if errors.As(err, &notFound) || errors.Is(err, platform.ErrRecordNotFound) {
 			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", programID)
 		}
+		var tpNotFound bpfman.ErrTracepointNotFound
+		if errors.As(err, &tpNotFound) {
+			return nil, status.Errorf(codes.NotFound, "%v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "attach tracepoint: %v", err)
 	}
 

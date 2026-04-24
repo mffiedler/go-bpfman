@@ -1781,6 +1781,30 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 	assert.Equal(t, kernel.ProgramID(99999), notFound.ID)
 }
 
+// TestAttach_ToNonExistentProgram_WinsOverTracepointPreflight verifies that:
+//
+//	Given a missing program ID and an unknown tracepoint,
+//	When I attempt to attach,
+//	Then the manager returns ErrProgramNotFound before any tracepoint validation error.
+func TestAttach_ToNonExistentProgram_WinsOverTracepointPreflight(t *testing.T) {
+	fix := newTestFixture(t)
+	ctx := context.Background()
+
+	fix.Kernel.tracepoints = []string{"sched/sched_switch"}
+
+	attachSpec, err := bpfman.NewTracepointAttachSpec(99999, "syscalls", "sched_switch")
+	require.NoError(t, err, "spec creation should succeed")
+	_, err = fix.Attach(ctx, attachSpec)
+	require.Error(t, err, "Attach to non-existent program should fail")
+
+	var notFound bpfman.ErrProgramNotFound
+	assert.True(t, errors.As(err, &notFound), "expected ErrProgramNotFound, got %T: %v", err, err)
+	assert.Equal(t, kernel.ProgramID(99999), notFound.ID)
+
+	var tpErr bpfman.ErrTracepointNotFound
+	assert.False(t, errors.As(err, &tpErr), "did not expect ErrTracepointNotFound, got %T: %v", err, err)
+}
+
 // TestGetLink_NonExistentLink_ReturnsNotFound verifies that:
 //
 //	Given an empty manager with no links,

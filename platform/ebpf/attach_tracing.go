@@ -2,7 +2,9 @@ package ebpf
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -21,6 +23,11 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 
 	lnk, err := link.Tracepoint(group, name, prog, nil)
 	if err != nil {
+		// Preserve the domain-level not-found error when tracefs
+		// enumeration was unavailable and manager preflight skipped.
+		if isTracepointNotFoundError(err) {
+			return bpfman.AttachOutput{}, bpfman.ErrTracepointNotFound{Group: group, Name: name}
+		}
 		return bpfman.AttachOutput{}, fmt.Errorf("attach to tracepoint %s/%s: %w", group, name, err)
 	}
 
@@ -49,6 +56,10 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 		KernelLink: ToKernelLink(linkInfo),
 		PinPath:    linkPinPath,
 	}, nil
+}
+
+func isTracepointNotFoundError(err error) bool {
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // AttachKprobe attaches a pinned program to a kernel function.
