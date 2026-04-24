@@ -1,0 +1,23 @@
+# -*- mode: bpfman -*-
+# examples/xdp.bpfman
+#
+# Minimal load/attach/detach/unload for an XDP program. No
+# assertions, no verification: purely to show the shape of the
+# commands.
+#
+# Requires root. Run from the repo root with:
+#   sudo bpfman repl -f examples/xdp.bpfman
+
+require ok exec ip link add bpfman-xdp type dummy
+require ok exec ip link set bpfman-xdp up
+
+let prog = [bpfman program load file \
+    --path e2e/testdata/bpf/xdp_pass_nopin.bpf.o \
+    --programs xdp:pass]
+
+let link = [bpfman link attach xdp --iface bpfman-xdp $prog]
+
+bpfman link detach $link
+bpfman program unload $prog
+
+exec ip link del bpfman-xdp

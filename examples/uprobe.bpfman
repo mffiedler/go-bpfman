@@ -1,0 +1,21 @@
+# -*- mode: bpfman -*-
+# examples/uprobe.bpfman
+#
+# Minimal load/attach/detach/unload for a uprobe program. No
+# assertions, no verification: purely to show the shape of the
+# commands.
+#
+# Requires root. Run from the repo root with:
+#   sudo bpfman repl -f examples/uprobe.bpfman
+
+let prog = [bpfman program load file \
+    --path e2e/testdata/bpf/uprobe_counter_nopin.bpf.o \
+    --programs uprobe:uprobe_counter]
+
+let link = [bpfman link attach uprobe \
+    --target e2e/testdata/bin/call_malloc \
+    --fn-name do_work \
+    $prog]
+
+bpfman link detach $link
+bpfman program unload $prog

@@ -1,0 +1,23 @@
+# -*- mode: bpfman -*-
+# examples/tcx.bpfman
+#
+# Minimal load/attach/detach/unload for a TCX program. No
+# assertions, no verification: purely to show the shape of the
+# commands.
+#
+# Requires root. Run from the repo root with:
+#   sudo bpfman repl -f examples/tcx.bpfman
+
+require ok exec ip link add bpfman-tcx type dummy
+require ok exec ip link set bpfman-tcx up
+
+let prog = [bpfman program load file \
+    --path e2e/testdata/bpf/tcx_counter_nopin.bpf.o \
+    --programs tcx:tcx_stats]
+
+let link = [bpfman link attach tcx --iface bpfman-tcx --direction ingress $prog]
+
+bpfman link detach $link
+bpfman program unload $prog
+
+exec ip link del bpfman-tcx

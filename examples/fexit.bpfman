@@ -1,0 +1,22 @@
+# -*- mode: bpfman -*-
+# examples/fexit.bpfman
+#
+# Minimal load/attach/detach/unload for an fexit program. The
+# attach target (do_unlinkat) is encoded at load time via the
+# TYPE:NAME:ATTACH_FUNC program spec; fexit links take no target
+# argument. The source object is the same as the fentry example;
+# only the section name (test_fexit) and declared type differ. No
+# assertions, no verification: purely to show the shape of the
+# commands.
+#
+# Requires root. Run from the repo root with:
+#   sudo bpfman repl -f examples/fexit.bpfman
+
+let prog = [bpfman program load file \
+    --path e2e/testdata/bpf/fentry_counter_nopin.bpf.o \
+    --programs fexit:test_fexit:do_unlinkat]
+
+let link = [bpfman link attach fexit $prog]
+
+bpfman link detach $link
+bpfman program unload $prog

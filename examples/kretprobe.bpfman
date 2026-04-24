@@ -1,0 +1,20 @@
+# -*- mode: bpfman -*-
+# examples/kretprobe.bpfman
+#
+# Minimal load/attach/detach/unload for a kretprobe program. The
+# underlying object is shared with the kprobe example; the program
+# type at load time decides whether attaches fire on entry or
+# return. No assertions, no verification: purely to show the shape
+# of the commands.
+#
+# Requires root. Run from the repo root with:
+#   sudo bpfman repl -f examples/kretprobe.bpfman
+
+let prog = [bpfman program load file \
+    --path e2e/testdata/bpf/kprobe_counter_nopin.bpf.o \
+    --programs kretprobe:kprobe_counter]
+
+let link = [bpfman link attach kprobe --fn-name try_to_wake_up $prog]
+
+bpfman link detach $link
+bpfman program unload $prog
