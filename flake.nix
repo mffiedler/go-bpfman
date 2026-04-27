@@ -36,15 +36,12 @@
       });
 
 
-      devShells = forAllSystems (pkgs: {
+      devShells = forAllSystems (pkgs: rec {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            # Go toolchain and CGO. glibc.static supplies libc.a and
-            # libpthread.a so `make STATIC=1` can link CGO binaries
-            # against a scratch base.
+            # Go toolchain and CGO.
             gcc
             git
-            glibc.static
             gnumake
             go_1_25
             pkg-config
@@ -76,8 +73,31 @@
 
           shellHook = ''
             export CGO_ENABLED=1
+            # Nixpkgs builds Go with GO_EXTLINK_ENABLED=0 baked in as
+            # the linker's compiled-in default, which forces internal
+            # linkmode whenever the user does not pass -linkmode
+            # explicitly. That breaks `go test -race`: the race
+            # runtime's syso pulls in libc symbols (getaddrinfo,
+            # __errno_location, pthread_*, ...) that the internal
+            # linker cannot resolve dynamically, so the link fails
+            # with "relocation target X not defined". Restoring the
+            # upstream default (1 = auto) lets the linker pick
+            # external mode when cgo/race host objects are present.
+            export GO_EXTLINK_ENABLED=1
           '';
         };
+
+        # Opt-in shell for `make STATIC=1`. glibc.static supplies
+        # libc.a and libpthread.a, but its `-L` entry contains only
+        # archives — placing it in the default shell makes ld pick
+        # libc.a over libc.so for ordinary dynamic builds and emit
+        # glibc's NSS dlopen-at-runtime warnings. Keeping it isolated
+        # here means `nix develop` is the warning-free everyday path
+        # and `nix develop .#static` is the explicit static-link
+        # entry point.
+        static = default.overrideAttrs (old: {
+          buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.glibc.static ];
+        });
       });
     };
 }
