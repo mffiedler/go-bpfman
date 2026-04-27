@@ -88,28 +88,9 @@ GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 # ---------------------------------------------------------------------------
 # Caller-tunable go build / go test / go ldflags.
 # ---------------------------------------------------------------------------
-# Caller-supplied additional flags forwarded to every `go build` and
-# `go test` invocation via Go's own GOFLAGS environment variable.
-# Empty by default; CI uses EXTRA_GOFLAGS=-a to force a from-scratch
-# rebuild of every package (so no stale build cache artefact can
-# poison a published binary). Also useful locally for -trimpath, -v,
-# -x, -gcflags, -count=1, etc. Go silently ignores entries that do
-# not apply to the current subcommand, so a single value can carry
-# both build- and test-only flags. Appended after any inherited
-# GOFLAGS so caller intent wins on duplicate flags.
+# Extra flags appended to `go build` and `go test` recipes
+# (e.g. EXTRA_GOFLAGS=-a to force a from-scratch rebuild).
 EXTRA_GOFLAGS ?=
-
-# Combine inherited GOFLAGS (env / command line) with EXTRA_GOFLAGS
-# and export once, so every recipe's `go` invocation picks it up
-# without a per-recipe prefix. `override` is required because
-# otherwise `make GOFLAGS=foo EXTRA_GOFLAGS=-a` would let the
-# command-line assignment win and drop the append. The `?=`
-# declares GOFLAGS with an empty default so `make
-# --warn-undefined-variables` does not flag the reference on the
-# next line when GOFLAGS is not set in the environment.
-GOFLAGS ?=
-override GOFLAGS := $(strip $(GOFLAGS) $(EXTRA_GOFLAGS))
-export GOFLAGS
 
 # Caller-supplied additional ldflags. Empty by default so local
 # development still produces unstripped binaries with full symbol
@@ -136,16 +117,17 @@ OIDC_ISSUER     ?=
 # attestation, and EXTRA_GO_LDFLAGS. Must be defined after all of
 # those so `:=` captures their final values.
 # ---------------------------------------------------------------------------
-GO_LDFLAGS := $(if $(STATIC),-extldflags '-static') \
-              -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
-              -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
-              -X $(VERSION_PKG).gitState=$(GIT_STATE) \
-              -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
-              -X $(VERSION_PKG).version=$(GIT_VERSION) \
-              $(if $(IMAGE_REF),-X $(VERSION_PKG).imageRef=$(IMAGE_REF)) \
-              $(if $(SIGNER_IDENTITY),-X $(VERSION_PKG).signerIdentity=$(SIGNER_IDENTITY)) \
-              $(if $(OIDC_ISSUER),-X $(VERSION_PKG).oidcIssuer=$(OIDC_ISSUER)) \
-              $(EXTRA_GO_LDFLAGS)
+GO_LDFLAGS := $(strip \
+    $(if $(STATIC),-extldflags '-static') \
+    -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
+    -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
+    -X $(VERSION_PKG).gitState=$(GIT_STATE) \
+    -X $(VERSION_PKG).buildDate=$(BUILD_DATE) \
+    -X $(VERSION_PKG).version=$(GIT_VERSION) \
+    $(if $(IMAGE_REF),-X $(VERSION_PKG).imageRef=$(IMAGE_REF)) \
+    $(if $(SIGNER_IDENTITY),-X $(VERSION_PKG).signerIdentity=$(SIGNER_IDENTITY)) \
+    $(if $(OIDC_ISSUER),-X $(VERSION_PKG).oidcIssuer=$(OIDC_ISSUER)) \
+    $(EXTRA_GO_LDFLAGS))
 
 # ---------------------------------------------------------------------------
 # Build tags.
@@ -415,7 +397,7 @@ lint-dockerfile:
 # Tests.
 # ---------------------------------------------------------------------------
 test: bpf-build
-	go test -race $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...
+	$(strip go test -race $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # nsenter cross-architecture tests
 #
@@ -434,7 +416,7 @@ test: bpf-build
 #   make test-nsenter-cross           # all architectures
 test-nsenter test-nsenter-amd64:
 	@echo "=== nsenter: amd64 ==="
-	CGO_ENABLED=1 go test -c $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/
+	$(strip CGO_ENABLED=1 go test -c $(EXTRA_GOFLAGS) $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/)
 	file $(NSENTER_TEST_BIN)
 	sudo ./$(NSENTER_TEST_BIN) -test.v
 
@@ -449,7 +431,7 @@ e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
 
 test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	@echo "Compiling e2e test binary..."
-	go test -c -race $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e
+	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e)
 	@echo "Running e2e tests (requires root)..."
 	cd e2e && sudo ../e2e.test -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
@@ -477,7 +459,7 @@ test-examples: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
 # ---------------------------------------------------------------------------
 coverage:
 	@mkdir -p $(COVERAGE_DIR)
-	@go test -coverprofile=$(COVERAGE_PROFILE) ./... 2>&1 | grep -v "no test files" | grep -v "no such tool" | grep -v "^#"
+	@$(strip go test $(EXTRA_GOFLAGS) -coverprofile=$(COVERAGE_PROFILE) ./...) 2>&1 | grep -v "no test files" | grep -v "no such tool" | grep -v "^#"
 	@echo "Coverage profile written to $(COVERAGE_PROFILE)"
 	@go tool cover -func=$(COVERAGE_PROFILE) 2>/dev/null | grep total
 
@@ -528,7 +510,7 @@ bpfman-vet: bpf-build
 # Compile bpfman without the dispatcher dependency. Used directly by
 # container builds where dispatcher objects are already present.
 bpfman-compile: | $(BIN_DIR)
-	CGO_ENABLED=1 go build $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman
+	$(strip CGO_ENABLED=1 go build $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
 bpfman-clean:
 	$(RM) $(BIN_DIR)/bpfman e2e/testdata/bin/call_malloc
