@@ -169,36 +169,21 @@ NSENTER_TEST_BIN ?= nsenter.test
 # ---------------------------------------------------------------------------
 # BPF build path.
 #
-# Default: build all BPF programs (dispatchers + e2e testdata) using
-# the host toolchain (clang + libbpf headers + linuxHeaders). The
-# Nix devShell ships these, and `hack/install-fedora-deps.sh`
-# installs the equivalent Fedora RPMs, so the host path is the
-# right default for everyday local work.
-#
-# Set BPF_BUILD_USE_DOCKER=1 to build inside a hermetic Fedora 43 image
-# instead -- the path CI uses to publish reproducible BPF objects.
-# Set BPF_DOCKERFILE to select a different builder Dockerfile;
-# downstream Konflux builds set BPF_DOCKERFILE=Dockerfile.bpf.openshift
-# to substitute a UBI-based builder. The Dockerfile contract is the
-# output layout under /output/, not the build environment.
-# Set DOCKER_BUILD_ARGS for additional docker build flags (e.g., cache options).
+# Build all BPF programs (dispatchers + e2e testdata) using the host
+# toolchain: clang + libbpf headers + Linux UAPI headers. The Nix
+# devShell provides these via clang-unwrapped + libbpf + linuxHeaders
+# (see flake.nix); `hack/install-fedora-deps.sh` installs the
+# equivalent Fedora RPMs (clang, llvm, libbpf-devel, kernel-headers,
+# pkgconf-pkg-config). On stock Ubuntu CI runners, apt-get installs
+# the equivalents (clang, llvm, libbpf-dev, linux-libc-dev,
+# pkg-config). Konflux's Containerfile.bpfman.openshift compiles the
+# BPF objects in its own first stage and does not invoke this rule.
 # ---------------------------------------------------------------------------
-DOCKER_BUILD_ARGS ?=
-BPF_DOCKERFILE ?= Dockerfile.bpf
 BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c)
 BPF_STAMP := .bpf-build-stamp
 
-# The Dockerfile is a dependency only when the Docker path is in
-# effect; the default host path skips it. Both the dependency list
-# and the build command are selected here so the $(BPF_STAMP) rule
-# below has a single, checkmake-parseable recipe body.
-ifdef BPF_BUILD_USE_DOCKER
-BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile $(BPF_DOCKERFILE)
-BPF_STAMP_CMD  := docker build -f $(BPF_DOCKERFILE) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
-else
 BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
 BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
-endif
 
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
@@ -227,7 +212,7 @@ EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which multiarch Dockerfile the target builds. Defaults to
 # the bookworm-based production path; CI overrides this to point at
 # Dockerfile.bpfman.multiarch.fedora when building the all-Fedora
-# variant. Mirrors the existing BPF_DOCKERFILE convention.
+# variant.
 MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
@@ -287,8 +272,6 @@ LINT_MAKE_TARGETS := \
 # `# hadolint ignore=...` pragmas in the repo are already set up
 # for this tool; adding the target wires it into CI.
 LINT_DOCKERFILES := \
-	Dockerfile.bpf \
-	Dockerfile.bpf.openshift \
 	Dockerfile.bpfman.local \
 	Dockerfile.bpfman.multiarch \
 	Dockerfile.bpfman.multiarch.fedora \
@@ -360,9 +343,8 @@ help:
 	@echo "  doc-text                    Print API documentation to stdout"
 	@echo ""
 	@echo "BPF:"
-	@echo "  bpf-build                   Build all BPF programs (host toolchain by default)"
+	@echo "  bpf-build                   Build all BPF programs"
 	@echo "  bpf-clean                   Remove BPF build artifacts"
-	@echo "  Set BPF_BUILD_USE_DOCKER=1 to build via a hermetic Docker image instead of the host toolchain."
 	@echo ""
 	@echo "Combined:"
 	@echo "  kind-undeploy-all           Remove all components from KIND cluster"

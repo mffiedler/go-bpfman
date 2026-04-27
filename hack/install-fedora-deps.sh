@@ -17,12 +17,11 @@
 # Not installed here:
 #
 #   docker:        docker-ce (from Docker's upstream repo) or
-#                  moby-engine (Fedora-native). Only needed if you
-#                  pass BPF_BUILD_USE_DOCKER=1 to make bpf-build (CI
-#                  uses this for hermetic publishes); the default
-#                  bpf-build path uses the host clang/llvm/libbpf-
-#                  devel/kernel-headers RPMs installed by this
-#                  script and does not require docker at all.
+#                  moby-engine (Fedora-native). Only needed for
+#                  `make build-image` and friends (the runtime
+#                  image build); `make bpf-build` uses the host
+#                  clang/llvm/libbpf-devel/kernel-headers RPMs
+#                  installed by this script.
 #   protoc-gen-go,
 #   protoc-gen-go-grpc:
 #                  not packaged in Fedora. The Makefile installs

@@ -47,8 +47,7 @@ jobs:
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: |
           # MULTIARCH_DOCKERFILE points at the all-Fedora variant
-          # so the published image is built end-to-end on Fedora 43,
-          # matching Dockerfile.bpf and Dockerfile.bpf.openshift.
+          # so the published image is built end-to-end on Fedora 43.
           # The bookworm-based Dockerfile.bpfman.multiarch is kept
           # in tree as the default for local development and as a
           # documented alternative; flipping CI back is a one-line

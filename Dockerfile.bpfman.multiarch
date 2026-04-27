@@ -43,8 +43,7 @@ ARG GO_VERSION=1.25
 # the build platform regardless of how many target platforms the
 # overall build is producing. Fedora is used here because the BPF
 # toolchain (clang/llvm/libbpf-devel/kernel-headers) is well known to
-# work for this project on Fedora -- matching the existing
-# Dockerfile.bpf.
+# work for this project on Fedora.
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
 

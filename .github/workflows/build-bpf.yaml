@@ -3,23 +3,43 @@ name: Build BPF objects
 on:
   workflow_call:
 
-env:
-  DOCKER_BUILD_ARGS: "--cache-from type=gha --cache-to type=gha,mode=max"
-
 jobs:
   build-bpf:
     name: Build BPF objects (dispatchers + e2e testdata)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
+
+      - name: Install BPF toolchain
+        # The BPF compile is `clang -target bpfel`, so the host needs
+        # clang + libbpf headers + the Linux UAPI headers (the same
+        # set the Nix devShell ships and the Fedora bootstrap script
+        # installs). pkg-config + make are already on ubuntu-latest
+        # but listed for explicitness.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            llvm \
+            libbpf-dev \
+            linux-libc-dev \
+            make \
+            pkg-config
 
       - name: Build BPF objects
-        # CI publishes BPF objects via the hermetic Fedora 43 image
-        # rather than the host toolchain so the published artifacts
-        # are reproducible across runner image churn. The local
-        # default is the host path; CI opts into Docker explicitly.
-        run: make bpf-build BPF_BUILD_USE_DOCKER=1
+        # Debian / Ubuntu put `linux-libc-dev`'s per-arch UAPI
+        # headers under /usr/include/$DEB_HOST_MULTIARCH/asm/
+        # rather than /usr/include/asm/. The host gcc/clang driver
+        # knows about this multiarch convention; clang in `-target
+        # bpfel` mode does not, so a bare `clang -target bpfel`
+        # cannot resolve `#include <asm/types.h>`. Pass the
+        # multiarch path explicitly via BPF_CFLAGS so the BPF
+        # compile finds linux/types.h, asm/types.h, etc. Fedora /
+        # NixOS hosts have everything under /usr/include/asm/ or
+        # the Nix linuxHeaders prefix and don't need this.
+        run: |
+          arch=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+          make bpf-build BPF_CFLAGS="-I/usr/include/$arch"
 
       - name: Upload BPF objects
         uses: actions/upload-artifact@v6

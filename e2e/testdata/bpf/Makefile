@@ -4,6 +4,7 @@
 # Makefile for test BPF programs.
 
 LIBBPF_CFLAGS := $(shell pkg-config --cflags libbpf)
+BPF_CFLAGS ?=
 
 TARGET_ARCH ?= $(shell uname -m)
 
@@ -25,7 +26,7 @@ OBJECTS := $(SOURCES:.bpf.c=.bpf.o)
 all: $(OBJECTS)
 
 %.bpf.o: %.bpf.c Makefile
-	clang $(LIBBPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) $< -o $@
+	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(TARGET_ARCH_DEFINE) $< -o $@
 
 clean:
 	rm -f $(OBJECTS)
