@@ -20,6 +20,8 @@ comma-join = $(subst $(space),$(comma),$(strip $(1)))
 FEDORA_VERSION ?= 43
 GO_VERSION ?= 1.25
 GOLANGCI_LINT_VERSION ?= v2.11.2
+PROTOC_GEN_GO_VERSION ?= v1.36.11
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
 
 # ---------------------------------------------------------------------------
 # Paths.
@@ -549,12 +551,33 @@ bpfman-clean:
 # ---------------------------------------------------------------------------
 bpfman-proto: $(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go
 
-$(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: $(BPFMAN_PROTO_DIR)/bpfman.proto
+# protoc discovers --go_out / --go-grpc_out plugins on PATH, so the
+# generated-stub rule prepends $(BIN_DIR) before invoking protoc.
+# The protoc-gen-* binaries are order-only prerequisites (after `|`)
+# so a fresh checkout that lacks them builds the plugins once, but
+# their mtime does not invalidate the committed .pb.go files.
+$(BPFMAN_PB_DIR)/bpfman.pb.go $(BPFMAN_PB_DIR)/bpfman_grpc.pb.go: \
+		$(BPFMAN_PROTO_DIR)/bpfman.proto \
+		| $(BIN_DIR)/protoc-gen-go $(BIN_DIR)/protoc-gen-go-grpc
 	mkdir -p $(BPFMAN_PB_DIR)
+	PATH="$(abspath $(BIN_DIR)):$$PATH" \
 	protoc --go_out=$(BPFMAN_PB_DIR) --go_opt=paths=source_relative \
 		--go-grpc_out=$(BPFMAN_PB_DIR) --go-grpc_opt=paths=source_relative \
 		--proto_path=$(BPFMAN_PROTO_DIR) \
 		$<
+
+# Vendor protoc plugins into $(BIN_DIR) so the Fedora-only build
+# path does not need them on $PATH separately. Mirrors the
+# golangci-lint pattern above. Versions are pinned via the
+# PROTOC_GEN_*_VERSION variables; bump them and flake.nix's
+# protoc-gen-go / protoc-gen-go-grpc pins together.
+$(BIN_DIR)/protoc-gen-go: | $(BIN_DIR)
+	GOBIN=$(abspath $(BIN_DIR)) go install \
+		google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+
+$(BIN_DIR)/protoc-gen-go-grpc: | $(BIN_DIR)
+	GOBIN=$(abspath $(BIN_DIR)) go install \
+		google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 
 # ---------------------------------------------------------------------------
 # BPF build targets.

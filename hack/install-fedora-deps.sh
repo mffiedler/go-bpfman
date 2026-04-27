@@ -19,10 +19,10 @@
 #                  pick one and install it yourself, or use
 #                  BPF_USE_HOST=1 to skip the Docker BPF path.
 #
-# protoc-gen-go and protoc-gen-go-grpc are not packaged in Fedora;
-# they are installed via `go install` into $(go env GOPATH)/bin.
-# Make sure that directory is on PATH before running `make
-# bpfman-proto`.
+# protoc-gen-go and protoc-gen-go-grpc are not packaged in Fedora.
+# The Makefile installs them into ./bin via `go install` on demand
+# (the same pattern used for golangci-lint), so this script does
+# not need to fetch them up front.
 #
 # Usage: hack/install-fedora-deps.sh
 #   Re-run safely; dnf will skip already-installed packages.
@@ -58,11 +58,6 @@ RPMS=(
 
 sudo dnf install -y "${RPMS[@]}"
 
-# Versions match flake.nix's protoc-gen-go / protoc-gen-go-grpc.
-# Update both sides together so Nix and Fedora paths stay aligned.
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
-
 cat <<'EOF'
 
 Fedora dependencies installed. To build without Nix on PATH:
@@ -74,10 +69,6 @@ Fedora dependencies installed. To build without Nix on PATH:
   make            # dynamic build
   make test       # race tests
   make STATIC=1   # static link (uses glibc-static)
-
-  # protoc-gen-go and protoc-gen-go-grpc were installed under
-  # $(go env GOPATH)/bin. Add it to PATH if not already:
-  export PATH="$(go env GOPATH)/bin:$PATH"
-  make bpfman-proto
+  make bpfman-proto  # also pulls protoc-gen-{go,go-grpc} into ./bin
 
 EOF
