@@ -6,3 +6,4 @@ archive/bpfman-kernel/bpfman-kernel
 .bpf-build-stamp
 e2e/testdata/bpf/*.bpf.o
 e2e/testdata/bin/call_malloc
+.cache/

@@ -84,6 +84,18 @@
             # upstream default (1 = auto) lets the linker pick
             # external mode when cgo/race host objects are present.
             export GO_EXTLINK_ENABLED=1
+            # Make `nix develop -i` (the modern `--pure`) self-
+            # sufficient: that mode strips HOME and XDG_CACHE_HOME,
+            # which Go normally consults to locate its build cache
+            # and module cache. Without these, `go build` aborts
+            # with "build cache is required, but could not be
+            # located". Pin both caches to project-local paths so
+            # the shell works the same in default and pure modes,
+            # and TMPDIR so anything else falling back to /tmp via
+            # $HOME (git, etc.) keeps working.
+            export GOCACHE="''${GOCACHE:-$PWD/.cache/go-build}"
+            export GOMODCACHE="''${GOMODCACHE:-$PWD/.cache/go-mod}"
+            export TMPDIR="''${TMPDIR:-/tmp}"
           '';
         };
 
