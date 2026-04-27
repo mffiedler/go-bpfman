@@ -1,6 +1,6 @@
 { lib
 , stdenv
-, clang
+, llvmPackages
 , gnumake
 , libbpf
 , linuxHeaders
@@ -20,8 +20,13 @@ stdenv.mkDerivation {
 
   src = ./..;
 
+  # Use clang-unwrapped: the cc-wrapper is host-target only and
+  # warns/injects/rejects flags when handed --target bpfel. With
+  # the unwrapped clang we get neither the noise nor the host-
+  # target -isystem fall-throughs, but we must supply
+  # linuxHeaders explicitly (libbpf still comes via pkg-config).
   nativeBuildInputs = [
-    clang
+    llvmPackages.clang-unwrapped
     gnumake
     pkg-config
   ];
@@ -31,11 +36,10 @@ stdenv.mkDerivation {
     linuxHeaders
   ];
 
-  # Clang rejects the cc-wrapper's default hardening flags
-  # (-fstack-protector-strong, -fzero-call-used-regs=used-gpr, ...)
-  # when targeting bpfel. Scope the override to just this derivation
-  # so the rest of the flake (CGO compiles, dev shell) keeps hardening.
-  hardeningDisable = [ "all" ];
+  # CPATH is the unwrapped clang's equivalent of the cc-wrapper's
+  # injected -isystem entries. linuxHeaders is the only system-
+  # include set the BPF sources need.
+  env.CPATH = "${linuxHeaders}/include";
 
   # The outputs are BPF bytecode, not ELF executables; skip the
   # fixup pass that would otherwise emit noisy `patchelf: wrong ELF

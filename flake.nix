@@ -46,9 +46,20 @@
             go_1_25
             pkg-config
 
-            # BPF build toolchain.
+            # BPF build toolchain. Use clang-unwrapped: the cc-
+            # wrapper warns "supplying --target bpfel != x86_64-
+            # unknown-linux-gnu may not work correctly" because it
+            # injects host-target -isystem (glibc-dev, ncurses,
+            # zlib, ...), --gcc-toolchain, NIX_LDFLAGS, and
+            # hardening flags (-fzero-call-used-regs, -fstack-
+            # protector-strong) that clang either rejects or
+            # ignores for bpfel. The unwrapped clang has none of
+            # that. We supply the only header set BPF actually
+            # needs from system paths (linuxHeaders) via CPATH in
+            # the shellHook below; libbpf headers come via
+            # pkg-config --cflags libbpf in the BPF Makefiles.
             bpftools
-            clang
+            llvmPackages.clang-unwrapped
             libbpf
             linuxHeaders
             llvm
@@ -102,6 +113,15 @@
             export GOCACHE="''${GOCACHE:-$PWD/.cache/go-build}"
             export GOMODCACHE="''${GOMODCACHE:-$PWD/.cache/go-mod}"
             export TMPDIR="''${TMPDIR:-/tmp}"
+            # CPATH supplies linuxHeaders to the unwrapped clang
+            # invocations done by the BPF Makefiles. clang reads
+            # CPATH like gcc does, treating each entry as an
+            # additional system-include directory. libbpf is
+            # picked up separately via `pkg-config --cflags
+            # libbpf`. Without this, unwrapped clang would fall
+            # through to /usr/include/linux on a non-NixOS host
+            # and silently use the host kernel headers.
+            export CPATH="${pkgs.linuxHeaders}/include''${CPATH:+:}''${CPATH:-}"
           '';
         };
 
