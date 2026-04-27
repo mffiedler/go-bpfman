@@ -73,6 +73,23 @@
 
           shellHook = ''
             export CGO_ENABLED=1
+            # Pin cgo's CC to the Nix gcc-wrapper. Nixpkgs builds Go
+            # with CC=clang baked in as the default, but the Nix
+            # clang-wrapper's auto-detection of a "base GCC
+            # installation" scans /usr/lib/gcc on non-NixOS hosts
+            # and silently picks the host system's GCC -- on Fedora
+            # that means Selected GCC installation:
+            # /usr/lib/gcc/x86_64-redhat-linux/15 and -L/usr/lib64
+            # -L/usr/lib appended to the ld command line. Nix paths
+            # come first so currently nothing actually resolves out
+            # of /usr, but a missing-from-Nix lib would silently
+            # fall through, breaking reproducibility. The gcc-
+            # wrapper has no such auto-detect path and is clean by
+            # construction. Clang stays available in the shell for
+            # BPF compilation; the BPF Makefiles invoke `clang`
+            # directly, not via $(CC), so they are unaffected.
+            export CC=cc
+            export CXX=c++
             # Nixpkgs builds Go with GO_EXTLINK_ENABLED=0 baked in as
             # the linker's compiled-in default, which forces internal
             # linkmode whenever the user does not pass -linkmode
