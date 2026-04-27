@@ -90,17 +90,6 @@
             # directly, not via $(CC), so they are unaffected.
             export CC=cc
             export CXX=c++
-            # Nixpkgs builds Go with GO_EXTLINK_ENABLED=0 baked in as
-            # the linker's compiled-in default, which forces internal
-            # linkmode whenever the user does not pass -linkmode
-            # explicitly. That breaks `go test -race`: the race
-            # runtime's syso pulls in libc symbols (getaddrinfo,
-            # __errno_location, pthread_*, ...) that the internal
-            # linker cannot resolve dynamically, so the link fails
-            # with "relocation target X not defined". Restoring the
-            # upstream default (1 = auto) lets the linker pick
-            # external mode when cgo/race host objects are present.
-            export GO_EXTLINK_ENABLED=1
             # Make `nix develop -i` (the modern `--pure`) self-
             # sufficient: that mode strips HOME and XDG_CACHE_HOME,
             # which Go normally consults to locate its build cache
