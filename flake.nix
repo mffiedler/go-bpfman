@@ -92,6 +92,33 @@
 
           shellHook = ''
             export CGO_ENABLED=1
+            # Override nixpkgs Go's compiled-in GO_EXTLINK_ENABLED=0
+            # default, which pins cmd/link to internal linkmode
+            # whenever the user does not pass -linkmode explicitly.
+            # That breaks `make test STATIC=1` from the .#static
+            # shell: the race runtime's syso (runtime/race/internal/
+            # amd64v1) is in cmd/link's internal-OK allowlist, so
+            # auto-mode picks internal -- but with glibc.static on
+            # the .#static shell's link path, ld pulls libc.a's
+            # archive members for __errno_location, getuid,
+            # pthread_self, etc., and the internal linker cannot
+            # relocate them ("relocation target X not defined").
+            # osusergo,netgo do not save us here -- those drop the
+            # cgo NSS resolvers from Go's net and os/user, but the
+            # race runtime itself references general libc symbols.
+            # Setting this to 1 lets cmd/link auto-detect external
+            # mode (which then defers libc resolution to the system
+            # linker, which handles it correctly).
+            #
+            # Trap to remember: GO_EXTLINK_ENABLED is *not* part of
+            # Go's build-cache key. Removing this export and re-
+            # running `make test` against a warm cache is a
+            # cache-hit on every prebuilt link result and looks
+            # like a clean build; the regression only surfaces on a
+            # cold cache (CI, fresh clone, or `rm -rf .cache`).
+            # Treat any "this turned out to be redundant" claim
+            # about this variable with extreme suspicion.
+            export GO_EXTLINK_ENABLED=1
             # Pin cgo's CC to the Nix gcc-wrapper. Nixpkgs builds Go
             # with CC=clang baked in as the default, but the Nix
             # clang-wrapper's auto-detection of a "base GCC
