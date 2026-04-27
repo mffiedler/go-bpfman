@@ -136,17 +136,19 @@
             # directly, not via $(CC), so they are unaffected.
             export CC=cc
             export CXX=c++
-            # Make `nix develop --ignore-env` (the modern `--pure`)
-            # self-sufficient: that mode strips HOME and
-            # XDG_CACHE_HOME, which Go normally consults to locate
-            # its build cache and module cache. Without these, `go
-            # build` aborts with "build cache is required, but
-            # could not be located". Pin both caches to project-
-            # local paths so the shell works the same in default
-            # and pure modes, and TMPDIR so anything else falling
-            # back to /tmp via $HOME (git, etc.) keeps working.
-            export GOCACHE="''${GOCACHE:-$PWD/.cache/go-build}"
-            export GOMODCACHE="''${GOMODCACHE:-$PWD/.cache/go-mod}"
+            # `nix develop --ignore-env` (--pure) strips HOME, which
+            # Go uses to locate ~/.cache/go-build and ~/go/pkg/mod
+            # (and which `~`-using tools like git also need). When
+            # HOME is absent, give it a per-user /tmp fallback so
+            # caches still land somewhere writable. In normal
+            # interactive use direnv inherits HOME from the user's
+            # shell, the conditional is a no-op, and Go uses the
+            # standard locations -- no `.cache/` polluting the
+            # checkout.
+            if [ -z "''${HOME:-}" ]; then
+              export HOME="/tmp/nix-shell-home-$UID"
+              mkdir -p "$HOME"
+            fi
             export TMPDIR="''${TMPDIR:-/tmp}"
             # CPATH supplies linuxHeaders to the unwrapped clang
             # invocations done by the BPF Makefiles. clang reads
