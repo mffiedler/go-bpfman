@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# Install the Fedora RPMs and Go-installed tools needed to build
-# go-bpfman without Nix. Mirrors the toolchain expressed in
-# flake.nix's default devShell, so a Fedora developer can `dnf
-# install` once and then run the same `make` targets the Nix
-# devShell uses.
+# Install the Fedora RPMs needed to build, test, and lint go-bpfman.
+# After running this once, every `make` target in the project
+# Makefile is reachable on a stock Fedora system with no further
+# setup.
 #
 # Coverage:
 #
@@ -14,15 +13,19 @@
 #   static link:   glibc-static  (required for `make STATIC=1`)
 #   protobuf:      protobuf-compiler  (provides `protoc`)
 #   linters:       golangci-lint ShellCheck hadolint checkmake
-#   docker BPF:    docker-ce (Docker upstream repo) or moby-engine
-#                  (Fedora-native). Not installed by this script;
-#                  pick one and install it yourself, or use
-#                  BPF_USE_HOST=1 to skip the Docker BPF path.
 #
-# protoc-gen-go and protoc-gen-go-grpc are not packaged in Fedora.
-# The Makefile installs them into ./bin via `go install` on demand
-# (the same pattern used for golangci-lint), so this script does
-# not need to fetch them up front.
+# Not installed here:
+#
+#   docker:        docker-ce (from Docker's upstream repo) or
+#                  moby-engine (Fedora-native). The choice is
+#                  policy; pick one yourself, or use
+#                  BPF_USE_HOST=1 to skip the Docker BPF path.
+#   protoc-gen-go,
+#   protoc-gen-go-grpc:
+#                  not packaged in Fedora. The Makefile installs
+#                  them into ./bin via `go install` on demand,
+#                  the same way it handles golangci-lint, so this
+#                  script does not need to fetch them up front.
 #
 # Usage: hack/install-fedora-deps.sh
 #   Re-run safely; dnf will skip already-installed packages.
@@ -60,15 +63,13 @@ sudo dnf install -y "${RPMS[@]}"
 
 cat <<'EOF'
 
-Fedora dependencies installed. To build without Nix on PATH:
+Fedora dependencies installed. Common starting points:
 
-  # If you also have Nix installed and direnv-loaded, drop its
-  # entries from PATH (e.g. with nix-path-munger -d) so the Fedora
-  # toolchain wins. Then:
-
-  make            # dynamic build
-  make test       # race tests
-  make STATIC=1   # static link (uses glibc-static)
-  make bpfman-proto  # also pulls protoc-gen-{go,go-grpc} into ./bin
+  make                  # dynamic build of bin/bpfman
+  make test             # unit tests (race detector enabled)
+  make STATIC=1         # static link, requires glibc-static
+  make bpfman-proto     # regenerate proto stubs
+  make build-image      # local docker image (bpfman:dev)
+  make help             # full target list
 
 EOF
