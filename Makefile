@@ -333,11 +333,12 @@ help:
 	@echo ""
 	@echo "Container images:"
 	@echo "  build-image                 Build single-arch bpfman image from host-built binary (everyday)"
+	@echo "  build-image-all             Build the single-arch images (build-image + stats-reader + csi-sanity)"
+	@echo "  build-image-csi-sanity      Build csi-sanity container image"
 	@echo "  build-image-multiarch       Buildx multi-arch build (PLATFORMS=, PUSH=); CI publish path"
+	@echo "  build-image-nix             Pure-Nix OCI image (no Docker daemon at build time; debug toolkit baked in)"
 	@echo "  build-image-openshift       Build via OpenShift Containerfile (local test)"
 	@echo "  build-image-stats-reader    Build stats-reader container image"
-	@echo "  build-image-csi-sanity      Build csi-sanity container image"
-	@echo "  build-image-all             Build the single-arch images (build-image + stats-reader + csi-sanity)"
 	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo ""
 	@echo "stats-reader app deployment:"
@@ -637,6 +638,14 @@ build-image: bpfman-build
 #       with SLSA build provenance (mode=max) and SBOM attestations
 #       attached per platform.
 
+# Pure-Nix OCI image, byte-reproducible and built without invoking
+# a Docker daemon. Pulls the layered tarball that nix produces and
+# `docker load`s it in one shot; --no-link keeps the workspace free
+# of a stray result symlink that could collide with `nix build .`.
+# See nix/image.nix for what is in the image and why.
+build-image-nix:
+	docker load < $$(nix build .#bpfman-image --print-out-paths --no-link)
+
 build-image-multiarch:
 	docker buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
@@ -813,7 +822,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-delete bpfman-delete-test bpfman-deploy bpfman-deploy-test bpfman-kind-load bpfman-logs bpfman-operator-deploy
-.PHONY: build-image build-image-all build-image-csi-sanity build-image-multiarch build-image-openshift build-image-stats-reader cosign-sign
+.PHONY: build-image build-image-all build-image-csi-sanity build-image-multiarch build-image-nix build-image-openshift build-image-stats-reader cosign-sign
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: kind-create kind-delete kind-undeploy-all

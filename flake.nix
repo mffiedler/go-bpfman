@@ -33,6 +33,14 @@
           inherit self bpf-objects;
           static = false;
         };
+        # Pure-Nix OCI image: the static `bpfman` plus a small
+        # debug toolkit (bash, coreutils, bpftool, iproute2, procps,
+        # strace), built without a Docker daemon. See nix/image.nix
+        # for rationale; `make build-image-nix` for the
+        # build-and-load convenience target.
+        bpfman-image = pkgs.callPackage ./nix/image.nix {
+          inherit bpfman;
+        };
       });
 
 
