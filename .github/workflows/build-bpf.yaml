@@ -15,7 +15,11 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build BPF objects
-        run: make bpf-build
+        # CI publishes BPF objects via the hermetic Fedora 43 image
+        # rather than the host toolchain so the published artifacts
+        # are reproducible across runner image churn. The local
+        # default is the host path; CI opts into Docker explicitly.
+        run: make bpf-build BPF_BUILD_USE_DOCKER=1
 
       - name: Upload BPF objects
         uses: actions/upload-artifact@v6

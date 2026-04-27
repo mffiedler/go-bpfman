@@ -169,9 +169,15 @@ NSENTER_TEST_BIN ?= nsenter.test
 # ---------------------------------------------------------------------------
 # BPF build path.
 #
-# Default: build all BPF programs (dispatchers + e2e testdata) via Docker.
-# Set BPF_USE_HOST=1 to use the host toolchain instead.
-# Set BPF_DOCKERFILE to select a different BPF builder Dockerfile;
+# Default: build all BPF programs (dispatchers + e2e testdata) using
+# the host toolchain (clang + libbpf headers + linuxHeaders). The
+# Nix devShell ships these, and `hack/install-fedora-deps.sh`
+# installs the equivalent Fedora RPMs, so the host path is the
+# right default for everyday local work.
+#
+# Set BPF_BUILD_USE_DOCKER=1 to build inside a hermetic Fedora 43 image
+# instead -- the path CI uses to publish reproducible BPF objects.
+# Set BPF_DOCKERFILE to select a different builder Dockerfile;
 # downstream Konflux builds set BPF_DOCKERFILE=Dockerfile.bpf.openshift
 # to substitute a UBI-based builder. The Dockerfile contract is the
 # output layout under /output/, not the build environment.
@@ -183,15 +189,15 @@ BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.
 BPF_STAMP := .bpf-build-stamp
 
 # The Dockerfile is a dependency only when the Docker path is in
-# effect; BPF_USE_HOST skips it. Both the dependency list and the
-# build command are selected here so the $(BPF_STAMP) rule below
-# has a single, checkmake-parseable recipe body.
-ifdef BPF_USE_HOST
-BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
-BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
-else
+# effect; the default host path skips it. Both the dependency list
+# and the build command are selected here so the $(BPF_STAMP) rule
+# below has a single, checkmake-parseable recipe body.
+ifdef BPF_BUILD_USE_DOCKER
 BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile $(BPF_DOCKERFILE)
 BPF_STAMP_CMD  := docker build -f $(BPF_DOCKERFILE) --target artifacts --output type=local,dest=. $(DOCKER_BUILD_ARGS) .
+else
+BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
+BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
 endif
 
 # ---------------------------------------------------------------------------
@@ -354,9 +360,9 @@ help:
 	@echo "  doc-text                    Print API documentation to stdout"
 	@echo ""
 	@echo "BPF:"
-	@echo "  bpf-build                   Build all BPF programs (Docker by default)"
+	@echo "  bpf-build                   Build all BPF programs (host toolchain by default)"
 	@echo "  bpf-clean                   Remove BPF build artifacts"
-	@echo "  Set BPF_USE_HOST=1 to use host toolchain instead of Docker."
+	@echo "  Set BPF_BUILD_USE_DOCKER=1 to build via a hermetic Docker image instead of the host toolchain."
 	@echo ""
 	@echo "Combined:"
 	@echo "  kind-undeploy-all           Remove all components from KIND cluster"
