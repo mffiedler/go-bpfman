@@ -463,7 +463,7 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
 e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
-	$(CC) -O0 $(if $(STATIC),-static) -o $@ $<
+	$(CC) $(if $(STATIC),-static) -o $@ $<
 
 test-e2e: bpf-build e2e/testdata/bin/call_malloc
 	@echo "Compiling e2e test binary..."

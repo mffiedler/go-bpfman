@@ -8,7 +8,13 @@
 
 #include <stdlib.h>
 
-__attribute__((noinline))
+// noinline keeps do_work as a real, callable symbol; optimize("O0")
+// prevents the malloc(1)/free(p) pair from being elided as dead
+// code at the compiler's default optimisation level. With both the
+// pair removed and the function body empty, the optimiser would
+// also elide main's call to do_work, leaving the uprobe attached
+// but never fired.
+__attribute__((noinline, optimize("O0")))
 void do_work(void) {
 	volatile void *p = malloc(1);
 	free((void *)p);
