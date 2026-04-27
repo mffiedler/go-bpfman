@@ -75,7 +75,7 @@ jobs:
           # line entirely.  SIGNER_IDENTITY is constructed to
           # exactly match the cert subject Fulcio will issue when
           # this same workflow signs in the next step.
-          make docker-build-bpfman-multiarch \
+          make build-image-multiarch \
             MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch.fedora \
             EXTRA_GO_LDFLAGS="-s -w" \
             IMAGE_REF=ttl.sh/frobware/go-bpfman \

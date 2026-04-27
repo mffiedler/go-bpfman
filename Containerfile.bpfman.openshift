@@ -14,7 +14,7 @@
 # lives in CodeReady Builder (subscription-required). For local
 # testing without entitlements, override with Fedora:
 #
-#   make docker-build-openshift \
+#   make build-image-openshift \
 #     OPENSHIFT_BPF_BASE_IMAGE=fedora:43 \
 #     OPENSHIFT_BPF_INSTALL_CMD="dnf install -y clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && dnf clean all"
 

@@ -213,10 +213,10 @@ PLATFORMS               ?=
 PUSH                    ?=
 BUILDX_EXTRA_ARGS       ?=
 # Caller-supplied extra args passed last to the plain `docker build`
-# targets (docker-build-bpfman-local, docker-build-stats-reader,
-# docker-build-csi-sanity, docker-build-openshift). Positioned just
-# before the build context so caller flags override any preceding
-# hard-coded flags that buildx/docker treats as last-wins.
+# targets (build-image, build-image-stats-reader, build-image-csi-
+# sanity, build-image-openshift). Positioned just before the build
+# context so caller flags override any preceding hard-coded flags
+# that buildx/docker treats as last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which multiarch Dockerfile the target builds. Defaults to
 # the bookworm-based production path; CI overrides this to point at
@@ -250,7 +250,7 @@ BUILDX_ATTEST := $(if $(PUSH),--provenance=mode=max --sbom=true)
 # builder stage defaults to UBI9 but can be overridden with Fedora
 # for local testing without RHEL entitlements:
 #
-#   make docker-build-openshift \
+#   make build-image-openshift \
 #     OPENSHIFT_BPF_BASE_IMAGE=fedora:43 \
 #     OPENSHIFT_BPF_INSTALL_CMD="dnf install -y clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && dnf clean all"
 # ---------------------------------------------------------------------------
@@ -273,8 +273,8 @@ LINT_MAKE_TARGETS := \
 	test test-e2e test-e2e-scripts \
 	test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross \
 	bpfman-compile \
-	docker-build-bpfman-local docker-build-bpfman-multiarch \
-	docker-build-stats-reader docker-build-csi-sanity docker-build-openshift \
+	build-image build-image-multiarch \
+	build-image-stats-reader build-image-csi-sanity build-image-openshift \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -304,7 +304,6 @@ help:
 	@echo "Build:"
 	@echo "  build-all                   Build all binaries"
 	@echo "  clean                       Remove all build artifacts"
-	@echo "  docker-build-all            Build all container images"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
@@ -331,20 +330,20 @@ help:
 	@echo "  bpfman-operator-deploy      Deploy Go bpfman to bpfman-operator cluster"
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
-	@echo "  build-image                 Build a local bpfman image (alias for docker-build-bpfman-multiarch)"
-	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
-	@echo "  docker-build-bpfman-local   Build bpfman image from host-built binary"
-	@echo "  docker-build-bpfman-multiarch  Buildx multi-arch build (PLATFORMS=, PUSH=)"
-	@echo "  docker-build-openshift        Build via OpenShift Containerfile (local test)"
 	@echo ""
-	@echo "Example stats-reader app:"
-	@echo "  docker-build-stats-reader   Build stats-reader container image"
+	@echo "Container images:"
+	@echo "  build-image                 Build single-arch bpfman image from host-built binary (everyday)"
+	@echo "  build-image-multiarch       Buildx multi-arch build (PLATFORMS=, PUSH=); CI publish path"
+	@echo "  build-image-openshift       Build via OpenShift Containerfile (local test)"
+	@echo "  build-image-stats-reader    Build stats-reader container image"
+	@echo "  build-image-csi-sanity      Build csi-sanity container image"
+	@echo "  build-image-all             Build the single-arch images (build-image + stats-reader + csi-sanity)"
+	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
+	@echo ""
+	@echo "stats-reader app deployment:"
 	@echo "  stats-reader-delete         Remove stats-reader pod"
 	@echo "  stats-reader-deploy         Deploy stats-reader pod"
 	@echo "  stats-reader-logs           Follow stats-reader logs"
-	@echo ""
-	@echo "CSI conformance testing:"
-	@echo "  docker-build-csi-sanity     Build csi-sanity container image"
 	@echo ""
 	@echo "KIND cluster:"
 	@echo "  kind-create                 Create KIND cluster with bpffs mounted"
@@ -596,14 +595,14 @@ bpf-clean:
 # ---------------------------------------------------------------------------
 # Docker image builds.
 # ---------------------------------------------------------------------------
-docker-build-all: docker-build-bpfman-local docker-build-stats-reader docker-build-csi-sanity
+build-image-all: build-image build-image-stats-reader build-image-csi-sanity
 
 # Build bpfman image from the host-built binary, using ubi9-minimal
 # as the runtime base. Intended for local development and operator
 # integration testing: the binary may be dynamically linked, and
 # having a shell in the image aids `kubectl exec` debugging. The
 # Dockerfile's default base is scratch; this target overrides it.
-docker-build-bpfman-local: bpfman-build
+build-image: bpfman-build
 	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
 		-f Dockerfile.bpfman.local \
@@ -613,23 +612,23 @@ docker-build-bpfman-local: bpfman-build
 #
 # Modes (selected automatically by the variable knobs below):
 #
-#   make docker-build-bpfman-multiarch
+#   make build-image-multiarch
 #       Default: native arch only, loaded into the local Docker
 #       store. Suitable for daily KIND work that does not require a
-#       shell-in-pod (use docker-build-bpfman-local for that).
+#       shell-in-pod (use build-image for that).
 #
-#   make docker-build-bpfman-multiarch PLATFORMS=linux/arm64
+#   make build-image-multiarch PLATFORMS=linux/arm64
 #       Single foreign arch, loaded into the local Docker store
 #       (requires host binfmt support to actually run the binary).
 #
-#   make docker-build-bpfman-multiarch \
+#   make build-image-multiarch \
 #       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
 #       Multi-arch, cache-only build (no output). Useful as a "does
 #       it all compile?" sanity check; the manifest stays in the
 #       BuildKit cache because the local Docker store cannot hold a
 #       multi-arch manifest.
 #
-#   make docker-build-bpfman-multiarch \
+#   make build-image-multiarch \
 #       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
 #       PUSH=1 \
 #       BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
@@ -638,12 +637,7 @@ docker-build-bpfman-local: bpfman-build
 #       with SLSA build provenance (mode=max) and SBOM attestations
 #       attached per platform.
 
-# Short alias: `make build-image` is the obvious thing to type when
-# you just want a local bpfman image. It is identical to running
-# docker-build-bpfman-multiarch with no overrides.
-build-image: docker-build-bpfman-multiarch
-
-docker-build-bpfman-multiarch:
+build-image-multiarch:
 	docker buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
 		$(BUILDX_OUTPUT) \
@@ -666,12 +660,12 @@ docker-build-bpfman-multiarch:
 # immutable index digest rather than the mutable tag.
 #
 # This target reads the digest from the buildx metadata file
-# produced by the previous docker-build-bpfman-multiarch run, so
+# produced by the previous build-image-multiarch run, so
 # the same Make recipe serves both CI and local testing.
 #
 # CI usage (keyless via GitHub Actions OIDC):
 #
-#   make docker-build-bpfman-multiarch \
+#   make build-image-multiarch \
 #     PUSH=1 \
 #     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
 #     IMAGE_TAG=latest \
@@ -710,12 +704,12 @@ cosign-sign:
 	}
 	@if [ -z "$(BUILDX_METADATA_FILE)" ]; then \
 		echo "error: BUILDX_METADATA_FILE must be set" >&2; \
-		echo "       (re-run docker-build-bpfman-multiarch with the same value first)" >&2; \
+		echo "       (re-run build-image-multiarch with the same value first)" >&2; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(BUILDX_METADATA_FILE)" ]; then \
 		echo "error: $(BUILDX_METADATA_FILE) does not exist" >&2; \
-		echo "       (run docker-build-bpfman-multiarch first to produce it)" >&2; \
+		echo "       (run build-image-multiarch first to produce it)" >&2; \
 		exit 1; \
 	fi
 	@digest=$$(jq -r '."containerimage.digest" // empty' "$(BUILDX_METADATA_FILE)"); \
@@ -728,14 +722,14 @@ cosign-sign:
 	cosign sign -y "$(BPFMAN_IMAGE)@$$digest"
 
 # stats-reader example app
-docker-build-stats-reader:
+build-image-stats-reader:
 	docker build -t $(STATS_READER_IMAGE):$(IMAGE_TAG) -f examples/stats-reader/Dockerfile $(EXTRA_DOCKER_BUILD_ARGS) .
 
 # CSI conformance testing
-docker-build-csi-sanity:
+build-image-csi-sanity:
 	docker build -t $(CSI_SANITY_IMAGE):$(IMAGE_TAG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
 
-docker-build-openshift:
+build-image-openshift:
 	docker build \
 		-f $(OPENSHIFT_CONTAINERFILE) \
 		$(if $(OPENSHIFT_BPF_BASE_IMAGE),--build-arg BPF_BASE_IMAGE=$(OPENSHIFT_BPF_BASE_IMAGE)) \
@@ -762,7 +756,7 @@ kind-create:
 kind-delete:
 	kind delete cluster --name $(KIND_CLUSTER)
 
-bpfman-kind-load: docker-build-bpfman-local
+bpfman-kind-load: build-image
 	kind load docker-image $(BPFMAN_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
 
 bpfman-deploy: bpfman-kind-load
@@ -783,16 +777,16 @@ bpfman-delete-test:
 	kubectl delete -f manifests/bpfman-test-pod.yaml --ignore-not-found
 
 # Deploy Go bpfman to an existing bpfman-operator deployment (replaces Rust bpfman)
-bpfman-operator-deploy: docker-build-bpfman-local
+bpfman-operator-deploy: build-image
 	docker tag $(BPFMAN_IMAGE):$(IMAGE_TAG) $(BPFMAN_IMAGE):latest
 	kind load docker-image $(BPFMAN_IMAGE):latest --name $(KIND_CLUSTER)
 	kubectl rollout restart daemonset/bpfman-daemon -n $(NAMESPACE)
 	kubectl rollout status daemonset/bpfman-daemon -n $(NAMESPACE) --timeout=60s
 
-bpfman-test-grpc: docker-build-bpfman-local
+bpfman-test-grpc: build-image
 	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
 
-stats-reader-kind-load: docker-build-stats-reader
+stats-reader-kind-load: build-image-stats-reader
 	kind load docker-image $(STATS_READER_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
 
 stats-reader-deploy: stats-reader-kind-load
@@ -819,10 +813,9 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-delete bpfman-delete-test bpfman-deploy bpfman-deploy-test bpfman-kind-load bpfman-logs bpfman-operator-deploy
-.PHONY: build-image cosign-sign
+.PHONY: build-image build-image-all build-image-csi-sanity build-image-multiarch build-image-openshift build-image-stats-reader cosign-sign
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
-.PHONY: docker-build-all docker-build-bpfman-local docker-build-bpfman-multiarch docker-build-csi-sanity docker-build-openshift docker-build-stats-reader
 .PHONY: kind-create kind-delete kind-undeploy-all
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
 .PHONY: stats-reader-delete stats-reader-deploy stats-reader-kind-load stats-reader-logs

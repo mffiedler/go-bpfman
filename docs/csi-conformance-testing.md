@@ -28,7 +28,7 @@ testing Node operations.
 Build the `csi-sanity` container image:
 
 ```bash
-make docker-build-csi-sanity
+make build-image-csi-sanity
 ```
 
 ## Running Tests
