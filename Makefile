@@ -193,6 +193,15 @@ EXTRA_DOCKER_BUILD_ARGS ?=
 # in-tree Dockerfile.bpfman; override to test an alternative
 # dockerfile without editing the recipe.
 BPFMAN_DOCKERFILE ?= Dockerfile.bpfman
+
+# True (1) when `docker` is the podman compat shim. Buildah/podman
+# does not honor the per-Dockerfile <dockerfile>.dockerignore
+# convention that buildkit reads automatically, so when running
+# under podman the build-image-dev recipe passes --ignorefile
+# explicitly to point at the per-file dockerignore. Buildkit-
+# backed `docker` does not need this and ignores --ignorefile
+# (it is a buildah/podman flag), so detection is required.
+DOCKER_IS_PODMAN := $(shell docker --version 2>&1 | grep -ci podman)
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
 # and the cosign-sign target reads the digest from it. Empty by
@@ -562,7 +571,9 @@ bpf-clean:
 # having a shell in the image aids `kubectl exec` debugging. The
 # Dockerfile's default base is scratch; this target overrides it.
 build-image-dev: bpfman-build
-	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+	docker build \
+		$(if $(filter-out 0,$(DOCKER_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
+		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
 		-f Dockerfile.bpfman.dev \
 		$(EXTRA_DOCKER_BUILD_ARGS) .
