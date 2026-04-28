@@ -441,10 +441,8 @@ e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
 	$(CC) $(if $(STATIC),-static) -o $@ $<
 
 test-e2e: bpf-build e2e/testdata/bin/call_malloc
-	@echo "Compiling e2e test binary..."
 	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e)
-	@echo "Running e2e tests (requires root)..."
-	cd e2e && sudo ../e2e.test -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	cd e2e && sudo ../e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so testdata paths
