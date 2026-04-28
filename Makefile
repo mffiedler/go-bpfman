@@ -796,15 +796,30 @@ ci-image:
 # build is sufficient and avoids the noisy glibc-static
 # warnings. The static-link path stays covered by the e2e jobs
 # (which do extract) and by image.yaml (which ships).
+#
+# Go's build and module caches are persisted in named docker
+# volumes so subsequent runs benefit from incremental compile.
+# CI runners are ephemeral and don't benefit from this directly
+# (each runner starts with empty volumes); the volumes are
+# specifically for local iteration speed.
 ci-build: ci-image
-	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
+	docker run --rm \
+		-v $(CURDIR):/src -w /src \
+		-v bpfman-ci-go-build:/root/.cache/go-build \
+		-v bpfman-ci-go-mod:/root/go/pkg/mod \
+		$(CI_IMAGE) \
 		make bpfman-build
 
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
-# current working tree exactly as a host build would.
+# current working tree exactly as a host build would. Same Go
+# cache volumes as ci-build for incremental-compile speed.
 ci-test: ci-image
-	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
+	docker run --rm \
+		-v $(CURDIR):/src -w /src \
+		-v bpfman-ci-go-build:/root/.cache/go-build \
+		-v bpfman-ci-go-mod:/root/go/pkg/mod \
+		$(CI_IMAGE) \
 		make test PARALLEL=1 STATIC=1
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
