@@ -1,38 +1,39 @@
 # syntax=docker/dockerfile:1.7
 #
-# Experimental: all-Fedora variant of Dockerfile.bpfman.multiarch.
+# All-Fedora multi-architecture build of bpfman. This is the
+# canonical path used by the CI publish workflow and the default
+# for the `make build-image*` targets.
 #
-# Where the production Dockerfile.bpfman.multiarch uses Debian
-# bookworm for the Go cross-compile stage (because Debian ships
-# pre-packaged libc6-dev-*-cross sysroots that "just work"), this
-# variant stays on Fedora 43 for both stages and builds the
-# foreign-arch sysroots itself at image-build time. The mechanism is
+# Both stages run on Fedora ${FEDORA_VERSION}. The bpf-builder
+# stage compiles eBPF objects with clang/llvm/libbpf-devel. The
+# go-builder stage cross-compiles a static binary against per-
+# target sysroots built at image-build time via
 # `dnf install --installroot=/sysroots/${arch} --forcearch=${arch}
-# --use-host-config`, which downloads foreign-arch
-# glibc/libgcc/kernel-headers from Fedora's regular per-arch
-# repositories. The cross gcc is then pointed at the populated
-# sysroot via --sysroot.
+# --use-host-config`, which pulls foreign-arch glibc/libgcc/
+# kernel-headers from Fedora's regular per-arch repositories. The
+# cross gcc is then pointed at the populated sysroot via --sysroot.
 #
-# Why this exists: to demonstrate that an all-Fedora multi-arch
-# build *is* possible without giving up static linking, and to
-# document the trade-offs against the bookworm path. The bookworm
-# path remains the production CI default because it is faster,
-# requires fewer build-time tricks, and has less surface area for
-# breakage when Fedora updates dnf or the rpm scriptlet machinery.
+# The bookworm-based alternative lives in Dockerfile.bpfman.multiarch
+# and is reachable via `MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch`.
 #
-# Usage is identical to Dockerfile.bpfman.multiarch:
+# Usage via the Make targets:
+#
+#   make build-image-arm64        # single arch, --load
+#   make build-image PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+#                                 # all four, cache-only
+#
+# Direct buildx invocation:
 #
 #   docker buildx build \
-#     --builder cgo-test-builder \
 #     --platform linux/amd64 \
 #     -f Dockerfile.bpfman.multiarch.fedora \
 #     --load \
-#     -t bpfman:multiarch-fedora-amd64 .
+#     -t bpfman:dev .
 
 ARG FEDORA_VERSION=43
 
 # ---------------------------------------------------------------------------
-# BPF objects: identical to the production multiarch Dockerfile.
+# BPF objects: same approach as in Dockerfile.bpfman.multiarch.
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
 
@@ -58,13 +59,14 @@ RUN make -C dispatcher
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS go-builder
 
+# Base toolchain: host gcc, host glibc-static (used by the amd64
+# build path which links against the host libc directly, no
+# sysroot), Go, and build helpers. TARGETARCH-independent so this
+# layer caches across all platform builds.
 # hadolint ignore=DL3041
 RUN dnf update -y && \
     dnf install -y \
         gcc \
-        gcc-aarch64-linux-gnu \
-        gcc-powerpc64le-linux-gnu \
-        gcc-s390x-linux-gnu \
         glibc-static \
         golang \
         make \
@@ -73,10 +75,18 @@ RUN dnf update -y && \
         ca-certificates && \
     dnf clean all
 
-# Build foreign-arch sysroots. Each one is a minimal Fedora
-# installroot containing just the C runtime, kernel headers, and
-# their dependencies for the target architecture, populated from
-# Fedora's foreign-arch repositories via --forcearch.
+# Install the cross gcc and build the foreign-arch sysroot for the
+# current TARGETARCH. The sysroot is a minimal Fedora installroot
+# containing just the C runtime, kernel headers, and their
+# dependencies, populated from Fedora's foreign-arch repositories
+# via --forcearch.
+#
+# Per-target rather than per-host: when buildx runs a multi-platform
+# build (`--platform linux/amd64,linux/arm64,...`) it invokes this
+# Dockerfile once per platform, each with its own TARGETARCH. Doing
+# the work per-target means each platform build only pays for the
+# cross gcc and sysroot it actually needs, and amd64 (host arch)
+# skips both steps entirely.
 #
 # Notes:
 #
@@ -96,23 +106,35 @@ RUN dnf update -y && \
 #
 #   install_weak_deps=False keeps the installroot lean.
 ARG FEDORA_VERSION
+ARG TARGETARCH
 # Distro rolling repos make exact version pinning brittle.
 # hadolint ignore=DL3041
 RUN set -eux; \
-    for arch in aarch64 ppc64le s390x; do \
-        sysroot="/sysroots/${arch}"; \
+    case "$TARGETARCH" in \
+        amd64)   sysroot_arch=""        cross_gcc=""                          ;; \
+        arm64)   sysroot_arch="aarch64" cross_gcc="gcc-aarch64-linux-gnu"     ;; \
+        ppc64le) sysroot_arch="ppc64le" cross_gcc="gcc-powerpc64le-linux-gnu" ;; \
+        s390x)   sysroot_arch="s390x"   cross_gcc="gcc-s390x-linux-gnu"       ;; \
+        *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    if [ -n "$cross_gcc" ]; then \
+        dnf install -y "$cross_gcc"; \
+    fi; \
+    if [ -n "$sysroot_arch" ]; then \
+        sysroot="/sysroots/${sysroot_arch}"; \
         mkdir -p "${sysroot}"; \
         dnf install -y \
             --use-host-config \
             --installroot="${sysroot}" \
-            --forcearch="${arch}" \
+            --forcearch="${sysroot_arch}" \
             --releasever="${FEDORA_VERSION}" \
             --setopt=install_weak_deps=False \
             --setopt=tsflags=noscripts \
             --nodocs \
             glibc glibc-devel glibc-static libgcc kernel-headers; \
         rm -rf "${sysroot}/var/cache" "${sysroot}/var/log" "${sysroot}/var/lib/dnf"; \
-    done
+    fi; \
+    dnf clean all
 
 WORKDIR /src
 

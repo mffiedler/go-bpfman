@@ -18,7 +18,7 @@
 #
 #   docker:        docker-ce (from Docker's upstream repo) or
 #                  moby-engine (Fedora-native). Only needed for
-#                  `make build-image` and friends (the runtime
+#                  `make build-image-dev` and friends (the runtime
 #                  image build); `make bpf-build` uses the host
 #                  clang/llvm/libbpf-devel/kernel-headers RPMs
 #                  installed by this script.
@@ -71,7 +71,7 @@ Fedora dependencies installed. Common starting points:
   make test             # unit tests (race detector enabled)
   make STATIC=1         # static link, requires glibc-static
   make bpfman-proto     # regenerate proto stubs
-  make build-image      # local docker image (bpfman:dev)
+  make build-image-dev  # local docker image (bpfman:dev)
   make help             # full target list
 
 EOF

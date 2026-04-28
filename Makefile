@@ -101,7 +101,7 @@ EXTRA_GO_LDFLAGS ?=
 # `bpfman version` can print a ready-to-pipe `cosign verify` command
 # for the image this binary was published from. All three default
 # to empty: local `make build`, the host-build path via
-# Dockerfile.bpfman.local, and downstream Konflux/RHEL/UBI builds
+# Dockerfile.bpfman.dev, and downstream Konflux/RHEL/UBI builds
 # leave them unset, and the version printer omits the Attestation
 # line entirely when any of them is empty. Only the CI image-build
 # workflow (.github/workflows/image.yaml) populates them.
@@ -173,7 +173,7 @@ BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
 # `scratch` and the two are coupled: a dynamically linked binary
 # would crash immediately on a libc-less base. If you need a
 # non-static binary (FIPS Go toolchains, dynamic-glibc bases), build
-# on the host and package via Dockerfile.bpfman.local instead.
+# on the host and package via Dockerfile.bpfman.dev instead.
 #
 # Multi-platform builds require a docker-container or remote buildx
 # builder. CI workflows use docker/setup-buildx-action which
@@ -184,16 +184,17 @@ PLATFORMS               ?=
 PUSH                    ?=
 BUILDX_EXTRA_ARGS       ?=
 # Caller-supplied extra args passed last to the plain `docker build`
-# targets (build-image, build-image-stats-reader, build-image-csi-
-# sanity, build-image-openshift). Positioned just before the build
-# context so caller flags override any preceding hard-coded flags
-# that buildx/docker treats as last-wins.
+# targets (build-image-dev, build-image-stats-reader, build-image-
+# csi-sanity, build-image-openshift). Positioned just before the
+# build context so caller flags override any preceding hard-coded
+# flags that buildx/docker treats as last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
-# Selects which multiarch Dockerfile the target builds. Defaults to
-# the bookworm-based production path; CI overrides this to point at
-# Dockerfile.bpfman.multiarch.fedora when building the all-Fedora
-# variant.
-MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch
+# Selects which multiarch Dockerfile the buildx targets use.
+# Defaults to the all-Fedora variant, which matches the production
+# CI publish path. The bookworm-based Dockerfile.bpfman.multiarch
+# is kept in tree as a documented alternative and is reachable via
+# `MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch`.
+MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch.fedora
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
 # and the cosign-sign target reads the digest from it. Empty by
@@ -244,7 +245,7 @@ LINT_MAKE_TARGETS := \
 	test test-e2e test-e2e-scripts \
 	test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross \
 	bpfman-compile \
-	build-image build-image-multiarch \
+	build-image build-image-amd64 build-image-dev \
 	build-image-stats-reader build-image-csi-sanity build-image-openshift \
 	cosign-sign coverage clean
 
@@ -252,7 +253,7 @@ LINT_MAKE_TARGETS := \
 # `# hadolint ignore=...` pragmas in the repo are already set up
 # for this tool; adding the target wires it into CI.
 LINT_DOCKERFILES := \
-	Dockerfile.bpfman.local \
+	Dockerfile.bpfman.dev \
 	Dockerfile.bpfman.multiarch \
 	Dockerfile.bpfman.multiarch.fedora \
 	Dockerfile.csi-sanity \
@@ -298,9 +299,10 @@ help:
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo ""
 	@echo "Container images:"
-	@echo "  build-image                 Build single-arch bpfman image from host-built binary (everyday)"
+	@echo "  build-image                 Cross-compile current-arch image via Fedora Dockerfile (canonical pipeline)"
+	@echo "  build-image-{arch}          Cross-compile single-arch image (arch in amd64/arm64/ppc64le/s390x)"
 	@echo "  build-image-csi-sanity      Build csi-sanity container image"
-	@echo "  build-image-multiarch       Buildx multi-arch build (PLATFORMS=, PUSH=); CI publish path"
+	@echo "  build-image-dev             Build current-arch image from host-built binary (fast dev iteration)"
 	@echo "  build-image-nix             Pure-Nix OCI image (no Docker daemon at build time; debug toolkit baked in)"
 	@echo "  build-image-openshift       Build via OpenShift Containerfile (local test)"
 	@echo "  build-image-stats-reader    Build stats-reader container image"
@@ -562,40 +564,43 @@ bpf-clean:
 # integration testing: the binary may be dynamically linked, and
 # having a shell in the image aids `kubectl exec` debugging. The
 # Dockerfile's default base is scratch; this target overrides it.
-build-image: bpfman-build
+build-image-dev: bpfman-build
 	docker build -t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
-		-f Dockerfile.bpfman.local \
+		-f Dockerfile.bpfman.dev \
 		$(EXTRA_DOCKER_BUILD_ARGS) .
 
-# Multi-architecture buildx-native image build.
+# Canonical bpfman image build via buildx and the Fedora multiarch
+# Dockerfile. The same recipe drives dev and CI; mode is selected
+# by the variable knobs below.
 #
-# Modes (selected automatically by the variable knobs below):
+# Modes:
 #
-#   make build-image-multiarch
-#       Default: native arch only, loaded into the local Docker
-#       store. Suitable for daily cluster work that does not require
-#       a shell-in-pod (use build-image for that).
+#   make build-image
+#       Default: current arch only, loaded into the local Docker
+#       store. The cross-compile happens inside the container, so no
+#       host toolchain is required (contrast with build-image-dev,
+#       which packages a host-built binary).
 #
-#   make build-image-multiarch PLATFORMS=linux/arm64
-#       Single foreign arch, loaded into the local Docker store
-#       (requires host binfmt support to actually run the binary).
+#   make build-image-{amd64,arm64,ppc64le,s390x}
+#       Per-arch presets that pin PLATFORMS to a single foreign arch
+#       and --load. Useful when you want to run a foreign-arch image
+#       under host binfmt + QEMU.
 #
-#   make build-image-multiarch \
-#       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
-#       Multi-arch, cache-only build (no output). Useful as a "does
-#       it all compile?" sanity check; the manifest stays in the
-#       BuildKit cache because the local Docker store cannot hold a
-#       multi-arch manifest.
+#   make build-image PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+#       Multi-arch, cache-only build (no output). The local Docker
+#       store cannot hold a multi-arch manifest, so the manifest
+#       stays in the BuildKit cache. Useful as a "does it all
+#       compile?" sanity check.
 #
-#   make build-image-multiarch \
+#   make build-image \
 #       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
 #       PUSH=1 \
-#       BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#       BPFMAN_IMAGE=<registry/repo> \
 #       IMAGE_TAG=$(GIT_COMMIT)
-#       CI publish: pushes a multi-arch manifest to the registry,
-#       with SLSA build provenance (mode=max) and SBOM attestations
-#       attached per platform.
+#       CI publish path: pushes a multi-arch manifest to the
+#       registry, with SLSA build provenance (mode=max) and SBOM
+#       attestations attached per platform.
 
 # Pure-Nix OCI image, byte-reproducible and built without invoking
 # a Docker daemon. Pulls the layered tarball that nix produces and
@@ -605,7 +610,7 @@ build-image: bpfman-build
 build-image-nix:
 	docker load < $$(nix build .#bpfman-image --print-out-paths --no-link)
 
-build-image-multiarch:
+build-image:
 	docker buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
 		$(BUILDX_OUTPUT) \
@@ -624,23 +629,42 @@ build-image-multiarch:
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		$(BUILDX_EXTRA_ARGS) .
 
+# Per-arch presets pinning PLATFORMS to a single foreign arch.
+# Each invocation builds one platform and --loads it into the local
+# Docker store under the default $(BPFMAN_IMAGE):$(IMAGE_TAG) tag
+# (e.g. bpfman:dev). The arch is implicit in the make target
+# chosen, so the tag does not encode it; each invocation overwrites
+# the previous one. To keep multiple arches loaded simultaneously,
+# pass IMAGE_TAG explicitly.
+#
+#   make build-image-amd64
+#   make build-image-arm64
+#   make build-image-ppc64le
+#   make build-image-s390x
+#
+# The CI publish path uses `build-image` directly with a comma-
+# separated PLATFORMS list; these presets are purely local-dev
+# shortcuts.
+build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build-image-%:
+	$(MAKE) build-image PLATFORMS=linux/$*
+
 # Sign a published multi-arch image with cosign, anchored to the
 # immutable index digest rather than the mutable tag.
 #
 # This target reads the digest from the buildx metadata file
-# produced by the previous build-image-multiarch run, so
-# the same Make recipe serves both CI and local testing.
+# produced by the previous build-image run, so the same Make
+# recipe serves both CI and local testing.
 #
 # CI usage (keyless via GitHub Actions OIDC):
 #
-#   make build-image-multiarch \
+#   make build-image \
 #     PUSH=1 \
-#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#     BPFMAN_IMAGE=<registry/repo> \
 #     IMAGE_TAG=latest \
 #     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json \
 #     ...
 #   make cosign-sign \
-#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+#     BPFMAN_IMAGE=<registry/repo> \
 #     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json
 #
 # Local usage (interactive OAuth signing identity):
@@ -672,12 +696,12 @@ cosign-sign:
 	}
 	@if [ -z "$(BUILDX_METADATA_FILE)" ]; then \
 		echo "error: BUILDX_METADATA_FILE must be set" >&2; \
-		echo "       (re-run build-image-multiarch with the same value first)" >&2; \
+		echo "       (re-run build-image with the same value first)" >&2; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(BUILDX_METADATA_FILE)" ]; then \
 		echo "error: $(BUILDX_METADATA_FILE) does not exist" >&2; \
-		echo "       (run build-image-multiarch first to produce it)" >&2; \
+		echo "       (run build-image first to produce it)" >&2; \
 		exit 1; \
 	fi
 	@digest=$$(jq -r '."containerimage.digest" // empty' "$(BUILDX_METADATA_FILE)"); \
@@ -712,7 +736,7 @@ build-image-openshift:
 # ---------------------------------------------------------------------------
 # gRPC integration test.
 # ---------------------------------------------------------------------------
-bpfman-test-grpc: build-image
+bpfman-test-grpc: build-image-dev
 	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
 
 
@@ -725,7 +749,7 @@ bpfman-test-grpc: build-image
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
-.PHONY: build-image build-image-csi-sanity build-image-multiarch build-image-nix build-image-openshift build-image-stats-reader cosign-sign
+.PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version

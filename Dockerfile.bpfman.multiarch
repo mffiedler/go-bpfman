@@ -10,30 +10,25 @@
 # time. This avoids QEMU emulation of the entire build and is
 # significantly faster than per-arch native builds.
 #
-# This file is intentionally separate from Dockerfile.bpfman.local:
-# it is the buildx-native variant and is self-contained (it builds
-# the BPF objects itself rather than relying on a pre-populated
-# bin/ or .bpf.o tree). Dockerfile.bpfman.local stays in place for
-# fast local cluster iteration via the `build-image` Make target.
+# This is the bookworm-based alternative to
+# Dockerfile.bpfman.multiarch.fedora, which is the canonical path
+# used by CI and the default for the `make build-image*` targets.
+# It is kept in tree as a documented alternative that uses Debian's
+# prepackaged libc6-dev-*-cross sysroots rather than building
+# per-target sysroots via `dnf --installroot --forcearch`.
 #
-# Local single-arch test (loads the result into the local Docker
-# image store):
+# To drive this dockerfile through the existing Make targets,
+# override MULTIARCH_DOCKERFILE:
+#
+#   make build-image-arm64 MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch
+#
+# Or invoke buildx directly:
 #
 #   docker buildx build \
-#     --builder cgo-test-builder \
 #     --platform linux/amd64 \
 #     -f Dockerfile.bpfman.multiarch \
 #     --load \
-#     -t bpfman:multiarch-amd64 .
-#
-# Full multi-arch build (manifest only, no load -- the docker image
-# store cannot hold a multi-arch manifest):
-#
-#   docker buildx build \
-#     --builder cgo-test-builder \
-#     --platform linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
-#     -f Dockerfile.bpfman.multiarch \
-#     -t bpfman:multiarch .
+#     -t bpfman:dev .
 
 ARG FEDORA_VERSION=43
 ARG GO_VERSION=1.25
@@ -171,7 +166,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 # ---------------------------------------------------------------------------
 # Final image: scratch + the static bpfman binary. Matches the
-# upstream policy already encoded in Dockerfile.bpfman.local's default
+# upstream policy already encoded in Dockerfile.bpfman.dev's default
 # BASE_IMAGE.
 # ---------------------------------------------------------------------------
 FROM scratch

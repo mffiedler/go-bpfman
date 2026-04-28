@@ -18,7 +18,7 @@ var (
 
 	// The next three are populated only by the CI image-build
 	// workflow (.github/workflows/image.yaml). Local `make
-	// build`, host-build paths via Dockerfile.bpfman.local, and
+	// build`, host-build paths via Dockerfile.bpfman.dev, and
 	// downstream Konflux/RHEL/UBI builds intentionally leave
 	// them empty: they are only meaningful for binaries that
 	// were published as part of a signed multi-arch image, and
