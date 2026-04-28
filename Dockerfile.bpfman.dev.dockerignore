@@ -1,13 +1,11 @@
-# Local dev build: bin/bpfman is the only file the dockerfile
-# COPYs into the runtime image. Everything else is build-context
-# bloat. We do not bother with a `*`-then-allowlist scheme
-# because there is only one COPY; just exclude the heavy and
-# irrelevant trees.
+# This file exists to override the root .dockerignore's `bin/`
+# exclusion so that `COPY bin/bpfman` in Dockerfile.bpfman.dev
+# works; without it, the host-built binary would be invisible to
+# buildkit. The other entries mirror the root for build-context
+# hygiene.
 .git/
 .gitignore
 *.md
 build/
-dispatcher/*.bpf.o
-.bpf-build-stamp
 scripts/
 vendor/
