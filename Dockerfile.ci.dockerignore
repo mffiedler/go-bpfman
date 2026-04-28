@@ -1,0 +1,19 @@
+# In-container CI build (Dockerfile.ci): the e2e-builder stage
+# compiles every artefact the tests need from source. Exclude
+# every host-built artefact so a stale host copy cannot leak into
+# the build context, get COPYed via `COPY . .`, and mask a
+# "didn't rebuild" bug.
+bin/
+dispatcher/*.bpf.o
+.bpf-build-stamp
+e2e.test
+e2e/testdata/bin/call_malloc
+e2e/testdata/bpf/*.bpf.o
+nsenter.test
+
+# Heavy/irrelevant trees that never need to be in the build context.
+.git/
+.gitignore
+*.md
+build/
+scripts/
