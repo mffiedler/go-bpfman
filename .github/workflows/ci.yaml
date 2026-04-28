@@ -75,12 +75,18 @@ jobs:
 
       - name: Build bpfman binary
         # Explicitly verify that the bpfman binary itself
-        # compiles (with the same static-link config the
-        # published image uses). `go test ./...` exercises
-        # package compilation but not the cmd/bpfman link path,
-        # so a build break in main.go would slip through the
-        # tests job; this job catches it directly.
-        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make bpfman-build STATIC=1
+        # compiles. `go test ./...` exercises package
+        # compilation but not the cmd/bpfman link path, so a
+        # build break in main.go would slip through the tests
+        # job; this job catches it directly.
+        #
+        # STATIC=1 is intentionally omitted here: static
+        # linking is a property we need when crossing the
+        # container/runner boundary (e2e bundle extraction,
+        # image publish), not for verifying compilation. The
+        # static path stays covered by the e2e-builder stage
+        # and image.yaml.
+        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make bpfman-build
 
   tests:
     uses: ./.github/workflows/test.yaml

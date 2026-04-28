@@ -787,12 +787,18 @@ ci-image:
 	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load .
 
 # Reproduce the workflow's build job locally. Verifies that the
-# bpfman binary itself compiles (with the production static-link
-# config) -- separable from `ci-test` because `go test ./...`
-# does not exercise the cmd/bpfman link path.
+# bpfman binary itself compiles -- separable from `ci-test`
+# because `go test ./...` does not exercise the cmd/bpfman link
+# path. STATIC=1 is intentionally omitted: static linking is a
+# property we need when crossing the container/runner boundary
+# (i.e. when we extract the artefact). Here the binary is
+# verified-then-discarded inside the container, so the dynamic
+# build is sufficient and avoids the noisy glibc-static
+# warnings. The static-link path stays covered by the e2e jobs
+# (which do extract) and by image.yaml (which ships).
 ci-build: ci-image
 	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
-		make bpfman-build STATIC=1
+		make bpfman-build
 
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
