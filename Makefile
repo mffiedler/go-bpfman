@@ -43,6 +43,15 @@ STATS_READER_IMAGE ?= stats-reader
 CSI_SANITY_IMAGE ?= csi-sanity
 
 # ---------------------------------------------------------------------------
+# CI build environment knobs. The `ci-*` make targets drive a
+# Fedora-based docker image that mirrors what the GH workflows
+# run, so a developer can reproduce CI locally with `make ci`.
+# ---------------------------------------------------------------------------
+CI_IMAGE       ?= bpfman-ci
+CI_DOCKERFILE  ?= Dockerfile.ci
+CI_E2E_OUTDIR  ?= ./out
+
+# ---------------------------------------------------------------------------
 # Test knobs.
 # ---------------------------------------------------------------------------
 PARALLEL ?=
@@ -254,6 +263,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-stats-reader build-image-csi-sanity build-image-openshift \
+	ci-image ci-test ci-test-e2e ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -262,6 +272,7 @@ LINT_MAKE_TARGETS := \
 LINT_DOCKERFILES := \
 	Dockerfile.bpfman.dev \
 	Dockerfile.bpfman \
+	Dockerfile.ci \
 	Dockerfile.csi-sanity \
 	Containerfile.bpfman.openshift \
 	examples/stats-reader/Dockerfile
@@ -296,6 +307,13 @@ help:
 	@echo "  coverage-html               Generate HTML coverage report"
 	@echo "  coverage-open               Generate and open HTML coverage report"
 	@echo "  coverage-clean              Remove coverage artifacts"
+	@echo ""
+	@echo "Local CI reproducer (Dockerfile.ci):"
+	@echo "  ci                          Run all three ci-* targets"
+	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
+	@echo "  ci-test                     Run build + unit tests inside the CI container"
+	@echo "  ci-test-e2e                 Extract e2e test bundle and run it on the host (sudo)"
+	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run REPL scripts (sudo)"
 	@echo ""
 	@echo "bpfman (with integrated CSI):"
 	@echo "  bpfman-build                Build bpfman binary"
@@ -440,9 +458,18 @@ test-e2e: bpf-build e2e/testdata/bin/call_malloc
 # reports failures as it goes, and exits non-zero at the end if
 # any script failed. Pass TEST=<name> to restrict to scripts whose
 # filename contains <name>.
-test-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+# Split into build + run so CI can extract pre-built artefacts
+# from a hermetic container build (Dockerfile.ci's e2e-export
+# stage) and invoke `run-e2e-scripts` directly on the runner
+# without re-triggering the build deps. Local invocations of
+# `test-e2e-scripts` still build first.
+build-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+
+run-e2e-scripts:
 	@echo "Running REPL e2e scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-e2e-scripts.sh $(TEST)
+
+test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 
 # Run every REPL script under examples/ against the built bpfman
 # binary. The examples are load/attach/detach/unload
@@ -742,6 +769,55 @@ build-image-openshift:
 		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # ---------------------------------------------------------------------------
+# Local CI reproducer.
+#
+# `make ci` runs the same two pipelines the GH workflows run --
+# build + unit-test inside a Fedora container, and an e2e job that
+# extracts a static test bundle from the same dockerfile and runs
+# it on the host with sudo. See Dockerfile.ci for the details of
+# the build environment.
+# ---------------------------------------------------------------------------
+
+# Build the `base` stage of Dockerfile.ci as a tagged image, ready
+# for `docker run` invocations against a mounted source tree. The
+# `--load` is required for `docker run` to find the image in the
+# local store.
+ci-image:
+	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load .
+
+# Reproduce the workflow's build + unit-test job locally. Source
+# is mounted into the container so the test process sees the
+# current working tree exactly as a host build would.
+ci-test: ci-image
+	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
+		make test PARALLEL=1 STATIC=1
+
+# Reproduce the workflow's e2e job locally. The `e2e-export`
+# stage produces a hermetic bundle (binary + testdata) at
+# $(CI_E2E_OUTDIR); the static binary is then run on the host
+# with sudo so it has the kernel privileges the e2e suite needs.
+ci-test-e2e:
+	rm -rf $(CI_E2E_OUTDIR)
+	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) .
+	cd $(CI_E2E_OUTDIR)/e2e && sudo ../e2e.test -test.v -test.failfast
+
+# Reproduce the workflow's e2e-scripts job locally. The REPL
+# scripts under e2e/scripts/ are interpreted by the bpfman
+# binary, so the bundle's bpfman + testdata are extracted
+# directly into the source tree (the layout matches), and the
+# scripts run via `make run-e2e-scripts` which assumes the
+# artefacts are already in place. No outer sudo: the inner
+# hack/test-e2e-scripts.sh shells out to `sudo bpfman` per
+# script invocation, which gets the kernel privileges it needs
+# while leaving the rest of the make recipe unprivileged.
+ci-test-e2e-scripts:
+	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) .
+	$(MAKE) run-e2e-scripts
+
+# Umbrella: run all three CI pipelines locally.
+ci: ci-test ci-test-e2e ci-test-e2e-scripts
+
+# ---------------------------------------------------------------------------
 # gRPC integration test.
 # ---------------------------------------------------------------------------
 bpfman-test-grpc: build-image-dev
@@ -758,8 +834,9 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
+.PHONY: ci ci-image ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: test test-e2e test-e2e-scripts test-examples
+.PHONY: build-e2e-scripts run-e2e-scripts test test-e2e test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
