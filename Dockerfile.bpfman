@@ -23,7 +23,7 @@
 #
 #   docker buildx build \
 #     --platform linux/amd64 \
-#     -f Dockerfile.bpfman.multiarch \
+#     -f Dockerfile.bpfman \
 #     --load \
 #     -t bpfman:dev .
 

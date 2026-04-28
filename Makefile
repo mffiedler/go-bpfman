@@ -189,10 +189,10 @@ BUILDX_EXTRA_ARGS       ?=
 # build context so caller flags override any preceding hard-coded
 # flags that buildx/docker treats as last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
-# Selects which multiarch Dockerfile the buildx targets use.
-# Defaults to the in-tree all-Fedora variant; override to test an
-# alternative dockerfile without editing the recipe.
-MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch
+# Selects which Dockerfile the buildx targets use. Defaults to the
+# in-tree Dockerfile.bpfman; override to test an alternative
+# dockerfile without editing the recipe.
+BPFMAN_DOCKERFILE ?= Dockerfile.bpfman
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
 # and the cosign-sign target reads the digest from it. Empty by
@@ -252,7 +252,7 @@ LINT_MAKE_TARGETS := \
 # for this tool; adding the target wires it into CI.
 LINT_DOCKERFILES := \
 	Dockerfile.bpfman.dev \
-	Dockerfile.bpfman.multiarch \
+	Dockerfile.bpfman \
 	Dockerfile.csi-sanity \
 	Containerfile.bpfman.openshift \
 	examples/stats-reader/Dockerfile
@@ -622,7 +622,7 @@ build-image:
 		--build-arg IMAGE_REF="$(IMAGE_REF)" \
 		--build-arg SIGNER_IDENTITY="$(SIGNER_IDENTITY)" \
 		--build-arg OIDC_ISSUER="$(OIDC_ISSUER)" \
-		-f $(MULTIARCH_DOCKERFILE) \
+		-f $(BPFMAN_DOCKERFILE) \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
 		$(BUILDX_EXTRA_ARGS) .
 
