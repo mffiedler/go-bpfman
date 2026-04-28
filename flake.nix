@@ -92,6 +92,21 @@
 
           shellHook = ''
             export CGO_ENABLED=1
+            # Linker chain in this dev shell. `go build`'s
+            # final link is:
+            #
+            #   cmd/link (external) -> $CC -> gcc-wrapper -> ld
+            #
+            # Every binary in that chain comes from /nix/store;
+            # /usr/bin/ld and /usr/lib/gcc never participate.
+            # cmd/link only takes this path because
+            # GO_EXTLINK_ENABLED=1 (below) forces external
+            # linkmode -- nixpkgs's compiled-in default is
+            # =0, which would keep the link inside cmd/link
+            # and never subprocess out at all. $CC and $CXX
+            # come from stdenv's cc-wrapper setup-hook, which
+            # runs before this shellHook.
+            #
             # Override nixpkgs Go's compiled-in GO_EXTLINK_ENABLED=0
             # default, which pins cmd/link to internal linkmode
             # whenever the user does not pass -linkmode explicitly.
@@ -119,23 +134,6 @@
             # Treat any "this turned out to be redundant" claim
             # about this variable with extreme suspicion.
             export GO_EXTLINK_ENABLED=1
-            # Pin cgo's CC to the Nix gcc-wrapper. Nixpkgs builds Go
-            # with CC=clang baked in as the default, but the Nix
-            # clang-wrapper's auto-detection of a "base GCC
-            # installation" scans /usr/lib/gcc on non-NixOS hosts
-            # and silently picks the host system's GCC -- on Fedora
-            # that means Selected GCC installation:
-            # /usr/lib/gcc/x86_64-redhat-linux/15 and -L/usr/lib64
-            # -L/usr/lib appended to the ld command line. Nix paths
-            # come first so currently nothing actually resolves out
-            # of /usr, but a missing-from-Nix lib would silently
-            # fall through, breaking reproducibility. The gcc-
-            # wrapper has no such auto-detect path and is clean by
-            # construction. Clang stays available in the shell for
-            # BPF compilation; the BPF Makefiles invoke `clang`
-            # directly, not via $(CC), so they are unaffected.
-            export CC=cc
-            export CXX=c++
             # `nix develop --ignore-env` (--pure) strips HOME, which
             # Go uses to locate ~/.cache/go-build and ~/go/pkg/mod
             # (and which `~`-using tools like git also need). When
