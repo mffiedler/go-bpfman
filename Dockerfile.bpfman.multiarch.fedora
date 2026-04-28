@@ -13,9 +13,6 @@
 # kernel-headers from Fedora's regular per-arch repositories. The
 # cross gcc is then pointed at the populated sysroot via --sysroot.
 #
-# The bookworm-based alternative lives in Dockerfile.bpfman.multiarch
-# and is reachable via `MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch`.
-#
 # Usage via the Make targets:
 #
 #   make build-image-arm64        # single arch, --load
@@ -33,7 +30,8 @@
 ARG FEDORA_VERSION=43
 
 # ---------------------------------------------------------------------------
-# BPF objects: same approach as in Dockerfile.bpfman.multiarch.
+# BPF objects: architecture-independent eBPF bytecode, built once
+# on the build platform.
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
 

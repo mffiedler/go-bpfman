@@ -46,13 +46,6 @@ jobs:
           # built rather than the runner's wall clock.
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: |
-          # The Makefile's `build-image` target uses the all-Fedora
-          # multiarch Dockerfile by default, so no MULTIARCH_DOCKERFILE
-          # override is needed here. The bookworm-based
-          # Dockerfile.bpfman.multiarch is kept in tree as a
-          # documented alternative and is reachable via
-          # MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch.
-          #
           # EXTRA_GO_LDFLAGS="-s -w" strips the symbol table and
           # DWARF sections from the shipped binary, dropping the
           # image size by roughly 90 MB on the Fedora path (which

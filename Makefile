@@ -190,10 +190,8 @@ BUILDX_EXTRA_ARGS       ?=
 # flags that buildx/docker treats as last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which multiarch Dockerfile the buildx targets use.
-# Defaults to the all-Fedora variant, which matches the production
-# CI publish path. The bookworm-based Dockerfile.bpfman.multiarch
-# is kept in tree as a documented alternative and is reachable via
-# `MULTIARCH_DOCKERFILE=Dockerfile.bpfman.multiarch`.
+# Defaults to the in-tree all-Fedora variant; override to test an
+# alternative dockerfile without editing the recipe.
 MULTIARCH_DOCKERFILE ?= Dockerfile.bpfman.multiarch.fedora
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
@@ -254,7 +252,6 @@ LINT_MAKE_TARGETS := \
 # for this tool; adding the target wires it into CI.
 LINT_DOCKERFILES := \
 	Dockerfile.bpfman.dev \
-	Dockerfile.bpfman.multiarch \
 	Dockerfile.bpfman.multiarch.fedora \
 	Dockerfile.csi-sanity \
 	Containerfile.bpfman.openshift \
