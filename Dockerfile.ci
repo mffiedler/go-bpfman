@@ -67,6 +67,18 @@ RUN dnf install -y \
     sqlite-devel \
   && dnf clean all
 
+# Tell git inside the container to trust any working tree
+# regardless of UID mismatch. With `docker run -v "$PWD":/src`
+# the host's .git/ has the host user's UID, while the container
+# runs as root (or whatever the image's default is) -- git's
+# safe.directory check (CVE-2022-24765 hardening) treats this
+# as dubious ownership and refuses to operate, which propagates
+# as `error obtaining VCS status: exit status 128` from go build
+# and as silent empty values from the Makefile's git-rev-parse
+# shell calls. The container is single-user, so trusting all
+# directories is appropriate here.
+RUN git config --system --add safe.directory '*'
+
 WORKDIR /src
 
 # ---------------------------------------------------------------------------
