@@ -263,7 +263,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-stats-reader build-image-csi-sanity build-image-openshift \
-	ci-image ci-test ci-test-e2e ci-test-e2e-scripts \
+	ci-build ci-image ci-test ci-test-e2e ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -309,9 +309,10 @@ help:
 	@echo "  coverage-clean              Remove coverage artifacts"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
-	@echo "  ci                          Run all three ci-* targets"
+	@echo "  ci                          Run every ci-* target"
+	@echo "  ci-build                    Compile bpfman binary inside the CI container"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
-	@echo "  ci-test                     Run build + unit tests inside the CI container"
+	@echo "  ci-test                     Run unit tests inside the CI container"
 	@echo "  ci-test-e2e                 Extract e2e test bundle and run it on the host (sudo)"
 	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run REPL scripts (sudo)"
 	@echo ""
@@ -785,8 +786,16 @@ build-image-openshift:
 ci-image:
 	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load .
 
-# Reproduce the workflow's build + unit-test job locally. Source
-# is mounted into the container so the test process sees the
+# Reproduce the workflow's build job locally. Verifies that the
+# bpfman binary itself compiles (with the production static-link
+# config) -- separable from `ci-test` because `go test ./...`
+# does not exercise the cmd/bpfman link path.
+ci-build: ci-image
+	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
+		make bpfman-build STATIC=1
+
+# Reproduce the workflow's unit-test job locally. Source is
+# mounted into the container so the test process sees the
 # current working tree exactly as a host build would.
 ci-test: ci-image
 	docker run --rm -v $(CURDIR):/src -w /src $(CI_IMAGE) \
@@ -814,8 +823,8 @@ ci-test-e2e-scripts:
 	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) .
 	$(MAKE) run-e2e-scripts
 
-# Umbrella: run all three CI pipelines locally.
-ci: ci-test ci-test-e2e ci-test-e2e-scripts
+# Umbrella: run every CI pipeline locally.
+ci: ci-build ci-test ci-test-e2e ci-test-e2e-scripts
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -834,7 +843,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
-.PHONY: ci ci-image ci-test ci-test-e2e ci-test-e2e-scripts
+.PHONY: ci ci-build ci-image ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
