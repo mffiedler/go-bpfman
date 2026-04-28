@@ -3,9 +3,21 @@ name: Tests
 on:
   workflow_call:
 
+# Three jobs in parallel, all driven by Dockerfile.ci. The
+# dockerfile encodes the build environment; the workflow only
+# orchestrates buildx invocations and the runner-side execution
+# of artefacts that need kernel privileges. See `make ci-test`,
+# `make ci-test-e2e`, and `make ci-test-e2e-scripts` for the
+# local equivalents that mirror what runs here.
+#
+# All three jobs share `cache-from/cache-to: type=gha,scope=ci`
+# so the buildx layer cache is shared across jobs (the dnf
+# install layer is identical for every job; the COPY layer
+# changes only on source changes).
+
 jobs:
-  unit-test:
-    name: Unit tests (${{ matrix.arch }})
+  test:
+    name: Build + unit tests (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -18,53 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read Go version from Makefile
-        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
 
-      - uses: actions/setup-go@v6
+      - name: Build CI image
+        uses: docker/build-push-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+          context: .
+          file: Dockerfile.ci
+          target: base
+          tags: bpfman-ci:latest
+          load: true
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
 
-      - name: Set Go cache date
-        if: matrix.arch == 'amd64'
-        run: echo "GO_CACHE_DATE=$(date +%Y-%m-%d)" >> "$GITHUB_ENV"
-
-      - name: Restore Go cache
-        if: matrix.arch == 'amd64'
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod') }}-${{ env.GO_CACHE_DATE }}
-          restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
-            go-${{ runner.os }}-
-
-      - name: Download BPF objects
-        uses: actions/download-artifact@v6
-        with:
-          name: bpf-objects
-
-      - name: Touch BPF objects to preserve Make freshness
-        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
-
-      - name: Unit tests
-        run: make test PARALLEL=1 STATIC=1
-
-      - name: Trim Go build cache
-        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
-        run: find ~/.cache/go-build -type f -mmin +90 -delete
-
-      - name: Save Go cache
-        if: matrix.arch == 'amd64' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod') }}-${{ env.GO_CACHE_DATE }}
+      - name: Run build + unit tests inside CI container
+        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make test PARALLEL=1 STATIC=1
 
   test-e2e:
     name: E2E tests (${{ matrix.arch }})
@@ -80,35 +60,28 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read Go version from Makefile
-        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
 
-      - uses: actions/setup-go@v6
+      - name: Extract e2e bundle
+        # The e2e-export stage produces a hermetic bundle (static
+        # e2e.test binary + testdata + bpfman + call_malloc) at
+        # ./out via buildx --output type=local. No image is left
+        # in the local docker store afterwards.
+        uses: docker/build-push-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+          context: .
+          file: Dockerfile.ci
+          target: e2e-export
+          outputs: type=local,dest=./out
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
 
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: nonexistent
-          restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
-            go-${{ runner.os }}-
-
-      - name: Download BPF objects
-        uses: actions/download-artifact@v6
-        with:
-          name: bpf-objects
-
-      - name: Touch BPF objects to preserve Make freshness
-        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
-
-      - name: E2E tests
-        run: make test-e2e PARALLEL=1 STATIC=1
+      - name: Run e2e tests on the runner
+        # The static binary runs on the runner's kernel, where
+        # CAP_BPF / CAP_NET_ADMIN are available via sudo. CWD is
+        # ./out/e2e so the binary can find its testdata at the
+        # bundle's e2e/testdata/{bin,bpf}/ paths.
+        run: cd ./out/e2e && sudo ../e2e.test -test.v -test.failfast
 
   test-e2e-scripts:
     name: E2E REPL scripts (${{ matrix.arch }})
@@ -124,40 +97,27 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Read Go version from Makefile
-        run: echo "GO_VERSION=$(make -s print-go-version)" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
 
-      - uses: actions/setup-go@v6
+      - name: Extract bundle into source tree
+        # The bundle's layout (bin/bpfman, e2e/testdata/...)
+        # matches the source tree's canonical paths, so dest=.
+        # places artefacts where `make run-e2e-scripts` expects
+        # them. The Dockerfile.ci.dockerignore excludes these
+        # paths so the next buildx run still hits cache.
+        uses: docker/build-push-action@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
+          context: .
+          file: Dockerfile.ci
+          target: e2e-export
+          outputs: type=local,dest=.
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
 
-      - name: Restore Go cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: nonexistent
-          restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.mod') }}-
-            go-${{ runner.os }}-
-
-      - name: Download BPF objects
-        uses: actions/download-artifact@v6
-        with:
-          name: bpf-objects
-
-      - name: Touch BPF objects to preserve Make freshness
-        run: touch .bpf-build-stamp dispatcher/*.bpf.o e2e/testdata/bpf/*.bpf.o
-
-      - name: Install iproute2 and iputils-ping
-        # iproute2 provides ip and tc for veth and netns setup plus
-        # TC dispatcher checks; iputils-ping drives the packet
-        # generation that fires the TCX/TC/XDP counters. Both are
-        # usually present on ubuntu-latest but we install
-        # explicitly so the workflow does not silently depend on
-        # the base image.
+      - name: Install runtime deps
+        # iproute2 provides ip and tc for veth/netns setup;
+        # iputils-ping drives the packet generation that fires
+        # the TCX/TC/XDP counters.
         run: |
           sudo apt-get update
           sudo apt-get install -y iproute2 iputils-ping
@@ -176,5 +136,9 @@ jobs:
           sudo ln -sf "$bpf_bin" /usr/local/bin/bpftool
           bpftool version
 
-      - name: E2E REPL scripts
-        run: make test-e2e-scripts STATIC=1
+      - name: Run REPL scripts
+        # `make run-e2e-scripts` invokes hack/test-e2e-scripts.sh,
+        # which raises sudo for each `bpfman repl` call. No outer
+        # sudo is needed; GH runners have NOPASSWD sudo so the
+        # inner sudo runs non-interactively.
+        run: make run-e2e-scripts

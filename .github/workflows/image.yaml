@@ -5,11 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  build-bpf:
-    uses: ./.github/workflows/build-bpf.yaml
-
   test:
-    needs: build-bpf
     uses: ./.github/workflows/test.yaml
 
   build-and-push:
