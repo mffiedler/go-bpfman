@@ -170,6 +170,9 @@
         # entry point.
         static = default.overrideAttrs (old: {
           buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.glibc.static ];
+          shellHook = (old.shellHook or "") + ''
+            export STATIC=1
+          '';
         });
       });
     };
