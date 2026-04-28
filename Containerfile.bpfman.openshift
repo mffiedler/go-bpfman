@@ -27,6 +27,7 @@
 # ---------------------------------------------------------------------------
 ARG BPF_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
+# hadolint ignore=DL3006
 FROM ${BPF_BASE_IMAGE} AS bpf-builder
 
 ARG BPF_INSTALL_CMD="microdnf install -y --nodocs --setopt=keepcache=0 --setopt=tsflags=nodocs clang gcc kernel-headers libbpf-devel llvm make pkgconf-pkg-config && microdnf clean all"

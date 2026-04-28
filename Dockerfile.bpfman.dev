@@ -16,6 +16,7 @@
 #     --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest .
 
 ARG BASE_IMAGE=scratch
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 COPY --link --chmod=0755 bin/bpfman /bpfman
