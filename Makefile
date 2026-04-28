@@ -275,6 +275,7 @@ help:
 	@echo "Build:"
 	@echo "  build-all                   Build all binaries"
 	@echo "  clean                       Remove all build artifacts"
+	@echo "  clean-mrproper              Like 'clean', plus wipe Go's shared build/test/fuzz caches (~/.cache/go-build); affects all Go projects on this machine"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
@@ -348,6 +349,16 @@ print-golangci-lint-version:
 
 clean: bpfman-clean bpf-clean coverage-clean
 	$(RM) -r $(BIN_DIR)
+
+# Nuclear option, modeled on `make mrproper` in the kernel tree:
+# wipe local build artifacts AND Go's shared caches under
+# ~/.cache/go-build. Useful when chasing cache-coherence bugs whose
+# inputs aren't in cmd/go's action key (e.g. GO_EXTLINK_ENABLED — see
+# flake.nix). Affects every Go project sharing this user's cache, not
+# just this checkout. The module cache is intentionally NOT wiped:
+# `go clean -modcache` forces a full re-download on the next build.
+clean-mrproper: clean
+	go clean -cache -testcache -fuzzcache
 
 # Ensure bin directory exists
 $(BIN_DIR):
@@ -786,7 +797,7 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 # Grouped across several lines because checkmake does not parse
 # .PHONY with backslash line continuations; each .PHONY line is a
 # stand-alone declaration.
-.PHONY: all build-all clean help lint lint-dockerfile lint-go lint-hack lint-make
+.PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-delete bpfman-delete-test bpfman-deploy bpfman-deploy-test bpfman-kind-load bpfman-logs bpfman-operator-deploy
