@@ -1,0 +1,35 @@
+# This .dockerignore is the build-context exclusion list for
+# Containerfile.bpfman.openshift, which is consumed by Konflux
+# (via Cachi2 + buildah). Buildah does not honor the per-file
+# <containerfile>.dockerignore convention that buildkit supports,
+# so the rules for the openshift build live at the context root.
+#
+# The other dockerfiles in the tree (Dockerfile.bpfman,
+# Dockerfile.bpfman.dev, Dockerfile.csi-sanity) are buildkit-
+# driven and ship their own <dockerfile>.dockerignore files,
+# which take precedence over this one for their respective
+# builds. This file therefore only affects the openshift
+# Containerfile build.
+#
+# When Containerfile.bpfman.openshift goes away, this file
+# can go with it.
+
+# In-container build: needs the full source tree but must not
+# pull in host-built artefacts. A stale host bin/bpfman,
+# dispatcher/*.bpf.o, or .bpf-build-stamp copied into the context
+# would overlap with the in-container build outputs and could
+# mask "didn't rebuild" bugs.
+bin/
+dispatcher/*.bpf.o
+.bpf-build-stamp
+
+# Heavy/irrelevant trees that never need to be in the build context.
+# Note: .git/ exclusion is load-bearing -- with .git/ present,
+# `go build` tries to embed VCS info via debug.BuildInfo, and
+# Cachi2's source-staging produces a .git/ state that fails the
+# git invocation (exit 128).
+.git/
+.gitignore
+*.md
+build/
+scripts/
