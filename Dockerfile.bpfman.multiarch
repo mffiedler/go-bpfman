@@ -14,7 +14,7 @@
 # it is the buildx-native variant and is self-contained (it builds
 # the BPF objects itself rather than relying on a pre-populated
 # bin/ or .bpf.o tree). Dockerfile.bpfman.local stays in place for
-# fast local KIND iteration via the `build-image` Make target.
+# fast local cluster iteration via the `build-image` Make target.
 #
 # Local single-arch test (loads the result into the local Docker
 # image store):

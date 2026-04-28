@@ -35,17 +35,10 @@ make build-image-csi-sanity
 
 ### Deploy the Driver
 
-Ensure the driver is running in your cluster:
-
-```bash
-make bpfman-deploy
-```
-
-For kind clusters, load the csi-sanity image:
-
-```bash
-kind load docker-image csi-sanity:dev --name bpfman-deployment
-```
+Ensure the driver is running in your cluster and that the
+`csi-sanity:dev` image (built above) is available to the cluster's
+node(s) — how you get the image into the cluster depends on your
+runtime (image registry pull, local cache, etc.).
 
 ### Run Identity Tests
 
@@ -159,9 +152,7 @@ This is a valid CSI pattern (used by secrets-store-csi-driver, etc.) but
 ## Alternative Testing
 
 For ephemeral inline volume drivers, integration testing via actual pod
-deployments is more meaningful than `csi-sanity`. See
-[testing-stats-example.md](testing-stats-example.md) for the end-to-end test
-workflow.
+deployments is more meaningful than `csi-sanity`.
 
 ## References
 

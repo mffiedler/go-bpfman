@@ -41,8 +41,6 @@ IMAGE_TAG ?= dev
 BPFMAN_IMAGE ?= bpfman
 STATS_READER_IMAGE ?= stats-reader
 CSI_SANITY_IMAGE ?= csi-sanity
-KIND_CLUSTER ?= bpfman-deployment
-NAMESPACE ?= bpfman
 
 # ---------------------------------------------------------------------------
 # Test knobs.
@@ -296,10 +294,6 @@ help:
 	@echo "  bpfman-build                Build bpfman binary"
 	@echo "  bpfman-compile              Compile bpfman (no fmt/vet/dispatchers)"
 	@echo "  bpfman-clean                Remove generated files and binary"
-	@echo "  bpfman-delete               Remove bpfman from cluster"
-	@echo "  bpfman-deploy               Deploy bpfman to KIND cluster"
-	@echo "  bpfman-logs                 Follow bpfman logs"
-	@echo "  bpfman-operator-deploy      Deploy Go bpfman to bpfman-operator cluster"
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo ""
@@ -312,15 +306,6 @@ help:
 	@echo "  build-image-stats-reader    Build stats-reader container image"
 	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo ""
-	@echo "stats-reader app deployment:"
-	@echo "  stats-reader-delete         Remove stats-reader pod"
-	@echo "  stats-reader-deploy         Deploy stats-reader pod"
-	@echo "  stats-reader-logs           Follow stats-reader logs"
-	@echo ""
-	@echo "KIND cluster:"
-	@echo "  kind-create                 Create KIND cluster with bpffs mounted"
-	@echo "  kind-delete                 Delete KIND cluster"
-	@echo ""
 	@echo "Documentation:"
 	@echo "  doc                         Start pkgsite documentation server"
 	@echo "  doc-text                    Print API documentation to stdout"
@@ -328,9 +313,6 @@ help:
 	@echo "BPF:"
 	@echo "  bpf-build                   Build all BPF programs"
 	@echo "  bpf-clean                   Remove BPF build artifacts"
-	@echo ""
-	@echo "Combined:"
-	@echo "  kind-undeploy-all           Remove all components from KIND cluster"
 	@echo ""
 	@echo "SQLite driver:"
 	@echo "  The default SQLite driver is modernc.org/sqlite (pure Go)."
@@ -592,8 +574,8 @@ build-image: bpfman-build
 #
 #   make build-image-multiarch
 #       Default: native arch only, loaded into the local Docker
-#       store. Suitable for daily KIND work that does not require a
-#       shell-in-pod (use build-image for that).
+#       store. Suitable for daily cluster work that does not require
+#       a shell-in-pod (use build-image for that).
 #
 #   make build-image-multiarch PLATFORMS=linux/arm64
 #       Single foreign arch, loaded into the local Docker store
@@ -728,65 +710,10 @@ build-image-openshift:
 		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # ---------------------------------------------------------------------------
-# KIND cluster + deployments.
+# gRPC integration test.
 # ---------------------------------------------------------------------------
-# KIND cluster management
-kind-create:
-	kind create cluster --name $(KIND_CLUSTER) --config kind-config.yaml
-	@echo "Mounting bpffs on KIND nodes..."
-	@for node in $$(kind get nodes --name $(KIND_CLUSTER)); do \
-		docker exec $$node mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true; \
-	done
-	@echo "KIND cluster $(KIND_CLUSTER) created with bpffs mounted"
-
-kind-delete:
-	kind delete cluster --name $(KIND_CLUSTER)
-
-bpfman-kind-load: build-image
-	kind load docker-image $(BPFMAN_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
-
-bpfman-deploy: bpfman-kind-load
-	kubectl apply -f manifests/csidriver.yaml -f manifests/bpfman.yaml
-	kubectl -n $(NAMESPACE) wait --for=condition=Ready pod -l app=bpfman-daemon-go --timeout=60s
-
-bpfman-delete:
-	kubectl delete -f manifests/bpfman.yaml -f manifests/csidriver.yaml --ignore-not-found
-
-bpfman-logs:
-	kubectl -n $(NAMESPACE) logs -l app=bpfman-daemon-go -c bpfman -f
-
-bpfman-deploy-test: bpfman-kind-load
-	kubectl apply -f manifests/bpfman-test-pod.yaml
-	kubectl wait --for=condition=Ready pod/bpfman-test --timeout=30s
-
-bpfman-delete-test:
-	kubectl delete -f manifests/bpfman-test-pod.yaml --ignore-not-found
-
-# Deploy Go bpfman to an existing bpfman-operator deployment (replaces Rust bpfman)
-bpfman-operator-deploy: build-image
-	docker tag $(BPFMAN_IMAGE):$(IMAGE_TAG) $(BPFMAN_IMAGE):latest
-	kind load docker-image $(BPFMAN_IMAGE):latest --name $(KIND_CLUSTER)
-	kubectl rollout restart daemonset/bpfman-daemon -n $(NAMESPACE)
-	kubectl rollout status daemonset/bpfman-daemon -n $(NAMESPACE) --timeout=60s
-
 bpfman-test-grpc: build-image
 	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
-
-stats-reader-kind-load: build-image-stats-reader
-	kind load docker-image $(STATS_READER_IMAGE):$(IMAGE_TAG) --name $(KIND_CLUSTER)
-
-stats-reader-deploy: stats-reader-kind-load
-	kubectl apply -f manifests/stats-reader.yaml
-	kubectl wait --for=condition=Ready pod/stats-reader --timeout=30s
-
-stats-reader-delete:
-	kubectl delete -f manifests/stats-reader.yaml --ignore-not-found
-
-stats-reader-logs:
-	kubectl logs -f stats-reader
-
-# Combined targets
-kind-undeploy-all: stats-reader-delete bpfman-delete
 
 
 # ============================================================================
@@ -798,12 +725,9 @@ kind-undeploy-all: stats-reader-delete bpfman-delete
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
-.PHONY: bpfman-delete bpfman-delete-test bpfman-deploy bpfman-deploy-test bpfman-kind-load bpfman-logs bpfman-operator-deploy
 .PHONY: build-image build-image-csi-sanity build-image-multiarch build-image-nix build-image-openshift build-image-stats-reader cosign-sign
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
-.PHONY: kind-create kind-delete kind-undeploy-all
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: stats-reader-delete stats-reader-deploy stats-reader-kind-load stats-reader-logs
 .PHONY: test test-e2e test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

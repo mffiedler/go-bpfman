@@ -32,7 +32,7 @@
 #
 # Distinct from:
 #   build-image            single-arch local Docker build of the host
-#                          binary onto ubi9-minimal; meant for KIND
+#                          binary onto ubi9-minimal; meant for cluster
 #                          iteration where you want `kubectl exec`.
 #                          Image tag collides on purpose -- both
 #                          produce bpfman:dev, last writer wins.

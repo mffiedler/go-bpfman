@@ -1,6 +1,5 @@
 # Local dev build needs bin/bpfman from host
 build/
-manifests/
 scripts/
 *.md
 .git/
