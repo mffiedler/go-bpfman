@@ -17,7 +17,7 @@ on:
 
 jobs:
   test:
-    name: Build + unit tests (${{ matrix.arch }})
+    name: Unit tests (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -43,7 +43,7 @@ jobs:
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
 
-      - name: Run build + unit tests inside CI container
+      - name: Run unit tests inside CI container
         run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make test PARALLEL=1 STATIC=1
 
   test-e2e:

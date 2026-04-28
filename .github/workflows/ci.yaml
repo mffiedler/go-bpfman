@@ -46,7 +46,7 @@ jobs:
       - name: Check format
         run: make bpfman-fmt && git diff --exit-code
 
-  test:
+  tests:
     uses: ./.github/workflows/test.yaml
 
   lint:
@@ -148,7 +148,7 @@ jobs:
 
   ci-complete:
     name: CI complete
-    needs: [check-vendor, check-fmt, test, lint, nix, test-nsenter-qemu]
+    needs: [check-vendor, check-fmt, tests, lint, nix, test-nsenter-qemu]
     if: always()
     runs-on: ubuntu-latest
     steps:
