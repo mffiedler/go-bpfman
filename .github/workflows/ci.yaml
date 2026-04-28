@@ -46,6 +46,42 @@ jobs:
       - name: Check format
         run: make bpfman-fmt && git diff --exit-code
 
+  build:
+    name: Build bpfman (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build CI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.ci
+          target: base
+          tags: bpfman-ci:latest
+          load: true
+          cache-from: type=gha,scope=ci
+          cache-to: type=gha,mode=max,scope=ci
+
+      - name: Build bpfman binary
+        # Explicitly verify that the bpfman binary itself
+        # compiles (with the same static-link config the
+        # published image uses). `go test ./...` exercises
+        # package compilation but not the cmd/bpfman link path,
+        # so a build break in main.go would slip through the
+        # tests job; this job catches it directly.
+        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make bpfman-build STATIC=1
+
   tests:
     uses: ./.github/workflows/test.yaml
 
@@ -148,7 +184,7 @@ jobs:
 
   ci-complete:
     name: CI complete
-    needs: [check-vendor, check-fmt, tests, lint, nix, test-nsenter-qemu]
+    needs: [check-vendor, check-fmt, build, tests, lint, nix, test-nsenter-qemu]
     if: always()
     runs-on: ubuntu-latest
     steps:
