@@ -1,6 +1,13 @@
-# Local dev build needs bin/bpfman from host
-build/
-scripts/
-*.md
+# Local dev build: bin/bpfman is the only file the dockerfile
+# COPYs into the runtime image. Everything else is build-context
+# bloat. We do not bother with a `*`-then-allowlist scheme
+# because there is only one COPY; just exclude the heavy and
+# irrelevant trees.
 .git/
 .gitignore
+*.md
+build/
+dispatcher/*.bpf.o
+.bpf-build-stamp
+scripts/
+vendor/
