@@ -99,7 +99,7 @@ COPY . .
 # that target also tries to sudo-run the binary in the same
 # recipe; we only want the build half here.
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
     make bpf-build; \
     make e2e/testdata/bin/call_malloc STATIC=1; \
