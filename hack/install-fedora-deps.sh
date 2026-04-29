@@ -9,7 +9,7 @@
 #
 #   build/runtime: golang git make gcc clang llvm libbpf-devel
 #                  kernel-headers bpftool pkgconf-pkg-config iproute
-#                  jq sqlite-devel
+#                  jq sqlite-devel file
 #   static link:   glibc-static  (required for `make STATIC=1`)
 #   protobuf:      protobuf-compiler  (provides `protoc`)
 #   linters:       golangci-lint ShellCheck hadolint checkmake
@@ -43,6 +43,7 @@ rpms=(
     bpftool
     checkmake
     clang
+    file
     gcc
     git
     glibc-static
