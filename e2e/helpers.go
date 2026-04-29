@@ -6,8 +6,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"embed"
 	"fmt"
 	"hash/fnv"
+	iofs "io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -41,6 +43,17 @@ import (
 	"github.com/frobware/go-bpfman/manager"
 )
 
+// bpfFS embeds the compiled BPF objects under testdata/bpf/ so the
+// e2e.test binary is self-contained: at runtime the bytes are
+// materialised under each test's baseDir (see materialiseBPFFS),
+// and LoadFile resolves relative paths against that directory.
+// The embed pattern resolves at `go test -c` time, so the Makefile
+// rule for $(E2E_BPF_OBJECTS) is still a real build prereq for
+// e2e.test.
+//
+//go:embed testdata/bpf/*.bpf.o
+var bpfFS embed.FS
+
 // TestEnv provides an isolated test environment for e2e tests.
 // Each test gets a fully isolated environment with unique directories,
 // database, and socket, enabling t.Parallel() across all tests.
@@ -50,7 +63,7 @@ type TestEnv struct {
 	Manager     *manager.Manager
 	ImagePuller platform.ImagePuller
 	logger      *slog.Logger
-	baseDir     string // parent directory containing layout and cache
+	baseDir     string // parent directory containing layout, cache, testdata
 	closeEnv    func() error
 }
 
@@ -69,6 +82,10 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	baseDir, err := os.MkdirTemp("", fmt.Sprintf("bpfman-e2e-%d-", os.Getpid()))
 	if err != nil {
 		t.Fatalf("failed to create temp directory: %v", err)
+	}
+
+	if err := materialiseBPFFS(baseDir); err != nil {
+		t.Fatalf("materialise embedded BPF objects: %v", err)
 	}
 
 	layout, err := fs.New(baseDir)
@@ -198,7 +215,15 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 }
 
 // LoadFile loads BPF programs from a local object file.
+//
+// Relative paths are resolved against the per-test baseDir, into
+// which the embedded testdata/bpf/ tree is materialised at
+// NewTestEnv. This lets call sites keep their historical
+// "testdata/bpf/foo.bpf.o" form regardless of cwd.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(e.baseDir, filePath)
+	}
 	var result []bpfman.Program
 	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		var loadErr error
@@ -208,6 +233,30 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 		return loadErr
 	})
 	return result, err
+}
+
+// materialiseBPFFS writes every file in the embedded BPF filesystem
+// out under root, preserving the embed.FS layout (testdata/bpf/...).
+// Called once per TestEnv so the Manager.Load file-path machinery
+// can open real files even though the binary ships its own copy.
+func materialiseBPFFS(root string) error {
+	return iofs.WalkDir(bpfFS, ".", func(name string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		dest := filepath.Join(root, name)
+		if d.IsDir() {
+			return os.MkdirAll(dest, 0o755)
+		}
+		data, err := bpfFS.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		if err := os.WriteFile(dest, data, 0o600); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
+		}
+		return nil
+	})
 }
 
 // Unload unloads a BPF program.
