@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,22 +18,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
-
-func TestMain(m *testing.M) {
-	// Fail fast on prerequisites
-	if os.Geteuid() != 0 {
-		fmt.Fprintln(os.Stderr, "e2e tests require root privileges")
-		os.Exit(1)
-	}
-
-	// Clean up stale test directories from crashed runs
-	if err := cleanupStaleTestDirs(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to clean stale test dirs: %v\n", err)
-		os.Exit(1)
-	}
-
-	os.Exit(m.Run())
-}
 
 // TestTracepoint_LoadAttachDetachUnload tests the full lifecycle of a tracepoint program.
 func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
@@ -492,10 +475,11 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
-	// Behavioural validation: trigger the uprobe by running the
-	// call_malloc binary whose do_work function is the attach target.
+	// Behavioural validation: trigger the uprobe by re-execing
+	// e2e.test in helper mode; the child runs e2e_do_work, which
+	// fires the kernel probe attached to the same inode/offset.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/bin/call_malloc").Run()
+		_ = fireUprobe()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -615,10 +599,11 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.NotZero(t, listedLinks[0].ID, "should have kernel link ID")
 	require.Equal(t, bpfman.LinkKindUretprobe, listedLinks[0].Kind, "ListLinks should report uretprobe")
 
-	// Behavioural validation: trigger the uretprobe by running the
-	// call_malloc binary whose do_work function is the attach target.
+	// Behavioural validation: trigger the uretprobe by re-execing
+	// e2e.test in helper mode; the child returns from e2e_do_work,
+	// firing the kernel uretprobe attached to the same inode/offset.
 	for i := 0; i < 5; i++ {
-		exec.Command("testdata/bin/call_malloc").Run()
+		_ = fireUprobe()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
@@ -1354,10 +1339,20 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 }
 
 // uprobeTarget returns the path and function name for uprobe tests.
-// The uprobe is attached directly to the call_malloc test binary's
-// do_work function, avoiding any dependency on locating the correct
-// libc path (which breaks on NixOS, Guix, musl, and other
-// non-standard layouts).
+// The target is the running e2e.test binary itself, with the cgo'd
+// e2e_do_work symbol as the attach point. Avoids any dependency on
+// locating the correct libc path (which breaks on NixOS, Guix,
+// musl, and other non-standard layouts) and removes the need for
+// a separate call_malloc helper binary on disk.
 func uprobeTarget() (target, fnName string) {
-	return "testdata/bin/call_malloc", "do_work"
+	return selfExe, "e2e_do_work"
+}
+
+// fireUprobe execs the running e2e.test binary in helper mode so
+// e2e_do_work runs in the child, firing the kernel uprobe attached
+// to the same inode + symbol offset.
+func fireUprobe() error {
+	cmd := exec.Command(selfExe)
+	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeCallMalloc)
+	return cmd.Run()
 }
