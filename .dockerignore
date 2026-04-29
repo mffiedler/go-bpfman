@@ -15,13 +15,14 @@
 # can go with it.
 
 # In-container build: needs the full source tree but must not
-# pull in host-built artefacts. A stale host bin/bpfman,
-# dispatcher/*.bpf.o, or .bpf-build-stamp copied into the context
-# would overlap with the in-container build outputs and could
-# mask "didn't rebuild" bugs.
+# pull in host-built artefacts. A stale host bin/bpfman or
+# dispatcher/*.bpf.o copied into the context would overlap with
+# the in-container build outputs and could mask "didn't rebuild"
+# bugs.
 bin/
 dispatcher/*.bpf.o
-.bpf-build-stamp
+dispatcher/bpf/*.bpf.o
+dispatcher/bpf/*.bpf.d
 
 # Heavy/irrelevant trees that never need to be in the build context.
 # Note: .git/ exclusion is load-bearing -- with .git/ present,

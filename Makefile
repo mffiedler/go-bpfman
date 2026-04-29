@@ -185,11 +185,50 @@ NSENTER_TEST_BIN ?= nsenter.test
 # pkg-config). Konflux's Containerfile.bpfman.openshift compiles the
 # BPF objects in its own first stage and does not invoke this rule.
 # ---------------------------------------------------------------------------
-BPF_SOURCES := $(wildcard dispatcher/bpf/*.bpf.c) $(wildcard e2e/testdata/bpf/*.bpf.c)
-BPF_STAMP := .bpf-build-stamp
 
-BPF_STAMP_DEPS := $(BPF_SOURCES) dispatcher/Makefile e2e/testdata/bpf/Makefile
-BPF_STAMP_CMD  := $(MAKE) -C dispatcher && $(MAKE) -C e2e/testdata/bpf
+# Shared compile setup. LIBBPF_CFLAGS comes from pkg-config so the
+# include path follows the libbpf-devel package; BPF_CFLAGS is a
+# caller knob (Ubuntu CI passes -I/usr/include/<DEB_HOST_MULTIARCH>
+# so clang in -target bpfel mode finds asm/types.h under the
+# multiarch include path).
+LIBBPF_CFLAGS := $(shell pkg-config --cflags libbpf)
+BPF_CFLAGS ?=
+
+# clang -target bpfel produces architecture-independent BPF
+# bytecode, but kernel UAPI headers it pulls in (asm/types.h and
+# friends) are arch-specific. Define __TARGET_ARCH_<arch> to match
+# the host so the right asm/ headers are used.
+HOST_ARCH ?= $(shell uname -m)
+ifeq ($(HOST_ARCH),x86_64)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_x86
+else ifeq ($(HOST_ARCH),i686)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_x86
+else ifeq ($(HOST_ARCH),aarch64)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_arm64
+else ifeq ($(HOST_ARCH),ppc64le)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_powerpc
+else ifeq ($(HOST_ARCH),powerpc64le)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_powerpc
+else ifeq ($(HOST_ARCH),s390x)
+    BPF_TARGET_ARCH := -D__TARGET_ARCH_s390
+else
+    $(error unsupported HOST_ARCH=$(HOST_ARCH))
+endif
+
+# Dispatcher BPF: sources live in dispatcher/bpf/, and the
+# dispatcher Go package's go:embed directives expect the .bpf.o
+# files at the package root (dispatcher/), so each compiled
+# object is also copied up. xdp_dispatcher_v1.bpf.c is kept as
+# historical reference and is excluded from the build.
+DISPATCHER_BPF_SOURCES := $(filter-out dispatcher/bpf/xdp_dispatcher_v1.bpf.c,$(wildcard dispatcher/bpf/*.bpf.c))
+DISPATCHER_BPF_OBJECTS := $(DISPATCHER_BPF_SOURCES:.bpf.c=.bpf.o)
+DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_OBJECTS)))
+DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_OBJECTS:.bpf.o=.bpf.d)
+
+# E2E testdata BPF: sources and outputs all live in
+# e2e/testdata/bpf/.
+E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
+E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
@@ -598,16 +637,34 @@ $(BIN_DIR)/protoc-gen-go-grpc: | $(BIN_DIR)
 # ---------------------------------------------------------------------------
 # BPF build targets.
 # ---------------------------------------------------------------------------
-bpf-build: $(BPF_STAMP)
+.PHONY: bpf-build
+bpf-build: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 
-$(BPF_STAMP): $(BPF_STAMP_DEPS)
-	$(BPF_STAMP_CMD)
-	touch $(BPF_STAMP)
+dispatcher/bpf/%.bpf.o: dispatcher/bpf/%.bpf.c Makefile
+	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
+		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
+
+# Each compiled dispatcher object also lives at dispatcher/<name>
+# so the dispatcher Go package's go:embed patterns (which read
+# from the package root, not from bpf/) find it.
+dispatcher/%.bpf.o: dispatcher/bpf/%.bpf.o
+	cp $< $@
+
+# Without .SECONDARY, Make auto-deletes the intermediate
+# dispatcher/bpf/*.bpf.o files after copying them up to
+# dispatcher/, forcing a full recompile on the next invocation.
+# Declaring them secondary keeps them on disk so incremental
+# rebuilds work correctly.
+.SECONDARY: $(DISPATCHER_BPF_OBJECTS)
+
+e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
+	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) $< -o $@
 
 bpf-clean:
-	$(MAKE) -C dispatcher clean
-	$(MAKE) -C e2e/testdata/bpf clean
-	$(RM) $(BPF_STAMP)
+	$(RM) $(DISPATCHER_BPF_OBJECTS) $(DISPATCHER_BPF_EMBEDS) \
+	      $(DISPATCHER_BPF_DEPS) $(E2E_BPF_OBJECTS)
+
+-include $(DISPATCHER_BPF_DEPS)
 
 # ---------------------------------------------------------------------------
 # Docker image builds.

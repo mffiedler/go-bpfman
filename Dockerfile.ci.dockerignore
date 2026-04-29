@@ -5,7 +5,8 @@
 # "didn't rebuild" bug.
 bin/
 dispatcher/*.bpf.o
-.bpf-build-stamp
+dispatcher/bpf/*.bpf.o
+dispatcher/bpf/*.bpf.d
 e2e.test
 e2e/testdata/bin/call_malloc
 e2e/testdata/bpf/*.bpf.o
