@@ -75,6 +75,10 @@ PARALLEL ?=
 # Optional regex passed to `-test.run` in test-e2e / test-e2e-scripts
 # to narrow which tests execute. Empty by default = run all.
 TEST ?=
+# Iteration count for `make test-stress`. Each test re-runs this
+# many times in the same process so init-time validators (e.g.
+# operation.NewKey's name registry) get exercised on second entry.
+STRESS_COUNT ?= 10
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -505,6 +509,25 @@ lint-dockerfile:
 # a real prerequisite for the unit-test target as well.
 test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(strip go test -race $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+
+# Stress-runs the unit tests in conditions designed to surface bugs
+# that one-shot runs miss. Two knobs differ from `test`:
+#
+#   - -count=$(STRESS_COUNT) re-enters every test, catching
+#     init-time validators that panic on second registration -- the
+#     class operation.NewKey hit before being made idempotent on
+#     same-name same-type. Independent of parallelism, so this part
+#     would still earn its keep under PARALLEL=1.
+#
+#   - PARALLEL is intentionally ignored so Go uses GOMAXPROCS,
+#     exercising concurrent goroutine races. ci-test pins PARALLEL=1
+#     for deterministic ordering; this target trades that determinism
+#     for fault-finding sensitivity.
+#
+# Not wired into ci-test today; run locally before pushing changes
+# that touch shared init-time state or concurrent paths.
+test-stress: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+	$(strip go test -race -count=$(STRESS_COUNT) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v ./...)
 
 # nsenter cross-architecture tests
 #
