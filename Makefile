@@ -77,6 +77,23 @@ PARALLEL ?=
 TEST ?=
 
 # ---------------------------------------------------------------------------
+# Verbose-build switch, modelled on the Linux kernel tree's V=
+# convention. Quiet by default (one short tag per recipe, e.g.
+# `  CLANG-BPF dispatcher/bpf/tc_dispatcher.bpf.o`); `make V=1`
+# restores the full command lines for debugging. Used in the BPF
+# compile rules; other recipes (go fmt / vet / build) print their
+# own progress and are left as-is.
+# ---------------------------------------------------------------------------
+V ?=
+ifeq ($(V),1)
+Q :=
+quiet_cmd = @:
+else
+Q := @
+quiet_cmd = @printf "  %-9s %s\n" "$(1)" "$(2)"
+endif
+
+# ---------------------------------------------------------------------------
 # Static linking is opt-in via STATIC=1. Any other value disables it.
 # The upstream container image enables it because the runtime base is
 # scratch, which ships no libc; downstream consumers building with a
@@ -229,6 +246,7 @@ DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_OBJECTS:.bpf.o=.bpf.d)
 # e2e/testdata/bpf/.
 E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
+E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
@@ -362,7 +380,7 @@ help:
 	@echo "  coverage-func               Show coverage by function"
 	@echo "  coverage-html               Generate HTML coverage report"
 	@echo "  coverage-open               Generate and open HTML coverage report"
-	@echo "  coverage-clean              Remove coverage artifacts"
+	@echo "  clean-coverage              Remove coverage artifacts"
 	@echo ""
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
@@ -378,7 +396,7 @@ help:
 	@echo "bpfman (with integrated CSI):"
 	@echo "  bpfman-build                Build bpfman binary"
 	@echo "  bpfman-compile              Compile bpfman (no fmt/vet/dispatchers)"
-	@echo "  bpfman-clean                Remove generated files and binary"
+	@echo "  clean-bpfman                Remove generated files and binary"
 	@echo "  bpfman-proto                Generate protobuf/gRPC stubs"
 	@echo "  bpfman-test-grpc            Run gRPC integration tests"
 	@echo ""
@@ -397,8 +415,8 @@ help:
 	@echo "  doc-text                    Print API documentation to stdout"
 	@echo ""
 	@echo "BPF:"
-	@echo "  bpf-build                   Build all BPF programs"
-	@echo "  bpf-clean                   Remove BPF build artifacts"
+	@echo "  clean-bpf                   Remove BPF build artefacts"
+	@echo "  (no bpf-build target -- consumers depend directly on .bpf.o outputs)"
 	@echo ""
 	@echo "SQLite driver:"
 	@echo "  The default SQLite driver is modernc.org/sqlite (pure Go)."
@@ -415,7 +433,7 @@ print-fedora-version:
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
-clean: bpfman-clean bpf-clean coverage-clean
+clean: clean-bpfman clean-bpf clean-coverage
 	$(RM) -r $(BIN_DIR)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -440,7 +458,7 @@ $(BIN_DIR):
 # iterate on one layer at a time.
 lint: lint-go lint-make lint-hack lint-dockerfile
 
-lint-go: bpf-build $(BIN_DIR)/golangci-lint
+lint-go: $(DISPATCHER_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
 
 $(BIN_DIR)/golangci-lint: | $(BIN_DIR)
@@ -475,7 +493,10 @@ lint-dockerfile:
 # ---------------------------------------------------------------------------
 # Tests.
 # ---------------------------------------------------------------------------
-test: bpf-build
+# platform/ebpf unit tests load e2e/testdata/bpf/xdp_pass.bpf.o on
+# every run (not gated to root-only e2e), so the e2e BPF objects are
+# a real prerequisite for the unit-test target as well.
+test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(strip go test -race $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # nsenter cross-architecture tests
@@ -508,8 +529,10 @@ test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
 	$(CC) $(if $(STATIC),-static) -o $@ $<
 
-test-e2e: bpf-build e2e/testdata/bin/call_malloc
+e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
 	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e)
+
+test-e2e: e2e.test
 	cd e2e && sudo ../e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
@@ -523,7 +546,7 @@ test-e2e: bpf-build e2e/testdata/bin/call_malloc
 # stage) and invoke `run-e2e-scripts` directly on the runner
 # without re-triggering the build deps. Local invocations of
 # `test-e2e-scripts` still build first.
-build-e2e-scripts: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+build-e2e-scripts: bpfman-compile $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
 
 run-e2e-scripts:
 	@echo "Running REPL e2e scripts (requires root)..."
@@ -536,7 +559,7 @@ test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
-test-examples: bpfman-compile bpf-build e2e/testdata/bin/call_malloc
+test-examples: bpfman-compile $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
 	@echo "Running REPL example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
@@ -559,7 +582,7 @@ coverage-func: coverage
 coverage-open: coverage-html
 	xdg-open $(COVERAGE_HTML) 2>/dev/null || open $(COVERAGE_HTML) 2>/dev/null || echo "Open $(COVERAGE_HTML) in your browser"
 
-coverage-clean:
+clean-coverage:
 	$(RM) -r $(COVERAGE_DIR)
 
 # ---------------------------------------------------------------------------
@@ -585,20 +608,22 @@ doc-text:
 # CGO is required for the ns/nsenter package which uses a C constructor to call
 # setns() before Go runtime starts (needed for uprobe container attachment).
 # ---------------------------------------------------------------------------
-bpfman-build: bpfman-fmt bpfman-vet bpf-build bpfman-compile
+bpfman-build: bpfman-fmt bpfman-vet bpfman-compile
 
 bpfman-fmt:
 	go fmt ./...
 
-bpfman-vet: bpf-build
+bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
 	go vet ./...
 
-# Compile bpfman without the dispatcher dependency. Used directly by
-# container builds where dispatcher objects are already present.
-bpfman-compile: | $(BIN_DIR)
+# Compile bpfman. Depends on the dispatcher BPF embeds because
+# the dispatcher Go package's go:embed directives need them at
+# compile time. Make's pattern rules build them on demand if
+# missing or out of date.
+bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip CGO_ENABLED=1 go build $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
-bpfman-clean:
+clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman e2e/testdata/bin/call_malloc
 
 # ---------------------------------------------------------------------------
@@ -635,20 +660,26 @@ $(BIN_DIR)/protoc-gen-go-grpc: | $(BIN_DIR)
 		google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 
 # ---------------------------------------------------------------------------
-# BPF build targets.
+# BPF build rules.
+#
+# No `bpf-build` umbrella target: consumers depend directly on
+# the actual .bpf.o outputs they need ($(DISPATCHER_BPF_EMBEDS)
+# for the production binary, $(E2E_BPF_OBJECTS) for tests that
+# exercise e2e BPF programs). Make's dependency graph handles
+# incremental rebuilds against the real outputs without needing
+# a phony intermediary.
 # ---------------------------------------------------------------------------
-.PHONY: bpf-build
-bpf-build: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
-
 dispatcher/bpf/%.bpf.o: dispatcher/bpf/%.bpf.c Makefile
-	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
+	$(call quiet_cmd,CLANG-BPF,$@)
+	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
 # Each compiled dispatcher object also lives at dispatcher/<name>
 # so the dispatcher Go package's go:embed patterns (which read
 # from the package root, not from bpf/) find it.
 dispatcher/%.bpf.o: dispatcher/bpf/%.bpf.o
-	cp $< $@
+	$(call quiet_cmd,CP,$@)
+	$(Q)cp $< $@
 
 # Without .SECONDARY, Make auto-deletes the intermediate
 # dispatcher/bpf/*.bpf.o files after copying them up to
@@ -658,13 +689,15 @@ dispatcher/%.bpf.o: dispatcher/bpf/%.bpf.o
 .SECONDARY: $(DISPATCHER_BPF_OBJECTS)
 
 e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
-	clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) $< -o $@
+	$(call quiet_cmd,CLANG-BPF,$@)
+	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
+		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
-bpf-clean:
+clean-bpf:
 	$(RM) $(DISPATCHER_BPF_OBJECTS) $(DISPATCHER_BPF_EMBEDS) \
-	      $(DISPATCHER_BPF_DEPS) $(E2E_BPF_OBJECTS)
+	      $(DISPATCHER_BPF_DEPS) $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS)
 
--include $(DISPATCHER_BPF_DEPS)
+-include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS)
 
 # ---------------------------------------------------------------------------
 # Docker image builds.
@@ -959,11 +992,11 @@ bpfman-test-grpc: build-image-dev
 # .PHONY with backslash line continuations; each .PHONY line is a
 # stand-alone declaration.
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
-.PHONY: bpf-build bpf-clean
-.PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
+.PHONY: clean-bpf
+.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
 .PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
-.PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
+.PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
 .PHONY: build-e2e-scripts run-e2e-scripts test test-e2e test-e2e-scripts test-examples

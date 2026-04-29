@@ -1,16 +1,20 @@
 { lib
 , stdenv
-, bpf-objects
 , glibc
 , gnumake
 , go_1_25
+, libbpf
+, linuxHeaders
+, llvmPackages
+, pkg-config
 , self
 , static ? true
 }:
 
 # Build bpfman by delegating to the repo's Makefile rather than
 # duplicating its tag/ldflags logic. The Makefile already knows how
-# to produce a static binary (`make STATIC=1 bpfman-compile`), so
+# to produce a static binary (`make STATIC=1 bpfman-compile`) and
+# how to compile the dispatcher BPF objects via its dep graph, so
 # this derivation just provides the toolchain, captures version
 # metadata from the flake's `self`, and installs the resulting
 # binary into the Nix store.
@@ -22,18 +26,32 @@ stdenv.mkDerivation rec {
   # ./.. resolves to the repo root because this file lives in nix/.
   src = ./..;
 
+  # clang-unwrapped + linuxHeaders + libbpf + pkg-config let `make
+  # bpfman-compile` build the dispatcher .bpf.o embeds itself via
+  # the Makefile's dep graph. Use clang-unwrapped (rather than the
+  # cc-wrapper) for the same reason the dev shell does: the wrapper
+  # injects host-target -isystem and rejects --target bpfel.
   nativeBuildInputs = [
     gnumake
     go_1_25
+    llvmPackages.clang-unwrapped
+    pkg-config
   ];
 
   # glibc.static supplies libc.a / libpthread.a so the CGO link step
   # can produce a static binary against a scratch-compatible base
-  # when static=true. The BPF toolchain is intentionally absent: the
-  # .bpf.o files come pre-built via the `bpf-objects` derivation and
-  # get copied into place in buildPhase, so this derivation only
-  # needs the Go toolchain and (when static) glibc's static archives.
-  buildInputs = lib.optional static glibc.static;
+  # when static=true. libbpf and linuxHeaders are needed for the
+  # dispatcher BPF compile that runs as part of `make bpfman-compile`
+  # via its $(DISPATCHER_BPF_EMBEDS) prerequisite.
+  buildInputs = [
+    libbpf
+    linuxHeaders
+  ] ++ lib.optional static glibc.static;
+
+  # CPATH is the unwrapped clang's equivalent of the cc-wrapper's
+  # injected -isystem entries. linuxHeaders is the only system-
+  # include set the BPF sources need.
+  env.CPATH = "${linuxHeaders}/include";
 
   # Pass flake-captured git metadata through the Makefile's existing
   # ldflags pipeline. GIT_BRANCH is not meaningful for a flake-rev
@@ -83,11 +101,10 @@ stdenv.mkDerivation rec {
     export GOCACHE=$TMPDIR/go-cache
     export GOFLAGS=-mod=vendor
 
-    # Seed the BPF objects from the shared derivation. The dispatcher
-    # Go package embeds them via go:embed, so they must be present
-    # before `go build` runs.
-    cp ${bpf-objects}/dispatcher/*.bpf.o dispatcher/
-
+    # `make bpfman-compile` pulls $(DISPATCHER_BPF_EMBEDS) via the
+    # Makefile's dep graph, so the dispatcher .bpf.o files are
+    # built in-tree before the Go link runs -- no separate seeding
+    # step needed.
     make bpfman-compile ${lib.optionalString static "STATIC=1"}
 
     runHook postBuild

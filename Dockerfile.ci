@@ -82,22 +82,19 @@ FROM base AS e2e-builder
 
 COPY . .
 
-# Inlines the `go test -c` invocation from the Makefile's
-# test-e2e recipe rather than calling `make test-e2e` because
-# that target also tries to sudo-run the binary in the same
-# recipe; we only want the build half here.
+# Build artefacts via Make's dep graph: `e2e.test` pulls in
+# dispatcher BPF + e2e BPF + call_malloc transitively, then
+# `bpfman-compile` reuses the cached dispatcher BPF and produces
+# bin/bpfman. test-e2e (the run target) is intentionally
+# skipped here -- we want only the build halves; the runner
+# executes the binary on the host with sudo.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
-    make bpf-build; \
-    make e2e/testdata/bin/call_malloc STATIC=1; \
+    make e2e.test STATIC=1; \
     make bpfman-compile STATIC=1; \
     mkdir -p /out/bin /out/e2e/testdata/bin /out/e2e/testdata/bpf; \
-    CGO_ENABLED=1 go test -c \
-      -tags=e2e,osusergo,netgo \
-      -ldflags '-extldflags=-static' \
-      -o /out/e2e.test \
-      ./e2e; \
+    cp e2e.test /out/e2e.test; \
     cp bin/bpfman /out/bin/; \
     cp e2e/testdata/bin/call_malloc /out/e2e/testdata/bin/; \
     cp e2e/testdata/bpf/*.bpf.o /out/e2e/testdata/bpf/

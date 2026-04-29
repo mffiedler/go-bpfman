@@ -19,7 +19,7 @@
 #   docker:        docker-ce (from Docker's upstream repo) or
 #                  moby-engine (Fedora-native). Only needed for
 #                  `make build-image-dev` and friends (the runtime
-#                  image build); `make bpf-build` uses the host
+#                  image build); the host BPF compile rules use
 #                  clang/llvm/libbpf-devel/kernel-headers RPMs
 #                  installed by this script.
 #   protoc-gen-go,

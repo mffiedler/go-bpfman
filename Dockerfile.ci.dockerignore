@@ -10,7 +10,12 @@ dispatcher/bpf/*.bpf.d
 e2e.test
 e2e/testdata/bin/call_malloc
 e2e/testdata/bpf/*.bpf.o
+e2e/testdata/bpf/*.bpf.d
 nsenter.test
+
+# `nix build` symlinks (`result`, `result-bin`, ...). Following them
+# would pull /nix/store closures into the context.
+result*
 
 # Heavy/irrelevant trees that never need to be in the build context.
 .git/

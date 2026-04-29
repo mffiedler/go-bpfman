@@ -86,10 +86,10 @@ jobs:
   # regressions and verifies `nix build .` still produces a working
   # binary.
   #
-  # BPF objects come from the bpf-objects nix derivation and are
-  # copied into the source tree before `make lint` runs, so Make's
-  # bpf-build step sees them as already-built and doesn't try to
-  # invoke docker or shell out to clang.
+  # BPF objects are built fresh by `make lint` -- the nix devshell
+  # supplies clang, libbpf, and kernel headers, so there's no
+  # special seeding step. The compile is cheap (~1-2s) and skipping
+  # the magic keeps the workflow honest about what it actually does.
   nix:
     name: Nix lint and build
     runs-on: ubuntu-latest
@@ -105,13 +105,6 @@ jobs:
         run: |
           file result/bin/bpfman
           ./result/bin/bpfman version
-
-      - name: Seed BPF objects from the nix derivation
-        run: |
-          bpf=$(nix build --no-link --print-out-paths .#bpf-objects)
-          cp "$bpf"/dispatcher/*.bpf.o dispatcher/
-          cp "$bpf"/e2e/testdata/bpf/*.bpf.o e2e/testdata/bpf/
-          touch .bpf-build-stamp
 
       - name: Run lint
         run: nix develop --command make lint
