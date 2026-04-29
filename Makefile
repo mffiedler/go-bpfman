@@ -51,6 +51,16 @@ CI_IMAGE       ?= bpfman-ci
 CI_DOCKERFILE  ?= Dockerfile.ci
 CI_E2E_OUTDIR  ?= ./out
 
+# Shared docker-run incantation for the ci-* targets that drive
+# work inside the CI container. Mounts the source tree and named
+# volumes for Go's build and module caches so consecutive runs
+# benefit from incremental compile.
+CI_RUN := docker run --rm \
+	-v $(CURDIR):/src -w /src \
+	-v bpfman-ci-go-build:/root/.cache/go-build \
+	-v bpfman-ci-go-mod:/root/go/pkg/mod \
+	$(CI_IMAGE)
+
 # ---------------------------------------------------------------------------
 # Test knobs.
 # ---------------------------------------------------------------------------
@@ -263,7 +273,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-stats-reader build-image-csi-sanity build-image-openshift \
-	ci-build ci-image ci-test ci-test-e2e ci-test-e2e-scripts \
+	ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -311,7 +321,10 @@ help:
 	@echo "Local CI reproducer (Dockerfile.ci):"
 	@echo "  ci                          Run every ci-* target"
 	@echo "  ci-build                    Compile bpfman binary inside the CI container"
+	@echo "  ci-check-fmt                Verify Go formatting is tidy (matches CI check-fmt)"
+	@echo "  ci-check-vendor             Verify go.mod and vendor are tidy (matches CI check-vendor)"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
+	@echo "  ci-lint                     Run \`make lint\` inside the CI container"
 	@echo "  ci-test                     Run unit tests inside the CI container"
 	@echo "  ci-test-e2e                 Extract e2e test bundle and run it on the host (sudo)"
 	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run REPL scripts (sudo)"
@@ -803,24 +816,38 @@ ci-image:
 # (each runner starts with empty volumes); the volumes are
 # specifically for local iteration speed.
 ci-build: ci-image
-	docker run --rm \
-		-v $(CURDIR):/src -w /src \
-		-v bpfman-ci-go-build:/root/.cache/go-build \
-		-v bpfman-ci-go-mod:/root/go/pkg/mod \
-		$(CI_IMAGE) \
-		make bpfman-build
+	$(CI_RUN) make bpfman-build
+
+# Reproduce the workflow's check-vendor job locally. Verifies
+# go.mod / go.sum / vendor are tidy. Runs on the host (no
+# container) to match the GH job, which uses actions/setup-go
+# directly on the runner rather than the bpfman-ci image. Like
+# the upstream CI job this assumes a clean tree; commit or
+# stash work-in-progress changes before invoking, otherwise
+# `git diff --exit-code` will fail on them.
+ci-check-vendor:
+	go mod tidy
+	go mod vendor
+	git diff --exit-code
+
+# Reproduce the workflow's check-fmt job locally. Same host /
+# clean-tree contract as ci-check-vendor.
+ci-check-fmt:
+	$(MAKE) bpfman-fmt
+	git diff --exit-code
+
+# Reproduce the workflow's lint job locally. Runs the full
+# `make lint` umbrella (golangci-lint + hadolint + shellcheck +
+# checkmake) inside the CI container.
+ci-lint: ci-image
+	$(CI_RUN) make lint
 
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
 # cache volumes as ci-build for incremental-compile speed.
 ci-test: ci-image
-	docker run --rm \
-		-v $(CURDIR):/src -w /src \
-		-v bpfman-ci-go-build:/root/.cache/go-build \
-		-v bpfman-ci-go-mod:/root/go/pkg/mod \
-		$(CI_IMAGE) \
-		make test PARALLEL=1 STATIC=1
+	$(CI_RUN) make test PARALLEL=1 STATIC=1
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
 # stage produces a hermetic bundle (binary + testdata) at
@@ -844,8 +871,10 @@ ci-test-e2e-scripts:
 	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) .
 	$(MAKE) run-e2e-scripts
 
-# Umbrella: run every CI pipeline locally.
-ci: ci-build ci-test ci-test-e2e ci-test-e2e-scripts
+# Umbrella: run every CI pipeline locally. Cheap checks first
+# (vendor/fmt) so failures surface fast; build before tests so
+# the test job's container has a populated Go cache; e2e last.
+ci: ci-check-vendor ci-check-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -864,7 +893,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpf-build bpf-clean
 .PHONY: bpfman-build bpfman-clean bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
-.PHONY: ci ci-build ci-image ci-test ci-test-e2e ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage coverage-clean coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
