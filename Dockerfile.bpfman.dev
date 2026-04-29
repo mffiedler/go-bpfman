@@ -3,7 +3,9 @@
 # The caller is responsible for producing bin/bpfman before invoking
 # docker build; this file does no compilation.
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+ARG RUNTIME_IMAGE=registry.fedoraproject.org/fedora-minimal:43
+# hadolint ignore=DL3006
+FROM ${RUNTIME_IMAGE}
 
 COPY --link --chmod=0755 bin/bpfman /bpfman
 
