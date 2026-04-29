@@ -976,6 +976,15 @@ ci-lint: ci-image
 ci-test: ci-image
 	$(CI_RUN) make clean-bpf test PARALLEL=1 STATIC=1
 
+# Reproduce the workflow's stress unit-test job locally.
+# Companion to ci-test: same container, same source mount, but
+# runs `make test-stress` (default GOMAXPROCS, -count=$(STRESS_COUNT))
+# instead of the deterministic `make test PARALLEL=1`. Forwards
+# STRESS_COUNT so callers (notably the GH workflow) can pin the
+# count rather than depending on the Makefile default.
+ci-test-stress: ci-image
+	$(CI_RUN) make clean-bpf test-stress STATIC=1 STRESS_COUNT=$(STRESS_COUNT)
+
 # Reproduce the workflow's e2e job locally. The `e2e-export`
 # stage produces a hermetic bundle (binary + testdata) at
 # $(CI_E2E_OUTDIR); the static binary is then run on the host
