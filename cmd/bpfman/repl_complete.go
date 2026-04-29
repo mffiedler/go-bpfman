@@ -60,6 +60,16 @@ func replCompleter(ctx context.Context, mgr *manager.Manager, session *shell.Ses
 }
 
 func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Session, line string, pos int) (replace int, candidates []string) {
+	return replCompleteIn(ctx, mgr, session, "", line, pos)
+}
+
+// replCompleteIn is replComplete with an explicit base directory
+// for filesystem completions. When baseDir is empty, relative
+// completions resolve against the process working directory; when
+// set, they resolve under baseDir. Tests use this entry point to
+// avoid mutating the process cwd via os.Chdir, which is unsafe
+// under t.Parallel().
+func replCompleteIn(ctx context.Context, mgr *manager.Manager, session *shell.Session, baseDir, line string, pos int) (replace int, candidates []string) {
 	head := line[:pos]
 
 	tokens := strings.Fields(head)
@@ -73,14 +83,14 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 	}
 	if len(tokens) >= 2 && trailingSpace && isPathFlag(tokens[len(tokens)-1]) {
 		// Cursor is right after "--path " or "-p ", complete filesystem paths.
-		candidates = replFileCompletions("")
+		candidates = replFileCompletions(baseDir, "")
 		return
 	}
 	if len(tokens) >= 2 && !trailingSpace {
 		prevIdx := len(tokens) - 2
 		if isPathFlag(tokens[prevIdx]) {
 			prefix := tokens[len(tokens)-1]
-			candidates = replFileCompletions(prefix)
+			candidates = replFileCompletions(baseDir, prefix)
 			replace = len(prefix)
 			return
 		}
@@ -119,10 +129,10 @@ func replComplete(ctx context.Context, mgr *manager.Manager, session *shell.Sess
 		// "source" takes a file path as its argument.
 		if tokens[0] == "source" {
 			if len(tokens) == 2 {
-				candidates = replFileCompletions(tokens[1])
+				candidates = replFileCompletions(baseDir, tokens[1])
 				replace = len(tokens[1])
 			} else {
-				candidates = replFileCompletions("")
+				candidates = replFileCompletions(baseDir, "")
 			}
 			return
 		}
@@ -803,8 +813,10 @@ func varPathSuffix(v shell.Value) string {
 // replFileCompletions returns filesystem path completions for the
 // given prefix. Directories get a trailing slash. When the prefix
 // starts with "./" the dot-slash is preserved in completions because
-// filepath.Glob normalises it away.
-func replFileCompletions(prefix string) []string {
+// filepath.Glob normalises it away. baseDir, when non-empty,
+// resolves relative prefixes under that directory rather than the
+// process cwd; absolute prefixes ignore it.
+func replFileCompletions(baseDir, prefix string) []string {
 	// When no prefix is given, list the current directory with an
 	// explicit "./" so completions read as relative paths.
 	dotSlash := false
@@ -816,26 +828,41 @@ func replFileCompletions(prefix string) []string {
 		dotSlash = true
 	}
 
+	rebase := baseDir != "" && !filepath.IsAbs(globPrefix)
 	pattern := globPrefix + "*"
+	if rebase {
+		// Strip a leading "./" so it doesn't get folded away by
+		// filepath.Join, then anchor under baseDir. The user's
+		// dot-slash convention is restored on the way back out.
+		rel := strings.TrimPrefix(globPrefix, "./")
+		pattern = baseDir + string(filepath.Separator) + rel + "*"
+	}
+
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
 		return nil
 	}
 	var completions []string
 	for _, m := range matches {
-		// filepath.Glob strips the "./" prefix; restore it
-		// when the user typed one.
-		if dotSlash && !strings.HasPrefix(m, "./") {
-			m = "./" + m
-		}
 		info, err := os.Stat(m)
 		if err != nil {
 			continue
 		}
+		out := m
+		if rebase {
+			out = strings.TrimPrefix(m, baseDir+string(filepath.Separator))
+			if dotSlash {
+				out = "./" + out
+			}
+		} else if dotSlash && !strings.HasPrefix(out, "./") {
+			// filepath.Glob strips the "./" prefix; restore it
+			// when the user typed one.
+			out = "./" + out
+		}
 		if info.IsDir() {
-			completions = append(completions, m+"/")
+			completions = append(completions, out+"/")
 		} else {
-			completions = append(completions, m)
+			completions = append(completions, out)
 		}
 	}
 	return completions

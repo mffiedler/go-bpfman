@@ -19,6 +19,8 @@ import (
 )
 
 func TestReplComplete_FileCompletion(t *testing.T) {
+	t.Parallel()
+
 	// Create a temp directory tree to complete against.
 	root := t.TempDir()
 
@@ -31,12 +33,6 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "e2e", "testdata", "other.o"), nil, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "e2e", "README"), nil, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "somefile.o"), nil, 0o644))
-
-	// Run tests from the temp directory so relative paths resolve.
-	orig, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(root))
-	t.Cleanup(func() { os.Chdir(orig) })
 
 	tests := []struct {
 		name        string
@@ -118,8 +114,9 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			pos := len(tt.line)
-			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
+			replace, candidates := replCompleteIn(context.Background(), nil, nil, root, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 
@@ -139,6 +136,8 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 }
 
 func TestScannerReader(t *testing.T) {
+	t.Parallel()
+
 	input := "line one\nline two\n"
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	defer lr.Close()
@@ -156,6 +155,8 @@ func TestScannerReader(t *testing.T) {
 }
 
 func TestReplLoop_CommentsAndBlanks(t *testing.T) {
+	t.Parallel()
+
 	// Feed the loop lines that include comments, blank lines, and
 	// an unknown command so we can verify only real commands are
 	// dispatched. The only side effect we can easily observe
@@ -187,6 +188,8 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 }
 
 func TestReplComplete_CommandCompletion(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		line        string
@@ -233,6 +236,7 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			pos := len(tt.line)
 			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
 
@@ -245,6 +249,8 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 }
 
 func TestArgTexts(t *testing.T) {
+	t.Parallel()
+
 	args := []shell.Arg{
 		shell.WordArg{Text: "show"},
 		shell.WordArg{Text: "program"},
@@ -255,11 +261,15 @@ func TestArgTexts(t *testing.T) {
 }
 
 func TestArgTexts_Empty(t *testing.T) {
+	t.Parallel()
+
 	got := argTexts(nil)
 	assert.Empty(t, got)
 }
 
 func TestArgTexts_StructuredValueArg(t *testing.T) {
+	t.Parallel()
+
 	args := []shell.Arg{
 		shell.WordArg{Text: "show"},
 		shell.WordArg{Text: "program"},
@@ -270,6 +280,8 @@ func TestArgTexts_StructuredValueArg(t *testing.T) {
 }
 
 func TestArgTexts_QuotedArg(t *testing.T) {
+	t.Parallel()
+
 	args := []shell.Arg{
 		shell.WordArg{Text: "load"},
 		shell.QuotedArg{Text: "my file.o"},
@@ -279,6 +291,8 @@ func TestArgTexts_QuotedArg(t *testing.T) {
 }
 
 func TestReplLoop_VarsEmpty(t *testing.T) {
+	t.Parallel()
+
 	input := "vars\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
@@ -290,6 +304,8 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 }
 
 func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
+	t.Parallel()
+
 	// "alias" is a shell command that produces no value, so
 	// assigning its result should produce an error.  The multi-token
 	// form forces the cmdsub parser down the command-invocation
@@ -306,6 +322,8 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman show program $x.id\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -317,6 +335,8 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 }
 
 func TestReplLoop_QuotedHashNotComment(t *testing.T) {
+	t.Parallel()
+
 	// A '#' inside double quotes should not be treated as a
 	// comment.  A quoted literal at statement position is an
 	// expression statement and is auto-printed, so the hash must
@@ -333,12 +353,16 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 }
 
 func TestReplComplete_VarsCommand(t *testing.T) {
+	t.Parallel()
+
 	// "vars" should appear in command completions.
 	_, candidates := replComplete(context.Background(), nil, nil, "va", len("va"))
 	assert.Contains(t, candidates, "vars ")
 }
 
 func TestReplLoop_Unset(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("foo", shell.StringValue("42"))
 	session.Set("bar", shell.StringValue("99"))
@@ -357,6 +381,8 @@ func TestReplLoop_Unset(t *testing.T) {
 }
 
 func TestReplLoop_UnsetMultiple(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("a", shell.StringValue("1"))
 	session.Set("b", shell.StringValue("2"))
@@ -377,6 +403,8 @@ func TestReplLoop_UnsetMultiple(t *testing.T) {
 }
 
 func TestReplLoop_UnsetUndefined(t *testing.T) {
+	t.Parallel()
+
 	input := "unset nosuch\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -388,6 +416,8 @@ func TestReplLoop_UnsetUndefined(t *testing.T) {
 }
 
 func TestReplLoop_UnsetNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "unset\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -399,6 +429,8 @@ func TestReplLoop_UnsetNoArgs(t *testing.T) {
 }
 
 func TestReplComplete_UnsetCompletion(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("prog", shell.StringValue("42"))
 	session.Set("prog2", shell.StringValue("99"))
@@ -441,6 +473,7 @@ func TestReplComplete_UnsetCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 			for _, want := range tt.wantAny {
@@ -454,6 +487,8 @@ func TestReplComplete_UnsetCompletion(t *testing.T) {
 }
 
 func TestReplLoop_Source(t *testing.T) {
+	t.Parallel()
+
 	// Write a temp file containing "help" and source it.
 	tmp := filepath.Join(t.TempDir(), "script.bpfman")
 	require.NoError(t, os.WriteFile(tmp, []byte("help\n"), 0o644))
@@ -469,6 +504,8 @@ func TestReplLoop_Source(t *testing.T) {
 }
 
 func TestReplLoop_SourceSharesSession(t *testing.T) {
+	t.Parallel()
+
 	// Source a file with an unknown command and verify the error
 	// appears, proving the sourced file runs in the same session.
 	tmp := filepath.Join(t.TempDir(), "script.bpfman")
@@ -485,6 +522,8 @@ func TestReplLoop_SourceSharesSession(t *testing.T) {
 }
 
 func TestReplLoop_SourceMissingFile(t *testing.T) {
+	t.Parallel()
+
 	input := "source /nonexistent/path/script.bpfman\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -496,6 +535,8 @@ func TestReplLoop_SourceMissingFile(t *testing.T) {
 }
 
 func TestReplLoop_SourceNestedRejected(t *testing.T) {
+	t.Parallel()
+
 	// A sourced file that itself contains a source command should
 	// be rejected with a clear error.
 	dir := t.TempDir()
@@ -515,6 +556,8 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 }
 
 func TestReplLoop_SourceNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "source\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -526,6 +569,8 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 }
 
 func TestParseProgramIDArg(t *testing.T) {
+	t.Parallel()
+
 	// Origin-backed value via ValueFromStruct (exercises HasProgramID capability).
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
@@ -581,6 +626,7 @@ func TestParseProgramIDArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseProgramIDArg(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -594,6 +640,8 @@ func TestParseProgramIDArg(t *testing.T) {
 }
 
 func TestReplCompleteVarPath(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 
 	// Structured variable mimicking a loaded program.
@@ -786,6 +834,7 @@ func TestReplCompleteVarPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			candidates, replace := replCompleteVarPath(session, tt.token, tt.sigil)
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 
@@ -805,12 +854,16 @@ func TestReplCompleteVarPath(t *testing.T) {
 }
 
 func TestReplCompleteVarPath_NilSession(t *testing.T) {
+	t.Parallel()
+
 	candidates, replace := replCompleteVarPath(nil, "$prog.", true)
 	assert.Empty(t, candidates)
 	assert.Equal(t, 0, replace)
 }
 
 func TestReplComplete_PrintCompletion(t *testing.T) {
+	t.Parallel()
+
 	// print's argument is any expression that evaluates to a
 	// value; bare-word args are literal strings at runtime
 	// ("print foo" prints "foo", not $foo), so completion only
@@ -868,6 +921,7 @@ func TestReplComplete_PrintCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
 			if tt.wantAny != nil {
 				assert.Equal(t, tt.wantReplace, replace, "replace")
@@ -883,6 +937,8 @@ func TestReplComplete_PrintCompletion(t *testing.T) {
 }
 
 func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	v, err := shell.ValueFromJSON([]byte(`{"record": {"program_id": 42}, "name": "test"}`))
 	require.NoError(t, err)
@@ -916,6 +972,7 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			replace, candidates := replComplete(context.Background(), nil, session, tt.line, len(tt.line))
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 			for _, want := range tt.wantAny {
@@ -926,6 +983,8 @@ func TestReplComplete_ProgramIDVarPathCompletion(t *testing.T) {
 }
 
 func TestProgramDeleteCmd_Validate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		cmd     ProgramDeleteCmd
@@ -956,6 +1015,7 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := tt.cmd.Validate()
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -968,6 +1028,8 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 }
 
 func TestReplComplete_ProgramDeleteAll(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		line        string
@@ -996,6 +1058,7 @@ func TestReplComplete_ProgramDeleteAll(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, len(tt.line))
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 			for _, want := range tt.wantAny {
@@ -1006,6 +1069,8 @@ func TestReplComplete_ProgramDeleteAll(t *testing.T) {
 }
 
 func TestReplComplete_ProgramGetNoAll(t *testing.T) {
+	t.Parallel()
+
 	// "bpfman program get" should offer program IDs, not --all.
 	replace, candidates := replComplete(context.Background(), nil, nil, "bpfman program get ", len("bpfman program get "))
 	assert.Equal(t, 0, replace)
@@ -1015,6 +1080,8 @@ func TestReplComplete_ProgramGetNoAll(t *testing.T) {
 }
 
 func TestParseLinkIDArg(t *testing.T) {
+	t.Parallel()
+
 	// Origin-backed value via ValueFromStruct (exercises HasLinkID capability).
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{ID: kernel.LinkID(77)},
@@ -1056,6 +1123,7 @@ func TestParseLinkIDArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parseLinkIDArg(tt.arg)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -1069,6 +1137,8 @@ func TestParseLinkIDArg(t *testing.T) {
 }
 
 func TestReplLoop_Version(t *testing.T) {
+	t.Parallel()
+
 	input := "version\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
@@ -1080,6 +1150,8 @@ func TestReplLoop_Version(t *testing.T) {
 }
 
 func TestReplComplete_NewCommands(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		line        string
@@ -1150,6 +1222,7 @@ func TestReplComplete_NewCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, len(tt.line))
 			assert.Equal(t, tt.wantReplace, replace, "replace")
 			for _, want := range tt.wantAny {
@@ -1160,6 +1233,8 @@ func TestReplComplete_NewCommands(t *testing.T) {
 }
 
 func TestReplLoop_DoctorExplain(t *testing.T) {
+	t.Parallel()
+
 	// "bpfman doctor explain" without a rule should list all rules.
 	input := "bpfman doctor explain\n"
 	var outBuf bytes.Buffer
@@ -1172,6 +1247,8 @@ func TestReplLoop_DoctorExplain(t *testing.T) {
 }
 
 func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman doctor explain nosuch-rule\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1183,6 +1260,8 @@ func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
 }
 
 func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman doctor bogus\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1194,6 +1273,8 @@ func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
 }
 
 func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman program get\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1205,6 +1286,8 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman program unload\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1216,6 +1299,8 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkAttachNoType(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman link attach\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1227,6 +1312,8 @@ func TestReplLoop_LinkAttachNoType(t *testing.T) {
 }
 
 func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman link attach bogus\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1238,6 +1325,8 @@ func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
 }
 
 func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman link detach\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1249,6 +1338,8 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkGetNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman link get\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1260,6 +1351,8 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "bpfman link delete\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1271,6 +1364,8 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_AliasBasic(t *testing.T) {
+	t.Parallel()
+
 	// Define an alias and use it to invoke a domain command.
 	// "bpfman doctor explain" lists rules; the alias should work the same.
 	input := "alias b = bpfman\nb doctor explain\n"
@@ -1284,6 +1379,8 @@ func TestReplLoop_AliasBasic(t *testing.T) {
 }
 
 func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -1297,6 +1394,7 @@ func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var errBuf bytes.Buffer
 			cli := &CLI{Out: io.Discard, Err: &errBuf}
 			lr := NewScannerReader(strings.NewReader(tt.input), nil)
@@ -1309,6 +1407,8 @@ func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
 }
 
 func TestReplLoop_AliasBadSyntax(t *testing.T) {
+	t.Parallel()
+
 	input := "alias b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1320,6 +1420,8 @@ func TestReplLoop_AliasBadSyntax(t *testing.T) {
 }
 
 func TestReplLoop_UnaliasBasic(t *testing.T) {
+	t.Parallel()
+
 	input := "alias b = bpfman\nunalias b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1331,6 +1433,8 @@ func TestReplLoop_UnaliasBasic(t *testing.T) {
 }
 
 func TestReplLoop_UnaliasUndefined(t *testing.T) {
+	t.Parallel()
+
 	input := "unalias nosuch\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1342,6 +1446,8 @@ func TestReplLoop_UnaliasUndefined(t *testing.T) {
 }
 
 func TestReplLoop_AliasesList(t *testing.T) {
+	t.Parallel()
+
 	input := "alias b = bpfman\nalias bp = bpfman\naliases\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
@@ -1354,6 +1460,8 @@ func TestReplLoop_AliasesList(t *testing.T) {
 }
 
 func TestReplLoop_AliasesEmpty(t *testing.T) {
+	t.Parallel()
+
 	input := "aliases\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
@@ -1365,6 +1473,8 @@ func TestReplLoop_AliasesEmpty(t *testing.T) {
 }
 
 func TestReplLoop_AliasInLetBinding(t *testing.T) {
+	t.Parallel()
+
 	// "let x = b doctor explain" should fail to bind (doctor
 	// produces no assignable value) but should reach the domain
 	// dispatcher, proving alias expansion works in let context.
@@ -1379,14 +1489,11 @@ func TestReplLoop_AliasInLetBinding(t *testing.T) {
 }
 
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "setup.bpfman"), nil, 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "scripts"), 0o755))
-
-	orig, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(root))
-	t.Cleanup(func() { os.Chdir(orig) })
 
 	tests := []struct {
 		name        string
@@ -1413,8 +1520,9 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			pos := len(tt.line)
-			replace, candidates := replComplete(context.Background(), nil, nil, tt.line, pos)
+			replace, candidates := replCompleteIn(context.Background(), nil, nil, root, tt.line, pos)
 
 			assert.Equal(t, tt.wantReplace, replace)
 			if tt.wantNonZero {
@@ -1428,6 +1536,8 @@ func TestReplComplete_SourceFileCompletion(t *testing.T) {
 }
 
 func TestParseProgramIDArg_RejectsLinkVariable(t *testing.T) {
+	t.Parallel()
+
 	link := bpfman.Link{
 		Record: bpfman.LinkRecord{
 			ID:        kernel.LinkID(10),
@@ -1447,6 +1557,8 @@ func TestParseProgramIDArg_RejectsLinkVariable(t *testing.T) {
 }
 
 func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{
 			ProgramID: kernel.ProgramID(42),
@@ -1473,6 +1585,8 @@ func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 // expression grammar: contains, path, ok, fail.
 
 func TestAssertContains(t *testing.T) {
+	t.Parallel()
+
 	r, err := assertContains([]string{"hello world", "world"})
 	require.NoError(t, err)
 	assert.True(t, r.pass)
@@ -1483,6 +1597,8 @@ func TestAssertContains(t *testing.T) {
 }
 
 func TestAssertPath(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "exists.txt")
 	require.NoError(t, os.WriteFile(existing, nil, 0o644))
@@ -1497,6 +1613,8 @@ func TestAssertPath(t *testing.T) {
 }
 
 func TestAssertPath_BadArgs(t *testing.T) {
+	t.Parallel()
+
 	_, err := assertPath([]string{"nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "path requires")
@@ -1512,6 +1630,8 @@ func wordArgs(ss ...string) []shell.Arg {
 }
 
 func TestAssertOk_UnknownCommand(t *testing.T) {
+	t.Parallel()
+
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "bogus" is not a valid command, so it should fail.
@@ -1522,6 +1642,8 @@ func TestAssertOk_UnknownCommand(t *testing.T) {
 }
 
 func TestAssertFail_UnknownCommand(t *testing.T) {
+	t.Parallel()
+
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("bogus"))
@@ -1530,6 +1652,8 @@ func TestAssertFail_UnknownCommand(t *testing.T) {
 }
 
 func TestAssertOk_SuccessfulCommand(t *testing.T) {
+	t.Parallel()
+
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "help" always succeeds.
@@ -1539,6 +1663,8 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 }
 
 func TestAssertFail_SuccessfulCommand(t *testing.T) {
+	t.Parallel()
+
 	cli := &CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("help"))
@@ -1547,6 +1673,8 @@ func TestAssertFail_SuccessfulCommand(t *testing.T) {
 }
 
 func TestNegateMessage(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in   string
 		want string
@@ -1557,12 +1685,15 @@ func TestNegateMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, negateMessage(tt.in))
 		})
 	}
 }
 
 func TestReplLoop_AssertEqPass(t *testing.T) {
+	t.Parallel()
+
 	input := "assert hello eq hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1576,6 +1707,8 @@ func TestReplLoop_AssertEqPass(t *testing.T) {
 }
 
 func TestReplLoop_AssertEqFail(t *testing.T) {
+	t.Parallel()
+
 	input := "assert hello eq world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1589,6 +1722,8 @@ func TestReplLoop_AssertEqFail(t *testing.T) {
 }
 
 func TestReplLoop_AssertNeFail(t *testing.T) {
+	t.Parallel()
+
 	input := "assert hello ne hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1603,6 +1738,8 @@ func TestReplLoop_AssertNeFail(t *testing.T) {
 }
 
 func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
+	t.Parallel()
+
 	input := "assert not hello eq world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1615,6 +1752,8 @@ func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
 }
 
 func TestReplLoop_RequireHaltsExecution(t *testing.T) {
+	t.Parallel()
+
 	// The second line should never run because require halts.
 	input := strings.Join([]string{
 		"require hello eq world",
@@ -1633,6 +1772,8 @@ func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 }
 
 func TestReplLoop_MultipleAssertFailures(t *testing.T) {
+	t.Parallel()
+
 	input := strings.Join([]string{
 		"assert a eq b",
 		"assert c eq d",
@@ -1649,6 +1790,8 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 }
 
 func TestReplLoop_IfThenBranch(t *testing.T) {
+	t.Parallel()
+
 	input := "let x = 5\nif $x > 3 {\n  let out = took-then\n}"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1666,6 +1809,8 @@ func TestReplLoop_IfThenBranch(t *testing.T) {
 }
 
 func TestReplLoop_IfElseBranch(t *testing.T) {
+	t.Parallel()
+
 	input := "let x = 1\nif $x > 3 {\n  let out = took-then\n} else {\n  let out = took-else\n}"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1682,6 +1827,8 @@ func TestReplLoop_IfElseBranch(t *testing.T) {
 }
 
 func TestReplLoop_IfElifChain(t *testing.T) {
+	t.Parallel()
+
 	input := "let x = 2\nif $x == 1 { let out = one } elif $x == 2 { let out = two } elif $x == 3 { let out = three } else { let out = other }"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1698,6 +1845,8 @@ func TestReplLoop_IfElifChain(t *testing.T) {
 }
 
 func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
+	t.Parallel()
+
 	input := "let x = 5\nif $x { let out = wrong }"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1712,6 +1861,8 @@ func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
 }
 
 func TestReplLoop_IfNested(t *testing.T) {
+	t.Parallel()
+
 	input := "let a = 1\nlet b = 2\nif $a == 1 {\n  if $b == 2 {\n    let out = both\n  } else {\n    let out = only-a\n  }\n}"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1728,6 +1879,8 @@ func TestReplLoop_IfNested(t *testing.T) {
 }
 
 func TestReplLoop_IfWithCmdSubCondition(t *testing.T) {
+	t.Parallel()
+
 	// Unary predicates inside if work.
 	input := "let x = hello\nif not-empty $x {\n  let out = ok\n}"
 	var errBuf bytes.Buffer
@@ -1745,6 +1898,8 @@ func TestReplLoop_IfWithCmdSubCondition(t *testing.T) {
 }
 
 func TestReplLoop_LetScalarAndAssert(t *testing.T) {
+	t.Parallel()
+
 	input := strings.Join([]string{
 		"let x = 42",
 		"assert $x eq 42",
@@ -1766,6 +1921,8 @@ func TestReplLoop_LetScalarAndAssert(t *testing.T) {
 }
 
 func TestReplLoop_LetMissingEquals(t *testing.T) {
+	t.Parallel()
+
 	input := "let x 42 val\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1777,6 +1934,8 @@ func TestReplLoop_LetMissingEquals(t *testing.T) {
 }
 
 func TestReplLoop_LetTooFewArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "let x\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1788,6 +1947,8 @@ func TestReplLoop_LetTooFewArgs(t *testing.T) {
 }
 
 func TestReplLoop_LetInvalidName(t *testing.T) {
+	t.Parallel()
+
 	input := "let 0bad = val\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1799,6 +1960,8 @@ func TestReplLoop_LetInvalidName(t *testing.T) {
 }
 
 func TestReplLoop_AssertNil(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("n", shell.Value{}) // nil
 
@@ -1814,6 +1977,8 @@ func TestReplLoop_AssertNil(t *testing.T) {
 }
 
 func TestReplLoop_AssertNotNil(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("s", shell.StringValue("hello"))
 
@@ -1829,6 +1994,8 @@ func TestReplLoop_AssertNotNil(t *testing.T) {
 }
 
 func TestReplLoop_AssertContains(t *testing.T) {
+	t.Parallel()
+
 	input := "assert contains \"hello world\" world\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1840,6 +2007,8 @@ func TestReplLoop_AssertContains(t *testing.T) {
 }
 
 func TestReplLoop_AssertTrue(t *testing.T) {
+	t.Parallel()
+
 	input := "assert true true\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1851,6 +2020,8 @@ func TestReplLoop_AssertTrue(t *testing.T) {
 }
 
 func TestReplLoop_AssertFalse(t *testing.T) {
+	t.Parallel()
+
 	input := "assert false false\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1862,6 +2033,8 @@ func TestReplLoop_AssertFalse(t *testing.T) {
 }
 
 func TestReplLoop_AssertOkHelp(t *testing.T) {
+	t.Parallel()
+
 	input := "assert ok help\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1873,6 +2046,8 @@ func TestReplLoop_AssertOkHelp(t *testing.T) {
 }
 
 func TestReplLoop_AssertFailBogus(t *testing.T) {
+	t.Parallel()
+
 	input := "assert fail bogus_command\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1884,6 +2059,8 @@ func TestReplLoop_AssertFailBogus(t *testing.T) {
 }
 
 func TestReplLoop_AssertPathExists(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	f := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(f, nil, 0o644))
@@ -1899,6 +2076,8 @@ func TestReplLoop_AssertPathExists(t *testing.T) {
 }
 
 func TestReplLoop_AssertPathNotExists(t *testing.T) {
+	t.Parallel()
+
 	input := "assert not path exists /nonexistent/path/xyz\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1910,6 +2089,8 @@ func TestReplLoop_AssertPathNotExists(t *testing.T) {
 }
 
 func TestReplLoop_AssertNumericLt(t *testing.T) {
+	t.Parallel()
+
 	input := "assert 1 < 2\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1921,6 +2102,8 @@ func TestReplLoop_AssertNumericLt(t *testing.T) {
 }
 
 func TestReplLoop_AssertNumericGeFail(t *testing.T) {
+	t.Parallel()
+
 	input := "assert 1 >= 2\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1934,6 +2117,8 @@ func TestReplLoop_AssertNumericGeFail(t *testing.T) {
 }
 
 func TestReplLoop_AssertUnknownVerb(t *testing.T) {
+	t.Parallel()
+
 	input := "assert bogusverb x y\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1945,6 +2130,8 @@ func TestReplLoop_AssertUnknownVerb(t *testing.T) {
 }
 
 func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
+	t.Parallel()
+
 	// Phase 2: prefix binary verbs are removed; infix form required.
 	input := "assert eq hello world\n"
 	var errBuf bytes.Buffer
@@ -1958,6 +2145,8 @@ func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
 }
 
 func TestReplLoop_AssertNoVerb(t *testing.T) {
+	t.Parallel()
+
 	input := "assert\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1969,6 +2158,8 @@ func TestReplLoop_AssertNoVerb(t *testing.T) {
 }
 
 func TestReplLoop_AssertNotNoVerb(t *testing.T) {
+	t.Parallel()
+
 	input := "assert not\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -1980,6 +2171,8 @@ func TestReplLoop_AssertNotNoVerb(t *testing.T) {
 }
 
 func TestReplLoop_SetWithExpandedVar(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("prog", shell.ValueFromMap(map[string]any{
 		"record": map[string]any{
@@ -1999,6 +2192,8 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 }
 
 func TestReplLoop_RequireNePass(t *testing.T) {
+	t.Parallel()
+
 	input := "require a ne b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2010,6 +2205,8 @@ func TestReplLoop_RequireNePass(t *testing.T) {
 }
 
 func TestReplLoop_AssertNe(t *testing.T) {
+	t.Parallel()
+
 	input := "assert foo ne bar\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2021,6 +2218,8 @@ func TestReplLoop_AssertNe(t *testing.T) {
 }
 
 func TestReplLoop_AssertNotEmpty(t *testing.T) {
+	t.Parallel()
+
 	input := "assert not-empty hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2032,6 +2231,8 @@ func TestReplLoop_AssertNotEmpty(t *testing.T) {
 }
 
 func TestReplComplete_AssertVerbs(t *testing.T) {
+	t.Parallel()
+
 	// "assert " should offer verb completions.
 	_, candidates := replComplete(context.Background(), nil, nil, "assert ", len("assert "))
 	assert.Contains(t, candidates, "nil ")
@@ -2045,12 +2246,16 @@ func TestReplComplete_AssertVerbs(t *testing.T) {
 }
 
 func TestReplComplete_RequireVerbs(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "require ", len("require "))
 	assert.Contains(t, candidates, "fail ")
 	assert.NotContains(t, candidates, "eq ")
 }
 
 func TestReplComplete_SetIsRetired(t *testing.T) {
+	t.Parallel()
+
 	// Completion must not offer "set " — the keyword was removed;
 	// let subsumes it.
 	_, candidates := replComplete(context.Background(), nil, nil, "se", len("se"))
@@ -2058,6 +2263,8 @@ func TestReplComplete_SetIsRetired(t *testing.T) {
 }
 
 func TestLookupBareVar(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("x", shell.StringValue("hello"))
 	session.Set("obj", shell.ValueFromMap(map[string]any{
@@ -2082,6 +2289,8 @@ func TestLookupBareVar(t *testing.T) {
 }
 
 func TestSourceLoc_String(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		loc  sourceLoc
@@ -2093,12 +2302,15 @@ func TestSourceLoc_String(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, tt.loc.String())
 		})
 	}
 }
 
 func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
+	t.Parallel()
+
 	// When a filename is provided, error messages should be
 	// prefixed with file:line: for compilation-mode integration.
 	input := "# line 1\n$undefined\n"
@@ -2112,6 +2324,8 @@ func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
 }
 
 func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
+	t.Parallel()
+
 	// Interactive mode (no file): errors have no location prefix
 	// and execution continues to subsequent lines.
 	input := "$undefined\nversion\n"
@@ -2126,6 +2340,8 @@ func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
 }
 
 func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
+	t.Parallel()
+
 	// require failures should also carry the file:line: prefix.
 	input := "require a eq b\n"
 	var errBuf bytes.Buffer
@@ -2138,6 +2354,8 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 }
 
 func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
+	t.Parallel()
+
 	input := "assert a eq b\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2149,6 +2367,8 @@ func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
 }
 
 func TestReplLoop_StdinIncludesLocation(t *testing.T) {
+	t.Parallel()
+
 	// When the filename is "<stdin>" (piped input), errors should
 	// carry a <stdin>:line: prefix and halt execution.
 	input := "version\nx\nversion\n"
@@ -2164,6 +2384,8 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 }
 
 func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
+	t.Parallel()
+
 	// In script mode (file provided), an error on an early line
 	// should prevent subsequent lines from executing.
 	input := "x\nversion\n"
@@ -2178,6 +2400,8 @@ func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
 }
 
 func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
+	t.Parallel()
+
 	// Blank lines and comments still count towards the line number.
 	input := "# comment\n\n# another\n$undefined\n"
 	var errBuf bytes.Buffer
@@ -2190,6 +2414,8 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 }
 
 func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
+	t.Parallel()
+
 	original := &CLI{
 		RuntimeDir:    "/run/bpfman",
 		ImageCacheDir: "/var/cache/bpfman",
@@ -2217,6 +2443,8 @@ func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
 // --- exec shell command tests ---
 
 func TestReplLoop_ExecSuccess(t *testing.T) {
+	t.Parallel()
+
 	input := "exec echo hello world\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2229,6 +2457,8 @@ func TestReplLoop_ExecSuccess(t *testing.T) {
 }
 
 func TestReplLoop_ExecFailure(t *testing.T) {
+	t.Parallel()
+
 	input := "exec false\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2240,6 +2470,8 @@ func TestReplLoop_ExecFailure(t *testing.T) {
 }
 
 func TestReplLoop_ExecNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "exec\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2251,6 +2483,8 @@ func TestReplLoop_ExecNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_ExecCommandNotFound(t *testing.T) {
+	t.Parallel()
+
 	input := "exec __nonexistent_command_12345__\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2262,6 +2496,8 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBinding(t *testing.T) {
+	t.Parallel()
+
 	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2289,6 +2525,8 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
+	t.Parallel()
+
 	input := "let out = [exec echo testing123]\nprint $out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2302,6 +2540,8 @@ func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
 }
 
 func TestReplLoop_ExecLetFailure(t *testing.T) {
+	t.Parallel()
+
 	// Let binding with a failing command should produce an error.
 	input := "let out = [exec false]\n"
 	var errBuf bytes.Buffer
@@ -2319,6 +2559,8 @@ func TestReplLoop_ExecLetFailure(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertOk(t *testing.T) {
+	t.Parallel()
+
 	input := "assert ok exec echo hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2332,6 +2574,8 @@ func TestReplLoop_ExecAssertOk(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertFail(t *testing.T) {
+	t.Parallel()
+
 	input := "assert fail exec false\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2345,6 +2589,8 @@ func TestReplLoop_ExecAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertOkFails(t *testing.T) {
+	t.Parallel()
+
 	input := "assert ok exec false\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2358,6 +2604,8 @@ func TestReplLoop_ExecAssertOkFails(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
+	t.Parallel()
+
 	input := "assert fail exec echo hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2371,6 +2619,8 @@ func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
 }
 
 func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
+	t.Parallel()
+
 	input := "let out = [exec echo \"hello world\"]\nassert contains $out.stdout hello\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2384,6 +2634,8 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 }
 
 func TestReplLoop_ExecArgvField(t *testing.T) {
+	t.Parallel()
+
 	input := "let out = [exec echo a b c]\nprint $out.argv\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2400,6 +2652,8 @@ func TestReplLoop_ExecArgvField(t *testing.T) {
 }
 
 func TestReplLoop_ExecStderrCaptured(t *testing.T) {
+	t.Parallel()
+
 	// Use sh -c to produce stderr output. The exec command runs
 	// argv[0] directly, so we invoke sh as the command.
 	input := "let out = [exec sh -c \"echo errout >&2\"]\nassert contains $out.stderr errout\n"
@@ -2415,6 +2669,8 @@ func TestReplLoop_ExecStderrCaptured(t *testing.T) {
 }
 
 func TestReplLoop_ExecVariableExpansion(t *testing.T) {
+	t.Parallel()
+
 	session := shell.NewSession()
 	session.Set("msg", shell.StringValue("expanded"))
 
@@ -2430,6 +2686,8 @@ func TestReplLoop_ExecVariableExpansion(t *testing.T) {
 }
 
 func TestReplLoop_ExecContextCancellation(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately.
 
@@ -2444,6 +2702,8 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 }
 
 func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
+	t.Parallel()
+
 	// Shell commands that do not produce values should still be
 	// rejected in let bindings.  Using a multi-token form so the
 	// cmdsub parses as a command invocation rather than a bare
@@ -2461,6 +2721,8 @@ func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 // --- exec status tests ---
 
 func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
+	t.Parallel()
+
 	// exec status captures non-zero exit as data, not error.
 	input := "let r = [exec status false]\nassert $r.exit_code eq 1\n"
 	var outBuf, errBuf bytes.Buffer
@@ -2478,6 +2740,8 @@ func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
+	t.Parallel()
+
 	// exec status also works for exit 0.
 	input := "let r = [exec status true]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
@@ -2491,6 +2755,8 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
+	t.Parallel()
+
 	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2503,6 +2769,8 @@ func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
+	t.Parallel()
+
 	// Launch failures are still errors even in status mode.
 	input := "let r = [exec status __nonexistent_command_12345__]\n"
 	var errBuf bytes.Buffer
@@ -2515,6 +2783,8 @@ func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "exec status\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2526,6 +2796,8 @@ func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
+	t.Parallel()
+
 	// exec status works with file adapters.
 	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
 	var errBuf bytes.Buffer
@@ -2539,6 +2811,8 @@ func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
+	t.Parallel()
+
 	// diff exits 0 when files are identical.
 	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
@@ -2552,6 +2826,8 @@ func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
 }
 
 func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
+	t.Parallel()
+
 	// Plain exec still errors on non-zero exit.
 	input := "exec false\n"
 	var errBuf bytes.Buffer
@@ -2564,11 +2840,15 @@ func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
 }
 
 func TestReplComplete_ExecStatusSubcommand(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "exec ", len("exec "))
 	assert.Contains(t, candidates, "status ")
 }
 
 func TestReplComplete_ExecInCommandNames(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "ex", len("ex"))
 	assert.Contains(t, candidates, "exec ")
 }
@@ -2576,6 +2856,8 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 // --- jq on JSON text / structured data tests ---
 
 func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2593,6 +2875,8 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
+	t.Parallel()
+
 	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2605,6 +2889,8 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
+	t.Parallel()
+
 	input := `let v = [jq "." 123]` + "\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2617,6 +2903,8 @@ func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." not-json]` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2628,6 +2916,8 @@ func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
 }
 
 func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
+	t.Parallel()
+
 	input := "jq\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2639,6 +2929,8 @@ func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
+	t.Parallel()
+
 	input := `assert ok jq "." '{"a":1}'` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2652,6 +2944,8 @@ func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
 }
 
 func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
+	t.Parallel()
+
 	input := `assert fail jq "." not-json` + "\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2665,6 +2959,8 @@ func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
+	t.Parallel()
+
 	// Inner jq on JSON text returns a scalar string; the outer echo
 	// should receive that string as a literal argv word.
 	input := `let out = [exec echo [jq "." '"world"']]` + "\nassert contains $out.stdout world\n"
@@ -2679,6 +2975,8 @@ func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
+	t.Parallel()
+
 	input := `let out = [exec echo [jq "." [jq "." '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2691,6 +2989,8 @@ func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
+	t.Parallel()
+
 	// Inner jq fails on malformed input.  The outer exec must
 	// never run, and the let must not bind.
 	input := `let out = [exec echo [jq "." not-json]]` + "\n"
@@ -2707,6 +3007,8 @@ func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_StructuredRejectedByExec(t *testing.T) {
+	t.Parallel()
+
 	// Inner exec returns an exec.result (structured). The outer
 	// exec cannot flatten that into argv; the error should name
 	// the kind and suggest a scalar path or the file adapter, not
@@ -2728,6 +3030,8 @@ func TestReplLoop_NestedCmdSub_StructuredRejectedByExec(t *testing.T) {
 }
 
 func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
+	t.Parallel()
+
 	// Workaround demonstrated in the error above: use a scalar path.
 	input := "let out = [exec echo [exec echo hello].stdout]\n"
 	// Note: this form depends on path access on a cmdsub result,
@@ -2749,6 +3053,8 @@ func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
 }
 
 func TestReplLoop_JQ_NestedAccess(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2761,6 +3067,8 @@ func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 }
 
 func TestReplLoop_JQ_WithExec(t *testing.T) {
+	t.Parallel()
+
 	// End-to-end: exec produces JSON text, jq on JSON text makes it
 	// structured.
 	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
@@ -2775,6 +3083,8 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 }
 
 func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
+	t.Parallel()
+
 	// Other non-value shell commands should still be rejected.  We
 	// bind a variable first and then try to bind the result of
 	// "print" on it; "print" prints its argument but produces no
@@ -2792,6 +3102,8 @@ func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
 // file temp tests
 
 func TestReplLoop_FileTempScalar(t *testing.T) {
+	t.Parallel()
+
 	input := "let data = hello\nlet f = [file temp $data]\nassert not-empty $f\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2814,6 +3126,8 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempStructured(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp $data]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2840,6 +3154,8 @@ func TestReplLoop_FileTempStructured(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathScalar(t *testing.T) {
+	t.Parallel()
+
 	input := "let raw = [exec echo hello]\nlet f = [file temp $raw.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2862,6 +3178,8 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp $data.items]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2885,6 +3203,8 @@ func TestReplLoop_FileTempPathStructured(t *testing.T) {
 }
 
 func TestReplLoop_FileTempNoArgs(t *testing.T) {
+	t.Parallel()
+
 	input := "file temp\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2896,6 +3216,8 @@ func TestReplLoop_FileTempNoArgs(t *testing.T) {
 }
 
 func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
+	t.Parallel()
+
 	input := "let f = [file temp $undefined_var]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2907,6 +3229,8 @@ func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
 }
 
 func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
+	t.Parallel()
+
 	input := "let data = hello\nfile temp $data\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2921,6 +3245,8 @@ func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
 }
 
 func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
+	t.Parallel()
+
 	input := "file\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -2934,6 +3260,8 @@ func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
 // Inline file adapter tests
 
 func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
+	t.Parallel()
+
 	input := "let raw = [exec echo hello]\nlet out = [exec wc -c file:$raw.stdout]\nassert contains $out.stdout 6\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2946,6 +3274,8 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2958,6 +3288,8 @@ func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
+	t.Parallel()
+
 	input := "let a = [exec echo aaa]\nlet b = [exec echo bbb]\nlet out = [exec diff file:$a.stdout file:$b.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2972,6 +3304,8 @@ func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
+	t.Parallel()
+
 	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -2984,6 +3318,8 @@ func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
+	t.Parallel()
+
 	// Verify that adapter temp files are cleaned up after exec.
 	input := "let data = hello\nlet out = [exec cat file:$data]\nassert contains $out.stdout hello\n"
 	var outBuf, errBuf bytes.Buffer
@@ -3009,6 +3345,8 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 }
 
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
+	t.Parallel()
+
 	input := `let data = [jq "." '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -3023,21 +3361,29 @@ func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
 // Completion tests for file command
 
 func TestReplComplete_FileInCommandNames(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "fi", len("fi"))
 	assert.Contains(t, candidates, "file ")
 }
 
 func TestReplComplete_FileSubcommands(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "file ", len("file "))
 	assert.Contains(t, candidates, "temp ")
 }
 
 func TestReplComplete_JQInCommandNames(t *testing.T) {
+	t.Parallel()
+
 	_, candidates := replComplete(context.Background(), nil, nil, "j", len("j"))
 	assert.Contains(t, candidates, "jq ")
 }
 
 func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
+	t.Parallel()
+
 	// At the top-level prompt a '$'-led first token is an
 	// expression statement: the completer should walk variable
 	// paths just like inside a command argument, so typing
@@ -3052,24 +3398,29 @@ func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
 	session.Set("pid", shell.StringValue("99"))
 
 	t.Run("dollar alone lists all sigil-prefixed vars", func(t *testing.T) {
+		t.Parallel()
 		replace, cands := replComplete(context.Background(), nil, session, "$", len("$"))
 		assert.Equal(t, 1, replace)
 		assert.Contains(t, cands, "$prog")
 		assert.Contains(t, cands, "$pid ")
 	})
 	t.Run("dollar-name partial completes variable names", func(t *testing.T) {
+		t.Parallel()
 		_, cands := replComplete(context.Background(), nil, session, "$pr", len("$pr"))
 		assert.Contains(t, cands, "$prog")
 	})
 	t.Run("dollar-name-dot walks fields", func(t *testing.T) {
+		t.Parallel()
 		_, cands := replComplete(context.Background(), nil, session, "$prog.", len("$prog."))
 		assert.Contains(t, cands, "$prog.record")
 	})
 	t.Run("dollar-name-nested-dot walks nested fields", func(t *testing.T) {
+		t.Parallel()
 		_, cands := replComplete(context.Background(), nil, session, "$prog.record.", len("$prog.record."))
 		assert.Contains(t, cands, "$prog.record.program_id ")
 	})
 	t.Run("bare-word first token stays on command path", func(t *testing.T) {
+		t.Parallel()
 		// "prog." is a literal string argument at statement
 		// position, not a variable reference; no variable
 		// paths should leak into the candidate list.
@@ -3077,6 +3428,7 @@ func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
 		assert.NotContains(t, cands, "prog.record")
 	})
 	t.Run("exact sigil name drills one level for discovery", func(t *testing.T) {
+		t.Parallel()
 		// "$prog" on its own is a valid expression; completion
 		// also surfaces its immediate children so a single tab
 		// on a structured variable makes drillable fields
@@ -3086,6 +3438,7 @@ func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
 		assert.Contains(t, cands, "$prog.record")
 	})
 	t.Run("exact path field drills one level for discovery", func(t *testing.T) {
+		t.Parallel()
 		// Same discovery behaviour one level deeper: tabbing
 		// on a fully-typed path whose value is structured
 		// reveals its immediate children.
@@ -3096,6 +3449,8 @@ func TestReplComplete_DollarLeadsExpressionAtPrompt(t *testing.T) {
 }
 
 func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
+	t.Parallel()
+
 	// let binding plus a bare arithmetic expression statement:
 	// the second line is routed to ExprStmt (leading '$' leads
 	// expression position) and its value is auto-printed.
@@ -3111,6 +3466,8 @@ func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
 }
 
 func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
+	t.Parallel()
+
 	// print [[EXPR]] evaluates the double-bracketed expression and
 	// prints the resulting scalar.  Exercises an arithmetic
 	// expression inside an expression-substitution bracket,
@@ -3128,6 +3485,8 @@ func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
 }
 
 func TestReplLoop_InterpString_SimpleVar(t *testing.T) {
+	t.Parallel()
+
 	input := "let n = 60\nlet wait = \"${n}s\"\nprint $wait\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -3140,6 +3499,8 @@ func TestReplLoop_InterpString_SimpleVar(t *testing.T) {
 }
 
 func TestReplLoop_InterpString_PathConstruction(t *testing.T) {
+	t.Parallel()
+
 	input := "let id = 42\nlet path = \"/sys/fs/bpf/prog-${id}/map\"\nprint $path\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -3152,6 +3513,8 @@ func TestReplLoop_InterpString_PathConstruction(t *testing.T) {
 }
 
 func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
+	t.Parallel()
+
 	input := "let n = 30\nlet wait = \"${[[$n * 2]]}s\"\nprint $wait\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: &errBuf}
@@ -3164,6 +3527,8 @@ func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
 }
 
 func TestReplLoop_PrintMultipleArgs(t *testing.T) {
+	t.Parallel()
+
 	// Multiple arguments render compactly and join with a single
 	// space; a single trailing newline closes the line.  Structured
 	// values render as compact JSON (the interpolation form) so a
@@ -3191,6 +3556,8 @@ func TestReplLoop_PrintMultipleArgs(t *testing.T) {
 }
 
 func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
+	t.Parallel()
+
 	input := "print\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
@@ -3202,6 +3569,8 @@ func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
 }
 
 func TestReplLoop_JQNullBinding(t *testing.T) {
+	t.Parallel()
+
 	// A jq filter that selects a missing field returns a present
 	// null.  The user should be able to bind it, print it, and
 	// interpolate it without tripping "produced no assignable
@@ -3226,6 +3595,8 @@ func TestReplLoop_JQNullBinding(t *testing.T) {
 }
 
 func TestReplLoop_InterpString_BareDollarRejected(t *testing.T) {
+	t.Parallel()
+
 	input := "let x = \"$foo\"\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
