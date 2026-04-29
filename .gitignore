@@ -8,5 +8,4 @@ e2e/testdata/bpf/*.bpf.o
 e2e/testdata/bpf/*.bpf.d
 platform/ebpf/*.bpf.o
 platform/ebpf/*.bpf.d
-e2e/testdata/bin/call_malloc
 .cache/

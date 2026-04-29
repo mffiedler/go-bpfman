@@ -5,7 +5,8 @@
 # assertions, no verification: purely to show the shape of the
 # commands.
 #
-# Requires root. Run from the repo root with:
+# Requires root and a built e2e.test binary (`make e2e.test`).
+# Run from the repo root with:
 #   sudo bpfman repl -f examples/uprobe.bpfman
 
 let prog = [bpfman program load file \
@@ -13,8 +14,8 @@ let prog = [bpfman program load file \
     --programs uprobe:uprobe_counter]
 
 let link = [bpfman link attach uprobe \
-    --target e2e/testdata/bin/call_malloc \
-    --fn-name do_work \
+    --target e2e.test \
+    --fn-name e2e_do_work \
     $prog]
 
 bpfman link detach $link

@@ -7,7 +7,6 @@ bin/
 dispatcher/*.bpf.o
 dispatcher/*.bpf.d
 e2e.test
-e2e/testdata/bin/call_malloc
 e2e/testdata/bpf/*.bpf.o
 e2e/testdata/bpf/*.bpf.d
 platform/ebpf/*.bpf.o

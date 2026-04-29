@@ -128,9 +128,9 @@ and compares the named tools against this manifest.
 
 ### Architecture-specific payload (cross-compiled for target)
 
-- `e2e.test` -- the cross-compiled e2e test binary
-- `call_malloc` and any other target-arch helper executables used
-  by the e2e suite
+- `e2e.test` -- the cross-compiled e2e test binary; self-contained
+  (BPF objects embedded via go:embed, uprobe attach target cgo'd in
+  as e2e_do_work), so no separate helper executables ship alongside
 - Dynamic linker and shared libraries for all guest executables
 - `iproute2` (`ip`, `tc`) for the target architecture
 - `iputils-ping` (`ping`) for the target architecture

@@ -16,18 +16,17 @@
 #
 # 2. **e2e binary extraction** (`buildx --output type=local`) --
 #    builds the `e2e-export` scratch stage which contains the
-#    static e2e.test binary plus the runtime artefacts the tests
-#    load via filesystem paths (BPF objects, call_malloc helper).
-#    The layout mirrors the source tree so the run invocation
-#    matches the Makefile's `cd e2e && sudo ../e2e.test ...`
-#    pattern:
+#    static, self-contained e2e.test binary (BPF objects embedded,
+#    uprobe target merged) plus the BPF object tree that the REPL
+#    pipeline still loads via filesystem paths. The layout mirrors
+#    the source tree:
 #
 #      docker buildx build \
 #        --file Dockerfile.ci \
 #        --target e2e-export \
 #        --output type=local,dest=./out \
 #        .
-#      cd ./out/e2e && sudo ../e2e.test -test.v -test.failfast
+#      sudo ./out/e2e.test -test.v -test.failfast
 #
 #    The `make ci-test-e2e` target wraps these two commands.
 #
@@ -70,10 +69,14 @@ RUN git config --system --add safe.directory '*'
 WORKDIR /src
 
 # ---------------------------------------------------------------------------
-# Stage 2: e2e-builder. Builds the static e2e test binary, the
-# static bpfman binary, and the runtime artefacts the tests and
-# REPL scripts load via filesystem paths (BPF objects,
-# call_malloc helper). Source is COPYed in (no host mount); the
+# Stage 2: e2e-builder. Builds the static e2e test binary and the
+# static bpfman binary. e2e.test embeds every BPF object it loads
+# (testdata/bpf/*.bpf.o via go:embed) and is its own uprobe attach
+# target (cgo'd e2e_do_work plus a TestMain helper-mode dispatch),
+# so the Go e2e suite is self-contained in a single artefact. The
+# REPL scripts under e2e/scripts/ still load BPF via the bpfman
+# CLI's file-path interface, so the .bpf.o tree is also exported
+# for that pipeline. Source is COPYed in (no host mount); the
 # dockerignore excludes every host-built artefact so the build is
 # genuinely hermetic. All deliverables are gathered into /out so
 # the export stage can grab them in one shot.
@@ -83,20 +86,19 @@ FROM base AS e2e-builder
 COPY . .
 
 # Build artefacts via Make's dep graph: `e2e.test` pulls in
-# dispatcher BPF + e2e BPF + call_malloc transitively, then
-# `bpfman-compile` reuses the cached dispatcher BPF and produces
-# bin/bpfman. test-e2e (the run target) is intentionally
-# skipped here -- we want only the build halves; the runner
-# executes the binary on the host with sudo.
+# dispatcher BPF + e2e BPF transitively, then `bpfman-compile`
+# reuses the cached dispatcher BPF and produces bin/bpfman.
+# test-e2e (the run target) is intentionally skipped here -- we
+# want only the build halves; the runner executes the binary on
+# the host with sudo.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
     make e2e.test STATIC=1; \
     make bpfman-compile STATIC=1; \
-    mkdir -p /out/bin /out/e2e/testdata/bin /out/e2e/testdata/bpf; \
+    mkdir -p /out/bin /out/e2e/testdata/bpf; \
     cp e2e.test /out/e2e.test; \
     cp bin/bpfman /out/bin/; \
-    cp e2e/testdata/bin/call_malloc /out/e2e/testdata/bin/; \
     cp e2e/testdata/bpf/*.bpf.o /out/e2e/testdata/bpf/
 
 # ---------------------------------------------------------------------------
@@ -104,12 +106,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # under /out from the e2e-builder stage. After
 #   docker buildx build --target=e2e-export --output type=local,dest=./out
 # the bundle contains:
-#   ./out/e2e.test                           (Go e2e test binary)
+#   ./out/e2e.test                           (self-contained Go e2e test binary)
 #   ./out/bin/bpfman                         (static bpfman binary)
-#   ./out/e2e/testdata/bin/call_malloc       (uprobe target binary)
-#   ./out/e2e/testdata/bpf/*.bpf.o           (BPF programs)
-# matching the Makefile's `cd e2e && sudo ../e2e.test ...` pattern
-# for Go tests, and providing bpfman + testdata for REPL scripts.
+#   ./out/e2e/testdata/bpf/*.bpf.o           (BPF programs for REPL scripts)
+# The Go e2e binary is invoked directly (no cwd contortions); the
+# .bpf.o tree is only consulted by the REPL pipeline.
 # ---------------------------------------------------------------------------
 FROM scratch AS e2e-export
 

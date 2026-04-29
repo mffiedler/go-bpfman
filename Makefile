@@ -567,14 +567,11 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
-e2e/testdata/bin/call_malloc: e2e/testdata/bin/call_malloc.c
-	$(CC) $(if $(STATIC),-static) -o $@ $<
-
-e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
+e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e)
 
 test-e2e: e2e.test
-	cd e2e && sudo ../e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo ./e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so testdata paths
@@ -587,7 +584,7 @@ test-e2e: e2e.test
 # stage) and invoke `run-e2e-scripts` directly on the runner
 # without re-triggering the build deps. Local invocations of
 # `test-e2e-scripts` still build first.
-build-e2e-scripts: bpfman-compile $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
+build-e2e-scripts: bpfman-compile e2e.test
 
 run-e2e-scripts:
 	@echo "Running REPL e2e scripts (requires root)..."
@@ -600,7 +597,7 @@ test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
-test-examples: bpfman-compile $(E2E_BPF_OBJECTS) e2e/testdata/bin/call_malloc
+test-examples: bpfman-compile e2e.test
 	@echo "Running REPL example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
@@ -665,7 +662,7 @@ bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 	$(strip CGO_ENABLED=1 go build $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
 clean-bpfman:
-	$(RM) $(BIN_DIR)/bpfman e2e/testdata/bin/call_malloc
+	$(RM) $(BIN_DIR)/bpfman
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
@@ -1007,13 +1004,14 @@ ci-test-stress: ci-image
 	$(CI_RUN) make clean-bpf test-stress STATIC=1 STRESS_COUNT=$(STRESS_COUNT)
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
-# stage produces a hermetic bundle (binary + testdata) at
-# $(CI_E2E_OUTDIR); the static binary is then run on the host
-# with sudo so it has the kernel privileges the e2e suite needs.
+# stage produces a hermetic bundle at $(CI_E2E_OUTDIR); the
+# self-contained e2e.test binary (BPF embedded, uprobe target
+# merged) is then run on the host with sudo so it has the kernel
+# privileges the e2e suite needs.
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_OUTDIR)
 	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
-	cd $(CI_E2E_OUTDIR)/e2e && sudo ../e2e.test -test.v -test.failfast
+	sudo $(CI_E2E_OUTDIR)/e2e.test -test.v -test.failfast
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman

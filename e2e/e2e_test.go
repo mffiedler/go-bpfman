@@ -441,7 +441,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to do_work in call_malloc binary
+	// When: attach via client to e2e_do_work in the e2e.test binary itself
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
@@ -564,7 +564,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to do_work in call_malloc binary (uretprobe uses AttachUprobe API)
+	// When: attach via client to e2e_do_work in the e2e.test binary (uretprobe uses AttachUprobe API)
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
