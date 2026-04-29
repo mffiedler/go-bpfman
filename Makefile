@@ -607,7 +607,7 @@ $(BPF_STAMP): $(BPF_STAMP_DEPS)
 bpf-clean:
 	$(MAKE) -C dispatcher clean
 	$(MAKE) -C e2e/testdata/bpf clean
-	rm -f $(BPF_STAMP)
+	$(RM) -f $(BPF_STAMP)
 
 # ---------------------------------------------------------------------------
 # Docker image builds.
@@ -792,11 +792,16 @@ build-image-openshift:
 # ---------------------------------------------------------------------------
 # Local CI reproducer.
 #
-# `make ci` runs the same two pipelines the GH workflows run --
-# build + unit-test inside a Fedora container, and an e2e job that
-# extracts a static test bundle from the same dockerfile and runs
-# it on the host with sudo. See Dockerfile.ci for the details of
-# the build environment.
+# `make ci` runs every pipeline the GH workflows run -- vendor /
+# format checks, the bpfman binary build, the lint umbrella, the
+# unit tests, and the two e2e jobs (Go binary + REPL scripts).
+# The CI workflow YAML invokes the same `make ci-*` targets, so
+# `make ci` locally is a faithful reproduction of what runs in
+# CI; if it passes here, it passes there (modulo runner-specific
+# behaviour like NOPASSWD sudo or GHA cache backend).
+#
+# See Dockerfile.ci for the build environment those targets run
+# inside.
 # ---------------------------------------------------------------------------
 
 # Build the `base` stage of Dockerfile.ci as a tagged image, ready
@@ -861,7 +866,7 @@ ci-test: ci-image
 # $(CI_E2E_OUTDIR); the static binary is then run on the host
 # with sudo so it has the kernel privileges the e2e suite needs.
 ci-test-e2e:
-	rm -rf $(CI_E2E_OUTDIR)
+	$(RM) -r $(CI_E2E_OUTDIR)
 	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
 	cd $(CI_E2E_OUTDIR)/e2e && sudo ../e2e.test -test.v -test.failfast
 
