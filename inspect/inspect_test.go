@@ -110,6 +110,8 @@ func testBPFFS(t *testing.T) fs.BPFFS {
 }
 
 func TestSnapshot_ManagedPrograms(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -141,6 +143,8 @@ func TestSnapshot_ManagedPrograms(t *testing.T) {
 }
 
 func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -183,6 +187,8 @@ func TestSnapshot_KernelOnlyPrograms(t *testing.T) {
 }
 
 func TestSnapshot_FSOnlyPrograms(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 
 	// Create an orphan prog pin on FS
@@ -205,6 +211,8 @@ func TestSnapshot_FSOnlyPrograms(t *testing.T) {
 }
 
 func TestSnapshot_Links(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -246,6 +254,8 @@ func TestSnapshot_Links(t *testing.T) {
 }
 
 func TestSnapshot_Dispatchers(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	require.NoError(t, os.MkdirAll(bpfFS.XDP(), 0755))
 
@@ -295,6 +305,8 @@ func TestSnapshot_Dispatchers(t *testing.T) {
 }
 
 func TestSnapshot_OrphanDispatcher(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	require.NoError(t, os.MkdirAll(bpfFS.XDP(), 0755))
 
@@ -322,6 +334,8 @@ func TestSnapshot_OrphanDispatcher(t *testing.T) {
 }
 
 func TestPresence_Methods(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		p          inspect.Presence
@@ -368,6 +382,7 @@ func TestPresence_Methods(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.managed, tt.p.Managed())
 			assert.Equal(t, tt.orphanFS, tt.p.OrphanFS())
 			assert.Equal(t, tt.kernelOnly, tt.p.KernelOnly())
@@ -376,6 +391,8 @@ func TestPresence_Methods(t *testing.T) {
 }
 
 func TestGetProgram_FullyPresent(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 
 	// Create a pin file on FS
@@ -409,6 +426,8 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 }
 
 func TestGetProgram_StoreOnly(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -432,6 +451,8 @@ func TestGetProgram_StoreOnly(t *testing.T) {
 }
 
 func TestGetProgram_KernelOnly(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -454,6 +475,8 @@ func TestGetProgram_KernelOnly(t *testing.T) {
 }
 
 func TestGetProgram_NotFound(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -466,6 +489,8 @@ func TestGetProgram_NotFound(t *testing.T) {
 }
 
 func TestGetLink_FullyPresent(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 
 	// Create a pin file on FS
@@ -502,6 +527,8 @@ func TestGetLink_FullyPresent(t *testing.T) {
 }
 
 func TestGetLink_StoreOnly(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -524,6 +551,8 @@ func TestGetLink_StoreOnly(t *testing.T) {
 }
 
 func TestGetLink_NotInStore(t *testing.T) {
+	t.Parallel()
+
 	// GetLink requires the link to be in the store (it takes a durable LinkID).
 	// If the link is not in the store, it returns inspect.ErrNotFound.
 	bpfFS := testBPFFS(t)
@@ -543,6 +572,8 @@ func TestGetLink_NotInStore(t *testing.T) {
 }
 
 func TestGetLink_NotFound(t *testing.T) {
+	t.Parallel()
+
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
 
@@ -555,6 +586,8 @@ func TestGetLink_NotFound(t *testing.T) {
 }
 
 func TestSnapshot_LinksHaveDetails(t *testing.T) {
+	t.Parallel()
+
 	// Verify that Snapshot() returns a World where links have Details populated.
 	// This is critical for the ATTACH column in CLI output.
 	bpfFS := testBPFFS(t)
@@ -620,6 +653,8 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 }
 
 func TestSnapshot_ProgramLinksHaveDetails(t *testing.T) {
+	t.Parallel()
+
 	// Verify that links correlated to programs also have details populated.
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()

@@ -11,6 +11,8 @@ import (
 )
 
 func TestLoadTCDispatcher(t *testing.T) {
+	t.Parallel()
+
 	if os.Getuid() != 0 {
 		t.Skip("requires root")
 	}
@@ -34,7 +36,10 @@ func TestLoadTCDispatcher(t *testing.T) {
 }
 
 func TestNewXDPConfig(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid range", func(t *testing.T) {
+		t.Parallel()
 		for n := 1; n <= dispatcher.MaxPrograms; n++ {
 			cfg, err := dispatcher.NewXDPConfig(n)
 			if err != nil {
@@ -47,6 +52,7 @@ func TestNewXDPConfig(t *testing.T) {
 	})
 
 	t.Run("default priorities", func(t *testing.T) {
+		t.Parallel()
 		cfg, err := dispatcher.NewXDPConfig(1)
 		if err != nil {
 			t.Fatal(err)
@@ -59,18 +65,21 @@ func TestNewXDPConfig(t *testing.T) {
 	})
 
 	t.Run("zero", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewXDPConfig(0); err == nil {
 			t.Error("NewXDPConfig(0): expected error")
 		}
 	})
 
 	t.Run("negative", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewXDPConfig(-1); err == nil {
 			t.Error("NewXDPConfig(-1): expected error")
 		}
 	})
 
 	t.Run("exceeds max", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewXDPConfig(dispatcher.MaxPrograms + 1); err == nil {
 			t.Errorf("NewXDPConfig(%d): expected error", dispatcher.MaxPrograms+1)
 		}
@@ -78,7 +87,10 @@ func TestNewXDPConfig(t *testing.T) {
 }
 
 func TestNewTCConfig(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid range", func(t *testing.T) {
+		t.Parallel()
 		for n := 1; n <= dispatcher.MaxPrograms; n++ {
 			cfg, err := dispatcher.NewTCConfig(n)
 			if err != nil {
@@ -91,6 +103,7 @@ func TestNewTCConfig(t *testing.T) {
 	})
 
 	t.Run("default priorities", func(t *testing.T) {
+		t.Parallel()
 		cfg, err := dispatcher.NewTCConfig(1)
 		if err != nil {
 			t.Fatal(err)
@@ -103,18 +116,21 @@ func TestNewTCConfig(t *testing.T) {
 	})
 
 	t.Run("zero", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewTCConfig(0); err == nil {
 			t.Error("NewTCConfig(0): expected error")
 		}
 	})
 
 	t.Run("negative", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewTCConfig(-1); err == nil {
 			t.Error("NewTCConfig(-1): expected error")
 		}
 	})
 
 	t.Run("exceeds max", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.NewTCConfig(dispatcher.MaxPrograms + 1); err == nil {
 			t.Errorf("NewTCConfig(%d): expected error", dispatcher.MaxPrograms+1)
 		}
@@ -122,7 +138,10 @@ func TestNewTCConfig(t *testing.T) {
 }
 
 func TestSlotName(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid positions", func(t *testing.T) {
+		t.Parallel()
 		for i := 0; i < dispatcher.MaxPrograms; i++ {
 			name, err := dispatcher.SlotName(i)
 			if err != nil {
@@ -136,18 +155,21 @@ func TestSlotName(t *testing.T) {
 	})
 
 	t.Run("negative", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.SlotName(-1); err == nil {
 			t.Error("SlotName(-1): expected error")
 		}
 	})
 
 	t.Run("at max", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.SlotName(dispatcher.MaxPrograms); err == nil {
 			t.Errorf("SlotName(%d): expected error", dispatcher.MaxPrograms)
 		}
 	})
 
 	t.Run("above max", func(t *testing.T) {
+		t.Parallel()
 		if _, err := dispatcher.SlotName(100); err == nil {
 			t.Error("SlotName(100): expected error")
 		}
@@ -155,6 +177,8 @@ func TestSlotName(t *testing.T) {
 }
 
 func TestProceedOnMask(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		actions []dispatcher.XDPAction
@@ -172,6 +196,7 @@ func TestProceedOnMask(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := dispatcher.ProceedOnMask(tt.actions...)
 			if got != tt.want {
 				t.Errorf("ProceedOnMask(%v) = 0x%x, want 0x%x", tt.actions, got, tt.want)
@@ -181,6 +206,8 @@ func TestProceedOnMask(t *testing.T) {
 }
 
 func TestParseDispatcherType(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input   string
 		want    dispatcher.DispatcherType
@@ -196,6 +223,7 @@ func TestParseDispatcherType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			got, err := dispatcher.ParseDispatcherType(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ParseDispatcherType(%q): err = %v, wantErr = %v", tt.input, err, tt.wantErr)
@@ -208,7 +236,10 @@ func TestParseDispatcherType(t *testing.T) {
 }
 
 func TestUnmarshalText(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
 		var dt dispatcher.DispatcherType
 		if err := dt.UnmarshalText([]byte("xdp")); err != nil {
 			t.Fatalf("UnmarshalText(xdp): %v", err)
@@ -219,6 +250,7 @@ func TestUnmarshalText(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
 		var dt dispatcher.DispatcherType
 		if err := dt.UnmarshalText([]byte("bogus")); err == nil {
 			t.Error("UnmarshalText(bogus): expected error")
@@ -227,6 +259,8 @@ func TestUnmarshalText(t *testing.T) {
 }
 
 func TestChainCallShift(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		dt   dispatcher.DispatcherType
 		want uint
@@ -237,6 +271,7 @@ func TestChainCallShift(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.dt.String(), func(t *testing.T) {
+			t.Parallel()
 			if got := tt.dt.ChainCallShift(); got != tt.want {
 				t.Errorf("%s.ChainCallShift() = %d, want %d", tt.dt, got, tt.want)
 			}
@@ -245,6 +280,8 @@ func TestChainCallShift(t *testing.T) {
 }
 
 func TestTCParentHandle(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		dt   dispatcher.DispatcherType
 		want uint32
@@ -255,6 +292,7 @@ func TestTCParentHandle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.dt.String(), func(t *testing.T) {
+			t.Parallel()
 			if got := dispatcher.TCParentHandle(tt.dt); got != tt.want {
 				t.Errorf("TCParentHandle(%s) = 0x%x, want 0x%x", tt.dt, got, tt.want)
 			}
@@ -263,6 +301,8 @@ func TestTCParentHandle(t *testing.T) {
 }
 
 func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
+	t.Parallel()
+
 	valid := dispatcher.XDPDispatcherAttachSpec{
 		Target:      bpfman.AttachTarget{IfIndex: 1},
 		ProgPinPath: "/some/path",
@@ -271,12 +311,14 @@ func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
 	}
 
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
 		if err := valid.Validate(); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("max progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = dispatcher.MaxPrograms
 		if err := s.Validate(); err != nil {
@@ -285,6 +327,7 @@ func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("zero progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = 0
 		if err := s.Validate(); err == nil {
@@ -293,6 +336,7 @@ func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("exceeds max progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = dispatcher.MaxPrograms + 1
 		if err := s.Validate(); err == nil {
@@ -301,6 +345,7 @@ func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("negative progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = -1
 		if err := s.Validate(); err == nil {
@@ -310,6 +355,8 @@ func TestXDPDispatcherAttachSpecValidate(t *testing.T) {
 }
 
 func TestTCDispatcherAttachSpecValidate(t *testing.T) {
+	t.Parallel()
+
 	valid := dispatcher.TCDispatcherAttachSpec{
 		Target:      bpfman.AttachTarget{IfIndex: 1},
 		IfName:      "lo",
@@ -319,12 +366,14 @@ func TestTCDispatcherAttachSpecValidate(t *testing.T) {
 	}
 
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
 		if err := valid.Validate(); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("max progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = dispatcher.MaxPrograms
 		if err := s.Validate(); err != nil {
@@ -333,6 +382,7 @@ func TestTCDispatcherAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("zero progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = 0
 		if err := s.Validate(); err == nil {
@@ -341,6 +391,7 @@ func TestTCDispatcherAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("exceeds max progs", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.NumProgs = dispatcher.MaxPrograms + 1
 		if err := s.Validate(); err == nil {
@@ -350,6 +401,8 @@ func TestTCDispatcherAttachSpecValidate(t *testing.T) {
 }
 
 func TestXDPExtensionAttachSpecValidate(t *testing.T) {
+	t.Parallel()
+
 	valid := dispatcher.XDPExtensionAttachSpec{
 		DispatcherPinPath: "/disp",
 		ProgPinPath:       "/prog",
@@ -358,12 +411,14 @@ func TestXDPExtensionAttachSpecValidate(t *testing.T) {
 	}
 
 	t.Run("valid at 0", func(t *testing.T) {
+		t.Parallel()
 		if err := valid.Validate(); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("valid at max-1", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.Position = dispatcher.MaxPrograms - 1
 		if err := s.Validate(); err != nil {
@@ -372,6 +427,7 @@ func TestXDPExtensionAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("negative position", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.Position = -1
 		if err := s.Validate(); err == nil {
@@ -380,6 +436,7 @@ func TestXDPExtensionAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("position at max", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.Position = dispatcher.MaxPrograms
 		if err := s.Validate(); err == nil {
@@ -389,6 +446,8 @@ func TestXDPExtensionAttachSpecValidate(t *testing.T) {
 }
 
 func TestTCExtensionAttachSpecValidate(t *testing.T) {
+	t.Parallel()
+
 	valid := dispatcher.TCExtensionAttachSpec{
 		DispatcherPinPath: "/disp",
 		ProgPinPath:       "/prog",
@@ -397,12 +456,14 @@ func TestTCExtensionAttachSpecValidate(t *testing.T) {
 	}
 
 	t.Run("valid at 0", func(t *testing.T) {
+		t.Parallel()
 		if err := valid.Validate(); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("negative position", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.Position = -1
 		if err := s.Validate(); err == nil {
@@ -411,6 +472,7 @@ func TestTCExtensionAttachSpecValidate(t *testing.T) {
 	})
 
 	t.Run("position at max", func(t *testing.T) {
+		t.Parallel()
 		s := valid
 		s.Position = dispatcher.MaxPrograms
 		if err := s.Validate(); err == nil {

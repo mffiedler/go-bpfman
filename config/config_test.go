@@ -8,6 +8,8 @@ import (
 )
 
 func TestLoggingConfigToSpec_MergesComponents(t *testing.T) {
+	t.Parallel()
+
 	cfg := LoggingConfig{
 		Level: "info",
 		Components: map[string]string{
@@ -35,6 +37,8 @@ func TestLoggingConfigToSpec_MergesComponents(t *testing.T) {
 }
 
 func TestLoggingConfigToSpec_DefaultBase(t *testing.T) {
+	t.Parallel()
+
 	cfg := LoggingConfig{
 		Components: map[string]string{
 			"manager": "debug",
@@ -55,6 +59,8 @@ func TestLoggingConfigToSpec_DefaultBase(t *testing.T) {
 }
 
 func TestLoggingConfigToSpec_Empty(t *testing.T) {
+	t.Parallel()
+
 	cfg := LoggingConfig{}
 	if got := cfg.ToSpec(); got != "" {
 		t.Fatalf("spec = %q, want empty string", got)
@@ -62,6 +68,8 @@ func TestLoggingConfigToSpec_Empty(t *testing.T) {
 }
 
 func TestConfigValidate_InvalidLoggingFormat(t *testing.T) {
+	t.Parallel()
+
 	cfg := DefaultConfig()
 	cfg.Logging.Format = "xml"
 
@@ -71,6 +79,8 @@ func TestConfigValidate_InvalidLoggingFormat(t *testing.T) {
 }
 
 func TestConfigValidate_InvalidLoggingSpec(t *testing.T) {
+	t.Parallel()
+
 	cfg := DefaultConfig()
 	cfg.Logging.Components = map[string]string{
 		"manager": "verbose",

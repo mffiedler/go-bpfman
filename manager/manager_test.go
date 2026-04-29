@@ -32,6 +32,8 @@ import (
 // =============================================================================
 
 func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -62,6 +64,8 @@ func TestLoadProgram_WithValidRequest_Succeeds(t *testing.T) {
 //	When I retrieve it via Get,
 //	Then all fields match what was provided at load time.
 func TestGetProgram_ReturnsAllFields(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -98,6 +102,8 @@ func TestGetProgram_ReturnsAllFields(t *testing.T) {
 //	When I retrieve it via Get,
 //	Then the global data is returned correctly.
 func TestLoadProgram_WithGlobalData(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -127,6 +133,8 @@ func TestLoadProgram_WithGlobalData(t *testing.T) {
 //	When I retrieve it via Get,
 //	Then both are returned correctly.
 func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -165,6 +173,8 @@ func TestLoadProgram_WithMetadataAndGlobalData(t *testing.T) {
 //	When I list all programs,
 //	Then each result contains correctly populated fields.
 func TestListPrograms_ReturnsAllFields(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -199,6 +209,8 @@ func TestListPrograms_ReturnsAllFields(t *testing.T) {
 //	When I attempt to load another program with the same name,
 //	Then both programs load successfully (duplicates are allowed).
 func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -229,6 +241,8 @@ func TestLoadProgram_WithDuplicateName_BothSucceed(t *testing.T) {
 //	When I load two programs with different names,
 //	Then both programs exist and are listed.
 func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -254,6 +268,8 @@ func TestLoadProgram_WithDifferentNames_BothSucceed(t *testing.T) {
 //	When I unload the program,
 //	Then the unload succeeds and the program is no longer retrievable.
 func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -278,6 +294,8 @@ func TestUnloadProgram_WhenProgramExists_RemovesIt(t *testing.T) {
 //	When I load a new program with the same name,
 //	Then the load succeeds because the name was freed.
 func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -306,6 +324,8 @@ func TestLoadProgram_AfterUnload_NameBecomesAvailable(t *testing.T) {
 //	When I load programs of each supported type,
 //	Then each program's type is correctly stored and returned via Get.
 func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
+	t.Parallel()
+
 	programTypes := []struct {
 		name        string
 		programType bpfman.ProgramType
@@ -325,6 +345,7 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 
 	for _, tc := range programTypes {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fix := newTestFixture(t)
 			ctx := context.Background()
 
@@ -355,6 +376,8 @@ func TestLoadProgram_AllProgramTypes_RoundTrip(t *testing.T) {
 //	Then the first succeeds with a success outcome,
 //	And the second fails with a failure outcome showing the kernel load failed.
 func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -393,6 +416,8 @@ func TestLoadProgram_PartialFailure_SecondProgramFails(t *testing.T) {
 //	Then the error is returned with a failure outcome,
 //	And no programs exist in the kernel or database.
 func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -416,6 +441,8 @@ func TestLoadProgram_SingleProgram_FailsCleanly(t *testing.T) {
 //	When I load multiple programs,
 //	Then the failure occurs at the expected point with correct outcome.
 func TestLoadProgram_FailOnNthLoad(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -454,6 +481,8 @@ func TestLoadProgram_FailOnNthLoad(t *testing.T) {
 //	And no link is created,
 //	And the outcome records the attach failure.
 func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -487,6 +516,8 @@ func TestAttachTracepoint_WhenAttachFails_ProgramRemainsLoaded(t *testing.T) {
 //	And the link is removed,
 //	And the program remains loaded.
 func TestDetach_ExistingLink_Succeeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -522,6 +553,8 @@ func TestDetach_ExistingLink_Succeeds(t *testing.T) {
 //	Then each detach succeeds,
 //	And the program remains loaded until explicitly unloaded.
 func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -576,6 +609,8 @@ func TestMultipleLinks_SameProgram_AllDetachable(t *testing.T) {
 //	Then the program is unloaded,
 //	And the kernel and database are clean.
 func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -629,6 +664,8 @@ func TestUnloadProgram_WithActiveLinks_DetachesLinksThenUnloads(t *testing.T) {
 //	When I attempt to detach and the kernel fails,
 //	Then the detach operation returns an error with failure outcome.
 func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -666,6 +703,8 @@ func TestDetach_KernelFailure_ReturnsError(t *testing.T) {
 //	When I list all programs,
 //	Then each program's type is correctly returned.
 func TestListPrograms_AllProgramTypes_ReturnsCorrectTypes(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 

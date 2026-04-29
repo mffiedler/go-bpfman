@@ -24,6 +24,8 @@ import (
 // Build tag: nsenter. Run via "make test-nsenter" which adds
 // -tags=nsenter and sudo.
 func TestConstructorWithSelfNamespace(t *testing.T) {
+	t.Parallel()
+
 	result := runHelper(t, []string{
 		nsenter.MntNsEnvVar + "=/proc/self/ns/mnt",
 	})

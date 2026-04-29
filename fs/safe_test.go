@@ -12,6 +12,8 @@ import (
 )
 
 func TestBPFFS_SafeRemoveAll_UnderParent(t *testing.T) {
+	t.Parallel()
+
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
@@ -27,6 +29,8 @@ func TestBPFFS_SafeRemoveAll_UnderParent(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsEscape(t *testing.T) {
+	t.Parallel()
+
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
@@ -40,6 +44,8 @@ func TestBPFFS_SafeRemoveAll_RejectsEscape(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsDotDot(t *testing.T) {
+	t.Parallel()
+
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
@@ -54,6 +60,8 @@ func TestBPFFS_SafeRemoveAll_RejectsDotDot(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_RejectsMountRoot(t *testing.T) {
+	t.Parallel()
+
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 
@@ -67,6 +75,8 @@ func TestBPFFS_SafeRemoveAll_RejectsMountRoot(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_PrefixFalsePositive(t *testing.T) {
+	t.Parallel()
+
 	// Ensure /base/fs/programs vs /base/fs/programsX doesn't match.
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)

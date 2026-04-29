@@ -10,6 +10,8 @@ import (
 )
 
 func TestListProgramsCmd_Validate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		attached   bool
@@ -46,6 +48,7 @@ func TestListProgramsCmd_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd := &ListProgramsCmd{
 				Attached:   tt.attached,
 				Unattached: tt.unattached,
@@ -62,6 +65,8 @@ func TestListProgramsCmd_Validate(t *testing.T) {
 }
 
 func TestParseProgramTypes(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    []string
@@ -146,6 +151,7 @@ func TestParseProgramTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := ParseProgramTypes(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -159,9 +165,12 @@ func TestParseProgramTypes(t *testing.T) {
 }
 
 func TestParseProgramTypes_AllValidTypes(t *testing.T) {
+	t.Parallel()
+
 	// Verify all program type names can be parsed
 	for _, name := range bpfman.ProgramTypeNames() {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			result, err := ParseProgramTypes([]string{name})
 			require.NoError(t, err)
 			assert.Len(t, result, 1)
@@ -170,10 +179,13 @@ func TestParseProgramTypes_AllValidTypes(t *testing.T) {
 }
 
 func TestParseProgramTypes_CaseInsensitivity(t *testing.T) {
+	t.Parallel()
+
 	// Test various case combinations
 	cases := []string{"XDP", "xdp", "Xdp", "xDp", "xDP", "XdP"}
 	for _, c := range cases {
 		t.Run(c, func(t *testing.T) {
+			t.Parallel()
 			result, err := ParseProgramTypes([]string{c})
 			require.NoError(t, err)
 			_, ok := result[bpfman.ProgramTypeXDP]

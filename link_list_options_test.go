@@ -9,6 +9,8 @@ import (
 )
 
 func TestLinkListOptions_WithKinds(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithKinds(bpfman.LinkKindXDP, bpfman.LinkKindTC))
 
 	xdpLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindXDP}
@@ -21,6 +23,8 @@ func TestLinkListOptions_WithKinds(t *testing.T) {
 }
 
 func TestLinkListOptions_WithProgramID(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithProgramID(123))
 
 	matchingLink := &bpfman.LinkRecord{ProgramID: 123}
@@ -31,6 +35,8 @@ func TestLinkListOptions_WithProgramID(t *testing.T) {
 }
 
 func TestLinkListOptions_Combined(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyLinkListOptions(
 		bpfman.WithKinds(bpfman.LinkKindXDP),
 		bpfman.WithProgramID(123),
@@ -46,6 +52,8 @@ func TestLinkListOptions_Combined(t *testing.T) {
 }
 
 func TestLinkListOptions_EmptyMatchesAll(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyLinkListOptions()
 
 	anyLink := &bpfman.LinkRecord{Kind: bpfman.LinkKindKprobe, ProgramID: 999}
@@ -53,6 +61,8 @@ func TestLinkListOptions_EmptyMatchesAll(t *testing.T) {
 }
 
 func TestLinkListOptions_WithKinds_Empty(t *testing.T) {
+	t.Parallel()
+
 	// Empty kinds should match all
 	opts := bpfman.ApplyLinkListOptions(bpfman.WithKinds())
 
@@ -61,6 +71,8 @@ func TestLinkListOptions_WithKinds_Empty(t *testing.T) {
 }
 
 func TestLinkListOptions_MultipleWithKinds(t *testing.T) {
+	t.Parallel()
+
 	// Calling WithKinds multiple times should accumulate
 	opts := bpfman.ApplyLinkListOptions(
 		bpfman.WithKinds(bpfman.LinkKindXDP),
@@ -77,6 +89,8 @@ func TestLinkListOptions_MultipleWithKinds(t *testing.T) {
 }
 
 func TestLinkKindNames(t *testing.T) {
+	t.Parallel()
+
 	names := bpfman.LinkKindNames()
 
 	assert.Contains(t, names, "xdp")
@@ -93,6 +107,8 @@ func TestLinkKindNames(t *testing.T) {
 }
 
 func TestAllLinkKinds(t *testing.T) {
+	t.Parallel()
+
 	kinds := bpfman.AllLinkKinds()
 
 	assert.Contains(t, kinds, bpfman.LinkKindXDP)

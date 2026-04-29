@@ -8,6 +8,8 @@ import (
 )
 
 func TestComputeTCXAttachOrder(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		existingLinks []bpfman.TCXLinkInfo
@@ -95,6 +97,7 @@ func TestComputeTCXAttachOrder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := computeTCXAttachOrder(tt.existingLinks, tt.newPriority)
 
 			if tt.wantFirst && !got.First {

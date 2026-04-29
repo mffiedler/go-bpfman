@@ -15,6 +15,8 @@ import (
 // (add, length, map, select, group_by) all reduce to a Value.
 
 func TestReplJQ_IdentityOnJSONScalar(t *testing.T) {
+	t.Parallel()
+
 	// A bare scalar input is parsed as JSON — matching bash jq
 	// semantics — so a JSON-quoted string flows through as a
 	// string and the identity filter returns it intact.
@@ -29,6 +31,8 @@ func TestReplJQ_IdentityOnJSONScalar(t *testing.T) {
 }
 
 func TestReplJQ_IdentityOnJSONNumber(t *testing.T) {
+	t.Parallel()
+
 	v, err := replJQ([]shell.Arg{
 		shell.WordArg{Text: "."},
 		shell.WordArg{Text: "42"},
@@ -40,6 +44,8 @@ func TestReplJQ_IdentityOnJSONNumber(t *testing.T) {
 }
 
 func TestReplJQ_ScalarNotValidJSONIsError(t *testing.T) {
+	t.Parallel()
+
 	// 'hello' on its own isn't JSON — users who want a string
 	// wrap it in JSON quotes.  Matches the error the standalone
 	// jq CLI produces on non-JSON stdin.
@@ -52,6 +58,8 @@ func TestReplJQ_ScalarNotValidJSONIsError(t *testing.T) {
 }
 
 func TestReplJQ_PathOnStructured(t *testing.T) {
+	t.Parallel()
+
 	input := shell.ValueFromMap(map[string]any{"a": "apple", "b": "banana"})
 	v, err := replJQ([]shell.Arg{
 		shell.WordArg{Text: ".a"},
@@ -64,6 +72,8 @@ func TestReplJQ_PathOnStructured(t *testing.T) {
 }
 
 func TestReplJQ_AggregateSum(t *testing.T) {
+	t.Parallel()
+
 	input := shell.ValueFromMap(map[string]any{
 		"items": []any{
 			map[string]any{"v": json.Number("1")},
@@ -82,6 +92,8 @@ func TestReplJQ_AggregateSum(t *testing.T) {
 }
 
 func TestReplJQ_Length(t *testing.T) {
+	t.Parallel()
+
 	input := shell.ValueFromMap(map[string]any{
 		"items": []any{"a", "b", "c"},
 	})
@@ -96,6 +108,8 @@ func TestReplJQ_Length(t *testing.T) {
 }
 
 func TestReplJQ_Map(t *testing.T) {
+	t.Parallel()
+
 	input := shell.ValueFromMap(map[string]any{
 		"items": []any{
 			map[string]any{"name": "foo"},
@@ -114,6 +128,8 @@ func TestReplJQ_Map(t *testing.T) {
 }
 
 func TestReplJQ_MultiResultCollected(t *testing.T) {
+	t.Parallel()
+
 	// jq ".items[]" emits one value per element.  Our builtin
 	// collects a multi-emission into a list Value so the caller
 	// can use it as a single bindable result.
@@ -132,6 +148,8 @@ func TestReplJQ_MultiResultCollected(t *testing.T) {
 }
 
 func TestReplJQ_BooleanResultIsOriginBool(t *testing.T) {
+	t.Parallel()
+
 	input := shell.ValueFromMap(map[string]any{"a": json.Number("5")})
 	v, err := replJQ([]shell.Arg{
 		shell.QuotedArg{Text: ".a > 3"},
@@ -144,6 +162,8 @@ func TestReplJQ_BooleanResultIsOriginBool(t *testing.T) {
 }
 
 func TestReplJQ_NullResultIsPresentNull(t *testing.T) {
+	t.Parallel()
+
 	// gojq producing a single null result (for example when a
 	// filter selects a missing field) returns a present null
 	// Value — not an absent Value — so that downstream
@@ -163,6 +183,8 @@ func TestReplJQ_NullResultIsPresentNull(t *testing.T) {
 }
 
 func TestReplJQ_InvalidFilter(t *testing.T) {
+	t.Parallel()
+
 	_, err := replJQ([]shell.Arg{
 		shell.QuotedArg{Text: "{{{ not valid"},
 		shell.ScalarValueArg{Text: "x"},
@@ -172,6 +194,8 @@ func TestReplJQ_InvalidFilter(t *testing.T) {
 }
 
 func TestReplJQ_WrongArgCount(t *testing.T) {
+	t.Parallel()
+
 	_, err := replJQ(nil)
 	require.Error(t, err)
 	_, err = replJQ([]shell.Arg{shell.WordArg{Text: "."}})
@@ -185,6 +209,8 @@ func TestReplJQ_WrongArgCount(t *testing.T) {
 }
 
 func TestReplJQ_FlagArgGetsHint(t *testing.T) {
+	t.Parallel()
+
 	// Passing a standalone-jq style flag like "-c" should not land
 	// the user with a bare "usage" message; it should explain that
 	// output formatting is a consumer concern ("${...}" for compact,
@@ -201,6 +227,8 @@ func TestReplJQ_FlagArgGetsHint(t *testing.T) {
 }
 
 func TestReplJQ_NormalisesIntsToJSONNumber(t *testing.T) {
+	t.Parallel()
+
 	// gojq produces int for integer arithmetic.  We want
 	// downstream Value.Scalar() to render the result as digits,
 	// not fall through to the "not a scalar" branch.

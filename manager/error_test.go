@@ -21,6 +21,8 @@ import (
 // Preflight failures from Detach return plain errors because no
 // operation state is created until the plan executes.
 func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -41,6 +43,8 @@ func TestDetach_NonExistentLink_ReturnsNotFound(t *testing.T) {
 // Preflight failures from Detach return plain errors because no
 // operation state is created until the plan executes.
 func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -65,6 +69,8 @@ func TestDetach_KernelOnlyLink_ReturnsNotManaged(t *testing.T) {
 // Preflight failures from Unload return plain errors because no
 // operation state is created until the plan executes.
 func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -85,6 +91,8 @@ func TestUnload_NonExistentProgram_ReturnsNotFound(t *testing.T) {
 // Preflight failures from Unload return plain errors because no
 // operation state is created until the plan executes.
 func TestUnload_KernelOnlyProgram_ReturnsNotManaged(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 

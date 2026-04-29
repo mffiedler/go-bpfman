@@ -10,6 +10,8 @@ import (
 )
 
 func TestParseProgramSpec_ValidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input              string
 		expectedType       bpfman.ProgramType
@@ -35,6 +37,7 @@ func TestParseProgramSpec_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			spec, err := ParseProgramSpec(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedType, spec.Type)
@@ -45,6 +48,8 @@ func TestParseProgramSpec_ValidInputs(t *testing.T) {
 }
 
 func TestParseProgramSpec_InvalidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input       string
 		errContains string
@@ -66,6 +71,7 @@ func TestParseProgramSpec_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseProgramSpec(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
@@ -74,6 +80,8 @@ func TestParseProgramSpec_InvalidInputs(t *testing.T) {
 }
 
 func TestParseKeyValue_ValidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input         string
 		expectedKey   string
@@ -90,6 +98,7 @@ func TestParseKeyValue_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			kv, err := ParseKeyValue(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedKey, kv.Key)
@@ -99,6 +108,8 @@ func TestParseKeyValue_ValidInputs(t *testing.T) {
 }
 
 func TestParseKeyValue_InvalidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input       string
 		errContains string
@@ -111,6 +122,7 @@ func TestParseKeyValue_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseKeyValue(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
@@ -119,6 +131,8 @@ func TestParseKeyValue_InvalidInputs(t *testing.T) {
 }
 
 func TestParseGlobalData_ValidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input        string
 		expectedName string
@@ -139,6 +153,7 @@ func TestParseGlobalData_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			gd, err := ParseGlobalData(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedName, gd.Name)
@@ -148,6 +163,8 @@ func TestParseGlobalData_ValidInputs(t *testing.T) {
 }
 
 func TestParseGlobalData_InvalidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input       string
 		errContains string
@@ -163,6 +180,7 @@ func TestParseGlobalData_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseGlobalData(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
@@ -171,7 +189,10 @@ func TestParseGlobalData_InvalidInputs(t *testing.T) {
 }
 
 func TestMetadataMap(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil for empty slice", func(t *testing.T) {
+		t.Parallel()
 		result := MetadataMap(nil)
 		assert.Nil(t, result)
 
@@ -180,6 +201,7 @@ func TestMetadataMap(t *testing.T) {
 	})
 
 	t.Run("converts to map", func(t *testing.T) {
+		t.Parallel()
 		input := []KeyValue{
 			{Key: "owner", Value: "acme"},
 			{Key: "app", Value: "test"},
@@ -192,6 +214,7 @@ func TestMetadataMap(t *testing.T) {
 	})
 
 	t.Run("last value wins for duplicate keys", func(t *testing.T) {
+		t.Parallel()
 		input := []KeyValue{
 			{Key: "key", Value: "first"},
 			{Key: "key", Value: "second"},
@@ -202,7 +225,10 @@ func TestMetadataMap(t *testing.T) {
 }
 
 func TestGlobalDataMap(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil for empty slice", func(t *testing.T) {
+		t.Parallel()
 		result := GlobalDataMap(nil)
 		assert.Nil(t, result)
 
@@ -211,6 +237,7 @@ func TestGlobalDataMap(t *testing.T) {
 	})
 
 	t.Run("converts to map", func(t *testing.T) {
+		t.Parallel()
 		input := []GlobalData{
 			{Name: "GLOBAL_u8", Data: []byte{0x01}},
 			{Name: "GLOBAL_u32", Data: []byte{0x0A, 0x0B, 0x0C, 0x0D}},
@@ -223,6 +250,7 @@ func TestGlobalDataMap(t *testing.T) {
 	})
 
 	t.Run("last value wins for duplicate names", func(t *testing.T) {
+		t.Parallel()
 		input := []GlobalData{
 			{Name: "var", Data: []byte{0x01}},
 			{Name: "var", Data: []byte{0x02}},
@@ -233,6 +261,8 @@ func TestGlobalDataMap(t *testing.T) {
 }
 
 func TestParseTracepointName_ValidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input         string
 		expectedGroup string
@@ -245,6 +275,7 @@ func TestParseTracepointName_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			tp, err := ParseTracepointName(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedGroup, tp.Group)
@@ -254,6 +285,8 @@ func TestParseTracepointName_ValidInputs(t *testing.T) {
 }
 
 func TestParseTracepointName_InvalidInputs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		input       string
@@ -272,6 +305,7 @@ func TestParseTracepointName_InvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseTracepointName(tt.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)

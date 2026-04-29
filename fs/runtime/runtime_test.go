@@ -25,6 +25,8 @@ func (m *mockMounter) EnsureMounted(mountPoint string) error {
 }
 
 func TestEnsure_CreatesDirectories(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
@@ -42,6 +44,8 @@ func TestEnsure_CreatesDirectories(t *testing.T) {
 }
 
 func TestEnsure_CallsMounter(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
@@ -54,6 +58,8 @@ func TestEnsure_CallsMounter(t *testing.T) {
 }
 
 func TestEnsure_MounterError(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(filepath.Join(t.TempDir(), "bpfman"))
 	require.NoError(t, err)
 
@@ -65,6 +71,8 @@ func TestEnsure_MounterError(t *testing.T) {
 }
 
 func TestEnsure_DirectoryCreationError(t *testing.T) {
+	t.Parallel()
+
 	// Create a file where a directory should be created
 	tmpDir := t.TempDir()
 	root, err := fs.New(filepath.Join(tmpDir, "bpfman"))
@@ -81,6 +89,8 @@ func TestEnsure_DirectoryCreationError(t *testing.T) {
 }
 
 func TestNoOpMounter_CreatesDirectory(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	mountPoint := filepath.Join(tmpDir, "test", "nested", "mount")
 
@@ -94,6 +104,8 @@ func TestNoOpMounter_CreatesDirectory(t *testing.T) {
 }
 
 func TestNoOpMounter_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	mountPoint := filepath.Join(tmpDir, "mount")
 

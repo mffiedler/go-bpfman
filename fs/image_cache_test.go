@@ -12,6 +12,8 @@ import (
 )
 
 func TestImageCache_RemoveCacheEntry_RemovesChild(t *testing.T) {
+	t.Parallel()
+
 	root := filepath.Join(t.TempDir(), "cache")
 	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)
@@ -26,6 +28,8 @@ func TestImageCache_RemoveCacheEntry_RemovesChild(t *testing.T) {
 }
 
 func TestImageCache_RemoveCacheEntry_RejectsRoot(t *testing.T) {
+	t.Parallel()
+
 	root := filepath.Join(t.TempDir(), "cache")
 	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)
@@ -38,6 +42,8 @@ func TestImageCache_RemoveCacheEntry_RejectsRoot(t *testing.T) {
 }
 
 func TestImageCache_CreateTempDir_CleanupIdempotent(t *testing.T) {
+	t.Parallel()
+
 	root := filepath.Join(t.TempDir(), "cache")
 	cache, err := fs.NewImageCache(root)
 	require.NoError(t, err)

@@ -27,6 +27,8 @@ func firstStmt(t *testing.T, prog *Program) Stmt {
 }
 
 func TestParse_SingleWordCommand(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "help")
 	require.NoError(t, err)
 	cmd, ok := firstStmt(t, prog).(*CommandStmt)
@@ -39,6 +41,8 @@ func TestParse_SingleWordCommand(t *testing.T) {
 }
 
 func TestParse_PlainCommand(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "show program 123")
 	require.NoError(t, err)
 	cmd, ok := firstStmt(t, prog).(*CommandStmt)
@@ -52,7 +56,10 @@ func TestParse_PlainCommand(t *testing.T) {
 }
 
 func TestParse_LineContinuation(t *testing.T) {
+	t.Parallel()
+
 	t.Run("bare command with backslash continuation", func(t *testing.T) {
+		t.Parallel()
 		prog, err := parseSource(t, "show program \\\n123")
 		require.NoError(t, err)
 		cmd, ok := firstStmt(t, prog).(*CommandStmt)
@@ -66,6 +73,7 @@ func TestParse_LineContinuation(t *testing.T) {
 	})
 
 	t.Run("continuation inside command substitution", func(t *testing.T) {
+		t.Parallel()
 		prog, err := parseSource(t, "let p = [show program \\\n123]")
 		require.NoError(t, err)
 		let, ok := firstStmt(t, prog).(*LetStmt)
@@ -80,6 +88,7 @@ func TestParse_LineContinuation(t *testing.T) {
 	})
 
 	t.Run("multiple continuations inside command substitution", func(t *testing.T) {
+		t.Parallel()
 		src := "let p = [show \\\nprogram \\\n123]"
 		prog, err := parseSource(t, src)
 		require.NoError(t, err)
@@ -95,6 +104,8 @@ func TestParse_LineContinuation(t *testing.T) {
 }
 
 func TestParse_LetAssignment_Literal(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let prog = 42")
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
@@ -106,6 +117,8 @@ func TestParse_LetAssignment_Literal(t *testing.T) {
 }
 
 func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
+	t.Parallel()
+
 	// "load file" is two tokens, not a primary/unary/binary; the
 	// recursive-descent parser surfaces this as "unexpected
 	// token" with a hint to wrap commands in [...].
@@ -116,6 +129,8 @@ func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let link = $prog")
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
@@ -127,6 +142,8 @@ func TestParse_LetWithVarRef(t *testing.T) {
 }
 
 func TestParse_LetWithCmdSub(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let x = [load file --path p]")
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
@@ -141,6 +158,8 @@ func TestParse_LetWithCmdSub(t *testing.T) {
 }
 
 func TestParse_LetErrors(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name    string
 		input   string
@@ -155,6 +174,7 @@ func TestParse_LetErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseSource(t, tc.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
@@ -163,12 +183,16 @@ func TestParse_LetErrors(t *testing.T) {
 }
 
 func TestParse_BareAssignIsError(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "prog = load file")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected '='")
 }
 
 func TestParse_AliasKeepsAssignAsLiteral(t *testing.T) {
+	t.Parallel()
+
 	// alias uses the = sigil syntactically; the parser must allow
 	// it through as a LiteralExpr so the alias command handler can
 	// see the classic "alias name = expansion" shape.
@@ -183,6 +207,8 @@ func TestParse_AliasKeepsAssignAsLiteral(t *testing.T) {
 }
 
 func TestParse_VarRefOnlyExprStmt(t *testing.T) {
+	t.Parallel()
+
 	// A leading varref is treated as an expression statement so the
 	// evaluator can auto-print its value at the REPL prompt.
 	prog, err := parseSource(t, "$prog.id")
@@ -196,6 +222,8 @@ func TestParse_VarRefOnlyExprStmt(t *testing.T) {
 }
 
 func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
+	t.Parallel()
+
 	// Each leading token in the trigger set must route to
 	// ExprStmt, not CommandStmt.  Bare words keep routing to
 	// CommandStmt.
@@ -221,6 +249,7 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			prog, err := parseSource(t, tc.input)
 			require.NoError(t, err)
 			require.NotEmpty(t, prog.Stmts)
@@ -241,12 +270,16 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 }
 
 func TestParse_EmptyProgram(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "")
 	require.NoError(t, err)
 	assert.Empty(t, prog.Stmts)
 }
 
 func TestParse_LocPropagation(t *testing.T) {
+	t.Parallel()
+
 	// Statements and expressions should carry Loc from their first
 	// token.  A multi-line program has different lines on each
 	// statement.
@@ -262,6 +295,8 @@ func TestParse_LocPropagation(t *testing.T) {
 }
 
 func TestParse_Thread_Basic(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let r = $x |> jq \"add\"")
 	require.NoError(t, err)
 	let, ok := firstStmt(t, prog).(*LetStmt)
@@ -284,6 +319,8 @@ func TestParse_Thread_Basic(t *testing.T) {
 }
 
 func TestParse_Thread_Chain_LeftAssociative(t *testing.T) {
+	t.Parallel()
+
 	// a |> b |> c should parse as (a |> b) |> c.
 	prog, err := parseSource(t, "let r = $x |> jq \".a\" |> jq \"add\"")
 	require.NoError(t, err)
@@ -299,6 +336,8 @@ func TestParse_Thread_Chain_LeftAssociative(t *testing.T) {
 }
 
 func TestParse_Thread_TighterThanComparison(t *testing.T) {
+	t.Parallel()
+
 	// $x |> jq "..." > 0 should parse as ($x |> jq "...") > 0.
 	prog, err := parseSource(t, "let r = $x |> jq \".n\" > 0")
 	require.NoError(t, err)
@@ -315,6 +354,8 @@ func TestParse_Thread_TighterThanComparison(t *testing.T) {
 }
 
 func TestParse_Thread_CmdSubLHS(t *testing.T) {
+	t.Parallel()
+
 	// [cmd] |> jq "FILTER" is valid: LHS is a CmdSubExpr, RHS is a thread.
 	prog, err := parseSource(t, "let r = [bpfman program list] |> jq \"length\"")
 	require.NoError(t, err)
@@ -326,6 +367,8 @@ func TestParse_Thread_CmdSubLHS(t *testing.T) {
 }
 
 func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
+	t.Parallel()
+
 	// The Loc on a ThreadExpr identifies the `|>` itself so errors
 	// about the threading step can point at the operator rather
 	// than at the LHS or RHS.
@@ -342,12 +385,16 @@ func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 }
 
 func TestParse_Thread_RejectsTrailingThread(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "let r = $x |>")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "thread")
 }
 
 func TestParse_Thread_RejectsLeadingThread(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "let r = |> jq \"add\"")
 	require.Error(t, err)
 }
@@ -355,6 +402,8 @@ func TestParse_Thread_RejectsLeadingThread(t *testing.T) {
 // --- foreach ------------------------------------------------------
 
 func TestParse_ForEach_Basic(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "foreach p in $list { print p }")
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
@@ -369,6 +418,8 @@ func TestParse_ForEach_Basic(t *testing.T) {
 }
 
 func TestParse_ForEach_ListFromPipe(t *testing.T) {
+	t.Parallel()
+
 	// Ensure the list expression can be an arbitrary expression,
 	// including a threading pipeline like [bpfman ... ] |> jq "..."
 	prog, err := parseSource(t, "foreach p in $raw |> jq \".items\" { print p }")
@@ -380,6 +431,8 @@ func TestParse_ForEach_ListFromPipe(t *testing.T) {
 }
 
 func TestParse_ForEach_MultiStatementBody(t *testing.T) {
+	t.Parallel()
+
 	input := "foreach p in $items {\n  let x = $p.name\n  print x\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
@@ -393,6 +446,8 @@ func TestParse_ForEach_MultiStatementBody(t *testing.T) {
 }
 
 func TestParse_ForEach_Nested(t *testing.T) {
+	t.Parallel()
+
 	input := "foreach a in $xs {\n  foreach b in $ys {\n    print b\n  }\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
@@ -405,6 +460,8 @@ func TestParse_ForEach_Nested(t *testing.T) {
 }
 
 func TestParse_ForEach_Errors(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name    string
 		input   string
@@ -419,6 +476,7 @@ func TestParse_ForEach_Errors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseSource(t, tc.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
@@ -427,6 +485,8 @@ func TestParse_ForEach_Errors(t *testing.T) {
 }
 
 func TestParse_Break_Simple(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "foreach x in $xs { break }")
 	require.NoError(t, err)
 	fe := firstStmt(t, prog).(*ForEachStmt)
@@ -436,6 +496,8 @@ func TestParse_Break_Simple(t *testing.T) {
 }
 
 func TestParse_Continue_Simple(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "foreach x in $xs { continue }")
 	require.NoError(t, err)
 	fe := firstStmt(t, prog).(*ForEachStmt)
@@ -445,6 +507,8 @@ func TestParse_Continue_Simple(t *testing.T) {
 }
 
 func TestParse_Break_InsideIf(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "foreach x in $xs {\n  if $x eq skip { break }\n  print x\n}")
 	require.NoError(t, err)
 	fe := firstStmt(t, prog).(*ForEachStmt)
@@ -457,6 +521,8 @@ func TestParse_Break_InsideIf(t *testing.T) {
 }
 
 func TestParse_Break_RejectsArguments(t *testing.T) {
+	t.Parallel()
+
 	// break and continue take no arguments — a trailing token
 	// is a parse-time error so "break 2"-style multi-level
 	// escapes don't silently tokenise as a command.
@@ -466,6 +532,8 @@ func TestParse_Break_RejectsArguments(t *testing.T) {
 }
 
 func TestParse_Continue_RejectsArguments(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "foreach x in $xs { continue now }")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "continue")
@@ -474,6 +542,8 @@ func TestParse_Continue_RejectsArguments(t *testing.T) {
 // --- logical operators + parens ------------------------------------
 
 func TestParse_LogicalOr(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "if $a or $b { help }")
 	require.NoError(t, err)
 	ifStmt := firstStmt(t, prog).(*IfStmt)
@@ -483,6 +553,8 @@ func TestParse_LogicalOr(t *testing.T) {
 }
 
 func TestParse_LogicalAnd(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "if $a and $b { help }")
 	require.NoError(t, err)
 	ifStmt := firstStmt(t, prog).(*IfStmt)
@@ -492,6 +564,8 @@ func TestParse_LogicalAnd(t *testing.T) {
 }
 
 func TestParse_LogicalNot(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "if not $a { help }")
 	require.NoError(t, err)
 	ifStmt := firstStmt(t, prog).(*IfStmt)
@@ -502,6 +576,8 @@ func TestParse_LogicalNot(t *testing.T) {
 }
 
 func TestParse_Logical_Precedence_AndTighterThanOr(t *testing.T) {
+	t.Parallel()
+
 	// "$a or $b and $c" should parse as "$a or ($b and $c)".
 	prog, err := parseSource(t, "if $a or $b and $c { help }")
 	require.NoError(t, err)
@@ -515,6 +591,8 @@ func TestParse_Logical_Precedence_AndTighterThanOr(t *testing.T) {
 }
 
 func TestParse_Logical_Precedence_NotTighterThanAnd(t *testing.T) {
+	t.Parallel()
+
 	// "not $a and $b" should parse as "(not $a) and $b".
 	prog, err := parseSource(t, "if not $a and $b { help }")
 	require.NoError(t, err)
@@ -527,6 +605,8 @@ func TestParse_Logical_Precedence_NotTighterThanAnd(t *testing.T) {
 }
 
 func TestParse_Logical_Precedence_NotLooserThanComparison(t *testing.T) {
+	t.Parallel()
+
 	// "not $a eq $b" should parse as "not ($a eq $b)" per SQL /
 	// Python convention, not "(not $a) eq $b" per C.
 	prog, err := parseSource(t, "if not $a eq $b { help }")
@@ -539,6 +619,8 @@ func TestParse_Logical_Precedence_NotLooserThanComparison(t *testing.T) {
 }
 
 func TestParse_Logical_DoubleNot(t *testing.T) {
+	t.Parallel()
+
 	// "not not $a" parses via right-associative recursion as
 	// NotExpr(NotExpr($a)).
 	prog, err := parseSource(t, "if not not $a { help }")
@@ -553,6 +635,8 @@ func TestParse_Logical_DoubleNot(t *testing.T) {
 }
 
 func TestParse_Logical_ParensOverridePrecedence(t *testing.T) {
+	t.Parallel()
+
 	// "($a or $b) and $c" should parse with 'and' at the top.
 	prog, err := parseSource(t, "if ($a or $b) and $c { help }")
 	require.NoError(t, err)
@@ -566,6 +650,8 @@ func TestParse_Logical_ParensOverridePrecedence(t *testing.T) {
 }
 
 func TestParse_Logical_PredBeforeCloseParen(t *testing.T) {
+	t.Parallel()
+
 	// "($a eq true) and $b": the 'true' inside the parens is
 	// on the RHS of a comparison, and the next token is ')' —
 	// not an operand.  operandFollowsPred must treat ')' as an
@@ -582,6 +668,8 @@ func TestParse_Logical_PredBeforeCloseParen(t *testing.T) {
 }
 
 func TestParse_Logical_ParenthesisedPrimary(t *testing.T) {
+	t.Parallel()
+
 	// A single parenthesised expression is equivalent to the
 	// inner expression at the same precedence; the AST has no
 	// dedicated ParenExpr node.
@@ -593,12 +681,16 @@ func TestParse_Logical_ParenthesisedPrimary(t *testing.T) {
 }
 
 func TestParse_Logical_UnmatchedParen(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "if ($a or $b { help }")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "')'")
 }
 
 func TestParse_Logical_StrayCloseParen(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "if $a) { help }")
 	require.Error(t, err)
 }
@@ -606,6 +698,8 @@ func TestParse_Logical_StrayCloseParen(t *testing.T) {
 // --- retry / timeout -----------------------------------------------
 
 func TestParse_Retry_Basic(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "retry { help } until $done eq true")
 	require.NoError(t, err)
 	rs, ok := firstStmt(t, prog).(*RetryStmt)
@@ -616,18 +710,24 @@ func TestParse_Retry_Basic(t *testing.T) {
 }
 
 func TestParse_Retry_MissingUntil(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "retry { help }")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "retry requires 'until'")
 }
 
 func TestParse_Retry_MissingExpression(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "retry { help } until")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires an expression")
 }
 
 func TestParse_Retry_TimeoutExpr(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "retry { help } until timeout 30s")
 	require.NoError(t, err)
 	rs := firstStmt(t, prog).(*RetryStmt)
@@ -639,6 +739,8 @@ func TestParse_Retry_TimeoutExpr(t *testing.T) {
 }
 
 func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "retry { help } until $done eq true or timeout 60s")
 	require.NoError(t, err)
 	rs := firstStmt(t, prog).(*RetryStmt)
@@ -650,6 +752,8 @@ func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
 }
 
 func TestParse_Timeout_BadDuration_ParsesButFailsAtEval(t *testing.T) {
+	t.Parallel()
+
 	// Under the relaxed grammar the argument is an arbitrary
 	// expression evaluated at check time.  The parse itself
 	// succeeds; the "banana is not a duration" complaint lands
@@ -662,12 +766,16 @@ func TestParse_Timeout_BadDuration_ParsesButFailsAtEval(t *testing.T) {
 }
 
 func TestParse_Timeout_MissingDuration(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "retry { help } until timeout")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout requires a duration")
 }
 
 func TestParse_Timeout_NotTimeoutFlips(t *testing.T) {
+	t.Parallel()
+
 	// Ensure precedence: "not timeout 1s" is NotExpr(TimeoutExpr).
 	prog, err := parseSource(t, "retry { help } until not timeout 1s")
 	require.NoError(t, err)
@@ -679,6 +787,8 @@ func TestParse_Timeout_NotTimeoutFlips(t *testing.T) {
 }
 
 func TestParse_Iteration_Basic(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "retry { help } until iteration 10")
 	require.NoError(t, err)
 	rs := firstStmt(t, prog).(*RetryStmt)
@@ -690,12 +800,16 @@ func TestParse_Iteration_Basic(t *testing.T) {
 }
 
 func TestParse_Iteration_MissingCount(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "retry { help } until iteration")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "iteration requires")
 }
 
 func TestParse_Iteration_NegativeCount_ParsesButFailsAtEval(t *testing.T) {
+	t.Parallel()
+
 	// Relaxed grammar: negative counts reach the evaluator,
 	// which errors.  Parse itself accepts the token run.
 	prog, err := parseSource(t, "retry { help } until iteration -3")
@@ -706,6 +820,8 @@ func TestParse_Iteration_NegativeCount_ParsesButFailsAtEval(t *testing.T) {
 }
 
 func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
+	t.Parallel()
+
 	// Same story for a non-numeric argument: the parse succeeds,
 	// the eval-time coercion fails.
 	prog, err := parseSource(t, "retry { help } until iteration banana")
@@ -716,6 +832,8 @@ func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
 }
 
 func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
+	t.Parallel()
+
 	// A syntax error inside [ ... ] surfaces at the outer Parse
 	// call: eager inner parsing is a deliberate behavioural change
 	// documented in the refactor plan.
@@ -727,6 +845,8 @@ func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
 // --- arithmetic ----------------------------------------------------
 
 func TestParse_Arithmetic_AdditivePrecedence(t *testing.T) {
+	t.Parallel()
+
 	// 1 + 2 * 3 should parse as 1 + (2 * 3): the '+' is at the
 	// root, with the '*' nested inside its right operand.
 	prog, err := parseSource(t, "let r = 1 + 2 * 3")
@@ -741,6 +861,8 @@ func TestParse_Arithmetic_AdditivePrecedence(t *testing.T) {
 }
 
 func TestParse_Arithmetic_ParensOverridePrecedence(t *testing.T) {
+	t.Parallel()
+
 	// (1 + 2) * 3: parens force '+' inside the left operand of '*'.
 	prog, err := parseSource(t, "let r = (1 + 2) * 3")
 	require.NoError(t, err)
@@ -754,6 +876,8 @@ func TestParse_Arithmetic_ParensOverridePrecedence(t *testing.T) {
 }
 
 func TestParse_Arithmetic_LeftAssociativeChain(t *testing.T) {
+	t.Parallel()
+
 	// 1 - 2 - 3 should parse as (1 - 2) - 3.
 	prog, err := parseSource(t, "let r = 1 - 2 - 3")
 	require.NoError(t, err)
@@ -767,6 +891,8 @@ func TestParse_Arithmetic_LeftAssociativeChain(t *testing.T) {
 }
 
 func TestParse_Arithmetic_LooserThanComparison(t *testing.T) {
+	t.Parallel()
+
 	// $x + 1 eq 5: 'eq' at the root, additive as the left operand.
 	prog, err := parseSource(t, "let r = $x + 1 eq 5")
 	require.NoError(t, err)
@@ -780,6 +906,8 @@ func TestParse_Arithmetic_LooserThanComparison(t *testing.T) {
 }
 
 func TestParse_Arithmetic_UnaryNegate_VarRef(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let r = - $x")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
@@ -790,6 +918,8 @@ func TestParse_Arithmetic_UnaryNegate_VarRef(t *testing.T) {
 }
 
 func TestParse_Arithmetic_UnaryNegate_ParenExpr(t *testing.T) {
+	t.Parallel()
+
 	// -(1 + 2) — negation of a parenthesised additive expression.
 	prog, err := parseSource(t, "let r = -(1 + 2)")
 	require.NoError(t, err)
@@ -802,6 +932,8 @@ func TestParse_Arithmetic_UnaryNegate_ParenExpr(t *testing.T) {
 }
 
 func TestParse_Arithmetic_UnaryNegate_Stacked(t *testing.T) {
+	t.Parallel()
+
 	// - - 3 (with spaces) stacks two negations.  "-3" alone
 	// tokenises as a single WORD, so we force separation.
 	prog, err := parseSource(t, "let r = - - $x")
@@ -816,6 +948,8 @@ func TestParse_Arithmetic_UnaryNegate_Stacked(t *testing.T) {
 }
 
 func TestParse_Arithmetic_NegativeLiteralUnchanged(t *testing.T) {
+	t.Parallel()
+
 	// A negative numeric literal with no space still tokenises
 	// as a single WORD, not as "negate token + literal".
 	prog, err := parseSource(t, "let r = -3")
@@ -827,11 +961,15 @@ func TestParse_Arithmetic_NegativeLiteralUnchanged(t *testing.T) {
 }
 
 func TestParse_Arithmetic_TrailingOperatorIsError(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "let r = $x +")
 	require.Error(t, err)
 }
 
 func TestParse_Arithmetic_NoWhitespace_PlusStarPercent(t *testing.T) {
+	t.Parallel()
+
 	// The tokeniser splits '+', '*', and '%' even without
 	// surrounding whitespace, so the compact forms that users
 	// naturally type work identically to the spaced forms.
@@ -848,6 +986,7 @@ func TestParse_Arithmetic_NoWhitespace_PlusStarPercent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			prog, err := parseSource(t, tc.src)
 			require.NoError(t, err)
 			let := firstStmt(t, prog).(*LetStmt)
@@ -859,6 +998,8 @@ func TestParse_Arithmetic_NoWhitespace_PlusStarPercent(t *testing.T) {
 }
 
 func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
+	t.Parallel()
+
 	// '-' and '/' stay word-interior (negative literals, flags,
 	// paths), so "$x -1" still tokenises as "$x" + "-1" and
 	// fails to parse.  The error should point at whitespace
@@ -870,6 +1011,8 @@ func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
 }
 
 func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "let r = $x /2")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "whitespace")

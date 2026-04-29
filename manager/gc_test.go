@@ -38,6 +38,8 @@ func testProgramRecord() bpfman.ProgramRecord {
 }
 
 func TestComputeStoreGC_EmptySnapshot(t *testing.T) {
+	t.Parallel()
+
 	actions := computeStoreGC(
 		nil,
 		nil,
@@ -51,6 +53,8 @@ func TestComputeStoreGC_EmptySnapshot(t *testing.T) {
 }
 
 func TestComputeStoreGC_LiveProgramNotDeleted(t *testing.T) {
+	t.Parallel()
+
 	programs := map[kernel.ProgramID]bpfman.ProgramRecord{
 		100: testProgramRecord(),
 	}
@@ -67,6 +71,8 @@ func TestComputeStoreGC_LiveProgramNotDeleted(t *testing.T) {
 }
 
 func TestComputeStoreGC_StaleDependentBeforeOwner(t *testing.T) {
+	t.Parallel()
+
 	ownerID := kernel.ProgramID(100)
 	dep := testProgramRecord()
 	dep.Handles.MapOwnerID = &ownerID
@@ -106,6 +112,8 @@ func TestComputeStoreGC_StaleDependentBeforeOwner(t *testing.T) {
 }
 
 func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
+	t.Parallel()
+
 	dispatchers := []platform.DispatcherSummary{
 		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 100),
 	}
@@ -130,6 +138,8 @@ func TestComputeStoreGC_StaleDispatcher(t *testing.T) {
 }
 
 func TestComputeStoreGC_LiveDispatcherNotDeleted(t *testing.T) {
+	t.Parallel()
+
 	dispatchers := []platform.DispatcherSummary{
 		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 100),
 	}
@@ -146,6 +156,8 @@ func TestComputeStoreGC_LiveDispatcherNotDeleted(t *testing.T) {
 }
 
 func TestComputeStoreGC_StaleNonSyntheticLink(t *testing.T) {
+	t.Parallel()
+
 	links := []bpfman.LinkRecord{
 		{
 			ID:        200,
@@ -175,6 +187,8 @@ func TestComputeStoreGC_StaleNonSyntheticLink(t *testing.T) {
 }
 
 func TestComputeStoreGC_SyntheticLinkSkipped(t *testing.T) {
+	t.Parallel()
+
 	links := []bpfman.LinkRecord{
 		{
 			ID:        kernel.LinkID(0x80000001), // synthetic
@@ -196,6 +210,8 @@ func TestComputeStoreGC_SyntheticLinkSkipped(t *testing.T) {
 }
 
 func TestComputeStoreGC_ExtensionLinkSurvivesWithLiveDispatcher(t *testing.T) {
+	t.Parallel()
+
 	// Dispatcher has one XDP extension link. The link's kernel ID
 	// is stale (destroyed by a rebuild), but the dispatcher is
 	// alive. Both should survive: the extension is still active
@@ -229,6 +245,8 @@ func TestComputeStoreGC_ExtensionLinkSurvivesWithLiveDispatcher(t *testing.T) {
 }
 
 func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
+	t.Parallel()
+
 	// Dispatcher has two extension links. Both have stale kernel
 	// IDs (destroyed by a rebuild), but the dispatcher is alive.
 	// Both links should survive because they are managed by the
@@ -273,6 +291,8 @@ func TestComputeStoreGC_DispatcherWithSurvivingLinks(t *testing.T) {
 }
 
 func TestComputeStoreGC_MixedScenario(t *testing.T) {
+	t.Parallel()
+
 	// Stale owner + dependent programs, stale dispatcher, stale link,
 	// and an orphaned dispatcher after link GC.
 	ownerID := kernel.ProgramID(100)
@@ -373,6 +393,8 @@ func TestComputeStoreGC_MixedScenario(t *testing.T) {
 // links are gone), but the extension is still active via the
 // dispatcher. GC must not delete these links.
 func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
+	t.Parallel()
+
 	dispatchers := []platform.DispatcherSummary{
 		testDispSummary(dispatcher.DispatcherTypeTCIngress, 4026531840, 2, 500),
 	}
@@ -411,6 +433,8 @@ func TestComputeStoreGC_ExtensionLinkWithLiveDispatcherSurvives(t *testing.T) {
 // for dispatcher-backed links; their lifecycle is owned by
 // DispatcherStore.
 func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
+	t.Parallel()
+
 	dispatchers := []platform.DispatcherSummary{
 		testDispSummary(dispatcher.DispatcherTypeXDP, 4026531840, 2, 500),
 	}
@@ -455,6 +479,8 @@ func TestComputeStoreGC_ExtensionLinkWithDeadDispatcherDeleted(t *testing.T) {
 }
 
 func TestComputeStoreGC_TCExtensionSurvivesWithLiveDispatcher(t *testing.T) {
+	t.Parallel()
+
 	// TC dispatcher is alive; its extension link has a stale kernel
 	// ID (destroyed by a rebuild). The link should survive because
 	// the dispatcher is alive. The dispatcher is not orphaned.

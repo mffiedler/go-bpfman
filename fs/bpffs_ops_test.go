@@ -9,6 +9,8 @@ import (
 )
 
 func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -60,6 +62,8 @@ func TestBPFFS_RemoveDispatcherProgPin_ValidatesNameAndParent(t *testing.T) {
 }
 
 func TestBPFFS_RemoveDispatcherRevDir_RefusesMountRoot(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -76,6 +80,8 @@ func TestBPFFS_RemoveDispatcherRevDir_RefusesMountRoot(t *testing.T) {
 }
 
 func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -106,6 +112,8 @@ func TestBPFFS_RemoveProgPin_ValidatesNumericSuffix(t *testing.T) {
 }
 
 func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -136,6 +144,8 @@ func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
 }
 
 func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -166,6 +176,8 @@ func TestBPFFS_RemoveDispatcherLinkPin_ValidatesPattern(t *testing.T) {
 }
 
 func TestBPFFS_SafeRemoveAll_RefusesEscape(t *testing.T) {
+	t.Parallel()
+
 	root, err := fs.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)

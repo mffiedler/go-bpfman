@@ -9,6 +9,8 @@ import (
 )
 
 func TestLevenshtein(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		a, b string
@@ -60,6 +62,7 @@ func TestLevenshtein(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, levenshtein(tt.a, tt.b))
 			assert.Equal(t, tt.want, levenshtein(tt.b, tt.a), "levenshtein should be symmetric")
 		})
@@ -69,6 +72,8 @@ func TestLevenshtein(t *testing.T) {
 // TestLevenshtein_TriangleInequality is a property check on a handful
 // of realistic inputs: for any three strings d(a,c) <= d(a,b) + d(b,c).
 func TestLevenshtein_TriangleInequality(t *testing.T) {
+	t.Parallel()
+
 	strs := []string{
 		"",
 		"a",
@@ -91,6 +96,8 @@ func TestLevenshtein_TriangleInequality(t *testing.T) {
 }
 
 func TestNearestStrings(t *testing.T) {
+	t.Parallel()
+
 	candidates := []string{
 		"sched/sched_switch",
 		"sched/sched_wakeup",
@@ -100,33 +107,39 @@ func TestNearestStrings(t *testing.T) {
 	}
 
 	t.Run("single-character typo surfaces the match", func(t *testing.T) {
+		t.Parallel()
 		got := nearestStrings("sched/sched_suitch", candidates, 3)
 		assert.NotEmpty(t, got)
 		assert.Equal(t, "sched/sched_switch", got[0])
 	})
 
 	t.Run("wrong category picks the right real tracepoint", func(t *testing.T) {
+		t.Parallel()
 		got := nearestStrings("syscalls/sched_switch", candidates, 3)
 		assert.Contains(t, got, "sched/sched_switch")
 	})
 
 	t.Run("unrelated garbage returns nothing", func(t *testing.T) {
+		t.Parallel()
 		got := nearestStrings("jkfdhjkasdf/qwerqwer", candidates, 3)
 		assert.Empty(t, got)
 	})
 
 	t.Run("limit caps the output", func(t *testing.T) {
+		t.Parallel()
 		got := nearestStrings("sched/sched", candidates, 2)
 		assert.LessOrEqual(t, len(got), 2)
 	})
 
 	t.Run("empty inputs yield nothing", func(t *testing.T) {
+		t.Parallel()
 		assert.Empty(t, nearestStrings("foo", nil, 3))
 		assert.Empty(t, nearestStrings("foo", []string{}, 3))
 		assert.Empty(t, nearestStrings("foo", candidates, 0))
 	})
 
 	t.Run("ties broken lexicographically", func(t *testing.T) {
+		t.Parallel()
 		// Two candidates at equal distance from "ac": "ab" and "ad"
 		// (both distance 1). Lex order puts "ab" first.
 		got := nearestStrings("ac", []string{"ad", "ab"}, 2)
@@ -134,6 +147,7 @@ func TestNearestStrings(t *testing.T) {
 	})
 
 	t.Run("distance cap trims distant matches", func(t *testing.T) {
+		t.Parallel()
 		// Target length 4 means maxDist = max(4/2, 3) = 3. "a"
 		// (distance 3) is on the edge; "wxyz" (distance 4 vs "abcd")
 		// must be dropped.
@@ -142,15 +156,18 @@ func TestNearestStrings(t *testing.T) {
 	})
 
 	t.Run("limit of one returns the single best", func(t *testing.T) {
+		t.Parallel()
 		got := nearestStrings("sched/sched_switch", candidates, 1)
 		assert.Equal(t, []string{"sched/sched_switch"}, got)
 	})
 
 	t.Run("negative limit is treated as zero", func(t *testing.T) {
+		t.Parallel()
 		assert.Empty(t, nearestStrings("foo", candidates, -1))
 	})
 
 	t.Run("relative cap trims weak tail when best match is close", func(t *testing.T) {
+		t.Parallel()
 		// The target shares a long prefix with the candidates, so the
 		// absolute cap based on length (max(23/2, 3) = 11) is very
 		// permissive. With a close match at distance 1, the relative
@@ -171,6 +188,7 @@ func TestNearestStrings(t *testing.T) {
 	})
 
 	t.Run("relative cap relaxes when best match is distant", func(t *testing.T) {
+		t.Parallel()
 		// When the best match is itself several edits away, the
 		// relative cap doubles and still admits it. Here the target
 		// has the wrong category prefix: the nearest match is six
@@ -186,6 +204,8 @@ func TestNearestStrings(t *testing.T) {
 }
 
 func TestNearestTracepoints(t *testing.T) {
+	t.Parallel()
+
 	candidates := []string{
 		"sched/sched_switch",
 		"sched/sched_wakeup",
@@ -197,6 +217,7 @@ func TestNearestTracepoints(t *testing.T) {
 	}
 
 	t.Run("typo in name ranks same-group candidates by name only", func(t *testing.T) {
+		t.Parallel()
 		// Target group matches syscalls/; the ranking is driven by
 		// name distance (kill=1, tkill=2), and name-only scoring
 		// prevents the long shared prefix from diluting the relative
@@ -209,6 +230,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("wrong group but correct name ranks by group distance", func(t *testing.T) {
+		t.Parallel()
 		// Target name "sched_switch" exists under group "sched"; the
 		// real tracepoint is sched/sched_switch but the user typed
 		// syscalls/sched_switch. Group-only scoring surfaces the
@@ -221,6 +243,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("fallback to full-string distance for unrelated both", func(t *testing.T) {
+		t.Parallel()
 		// Neither group nor name matches anything in the list; all
 		// scores fall back to full-string distance. The best match is
 		// whichever candidate has the most characters in common.
@@ -231,6 +254,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("target without a slash scores against candidate names only", func(t *testing.T) {
+		t.Parallel()
 		// When the user omits the group, ranking against the full
 		// "group/name" path would charge the length of the absent
 		// group as edit distance and exhaust the absolute cap. Scoring
@@ -242,6 +266,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("target without a slash tolerates a single typo", func(t *testing.T) {
+		t.Parallel()
 		// Regression: before name-only scoring, "sched_swtch" against
 		// "sched/sched_switch" cost seven edits (the group prefix plus
 		// the missing 'i') and fell outside the absolute cap, leaving
@@ -251,12 +276,14 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("target without a slash still handles flat candidates", func(t *testing.T) {
+		t.Parallel()
 		// Defensive: candidates without a '/' are scored whole.
 		got := nearestTracepoints("sched", []string{"sched", "other"}, 3)
 		assert.Contains(t, got, "sched")
 	})
 
 	t.Run("name prefix under the correct group returns the family", func(t *testing.T) {
+		t.Parallel()
 		// "sched/sched" is not a real tracepoint, but the user has
 		// supplied the right group and the start of a real name. The
 		// prefix branch scores every matching candidate as 0, and the
@@ -270,6 +297,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("name prefix under the wrong group surfaces the right group", func(t *testing.T) {
+		t.Parallel()
 		// "foo/sched" has no exact group or name hit. The prefix
 		// branch in the default case scores by group distance alone,
 		// so sched/* candidates surface at distance levenshtein("foo",
@@ -283,6 +311,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("name prefix below the length threshold is ignored", func(t *testing.T) {
+		t.Parallel()
 		// A one- or two-character fragment is not a signal. Without
 		// the threshold, "foo/sc" would sweep in every sched_*
 		// candidate and more. The threshold drops it back to
@@ -292,6 +321,7 @@ func TestNearestTracepoints(t *testing.T) {
 	})
 
 	t.Run("empty inputs yield nothing", func(t *testing.T) {
+		t.Parallel()
 		assert.Empty(t, nearestTracepoints("sched/switch", nil, 3))
 		assert.Empty(t, nearestTracepoints("sched/switch", candidates, 0))
 	})

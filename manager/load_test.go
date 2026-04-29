@@ -21,6 +21,8 @@ func newTestImageRef() *platform.ImageRef {
 }
 
 func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -41,6 +43,8 @@ func TestLoad_AutoDiscover_SingleProgram(t *testing.T) {
 }
 
 func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -67,6 +71,8 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 }
 
 func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -84,6 +90,8 @@ func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 }
 
 func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -108,6 +116,8 @@ func TestLoad_ExplicitPrograms_Valid(t *testing.T) {
 }
 
 func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -130,6 +140,8 @@ func TestLoad_ExplicitPrograms_InvalidName(t *testing.T) {
 }
 
 func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -176,6 +188,8 @@ func TestLoad_Rollback_SecondProgramFails(t *testing.T) {
 }
 
 func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -202,6 +216,8 @@ func TestLoad_Rollback_ThirdProgramFails(t *testing.T) {
 }
 
 func TestLoad_PullError(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	puller.SetPullError(fmt.Errorf("network error"))
@@ -219,6 +235,8 @@ func TestLoad_PullError(t *testing.T) {
 }
 
 func TestLoad_DiscoverError(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	discoverer.SetDiscoverError(fmt.Errorf("corrupt ELF file"))
 	puller := newFakeImagePuller()
@@ -236,6 +254,8 @@ func TestLoad_DiscoverError(t *testing.T) {
 }
 
 func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -260,6 +280,8 @@ func TestLoad_AutoDiscover_FentryFexit(t *testing.T) {
 }
 
 func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -303,6 +325,8 @@ func TestLoad_Rollback_FentryFexitSecondFails(t *testing.T) {
 }
 
 func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -342,6 +366,8 @@ func TestLoad_Rollback_FentryFexitFirstFails(t *testing.T) {
 }
 
 func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -394,6 +420,8 @@ func TestLoad_Rollback_MixedTypesThirdFails(t *testing.T) {
 }
 
 func TestLoad_ValidationError(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	puller := newFakeImagePuller()
 	f := newTestFixtureWithOptions(t, discoverer, puller)
@@ -417,6 +445,8 @@ func TestLoad_ValidationError(t *testing.T) {
 }
 
 func TestLoad_FileSource(t *testing.T) {
+	t.Parallel()
+
 	discoverer := newFakeDiscoverer()
 	f := newTestFixtureWithDiscoverer(t, discoverer)
 	objPath := f.BytecodeFile("object.o")

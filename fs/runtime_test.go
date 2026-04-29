@@ -29,6 +29,8 @@ func writeDummyBytecode(t *testing.T, dir string) string {
 }
 
 func TestPublishBytecode(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 	srcDir := t.TempDir()
@@ -68,6 +70,8 @@ func TestPublishBytecode(t *testing.T) {
 }
 
 func TestPublishBytecode_ErrFinalExists(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 	srcDir := t.TempDir()
@@ -85,6 +89,8 @@ func TestPublishBytecode_ErrFinalExists(t *testing.T) {
 }
 
 func TestPublishBytecode_InvalidSource(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -101,6 +107,8 @@ func TestPublishBytecode_InvalidSource(t *testing.T) {
 }
 
 func TestPublishBytecode_CleansUpOnError(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -119,6 +127,8 @@ func TestPublishBytecode_CleansUpOnError(t *testing.T) {
 }
 
 func TestRemoveProgram(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 	srcDir := t.TempDir()
@@ -134,6 +144,8 @@ func TestRemoveProgram(t *testing.T) {
 }
 
 func TestRemoveProgram_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -142,6 +154,8 @@ func TestRemoveProgram_Idempotent(t *testing.T) {
 }
 
 func TestProgramExists(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -156,6 +170,8 @@ func TestProgramExists(t *testing.T) {
 }
 
 func TestProgramBytecodePath(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -164,6 +180,8 @@ func TestProgramBytecodePath(t *testing.T) {
 }
 
 func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -186,6 +204,8 @@ func TestScanProgramDirs_NumericNameOnly(t *testing.T) {
 }
 
 func TestCleanStaging(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -202,6 +222,8 @@ func TestCleanStaging(t *testing.T) {
 }
 
 func TestCleanStaging_NoStagingDir(t *testing.T) {
+	t.Parallel()
+
 	root := mustNew(t)
 	rt := root.Bytecode()
 
@@ -210,6 +232,8 @@ func TestCleanStaging_NoStagingDir(t *testing.T) {
 }
 
 func TestZeroValueBytecode(t *testing.T) {
+	t.Parallel()
+
 	var layout fs.Layout
 	// Calling Bytecode() on zero Layout should panic
 	assert.Panics(t, func() { layout.Bytecode() }, "Bytecode() on zero Layout should panic")

@@ -11,6 +11,8 @@ import (
 )
 
 func TestNew_ValidAbsolutePaths(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    string
 		expected string
@@ -28,12 +30,16 @@ func TestNew_ValidAbsolutePaths(t *testing.T) {
 }
 
 func TestNew_RejectsEmpty(t *testing.T) {
+	t.Parallel()
+
 	_, err := fs.New("")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 }
 
 func TestNew_RejectsRelative(t *testing.T) {
+	t.Parallel()
+
 	relativePaths := []string{
 		"run/bpfman",
 		"./",
@@ -52,6 +58,8 @@ func TestNew_RejectsRelative(t *testing.T) {
 }
 
 func TestNew_CleansPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    string
 		expected string
@@ -72,6 +80,8 @@ func TestNew_CleansPath(t *testing.T) {
 }
 
 func TestZeroValueLayout(t *testing.T) {
+	t.Parallel()
+
 	var layout fs.Layout
 	assert.False(t, layout.Valid(), "zero Layout should not be valid")
 
@@ -83,6 +93,8 @@ func TestZeroValueLayout(t *testing.T) {
 }
 
 func TestLayoutString(t *testing.T) {
+	t.Parallel()
+
 	// String() on zero Layout should not panic and return a safe representation
 	var zero fs.Layout
 	assert.Equal(t, "fs.Layout(<invalid>)", zero.String())
@@ -94,6 +106,8 @@ func TestLayoutString(t *testing.T) {
 }
 
 func TestRuntimeDirs(t *testing.T) {
+	t.Parallel()
+
 	parent := t.TempDir()
 	layout, err := fs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
@@ -106,6 +120,8 @@ func TestRuntimeDirs(t *testing.T) {
 }
 
 func TestCSIDirs(t *testing.T) {
+	t.Parallel()
+
 	parent := t.TempDir()
 	layout, err := fs.New(filepath.Join(parent, "bpfman"))
 	require.NoError(t, err)
@@ -117,12 +133,16 @@ func TestCSIDirs(t *testing.T) {
 }
 
 func TestBytecode_ZeroValue(t *testing.T) {
+	t.Parallel()
+
 	var layout fs.Layout
 	// Calling Bytecode() on zero Layout should panic
 	assert.Panics(t, func() { layout.Bytecode() }, "Bytecode() on zero Layout should panic")
 }
 
 func TestBPFFS_ZeroValue(t *testing.T) {
+	t.Parallel()
+
 	var layout fs.Layout
 	// Calling BPFFS() on zero Layout should panic
 	assert.Panics(t, func() { layout.BPFFS() }, "BPFFS() on zero Layout should panic")

@@ -11,6 +11,8 @@ import (
 )
 
 func TestParseLevel(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		input   string
@@ -33,6 +35,7 @@ func TestParseLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := logging.ParseLevel(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -45,6 +48,8 @@ func TestParseLevel(t *testing.T) {
 }
 
 func TestLevel_ToSlog(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		level logging.Level
 		want  slog.Level
@@ -58,12 +63,15 @@ func TestLevel_ToSlog(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.level.String(), func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, tt.level.ToSlog())
 		})
 	}
 }
 
 func TestLevel_String(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		level logging.Level
 		want  string
@@ -78,6 +86,7 @@ func TestLevel_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, tt.level.String())
 		})
 	}

@@ -17,6 +17,8 @@ func evalEnv(s *Session) *Env {
 }
 
 func TestEvalExpr_Literal(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	v, err := EvalExpr(&LiteralExpr{Text: "hello"}, evalEnv(s))
 	require.NoError(t, err)
@@ -26,6 +28,8 @@ func TestEvalExpr_Literal(t *testing.T) {
 }
 
 func TestEvalExpr_VarRef_Bare(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("bound"))
 	v, err := EvalExpr(&VarRefExpr{Name: "x"}, evalEnv(s))
@@ -36,6 +40,8 @@ func TestEvalExpr_VarRef_Bare(t *testing.T) {
 }
 
 func TestEvalExpr_VarRef_Path(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("prog", ValueFromMap(map[string]any{
 		"record": map[string]any{"program_id": "42"},
@@ -48,6 +54,8 @@ func TestEvalExpr_VarRef_Path(t *testing.T) {
 }
 
 func TestEvalExpr_VarRef_Undefined(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	_, err := EvalExpr(&VarRefExpr{Name: "missing"}, evalEnv(s))
 	require.Error(t, err)
@@ -55,6 +63,8 @@ func TestEvalExpr_VarRef_Undefined(t *testing.T) {
 }
 
 func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("hi"))
 	_, err := EvalExpr(&AdapterExpr{Adapter: "file", Name: "x"}, evalEnv(s))
@@ -63,6 +73,8 @@ func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
 }
 
 func TestEvalExpr_CmdSub_NoRunner(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	e := &CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "foo"}}}}}}
 	_, err := EvalExpr(e, evalEnv(s))
@@ -71,6 +83,8 @@ func TestEvalExpr_CmdSub_NoRunner(t *testing.T) {
 }
 
 func TestEvalExpr_CmdSub_DispatchesViaEnv(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	env := &Env{
 		Session: s,
@@ -90,6 +104,8 @@ func TestEvalExpr_CmdSub_DispatchesViaEnv(t *testing.T) {
 }
 
 func TestEvalExpr_Binary_Textual(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	cases := []struct {
 		op         string
@@ -109,6 +125,7 @@ func TestEvalExpr_Binary_Textual(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.op+" "+tc.left+" "+tc.right, func(t *testing.T) {
+			t.Parallel()
 			e := &BinaryExpr{
 				Left:  &LiteralExpr{Text: tc.left},
 				Op:    tc.op,
@@ -125,6 +142,8 @@ func TestEvalExpr_Binary_Textual(t *testing.T) {
 }
 
 func TestEvalExpr_Binary_Numeric(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	cases := []struct {
 		op         string
@@ -144,6 +163,7 @@ func TestEvalExpr_Binary_Numeric(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.op+" "+tc.left+" "+tc.right, func(t *testing.T) {
+			t.Parallel()
 			e := &BinaryExpr{
 				Left:  &LiteralExpr{Text: tc.left},
 				Op:    tc.op,
@@ -159,6 +179,8 @@ func TestEvalExpr_Binary_Numeric(t *testing.T) {
 }
 
 func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	e := &BinaryExpr{
 		Left:  &LiteralExpr{Text: "abc"},
@@ -171,6 +193,8 @@ func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
 }
 
 func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	s.Set("y", StringValue(""))
@@ -191,6 +215,8 @@ func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
 }
 
 func TestEvalExpr_Unary_TrueFalse(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("flag", StringValue("true"))
 	e := &UnaryExpr{Pred: "true", Operand: &VarRefExpr{Name: "flag"}}
@@ -209,7 +235,10 @@ func TestEvalExpr_Unary_TrueFalse(t *testing.T) {
 }
 
 func TestExprFromArgs_Primary(t *testing.T) {
+	t.Parallel()
+
 	t.Run("word literal", func(t *testing.T) {
+		t.Parallel()
 		e, err := ExprFromArgs([]Arg{WordArg{Text: "foo"}})
 		require.NoError(t, err)
 		lit, ok := e.(*LiteralExpr)
@@ -218,6 +247,7 @@ func TestExprFromArgs_Primary(t *testing.T) {
 		assert.False(t, lit.Quoted)
 	})
 	t.Run("quoted literal", func(t *testing.T) {
+		t.Parallel()
 		e, err := ExprFromArgs([]Arg{QuotedArg{Text: "hello world"}})
 		require.NoError(t, err)
 		lit, ok := e.(*LiteralExpr)
@@ -226,6 +256,7 @@ func TestExprFromArgs_Primary(t *testing.T) {
 		assert.True(t, lit.Quoted)
 	})
 	t.Run("scalar var reference", func(t *testing.T) {
+		t.Parallel()
 		e, err := ExprFromArgs([]Arg{ScalarValueArg{Text: "42"}})
 		require.NoError(t, err)
 		lit, ok := e.(*LiteralExpr)
@@ -233,6 +264,7 @@ func TestExprFromArgs_Primary(t *testing.T) {
 		assert.Equal(t, "42", lit.Text)
 	})
 	t.Run("bare structured reference", func(t *testing.T) {
+		t.Parallel()
 		e, err := ExprFromArgs([]Arg{StructuredValueArg{Name: "prog", Value: ValueFromMap(map[string]any{"x": 1})}})
 		require.NoError(t, err)
 		ref, ok := e.(*VarRefExpr)
@@ -243,6 +275,8 @@ func TestExprFromArgs_Primary(t *testing.T) {
 }
 
 func TestExprFromArgs_Unary(t *testing.T) {
+	t.Parallel()
+
 	e, err := ExprFromArgs([]Arg{
 		WordArg{Text: "not-empty"},
 		ScalarValueArg{Text: "foo"},
@@ -254,6 +288,8 @@ func TestExprFromArgs_Unary(t *testing.T) {
 }
 
 func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
+	t.Parallel()
+
 	_, err := ExprFromArgs([]Arg{
 		WordArg{Text: "notapred"},
 		WordArg{Text: "operand"},
@@ -263,9 +299,12 @@ func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
 }
 
 func TestExprFromArgs_Binary(t *testing.T) {
+	t.Parallel()
+
 	ops := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
 	for _, op := range ops {
 		t.Run(op, func(t *testing.T) {
+			t.Parallel()
 			e, err := ExprFromArgs([]Arg{
 				ScalarValueArg{Text: "1"},
 				WordArg{Text: op},
@@ -280,6 +319,8 @@ func TestExprFromArgs_Binary(t *testing.T) {
 }
 
 func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
+	t.Parallel()
+
 	_, err := ExprFromArgs([]Arg{
 		WordArg{Text: "a"},
 		WordArg{Text: "bogus"},
@@ -290,6 +331,8 @@ func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
 }
 
 func TestExprFromArgs_TooManyArgs(t *testing.T) {
+	t.Parallel()
+
 	_, err := ExprFromArgs([]Arg{
 		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
 	})
@@ -298,12 +341,16 @@ func TestExprFromArgs_TooManyArgs(t *testing.T) {
 }
 
 func TestExprFromArgs_Empty(t *testing.T) {
+	t.Parallel()
+
 	_, err := ExprFromArgs(nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty expression")
 }
 
 func TestAsBool_RejectsNonBool(t *testing.T) {
+	t.Parallel()
+
 	cases := []Value{
 		StringValue("true"),
 		StringValue(""),
@@ -317,6 +364,8 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 }
 
 func TestIsBinaryOp(t *testing.T) {
+	t.Parallel()
+
 	true_ := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
 	false_ := []string{"", "foo", "=", "<=>"}
 	for _, s := range true_ {
@@ -328,6 +377,8 @@ func TestIsBinaryOp(t *testing.T) {
 }
 
 func TestIsUnaryPred(t *testing.T) {
+	t.Parallel()
+
 	true_ := []string{"true", "false", "not-empty"}
 	false_ := []string{"", "ok", "fail", "eq", "nil"}
 	for _, s := range true_ {
@@ -342,6 +393,8 @@ func TestIsUnaryPred(t *testing.T) {
 // old resolveCmdSubs unit tests).
 
 func TestEvalArgs_CmdSub_FlattensScalar(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	env := &Env{
 		Session: s,
@@ -367,6 +420,8 @@ func TestEvalArgs_CmdSub_FlattensScalar(t *testing.T) {
 }
 
 func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	structured := ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram)
 	env := &Env{
@@ -392,6 +447,8 @@ func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
 // the pipe's command, which then dispatches via ExecSubstitution.
 
 func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("42"))
 	var captured []Arg
@@ -421,6 +478,8 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 }
 
 func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("p", ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram))
 	var captured []Arg
@@ -444,6 +503,8 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 }
 
 func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", Value{}) // nil value
 	env := &Env{
@@ -462,6 +523,8 @@ func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
 }
 
 func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("42"))
 	env := &Env{Session: s}
@@ -475,6 +538,8 @@ func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 }
 
 func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
+	t.Parallel()
+
 	// Build ((x | stage1) | stage2) manually; each stage's runner
 	// returns a known Value, and the outer stage asserts that its
 	// last arg is the inner stage's return.
@@ -505,6 +570,8 @@ func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 }
 
 func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
+	t.Parallel()
+
 	// A ThreadExpr used as a command argument: the evaluator should
 	// dispatch the pipe, then wrap the returned Value as a
 	// ScalarValueArg or StructuredValueArg just like CmdSubExpr.
@@ -532,6 +599,8 @@ func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 // --- foreach ------------------------------------------------------
 
 func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`["a","b","c"]`))
 	require.NoError(t, err)
@@ -566,6 +635,8 @@ func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_LoopVarPersistsAfterLoop(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`[1,2,3]`))
 	require.NoError(t, err)
@@ -591,6 +662,8 @@ func TestEvalProgram_ForEach_LoopVarPersistsAfterLoop(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`[]`))
 	require.NoError(t, err)
@@ -617,6 +690,8 @@ func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("notalist", StringValue("hello"))
 	env := &Env{
@@ -636,6 +711,8 @@ func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`["a","b","c"]`))
 	require.NoError(t, err)
@@ -666,6 +743,8 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`["a","b","c","d"]`))
 	require.NoError(t, err)
@@ -705,6 +784,8 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	listValue, err := ValueFromJSON([]byte(`["a","b","c","d"]`))
 	require.NoError(t, err)
@@ -744,6 +825,8 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 }
 
 func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
+	t.Parallel()
+
 	// Nested foreach: break in the inner loop must not escape
 	// the outer loop.
 	s := NewSession()
@@ -800,6 +883,8 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 }
 
 func TestEvalProgram_Break_OutsideLoopIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	env := &Env{Session: s}
 	prog := &Program{Stmts: []Stmt{&BreakStmt{}}}
@@ -810,6 +895,8 @@ func TestEvalProgram_Break_OutsideLoopIsError(t *testing.T) {
 }
 
 func TestEvalProgram_Continue_OutsideLoopIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	env := &Env{Session: s}
 	prog := &Program{Stmts: []Stmt{&ContinueStmt{}}}
@@ -822,6 +909,8 @@ func TestEvalProgram_Continue_OutsideLoopIsError(t *testing.T) {
 // --- logical operators ---------------------------------------------
 
 func TestEvalExpr_And_BothTrue(t *testing.T) {
+	t.Parallel()
+
 	v, err := EvalExpr(&LogicalExpr{
 		Op:    "and",
 		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
@@ -834,6 +923,8 @@ func TestEvalExpr_And_BothTrue(t *testing.T) {
 }
 
 func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
+	t.Parallel()
+
 	// Right operand would error on Scalar() — if the short-circuit
 	// fires correctly, it's never evaluated.
 	s := NewSession()
@@ -850,6 +941,8 @@ func TestEvalExpr_And_ShortCircuitsOnFalseLeft(t *testing.T) {
 }
 
 func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
 	v, err := EvalExpr(&LogicalExpr{
@@ -864,6 +957,8 @@ func TestEvalExpr_Or_ShortCircuitsOnTrueLeft(t *testing.T) {
 }
 
 func TestEvalExpr_Or_BothFalse(t *testing.T) {
+	t.Parallel()
+
 	v, err := EvalExpr(&LogicalExpr{
 		Op:    "or",
 		Left:  &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "2"}},
@@ -876,6 +971,8 @@ func TestEvalExpr_Or_BothFalse(t *testing.T) {
 }
 
 func TestEvalExpr_Not_Negates(t *testing.T) {
+	t.Parallel()
+
 	v, err := EvalExpr(&NotExpr{
 		Operand: &BinaryExpr{Left: &LiteralExpr{Text: "1"}, Op: "==", Right: &LiteralExpr{Text: "1"}},
 	}, evalEnv(NewSession()))
@@ -886,6 +983,8 @@ func TestEvalExpr_Not_Negates(t *testing.T) {
 }
 
 func TestEvalExpr_Not_RejectsNonBool(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	_, err := EvalExpr(&NotExpr{Operand: &VarRefExpr{Name: "x"}}, evalEnv(s))
@@ -894,6 +993,8 @@ func TestEvalExpr_Not_RejectsNonBool(t *testing.T) {
 }
 
 func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	_, err := EvalExpr(&LogicalExpr{
@@ -908,6 +1009,8 @@ func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 // --- retry / timeout / iteration -----------------------------------
 
 func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
+	t.Parallel()
+
 	// Body succeeds every iteration; until becomes true when
 	// iteration count reaches 3.
 	s := NewSession()
@@ -930,6 +1033,8 @@ func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
+	t.Parallel()
+
 	// Body always errors; until iteration 5 fires; the body's
 	// last error propagates out.
 	s := NewSession()
@@ -952,6 +1057,8 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
+	t.Parallel()
+
 	// Body always errors; timeout is tiny so we exit in a few
 	// iterations.  Verify the last body error propagates.
 	s := NewSession()
@@ -974,6 +1081,8 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
 	// Body succeeds on first iteration; until iteration 1 fires.
 	s := NewSession()
 	env := &Env{
@@ -990,6 +1099,8 @@ func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
+	t.Parallel()
+
 	// The iteration count comes from a session variable, not a
 	// literal.  This is the whole point of the relaxed grammar:
 	// retry caps are configurable at run time.
@@ -1014,6 +1125,8 @@ func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("max_wait", StringValue("50ms"))
 	sentinel := errors.New("not yet")
@@ -1035,6 +1148,8 @@ func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("max", StringValue("-3"))
 	env := &Env{
@@ -1053,6 +1168,8 @@ func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
 }
 
 func TestEvalExpr_Timeout_OutsideRetryIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	_, err := EvalExpr(&TimeoutExpr{Arg: &LiteralExpr{Text: "1s"}}, evalEnv(s))
 	require.Error(t, err)
@@ -1060,6 +1177,8 @@ func TestEvalExpr_Timeout_OutsideRetryIsError(t *testing.T) {
 }
 
 func TestEvalExpr_Iteration_OutsideRetryIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	_, err := EvalExpr(&IterationExpr{Arg: &LiteralExpr{Text: "3"}}, evalEnv(s))
 	require.Error(t, err)
@@ -1067,6 +1186,8 @@ func TestEvalExpr_Iteration_OutsideRetryIsError(t *testing.T) {
 }
 
 func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
+	t.Parallel()
+
 	// Nested retry: inner's timeout / iteration tracks the
 	// inner clock, not the outer.  We set both with very
 	// different thresholds and ensure the inner exits first.
@@ -1098,6 +1219,8 @@ func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
 }
 
 func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	env := &Env{
 		Session: s,
@@ -1129,6 +1252,8 @@ func scalarTextEval(t *testing.T, e Expr) string {
 }
 
 func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		op    string
 		left  string
@@ -1150,6 +1275,7 @@ func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.op+"_"+tc.left+"_"+tc.right, func(t *testing.T) {
+			t.Parallel()
 			e := &BinaryExpr{
 				Left:  &LiteralExpr{Text: tc.left},
 				Op:    tc.op,
@@ -1161,8 +1287,11 @@ func TestEvalExpr_Arithmetic_AllOps(t *testing.T) {
 }
 
 func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
+	t.Parallel()
+
 	for _, op := range []string{"/", "%"} {
 		t.Run(op, func(t *testing.T) {
+			t.Parallel()
 			e := &BinaryExpr{
 				Left:  &LiteralExpr{Text: "1"},
 				Op:    op,
@@ -1176,6 +1305,8 @@ func TestEvalExpr_Arithmetic_DivideByZero(t *testing.T) {
 }
 
 func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
+	t.Parallel()
+
 	// "abc" + 1: Python-style string concat is deliberately out
 	// of scope, so this must surface as a numeric-operand error
 	// rather than producing a string.
@@ -1190,17 +1321,23 @@ func TestEvalExpr_Arithmetic_NonNumericOperand(t *testing.T) {
 }
 
 func TestEvalExpr_Negate_Literal(t *testing.T) {
+	t.Parallel()
+
 	e := &NegateExpr{Operand: &LiteralExpr{Text: "5"}}
 	assert.Equal(t, "-5", scalarTextEval(t, e))
 }
 
 func TestEvalExpr_Negate_DoubleNegate(t *testing.T) {
+	t.Parallel()
+
 	// -(-5) → 5: stacks resolve inside-out.
 	e := &NegateExpr{Operand: &NegateExpr{Operand: &LiteralExpr{Text: "5"}}}
 	assert.Equal(t, "5", scalarTextEval(t, e))
 }
 
 func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
+	t.Parallel()
+
 	// Negating a map is nonsense — must error rather than panic.
 	s := NewSession()
 	s.Set("m", ValueFromMap(map[string]any{"x": 1}))
@@ -1210,6 +1347,8 @@ func TestEvalExpr_Negate_StructuredIsError(t *testing.T) {
 }
 
 func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("x", StringValue("hello"))
 	_, err := EvalExpr(&NegateExpr{Operand: &VarRefExpr{Name: "x"}}, evalEnv(s))
@@ -1218,6 +1357,8 @@ func TestEvalExpr_Negate_NonNumericScalarIsError(t *testing.T) {
 }
 
 func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
+	t.Parallel()
+
 	// 3 + 4 > 5 → true.  Exercises the full chain:
 	// comparison evaluates additive on both sides, reduces each
 	// to a numeric scalar, then compares as floats.
@@ -1238,6 +1379,8 @@ func TestEvalExpr_Arithmetic_InComparisonPosition(t *testing.T) {
 }
 
 func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
+	t.Parallel()
+
 	// let n = $count + 1: parse, evaluate, confirm the session
 	// carries a numeric scalar whose text is "11".
 	prog, err := parseSource(t, "let count = 10\nlet n = $count + 1")
@@ -1252,6 +1395,8 @@ func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
 }
 
 func TestEvalExpr_ExprSub_Arithmetic(t *testing.T) {
+	t.Parallel()
+
 	// [[expr]] uses strict tokenisation so '-' and '/' split
 	// without surrounding whitespace.  Each case here would
 	// either error or return a string under the shell
@@ -1272,6 +1417,7 @@ func TestEvalExpr_ExprSub_Arithmetic(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			prog, err := parseSource(t, "let x = "+tc.input)
 			require.NoError(t, err)
 			s := NewSession()
@@ -1286,6 +1432,8 @@ func TestEvalExpr_ExprSub_Arithmetic(t *testing.T) {
 }
 
 func TestEvalExpr_ExprSub_VarRef(t *testing.T) {
+	t.Parallel()
+
 	// Expression substitutions read session variables and
 	// combine them with arithmetic just like any other
 	// expression.
@@ -1301,6 +1449,8 @@ func TestEvalExpr_ExprSub_VarRef(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
+	t.Parallel()
+
 	// An InterpStringExpr with only literal segments (rare in
 	// practice — the lexer emits TokenQuoted for that case —
 	// but the evaluator is happy to concatenate literals if a
@@ -1320,6 +1470,8 @@ func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_VarRef(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("n", StringValue("60"))
 	e := &InterpStringExpr{
@@ -1336,6 +1488,8 @@ func TestEvalExpr_InterpString_VarRef(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("prog", StringValue("42"))
 	e := &InterpStringExpr{
@@ -1353,6 +1507,8 @@ func TestEvalExpr_InterpString_MixedSegments(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("r", ValueFromMap(map[string]any{"exit_code": 0, "stdout": "hi"}))
 	e := &InterpStringExpr{
@@ -1371,6 +1527,8 @@ func TestEvalExpr_InterpString_StructuredValueCompactJSON(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("xs", ValueFromAny([]any{float64(1), float64(2), float64(3)}))
 	e := &InterpStringExpr{
@@ -1387,6 +1545,8 @@ func TestEvalExpr_InterpString_ArrayCompactJSON(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
+	t.Parallel()
+
 	// A nil Value in the interpolation slot renders as "null" so
 	// the output string stays well-formed.  We exercise the
 	// helper directly because nothing in the expression grammar
@@ -1399,6 +1559,8 @@ func TestEvalExpr_InterpString_NilRendersAsNull(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name  string
 		setup func(*Session)
@@ -1440,6 +1602,7 @@ func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := NewSession()
 			if tc.setup != nil {
 				tc.setup(s)
@@ -1457,6 +1620,8 @@ func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_DoubleSigilRejected(t *testing.T) {
+	t.Parallel()
+
 	// "${$n}" was the shape a naive "body is a general expression"
 	// rule would have exposed; the bash-style "${name}" rule rejects
 	// it so there is one spelling of variable interpolation.
@@ -1466,6 +1631,8 @@ func TestEvalExpr_InterpString_DoubleSigilRejected(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_ExpressionWithoutBrackets(t *testing.T) {
+	t.Parallel()
+
 	// Inside ${...} the body must be a var ref or start with "[".
 	// Bare arithmetic is rejected so users reach for the explicit
 	// ${[[...]]} form.
@@ -1475,6 +1642,8 @@ func TestEvalExpr_InterpString_ExpressionWithoutBrackets(t *testing.T) {
 }
 
 func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	e := &InterpStringExpr{
 		Segments: []InterpStringSegment{
@@ -1487,6 +1656,8 @@ func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 }
 
 func TestEvalExpr_ExprSub_InCondition(t *testing.T) {
+	t.Parallel()
+
 	// `if [[$count - 1]] gt 0 { ... }`: condition grammar is
 	// already expression-mode at the parser level, so an
 	// expression substitution is a legal primary whose numeric
@@ -1504,6 +1675,8 @@ func TestEvalExpr_ExprSub_InCondition(t *testing.T) {
 }
 
 func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
+	t.Parallel()
+
 	// [cmd] is still allowed as an operand inside [[expr]]
 	// so expressions can combine arithmetic with command
 	// results.
@@ -1525,6 +1698,8 @@ func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
 }
 
 func TestEvalExpr_ExprSub_ThreadWithFlagHintsCmdSubForm(t *testing.T) {
+	t.Parallel()
+
 	// Threading with a flagged command inside "[[...]]" fails
 	// because strict tokenisation splits "-c" into "-" and "c".
 	// The error should point the user at "[...]" where shell
@@ -1536,6 +1711,8 @@ func TestEvalExpr_ExprSub_ThreadWithFlagHintsCmdSubForm(t *testing.T) {
 }
 
 func TestEvalExpr_CmdSub_AcceptsThreadExpr(t *testing.T) {
+	t.Parallel()
+
 	// "[$x |> cmd -c arg]" is the command-shaped thread form; the
 	// parser must accept it under shell tokenisation so flags like
 	// "-c" stay whole.  The strict-mode "[[...]]" alternative would
@@ -1575,6 +1752,8 @@ func TestEvalExpr_CmdSub_AcceptsThreadExpr(t *testing.T) {
 }
 
 func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {
+	t.Parallel()
+
 	// [1/2] no longer masquerades as an expression.  The parser
 	// must reject it and point the user at the [[...]] form.
 	_, err := parseSource(t, "print [1/2]")
@@ -1583,6 +1762,8 @@ func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {
 }
 
 func TestEvalExpr_CmdSub_RejectsBareArithmetic(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "print [1 + 1]")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "[[")

@@ -10,6 +10,8 @@ import (
 )
 
 func TestProgramTypeConsistency(t *testing.T) {
+	t.Parallel()
+
 	// Verify AllProgramTypes and ProgramTypeNames are consistent
 	allTypes := bpfman.AllProgramTypes()
 	allNames := bpfman.ProgramTypeNames()

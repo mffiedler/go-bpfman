@@ -19,12 +19,16 @@ func feedLines(lines ...string) bool {
 }
 
 func TestContState_SingleLine_Balanced(t *testing.T) {
+	t.Parallel()
+
 	assert.False(t, feedLines("help"), "plain command is closed")
 	assert.False(t, feedLines("let x = 1"), "simple let is closed")
 	assert.False(t, feedLines("if $x > 0 { bpfman program list }"), "one-line if is closed")
 }
 
 func TestContState_LineContinuation(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, feedLines("bpfman program list \\"), "trailing backslash keeps buffer open")
 	assert.True(t, feedLines("foo\\"), "trailing backslash with no preceding space also opens")
 	assert.False(t,
@@ -46,14 +50,20 @@ func TestContState_LineContinuation(t *testing.T) {
 }
 
 func TestContState_SingleLine_OpenBrace(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, feedLines("if $x > 0 {"), "unterminated if is open")
 }
 
 func TestContState_SingleLine_OpenBracket(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, feedLines("let x = [bpfman program list"), "unterminated cmdsub is open")
 }
 
 func TestContState_MultiLine_IfBlockBalanced(t *testing.T) {
+	t.Parallel()
+
 	closed := !feedLines(
 		"if $x > 0 {",
 		"  bpfman program list",
@@ -63,6 +73,8 @@ func TestContState_MultiLine_IfBlockBalanced(t *testing.T) {
 }
 
 func TestContState_MultiLine_CmdSubBalanced(t *testing.T) {
+	t.Parallel()
+
 	closed := !feedLines(
 		"let x = [bpfman",
 		"  program",
@@ -72,10 +84,14 @@ func TestContState_MultiLine_CmdSubBalanced(t *testing.T) {
 }
 
 func TestContState_Comment_EndsLine(t *testing.T) {
+	t.Parallel()
+
 	assert.False(t, feedLines("help # this comment has a { brace"), "comment body ignored")
 }
 
 func TestContState_QuotedBrace_SingleLine(t *testing.T) {
+	t.Parallel()
+
 	// Braces inside quoted strings must not count toward depth.
 	assert.False(t, feedLines(`exec echo "{ not a block }"`), "quoted braces are text")
 	assert.False(t, feedLines(`exec echo '{ not a block }'`), "single-quoted braces are text")
@@ -91,6 +107,8 @@ func TestContState_QuotedBrace_SingleLine(t *testing.T) {
 // in a correct tracker it's string content; in the buggy one it's
 // a block opener that nothing closes.
 func TestContState_MultiLine_QuotedString_UnbalancedBraceIsText(t *testing.T) {
+	t.Parallel()
+
 	closed := !feedLines(
 		`exec bash -c "`,
 		`  kill -USR1 $$; echo { only-open`,
@@ -100,6 +118,8 @@ func TestContState_MultiLine_QuotedString_UnbalancedBraceIsText(t *testing.T) {
 }
 
 func TestContState_MultiLine_QuotedString_UnbalancedBracketIsText(t *testing.T) {
+	t.Parallel()
+
 	closed := !feedLines(
 		`exec bash -c '`,
 		`  echo [ only-open`,
@@ -109,6 +129,8 @@ func TestContState_MultiLine_QuotedString_UnbalancedBracketIsText(t *testing.T) 
 }
 
 func TestContState_MultiLine_QuotedString_ThenRealBlock(t *testing.T) {
+	t.Parallel()
+
 	// Unbalanced quoted `{` on line 2 is text and must not leak
 	// into the depth count.  A real `{` on line 4 opens a block
 	// that line 5 closes.  If the quoted `{` leaked, final depth
@@ -125,6 +147,8 @@ func TestContState_MultiLine_QuotedString_ThenRealBlock(t *testing.T) {
 }
 
 func TestContState_MultiLine_QuotedString_StillOpenAtEOF(t *testing.T) {
+	t.Parallel()
+
 	// A genuinely unterminated multi-line double-quoted string:
 	// open() should report open because depth (bracket/brace) is
 	// zero but the string never closed.  Current contState tracks

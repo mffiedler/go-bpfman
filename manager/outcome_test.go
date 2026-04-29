@@ -17,6 +17,8 @@ import (
 // TestLoad_Success verifies that a successful load operation completes
 // without error and returns the program.
 func TestLoad_Success(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -34,6 +36,8 @@ func TestLoad_Success(t *testing.T) {
 // TestUnload_Success verifies that a successful unload operation
 // completes without error.
 func TestUnload_Success(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -56,6 +60,8 @@ func TestUnload_Success(t *testing.T) {
 // operation for a non-existent link returns a plain error because
 // preflight failures bypass plan execution.
 func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -70,6 +76,8 @@ func TestDetach_NotFound_ReturnsPlainError(t *testing.T) {
 // operation for a non-existent program returns a plain error because
 // preflight failures bypass plan execution.
 func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -83,6 +91,8 @@ func TestUnload_NotFound_ReturnsPlainError(t *testing.T) {
 // TestAttachTracepoint_Success verifies that a successful attach operation
 // completes without error and returns the link.
 func TestAttachTracepoint_Success(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -108,6 +118,8 @@ func TestAttachTracepoint_Success(t *testing.T) {
 // TestGC_Success_OutcomeTracksPhases verifies that GC completes
 // successfully and reports correct statistics.
 func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -125,6 +137,8 @@ func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
 // TestOutcome_SystemStateReflectsActualState verifies that after an unload
 // the system state is clean.
 func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -145,6 +159,8 @@ func TestOutcome_SystemStateReflectsActualState(t *testing.T) {
 // TestOutcome_ExecutionFailure_HasTimeline verifies that an operation
 // that fails during plan execution produces a useful error.
 func TestOutcome_ExecutionFailure_HasTimeline(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 

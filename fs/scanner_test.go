@@ -13,6 +13,8 @@ import (
 )
 
 func TestScanner_DispatcherParsing_Strict(t *testing.T) {
+	t.Parallel()
+
 	layout, err := fs.New(t.TempDir())
 	require.NoError(t, err)
 

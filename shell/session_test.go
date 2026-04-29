@@ -9,6 +9,8 @@ import (
 )
 
 func TestSessionSetGetDelete(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 
 	// Initially empty.
@@ -42,6 +44,8 @@ func TestSessionSetGetDelete(t *testing.T) {
 }
 
 func TestSessionNames(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("beta", StringValue("b"))
 	s.Set("alpha", StringValue("a"))
@@ -50,6 +54,8 @@ func TestSessionNames(t *testing.T) {
 }
 
 func TestSessionExpand(t *testing.T) {
+	t.Parallel()
+
 	progData := map[string]any{
 		"id":   json.Number("42"),
 		"name": "test_prog",
@@ -257,6 +263,7 @@ func TestSessionExpand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			s := newSession()
 			got, err := evalArgsForTest(s, tt.tokens)
 			if tt.wantErr != "" {
@@ -294,6 +301,8 @@ func evalArgsForTest(s *Session, tokens []Token) ([]Arg, error) {
 }
 
 func TestSessionAssertFailures(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	assert.Equal(t, 0, s.AssertFailures())
 
@@ -306,6 +315,8 @@ func TestSessionAssertFailures(t *testing.T) {
 }
 
 func TestSessionExpandAdapterRef(t *testing.T) {
+	t.Parallel()
+
 	progData := map[string]any{
 		"id":   json.Number("42"),
 		"name": "test_prog",
@@ -326,6 +337,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	}
 
 	t.Run("adapter ref with scalar value", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$simple", Adapter: "file", VarName: "simple"},
@@ -343,6 +355,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref with bare structured value", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog", Adapter: "file", VarName: "prog"},
@@ -355,6 +368,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref with pathed structured subtree", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog.details", Adapter: "file", VarName: "prog", VarPath: "details"},
@@ -367,6 +381,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref with pathed scalar leaf", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$prog.name", Adapter: "file", VarName: "prog", VarPath: "name"},
@@ -382,6 +397,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref with undefined variable", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		_, err := evalArgsForTest(s, []Token{
 			{Kind: TokenAdapterRef, Text: "file:$unknown", Adapter: "file", VarName: "unknown"},
@@ -391,6 +407,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref with null value", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		s.Set("n", Value{})
 		_, err := evalArgsForTest(s, []Token{
@@ -401,6 +418,7 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 	})
 
 	t.Run("adapter ref mixed with normal tokens", func(t *testing.T) {
+		t.Parallel()
 		s := newSession()
 		got, err := evalArgsForTest(s, []Token{
 			{Kind: TokenWord, Text: "diff"},
@@ -416,6 +434,8 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 }
 
 func TestSessionExpandNilVariable(t *testing.T) {
+	t.Parallel()
+
 	s := NewSession()
 	s.Set("n", Value{}) // nil value
 

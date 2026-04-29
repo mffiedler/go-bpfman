@@ -54,6 +54,8 @@ func assertActions(t *testing.T, violations []Violation, expected [][]action.Act
 }
 
 func TestStaleDispatcher_XDP(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.dispatchers = []DispatcherState{{
 		DB: &dispatcher.State{
@@ -81,6 +83,8 @@ func TestStaleDispatcher_XDP(t *testing.T) {
 }
 
 func TestStaleDispatcher_TC(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.tcFilterOK[dispatcherKey(dispatcher.DispatcherTypeTCIngress, 1, 3)] = false
 	s.dispatchers = []DispatcherState{{
@@ -109,6 +113,8 @@ func TestStaleDispatcher_TC(t *testing.T) {
 }
 
 func TestStaleDispatcher_NotStale(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	// Dispatcher with extensions is not stale.
 	s.dispatchers = []DispatcherState{{
@@ -133,6 +139,8 @@ func TestStaleDispatcher_NotStale(t *testing.T) {
 }
 
 func TestOrphanProgramArtefacts_DeadProgPin(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
@@ -148,6 +156,8 @@ func TestOrphanProgramArtefacts_DeadProgPin(t *testing.T) {
 }
 
 func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/bpffs/links/42", ProgramID: 42, Kind: OrphanLinkDir},
@@ -162,6 +172,8 @@ func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
 }
 
 func TestOrphanProgramArtefacts_MapDir(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/bpffs/maps/42", ProgramID: 42, Kind: OrphanMapDir},
@@ -176,6 +188,8 @@ func TestOrphanProgramArtefacts_MapDir(t *testing.T) {
 }
 
 func TestOrphanProgramArtefacts_LiveSkipped(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
@@ -191,6 +205,8 @@ func TestOrphanProgramArtefacts_LiveSkipped(t *testing.T) {
 }
 
 func TestOrphanDispatcherArtefacts_Dir(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/bpffs/xdp/dispatcher_1_2_1", Kind: OrphanDispatcherDir},
@@ -205,6 +221,8 @@ func TestOrphanDispatcherArtefacts_Dir(t *testing.T) {
 }
 
 func TestOrphanDispatcherArtefacts_Link(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/bpffs/xdp/dispatcher_1_2_link", Kind: OrphanDispatcherLink},
@@ -219,6 +237,8 @@ func TestOrphanDispatcherArtefacts_Link(t *testing.T) {
 }
 
 func TestOrphanProgramDirs(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/data/programs/42", ProgramID: 42, Kind: OrphanProgramDir},
@@ -233,6 +253,8 @@ func TestOrphanProgramDirs(t *testing.T) {
 }
 
 func TestOrphanProgramDirs_Unknown(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/data/programs/bad-name", Kind: OrphanProgramDirUnk},
@@ -247,6 +269,8 @@ func TestOrphanProgramDirs_Unknown(t *testing.T) {
 }
 
 func TestOrphanStagingDirs(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.orphans = []FsOrphan{
 		{Path: "/data/.staging/abc123", Kind: OrphanStagingDir},
@@ -261,6 +285,8 @@ func TestOrphanStagingDirs(t *testing.T) {
 }
 
 func TestPruneLiveOrphans_ProgPin(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
@@ -276,6 +302,8 @@ func TestPruneLiveOrphans_ProgPin(t *testing.T) {
 }
 
 func TestPruneLiveOrphans_LinkDir(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	s.kernelAlive[42] = true
 	s.orphans = []FsOrphan{
@@ -291,6 +319,8 @@ func TestPruneLiveOrphans_LinkDir(t *testing.T) {
 }
 
 func TestPruneLiveOrphans_SkipsDeadOrphans(t *testing.T) {
+	t.Parallel()
+
 	s := newTestState()
 	// kernel ID 42 is NOT alive
 	s.orphans = []FsOrphan{

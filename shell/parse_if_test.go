@@ -8,6 +8,8 @@ import (
 )
 
 func TestParse_IfBasic(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "if $count > 0 { bpfman program list }")
 	require.NoError(t, err)
 	require.Len(t, prog.Stmts, 1)
@@ -27,6 +29,8 @@ func TestParse_IfBasic(t *testing.T) {
 }
 
 func TestParse_IfElseMultiLine(t *testing.T) {
+	t.Parallel()
+
 	input := "if $count > 0 {\n  let a = yes\n} else {\n  let a = no\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
@@ -44,6 +48,8 @@ func TestParse_IfElseMultiLine(t *testing.T) {
 }
 
 func TestParse_IfElifChain(t *testing.T) {
+	t.Parallel()
+
 	input := "if $x == 1 {\n let a = one\n} elif $x == 2 {\n let a = two\n} elif $x == 3 {\n let a = three\n} else {\n let a = other\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
@@ -56,6 +62,8 @@ func TestParse_IfElifChain(t *testing.T) {
 }
 
 func TestParse_IfNested(t *testing.T) {
+	t.Parallel()
+
 	input := "if $a == 1 {\n if $b == 2 {\n let c = yes\n }\n}"
 	prog, err := parseSource(t, input)
 	require.NoError(t, err)
@@ -69,18 +77,24 @@ func TestParse_IfNested(t *testing.T) {
 }
 
 func TestParse_IfMissingBrace(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "if $count > 0 bpfman program list")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected '{'")
 }
 
 func TestParse_IfUnterminatedBlock(t *testing.T) {
+	t.Parallel()
+
 	_, err := parseSource(t, "if $x eq 1 {\n let a = yes")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unterminated block")
 }
 
 func TestParse_SemicolonSeparator(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let a = 1 ; let b = 2")
 	require.NoError(t, err)
 	require.Len(t, prog.Stmts, 2)
@@ -91,6 +105,8 @@ func TestParse_SemicolonSeparator(t *testing.T) {
 }
 
 func TestParse_NewlineSeparator(t *testing.T) {
+	t.Parallel()
+
 	prog, err := parseSource(t, "let a = 1\nlet b = 2\n")
 	require.NoError(t, err)
 	require.Len(t, prog.Stmts, 2)

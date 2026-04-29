@@ -8,6 +8,8 @@ import (
 )
 
 func TestTokenise(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		input   string
@@ -504,6 +506,7 @@ func TestTokenise(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -517,6 +520,8 @@ func TestTokenise(t *testing.T) {
 }
 
 func TestTokeniseLineContinuation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -578,6 +583,7 @@ func TestTokeniseLineContinuation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, stripLocs(got))
@@ -586,6 +592,8 @@ func TestTokeniseLineContinuation(t *testing.T) {
 }
 
 func TestTokeniseExprSub(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		input   string
@@ -633,6 +641,7 @@ func TestTokeniseExprSub(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -646,6 +655,8 @@ func TestTokeniseExprSub(t *testing.T) {
 }
 
 func TestTokeniseInterpString(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -758,6 +769,7 @@ func TestTokeniseInterpString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -783,6 +795,8 @@ func TestTokeniseInterpString(t *testing.T) {
 }
 
 func TestTokeniseDoubleQuotedEscapes(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -846,6 +860,7 @@ func TestTokeniseDoubleQuotedEscapes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -874,6 +889,8 @@ func TestTokeniseDoubleQuotedEscapes(t *testing.T) {
 }
 
 func TestTokeniseSingleQuotedIsLiteral(t *testing.T) {
+	t.Parallel()
+
 	// Single quotes are fully literal: no escape processing.
 	// "\n" inside single quotes stays two characters.
 	got, err := Tokenise(`'a\nb'`)
@@ -884,6 +901,8 @@ func TestTokeniseSingleQuotedIsLiteral(t *testing.T) {
 }
 
 func TestTokeniseStrict(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -934,6 +953,7 @@ func TestTokeniseStrict(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := TokeniseStrict(tt.input)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, stripLocs(got))
@@ -958,6 +978,8 @@ func stripLocs(tokens []Token) []Token {
 }
 
 func TestTokeniseLoc(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		input string
@@ -1019,6 +1041,7 @@ func TestTokeniseLoc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Tokenise(tt.input)
 			require.NoError(t, err)
 			for idx, want := range tt.wantLocs {
@@ -1030,6 +1053,8 @@ func TestTokeniseLoc(t *testing.T) {
 }
 
 func TestIsIdent(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input string
 		want  bool
@@ -1049,6 +1074,7 @@ func TestIsIdent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, IsIdent(tt.input))
 		})
 	}

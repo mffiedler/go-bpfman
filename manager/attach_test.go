@@ -24,6 +24,8 @@ import (
 //	When I attach it,
 //	Then a link is created.
 func TestFentry_AttachSucceeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -51,6 +53,8 @@ func TestFentry_AttachSucceeds(t *testing.T) {
 //	When I try to create the spec,
 //	Then spec creation fails because fentry requires attachFunc.
 func TestFentry_LoadWithoutFnName_Fails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 
 	// Try to create a fentry spec WITHOUT FnName - should fail at spec creation
@@ -64,6 +68,8 @@ func TestFentry_LoadWithoutFnName_Fails(t *testing.T) {
 
 // TestFentry_FullLifecycle verifies the complete fentry lifecycle.
 func TestFentry_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -106,6 +112,8 @@ func TestFentry_FullLifecycle(t *testing.T) {
 //	When I attach it,
 //	Then a link is created.
 func TestFexit_AttachSucceeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -133,6 +141,8 @@ func TestFexit_AttachSucceeds(t *testing.T) {
 //	When I try to create the spec,
 //	Then spec creation fails because fexit requires attachFunc.
 func TestFexit_LoadWithoutFnName_Fails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 
 	// Try to create a fexit spec WITHOUT FnName - should fail at spec creation
@@ -146,6 +156,8 @@ func TestFexit_LoadWithoutFnName_Fails(t *testing.T) {
 
 // TestFexit_FullLifecycle verifies the complete fexit lifecycle.
 func TestFexit_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -188,6 +200,8 @@ func TestFexit_FullLifecycle(t *testing.T) {
 //	When I attach it with a function name,
 //	Then a link is created.
 func TestKprobe_AttachSucceeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -214,6 +228,8 @@ func TestKprobe_AttachSucceeds(t *testing.T) {
 //	When I attach it with a function name and offset,
 //	Then a link is created.
 func TestKprobe_AttachWithOffset(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -241,6 +257,8 @@ func TestKprobe_AttachWithOffset(t *testing.T) {
 //	When I try to attach without a function name,
 //	Then the operation fails.
 func TestKprobe_AttachWithoutFnName_Fails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -260,6 +278,8 @@ func TestKprobe_AttachWithoutFnName_Fails(t *testing.T) {
 
 // TestKprobe_FullLifecycle verifies the complete kprobe lifecycle.
 func TestKprobe_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -302,6 +322,8 @@ func TestKprobe_FullLifecycle(t *testing.T) {
 //	When I attach it with a target,
 //	Then a link is created.
 func TestUprobe_AttachSucceeds(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -330,6 +352,8 @@ func TestUprobe_AttachSucceeds(t *testing.T) {
 //	When I try to attach without a target,
 //	Then the operation fails.
 func TestUprobe_AttachWithoutTarget_Fails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -349,6 +373,8 @@ func TestUprobe_AttachWithoutTarget_Fails(t *testing.T) {
 
 // TestUprobe_FullLifecycle verifies the complete uprobe lifecycle.
 func TestUprobe_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -393,6 +419,8 @@ func TestUprobe_FullLifecycle(t *testing.T) {
 //	When I attach it to an interface,
 //	Then a link is created.
 func TestXDP_FirstAttachCreatesLink(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -419,6 +447,8 @@ func TestXDP_FirstAttachCreatesLink(t *testing.T) {
 //	When I attach it multiple times to the same interface,
 //	Then multiple links are created.
 func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -445,6 +475,8 @@ func TestXDP_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 
 // TestXDP_FullLifecycle verifies the complete XDP lifecycle.
 func TestXDP_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -492,6 +524,8 @@ func TestXDP_FullLifecycle(t *testing.T) {
 //	When I attach it to an interface,
 //	Then a link is created.
 func TestTC_FirstAttachCreatesLink(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -519,6 +553,8 @@ func TestTC_FirstAttachCreatesLink(t *testing.T) {
 //	When I attach it with both ingress and egress directions,
 //	Then both attachments succeed.
 func TestTC_IngressAndEgressDirections(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -549,6 +585,8 @@ func TestTC_IngressAndEgressDirections(t *testing.T) {
 
 // TestTC_FullLifecycle verifies the complete TC lifecycle.
 func TestTC_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -608,6 +646,8 @@ func TestTC_FullLifecycle(t *testing.T) {
 //	When I attach it to an interface,
 //	Then a link is created.
 func TestTCX_FirstAttachCreatesLink(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -635,6 +675,8 @@ func TestTCX_FirstAttachCreatesLink(t *testing.T) {
 //	When I attach it with both ingress and egress directions,
 //	Then both attachments succeed.
 func TestTCX_IngressAndEgressDirections(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -665,6 +707,8 @@ func TestTCX_IngressAndEgressDirections(t *testing.T) {
 
 // TestTCX_FullLifecycle verifies the complete TCX lifecycle.
 func TestTCX_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -724,6 +768,8 @@ func TestTCX_FullLifecycle(t *testing.T) {
 //	When I list links,
 //	Then all links are returned.
 func TestListLinks_ReturnsAllLinks(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -762,6 +808,8 @@ func TestListLinks_ReturnsAllLinks(t *testing.T) {
 //	When I list links,
 //	Then an empty list is returned.
 func TestListLinks_EmptyWhenNoLinks(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -787,6 +835,8 @@ func TestListLinks_EmptyWhenNoLinks(t *testing.T) {
 //	When I attempt to load a program with an empty name,
 //	Then the operation fails.
 func TestLoadProgram_WithEmptyName_IsRejected(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 
 	// Try to create a spec with empty name
@@ -803,6 +853,8 @@ func TestLoadProgram_WithEmptyName_IsRejected(t *testing.T) {
 //	When I attempt to load a program with an invalid program type,
 //	Then the operation fails.
 func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 
 	// Try to create a spec with zero-value type (invalid)
@@ -819,6 +871,8 @@ func TestLoadProgram_WithInvalidProgramType_IsRejected(t *testing.T) {
 //	When I attempt to load a program,
 //	Then the failure occurs with failure outcome and no state is left behind.
 func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -842,6 +896,8 @@ func TestLoadProgram_PartialFailure_FirstProgramFails(t *testing.T) {
 //	When I attempt to load three programs,
 //	Then the first two succeed with success outcomes, the third fails with failure outcome.
 func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -881,6 +937,8 @@ func TestLoadProgram_PartialFailure_ThirdOfThreeFails(t *testing.T) {
 //	Then the first program has no MapOwnerID (it owns the maps),
 //	And subsequent programs have MapOwnerID set to the first program's ID.
 func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -941,6 +999,8 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 //	When it is successfully loaded,
 //	Then it owns its own maps (no MapOwnerID).
 func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -961,6 +1021,8 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 //	When it is attached to an interface,
 //	Then the kernel receives the program's PinPath for pin-based extension loading.
 func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -994,6 +1056,8 @@ func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
 //	When it is attached to an interface,
 //	Then the kernel receives the program's PinPath for pin-based extension loading.
 func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1028,6 +1092,8 @@ func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
 //	When the second (XDP) program is attached,
 //	Then the kernel receives the XDP program's own PinPath (not the owner's).
 func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1069,6 +1135,8 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 //	When the second (TC) program is attached,
 //	Then the kernel receives the TC program's own PinPath (not the owner's).
 func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1112,6 +1180,8 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 // TestXDP_DispatcherStateInStore verifies that the store tracks
 // dispatcher state and cleans it up when the last extension is detached.
 func TestXDP_DispatcherStateInStore(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1160,6 +1230,8 @@ func TestXDP_DispatcherStateInStore(t *testing.T) {
 // tracks dispatcher state after attachment and cleans it up after the
 // last extension is detached.
 func TestTC_DispatcherStateInStore(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1203,6 +1275,8 @@ func TestTC_DispatcherStateInStore(t *testing.T) {
 // TestXDP_ExtensionPositionsAreSequential verifies that multiple XDP
 // extensions on the same interface get sequential positions.
 func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1249,6 +1323,8 @@ func TestXDP_ExtensionPositionsAreSequential(t *testing.T) {
 // TestTC_ExtensionPositionsAreSequential verifies that multiple TC
 // extensions on the same interface/direction get sequential positions.
 func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1298,6 +1374,8 @@ func TestTC_ExtensionPositionsAreSequential(t *testing.T) {
 // TestXDP_PinPathConventions verifies that dispatcher cleanup removes
 // pins at convention-derived paths.
 func TestXDP_PinPathConventions(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1328,6 +1406,8 @@ func TestXDP_PinPathConventions(t *testing.T) {
 // TestTC_PinPathConventions verifies that dispatcher cleanup removes
 // pins at paths matching the convention.
 func TestTC_PinPathConventions(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1363,6 +1443,8 @@ func TestTC_PinPathConventions(t *testing.T) {
 // TestTC_FilterHandleRoundTrip verifies that the TC filter handle
 // assigned at attach time is correctly looked up at detach time.
 func TestTC_FilterHandleRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1403,6 +1485,8 @@ func TestTC_FilterHandleRoundTrip(t *testing.T) {
 //	When I try to attach with an invalid direction,
 //	Then the operation fails.
 func TestTC_InvalidDirection(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1425,6 +1509,8 @@ func TestTC_InvalidDirection(t *testing.T) {
 //	When I try to attach with an invalid direction,
 //	Then the operation fails.
 func TestTCX_InvalidDirection(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1451,6 +1537,8 @@ func TestTCX_InvalidDirection(t *testing.T) {
 //	When it is attached to an interface,
 //	Then the kernel receives the program's PinPath.
 func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1487,6 +1575,8 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 //	When I get link details,
 //	Then the correct details are returned.
 func TestGetLink_ReturnsLinkDetails(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1523,6 +1613,8 @@ func TestGetLink_ReturnsLinkDetails(t *testing.T) {
 //	When I attempt to load a program with unspecified type,
 //	Then the operation fails.
 func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 
 	// Try to create a spec with zero-value type (unspecified)
@@ -1543,6 +1635,8 @@ func TestLoadProgram_WithUnspecifiedProgramType_IsRejected(t *testing.T) {
 //	When I attach it to an interface for the first time,
 //	Then a dispatcher is created.
 func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1569,6 +1663,8 @@ func TestXDPDispatcher_FirstAttachCreatesDispatcher(t *testing.T) {
 //	When I attach it multiple times to the same interface,
 //	Then multiple links are created.
 func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1596,6 +1692,8 @@ func TestXDPDispatcher_MultipleAttachesCreateMultipleLinks(t *testing.T) {
 //	When I detach one link,
 //	Then the link count decrements.
 func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1627,6 +1725,8 @@ func TestXDPDispatcher_DetachDecrementsLinkCount(t *testing.T) {
 
 // TestXDPDispatcher_FullLifecycle verifies the complete dispatcher lifecycle.
 func TestXDPDispatcher_FullLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1678,6 +1778,8 @@ func TestXDPDispatcher_FullLifecycle(t *testing.T) {
 //	When I try to attach it to a non-existent interface,
 //	Then the operation fails with failure outcome and appropriate error.
 func TestXDP_AttachToNonExistentInterface(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1705,6 +1807,8 @@ func TestXDP_AttachToNonExistentInterface(t *testing.T) {
 //	When I try to attach it to a non-existent interface,
 //	Then the operation fails with failure outcome and appropriate error.
 func TestTC_AttachToNonExistentInterface(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1732,6 +1836,8 @@ func TestTC_AttachToNonExistentInterface(t *testing.T) {
 //	When I try to attach it to a non-existent interface,
 //	Then the operation fails with failure outcome and appropriate error.
 func TestTCX_AttachToNonExistentInterface(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1767,6 +1873,8 @@ func TestTCX_AttachToNonExistentInterface(t *testing.T) {
 // Preflight failures (getProgram, prepare) return plain errors,
 // consistent with Load and Unload preflight behaviour.
 func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1787,6 +1895,8 @@ func TestAttach_ToNonExistentProgram_ReturnsNotFound(t *testing.T) {
 //	When I attempt to attach,
 //	Then the manager returns ErrProgramNotFound before any tracepoint validation error.
 func TestAttach_ToNonExistentProgram_WinsOverTracepointPreflight(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1811,6 +1921,8 @@ func TestAttach_ToNonExistentProgram_WinsOverTracepointPreflight(t *testing.T) {
 //	When I attempt to get a non-existent link,
 //	Then the manager returns ErrLinkNotFound.
 func TestGetLink_NonExistentLink_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1829,6 +1941,8 @@ func TestGetLink_NonExistentLink_ReturnsNotFound(t *testing.T) {
 //	When I list programs filtering by metadata,
 //	Then only matching programs are returned.
 func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1876,6 +1990,8 @@ func TestListPrograms_WithMetadataFilter_ReturnsOnlyMatching(t *testing.T) {
 // is rejected with bpfman.ErrTracepointNotFound before any kernel work
 // is attempted, and that the error carries nearest-match suggestions.
 func TestTracepointAttach_PreflightRejectsUnknown(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1906,6 +2022,8 @@ func TestTracepointAttach_PreflightRejectsUnknown(t *testing.T) {
 // TestTracepointAttach_PreflightAllowsKnown verifies that an attach
 // whose target is in the kernel's tracepoint list proceeds normally.
 func TestTracepointAttach_PreflightAllowsKnown(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 
@@ -1928,6 +2046,8 @@ func TestTracepointAttach_PreflightAllowsKnown(t *testing.T) {
 // and lets the attach proceed (the fakeKernel default preserves the
 // existing behaviour of attach tests that don't stage a list).
 func TestTracepointAttach_PreflightSkippedWhenListEmpty(t *testing.T) {
+	t.Parallel()
+
 	fix := newTestFixture(t)
 	ctx := context.Background()
 

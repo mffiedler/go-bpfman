@@ -114,6 +114,8 @@ func setupXDPSnapshot(t *testing.T, ctx context.Context, store platform.Store) p
 }
 
 func TestSnapshotStore_ReplaceAndGet_XDP(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -149,6 +151,8 @@ func TestSnapshotStore_ReplaceAndGet_XDP(t *testing.T) {
 }
 
 func TestSnapshotStore_ReplaceRemovesOldMembership(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -208,6 +212,8 @@ func TestSnapshotStore_ReplaceRemovesOldMembership(t *testing.T) {
 }
 
 func TestSnapshotStore_DeleteSnapshot(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -233,6 +239,8 @@ func TestSnapshotStore_DeleteSnapshot(t *testing.T) {
 }
 
 func TestSnapshotStore_DeleteNonExistent(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -244,6 +252,8 @@ func TestSnapshotStore_DeleteNonExistent(t *testing.T) {
 }
 
 func TestSnapshotStore_GetNonExistent(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -255,6 +265,8 @@ func TestSnapshotStore_GetNonExistent(t *testing.T) {
 }
 
 func TestSnapshotStore_TransactionRollback(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -286,6 +298,8 @@ func TestSnapshotStore_TransactionRollback(t *testing.T) {
 }
 
 func TestSnapshotStore_ListSummaries(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -389,6 +403,8 @@ func TestSnapshotStore_ListSummaries(t *testing.T) {
 }
 
 func TestSnapshotStore_TC_NullLinkID(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()
@@ -435,6 +451,8 @@ func TestSnapshotStore_TC_NullLinkID(t *testing.T) {
 }
 
 func TestSnapshotStore_EmptyMembers(t *testing.T) {
+	t.Parallel()
+
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err)
 	defer store.Close()

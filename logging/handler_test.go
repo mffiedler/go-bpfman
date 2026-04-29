@@ -15,6 +15,8 @@ import (
 )
 
 func TestFilteringHandler_Enabled(t *testing.T) {
+	t.Parallel()
+
 	spec := &logging.Spec{
 		BaseLevel: logging.LevelWarn,
 		Components: map[string]logging.Level{
@@ -47,6 +49,8 @@ func TestFilteringHandler_Enabled(t *testing.T) {
 }
 
 func TestFilteringHandler_Handle(t *testing.T) {
+	t.Parallel()
+
 	spec := &logging.Spec{
 		BaseLevel: logging.LevelWarn,
 		Components: map[string]logging.Level{
@@ -84,6 +88,8 @@ func TestFilteringHandler_Handle(t *testing.T) {
 }
 
 func TestFilteringHandler_WithGroup(t *testing.T) {
+	t.Parallel()
+
 	spec := &logging.Spec{
 		BaseLevel: logging.LevelInfo,
 		Components: map[string]logging.Level{
@@ -104,6 +110,8 @@ func TestFilteringHandler_WithGroup(t *testing.T) {
 }
 
 func TestFilteringHandler_Integration(t *testing.T) {
+	t.Parallel()
+
 	spec, err := logging.ParseSpec("warn,manager=debug,store=trace")
 	require.NoError(t, err)
 
@@ -154,6 +162,8 @@ func TestFilteringHandler_Integration(t *testing.T) {
 }
 
 func TestNew_Precedence(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		opts      logging.Options
@@ -183,6 +193,7 @@ func TestNew_Precedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			tt.opts.Output = &buf
 
@@ -208,12 +219,16 @@ func TestNew_Precedence(t *testing.T) {
 }
 
 func TestNew_InvalidSpec(t *testing.T) {
+	t.Parallel()
+
 	_, err := logging.New(logging.Options{CLISpec: "invalid"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid log spec")
 }
 
 func TestParseFormat(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input   string
 		want    logging.Format
@@ -229,6 +244,7 @@ func TestParseFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
 			got, err := logging.ParseFormat(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -241,6 +257,8 @@ func TestParseFormat(t *testing.T) {
 }
 
 func TestNew_JSONFormat(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	logger, err := logging.New(logging.Options{
 		CLISpec: "info",

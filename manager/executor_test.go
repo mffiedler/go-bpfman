@@ -286,6 +286,8 @@ func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath string, ifi
 // This keeps the test focused on executor counting logic, not kernel behaviour.
 
 func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 	exec := manager.NewExecutorForTest(store, kops, fs.Bytecode{}, fs.BPFFS{}, nil)
@@ -322,6 +324,8 @@ func TestExecuteAllWithResult_AllSucceed(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 	exec := manager.NewExecutorForTest(store, kops, fs.Bytecode{}, fs.BPFFS{}, nil)
@@ -341,6 +345,8 @@ func TestExecuteAllWithResult_EmptySlice(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -376,6 +382,8 @@ func TestExecuteAllWithResult_FirstActionFails(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -414,6 +422,8 @@ func TestExecuteAllWithResult_MiddleActionFails(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -452,6 +462,8 @@ func TestExecuteAllWithResult_LastActionFails(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -483,6 +495,8 @@ func TestExecuteAllWithResult_StopsOnFirstError(t *testing.T) {
 }
 
 func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -527,6 +541,8 @@ func TestExecuteAllWithResult_ActionsSliceUnmodified(t *testing.T) {
 }
 
 func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 
@@ -553,6 +569,8 @@ func TestExecuteAll_DelegatesToExecuteAllWithResult(t *testing.T) {
 }
 
 func TestExecuteAll_SuccessReturnsNil(t *testing.T) {
+	t.Parallel()
+
 	store := newStubStore()
 	kops := newStubKernel()
 	exec := manager.NewExecutorForTest(store, kops, fs.Bytecode{}, fs.BPFFS{}, nil)

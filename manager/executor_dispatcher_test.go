@@ -7,6 +7,8 @@ import (
 )
 
 func TestEffectivePriority(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, 50, effectivePriority(0), "zero maps to DefaultPriority")
 	assert.Equal(t, 1, effectivePriority(1))
 	assert.Equal(t, 50, effectivePriority(50))
@@ -14,6 +16,8 @@ func TestEffectivePriority(t *testing.T) {
 }
 
 func TestSortRebuildSlots_ZeroPrioritySortsAsDefault(t *testing.T) {
+	t.Parallel()
+
 	slots := []rebuildSlot{
 		{ProgramName: "low", Priority: 10},
 		{ProgramName: "unset", Priority: 0}, // effective 50
@@ -28,6 +32,8 @@ func TestSortRebuildSlots_ZeroPrioritySortsAsDefault(t *testing.T) {
 }
 
 func TestSortRebuildSlots_ZeroPriorityTiebreaksWithExplicit50(t *testing.T) {
+	t.Parallel()
+
 	slots := []rebuildSlot{
 		{ProgramName: "explicit", Priority: 50},
 		{ProgramName: "unset", Priority: 0},
@@ -39,6 +45,8 @@ func TestSortRebuildSlots_ZeroPriorityTiebreaksWithExplicit50(t *testing.T) {
 }
 
 func TestSortRebuildSlots_AllZeroPriority(t *testing.T) {
+	t.Parallel()
+
 	slots := []rebuildSlot{
 		{ProgramName: "charlie", Priority: 0},
 		{ProgramName: "alpha", Priority: 0},

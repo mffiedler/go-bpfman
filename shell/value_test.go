@@ -9,7 +9,10 @@ import (
 )
 
 func TestValueFromJSON(t *testing.T) {
+	t.Parallel()
+
 	t.Run("object", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`{"id": 42, "name": "test"}`))
 		require.NoError(t, err)
 		assert.True(t, v.IsStructured())
@@ -18,6 +21,7 @@ func TestValueFromJSON(t *testing.T) {
 	})
 
 	t.Run("string", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`"hello"`))
 		require.NoError(t, err)
 		assert.True(t, v.IsScalar())
@@ -28,6 +32,7 @@ func TestValueFromJSON(t *testing.T) {
 	})
 
 	t.Run("number preserved as json.Number", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`42`))
 		require.NoError(t, err)
 		_, ok := v.Raw().(json.Number)
@@ -35,29 +40,34 @@ func TestValueFromJSON(t *testing.T) {
 	})
 
 	t.Run("null", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`null`))
 		require.NoError(t, err)
 		assert.True(t, v.IsNil())
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
+		t.Parallel()
 		_, err := ValueFromJSON([]byte(`{invalid`))
 		require.Error(t, err)
 	})
 
 	t.Run("trailing garbage after value", func(t *testing.T) {
+		t.Parallel()
 		_, err := ValueFromJSON([]byte(`123 junk`))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "trailing data")
 	})
 
 	t.Run("trailing garbage after object", func(t *testing.T) {
+		t.Parallel()
 		_, err := ValueFromJSON([]byte(`{"a":1} {"b":2}`))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "trailing data")
 	})
 
 	t.Run("trailing whitespace is not trailing garbage", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte("42  \n  "))
 		require.NoError(t, err)
 		s, err := v.Scalar()
@@ -67,6 +77,8 @@ func TestValueFromJSON(t *testing.T) {
 }
 
 func TestValueFromStruct(t *testing.T) {
+	t.Parallel()
+
 	type Result struct {
 		ID   uint32 `json:"id"`
 		Name string `json:"name"`
@@ -92,7 +104,10 @@ func TestValueFromStruct(t *testing.T) {
 }
 
 func TestValueConvenience(t *testing.T) {
+	t.Parallel()
+
 	t.Run("StringValue", func(t *testing.T) {
+		t.Parallel()
 		v := StringValue("hello")
 		assert.True(t, v.IsScalar())
 		s, err := v.Scalar()
@@ -101,6 +116,7 @@ func TestValueConvenience(t *testing.T) {
 	})
 
 	t.Run("BoolValue", func(t *testing.T) {
+		t.Parallel()
 		v := BoolValue(true)
 		assert.True(t, v.IsScalar())
 		s, err := v.Scalar()
@@ -110,6 +126,8 @@ func TestValueConvenience(t *testing.T) {
 }
 
 func TestValueScalar(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		value   Value
@@ -165,6 +183,7 @@ func TestValueScalar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := tt.value.Scalar()
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -178,6 +197,8 @@ func TestValueScalar(t *testing.T) {
 }
 
 func TestValueLookup(t *testing.T) {
+	t.Parallel()
+
 	// Build a structured value with nested fields and arrays.
 	data := map[string]any{
 		"id":   json.Number("42"),
@@ -284,6 +305,7 @@ func TestValueLookup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := v.Lookup("v", tt.path)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -301,6 +323,8 @@ func TestValueLookup(t *testing.T) {
 }
 
 func TestValueLookupEmptyPath(t *testing.T) {
+	t.Parallel()
+
 	v := StringValue("hello")
 	got, err := v.Lookup("v", "")
 	require.NoError(t, err)
@@ -310,7 +334,10 @@ func TestValueLookupEmptyPath(t *testing.T) {
 }
 
 func TestValuePrecision(t *testing.T) {
+	t.Parallel()
+
 	t.Run("large uint32", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`{"id": 4294967295}`))
 		require.NoError(t, err)
 		id, err := v.Lookup("v", "id")
@@ -321,6 +348,7 @@ func TestValuePrecision(t *testing.T) {
 	})
 
 	t.Run("2^53+1 via json.Number", func(t *testing.T) {
+		t.Parallel()
 		v, err := ValueFromJSON([]byte(`{"big": 9007199254740993}`))
 		require.NoError(t, err)
 		big, err := v.Lookup("v", "big")
@@ -332,6 +360,8 @@ func TestValuePrecision(t *testing.T) {
 }
 
 func TestValueLookupValue(t *testing.T) {
+	t.Parallel()
+
 	data := map[string]any{
 		"id":   json.Number("42"),
 		"name": "test_prog",
@@ -348,6 +378,7 @@ func TestValueLookupValue(t *testing.T) {
 	v := ValueFromMap(data)
 
 	t.Run("returns structured map", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "details")
 		require.NoError(t, err)
 		assert.True(t, got.IsStructured())
@@ -357,6 +388,7 @@ func TestValueLookupValue(t *testing.T) {
 	})
 
 	t.Run("returns structured array", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "maps")
 		require.NoError(t, err)
 		assert.True(t, got.IsStructured())
@@ -366,12 +398,14 @@ func TestValueLookupValue(t *testing.T) {
 	})
 
 	t.Run("returns nil value", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "nullable")
 		require.NoError(t, err)
 		assert.True(t, got.IsNil())
 	})
 
 	t.Run("returns scalar", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "name")
 		require.NoError(t, err)
 		assert.True(t, got.IsScalar())
@@ -381,6 +415,7 @@ func TestValueLookupValue(t *testing.T) {
 	})
 
 	t.Run("nested array element", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "maps[0]")
 		require.NoError(t, err)
 		assert.True(t, got.IsStructured())
@@ -390,18 +425,21 @@ func TestValueLookupValue(t *testing.T) {
 	})
 
 	t.Run("empty path returns whole value", func(t *testing.T) {
+		t.Parallel()
 		got, err := v.LookupValue("v", "")
 		require.NoError(t, err)
 		assert.True(t, got.IsStructured())
 	})
 
 	t.Run("missing field errors", func(t *testing.T) {
+		t.Parallel()
 		_, err := v.LookupValue("v", "nonexistent")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "field nonexistent not found")
 	})
 
 	t.Run("index out of range errors", func(t *testing.T) {
+		t.Parallel()
 		_, err := v.LookupValue("v", "maps[5]")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "index 5 out of range")
@@ -409,7 +447,10 @@ func TestValueLookupValue(t *testing.T) {
 }
 
 func TestValueKeys(t *testing.T) {
+	t.Parallel()
+
 	t.Run("map returns sorted keys", func(t *testing.T) {
+		t.Parallel()
 		v := ValueFromMap(map[string]any{
 			"zebra": "z",
 			"alpha": "a",
@@ -419,39 +460,48 @@ func TestValueKeys(t *testing.T) {
 	})
 
 	t.Run("array returns index strings", func(t *testing.T) {
+		t.Parallel()
 		v := Value{v: []any{"a", "b", "c"}}
 		assert.Equal(t, []string{"[0]", "[1]", "[2]"}, v.Keys())
 	})
 
 	t.Run("empty map returns empty slice", func(t *testing.T) {
+		t.Parallel()
 		v := ValueFromMap(map[string]any{})
 		assert.Equal(t, []string{}, v.Keys())
 	})
 
 	t.Run("empty array returns empty slice", func(t *testing.T) {
+		t.Parallel()
 		v := Value{v: []any{}}
 		assert.Equal(t, []string{}, v.Keys())
 	})
 
 	t.Run("scalar returns nil", func(t *testing.T) {
+		t.Parallel()
 		assert.Nil(t, StringValue("hello").Keys())
 	})
 
 	t.Run("nil returns nil", func(t *testing.T) {
+		t.Parallel()
 		assert.Nil(t, Value{}.Keys())
 	})
 
 	t.Run("number returns nil", func(t *testing.T) {
+		t.Parallel()
 		v := Value{v: json.Number("42")}
 		assert.Nil(t, v.Keys())
 	})
 
 	t.Run("bool returns nil", func(t *testing.T) {
+		t.Parallel()
 		assert.Nil(t, BoolValue(true).Keys())
 	})
 }
 
 func TestValueIsPredicates(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, Value{}.IsNil())
 	assert.False(t, Value{}.IsScalar())
 	assert.False(t, Value{}.IsStructured())
@@ -467,6 +517,8 @@ func TestValueIsPredicates(t *testing.T) {
 }
 
 func TestValueFromStruct_PreservesOrigin(t *testing.T) {
+	t.Parallel()
+
 	type MyStruct struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
@@ -478,17 +530,23 @@ func TestValueFromStruct_PreservesOrigin(t *testing.T) {
 }
 
 func TestValueFromJSON_NilOrigin(t *testing.T) {
+	t.Parallel()
+
 	v, err := ValueFromJSON([]byte(`{"id": 1}`))
 	require.NoError(t, err)
 	assert.Nil(t, v.Origin())
 }
 
 func TestStringValue_NilOrigin(t *testing.T) {
+	t.Parallel()
+
 	v := StringValue("hello")
 	assert.Nil(t, v.Origin())
 }
 
 func TestRenderValue(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		val  Value
@@ -570,6 +628,7 @@ func TestRenderValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := RenderValue(tt.val)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, string(got))

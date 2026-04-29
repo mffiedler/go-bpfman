@@ -10,6 +10,8 @@ import (
 )
 
 func TestParseSpec(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		input      string
@@ -86,6 +88,7 @@ func TestParseSpec(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := logging.ParseSpec(tt.input)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -107,6 +110,8 @@ func TestParseSpec(t *testing.T) {
 }
 
 func TestSpec_LevelFor(t *testing.T) {
+	t.Parallel()
+
 	spec := logging.Spec{
 		BaseLevel: logging.LevelWarn,
 		Components: map[string]logging.Level{
@@ -128,12 +133,15 @@ func TestSpec_LevelFor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.component, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, spec.LevelFor(tt.component))
 		})
 	}
 }
 
 func TestSpec_String(t *testing.T) {
+	t.Parallel()
+
 	spec := logging.Spec{
 		BaseLevel:  logging.LevelInfo,
 		Components: map[string]logging.Level{},

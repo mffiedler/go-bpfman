@@ -94,6 +94,8 @@ import (
 // namespace inode and whether the variable survived, giving the
 // parent everything it needs for its assertions.
 func TestHelperProcess(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("_NSENTER_TEST_HELPER") != "1" {
 		return
 	}
@@ -120,6 +122,8 @@ func TestHelperProcess(t *testing.T) {
 // TestGetCurrentMntNsInode is a basic sanity check that the package
 // built with CGO and GetCurrentMntNsInode returns a valid inode.
 func TestGetCurrentMntNsInode(t *testing.T) {
+	t.Parallel()
+
 	inode, err := nsenter.GetCurrentMntNsInode()
 	if err != nil {
 		t.Fatalf("GetCurrentMntNsInode: %v", err)
@@ -140,6 +144,8 @@ func TestGetCurrentMntNsInode(t *testing.T) {
 // "Go started," which would still pass if the constructor were
 // dead.
 func TestConstructorWithoutNamespace(t *testing.T) {
+	t.Parallel()
+
 	result := runHelper(t, []string{
 		nsenter.LogLevelEnvVar + "=debug",
 	})

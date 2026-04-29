@@ -11,6 +11,8 @@ import (
 )
 
 func TestDescribe(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		action   Action
@@ -198,6 +200,7 @@ func TestDescribe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := Describe(tt.action)
 			if !strings.Contains(got, tt.contains) {
 				t.Errorf("Describe(%T) = %q, want substring %q", tt.action, got, tt.contains)
@@ -211,6 +214,8 @@ func TestDescribe(t *testing.T) {
 // than falling through to the default %T format. If a new action type
 // is added without a corresponding Describe case, this test fails.
 func TestDescribe_Exhaustive(t *testing.T) {
+	t.Parallel()
+
 	// Every concrete type implementing Action must appear here.
 	// The test does not care about the description content (TestDescribe
 	// covers that); it only checks that Describe does not fall through

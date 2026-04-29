@@ -12,6 +12,8 @@ import (
 )
 
 func TestIsMounted(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		mountinfo  string
@@ -113,6 +115,7 @@ func TestIsMounted(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Create a temporary file with the test mountinfo content
 			tmpDir := t.TempDir()
 			mountInfoPath := filepath.Join(tmpDir, "mountinfo")
@@ -132,6 +135,8 @@ func TestIsMounted(t *testing.T) {
 }
 
 func TestIsMounted_FileNotFound(t *testing.T) {
+	t.Parallel()
+
 	_, err := runtime.IsMounted("/nonexistent/path/mountinfo", "/sys/fs/bpf")
 	if err == nil {
 		t.Error("IsMounted() expected error for nonexistent file, got nil")
@@ -139,6 +144,8 @@ func TestIsMounted_FileNotFound(t *testing.T) {
 }
 
 func TestIsMounted_LongLine(t *testing.T) {
+	t.Parallel()
+
 	// Generate a mountinfo line > 64 KiB (default scanner limit).
 	// This tests the scanner buffer increase (prevents ErrTooLong).
 	// Target ~70 KiB to ensure it fails without the buffer bump.
@@ -167,6 +174,8 @@ func TestIsMounted_LongLine(t *testing.T) {
 }
 
 func TestIsMounted_EscapedMountPoint(t *testing.T) {
+	t.Parallel()
+
 	mountinfo := "30 22 0:27 / /sys/fs/bpf\\040extra rw,nosuid shared:9 - bpf bpf rw,mode=700\n"
 
 	tmpDir := t.TempDir()
@@ -185,6 +194,8 @@ func TestIsMounted_EscapedMountPoint(t *testing.T) {
 }
 
 func TestEnsureMounted_EbusyRecheck(t *testing.T) {
+	t.Parallel()
+
 	mountPoint := "/sys/fs/bpf"
 	mountinfo := "15 20 0:3 / /proc rw,relatime - proc /proc rw\n"
 

@@ -76,6 +76,8 @@ func staticUndo(actions ...action.Action) NodeOpt {
 // ---------- Forward execution ----------
 
 func TestDoSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -90,6 +92,8 @@ func TestDoSuccess(t *testing.T) {
 }
 
 func TestDoFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -104,6 +108,8 @@ func TestDoFailure(t *testing.T) {
 }
 
 func TestProduceSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[int]("produce-success-value")
 	plan := Build(
@@ -122,6 +128,8 @@ func TestProduceSuccess(t *testing.T) {
 }
 
 func TestProduceFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[int]("produce-failure-value")
 	plan := Build(
@@ -137,6 +145,8 @@ func TestProduceFailure(t *testing.T) {
 }
 
 func TestTrySuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Try("best-effort", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -151,6 +161,8 @@ func TestTrySuccess(t *testing.T) {
 }
 
 func TestTryFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Try("best-effort", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -165,6 +177,8 @@ func TestTryFailure(t *testing.T) {
 }
 
 func TestTryAfterPriorFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	tryCalled := false
 	plan := Build(
@@ -189,6 +203,8 @@ func TestTryAfterPriorFailure(t *testing.T) {
 // ---------- Auto-skip ----------
 
 func TestAutoSkipAfterDoFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -207,6 +223,8 @@ func TestAutoSkipAfterDoFailure(t *testing.T) {
 }
 
 func TestAutoSkipDoFailsSkipsDoAndTry(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("check", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -229,6 +247,8 @@ func TestAutoSkipDoFailsSkipsDoAndTry(t *testing.T) {
 }
 
 func TestAutoSkipProduceFailsSkipsDo(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[int]("autoskip-val")
 	plan := Build(
@@ -250,6 +270,8 @@ func TestAutoSkipProduceFailsSkipsDo(t *testing.T) {
 // ---------- Bindings ----------
 
 func TestProduceStoresBindingForLaterDo(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[string]("binding-msg")
 	var captured string
@@ -273,6 +295,8 @@ func TestProduceStoresBindingForLaterDo(t *testing.T) {
 }
 
 func TestGetMissingKeyPanics(t *testing.T) {
+	t.Parallel()
+
 	b := newBindings()
 	key := NewKey[int]("get-missing")
 	defer func() {
@@ -292,6 +316,8 @@ func TestGetMissingKeyPanics(t *testing.T) {
 }
 
 func TestMultipleProduceBindings(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	keyA := NewKey[int]("multi-a")
 	keyB := NewKey[string]("multi-b")
@@ -319,6 +345,8 @@ func TestMultipleProduceBindings(t *testing.T) {
 // ---------- Undo registration ----------
 
 func TestDoWithUndoOnSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	// Set up: Do succeeds, then a subsequent Do fails to trigger rollback.
 	plan := Build(
@@ -341,6 +369,8 @@ func TestDoWithUndoOnSuccess(t *testing.T) {
 }
 
 func TestDoWithUndoOnFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -359,6 +389,8 @@ func TestDoWithUndoOnFailure(t *testing.T) {
 }
 
 func TestProduceWithUndoFromOnSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[string]("undo-from-success-val")
 	plan := Build(
@@ -383,6 +415,8 @@ func TestProduceWithUndoFromOnSuccess(t *testing.T) {
 }
 
 func TestProduceWithUndoFromOnFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[string]("undo-from-failure-val")
 	plan := Build(
@@ -404,6 +438,8 @@ func TestProduceWithUndoFromOnFailure(t *testing.T) {
 }
 
 func TestDoWithoutUndoNeverAccumulatesUndo(t *testing.T) {
+	t.Parallel()
+
 	// Do nodes without undo options should not accumulate any
 	// rollback actions.
 	exec := newFakeExecutor()
@@ -426,6 +462,8 @@ func TestDoWithoutUndoNeverAccumulatesUndo(t *testing.T) {
 }
 
 func TestTryNeverAccumulatesUndo(t *testing.T) {
+	t.Parallel()
+
 	// Try nodes have no undo. Even if they succeed, no undo entries
 	// are accumulated.
 	exec := newFakeExecutor()
@@ -450,6 +488,8 @@ func TestTryNeverAccumulatesUndo(t *testing.T) {
 // ---------- Rollback ----------
 
 func TestRollbackSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -470,6 +510,8 @@ func TestRollbackSuccess(t *testing.T) {
 }
 
 func TestRollbackFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	exec.failOn("undo-a", errors.New("undo failed"))
 	plan := Build(
@@ -492,6 +534,8 @@ func TestRollbackFailure(t *testing.T) {
 }
 
 func TestRollbackReversedOrder(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("first", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -519,6 +563,8 @@ func TestRollbackReversedOrder(t *testing.T) {
 }
 
 func TestRollbackAllAttempted(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	exec.failOn("undo-b", errors.New("undo-b failed"))
 	plan := Build(
@@ -548,6 +594,8 @@ func TestRollbackAllAttempted(t *testing.T) {
 }
 
 func TestNoRollbackEntriesNoUndoExecuted(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -567,6 +615,8 @@ func TestNoRollbackEntriesNoUndoExecuted(t *testing.T) {
 // ---------- Run / Run0 ----------
 
 func TestRunReturnsBindingsOnSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	key := NewKey[int]("run-bindings-val")
 	plan := Build(
@@ -588,6 +638,8 @@ func TestRunReturnsBindingsOnSuccess(t *testing.T) {
 }
 
 func TestRunReturnsErrorOnFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -602,6 +654,8 @@ func TestRunReturnsErrorOnFailure(t *testing.T) {
 }
 
 func TestRun0ReturnsNilOnSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("action", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -616,6 +670,8 @@ func TestRun0ReturnsNilOnSuccess(t *testing.T) {
 }
 
 func TestRun0ReturnsErrorOnFailure(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Do("fail", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {
@@ -632,6 +688,8 @@ func TestRun0ReturnsErrorOnFailure(t *testing.T) {
 // ---------- Edge cases ----------
 
 func TestEmptyPlanSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build()
 
@@ -645,6 +703,8 @@ func TestEmptyPlanSuccess(t *testing.T) {
 }
 
 func TestBuildDuplicateProduceKeyPanics(t *testing.T) {
+	t.Parallel()
+
 	key := NewKey[int]("build-dup")
 	defer func() {
 		r := recover()
@@ -670,6 +730,8 @@ func TestBuildDuplicateProduceKeyPanics(t *testing.T) {
 }
 
 func TestAllTryNodesFailIsSuccess(t *testing.T) {
+	t.Parallel()
+
 	exec := newFakeExecutor()
 	plan := Build(
 		Try("try1", "t1", func(_ context.Context, _ action.ExecutorWithResult, _ *Bindings) error {

@@ -36,6 +36,8 @@ func structuredLink(name string, linkID kernel.LinkID) shell.Arg {
 func word(s string) shell.Arg { return shell.WordArg{Text: s} }
 
 func TestParseShowProgram(t *testing.T) {
+	t.Parallel()
+
 	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
@@ -203,6 +205,7 @@ func TestParseShowProgram(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseShowProgram(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -218,6 +221,8 @@ func TestParseShowProgram(t *testing.T) {
 }
 
 func TestParseLoadFile(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		args        []shell.Arg
@@ -337,6 +342,7 @@ func TestParseLoadFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLoadFile(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -356,6 +362,8 @@ func TestParseLoadFile(t *testing.T) {
 }
 
 func TestParseLoadImage(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		args           []shell.Arg
@@ -446,6 +454,7 @@ func TestParseLoadImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLoadImage(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -467,6 +476,8 @@ func TestParseLoadImage(t *testing.T) {
 }
 
 func TestParseLinkAttach_Routing(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		args    []shell.Arg
@@ -485,6 +496,7 @@ func TestParseLinkAttach_Routing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseLinkAttach(tt.args)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
@@ -493,6 +505,8 @@ func TestParseLinkAttach_Routing(t *testing.T) {
 }
 
 func TestParseLinkAttachTracepoint(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		args       []shell.Arg
@@ -560,6 +574,7 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkAttach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -574,6 +589,8 @@ func TestParseLinkAttachTracepoint(t *testing.T) {
 }
 
 func TestParseLinkAttachKprobe(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		args       []shell.Arg
@@ -616,6 +633,7 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkAttach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -630,6 +648,8 @@ func TestParseLinkAttachKprobe(t *testing.T) {
 }
 
 func TestParseLinkAttachUprobe(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		args       []shell.Arg
@@ -674,6 +694,7 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkAttach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -688,6 +709,8 @@ func TestParseLinkAttachUprobe(t *testing.T) {
 }
 
 func TestParseLinkAttachFentry(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		args       []shell.Arg
@@ -734,6 +757,7 @@ func TestParseLinkAttachFentry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkAttach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -748,6 +772,8 @@ func TestParseLinkAttachFentry(t *testing.T) {
 }
 
 func TestParseLinkAttachFexit(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		args       []shell.Arg
@@ -772,6 +798,7 @@ func TestParseLinkAttachFexit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkAttach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -786,6 +813,8 @@ func TestParseLinkAttachFexit(t *testing.T) {
 }
 
 func TestParseLinkAttachXDP_Errors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		args    []shell.Arg
@@ -819,6 +848,7 @@ func TestParseLinkAttachXDP_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseLinkAttach(tt.args)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
@@ -827,6 +857,8 @@ func TestParseLinkAttachXDP_Errors(t *testing.T) {
 }
 
 func TestParseLinkAttachTC_Errors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		args    []shell.Arg
@@ -855,6 +887,7 @@ func TestParseLinkAttachTC_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseLinkAttach(tt.args)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
@@ -863,6 +896,8 @@ func TestParseLinkAttachTC_Errors(t *testing.T) {
 }
 
 func TestParseLinkAttachTCX_Errors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		args    []shell.Arg
@@ -891,6 +926,7 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := parseLinkAttach(tt.args)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
@@ -899,6 +935,8 @@ func TestParseLinkAttachTCX_Errors(t *testing.T) {
 }
 
 func TestParseLinkDetach(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		args    []shell.Arg
@@ -946,6 +984,7 @@ func TestParseLinkDetach(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseLinkDetach(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -959,6 +998,8 @@ func TestParseLinkDetach(t *testing.T) {
 }
 
 func TestParseGetProgram(t *testing.T) {
+	t.Parallel()
+
 	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
 	require.NoError(t, err)
 
@@ -1056,6 +1097,7 @@ func TestParseGetProgram(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseGetProgram(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -1070,6 +1112,8 @@ func TestParseGetProgram(t *testing.T) {
 }
 
 func TestParseGetLink(t *testing.T) {
+	t.Parallel()
+
 	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
 	require.NoError(t, err)
 
@@ -1162,6 +1206,7 @@ func TestParseGetLink(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmd, err := parseGetLink(tt.args)
 			if tt.wantErr != "" {
 				require.Error(t, err)

@@ -10,6 +10,8 @@ import (
 )
 
 func TestColumnSpec_ExtractValue(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{
 			ProgramID: 42,
@@ -86,6 +88,7 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			info, ok := index[tt.columnName]
 			if !ok {
 				t.Fatalf("column %q not found in registry", tt.columnName)
@@ -100,6 +103,8 @@ func TestColumnSpec_ExtractValue(t *testing.T) {
 }
 
 func TestColumnSet_FormatTable(t *testing.T) {
+	t.Parallel()
+
 	programs := []bpfman.Program{
 		{
 			Record: bpfman.ProgramRecord{
@@ -141,6 +146,8 @@ func TestColumnSet_FormatTable(t *testing.T) {
 }
 
 func TestDefaultColumns(t *testing.T) {
+	t.Parallel()
+
 	cols := DefaultColumns()
 	if len(cols.Columns) != 4 {
 		t.Errorf("DefaultColumns() has %d columns, want 4", len(cols.Columns))
@@ -155,6 +162,8 @@ func TestDefaultColumns(t *testing.T) {
 }
 
 func TestWideColumns(t *testing.T) {
+	t.Parallel()
+
 	cols := WideColumns()
 	if len(cols.Columns) != 8 {
 		t.Errorf("WideColumns() has %d columns, want 8", len(cols.Columns))
@@ -169,6 +178,8 @@ func TestWideColumns(t *testing.T) {
 }
 
 func TestExtractLinkIDs_NoLinks(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Status: bpfman.ProgramStatus{
 			Links: nil,
@@ -185,6 +196,8 @@ func TestExtractLinkIDs_NoLinks(t *testing.T) {
 }
 
 func TestExtractAttach_NoLinks(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Status: bpfman.ProgramStatus{
 			Links: nil,
@@ -201,6 +214,8 @@ func TestExtractAttach_NoLinks(t *testing.T) {
 }
 
 func TestExtractLinkIDs_MultipleLinks(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Status: bpfman.ProgramStatus{
 			Links: []bpfman.Link{
@@ -221,6 +236,8 @@ func TestExtractLinkIDs_MultipleLinks(t *testing.T) {
 }
 
 func TestExtractAttach_TracepointDetails(t *testing.T) {
+	t.Parallel()
+
 	prog := bpfman.Program{
 		Status: bpfman.ProgramStatus{
 			Links: []bpfman.Link{
@@ -248,6 +265,8 @@ func TestExtractAttach_TracepointDetails(t *testing.T) {
 }
 
 func TestIntegration_FormatProgramsCompositeWide(t *testing.T) {
+	t.Parallel()
+
 	result := bpfman.ProgramListResult{
 		ObservedAt: time.Now(),
 		Programs: []bpfman.Program{

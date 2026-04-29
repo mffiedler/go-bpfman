@@ -18,6 +18,8 @@ func testObjectPath(t *testing.T) string {
 }
 
 func TestDiscoverPrograms(t *testing.T) {
+	t.Parallel()
+
 	programs, err := ebpf.DiscoverPrograms(testObjectPath(t))
 	if err != nil {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
@@ -53,6 +55,8 @@ func TestDiscoverPrograms(t *testing.T) {
 }
 
 func TestDiscoverPrograms_NonExistentFile(t *testing.T) {
+	t.Parallel()
+
 	_, err := ebpf.DiscoverPrograms("/nonexistent/path/to/file.o")
 	if err == nil {
 		t.Fatal("expected error for non-existent file")
@@ -60,6 +64,8 @@ func TestDiscoverPrograms_NonExistentFile(t *testing.T) {
 }
 
 func TestValidatePrograms(t *testing.T) {
+	t.Parallel()
+
 	objectPath := testObjectPath(t)
 
 	// First discover what programs are available
@@ -72,6 +78,7 @@ func TestValidatePrograms(t *testing.T) {
 	}
 
 	t.Run("valid programs", func(t *testing.T) {
+		t.Parallel()
 		// Use actual program names from the object file
 		names := make([]string, len(discovered))
 		for i, d := range discovered {
@@ -84,6 +91,7 @@ func TestValidatePrograms(t *testing.T) {
 	})
 
 	t.Run("missing program", func(t *testing.T) {
+		t.Parallel()
 		err := ebpf.ValidatePrograms(objectPath, []string{"nonexistent_program_xyz"})
 		if err == nil {
 			t.Error("expected error for missing program")
@@ -91,6 +99,7 @@ func TestValidatePrograms(t *testing.T) {
 	})
 
 	t.Run("mix of valid and invalid", func(t *testing.T) {
+		t.Parallel()
 		names := []string{discovered[0].Name, "nonexistent_program_xyz"}
 		err := ebpf.ValidatePrograms(objectPath, names)
 		if err == nil {
@@ -99,6 +108,7 @@ func TestValidatePrograms(t *testing.T) {
 	})
 
 	t.Run("empty list", func(t *testing.T) {
+		t.Parallel()
 		err := ebpf.ValidatePrograms(objectPath, []string{})
 		if err != nil {
 			t.Errorf("expected no error for empty list: %v", err)
@@ -106,6 +116,7 @@ func TestValidatePrograms(t *testing.T) {
 	})
 
 	t.Run("nil list", func(t *testing.T) {
+		t.Parallel()
 		err := ebpf.ValidatePrograms(objectPath, nil)
 		if err != nil {
 			t.Errorf("expected no error for nil list: %v", err)
@@ -114,6 +125,8 @@ func TestValidatePrograms(t *testing.T) {
 }
 
 func TestExtractAttachFunc(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		section  string
 		expected string
@@ -129,6 +142,7 @@ func TestExtractAttachFunc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.section, func(t *testing.T) {
+			t.Parallel()
 			got := ebpf.ExtractAttachFunc(tc.section)
 			if got != tc.expected {
 				t.Errorf("ExtractAttachFunc(%q) = %q, want %q", tc.section, got, tc.expected)
@@ -138,6 +152,8 @@ func TestExtractAttachFunc(t *testing.T) {
 }
 
 func TestInferProgramType(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		section  string
 		expected bpfman.ProgramType
@@ -161,6 +177,7 @@ func TestInferProgramType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.section, func(t *testing.T) {
+			t.Parallel()
 			got := ebpf.InferProgramType(tc.section)
 			if got != tc.expected {
 				t.Errorf("InferProgramType(%q) = %v, want %v", tc.section, got, tc.expected)

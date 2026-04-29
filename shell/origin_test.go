@@ -9,6 +9,8 @@ import (
 )
 
 func TestOriginKind_String(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		kind OriginKind
 		want string
@@ -25,12 +27,15 @@ func TestOriginKind_String(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, tc.kind.String())
 		})
 	}
 }
 
 func TestValue_KindDefaultsToUnknown(t *testing.T) {
+	t.Parallel()
+
 	v, err := ValueFromJSON([]byte(`{"a":1}`))
 	require.NoError(t, err)
 	assert.Equal(t, OriginUnknown, v.Kind())
@@ -45,11 +50,15 @@ func TestValue_KindDefaultsToUnknown(t *testing.T) {
 }
 
 func TestValue_ConstructorKinds(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, OriginScalar, StringValue("x").Kind())
 	assert.Equal(t, OriginBool, BoolValue(true).Kind())
 }
 
 func TestValue_WithKind(t *testing.T) {
+	t.Parallel()
+
 	v := StringValue("x").WithKind(OriginProgram)
 	assert.Equal(t, OriginProgram, v.Kind())
 
@@ -61,12 +70,16 @@ func TestValue_WithKind(t *testing.T) {
 }
 
 func TestExpectOrigin_Matches(t *testing.T) {
+	t.Parallel()
+
 	v := StringValue("x").WithKind(OriginProgram)
 	assert.NoError(t, ExpectOrigin(v, "$prog", OriginProgram))
 	assert.NoError(t, ExpectOrigin(v, "$prog", OriginProgram, OriginLink))
 }
 
 func TestExpectOrigin_UnknownIsWildcard(t *testing.T) {
+	t.Parallel()
+
 	v, err := ValueFromJSON([]byte(`{"record":{"id":1}}`))
 	require.NoError(t, err)
 	assert.NoError(t, ExpectOrigin(v, "$x", OriginProgram))
@@ -74,6 +87,8 @@ func TestExpectOrigin_UnknownIsWildcard(t *testing.T) {
 }
 
 func TestExpectOrigin_Mismatch(t *testing.T) {
+	t.Parallel()
+
 	v := StringValue("x").WithKind(OriginProgram)
 	err := ExpectOrigin(v, "$prog", OriginLink)
 	require.Error(t, err)
@@ -86,6 +101,8 @@ func TestExpectOrigin_Mismatch(t *testing.T) {
 }
 
 func TestOriginMismatchError_Message(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		err  *OriginMismatchError
@@ -109,6 +126,7 @@ func TestOriginMismatchError_Message(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}

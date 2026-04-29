@@ -21,6 +21,8 @@ func runCheckInput(t *testing.T, src string) (bool, string) {
 }
 
 func TestReplCheck_CleanInput(t *testing.T) {
+	t.Parallel()
+
 	clean := []string{
 		"help",
 		"let x = 1\nshow program",
@@ -31,6 +33,7 @@ func TestReplCheck_CleanInput(t *testing.T) {
 	}
 	for _, src := range clean {
 		t.Run(src, func(t *testing.T) {
+			t.Parallel()
 			hadErrors, errOut := runCheckInput(t, src)
 			assert.False(t, hadErrors, "unexpected errors: %s", errOut)
 			assert.Empty(t, errOut)
@@ -39,6 +42,8 @@ func TestReplCheck_CleanInput(t *testing.T) {
 }
 
 func TestReplCheck_BrokenSnippets(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name        string
 		input       string
@@ -77,6 +82,7 @@ func TestReplCheck_BrokenSnippets(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			hadErrors, errOut := runCheckInput(t, tc.input)
 			assert.True(t, hadErrors, "expected errors; got clean output")
 			assert.Contains(t, errOut, tc.wantContain)
@@ -86,12 +92,16 @@ func TestReplCheck_BrokenSnippets(t *testing.T) {
 }
 
 func TestReplCheck_UnterminatedBlockAtEOF(t *testing.T) {
+	t.Parallel()
+
 	hadErrors, errOut := runCheckInput(t, "if $x > 0 {\n  let y = 1")
 	assert.True(t, hadErrors)
 	assert.Contains(t, errOut, "unterminated block")
 }
 
 func TestReplCheck_ReportsMultipleErrors(t *testing.T) {
+	t.Parallel()
+
 	// Each balanced chunk is checked independently, so both errors
 	// on separate statements should surface.
 	src := "let x = 1 = 2\nprog = load\n"
@@ -104,6 +114,8 @@ func TestReplCheck_ReportsMultipleErrors(t *testing.T) {
 }
 
 func TestReplCheck_LinePrefixTracksChunkStart(t *testing.T) {
+	t.Parallel()
+
 	src := "help\n\nlet x = 1 = 2\n"
 	hadErrors, errOut := runCheckInput(t, src)
 	assert.True(t, hadErrors)
@@ -116,6 +128,8 @@ func TestReplCheck_LinePrefixTracksChunkStart(t *testing.T) {
 // The gallery is the reference source for the REPL's surface syntax;
 // if this regresses the refactor has lost coverage somewhere.
 func TestReplCheck_SyntaxGallery(t *testing.T) {
+	t.Parallel()
+
 	path, err := filepath.Abs("../../emacs/syntax-gallery.bpfman")
 	require.NoError(t, err)
 	f, err := openScriptReader(path)

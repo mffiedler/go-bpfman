@@ -12,6 +12,8 @@ import (
 )
 
 func TestListOptions_NoOptions(t *testing.T) {
+	t.Parallel()
+
 	// Zero options should match everything
 	opts := bpfman.ApplyListOptions()
 
@@ -24,6 +26,8 @@ func TestListOptions_NoOptions(t *testing.T) {
 }
 
 func TestListOptions_WithAttached(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyListOptions(bpfman.WithAttached())
 
 	progWithLinks := &bpfman.Program{
@@ -52,6 +56,8 @@ func TestListOptions_WithAttached(t *testing.T) {
 }
 
 func TestListOptions_WithUnattached(t *testing.T) {
+	t.Parallel()
+
 	opts := bpfman.ApplyListOptions(bpfman.WithUnattached())
 
 	progWithLinks := &bpfman.Program{
@@ -72,6 +78,8 @@ func TestListOptions_WithUnattached(t *testing.T) {
 }
 
 func TestListOptions_WithTypes(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		filterTypes []bpfman.ProgramType
@@ -112,6 +120,7 @@ func TestListOptions_WithTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			opts := bpfman.ApplyListOptions(bpfman.WithTypes(tt.filterTypes...))
 			prog := &bpfman.Program{
 				Record: bpfman.ProgramRecord{
@@ -124,6 +133,8 @@ func TestListOptions_WithTypes(t *testing.T) {
 }
 
 func TestListOptions_WithTypes_Empty(t *testing.T) {
+	t.Parallel()
+
 	// Empty types should match all
 	opts := bpfman.ApplyListOptions(bpfman.WithTypes())
 
@@ -136,6 +147,8 @@ func TestListOptions_WithTypes_Empty(t *testing.T) {
 }
 
 func TestListOptions_MatchingLabels(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		filterLabels map[string]string
@@ -182,6 +195,7 @@ func TestListOptions_MatchingLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			opts := bpfman.ApplyListOptions(bpfman.MatchingLabels(tt.filterLabels))
 			prog := &bpfman.Program{
 				Record: bpfman.ProgramRecord{
@@ -194,6 +208,8 @@ func TestListOptions_MatchingLabels(t *testing.T) {
 }
 
 func TestListOptions_MatchingSelector(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		selector   string
@@ -252,6 +268,7 @@ func TestListOptions_MatchingSelector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			sel, err := labels.Parse(tt.selector)
 			require.NoError(t, err)
 
@@ -267,6 +284,8 @@ func TestListOptions_MatchingSelector(t *testing.T) {
 }
 
 func TestListOptions_Combined(t *testing.T) {
+	t.Parallel()
+
 	// Program that matches all criteria
 	matchingProg := &bpfman.Program{
 		Record: bpfman.ProgramRecord{
@@ -287,10 +306,12 @@ func TestListOptions_Combined(t *testing.T) {
 	)
 
 	t.Run("all criteria match", func(t *testing.T) {
+		t.Parallel()
 		assert.True(t, opts.Matches(matchingProg))
 	})
 
 	t.Run("wrong type fails", func(t *testing.T) {
+		t.Parallel()
 		prog := &bpfman.Program{
 			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeKprobe),
@@ -306,6 +327,7 @@ func TestListOptions_Combined(t *testing.T) {
 	})
 
 	t.Run("wrong labels fails", func(t *testing.T) {
+		t.Parallel()
 		prog := &bpfman.Program{
 			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
@@ -321,6 +343,7 @@ func TestListOptions_Combined(t *testing.T) {
 	})
 
 	t.Run("not attached fails", func(t *testing.T) {
+		t.Parallel()
 		prog := &bpfman.Program{
 			Record: bpfman.ProgramRecord{
 				Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP),
@@ -335,6 +358,8 @@ func TestListOptions_Combined(t *testing.T) {
 }
 
 func TestListOptions_MultipleWithTypes(t *testing.T) {
+	t.Parallel()
+
 	// Calling WithTypes multiple times should accumulate
 	opts := bpfman.ApplyListOptions(
 		bpfman.WithTypes(bpfman.ProgramTypeXDP),
@@ -365,6 +390,8 @@ func TestListOptions_MultipleWithTypes(t *testing.T) {
 // Edge case tests for list options.
 
 func TestListOptions_MatchingLabels_EmptyValue(t *testing.T) {
+	t.Parallel()
+
 	// Empty label values are valid in Kubernetes
 	opts := bpfman.ApplyListOptions(
 		bpfman.MatchingLabels(map[string]string{"app": ""}),
@@ -386,6 +413,8 @@ func TestListOptions_MatchingLabels_EmptyValue(t *testing.T) {
 }
 
 func TestListOptions_MatchingSelector_OverridesMatchingLabels(t *testing.T) {
+	t.Parallel()
+
 	// When both MatchingLabels and MatchingSelector are used,
 	// the last one wins (they both set the same selector field)
 	sel, err := labels.Parse("env=prod")
@@ -412,6 +441,8 @@ func TestListOptions_MatchingSelector_OverridesMatchingLabels(t *testing.T) {
 }
 
 func TestListOptions_MatchingLabels_NilMap(t *testing.T) {
+	t.Parallel()
+
 	// Nil map should match everything (no label constraints)
 	opts := bpfman.ApplyListOptions(
 		bpfman.MatchingLabels(nil),
@@ -427,6 +458,8 @@ func TestListOptions_MatchingLabels_NilMap(t *testing.T) {
 }
 
 func TestListOptions_MatchingSelector_Nil(t *testing.T) {
+	t.Parallel()
+
 	// Nil selector should match everything
 	opts := bpfman.ApplyListOptions(
 		bpfman.MatchingSelector(nil),
@@ -442,6 +475,8 @@ func TestListOptions_MatchingSelector_Nil(t *testing.T) {
 }
 
 func TestListOptions_MatchingSelector_Everything(t *testing.T) {
+	t.Parallel()
+
 	// labels.Everything() should match all programs
 	opts := bpfman.ApplyListOptions(
 		bpfman.MatchingSelector(labels.Everything()),
@@ -463,6 +498,8 @@ func TestListOptions_MatchingSelector_Everything(t *testing.T) {
 }
 
 func TestListOptions_MatchingSelector_Nothing(t *testing.T) {
+	t.Parallel()
+
 	// labels.Nothing() should match no programs
 	opts := bpfman.ApplyListOptions(
 		bpfman.MatchingSelector(labels.Nothing()),
@@ -478,6 +515,8 @@ func TestListOptions_MatchingSelector_Nothing(t *testing.T) {
 }
 
 func TestListOptions_WithAttachedAndUnattached_LastWins(t *testing.T) {
+	t.Parallel()
+
 	// Multiple attachment options - last one wins
 	opts := bpfman.ApplyListOptions(
 		bpfman.WithAttached(),

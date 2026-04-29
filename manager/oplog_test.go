@@ -11,6 +11,8 @@ import (
 )
 
 func TestWithOpIDHandler_WithoutOpIDInContext(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	baseLogger := slog.New(slog.NewTextHandler(&buf, nil))
 	logger := manager.WithOpIDHandler(baseLogger)
@@ -23,6 +25,8 @@ func TestWithOpIDHandler_WithoutOpIDInContext(t *testing.T) {
 }
 
 func TestWithOpIDHandler_WithOpIDInContext(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	baseLogger := slog.New(slog.NewTextHandler(&buf, nil))
 	logger := manager.WithOpIDHandler(baseLogger)
@@ -36,6 +40,8 @@ func TestWithOpIDHandler_WithOpIDInContext(t *testing.T) {
 }
 
 func TestWithOpIDHandler_WithAttrs(t *testing.T) {
+	t.Parallel()
+
 	// Verify op_id works after calling logger.With() which uses WithAttrs
 	var buf bytes.Buffer
 	baseLogger := slog.New(slog.NewTextHandler(&buf, nil))
