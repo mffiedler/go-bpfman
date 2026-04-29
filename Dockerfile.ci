@@ -26,7 +26,7 @@
 #        --target e2e-export \
 #        --output type=local,dest=./out \
 #        .
-#      sudo ./out/e2e.test -test.v -test.failfast
+#      sudo ./out/bin/e2e.test -test.v -test.failfast
 #
 #    The `make ci-test-e2e` target wraps these two commands.
 #
@@ -94,10 +94,10 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
-    make e2e.test STATIC=1; \
+    make bin/e2e.test STATIC=1; \
     make bpfman-compile STATIC=1; \
     mkdir -p /out/bin /out/e2e/testdata/bpf; \
-    cp e2e.test /out/e2e.test; \
+    cp bin/e2e.test /out/bin/; \
     cp bin/bpfman /out/bin/; \
     cp e2e/testdata/bpf/*.bpf.o /out/e2e/testdata/bpf/
 
@@ -106,11 +106,13 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # under /out from the e2e-builder stage. After
 #   docker buildx build --target=e2e-export --output type=local,dest=./out
 # the bundle contains:
-#   ./out/e2e.test                           (self-contained Go e2e test binary)
+#   ./out/bin/e2e.test                       (self-contained Go e2e test binary)
 #   ./out/bin/bpfman                         (static bpfman binary)
 #   ./out/e2e/testdata/bpf/*.bpf.o           (BPF programs for REPL scripts)
-# The Go e2e binary is invoked directly (no cwd contortions); the
-# .bpf.o tree is only consulted by the REPL pipeline.
+# The bundle layout matches the in-tree layout, so REPL scripts
+# under e2e/scripts/ that reference ../bin/e2e.test resolve the
+# same way regardless of whether they're run against a local
+# build or an extracted CI bundle.
 # ---------------------------------------------------------------------------
 FROM scratch AS e2e-export
 

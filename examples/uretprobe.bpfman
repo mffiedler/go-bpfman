@@ -7,7 +7,7 @@
 # return. No assertions, no verification: purely to show the shape
 # of the commands.
 #
-# Requires root and a built e2e.test binary (`make e2e.test`).
+# Requires root and a built e2e.test binary (`make bin/e2e.test`).
 # Run from the repo root with:
 #   sudo bpfman repl -f examples/uretprobe.bpfman
 
@@ -16,7 +16,7 @@ let prog = [bpfman program load file \
     --programs uretprobe:uprobe_counter]
 
 let link = [bpfman link attach uprobe \
-    --target e2e.test \
+    --target bin/e2e.test \
     --fn-name e2e_do_work \
     $prog]
 

@@ -14,7 +14,7 @@
 #
 # Environment:
 #   NSENTER_TEST_BIN  output path for the compiled test binary
-#                      (default: nsenter.test)
+#                      (default: bin/nsenter.test)
 #   NSENTER_TAGS      comma-separated build tags (optional)
 
 set -euo pipefail
@@ -25,7 +25,7 @@ if [ $# -ne 1 ]; then
 fi
 
 goarch=$1
-nsenter_test_bin=${NSENTER_TEST_BIN:-nsenter.test}
+nsenter_test_bin=${NSENTER_TEST_BIN:-bin/nsenter.test}
 nsenter_tags=${NSENTER_TAGS:-}
 
 case $goarch in
@@ -64,9 +64,10 @@ if [ -n "$nsenter_tags" ]; then
     tag_args=(-tags="$nsenter_tags")
 fi
 
+mkdir -p "$(dirname "$nsenter_test_bin")"
 CGO_ENABLED=1 GOOS=linux GOARCH="$goarch" CC="$cc" \
     go test -c "${tag_args[@]}" -o "$nsenter_test_bin" ./ns/nsenter/
 file "$nsenter_test_bin"
 
 sudo QEMU_LD_PREFIX="$sysroot" \
-    "${qemu_cmd[@]}" "./$nsenter_test_bin" -test.v
+    "${qemu_cmd[@]}" "$nsenter_test_bin" -test.v

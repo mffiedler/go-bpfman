@@ -191,7 +191,7 @@ NSENTER_TAGS := $(call comma-join,nsenter $(EXTRA_TAGS))
 # nsenter cross-architecture tests.
 # ---------------------------------------------------------------------------
 NSENTER_ARCHES ?= amd64 arm64 ppc64le s390x
-NSENTER_TEST_BIN ?= nsenter.test
+NSENTER_TEST_BIN ?= $(BIN_DIR)/nsenter.test
 
 # ---------------------------------------------------------------------------
 # BPF build path.
@@ -555,11 +555,11 @@ test-stress: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 #   make test-nsenter                 # native amd64 only
 #   make test-nsenter-arm64           # single foreign architecture
 #   make test-nsenter-cross           # all architectures
-test-nsenter test-nsenter-amd64:
+test-nsenter test-nsenter-amd64: | $(BIN_DIR)
 	@echo "=== nsenter: amd64 ==="
 	$(strip CGO_ENABLED=1 go test -c $(EXTRA_GOFLAGS) $(if $(NSENTER_TAGS),-tags=$(NSENTER_TAGS)) -o $(NSENTER_TEST_BIN) ./ns/nsenter/)
 	file $(NSENTER_TEST_BIN)
-	sudo ./$(NSENTER_TEST_BIN) -test.v
+	sudo $(NSENTER_TEST_BIN) -test.v
 
 test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 	NSENTER_TEST_BIN=$(NSENTER_TEST_BIN) NSENTER_TAGS=$(NSENTER_TAGS) \
@@ -567,11 +567,15 @@ test-nsenter-arm64 test-nsenter-ppc64le test-nsenter-s390x:
 
 test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 
-e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
-	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o e2e.test ./e2e)
+# Phony so the recipe always runs; go's own build cache decides
+# whether anything actually rebuilds. Mirrors the bpfman-compile
+# pattern -- Make's mtime tracking would otherwise lie when the
+# inputs are .go files we haven't enumerated as prereqs.
+$(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
+	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
 
-test-e2e: e2e.test
-	sudo ./e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+test-e2e: $(BIN_DIR)/e2e.test
+	sudo $(BIN_DIR)/e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so testdata paths
@@ -584,7 +588,7 @@ test-e2e: e2e.test
 # stage) and invoke `run-e2e-scripts` directly on the runner
 # without re-triggering the build deps. Local invocations of
 # `test-e2e-scripts` still build first.
-build-e2e-scripts: bpfman-compile e2e.test
+build-e2e-scripts: bpfman-compile $(BIN_DIR)/e2e.test
 
 run-e2e-scripts:
 	@echo "Running REPL e2e scripts (requires root)..."
@@ -597,7 +601,7 @@ test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
-test-examples: bpfman-compile e2e.test
+test-examples: bpfman-compile $(BIN_DIR)/e2e.test
 	@echo "Running REPL example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 
@@ -1011,7 +1015,7 @@ ci-test-stress: ci-image
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_OUTDIR)
 	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
-	sudo $(CI_E2E_OUTDIR)/e2e.test -test.v -test.failfast
+	sudo $(CI_E2E_OUTDIR)/bin/e2e.test -test.v -test.failfast
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman
@@ -1052,5 +1056,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-scripts run-e2e-scripts test test-e2e test-e2e-scripts test-examples
+.PHONY: build-e2e-scripts $(BIN_DIR)/e2e.test run-e2e-scripts test test-e2e test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

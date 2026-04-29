@@ -15,7 +15,8 @@
 #   cd e2e
 #   sudo bpfman repl -f scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
 #
-# Requires root and bpftool. e2e.test must be built (`make e2e.test`).
+# Requires root and bpftool. The e2e.test binary must be built
+# first (`make bin/e2e.test`).
 
 # Load the uprobe counter ELF as a uretprobe program.
 let prog = [bpfman program load file --path testdata/bpf/uprobe_counter_nopin.bpf.o --programs uretprobe:uprobe_counter]
@@ -53,15 +54,16 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 
 # Attach to e2e_do_work() in the e2e.test binary. The attach
 # command is the same as for uprobe; retprobe semantics come from
-# the program type. ../e2e.test resolves from cwd=e2e/.
-let link = [bpfman link attach uprobe --target ../e2e.test --fn-name e2e_do_work $prog]
+# the program type. The binary lives at $(BIN_DIR)/e2e.test;
+# from cwd=e2e/ that resolves to ../bin/e2e.test.
+let link = [bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_do_work $prog]
 require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
 assert $link.record.kind eq uretprobe
 assert $link.record.program_id == $pid
-assert $link.record.details.target eq ../e2e.test
+assert $link.record.details.target eq ../bin/e2e.test
 assert $link.record.details.fn_name eq e2e_do_work
 assert $link.record.details.offset == 0
 assert $link.record.details.retprobe eq true
@@ -100,7 +102,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # sets BPFMAN_E2E_MODE=call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
 foreach _ in [jq "[range(5)]" '0'] {
-    require ok exec env BPFMAN_E2E_MODE=call-malloc ../e2e.test
+    require ok exec env BPFMAN_E2E_MODE=call-malloc ../bin/e2e.test
 }
 
 let dumpAfter = [exec bpftool map dump id $mapID -j]
