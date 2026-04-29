@@ -49,7 +49,18 @@ CSI_SANITY_IMAGE ?= csi-sanity
 # ---------------------------------------------------------------------------
 CI_IMAGE       ?= bpfman-ci
 CI_DOCKERFILE  ?= Dockerfile.ci
-CI_E2E_OUTDIR  ?= ./out
+CI_E2E_BUNDLE  ?= ./ci-e2e-bundle
+
+# Refuse to proceed if CI_E2E_BUNDLE is empty or a path that
+# would `rm -rf` something catastrophic. The ci-test-e2e and
+# clean recipes both $(RM) -r this directory; an unguarded
+# `make clean CI_E2E_BUNDLE=.` would shred the source tree.
+ifeq (,$(strip $(CI_E2E_BUNDLE)))
+$(error CI_E2E_BUNDLE is empty)
+endif
+ifneq (,$(filter . ./ .. ../ /,$(strip $(CI_E2E_BUNDLE))))
+$(error CI_E2E_BUNDLE=$(CI_E2E_BUNDLE) is unsafe (would remove source tree or filesystem root))
+endif
 
 # Caller-supplied buildx flags appended to the buildx-driven
 # ci-* recipes. Empty by default for local invocations; CI sets
@@ -454,7 +465,7 @@ print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
 clean: clean-bpfman clean-bpf clean-coverage
-	$(RM) -r $(BIN_DIR)
+	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
 # wipe local build artifacts AND Go's shared caches under
@@ -1008,14 +1019,14 @@ ci-test-stress: ci-image
 	$(CI_RUN) make clean-bpf test-stress STATIC=1 STRESS_COUNT=$(STRESS_COUNT)
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
-# stage produces a hermetic bundle at $(CI_E2E_OUTDIR); the
+# stage produces a hermetic bundle at $(CI_E2E_BUNDLE); the
 # self-contained e2e.test binary (BPF embedded, uprobe target
 # merged) is then run on the host with sudo so it has the kernel
 # privileges the e2e suite needs.
 ci-test-e2e:
-	$(RM) -r $(CI_E2E_OUTDIR)
-	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
-	sudo $(CI_E2E_OUTDIR)/bin/e2e.test -test.v -test.failfast
+	$(RM) -r $(CI_E2E_BUNDLE)
+	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
+	sudo $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman
@@ -1026,7 +1037,17 @@ ci-test-e2e:
 # hack/test-e2e-scripts.sh shells out to `sudo bpfman` per
 # script invocation, which gets the kernel privileges it needs
 # while leaving the rest of the make recipe unprivileged.
+#
+# Pre-clean the exact set of paths the bundle is about to write
+# (bin/bpfman, bin/e2e.test, and the BPF object tree). buildx
+# --output overwrites individual files but does not prune
+# anything stale, so leftover artefacts from a previous run
+# could otherwise mask "didn't rebuild" bugs. golangci-lint
+# under bin/ is preserved -- it has its own rule and re-fetching
+# over the network is slow.
 ci-test-e2e-scripts:
+	$(RM) bin/bpfman bin/e2e.test
+	$(MAKE) clean-bpf
 	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 

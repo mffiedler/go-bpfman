@@ -8,4 +8,5 @@ e2e/testdata/bpf/*.bpf.o
 e2e/testdata/bpf/*.bpf.d
 platform/ebpf/*.bpf.o
 platform/ebpf/*.bpf.d
+/ci-e2e-bundle/
 .cache/

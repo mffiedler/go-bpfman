@@ -24,9 +24,9 @@
 #      docker buildx build \
 #        --file Dockerfile.ci \
 #        --target e2e-export \
-#        --output type=local,dest=./out \
+#        --output type=local,dest=./ci-e2e-bundle \
 #        .
-#      sudo ./out/bin/e2e.test -test.v -test.failfast
+#      sudo ./ci-e2e-bundle/bin/e2e.test -test.v -test.failfast
 #
 #    The `make ci-test-e2e` target wraps these two commands.
 #
@@ -96,19 +96,19 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     set -eux; \
     make bin/e2e.test STATIC=1; \
     make bpfman-compile STATIC=1; \
-    mkdir -p /out/bin /out/e2e/testdata/bpf; \
-    cp bin/e2e.test /out/bin/; \
-    cp bin/bpfman /out/bin/; \
-    cp e2e/testdata/bpf/*.bpf.o /out/e2e/testdata/bpf/
+    mkdir -p /ci-e2e-bundle/bin /ci-e2e-bundle/e2e/testdata/bpf; \
+    cp bin/e2e.test /ci-e2e-bundle/bin/; \
+    cp bin/bpfman /ci-e2e-bundle/bin/; \
+    cp e2e/testdata/bpf/*.bpf.o /ci-e2e-bundle/e2e/testdata/bpf/
 
 # ---------------------------------------------------------------------------
 # Stage 3: e2e-export. Scratch stage that mirrors the layout
-# under /out from the e2e-builder stage. After
-#   docker buildx build --target=e2e-export --output type=local,dest=./out
+# under /ci-e2e-bundle from the e2e-builder stage. After
+#   docker buildx build --target=e2e-export --output type=local,dest=./ci-e2e-bundle
 # the bundle contains:
-#   ./out/bin/e2e.test                       (self-contained Go e2e test binary)
-#   ./out/bin/bpfman                         (static bpfman binary)
-#   ./out/e2e/testdata/bpf/*.bpf.o           (BPF programs for REPL scripts)
+#   ./ci-e2e-bundle/bin/e2e.test                 (self-contained Go e2e test binary)
+#   ./ci-e2e-bundle/bin/bpfman                   (static bpfman binary)
+#   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for REPL scripts)
 # The bundle layout matches the in-tree layout, so REPL scripts
 # under e2e/scripts/ that reference ../bin/e2e.test resolve the
 # same way regardless of whether they're run against a local
@@ -116,4 +116,4 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # ---------------------------------------------------------------------------
 FROM scratch AS e2e-export
 
-COPY --from=e2e-builder /out /
+COPY --from=e2e-builder /ci-e2e-bundle /
