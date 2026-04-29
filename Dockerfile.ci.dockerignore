@@ -10,6 +10,8 @@ e2e.test
 e2e/testdata/bin/call_malloc
 e2e/testdata/bpf/*.bpf.o
 e2e/testdata/bpf/*.bpf.d
+platform/ebpf/*.bpf.o
+platform/ebpf/*.bpf.d
 nsenter.test
 
 # `nix build` symlinks (`result`, `result-bin`, ...). Following them

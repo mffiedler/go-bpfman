@@ -2,6 +2,8 @@ package ebpf
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -38,7 +40,19 @@ var _ platform.ProgramDiscoverer = (*ProgramDiscoverer)(nil)
 // For fentry/fexit programs, the attach function is extracted from the ELF
 // section name (e.g., "fentry/vfs_read" -> AttachFunc="vfs_read").
 func DiscoverPrograms(objectPath string) ([]platform.DiscoveredProgram, error) {
-	collSpec, err := ebpf.LoadCollectionSpec(objectPath)
+	f, err := os.Open(objectPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return DiscoverProgramsFromReader(f)
+}
+
+// DiscoverProgramsFromReader is the io.ReaderAt-based form of
+// DiscoverPrograms. Useful for callers that have BPF object bytes
+// in memory (e.g. embed.FS) and don't want to stage them to disk.
+func DiscoverProgramsFromReader(rd io.ReaderAt) ([]platform.DiscoveredProgram, error) {
+	collSpec, err := ebpf.LoadCollectionSpecFromReader(rd)
 	if err != nil {
 		return nil, fmt.Errorf("load collection spec: %w", err)
 	}
@@ -120,7 +134,22 @@ func ValidatePrograms(objectPath string, programNames []string) error {
 		return nil
 	}
 
-	collSpec, err := ebpf.LoadCollectionSpec(objectPath)
+	f, err := os.Open(objectPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return ValidateProgramsFromReader(f, programNames)
+}
+
+// ValidateProgramsFromReader is the io.ReaderAt-based form of
+// ValidatePrograms.
+func ValidateProgramsFromReader(rd io.ReaderAt, programNames []string) error {
+	if len(programNames) == 0 {
+		return nil
+	}
+
+	collSpec, err := ebpf.LoadCollectionSpecFromReader(rd)
 	if err != nil {
 		return fmt.Errorf("load collection spec: %w", err)
 	}

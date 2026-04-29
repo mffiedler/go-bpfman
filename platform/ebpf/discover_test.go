@@ -1,26 +1,34 @@
 package ebpf_test
 
 import (
-	"path/filepath"
+	"bytes"
+	_ "embed"
 	"testing"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 )
 
-// testObjectPath returns the path to a BPF object file built by
-// make bpf-build. The tests require the BPF objects to be present;
-// run make bpf-build (or make) first.
-func testObjectPath(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join("..", "..", "e2e", "testdata", "bpf", "xdp_pass.bpf.o")
-	return path
+// xdpPassObject is the compiled xdp_pass BPF object embedded at
+// build time. The Makefile rule
+// `platform/ebpf/xdp_pass.bpf.o: e2e/testdata/bpf/xdp_pass.bpf.c`
+// emits the object next to this test file so go:embed can pick
+// it up without reaching across packages.
+//
+//go:embed xdp_pass.bpf.o
+var xdpPassObject []byte
+
+// xdpPassReader returns a fresh io.ReaderAt over the embedded
+// xdp_pass BPF object. Each call hands back a new bytes.Reader so
+// concurrent (t.Parallel) callers don't share read state.
+func xdpPassReader() *bytes.Reader {
+	return bytes.NewReader(xdpPassObject)
 }
 
 func TestDiscoverPrograms(t *testing.T) {
 	t.Parallel()
 
-	programs, err := ebpf.DiscoverPrograms(testObjectPath(t))
+	programs, err := ebpf.DiscoverProgramsFromReader(xdpPassReader())
 	if err != nil {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
 	}
@@ -66,10 +74,8 @@ func TestDiscoverPrograms_NonExistentFile(t *testing.T) {
 func TestValidatePrograms(t *testing.T) {
 	t.Parallel()
 
-	objectPath := testObjectPath(t)
-
 	// First discover what programs are available
-	discovered, err := ebpf.DiscoverPrograms(objectPath)
+	discovered, err := ebpf.DiscoverProgramsFromReader(xdpPassReader())
 	if err != nil {
 		t.Fatalf("DiscoverPrograms failed: %v", err)
 	}
@@ -84,7 +90,7 @@ func TestValidatePrograms(t *testing.T) {
 		for i, d := range discovered {
 			names[i] = d.Name
 		}
-		err := ebpf.ValidatePrograms(objectPath, names)
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), names)
 		if err != nil {
 			t.Errorf("ValidatePrograms failed for valid programs: %v", err)
 		}
@@ -92,7 +98,7 @@ func TestValidatePrograms(t *testing.T) {
 
 	t.Run("missing program", func(t *testing.T) {
 		t.Parallel()
-		err := ebpf.ValidatePrograms(objectPath, []string{"nonexistent_program_xyz"})
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), []string{"nonexistent_program_xyz"})
 		if err == nil {
 			t.Error("expected error for missing program")
 		}
@@ -101,7 +107,7 @@ func TestValidatePrograms(t *testing.T) {
 	t.Run("mix of valid and invalid", func(t *testing.T) {
 		t.Parallel()
 		names := []string{discovered[0].Name, "nonexistent_program_xyz"}
-		err := ebpf.ValidatePrograms(objectPath, names)
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), names)
 		if err == nil {
 			t.Error("expected error for mixed valid/invalid programs")
 		}
@@ -109,7 +115,7 @@ func TestValidatePrograms(t *testing.T) {
 
 	t.Run("empty list", func(t *testing.T) {
 		t.Parallel()
-		err := ebpf.ValidatePrograms(objectPath, []string{})
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), []string{})
 		if err != nil {
 			t.Errorf("expected no error for empty list: %v", err)
 		}
@@ -117,7 +123,7 @@ func TestValidatePrograms(t *testing.T) {
 
 	t.Run("nil list", func(t *testing.T) {
 		t.Parallel()
-		err := ebpf.ValidatePrograms(objectPath, nil)
+		err := ebpf.ValidateProgramsFromReader(xdpPassReader(), nil)
 		if err != nil {
 			t.Errorf("expected no error for nil list: %v", err)
 		}

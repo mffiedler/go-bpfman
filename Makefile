@@ -259,6 +259,15 @@ E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 
+# platform/ebpf BPF: the package's discover_test.go embeds
+# xdp_pass.bpf.o via go:embed, so the compile rule emits the
+# object straight into platform/ebpf/ alongside the test source.
+# Source still lives under e2e/testdata/bpf/ -- the BPF program
+# is shared between the unit tests and the e2e suite, and
+# duplicating the .bpf.c would create a divergence risk.
+PLATFORM_EBPF_BPF_EMBEDS := platform/ebpf/xdp_pass.bpf.o
+PLATFORM_EBPF_BPF_DEPS   := $(PLATFORM_EBPF_BPF_EMBEDS:.bpf.o=.bpf.d)
+
 # ---------------------------------------------------------------------------
 # Multi-arch buildx knobs.
 #
@@ -469,7 +478,7 @@ $(BIN_DIR):
 # iterate on one layer at a time.
 lint: lint-go lint-make lint-hack lint-dockerfile
 
-lint-go: $(DISPATCHER_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
+lint-go: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint run
 
 $(BIN_DIR)/golangci-lint: | $(BIN_DIR)
@@ -504,10 +513,12 @@ lint-dockerfile:
 # ---------------------------------------------------------------------------
 # Tests.
 # ---------------------------------------------------------------------------
-# platform/ebpf unit tests load e2e/testdata/bpf/xdp_pass.bpf.o on
-# every run (not gated to root-only e2e), so the e2e BPF objects are
-# a real prerequisite for the unit-test target as well.
-test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+# platform/ebpf unit tests embed xdp_pass.bpf.o via go:embed, so
+# the embed object must exist at `go test -c` time. The dispatcher
+# embeds are needed because dispatcher tests likewise go:embed
+# their .bpf.o files. Unit tests no longer reach into
+# e2e/testdata/bpf/ at runtime.
+test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	$(strip go test -race $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # Stress-runs the unit tests in conditions designed to surface bugs
@@ -526,7 +537,7 @@ test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 #
 # Not wired into ci-test today; run locally before pushing changes
 # that touch shared init-time state or concurrent paths.
-test-stress: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
+test-stress: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	$(strip go test -race -count=$(STRESS_COUNT) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v ./...)
 
 # nsenter cross-architecture tests
@@ -643,7 +654,7 @@ bpfman-build: bpfman-fmt bpfman-vet bpfman-compile
 bpfman-fmt:
 	go fmt ./...
 
-bpfman-vet: $(DISPATCHER_BPF_EMBEDS)
+bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	go vet ./...
 
 # Compile bpfman. Depends on the dispatcher BPF embeds because
@@ -709,11 +720,21 @@ e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
+# platform/ebpf consumes the same .bpf.c sources as the e2e tests
+# but needs the compiled object next to the Go test files for
+# go:embed. Mirrors the dispatcher pattern: emit straight into the
+# consuming package's directory, no intermediate cp.
+platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
+	$(call quiet_cmd,CLANG-BPF,$@)
+	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
+		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
+
 clean-bpf:
 	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
-	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS)
+	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS) \
+	      $(PLATFORM_EBPF_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_DEPS)
 
--include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS)
+-include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS) $(PLATFORM_EBPF_BPF_DEPS)
 
 # ---------------------------------------------------------------------------
 # Docker image builds.
