@@ -8,6 +8,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Each docker-using job is a thin shell over a `make ci-*`
+# target -- the same recipe a developer runs locally via
+# `make ci`. CI_BUILDX_CACHE wires the buildkit layer cache
+# into GHA cache; the cache scope is shared across all jobs
+# (and with test.yaml) so the dnf install layer warms once and
+# everyone reuses it.
+env:
+  CI_BUILDX_CACHE: --cache-from type=gha,scope=ci --cache-to type=gha,mode=max,scope=ci
+
 jobs:
   check-vendor:
     name: Check go.mod and vendor
@@ -23,11 +32,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
 
-      - name: Check go.mod and vendor are tidy
-        run: |
-          go mod tidy
-          go mod vendor
-          git diff --exit-code
+      - run: make ci-check-vendor
 
   check-fmt:
     name: Check Go formatting
@@ -43,8 +48,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
 
-      - name: Check format
-        run: make bpfman-fmt && git diff --exit-code
+      - run: make ci-check-fmt
 
   build:
     name: Build bpfman (${{ matrix.arch }})
@@ -59,34 +63,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Build CI image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          target: base
-          tags: bpfman-ci:latest
-          load: true
-          cache-from: type=gha,scope=ci
-          cache-to: type=gha,mode=max,scope=ci
-
-      - name: Build bpfman binary
-        # Explicitly verify that the bpfman binary itself
-        # compiles. `go test ./...` exercises package
-        # compilation but not the cmd/bpfman link path, so a
-        # build break in main.go would slip through the tests
-        # job; this job catches it directly.
-        #
-        # STATIC=1 is intentionally omitted here: static
-        # linking is a property we need when crossing the
-        # container/runner boundary (e2e bundle extraction,
-        # image publish), not for verifying compilation. The
-        # static path stays covered by the e2e-builder stage
-        # and image.yaml.
-        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make bpfman-build
+      - run: make ci-build
 
   tests:
     uses: ./.github/workflows/test.yaml
@@ -96,27 +74,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Build CI image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          target: base
-          tags: bpfman-ci:latest
-          load: true
-          cache-from: type=gha,scope=ci
-          cache-to: type=gha,mode=max,scope=ci
-
-      - name: Run lint inside CI container
-        # `make lint` depends on bpf-build, so the BPF objects
-        # are built fresh inside the container; golangci-lint and
-        # its supporting linters (checkmake, hadolint, ShellCheck)
-        # are pre-installed in the image via the dnf install
-        # block in Dockerfile.ci.
-        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make lint
+      - run: make ci-lint
 
   # Additional nix-backed sweep: build the flake package and run the
   # full `make lint` via the devshell, which pins checkmake,

@@ -3,17 +3,15 @@ name: Tests
 on:
   workflow_call:
 
-# Three jobs in parallel, all driven by Dockerfile.ci. The
-# dockerfile encodes the build environment; the workflow only
-# orchestrates buildx invocations and the runner-side execution
-# of artefacts that need kernel privileges. See `make ci-test`,
-# `make ci-test-e2e`, and `make ci-test-e2e-scripts` for the
-# local equivalents that mirror what runs here.
-#
-# All three jobs share `cache-from/cache-to: type=gha,scope=ci`
-# so the buildx layer cache is shared across jobs (the dnf
-# install layer is identical for every job; the COPY layer
-# changes only on source changes).
+# Each job is a thin shell over a `make ci-*` target. The
+# Makefile recipes are the same ones a developer runs locally
+# via `make ci`, so what passes here is what passes locally and
+# vice versa. CI_BUILDX_CACHE wires the buildkit layer cache
+# into GHA cache; the cache scope is shared across all jobs so
+# the dnf install layer warms once and everyone reuses it.
+
+env:
+  CI_BUILDX_CACHE: --cache-from type=gha,scope=ci --cache-to type=gha,mode=max,scope=ci
 
 jobs:
   test:
@@ -29,22 +27,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Build CI image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          target: base
-          tags: bpfman-ci:latest
-          load: true
-          cache-from: type=gha,scope=ci
-          cache-to: type=gha,mode=max,scope=ci
-
-      - name: Run unit tests inside CI container
-        run: docker run --rm -v "$PWD":/src -w /src bpfman-ci:latest make test PARALLEL=1 STATIC=1
+      - run: make ci-test
 
   test-e2e:
     name: E2E tests (${{ matrix.arch }})
@@ -59,29 +43,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Extract e2e bundle
-        # The e2e-export stage produces a hermetic bundle (static
-        # e2e.test binary + testdata + bpfman + call_malloc) at
-        # ./out via buildx --output type=local. No image is left
-        # in the local docker store afterwards.
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          target: e2e-export
-          outputs: type=local,dest=./out
-          cache-from: type=gha,scope=ci
-          cache-to: type=gha,mode=max,scope=ci
-
-      - name: Run e2e tests on the runner
-        # The static binary runs on the runner's kernel, where
-        # CAP_BPF / CAP_NET_ADMIN are available via sudo. CWD is
-        # ./out/e2e so the binary can find its testdata at the
-        # bundle's e2e/testdata/{bin,bpf}/ paths.
-        run: cd ./out/e2e && sudo ../e2e.test -test.v -test.failfast
+      - run: make ci-test-e2e
 
   test-e2e-scripts:
     name: E2E REPL scripts (${{ matrix.arch }})
@@ -96,23 +59,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-buildx-action@v3
-
-      - name: Extract bundle into source tree
-        # The bundle's layout (bin/bpfman, e2e/testdata/...)
-        # matches the source tree's canonical paths, so dest=.
-        # places artefacts where `make run-e2e-scripts` expects
-        # them. The Dockerfile.ci.dockerignore excludes these
-        # paths so the next buildx run still hits cache.
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          target: e2e-export
-          outputs: type=local,dest=.
-          cache-from: type=gha,scope=ci
-          cache-to: type=gha,mode=max,scope=ci
 
       - name: Install runtime deps
         # iproute2 provides ip and tc for veth/netns setup;
@@ -125,20 +72,16 @@ jobs:
       - name: Install bpftool
         # linux-tools-generic ships a working bpftool at
         # /usr/lib/linux-tools/<ver>-generic/bpftool. Symlink it
-        # directly to /usr/local/bin instead of going through the
-        # /usr/sbin/bpftool wrapper: the wrapper dispatches on
-        # uname -r and Canonical's linux-tools-<kernel>-azure
-        # package ships an empty tools directory on some Azure
-        # runner kernels, so wrapper-based access is unreliable.
+        # directly to /usr/local/bin instead of going through
+        # the /usr/sbin/bpftool wrapper: the wrapper dispatches
+        # on uname -r and Canonical's
+        # linux-tools-<kernel>-azure package ships an empty
+        # tools directory on some Azure runner kernels, so
+        # wrapper-based access is unreliable.
         run: |
           sudo apt-get install -y --no-install-recommends linux-tools-generic
           bpf_bin=$(ls /usr/lib/linux-tools/*-generic/bpftool | head -n 1)
           sudo ln -sf "$bpf_bin" /usr/local/bin/bpftool
           bpftool version
 
-      - name: Run REPL scripts
-        # `make run-e2e-scripts` invokes hack/test-e2e-scripts.sh,
-        # which raises sudo for each `bpfman repl` call. No outer
-        # sudo is needed; GH runners have NOPASSWD sudo so the
-        # inner sudo runs non-interactively.
-        run: make run-e2e-scripts
+      - run: make ci-test-e2e-scripts
