@@ -23,6 +23,7 @@ linters:
     - govet
     - ineffassign
     - misspell
+    - paralleltest
     - staticcheck
     - unconvert
     - unused
@@ -44,6 +45,10 @@ linters:
 
     misspell:
       locale: UK
+
+    paralleltest:
+      ignore-missing: false
+      ignore-missing-subtests: false
 
     staticcheck:
       checks:
