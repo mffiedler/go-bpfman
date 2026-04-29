@@ -12,6 +12,12 @@ dispatcher/bpf/*.bpf.d
 # would pull /nix/store closures into the context.
 result*
 
+# Host-side caches. .cache/go-build is created by host `go build`
+# / `go test`; .direnv is the nix-direnv shell cache. Both bloat
+# the build context and can confuse the in-container Go cache.
+.cache/
+.direnv/
+
 # Heavy/irrelevant trees that never need to be in the build context.
 .git/
 .gitignore

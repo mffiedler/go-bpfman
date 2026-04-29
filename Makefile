@@ -208,7 +208,15 @@ NSENTER_TEST_BIN ?= nsenter.test
 # caller knob (Ubuntu CI passes -I/usr/include/<DEB_HOST_MULTIARCH>
 # so clang in -target bpfel mode finds asm/types.h under the
 # multiarch include path).
-LIBBPF_CFLAGS := $(shell pkg-config --cflags libbpf)
+#
+# `=` (deferred) rather than `:=` (immediate) so pkg-config only
+# fires when a recipe actually references LIBBPF_CFLAGS. The
+# openshift Containerfile's go-builder stage runs `make bpfman-
+# compile` against pre-built .bpf.o files (no BPF compile happens
+# there), and that stage's image (ubi9/go-toolset) intentionally
+# does not ship libbpf-devel; an immediate evaluation would emit a
+# spurious "Package 'libbpf' not found" pkg-config warning.
+LIBBPF_CFLAGS = $(shell pkg-config --cflags libbpf)
 BPF_CFLAGS ?=
 
 # clang -target bpfel produces architecture-independent BPF

@@ -47,12 +47,6 @@ RUN dnf update -y && \
     dnf clean all
 
 WORKDIR /build
-# Top-level Makefile holds the BPF compile rules (the previous
-# per-directory dispatcher/Makefile was inlined into it). COPY
-# both the Makefile and the dispatcher source tree, then ask
-# Make for the dispatcher BPF embed outputs by name. The
-# dispatcher Go package's go:embed reads dispatcher/*.bpf.o, so
-# those are the targets we need.
 COPY Makefile Makefile
 COPY dispatcher/ dispatcher/
 RUN make dispatcher/tc_dispatcher.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o

@@ -28,6 +28,13 @@ dispatcher/bpf/*.bpf.d
 # would pull /nix/store closures into the context.
 result*
 
+# Host-side caches. .cache/go-build is created by host `go build`
+# / `go test`; .direnv is the nix-direnv shell cache. Both are root-
+# owned when COPYed into a container and then unwritable by non-
+# root build users (e.g. ubi9/go-toolset's uid 1001).
+.cache/
+.direnv/
+
 # Heavy/irrelevant trees that never need to be in the build context.
 # Note: .git/ exclusion is load-bearing -- with .git/ present,
 # `go build` tries to embed VCS info via debug.BuildInfo, and

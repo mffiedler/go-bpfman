@@ -2,13 +2,8 @@
 #
 # Downstream container build for Konflux/OpenShift pipelines.
 #
-# Multi-stage build:
-#   1. bpf-builder:  compile dispatcher BPF objects
-#   2. go-builder:   compile go-bpfman with CGO_ENABLED=1
-#   3. runtime:      minimal UBI9 image with the bpfman binary
-#
-# The build requires CGO_ENABLED=1 because the nsenter package uses
-# a C constructor to call setns() before the Go runtime starts.
+# CGO_ENABLED=1 is required because the nsenter package uses a C
+# constructor to call setns() before the Go runtime starts.
 #
 # The BPF builder base image is parameterised because libbpf-devel
 # lives in CodeReady Builder (subscription-required). For local
@@ -34,8 +29,9 @@ ARG BPF_INSTALL_CMD="microdnf install -y --nodocs --setopt=keepcache=0 --setopt=
 RUN sh -c "${BPF_INSTALL_CMD}"
 
 WORKDIR /build
+COPY Makefile Makefile
 COPY dispatcher/ dispatcher/
-RUN make -C dispatcher
+RUN make dispatcher/tc_dispatcher.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o
 
 # ---------------------------------------------------------------------------
 # Stage 2: Go build
