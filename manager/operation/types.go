@@ -3,28 +3,45 @@ package operation
 import (
 	"fmt"
 	"reflect"
+	"sync"
 )
 
-// registry tracks all key names to detect duplicate registrations at
-// startup. The map value records the concrete type so the panic
-// message can report what collided.
-var registry = map[string]reflect.Type{}
+// registry holds the type registered for each key name, used by
+// NewKey to detect type-confused re-registrations. sync.Map is used
+// so concurrent NewKey callers (parallel tests, `go test -count=N`)
+// hit an atomic check-and-insert without explicit locking.
+var registry sync.Map // map[string]reflect.Type
 
 // Key is a typed reference to a plan binding. The type parameter
 // ensures that Get returns the correct type without requiring callers
 // to assert.
 type Key[T any] struct{ name string }
 
-// NewKey creates a binding key with the given name. It panics if a
-// key with the same name has already been registered, catching
-// accidental name collisions at process startup rather than during
-// operation execution.
+// NewKey creates a binding key with the given name.
+//
+// Within a single process, every (name, T) pair must agree:
+//
+//   - Same name, same T — returns a Key with that name (idempotent).
+//     This is what lets `go test -count=N` and parallel tests
+//     re-enter NewKey safely; production callers register at package
+//     init.
+//
+//   - Same name, different T — panics. Without this check, one call
+//     site's Produce(Key[int]("foo"), ...) would store an int at
+//     "foo" in a Bindings map, and another site's Get(b,
+//     Key[string]("foo")) would type-assert to string at runtime.
+//     NewKey moves that failure to registration time (effectively
+//     startup) instead of an arbitrary later Get call.
+//
+// Bindings are per-Run, so name reuse never causes cross-run state
+// sharing — only the type guarantee matters here.
 func NewKey[T any](name string) Key[T] {
 	t := reflect.TypeFor[T]()
-	if existing, ok := registry[name]; ok {
-		panic(fmt.Sprintf("operation.NewKey: %q already registered with type %s (got %s)", name, existing, t))
+	if existing, loaded := registry.LoadOrStore(name, t); loaded {
+		if existing.(reflect.Type) != t {
+			panic(fmt.Sprintf("operation.NewKey: %q already registered with type %s (got %s)", name, existing.(reflect.Type), t))
+		}
 	}
-	registry[name] = t
 	return Key[T]{name: name}
 }
 
