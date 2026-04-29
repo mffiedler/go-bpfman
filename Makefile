@@ -1054,6 +1054,16 @@ ci-test-e2e-scripts:
 # Umbrella: run every CI pipeline locally. Cheap checks first
 # (vendor/fmt) so failures surface fast; build before tests so
 # the test job's container has a populated Go cache; e2e last.
+#
+# Run sequentially. CI gives each job its own runner, so the
+# upstream workflow can fan out the e2e jobs in parallel; on a
+# single dev box that fan-out collides on shared kernel state --
+# bpffs mounts, dispatcher slot tables, the global program-id
+# space, and the inode that uprobes attach to (for which both
+# suites use the same e2e.test binary). Symptoms range from spurious
+# attach failures to REPL counter assertions seeing the other
+# suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
+# locally, and don't run them in two shells at once.
 ci: ci-check-vendor ci-check-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 
 # ---------------------------------------------------------------------------
