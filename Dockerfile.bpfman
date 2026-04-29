@@ -1,176 +1,61 @@
 # syntax=docker/dockerfile:1.7
 #
-# All-Fedora multi-architecture build of bpfman. This is the
-# canonical path used by the CI publish workflow and the default
-# for the `make build-image*` targets.
+# Cross-compile bpfman on Fedora and package it on ubi9-minimal.
 #
-# Both stages run on Fedora ${FEDORA_VERSION}. The bpf-builder
-# stage compiles eBPF objects with clang/llvm/libbpf-devel. The
-# go-builder stage cross-compiles a static binary against per-
-# target sysroots built at image-build time via
-# `dnf install --installroot=/sysroots/${arch} --forcearch=${arch}
-# --use-host-config`, which pulls foreign-arch glibc/libgcc/
-# kernel-headers from Fedora's regular per-arch repositories. The
-# cross gcc is then pointed at the populated sysroot via --sysroot.
+# The build stage runs on $BUILDPLATFORM and dispatches per
+# TARGETARCH: cross gcc + a foreign-arch sysroot built with
+# `dnf --installroot --forcearch`, plus GOOS/GOARCH for Go (whose
+# compiler is multi-arch internally). This means buildx multi-arch
+# invocations (one Dockerfile pass per TARGETARCH) all run natively
+# on the build host -- no QEMU emulation.
+#
+# Static linkage keeps the binary independent of the runtime image's
+# glibc, so the same artefact runs on ubi9-minimal, scratch, or
+# anything else.
 #
 # Usage via the Make targets:
 #
 #   make build-image-arm64        # single arch, --load
 #   make build-image PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
 #                                 # all four, cache-only
-#
-# Direct buildx invocation:
-#
-#   docker buildx build \
-#     --platform linux/amd64 \
-#     -f Dockerfile.bpfman \
-#     --load \
-#     -t bpfman:dev .
 
 ARG FEDORA_VERSION=43
 
 # ---------------------------------------------------------------------------
-# BPF objects: architecture-independent eBPF bytecode, built once
-# on the build platform.
+# Stage 1: build.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS bpf-builder
+FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS builder
 
-# hadolint ignore=DL3041
-RUN dnf update -y && \
-    dnf install -y \
-        clang \
-        llvm \
-        libbpf-devel \
-        pkg-config \
-        make \
-        kernel-headers && \
-    dnf clean all
+# Canonical Fedora dep list, shared with the host bootstrap path.
+# `dnf clean all` runs after so the image stays lean -- the script
+# itself does not clean because host users typically want the dnf
+# cache for follow-up installs.
+COPY hack/install-fedora-deps.sh /tmp/install-fedora-deps.sh
+RUN bash /tmp/install-fedora-deps.sh \
+  && rm /tmp/install-fedora-deps.sh \
+  && dnf clean all
 
-WORKDIR /build
-COPY Makefile Makefile
-COPY dispatcher/ dispatcher/
-RUN make dispatcher/tc_dispatcher.bpf.o dispatcher/xdp_dispatcher_v2.bpf.o
-
-# ---------------------------------------------------------------------------
-# Go cross-build stage (Fedora). Cross gcc on Fedora is just the
-# compiler binary, with no target sysroot, so we build per-target
-# sysroots ourselves below using `dnf --installroot --forcearch`.
-# ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM fedora:${FEDORA_VERSION} AS go-builder
-
-# Base toolchain: host gcc, host glibc-static (used by the amd64
-# build path which links against the host libc directly, no
-# sysroot), Go, and build helpers. TARGETARCH-independent so this
-# layer caches across all platform builds.
-# hadolint ignore=DL3041
-RUN dnf update -y && \
-    dnf install -y \
-        gcc \
-        glibc-static \
-        golang \
-        make \
-        git \
-        file \
-        ca-certificates && \
-    dnf clean all
-
-# Install the cross gcc and build the foreign-arch sysroot for the
-# current TARGETARCH. The sysroot is a minimal Fedora installroot
-# containing just the C runtime, kernel headers, and their
-# dependencies, populated from Fedora's foreign-arch repositories
-# via --forcearch.
-#
-# Per-target rather than per-host: when buildx runs a multi-platform
-# build (`--platform linux/amd64,linux/arm64,...`) it invokes this
-# Dockerfile once per platform, each with its own TARGETARCH. Doing
-# the work per-target means each platform build only pays for the
-# cross gcc and sysroot it actually needs, and amd64 (host arch)
-# skips both steps entirely.
-#
-# Notes:
-#
-#   --use-host-config tells dnf to read /etc/yum.repos.d from the
-#   build container rather than expecting an already-populated repo
-#   tree inside the (empty) installroot. dnf5 made this explicit;
-#   without it the install fails with "no repositories were loaded
-#   from the installroot".
-#
-#   tsflags=noscripts skips post-install rpm scriptlets. This is
-#   necessary because the foreign-arch glibc post-install runs
-#   ldconfig, and ldconfig in a foreign-arch sysroot is the foreign
-#   ELF binary -- not executable on the build host without QEMU
-#   binfmt_misc registration. The scriptlets are not needed for a
-#   sysroot whose only purpose is to be linked against; ldconfig at
-#   runtime on the target machine handles its own cache.
-#
-#   install_weak_deps=False keeps the installroot lean.
-ARG FEDORA_VERSION
+# Per-target cross gcc + foreign-arch sysroot. The script no-ops on
+# the host arch (amd64) so each platform build only pays for what
+# it actually needs.
 ARG TARGETARCH
-# Distro rolling repos make exact version pinning brittle.
-# hadolint ignore=DL3041
-RUN set -eux; \
-    case "$TARGETARCH" in \
-        amd64)   sysroot_arch=""        cross_gcc=""                          ;; \
-        arm64)   sysroot_arch="aarch64" cross_gcc="gcc-aarch64-linux-gnu"     ;; \
-        ppc64le) sysroot_arch="ppc64le" cross_gcc="gcc-powerpc64le-linux-gnu" ;; \
-        s390x)   sysroot_arch="s390x"   cross_gcc="gcc-s390x-linux-gnu"       ;; \
-        *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    if [ -n "$cross_gcc" ]; then \
-        dnf install -y "$cross_gcc"; \
-    fi; \
-    if [ -n "$sysroot_arch" ]; then \
-        sysroot="/sysroots/${sysroot_arch}"; \
-        mkdir -p "${sysroot}"; \
-        dnf install -y \
-            --use-host-config \
-            --installroot="${sysroot}" \
-            --forcearch="${sysroot_arch}" \
-            --releasever="${FEDORA_VERSION}" \
-            --setopt=install_weak_deps=False \
-            --setopt=tsflags=noscripts \
-            --nodocs \
-            glibc glibc-devel glibc-static libgcc kernel-headers; \
-        rm -rf "${sysroot}/var/cache" "${sysroot}/var/log" "${sysroot}/var/lib/dnf"; \
-    fi; \
-    dnf clean all
+COPY hack/install-cross-sysroot.sh /tmp/install-cross-sysroot.sh
+RUN /tmp/install-cross-sysroot.sh "$TARGETARCH" \
+  && rm /tmp/install-cross-sysroot.sh \
+  && dnf clean all
 
 WORKDIR /src
-
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
 COPY . .
-COPY --from=bpf-builder /build/dispatcher/*.bpf.o dispatcher/
 
 ARG GIT_COMMIT=
 ARG GIT_BRANCH=
 ARG GIT_VERSION=
 ARG BUILD_DATE=
-
-# Caller-supplied additional flags forwarded to `go build` / `go
-# test` via Go's own GOFLAGS environment variable. Empty by default;
-# CI sets EXTRA_GOFLAGS=-a to force a from-scratch rebuild of every
-# package, guaranteeing no stale build cache artefact ends up in a
-# published image.
 ARG EXTRA_GOFLAGS=
-
-# Caller-supplied additional Go ldflags. Empty by default; CI passes
-# `-s -w` to drop the symbol table and DWARF sections from shipped
-# images. Local development leaves it empty so that bin/bpfman
-# remains debuggable.
 ARG EXTRA_GO_LDFLAGS=
-
-# Image attestation metadata. All three default to empty; the
-# version printer omits the Attestation line entirely when any of
-# them is unset, so local builds and downstream Konflux/RHEL/UBI
-# builds are unaffected. Only the CI image-build workflow sets
-# these.
 ARG IMAGE_REF=
 ARG SIGNER_IDENTITY=
 ARG OIDC_ISSUER=
-
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -198,11 +83,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     file bin/bpfman
 
 # ---------------------------------------------------------------------------
-# Final image: scratch + the static bpfman binary.
+# Stage 2: runtime.
 # ---------------------------------------------------------------------------
-FROM scratch
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
-COPY --from=go-builder /src/bin/bpfman /bpfman
+COPY --from=builder /src/bin/bpfman /bpfman
 
 ENV BPFMAN_MODE=bpfman-rpc
 ENV BPFMAN_PPROF_ADDRESS=localhost:6060

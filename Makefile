@@ -752,16 +752,12 @@ clean-bpf:
 # Docker image builds.
 # ---------------------------------------------------------------------------
 
-# Build bpfman image from the host-built binary, using ubi9-minimal
-# as the runtime base. Intended for local development and operator
-# integration testing: the binary may be dynamically linked, and
-# having a shell in the image aids `kubectl exec` debugging. The
-# Dockerfile's default base is scratch; this target overrides it.
+# Build bpfman image from the host-built binary. Intended for local
+# development and operator integration testing.
 build-image-dev: bpfman-build
 	docker build \
 		$(if $(filter-out 0,$(DOCKER_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
 		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
-		--build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest \
 		-f Dockerfile.bpfman.dev \
 		$(EXTRA_DOCKER_BUILD_ARGS) .
 

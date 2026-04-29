@@ -1,23 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # Runtime image for go-bpfman, assembled from a host-built binary.
-# The caller (CI workflow, make target, Konflux pipeline) is
-# responsible for producing bin/bpfman before invoking docker build;
-# this file does no compilation.
-#
-# Mechanism, not policy: BASE_IMAGE is parameterised so that callers
-# decide the runtime base. The default is scratch, which matches the
-# upstream CI policy of `make bpfman-compile STATIC=1`. Callers
-# shipping a dynamically linked binary (for example local cluster
-# development, or FIPS builds via ubi9 go-toolset) must override
-# BASE_IMAGE to a base that provides a compatible glibc, e.g.:
-#
-#   docker build \
-#     -f Dockerfile.bpfman.local \
-#     --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest .
+# The caller is responsible for producing bin/bpfman before invoking
+# docker build; this file does no compilation.
 
-ARG BASE_IMAGE=scratch
-# hadolint ignore=DL3006
-FROM ${BASE_IMAGE}
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --link --chmod=0755 bin/bpfman /bpfman
 
