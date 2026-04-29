@@ -607,7 +607,7 @@ $(BPF_STAMP): $(BPF_STAMP_DEPS)
 bpf-clean:
 	$(MAKE) -C dispatcher clean
 	$(MAKE) -C e2e/testdata/bpf clean
-	$(RM) -f $(BPF_STAMP)
+	$(RM) $(BPF_STAMP)
 
 # ---------------------------------------------------------------------------
 # Docker image builds.
