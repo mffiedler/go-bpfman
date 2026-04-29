@@ -917,8 +917,17 @@ ci-image:
 # CI runners are ephemeral and don't benefit from this directly
 # (each runner starts with empty volumes); the volumes are
 # specifically for local iteration speed.
+#
+# `make clean-bpf` runs first because $(CI_RUN) bind-mounts the
+# source tree (-v $(CURDIR):/src), and bind mounts bypass the
+# dockerignore filter -- without it, host-built dispatcher/*.bpf.o
+# would be visible inside the container, and Make would skip the
+# in-container BPF compile based on host mtimes. The compile is
+# cheap (~1-2s) and the Go cache volumes carry the rest of the
+# incremental story. ci-test and ci-lint apply the same prefix
+# for the same reason.
 ci-build: ci-image
-	$(CI_RUN) make bpfman-build
+	$(CI_RUN) make clean-bpf bpfman-build
 
 # Reproduce the workflow's check-vendor job locally. Verifies
 # go.mod / go.sum / vendor are tidy. Runs on the host (no
@@ -942,14 +951,14 @@ ci-check-fmt:
 # `make lint` umbrella (golangci-lint + hadolint + shellcheck +
 # checkmake) inside the CI container.
 ci-lint: ci-image
-	$(CI_RUN) make lint
+	$(CI_RUN) make clean-bpf lint
 
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
 # cache volumes as ci-build for incremental-compile speed.
 ci-test: ci-image
-	$(CI_RUN) make test PARALLEL=1 STATIC=1
+	$(CI_RUN) make clean-bpf test PARALLEL=1 STATIC=1
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
 # stage produces a hermetic bundle (binary + testdata) at
