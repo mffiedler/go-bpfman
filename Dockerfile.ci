@@ -43,28 +43,16 @@
 # ---------------------------------------------------------------------------
 FROM fedora:43 AS base
 
-# Distro rolling repos make exact version pinning brittle.
-# hadolint ignore=DL3041
-RUN dnf install -y \
-    bpftool \
-    checkmake \
-    clang \
-    gcc \
-    git \
-    glibc-static \
-    golang \
-    golangci-lint \
-    hadolint \
-    iproute \
-    jq \
-    kernel-headers \
-    libbpf-devel \
-    llvm \
-    make \
-    pkgconf-pkg-config \
-    protobuf-compiler \
-    ShellCheck \
-    sqlite-devel \
+# Use hack/install-fedora-deps.sh as the canonical Fedora dep
+# list, shared with the host-bootstrap path. The script is
+# sudo-aware: it skips sudo when running as root (i.e. here),
+# uses sudo on a regular host. `dnf clean all` runs after so the
+# image stays lean -- the script itself doesn't clean because
+# host users typically want the dnf cache for follow-up
+# installs.
+COPY hack/install-fedora-deps.sh /tmp/install-fedora-deps.sh
+RUN bash /tmp/install-fedora-deps.sh \
+  && rm /tmp/install-fedora-deps.sh \
   && dnf clean all
 
 # Tell git inside the container to trust any working tree

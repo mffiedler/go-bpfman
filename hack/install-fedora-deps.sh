@@ -39,7 +39,7 @@ if ! command -v dnf >/dev/null; then
     exit 1
 fi
 
-RPMS=(
+rpms=(
     bpftool
     checkmake
     clang
@@ -61,7 +61,15 @@ RPMS=(
     sqlite-devel
 )
 
-sudo dnf install -y "${RPMS[@]}"
+# Skip sudo when already root (e.g. inside a container during
+# `docker build`); use sudo on a regular host where the user
+# typically isn't root.
+sudo_cmd=
+if [ "$(id -u)" -ne 0 ]; then
+    sudo_cmd=sudo
+fi
+
+$sudo_cmd dnf install -y "${rpms[@]}"
 
 cat <<'EOF'
 
