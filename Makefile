@@ -51,6 +51,13 @@ CI_IMAGE       ?= bpfman-ci
 CI_DOCKERFILE  ?= Dockerfile.ci
 CI_E2E_OUTDIR  ?= ./out
 
+# Caller-supplied buildx flags appended to the buildx-driven
+# ci-* recipes. Empty by default for local invocations; CI sets
+#   CI_BUILDX_CACHE=--cache-from type=gha,scope=ci --cache-to type=gha,mode=max,scope=ci
+# (typically via `env:` in the workflow YAML) so the buildkit
+# layer cache is shared across all CI jobs.
+CI_BUILDX_CACHE ?=
+
 # Shared docker-run incantation for the ci-* targets that drive
 # work inside the CI container. Mounts the source tree and named
 # volumes for Go's build and module caches so consecutive runs
@@ -797,7 +804,7 @@ build-image-openshift:
 # `--load` is required for `docker run` to find the image in the
 # local store.
 ci-image:
-	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load .
+	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load $(CI_BUILDX_CACHE) .
 
 # Reproduce the workflow's build job locally. Verifies that the
 # bpfman binary itself compiles -- separable from `ci-test`
@@ -855,7 +862,7 @@ ci-test: ci-image
 # with sudo so it has the kernel privileges the e2e suite needs.
 ci-test-e2e:
 	rm -rf $(CI_E2E_OUTDIR)
-	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) .
+	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_OUTDIR) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
 	cd $(CI_E2E_OUTDIR)/e2e && sudo ../e2e.test -test.v -test.failfast
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
@@ -868,7 +875,7 @@ ci-test-e2e:
 # script invocation, which gets the kernel privileges it needs
 # while leaving the rest of the make recipe unprivileged.
 ci-test-e2e-scripts:
-	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) .
+	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 
 # Umbrella: run every CI pipeline locally. Cheap checks first
