@@ -240,15 +240,14 @@ else
     $(error unsupported HOST_ARCH=$(HOST_ARCH))
 endif
 
-# Dispatcher BPF: sources live in dispatcher/bpf/, and the
-# dispatcher Go package's go:embed directives expect the .bpf.o
-# files at the package root (dispatcher/), so each compiled
-# object is also copied up. xdp_dispatcher_v1.bpf.c is kept as
-# historical reference and is excluded from the build.
+# Dispatcher BPF: sources live in dispatcher/bpf/; the dispatcher
+# Go package's go:embed directives read .bpf.o files at the package
+# root (dispatcher/), so the compile rule below targets that path
+# directly -- no intermediate copy needed. xdp_dispatcher_v1.bpf.c
+# is kept as historical reference and is excluded from the build.
 DISPATCHER_BPF_SOURCES := $(filter-out dispatcher/bpf/xdp_dispatcher_v1.bpf.c,$(wildcard dispatcher/bpf/*.bpf.c))
-DISPATCHER_BPF_OBJECTS := $(DISPATCHER_BPF_SOURCES:.bpf.c=.bpf.o)
-DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_OBJECTS)))
-DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_OBJECTS:.bpf.o=.bpf.d)
+DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_SOURCES:.bpf.c=.bpf.o)))
+DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_EMBEDS:.bpf.o=.bpf.d)
 
 # E2E testdata BPF: sources and outputs all live in
 # e2e/testdata/bpf/.
@@ -677,24 +676,10 @@ $(BIN_DIR)/protoc-gen-go-grpc: | $(BIN_DIR)
 # incremental rebuilds against the real outputs without needing
 # a phony intermediary.
 # ---------------------------------------------------------------------------
-dispatcher/bpf/%.bpf.o: dispatcher/bpf/%.bpf.c Makefile
+dispatcher/%.bpf.o: dispatcher/bpf/%.bpf.c Makefile
 	$(call quiet_cmd,CLANG-BPF,$@)
 	$(Q)clang $(LIBBPF_CFLAGS) $(BPF_CFLAGS) -g -O2 -target bpfel -c $(BPF_TARGET_ARCH) \
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
-
-# Each compiled dispatcher object also lives at dispatcher/<name>
-# so the dispatcher Go package's go:embed patterns (which read
-# from the package root, not from bpf/) find it.
-dispatcher/%.bpf.o: dispatcher/bpf/%.bpf.o
-	$(call quiet_cmd,CP,$@)
-	$(Q)cp $< $@
-
-# Without .SECONDARY, Make auto-deletes the intermediate
-# dispatcher/bpf/*.bpf.o files after copying them up to
-# dispatcher/, forcing a full recompile on the next invocation.
-# Declaring them secondary keeps them on disk so incremental
-# rebuilds work correctly.
-.SECONDARY: $(DISPATCHER_BPF_OBJECTS)
 
 e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 	$(call quiet_cmd,CLANG-BPF,$@)
@@ -702,8 +687,8 @@ e2e/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 		-MD -MP -MF$(@:.bpf.o=.bpf.d) $< -o $@
 
 clean-bpf:
-	$(RM) $(DISPATCHER_BPF_OBJECTS) $(DISPATCHER_BPF_EMBEDS) \
-	      $(DISPATCHER_BPF_DEPS) $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS)
+	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
+	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS)
 
 -include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS)
 

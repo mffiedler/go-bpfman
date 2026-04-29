@@ -5,8 +5,7 @@
 # "didn't rebuild" bugs.
 bin/
 dispatcher/*.bpf.o
-dispatcher/bpf/*.bpf.o
-dispatcher/bpf/*.bpf.d
+dispatcher/*.bpf.d
 
 # `nix build` symlinks (`result`, `result-bin`, ...). Following them
 # would pull /nix/store closures into the context.
