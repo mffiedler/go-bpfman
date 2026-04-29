@@ -12,9 +12,15 @@ import (
 // binary skips the Go test framework entirely and runs the named
 // helper before exiting, so the same e2e.test binary serves as
 // both the test driver and the uprobe attach target.
+//
+// Mode values are <verb>-<specifier>: the verb names the high-
+// level behaviour (e.g. uprobe-trigger), the specifier names
+// which sibling helper to run (e.g. call-malloc). Picking a name
+// per helper avoids retrofitting a "_2" or "_target" suffix once
+// a second uprobe-firing path is needed.
 const (
-	e2eModeEnv        = "BPFMAN_E2E_MODE"
-	e2eModeCallMalloc = "call-malloc"
+	e2eModeEnv                     = "BPFMAN_E2E_MODE"
+	e2eModeUprobeTriggerCallMalloc = "uprobe-trigger-call-malloc"
 )
 
 // selfExe is the absolute path of the running e2e.test binary,
@@ -30,8 +36,8 @@ func TestMain(m *testing.M) {
 	// exec.Command(os.Executable()) inheriting BPFMAN_E2E_MODE,
 	// and the helper has nothing to clean up.
 	switch os.Getenv(e2eModeEnv) {
-	case e2eModeCallMalloc:
-		callDoWork()
+	case e2eModeUprobeTriggerCallMalloc:
+		invokeUprobeCallMalloc()
 		os.Exit(0)
 	case "":
 		// normal test driver mode

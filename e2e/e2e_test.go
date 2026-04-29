@@ -441,7 +441,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to e2e_do_work in the e2e.test binary itself
+	// When: attach via client to e2e_uprobe_call_malloc in the e2e.test binary itself
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
@@ -476,15 +476,15 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, link.Kind, listedLinks[0].Kind)
 
 	// Behavioural validation: trigger the uprobe by re-execing
-	// e2e.test in helper mode; the child runs e2e_do_work, which
-	// fires the kernel probe attached to the same inode/offset.
+	// e2e.test in helper mode; the child runs e2e_uprobe_call_malloc,
+	// which fires the kernel probe attached to the same inode/offset.
 	for i := 0; i < 5; i++ {
 		_ = fireUprobe()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
 	t.Logf("uprobe counter: %d", count)
-	require.Greater(t, count, uint64(0), "uprobe program should have counted do_work calls")
+	require.Greater(t, count, uint64(0), "uprobe program should have counted target invocations")
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -564,7 +564,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, "uprobe_counter", listedProgs[0].Record.Meta.Name)
 	require.NotEmpty(t, listedProgs[0].Record.Handles.PinPath)
 
-	// When: attach via client to e2e_do_work in the e2e.test binary (uretprobe uses AttachUprobe API)
+	// When: attach via client to e2e_uprobe_call_malloc in the e2e.test binary (uretprobe uses AttachUprobe API)
 	upSpec, err := bpfman.NewUprobeAttachSpec(prog.Status.Kernel.ID, target)
 	require.NoError(t, err)
 	upSpec = upSpec.WithFnName(fnName)
@@ -600,15 +600,16 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	require.Equal(t, bpfman.LinkKindUretprobe, listedLinks[0].Kind, "ListLinks should report uretprobe")
 
 	// Behavioural validation: trigger the uretprobe by re-execing
-	// e2e.test in helper mode; the child returns from e2e_do_work,
-	// firing the kernel uretprobe attached to the same inode/offset.
+	// e2e.test in helper mode; the child returns from
+	// e2e_uprobe_call_malloc, firing the kernel uretprobe attached
+	// to the same inode/offset.
 	for i := 0; i < 5; i++ {
 		_ = fireUprobe()
 	}
 	statsPath := filepath.Join(prog.Record.Handles.MapPinPath, "uprobe_stats_map")
 	count := readPerCPUCounter(t, statsPath, 0)
 	t.Logf("uretprobe counter: %d", count)
-	require.Greater(t, count, uint64(0), "uretprobe program should have counted do_work returns")
+	require.Greater(t, count, uint64(0), "uretprobe program should have counted target returns")
 
 	// When: detach
 	err = env.Detach(ctx, link.ID)
@@ -1340,19 +1341,19 @@ func TestLoadWithMetadataAndGlobalData(t *testing.T) {
 
 // uprobeTarget returns the path and function name for uprobe tests.
 // The target is the running e2e.test binary itself, with the cgo'd
-// e2e_do_work symbol as the attach point. Avoids any dependency on
-// locating the correct libc path (which breaks on NixOS, Guix,
-// musl, and other non-standard layouts) and removes the need for
-// a separate call_malloc helper binary on disk.
+// e2e_uprobe_call_malloc symbol as the attach point. Avoids any
+// dependency on locating the correct libc path (which breaks on
+// NixOS, Guix, musl, and other non-standard layouts) and removes
+// the need for a separate helper binary on disk.
 func uprobeTarget() (target, fnName string) {
-	return selfExe, "e2e_do_work"
+	return selfExe, "e2e_uprobe_call_malloc"
 }
 
 // fireUprobe execs the running e2e.test binary in helper mode so
-// e2e_do_work runs in the child, firing the kernel uprobe attached
-// to the same inode + symbol offset.
+// e2e_uprobe_call_malloc runs in the child, firing the kernel uprobe
+// (or uretprobe) attached to the same inode + symbol offset.
 func fireUprobe() error {
 	cmd := exec.Command(selfExe)
-	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeCallMalloc)
+	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeUprobeTriggerCallMalloc)
 	return cmd.Run()
 }

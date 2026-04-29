@@ -72,7 +72,7 @@ WORKDIR /src
 # Stage 2: e2e-builder. Builds the static e2e test binary and the
 # static bpfman binary. e2e.test embeds every BPF object it loads
 # (testdata/bpf/*.bpf.o via go:embed) and is its own uprobe attach
-# target (cgo'd e2e_do_work plus a TestMain helper-mode dispatch),
+# target (cgo'd e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch),
 # so the Go e2e suite is self-contained in a single artefact. The
 # REPL scripts under e2e/scripts/ still load BPF via the bpfman
 # CLI's file-path interface, so the .bpf.o tree is also exported

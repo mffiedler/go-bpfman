@@ -17,7 +17,7 @@ let prog = [bpfman program load file \
 
 let link = [bpfman link attach uprobe \
     --target bin/e2e.test \
-    --fn-name e2e_do_work \
+    --fn-name e2e_uprobe_call_malloc \
     $prog]
 
 bpfman link detach $link
