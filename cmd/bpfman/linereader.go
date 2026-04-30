@@ -22,6 +22,13 @@ type LineReader interface {
 	Close() error
 }
 
+// HistoryWriter is implemented by LineReaders that persist a
+// caller-supplied history entry. Backends that lack a history file
+// (script and pipe readers) do not implement it.
+type HistoryWriter interface {
+	SaveHistory(entry string) error
+}
+
 // scannerReader wraps a bufio.Scanner to implement LineReader for
 // non-interactive input (files, pipes).
 type scannerReader struct {

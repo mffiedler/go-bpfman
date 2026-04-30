@@ -138,6 +138,12 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 		buf.Reset()
 		cs = contState{}
 
+		if hw, ok := lr.(HistoryWriter); ok {
+			if entry := canonicaliseHistory(accumulated); entry != "" {
+				_ = hw.SaveHistory(entry)
+			}
+		}
+
 		var loc sourceLoc
 		if file != "" {
 			loc = sourceLoc{file: file, line: startLine}
@@ -147,6 +153,61 @@ func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader
 			return err
 		}
 	}
+}
+
+// canonicaliseHistory collapses a multi-line REPL submission into a
+// single line suitable for a one-entry history record. Backslash
+// continuations and bare newlines outside quoted strings become a
+// single space, leading whitespace on continuation lines is dropped,
+// and `#` comments outside quoted strings are stripped to the end of
+// their line. Newlines inside quoted strings are preserved verbatim.
+func canonicaliseHistory(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	var inSingle, inDouble bool
+	emitSpace := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if !inSingle && !inDouble && ch == '#' {
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+			if i >= len(s) {
+				break
+			}
+			ch = s[i]
+		}
+		if !inSingle && !inDouble && ch == '\\' && i+1 < len(s) && s[i+1] == '\n' {
+			i++
+			emitSpace = true
+			continue
+		}
+		if !inSingle && !inDouble && ch == '\n' {
+			emitSpace = true
+			continue
+		}
+		if emitSpace {
+			if ch == ' ' || ch == '\t' || ch == '\r' {
+				continue
+			}
+			out := b.String()
+			out = strings.TrimRight(out, " \t")
+			b.Reset()
+			b.WriteString(out)
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			emitSpace = false
+		}
+		switch {
+		case ch == '\'' && !inDouble:
+			inSingle = !inSingle
+		case ch == '"' && !inSingle:
+			inDouble = !inDouble
+		}
+		b.WriteByte(ch)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // contState tracks brace and bracket depth across accumulated input

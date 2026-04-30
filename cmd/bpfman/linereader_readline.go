@@ -34,9 +34,10 @@ type readlineReader struct {
 // NewLineReader creates a LineReader backed by ergochat/readline.
 func NewLineReader(prompt, historyPath string, complete CompleteFunc) (LineReader, error) {
 	cfg := &readline.Config{
-		Prompt:       prompt,
-		HistoryFile:  historyPath,
-		AutoComplete: &readlineCompleter{fn: complete},
+		Prompt:                 prompt,
+		HistoryFile:            historyPath,
+		AutoComplete:           &readlineCompleter{fn: complete},
+		DisableAutoSaveHistory: true,
 	}
 	inst, err := readline.NewEx(cfg)
 	if err != nil {
@@ -55,4 +56,8 @@ func (r *readlineReader) Readline() (string, error) {
 
 func (r *readlineReader) Close() error {
 	return r.inst.Close()
+}
+
+func (r *readlineReader) SaveHistory(entry string) error {
+	return r.inst.SaveToHistory(entry)
 }
