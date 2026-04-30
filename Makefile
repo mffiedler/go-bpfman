@@ -39,7 +39,6 @@ DOC_PORT ?= 6060
 # ---------------------------------------------------------------------------
 IMAGE_TAG ?= dev
 BPFMAN_IMAGE ?= bpfman
-STATS_READER_IMAGE ?= stats-reader
 CSI_SANITY_IMAGE ?= csi-sanity
 
 # ---------------------------------------------------------------------------
@@ -318,10 +317,10 @@ PLATFORMS               ?=
 PUSH                    ?=
 BUILDX_EXTRA_ARGS       ?=
 # Caller-supplied extra args passed last to the plain `docker build`
-# targets (build-image-dev, build-image-stats-reader, build-image-
-# csi-sanity, build-image-openshift). Positioned just before the
-# build context so caller flags override any preceding hard-coded
-# flags that buildx/docker treats as last-wins.
+# targets (build-image-dev, build-image-csi-sanity, build-image-
+# openshift). Positioned just before the build context so caller
+# flags override any preceding hard-coded flags that buildx/docker
+# treats as last-wins.
 EXTRA_DOCKER_BUILD_ARGS ?=
 # Selects which Dockerfile the buildx targets use. Defaults to the
 # in-tree Dockerfile.bpfman; override to test an alternative
@@ -387,7 +386,7 @@ LINT_MAKE_TARGETS := \
 	test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
-	build-image-stats-reader build-image-csi-sanity build-image-openshift \
+	build-image-csi-sanity build-image-openshift \
 	ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
@@ -399,8 +398,7 @@ LINT_DOCKERFILES := \
 	Dockerfile.bpfman \
 	Dockerfile.ci \
 	Dockerfile.csi-sanity \
-	Containerfile.bpfman.openshift \
-	examples/stats-reader/Dockerfile
+	Containerfile.bpfman.openshift
 
 
 # ============================================================================
@@ -458,7 +456,6 @@ help:
 	@echo "  build-image-dev             Build current-arch image from host-built binary (fast dev iteration)"
 	@echo "  build-image-nix             Pure-Nix OCI image (no Docker daemon at build time; debug toolkit baked in)"
 	@echo "  build-image-openshift       Build via OpenShift Containerfile (local test)"
-	@echo "  build-image-stats-reader    Build stats-reader container image"
 	@echo "  cosign-sign                 Sign a published image (requires BUILDX_METADATA_FILE)"
 	@echo ""
 	@echo "Documentation:"
@@ -927,10 +924,6 @@ cosign-sign:
 	echo "Signing $(BPFMAN_IMAGE)@$$digest"; \
 	cosign sign -y "$(BPFMAN_IMAGE)@$$digest"
 
-# stats-reader example app
-build-image-stats-reader:
-	docker build -t $(STATS_READER_IMAGE):$(IMAGE_TAG) -f examples/stats-reader/Dockerfile $(EXTRA_DOCKER_BUILD_ARGS) .
-
 # CSI conformance testing
 build-image-csi-sanity:
 	docker build -t $(CSI_SANITY_IMAGE):$(IMAGE_TAG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
@@ -1101,7 +1094,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
-.PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x build-image-stats-reader cosign-sign
+.PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
 .PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
