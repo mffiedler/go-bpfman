@@ -11,16 +11,13 @@
 #include <linux/pkt_cls.h>
 #include <bpf/bpf_helpers.h>
 
-#ifndef BPF_MAP_PINNING
-#define BPF_MAP_PINNING LIBBPF_PIN_BY_NAME
-#endif
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__type(key, __u32);
 	__type(value, __u64);
 	__uint(max_entries, 1);
-	__uint(pinning, BPF_MAP_PINNING);
+	__uint(pinning, LIBBPF_PIN_NONE);
 } tcx_stats_map SEC(".maps");
 
 SEC("classifier/tcx_stats")

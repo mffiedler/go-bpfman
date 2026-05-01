@@ -174,7 +174,7 @@ load_program() {
         bpfman program load image -o json --programs=uprobe:uprobe_counter --image-url="$IMAGE" || true
         exit 1
     fi
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to parse program ID from output"
@@ -185,7 +185,7 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    prog_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     assert_eq "uprobe" "$prog_type" "Managed program type should be uprobe"
 
     local kernel_type

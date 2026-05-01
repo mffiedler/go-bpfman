@@ -5,8 +5,48 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"syscall"
 	"testing"
 )
+
+// e2eSuiteLockPath is a system-wide flock the suite holds for the
+// duration of a run. The e2e tests share kernel state (bpffs,
+// kprobes, perf events, network namespaces) and running two
+// instances concurrently produces undefined results that look like
+// flakes -- we found this empirically when an interrupted invocation
+// kept running and a second was started in parallel. Holding an
+// exclusive non-blocking flock at TestMain entry makes a duplicate
+// run fail fast with a clear message instead.
+//
+// The path deliberately does NOT start with "bpfman-e2e-" so it
+// can't be picked up by cleanupStaleTestDirs's glob, which would
+// unlink it on every run and break flock semantics (flock binds to
+// an inode; replacing the inode silently invalidates other
+// holders' locks).
+const e2eSuiteLockPath = "/tmp/bpfman-e2e.lock"
+
+// suiteLock is package-scoped only so the open file (and thus the
+// flock) lives for the full test process lifetime; closing the fd
+// drops the lock. The OS releases everything on process exit.
+var suiteLock *os.File
+
+func acquireSuiteLock() {
+	f, err := os.OpenFile(e2eSuiteLockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: open suite lock %s: %v\n", e2eSuiteLockPath, err)
+		os.Exit(1)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"e2e: another e2e.test run holds %s -- refusing to start.\n"+
+				"    pid likely visible via: lsof %s   or   fuser %s\n"+
+				"    if no such process exists, remove the lock file and retry.\n",
+			e2eSuiteLockPath, e2eSuiteLockPath, e2eSuiteLockPath)
+		f.Close()
+		os.Exit(1)
+	}
+	suiteLock = f
+}
 
 // e2eModeEnv selects an alternative process role. When set, the
 // binary skips the Go test framework entirely and runs the named
@@ -21,6 +61,7 @@ import (
 const (
 	e2eModeEnv                     = "BPFMAN_E2E_MODE"
 	e2eModeUprobeTriggerCallMalloc = "uprobe-trigger-call-malloc"
+	e2eModeWorkloadDriver          = "workload-driver"
 )
 
 // selfExe is the absolute path of the running e2e.test binary,
@@ -39,6 +80,9 @@ func TestMain(m *testing.M) {
 	case e2eModeUprobeTriggerCallMalloc:
 		invokeUprobeCallMalloc()
 		os.Exit(0)
+	case e2eModeWorkloadDriver:
+		runWorkloadDriver()
+		os.Exit(0)
 	case "":
 		// normal test driver mode
 	default:
@@ -51,6 +95,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Take exclusive lock before any cleanup or test setup so a
+	// concurrent invocation aborts before stomping on shared
+	// kernel/filesystem state.
+	acquireSuiteLock()
+
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "os.Executable: %v\n", err)
@@ -61,6 +110,25 @@ func TestMain(m *testing.M) {
 	if err := cleanupStaleTestDirs(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to clean stale test dirs: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Stand up the suite-wide runtime when shared mode is requested,
+	// before any test runs.  Tests pick it up via NewTestEnv.
+	if sharedRuntimeMode() {
+		if _, err := initSharedRuntime(); err != nil {
+			fmt.Fprintf(os.Stderr, "shared runtime setup failed: %v\n", err)
+			os.Exit(1)
+		}
+		code := m.Run()
+		// Suite-end leak detection promotes a passing run to a
+		// failure if any program or link survived: the t.Cleanup
+		// chain is supposed to drain the manager to zero by the
+		// time TestMain regains control.
+		if leaked := teardownSharedRuntime(sharedRuntime); leaked && code == 0 {
+			fmt.Fprintln(os.Stderr, "e2e suite teardown: residual state at suite end -- failing the run")
+			code = 1
+		}
+		os.Exit(code)
 	}
 
 	os.Exit(m.Run())

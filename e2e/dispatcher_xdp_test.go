@@ -29,7 +29,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/xdp_pass.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/xdp_pass_pinned.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeXDP, Name: "pass"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
 
-			objFile := "testdata/bpf/xdp_counter_nopin.bpf.o"
+			objFile := "testdata/bpf/xdp_counter.bpf.o"
 
 			type loadedProg struct {
 				kernelID   kernel.ProgramID

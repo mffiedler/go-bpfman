@@ -153,7 +153,7 @@ load_program() {
 
     local output
     output=$(bpfman program load image -o json --programs=tcx:stats --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -164,7 +164,7 @@ load_program() {
 
     # Verify program info - TCX programs report as 'tcx' type
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    prog_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     assert_eq "tcx" "$prog_type" "Managed program type should be tcx"
 
     local kernel_type

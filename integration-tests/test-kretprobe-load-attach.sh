@@ -94,7 +94,7 @@ load_program() {
 
     local output
     output=$(bpfman program load image -o json --programs=kretprobe:kprobe_counter --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -112,7 +112,7 @@ load_program() {
     # The distinction is in our stored metadata
     # Let's check what's stored in the database
     local stored_type
-    stored_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    stored_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     log_info "Program type from managed metadata: $stored_type"
     assert_eq "kretprobe" "$stored_type" "Managed program type should be kretprobe"
 

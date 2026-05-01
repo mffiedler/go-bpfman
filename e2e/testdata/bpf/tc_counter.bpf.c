@@ -11,9 +11,6 @@
 
 #include <bpf/bpf_helpers.h>
 
-#ifndef BPF_MAP_PINNING
-#define BPF_MAP_PINNING LIBBPF_PIN_BY_NAME
-#endif
 
 struct datarec {
 	__u64 rx_packets;
@@ -25,7 +22,7 @@ struct {
 	__type(key, __u32);
 	__type(value, datarec);
 	__uint(max_entries, TC_ACT_VALUE_MAX);
-	__uint(pinning, BPF_MAP_PINNING);
+	__uint(pinning, LIBBPF_PIN_NONE);
 } tc_stats_map SEC(".maps");
 
 static __u32 tc_stats_record_action(struct __sk_buff *skb, __u32 action) {

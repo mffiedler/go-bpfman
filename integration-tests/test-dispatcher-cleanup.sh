@@ -112,7 +112,7 @@ ensure_clean_state() {
 load_program() {
     log_info "Step 1: Loading XDP program..."
     log_info "Image: $IMAGE"
-    PROG_ID=$(bpfman program load image -o 'jsonpath={[0].record.program_id}' --programs=xdp:pass --image-url="$IMAGE" 2>&1)
+    PROG_ID=$(bpfman program load image -o 'jsonpath={.programs[0].record.program_id}' --programs=xdp:pass --image-url="$IMAGE" 2>&1)
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"

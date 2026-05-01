@@ -28,7 +28,7 @@ fi
 BPFMAN="${BPFMAN:-./bin/bpfman}"
 CONFIG="${CONFIG:-./config/test.toml}"
 RUNTIME_DIR="${RUNTIME_DIR:-/tmp/bpfman-slow-tc-$$}"
-BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter.bpf.o}"
+BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter_pinned.bpf.o}"
 VETH0="bpf-veth0"
 VETH1="bpf-veth1"
 
@@ -99,9 +99,9 @@ echo "[setup] veth pair: $VETH0 (10.99.0.1) <-> $VETH1 (10.99.0.2)"
 
 # Load two separate instances of the same bytecode
 PROG_A=$(bpfman_quiet program load file -o json \
-    --path="$BYTECODE" --programs=tc:stats 2>/dev/null | jq -r '.[0].record.program_id')
+    --path="$BYTECODE" --programs=tc:stats 2>/dev/null | jq -r '.programs[0].record.program_id')
 PROG_B=$(bpfman_quiet program load file -o json \
-    --path="$BYTECODE" --programs=tc:stats 2>/dev/null | jq -r '.[0].record.program_id')
+    --path="$BYTECODE" --programs=tc:stats 2>/dev/null | jq -r '.programs[0].record.program_id')
 echo "[load] prog_A=$PROG_A (will be the 'original' at priority 55)"
 echo "[load] prog_B=$PROG_B (will be the 'copy' at priority 0)"
 

@@ -160,7 +160,7 @@ load_program() {
     local output
     # For fexit, the format is: fexit:<bpf_func_name>:<kernel_attach_func>
     output=$(bpfman program load file -o json --programs="fexit:${BPF_FUNC}:${FEXIT_FN}" --path="$BYTECODE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -171,7 +171,7 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    prog_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     assert_eq "fexit" "$prog_type" "Managed program type should be fexit"
 
     local kernel_type

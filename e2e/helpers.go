@@ -6,8 +6,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"embed"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"math/rand"
 	"hash/fnv"
 	iofs "io/fs"
 	"log/slog"
@@ -19,6 +23,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +62,13 @@ var bpfFS embed.FS
 // TestEnv provides an isolated test environment for e2e tests.
 // Each test gets a fully isolated environment with unique directories,
 // database, and socket, enabling t.Parallel() across all tests.
+//
+// When BPFMAN_E2E_SHARED_RUNTIME=1 is set, NewTestEnv hands back a
+// view onto the suite-wide runtime instead of creating one per test;
+// the per-test cleanup (unmount bpffs, remove temp dir, close store)
+// is then a no-op and the suite owns those operations end-to-end via
+// teardownSharedRuntime in TestMain.  See shared_runtime_test.go for
+// the rationale.
 type TestEnv struct {
 	T           *testing.T
 	Layout      fs.Layout
@@ -65,6 +77,19 @@ type TestEnv struct {
 	logger      *slog.Logger
 	baseDir     string // parent directory containing layout, cache, testdata
 	closeEnv    func() error
+	// shared is true when this TestEnv is a view onto the suite-wide
+	// runtime rather than a per-test runtime; cleanup() is a no-op
+	// in that case and the suite-end teardown owns global teardown.
+	shared bool
+
+	// scopeMu guards the per-test scope sets below.  In shared mode
+	// concurrent tests run against the same manager, so the
+	// TestEnv's bookkeeping has to be safe against the test's own
+	// callers parallelising helpers (none today, but cheap to keep
+	// correct).
+	scopeMu       sync.Mutex
+	scopePrograms map[kernel.ProgramID]struct{}
+	scopeLinks    map[kernel.LinkID]struct{}
 }
 
 // NewTestEnv creates an isolated test environment for e2e testing.
@@ -77,6 +102,31 @@ type TestEnv struct {
 // The environment is automatically cleaned up via t.Cleanup().
 func NewTestEnv(t *testing.T) *TestEnv {
 	t.Helper()
+
+	// Shared-runtime mode: hand back a view onto the suite-wide
+	// runtime that TestMain stood up.  The per-test bpffs mount,
+	// store, and manager are skipped; cleanup is a no-op.  Note
+	// that AssertCleanState and friends still operate on global
+	// state in this mode -- phase 2 of the shared-runtime work
+	// makes them scope-aware.  Today, running multiple tests
+	// concurrently in shared mode will trip the global checks.
+	if sharedRuntimeMode() {
+		rt := requireSharedRuntimeForTest(t)
+		env := &TestEnv{
+			T:             t,
+			Layout:        rt.layout,
+			Manager:       rt.manager,
+			ImagePuller:   rt.imagePuller,
+			logger:        rt.logger.With("test", t.Name()),
+			baseDir:       rt.baseDir,
+			closeEnv:      nil,
+			shared:        true,
+			scopePrograms: make(map[kernel.ProgramID]struct{}),
+			scopeLinks:    make(map[kernel.LinkID]struct{}),
+		}
+		t.Cleanup(env.cleanup)
+		return env
+	}
 
 	// Create unique directory for this test
 	baseDir, err := os.MkdirTemp("", fmt.Sprintf("bpfman-e2e-%d-", os.Getpid()))
@@ -175,7 +225,17 @@ func NewTestEnv(t *testing.T) *TestEnv {
 
 // cleanup releases resources and removes test directories.
 // Failures are reported and cause the test to fail.
+//
+// In shared-runtime mode this is a no-op: the bpffs mount, store,
+// and base directory belong to the suite, not to any single test,
+// and teardownSharedRuntime in TestMain owns those operations.
+// Per-test resource lifecycle (programs loaded, links attached) is
+// still managed by the test's own t.Cleanup callbacks via
+// env.Detach / env.Unload, exactly as in isolated mode.
 func (e *TestEnv) cleanup() {
+	if e.shared {
+		return
+	}
 	if e.closeEnv != nil {
 		if err := e.closeEnv(); err != nil {
 			e.T.Errorf("failed to close environment: %v", err)
@@ -196,9 +256,42 @@ func (e *TestEnv) cleanup() {
 	}
 }
 
-// runWithLock executes a function under the writer lock.
+// runWithLock executes a function under the writer lock.  Routes
+// through lock.RunWithTiming so wait_ms / held_ms appear in the
+// log stream tagged component=lock; emit at Debug level, so the
+// default e2e logger (Error level) still drops them and the
+// instrumentation is free unless explicitly opted into via
+// BPFMAN_LOG=lock=debug (or a coarser BPFMAN_LOG=debug).
+//
+// Tags every entry with op=<calling-method> via runtime.Caller and
+// test=<t.Name()> via the env logger, so a shared-runtime BPFMAN_LOG
+// run can be slice-and-diced by operation (LoadFile, Attach, ...)
+// or by test to find the outliers behind shared-mode wall-clock.
 func (e *TestEnv) runWithLock(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
-	return lock.Run(ctx, e.Layout.LockPath(), fn)
+	op := callerOp()
+	return lock.RunWithTiming(ctx, e.Layout.LockPath(), e.logger.With("op", op), fn)
+}
+
+// callerOp returns the unqualified name of the function that
+// called runWithLock -- e.g. "LoadFile", "Attach".  Used to tag
+// the lock-timing log entries so shared-runtime BPFMAN_LOG runs
+// can be aggregated by operation type.  Returns "?" if the stack
+// inspection fails; callers must not rely on this for control
+// flow.
+func callerOp() string {
+	pc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		return "?"
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "?"
+	}
+	name := fn.Name()
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
 }
 
 // LoadImage loads BPF programs from an OCI image.
@@ -211,6 +304,9 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 		}, programs, opts)
 		return loadErr
 	})
+	if err == nil {
+		e.trackPrograms(result)
+	}
 	return result, err
 }
 
@@ -232,6 +328,9 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 		}, programs, opts)
 		return loadErr
 	})
+	if err == nil {
+		e.trackPrograms(result)
+	}
 	return result, err
 }
 
@@ -261,18 +360,44 @@ func materialiseBPFFS(root string) error {
 
 // Unload unloads a BPF program.
 func (e *TestEnv) Unload(ctx context.Context, programID kernel.ProgramID) error {
-	return e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return e.Manager.Unload(ctx, writeLock, programID)
 	})
+	if err == nil {
+		e.untrackProgram(programID)
+	}
+	return err
 }
 
-// List returns all managed programs.
+// List returns the managed programs visible to this TestEnv.
+//
+// In isolated mode (the default) this is everything the manager
+// knows about, since the manager is per-test.  In shared-runtime
+// mode the result is filtered to programs this TestEnv created via
+// LoadFile / LoadImage and not yet Unloaded -- callers that wrote
+// against the historical "shows my programs" expectation continue
+// to work without scope-awareness leaking into every test.
 func (e *TestEnv) List(ctx context.Context) ([]bpfman.Program, error) {
 	result, err := e.Manager.ListPrograms(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return result.Programs, nil
+	if !e.shared {
+		return result.Programs, nil
+	}
+	mine := make([]bpfman.Program, 0, e.scopeProgramCount())
+	for _, p := range result.Programs {
+		if p.Status.Kernel == nil {
+			continue
+		}
+		e.scopeMu.Lock()
+		_, ok := e.scopePrograms[p.Status.Kernel.ID]
+		e.scopeMu.Unlock()
+		if ok {
+			mine = append(mine, p)
+		}
+	}
+	return mine, nil
 }
 
 // Get returns detailed information about a program.
@@ -292,6 +417,7 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 	if err != nil {
 		return bpfman.LinkRecord{}, err
 	}
+	e.trackLink(result.Record.ID)
 	record, err := e.Manager.GetLink(ctx, result.Record.ID)
 	if err != nil {
 		return bpfman.LinkRecord{ID: result.Record.ID}, nil
@@ -301,14 +427,93 @@ func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.Li
 
 // Detach detaches a link.
 func (e *TestEnv) Detach(ctx context.Context, linkID kernel.LinkID) error {
-	return e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
+	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return e.Manager.Detach(ctx, writeLock, linkID)
 	})
+	if err == nil {
+		e.untrackLink(linkID)
+	}
+	return err
 }
 
-// ListLinks returns all managed links.
+// trackPrograms records every successfully loaded program in the
+// TestEnv's local set so AssertProgramCount and AssertCleanState
+// can return scope-local answers under shared mode.  Cheap in
+// isolated mode (the assertion helpers ignore the set there).
+func (e *TestEnv) trackPrograms(progs []bpfman.Program) {
+	if len(progs) == 0 {
+		return
+	}
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	if e.scopePrograms == nil {
+		e.scopePrograms = make(map[kernel.ProgramID]struct{}, len(progs))
+	}
+	for _, p := range progs {
+		if p.Status.Kernel == nil {
+			continue
+		}
+		e.scopePrograms[p.Status.Kernel.ID] = struct{}{}
+	}
+}
+
+func (e *TestEnv) untrackProgram(id kernel.ProgramID) {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	delete(e.scopePrograms, id)
+}
+
+func (e *TestEnv) trackLink(id kernel.LinkID) {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	if e.scopeLinks == nil {
+		e.scopeLinks = make(map[kernel.LinkID]struct{})
+	}
+	e.scopeLinks[id] = struct{}{}
+}
+
+func (e *TestEnv) untrackLink(id kernel.LinkID) {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	delete(e.scopeLinks, id)
+}
+
+func (e *TestEnv) scopeProgramCount() int {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	return len(e.scopePrograms)
+}
+
+func (e *TestEnv) scopeLinkCount() int {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	return len(e.scopeLinks)
+}
+
+func (e *TestEnv) scopeContainsLink(id kernel.LinkID) bool {
+	e.scopeMu.Lock()
+	defer e.scopeMu.Unlock()
+	_, ok := e.scopeLinks[id]
+	return ok
+}
+
+// ListLinks returns the managed links visible to this TestEnv.
+// Scope-aware in shared-runtime mode; see List for the rationale.
 func (e *TestEnv) ListLinks(ctx context.Context) ([]bpfman.LinkRecord, error) {
-	return e.Manager.ListLinks(ctx)
+	all, err := e.Manager.ListLinks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !e.shared {
+		return all, nil
+	}
+	mine := make([]bpfman.LinkRecord, 0, e.scopeLinkCount())
+	for _, l := range all {
+		if e.scopeContainsLink(l.ID) {
+			mine = append(mine, l)
+		}
+	}
+	return mine, nil
 }
 
 // GetLink returns detailed information about a link.
@@ -347,26 +552,48 @@ func (e *TestEnv) AssertCleanState() {
 }
 
 // AssertProgramCount verifies the number of managed programs.
+//
+// In shared-runtime mode the assertion is scoped to programs this
+// TestEnv created (via env.LoadFile / env.LoadImage and not yet
+// Unloaded), since the manager's global view also contains other
+// concurrent tests' programs.  In isolated mode the per-test
+// manager has only this test's programs, so a global list is
+// equivalent; we keep the global path for that mode unchanged.
 func (e *TestEnv) AssertProgramCount(expected int) {
 	e.T.Helper()
+	if e.shared {
+		got := e.scopeProgramCount()
+		require.Equal(e.T, expected, got,
+			"unexpected scope-local program count (shared runtime mode); want=%d got=%d",
+			expected, got)
+		return
+	}
 	ctx := context.Background()
-
 	programs, err := e.List(ctx)
 	require.NoError(e.T, err, "failed to list programs")
 	require.Len(e.T, programs, expected, "unexpected program count")
 }
 
 // AssertLinkCount verifies the total number of managed links.
+// Scope-aware in shared-runtime mode; see AssertProgramCount.
 func (e *TestEnv) AssertLinkCount(expected int) {
 	e.T.Helper()
+	if e.shared {
+		got := e.scopeLinkCount()
+		require.Equal(e.T, expected, got,
+			"unexpected scope-local link count (shared runtime mode); want=%d got=%d",
+			expected, got)
+		return
+	}
 	ctx := context.Background()
-
 	links, err := e.ListLinks(ctx)
 	require.NoError(e.T, err, "failed to list links")
 	require.Len(e.T, links, expected, "unexpected link count")
 }
 
 // AssertLinkCountByKind verifies the number of links of a specific kind.
+// Scope-aware in shared-runtime mode; iterates the global list and
+// keeps only links this TestEnv created.
 func (e *TestEnv) AssertLinkCountByKind(linkKind bpfman.LinkKind, expected int) {
 	e.T.Helper()
 	ctx := context.Background()
@@ -376,9 +603,13 @@ func (e *TestEnv) AssertLinkCountByKind(linkKind bpfman.LinkKind, expected int) 
 
 	count := 0
 	for _, link := range links {
-		if link.Kind == linkKind {
-			count++
+		if link.Kind != linkKind {
+			continue
 		}
+		if e.shared && !e.scopeContainsLink(link.ID) {
+			continue
+		}
+		count++
 	}
 	require.Equal(e.T, expected, count, "unexpected link count for kind %s", linkKind)
 }
@@ -388,6 +619,21 @@ func RequireRoot(t *testing.T) {
 	t.Helper()
 	if os.Geteuid() != 0 {
 		t.Fatal("test requires root privileges")
+	}
+}
+
+// RequireIsolatedRuntime skips the test when BPFMAN_E2E_SHARED_RUNTIME=1
+// is in effect. Use it for tests whose assertions are globally
+// scoped -- e.g. "after my last unload the shared bpffs pin is
+// removed" -- which are correct in the per-test runtime where this
+// test owns the entire bpffs, but cannot hold under shared mode
+// where concurrent tests legitimately keep the same shared resources
+// alive. The skip carries a reason so a shared-mode run still
+// reports clearly that something was deliberately not exercised.
+func RequireIsolatedRuntime(t *testing.T, reason string) {
+	t.Helper()
+	if sharedRuntimeMode() {
+		t.Skipf("skipped under BPFMAN_E2E_SHARED_RUNTIME=1: %s", reason)
 	}
 }
 
@@ -584,19 +830,50 @@ func uniqueTestName() string {
 	return fmt.Sprintf("B%012xN", h.Sum64()&0xffffffffffff)
 }
 
-var vethAddrSeq atomic.Uint32
+// vethAddrPool tracks which pair indices in [1, 127] are
+// currently allocated. Indices map to /32 addresses inside RFC
+// 5737 TEST-NET-2 (198.51.100.0/24) via vethAddrsForIndex. The
+// pool is sized for peak concurrent veth pairs across parallel
+// tests, not the cumulative total over the lifetime of the
+// process: NewTestVethPair acquires an index, the t.Cleanup
+// releases it. Pre-release the counter was monotonic and a
+// `-test.count=N` run quickly exceeded the 127 ceiling even
+// though peak concurrency stayed well under it.
+var vethAddrPool = struct {
+	mu   sync.Mutex
+	used [128]bool // index 0 unused; valid range is [1, 127]
+}{}
 
-// vethAddrs allocates a unique pair of /32 addresses from the RFC
-// 5737 TEST-NET-2 range (198.51.100.0/24) for a veth pair. Each
-// call returns addresses that won't conflict with other pairs in
-// the root namespace's routing table. The returned pairIndex is
-// the allocation index, which callers must use for any derived
-// identifiers (e.g., MAC addresses) to avoid races between the
-// atomic increment and a separate Load.
-func vethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
-	idx := vethAddrSeq.Add(1)
-	addrA, addrB, pingTarget = vethAddrsForIndex(idx)
-	return addrA, addrB, pingTarget, idx
+// acquireVethAddrs takes the lowest free index from vethAddrPool
+// and returns its /32 addresses. Panics if the pool is
+// exhausted -- that means more than 127 veth pairs are alive
+// concurrently, which is well past expected parallelism and
+// indicates either a leak (releaseVethAddrs not called) or
+// genuinely too many parallel tests for this address range.
+func acquireVethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
+	vethAddrPool.mu.Lock()
+	defer vethAddrPool.mu.Unlock()
+	for i := uint32(1); i <= 127; i++ {
+		if !vethAddrPool.used[i] {
+			vethAddrPool.used[i] = true
+			addrA, addrB, pingTarget = vethAddrsForIndex(i)
+			return addrA, addrB, pingTarget, i
+		}
+	}
+	panic("veth address pool exhausted: more than 127 concurrent veth pairs in flight (leak or excessive parallelism)")
+}
+
+// releaseVethAddrs returns an index to vethAddrPool so the next
+// acquireVethAddrs can reuse its addresses. Idempotent for the
+// no-op case (already-free index) so a double-cleanup doesn't
+// crash, but logs nothing -- the index becoming free twice is
+// benign.
+func releaseVethAddrs(pairIndex uint32) {
+	vethAddrPool.mu.Lock()
+	defer vethAddrPool.mu.Unlock()
+	if pairIndex >= 1 && pairIndex <= 127 {
+		vethAddrPool.used[pairIndex] = false
+	}
 }
 
 // vethAddrsForIndex returns unique /32 addresses for the given pair
@@ -699,6 +976,16 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 		t.Fatalf("namespace %s already exists (leaked from previous test?)", nsName)
 	}
 
+	// Acquire the address index first and register its release
+	// cleanup before any kernel artefacts (namespace, veth) so
+	// LIFO cleanup order is: delete veth -> delete namespace ->
+	// release index. The release must run *after* the kernel
+	// has removed the interface (and with it the addresses and
+	// routes) so a concurrent acquirer reusing the same index
+	// doesn't try to add the still-present /32 to a new veth.
+	ipA, ipB, pingTarget, pairIdx := acquireVethAddrs()
+	t.Cleanup(func() { releaseVethAddrs(pairIdx) })
+
 	// Create named network namespace. NewNamed switches the calling
 	// thread's netns, so we must lock the OS thread and restore.
 	runtime.LockOSThread()
@@ -762,10 +1049,6 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	}
 	nsHandleForMove.Close()
 
-	// Allocate unique /32 addresses from TEST-NET-2 so that
-	// multiple veth pairs in the root namespace never conflict.
-	ipA, ipB, pingTarget, pairIdx := vethAddrs()
-
 	// Configure A in root namespace with a peer route to B.
 	linkA, err := netlink.LinkByName(nameA)
 	if err != nil {
@@ -815,7 +1098,7 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// where <pid_hi>:<pid_lo> are the two least-significant
 	// bytes of the process ID (ensuring uniqueness across
 	// concurrent stress test processes), <pair> is the veth pair
-	// index returned by vethAddrs (ensuring uniqueness within a
+	// index returned by acquireVethAddrs (ensuring uniqueness within a
 	// process and avoiding a race between Add and Load on the
 	// atomic counter), and <end> is 01 for the A side (root
 	// namespace) or 02 for the B side (test namespace).
@@ -978,11 +1261,67 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	}
 }
 
+// pingMode selects ping behaviour for the private ping helper.
+// The three Ping* public methods each pick one mode; the modes
+// aren't combinatorial flags, they're discrete choices, so an
+// enum reads better than a pair of bools at the helper's call
+// sites.
+type pingMode int
+
+const (
+	// pingDefensive re-verifies connectivity before the burst
+	// (one extra pre-burst ping) and fails on any reply loss.
+	// Default for non-exact-equality tests under heavy parallel
+	// load -- the re-verify re-warms ARP that other tests'
+	// cleanup may have evicted.
+	pingDefensive pingMode = iota
+
+	// pingExactCount skips the re-verify so the burst is
+	// exactly N ICMP echo requests on A's ingress, and fails on
+	// any reply loss. For exact-equality counter assertions.
+	pingExactCount
+
+	// pingExpectDrop skips the re-verify and tolerates 100%
+	// reply loss. For chain-stops tests where an attached BPF
+	// program drops packets at A's ingress (e.g. a multi-prog
+	// XDP chain whose middle program returns XDP_DROP).
+	pingExpectDrop
+)
+
 // Ping sends count ICMP echo requests from the veth pair's B
 // interface (inside the test namespace) to A's IP address. This
 // generates real ingress traffic on A, triggering any attached TC
-// programs.
+// programs. Does a defensive re-verify before the burst, which adds
+// one extra echo request to A's ingress -- non-exact tests use this
+// form; tests that assert exact counts should use PingExact.
 func (v TestVethPair) Ping(t *testing.T, count int) {
+	t.Helper()
+	v.ping(t, count, pingDefensive)
+}
+
+// PingExact is Ping without the pre-burst re-verify. Use for
+// exact-equality counter assertions, where the extra ping inflates
+// the count by one. Relies on the initial waitConnectivity at veth
+// creation having warmed ARP; do not call across long pauses where
+// concurrent cleanup elsewhere could disrupt link state.
+func (v TestVethPair) PingExact(t *testing.T, count int) {
+	t.Helper()
+	v.ping(t, count, pingExactCount)
+}
+
+// PingExpectDrop fires count ICMP echo requests but tolerates
+// 100% reply loss. Use when an attached BPF program is expected
+// to drop packets at A's ingress (e.g. a multi-program XDP chain
+// where the middle program returns XDP_DROP to terminate the
+// chain). The kernel still sends the N requests from B; the
+// counter at A's BPF program advances exactly N times even though
+// the kernel ICMP responder never gets them.
+func (v TestVethPair) PingExpectDrop(t *testing.T, count int) {
+	t.Helper()
+	v.ping(t, count, pingExpectDrop)
+}
+
+func (v TestVethPair) ping(t *testing.T, count int, mode pingMode) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1000,15 +1339,18 @@ func (v TestVethPair) Ping(t *testing.T, count int) {
 			v.A.Ifindex, linkA.Attrs().Index)
 	}
 
-	// Re-verify connectivity before the test burst. Under heavy
-	// parallel load, concurrent veth cleanup from other tests
-	// can disrupt link state. This re-establishes ARP entries.
-	waitConnectivity(t, v.Netns, v.PingTarget, 30*time.Second)
+	if mode == pingDefensive {
+		// Re-verify connectivity before the test burst. Under
+		// heavy parallel load, concurrent veth cleanup from
+		// other tests can disrupt link state. This re-
+		// establishes ARP entries.
+		waitConnectivity(t, v.Netns, v.PingTarget, 30*time.Second)
+	}
 
 	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", v.Netns,
 		"ping", "-c", strconv.Itoa(count), "-i", "0.1", "-W", "1", v.PingTarget)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if err != nil && mode != pingExpectDrop {
 		v.dumpNetworkState(t, "ping-failure")
 		t.Fatalf("ping failed: %v\n%s", err, out)
 	}
@@ -1143,9 +1485,20 @@ func cleanupStaleTestDirs() error {
 	}
 
 	for _, path := range matches {
-		// Safety: verify path is under tempDir and has expected prefix
+		// Safety: verify path is under tempDir and has expected prefix.
 		if err := validateStaleTestDir(path, tempDir); err != nil {
 			return fmt.Errorf("refusing to remove %s: %w", path, err)
+		}
+
+		// Defensive: only stale TEST DIRECTORIES are in scope here.
+		// Files matching the glob (notably the suite-lock file the
+		// e2eSuiteLockPath now lives outside the prefix on principle,
+		// but anything else that ends up in /tmp under the prefix
+		// without being a directory is not ours to remove) are left
+		// alone.
+		fi, err := os.Lstat(path)
+		if err != nil || !fi.IsDir() {
+			continue
 		}
 
 		// Check if the PID in the directory name is still running
@@ -1250,6 +1603,387 @@ func readPerCPUCounter(t *testing.T, mapPinPath string, key uint32) uint64 {
 	var perCPU []uint64
 	err = m.Lookup(key, &perCPU)
 	require.NoError(t, err, "lookup key %d in map at %s", key, mapPinPath)
+
+	var total uint64
+	for _, v := range perCPU {
+		total += v
+	}
+	return total
+}
+
+// mapIDByName resolves a program's kernel map by name and returns its
+// kernel-assigned ID. Useful for tests that need to read a specific
+// named counter map without depending on the kernel's MapIDs ordering
+// (which is not contractually stable when a program owns multiple
+// maps).
+func mapIDByName(t *testing.T, prog bpfman.Program, name string) kernel.MapID {
+	t.Helper()
+	require.NotNil(t, prog.Status.Kernel, "program has no kernel info")
+	for _, m := range prog.Status.Maps {
+		if m.Name == name {
+			return m.ID
+		}
+	}
+	t.Fatalf("program %d has no map named %q (maps: %+v)", prog.Status.Kernel.ID, name, prog.Status.Maps)
+	return 0
+}
+
+// readArrayCounterByID opens a BPF_MAP_TYPE_ARRAY map by its
+// kernel-assigned ID and returns the uint64 value at key 0. Used by
+// tests where the BPF program filters in-kernel and writes to a
+// single counter slot.
+func readArrayCounterByID(t *testing.T, mapID kernel.MapID) uint64 {
+	t.Helper()
+
+	m, err := ciliumebpf.NewMapFromID(ciliumebpf.MapID(mapID))
+	require.NoError(t, err, "open map ID %d", mapID)
+	defer m.Close()
+
+	var key uint32 = 0
+	var val uint64
+	err = m.Lookup(key, &val)
+	require.NoError(t, err, "lookup key 0 in map ID %d", mapID)
+	return val
+}
+
+// assertCounterQuiet drives `fire` and asserts that the named
+// counter map on `prog` does not advance. Use after Detach to
+// prove that detach actually stopped the BPF program firing, not
+// just removed bpfman's link record. The original perf-link
+// detach bug (commit 1459c0b) would surface here as a non-zero
+// delta even though `events * weight == count` passed pre-detach,
+// because the singleton tests never fire post-detach traffic by
+// themselves. Applies to every program type -- the bug is
+// perf-link specific but the property "detach stopped it" is
+// worth pinning down uniformly.
+func assertCounterQuiet(t *testing.T, prog bpfman.Program, mapName string, fire func()) {
+	t.Helper()
+	mapID := mapIDByName(t, prog, mapName)
+	before := readArrayCounterByID(t, mapID)
+	fire()
+	after := readArrayCounterByID(t, mapID)
+	require.Equal(t, before, after,
+		"counter %q should be quiet after detach (before=%d after=%d, delta=%d)",
+		mapName, before, after, after-before)
+}
+
+// ActiveResult is what waitProgramActive reports back. Mirror of
+// QuiescenceResult on the attach side.
+type ActiveResult struct {
+	// Probes is the total number of single-event firings driven
+	// before the just-attached program counted its first event.
+	// Each probe still flows through the kernel hook, so siblings
+	// of the just-attached program (which are already attached)
+	// count every probe; callers must add Probes to each sibling's
+	// expected counter to keep assertions exact.
+	Probes int
+	// EventsCounted is how many probes the just-attached program
+	// counted. Always 1 on success (the first observed increment is
+	// the exit condition); included for symmetry with
+	// QuiescenceResult and so callers add it uniformly to expected.
+	EventsCounted int
+	// LostProbes is Probes - EventsCounted, the number of probes
+	// fired before the program became active. Telemetry: 0 on
+	// synchronous attach, > 0 on racy/contended attach paths
+	// (notably bpf_trampoline rebuild for fentry/fexit when
+	// concurrent attaches contend on the same target function).
+	LostProbes int
+	// Latency is the wall-clock time from first probe to first
+	// observed increment.
+	Latency time.Duration
+}
+
+// AttachActiveProbe configures waitProgramActive.
+type AttachActiveProbe struct {
+	// AttachedMap is the counter map of the just-attached program.
+	AttachedMap    kernel.MapID
+	AttachedWeight uint64
+	// FireOne drives exactly one workload event that should hit the
+	// program's hook now that it's attached.
+	FireOne func()
+	// Deadline is the upper bound on the entire wait. Default 500ms.
+	Deadline time.Duration
+}
+
+// waitProgramActive fires single workload events one at a time after
+// env.Attach returns and waits for the just-attached program's counter
+// to register its first event -- proving the attach has taken effect
+// kernel-side. This is the symmetric attach-side counterpart of
+// waitDetachQuiescent.
+//
+// Why it's needed: for fentry/fexit (and to a lesser extent any
+// multi-program-on-one-hook attach), env.Attach can return before the
+// kernel-side machinery is fully active. For fentry/fexit specifically
+// the attach goes through bpf_trampoline_update -- a JITed image is
+// rebuilt and text_poke_bp swaps the function-entry patch. Under
+// concurrent attach/detach contention on the same target function (the
+// e2e suite has many tests sharing do_unlinkat) the rebuild can be
+// slow enough that a workload event fired immediately after Attach
+// lands on the OLD image, where our program isn't yet present, and the
+// event is lost from our counter. Same class of bug as the detach
+// deferral, symmetrically placed.
+//
+// kprobe/uprobe/tracepoint attach is essentially synchronous (a single
+// rcu_assign_pointer publish onto tp_event->prog_array), so this
+// helper typically returns on the first probe for those types -- but
+// using it uniformly costs ~one extra probe per attach and gains
+// uniform telemetry plus defence in depth.
+func waitProgramActive(t *testing.T, p AttachActiveProbe) ActiveResult {
+	t.Helper()
+	deadline := p.Deadline
+	if deadline <= 0 {
+		deadline = 500 * time.Millisecond
+	}
+
+	start := time.Now()
+	initial := readArrayCounterByID(t, p.AttachedMap)
+	probes := 0
+
+	for time.Since(start) < deadline {
+		p.FireOne()
+		probes++
+		now := readArrayCounterByID(t, p.AttachedMap)
+		if now != initial {
+			eventsCounted := int((now - initial) / p.AttachedWeight)
+			return ActiveResult{
+				Probes:        probes,
+				EventsCounted: eventsCounted,
+				LostProbes:    probes - eventsCounted,
+				Latency:       time.Since(start),
+			}
+		}
+	}
+	t.Fatalf("waitProgramActive: counter never incremented after %d probes in %s -- attach not effective",
+		probes, time.Since(start))
+	return ActiveResult{}
+}
+
+// QuiescenceResult is what waitDetachQuiescent reports back so callers
+// can both check that the barrier was reached and fold the probe events
+// into their expected counts.
+type QuiescenceResult struct {
+	// Probes is the total number of single-event workload firings
+	// driven during the wait. Each probe still flows through the
+	// kernel hook, so siblings of the just-detached program (which
+	// remain attached) WILL count it; callers must add Probes to
+	// the expected counter for any sibling that is still attached.
+	Probes int
+	// EventsCounted is the number of probes the detached program
+	// itself counted before quiescence. Telemetry: under perfect
+	// synchronous detach this is 0; values > 0 measure the kernel
+	// deferral (RCU GP + workqueue) in events.
+	EventsCounted int
+	// Latency is the wall-clock time from first probe to declaring
+	// quiescence. Telemetry only.
+	Latency time.Duration
+}
+
+// QuiescenceProbe configures waitDetachQuiescent.
+type QuiescenceProbe struct {
+	// DetachedMap is the counter map of the just-detached program.
+	// The barrier waits until this counter has been stable across
+	// StableProbes consecutive probes.
+	DetachedMap    kernel.MapID
+	DetachedWeight uint64
+
+	// ControlMap, if non-zero, is the counter map of a still-
+	// attached sibling on the same hook. After the barrier, the
+	// helper asserts ControlMap advanced by exactly
+	// Probes*ControlWeight, catching the "workload is broken so the
+	// hook never fires" false-negative case (where a never-firing
+	// counter looks identical to a successfully detached one). Pass
+	// 0 to skip -- typically only for singleton tests where the
+	// pre-detach pass already proved the workload reaches the hook.
+	ControlMap    kernel.MapID
+	ControlWeight uint64
+
+	// FireOne drives exactly one workload event that would hit the
+	// program's hook if it were still attached.
+	FireOne func()
+
+	// StableProbes is how many consecutive non-moving counter reads
+	// declare quiescence. Default 3.
+	StableProbes int
+	// Deadline is the upper bound on the entire wait. Default 500ms.
+	Deadline time.Duration
+}
+
+// waitDetachQuiescent fires single workload events one at a time and
+// reads the just-detached program's counter after each, returning when
+// the counter has been stable for StableProbes consecutive probes
+// (the detach has demonstrably taken effect kernel-side) or fails the
+// test if the deadline expires while the counter is still moving.
+//
+// This is the only correct primitive for proving "this BPF program
+// stopped firing" on bpf-perf-link types (kprobe, kretprobe, uprobe,
+// uretprobe, tracepoint, fentry, fexit). Per
+// docs/PERF-LINK-DETACH-IS-ASYNC.md the kernel exposes no synchronous
+// teardown for those: pin removal is RCU-deferred via the bpffs
+// inode's free_inode super_op, and the FD close path can only free
+// when it drops the LAST ref, which it never does while the pin is
+// alive. The deferred bpf_link_free is what eventually runs
+// perf_event_detach_bpf_prog and removes the program from the
+// trace_event's prog_array. Any fixed sleep is wrong on slow runners
+// eventually; polling the program's own counter is the lagging
+// observable that adapts to actual kernel timing.
+//
+// FireOne must drive exactly one workload event that would hit the
+// program's hook if it were still attached. For tests that share a
+// hook between several programs, every probe also lands on the still-
+// attached siblings -- the caller adds the returned Probes to each
+// sibling's expected counter to keep assertions exact.
+//
+// If ControlMap is set, the helper sanity-checks that ControlMap
+// advanced by exactly Probes*ControlWeight after the barrier; this
+// catches the false-negative where the workload no longer reaches the
+// hook (counter never increments, looks like a clean detach).
+func waitDetachQuiescent(t *testing.T, p QuiescenceProbe) QuiescenceResult {
+	t.Helper()
+	stableProbes := p.StableProbes
+	if stableProbes <= 0 {
+		stableProbes = 3
+	}
+	deadline := p.Deadline
+	if deadline <= 0 {
+		deadline = 500 * time.Millisecond
+	}
+
+	start := time.Now()
+	initial := readArrayCounterByID(t, p.DetachedMap)
+	var controlInitial uint64
+	if p.ControlMap != 0 {
+		controlInitial = readArrayCounterByID(t, p.ControlMap)
+	}
+	last := initial
+	stable := 0
+	probes := 0
+
+	for time.Since(start) < deadline {
+		p.FireOne()
+		probes++
+		now := readArrayCounterByID(t, p.DetachedMap)
+		if now == last {
+			stable++
+			if stable >= stableProbes {
+				result := QuiescenceResult{
+					Probes:        probes,
+					EventsCounted: int((now - initial) / p.DetachedWeight),
+					Latency:       time.Since(start),
+				}
+				if p.ControlMap != 0 {
+					controlDelta := readArrayCounterByID(t, p.ControlMap) - controlInitial
+					expected := uint64(probes) * p.ControlWeight
+					require.Equal(t, expected, controlDelta,
+						"control sibling counter delta should equal probes(%d) * weight(%d) = %d after barrier; got %d. Workload likely not hitting the hook -- 'quiescence' would be a false positive",
+						probes, p.ControlWeight, expected, controlDelta)
+				}
+				return result
+			}
+		} else {
+			stable = 0
+			last = now
+		}
+	}
+	t.Fatalf("waitDetachQuiescent: counter still moving after %s and %d probes (delta=%d, weight=%d)",
+		deadline, probes, last-initial, p.DetachedWeight)
+	return QuiescenceResult{}
+}
+
+// uniqueWeights returns n distinct random uint64 weights derived
+// from a fresh test-scoped seed. Used by tests that pass per-program
+// weights as global data so the BPF program's counter is a verifiable
+// function of (events × weight) rather than a bare event tally.
+//
+// Weights are forced to differ from each other so that a "wrong map"
+// or "swapped indices" bug is detectable. The high bit is cleared so
+// that events × weight cannot overflow for realistic event counts.
+func uniqueWeights(t *testing.T, n int) []uint64 {
+	t.Helper()
+	r := newTestRand(t)
+	seen := make(map[uint64]struct{}, n)
+	out := make([]uint64, 0, n)
+	for len(out) < n {
+		w := r.Uint64() & ((1 << 40) - 1)
+		if w == 0 {
+			continue
+		}
+		if _, dup := seen[w]; dup {
+			continue
+		}
+		seen[w] = struct{}{}
+		out = append(out, w)
+	}
+	return out
+}
+
+// newTestRand returns a math/rand source seeded uniquely per test.
+// The seed is logged so a failing test is reproducible when the
+// random weights matter.
+func newTestRand(t *testing.T) *rand.Rand {
+	t.Helper()
+	var seedBytes [8]byte
+	_, err := cryptorand.Read(seedBytes[:])
+	require.NoError(t, err, "read crypto/rand seed")
+	seed := int64(binary.LittleEndian.Uint64(seedBytes[:]))
+	t.Logf("test rand seed: %d", seed)
+	return rand.New(rand.NewSource(seed))
+}
+
+// uint32LE encodes v as 4 little-endian bytes, the form bpfman
+// global-data injection expects for `volatile const __u32`.
+func uint32LE(v uint32) []byte {
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], v)
+	return b[:]
+}
+
+// uint64LE encodes v as 8 little-endian bytes, the form bpfman
+// global-data injection expects for `volatile const __u64`.
+func uint64LE(v uint64) []byte {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], v)
+	return b[:]
+}
+
+// readHashCounterByID opens a BPF_MAP_TYPE_HASH map by its
+// kernel-assigned ID and returns the uint64 value at the given key,
+// or 0 if the key is not present. Used by tests that count events
+// per-PID in a hash map keyed by bpf_get_current_pid_tgid() >> 32,
+// so they can assert exact counts without being polluted by ambient
+// system activity on the same attach surface.
+func readHashCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 {
+	t.Helper()
+
+	m, err := ciliumebpf.NewMapFromID(ciliumebpf.MapID(mapID))
+	require.NoError(t, err, "open map ID %d", mapID)
+	defer m.Close()
+
+	var val uint64
+	err = m.Lookup(key, &val)
+	if err != nil {
+		if errors.Is(err, ciliumebpf.ErrKeyNotExist) {
+			return 0
+		}
+		t.Fatalf("lookup key %d in map ID %d: %v", key, mapID, err)
+	}
+	return val
+}
+
+// readPerCPUCounterByID opens a BPF_MAP_TYPE_PERCPU_ARRAY map by its
+// kernel-assigned ID and returns the sum of uint64 values across all
+// CPUs for the given key. Used by tests that load programs from
+// LIBBPF_PIN_NONE objects, where the maps are not on the filesystem
+// and must be resolved via Program.Status.Kernel.MapIDs.
+func readPerCPUCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 {
+	t.Helper()
+
+	m, err := ciliumebpf.NewMapFromID(ciliumebpf.MapID(mapID))
+	require.NoError(t, err, "open map ID %d", mapID)
+	defer m.Close()
+
+	var perCPU []uint64
+	err = m.Lookup(key, &perCPU)
+	require.NoError(t, err, "lookup key %d in map ID %d", key, mapID)
 
 	var total uint64
 	for _, v := range perCPU {

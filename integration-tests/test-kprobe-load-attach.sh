@@ -132,7 +132,7 @@ load_program() {
 
     local output
     output=$(bpfman program load image -o json --programs=kprobe:kprobe_counter --image-url="$IMAGE" 2>&1)
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to load program"
@@ -143,7 +143,7 @@ load_program() {
 
     # Verify program info
     local prog_type
-    prog_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    prog_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     assert_eq "kprobe" "$prog_type" "Managed program type should be kprobe"
 
     local kernel_type

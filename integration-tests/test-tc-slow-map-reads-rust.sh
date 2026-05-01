@@ -19,7 +19,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 RUST_BPFMAN="${RUST_BPFMAN:-/home/aim/src/github.com/bpfman/bpfman/worktrees/general/target/debug/bpfman}"
-BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter.bpf.o}"
+BYTECODE="${BYTECODE:-./e2e/testdata/bpf/tc_counter_pinned.bpf.o}"
 VETH0="bpf-veth0"
 VETH1="bpf-veth1"
 

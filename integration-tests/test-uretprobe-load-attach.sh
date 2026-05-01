@@ -151,7 +151,7 @@ load_program() {
         bpfman program load image -o json --programs=uretprobe:uprobe_counter --image-url="$IMAGE" || true
         exit 1
     fi
-    PROG_ID=$(echo "$output" | jq -r '.[0].record.program_id')
+    PROG_ID=$(echo "$output" | jq -r '.programs[0].record.program_id')
 
     if [ -z "$PROG_ID" ] || [ "$PROG_ID" = "null" ]; then
         log_fail "Failed to parse program ID from output"
@@ -162,7 +162,7 @@ load_program() {
 
     # Verify program type is uretprobe (this is the key check!)
     local stored_type
-    stored_type=$(echo "$output" | jq -r '.[0].record.load.program_type')
+    stored_type=$(echo "$output" | jq -r '.programs[0].record.load.program_type')
     log_info "Program type from managed metadata: $stored_type"
     assert_eq "uretprobe" "$stored_type" "Managed program type should be uretprobe"
 

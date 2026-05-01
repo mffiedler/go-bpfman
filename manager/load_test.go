@@ -70,6 +70,48 @@ func TestLoad_AutoDiscover_MultiplePrograms(t *testing.T) {
 	assert.Equal(t, "prog_c", programs[2].Record.Meta.Name)
 }
 
+// TestLoad_ExplicitPrograms_PreservesOrder asserts the contract that
+// Manager.Load returns programs in the same order as the input
+// ProgramSpec slice, independent of the order they appear in the
+// object file. CLI and SDK consumers depend on this for stable
+// jsonpath access (`{.programs[i]...}`) and for variable assignment
+// in the REPL (`let progs = [bpfman program load ...]`).
+func TestLoad_ExplicitPrograms_PreservesOrder(t *testing.T) {
+	t.Parallel()
+
+	discoverer := newFakeDiscoverer()
+	puller := newFakeImagePuller()
+	f := newTestFixtureWithOptions(t, discoverer, puller)
+	objPath := f.BytecodeFile("object.o")
+	puller.SetObjectPath(objPath)
+	discoverer.SetPrograms(objPath, []platform.DiscoveredProgram{
+		{Name: "prog_a", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_b", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_c", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_d", SectionName: "xdp", Type: bpfman.ProgramTypeXDP},
+	})
+
+	// Request a non-alphabetical, non-source-order subset so the
+	// assertion catches both "discoverer order leaked" and
+	// "result was sorted".
+	requested := []manager.ProgramSpec{
+		{Name: "prog_c", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_a", Type: bpfman.ProgramTypeXDP},
+		{Name: "prog_d", Type: bpfman.ProgramTypeXDP},
+	}
+
+	programs, err := f.LoadDirect(context.Background(), manager.LoadSource{
+		Image: newTestImageRef(),
+	}, requested, manager.LoadOpts{})
+
+	require.NoError(t, err)
+	require.Len(t, programs, len(requested))
+	for i, want := range requested {
+		assert.Equal(t, want.Name, programs[i].Record.Meta.Name,
+			"programs[%d].Record.Meta.Name should match requested[%d].Name", i, i)
+	}
+}
+
 func TestLoad_AutoDiscover_NoPrograms(t *testing.T) {
 	t.Parallel()
 

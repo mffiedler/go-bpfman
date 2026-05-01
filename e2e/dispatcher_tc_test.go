@@ -35,7 +35,7 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	iface := NewTestInterface(t)
 	ctx := context.Background()
 
-	programs, err := env.LoadFile(ctx, "testdata/bpf/tc_counter.bpf.o", []manager.ProgramSpec{
+	programs, err := env.LoadFile(ctx, "testdata/bpf/tc_counter_pinned.bpf.o", []manager.ProgramSpec{
 		{Type: bpfman.ProgramTypeTC, Name: "stats"},
 	}, manager.LoadOpts{})
 	require.NoError(t, err)
@@ -231,7 +231,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 	proceedOn := []int32{0, 3, 30} // TC_ACT_OK, TC_ACT_PIPE, DispatcherReturn
 
 	type prog struct {
@@ -449,7 +449,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 
 	// Load 5 separate instances so each gets independent maps.
 	type loadedProg struct {
@@ -554,7 +554,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 			veth := NewTestVethPair(t)
 			ctx := context.Background()
 
-			objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+			objFile := "testdata/bpf/tc_counter.bpf.o"
 
 			type loadedProg struct {
 				kernelID   kernel.ProgramID
@@ -642,7 +642,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 
 	type loadedProg struct {
 		kernelID   kernel.ProgramID
@@ -723,7 +723,7 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 
 	// Default proceed-on matching the operator CRD default.
 	defaultProceedOn := []int32{3, 30} // Pipe, DispatcherReturn
@@ -820,7 +820,7 @@ func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 
 	type prog struct {
 		id         kernel.ProgramID
@@ -893,7 +893,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter_nopin.bpf.o"
+	objFile := "testdata/bpf/tc_counter.bpf.o"
 
 	// Proceed-on including TC_ACT_OK so the chain continues.
 	proceedOn := []int32{0, 3, 30} // OK, Pipe, DispatcherReturn
@@ -954,7 +954,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 // PinByName maps are implicitly shared via a well-known pin path.
 //
 // The test:
-//  1. Loads tc_counter.bpf.o twice as separate LoadFile calls.
+//  1. Loads tc_counter_pinned.bpf.o twice as separate LoadFile calls.
 //  2. Verifies both programs reference the same kernel map ID for
 //     tc_stats_map (proving the map is shared, not duplicated).
 //  3. Attaches both programs with proceed-on including TC_ACT_OK so
@@ -966,12 +966,17 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireTC(t)
+	RequireIsolatedRuntime(t,
+		"asserts the shared tc_stats_map pin is removed after the last "+
+			"user unloads -- a global property that only holds when this "+
+			"test owns the whole bpffs; under shared mode other tests "+
+			"legitimately keep the same shared map alive")
 
 	env := NewTestEnv(t)
 	veth := NewTestVethPair(t)
 	ctx := context.Background()
 
-	objFile := "testdata/bpf/tc_counter.bpf.o"
+	objFile := "testdata/bpf/tc_counter_pinned.bpf.o"
 
 	type prog struct {
 		kernelID   kernel.ProgramID
