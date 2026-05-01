@@ -830,6 +830,16 @@ func uniqueTestName() string {
 	return fmt.Sprintf("B%012xN", h.Sum64()&0xffffffffffff)
 }
 
+// slotProvenance records the most recent occupant of a pair
+// index slot so a stale-state check on the next acquire can
+// attribute any leaked kernel state to a specific test.
+type slotProvenance struct {
+	testName   string
+	nsName     string
+	linkAName  string // name of A-side veth in root namespace
+	releasedAt time.Time
+}
+
 // vethAddrPool tracks which pair indices in [1, 127] are
 // currently allocated. Indices map to /32 addresses inside RFC
 // 5737 TEST-NET-2 (198.51.100.0/24) via vethAddrsForIndex. The
@@ -848,10 +858,15 @@ func uniqueTestName() string {
 // ifindex) that has not finished tearing down. FIFO maximises
 // the cooldown each freed index gets before reuse without
 // growing the pool.
+//
+// last[idx] keeps the forensic breadcrumb of the slot's most
+// recent occupant so acquire-time stale-state checks can name
+// the test that leaked.
 var vethAddrPool = struct {
 	mu   sync.Mutex
 	used [128]bool // index 0 unused; valid range is [1, 127]
 	free []uint32  // FIFO queue of free indices; head = oldest
+	last [128]slotProvenance
 }{
 	free: func() []uint32 {
 		q := make([]uint32, 0, 127)
@@ -862,13 +877,23 @@ var vethAddrPool = struct {
 	}(),
 }
 
-// acquireVethAddrs takes the oldest free index from vethAddrPool
-// and returns its /32 addresses. Panics if the pool is
-// exhausted -- that means more than 127 veth pairs are alive
-// concurrently, which is well past expected parallelism and
-// indicates either a leak (releaseVethAddrs not called) or
-// genuinely too many parallel tests for this address range.
-func acquireVethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
+// acquireVethAddrs takes the oldest free index from
+// vethAddrPool, asserts that no kernel state from the slot's
+// previous occupant is still present, and returns the slot's
+// /32 addresses. Panics if the pool is exhausted -- that means
+// more than 127 veth pairs are alive concurrently, which is
+// well past expected parallelism and indicates either a leak
+// (releaseVethAddrs not called) or genuinely too many parallel
+// tests for this address range.
+//
+// nsName and linkAName are the names the caller is about to
+// bind to this slot. They are recorded so that the *next*
+// acquire of this slot can verify the previous occupant
+// actually deleted them. testName is t.Name() captured before
+// any failure path so attribution in panics or fatals is always
+// accurate.
+func acquireVethAddrs(t *testing.T, nsName, linkAName string) (addrA, addrB, pingTarget string, pairIndex uint32) {
+	t.Helper()
 	vethAddrPool.mu.Lock()
 	defer vethAddrPool.mu.Unlock()
 	if len(vethAddrPool.free) == 0 {
@@ -876,9 +901,59 @@ func acquireVethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
 	}
 	pairIndex = vethAddrPool.free[0]
 	vethAddrPool.free = vethAddrPool.free[1:]
-	vethAddrPool.used[pairIndex] = true
+
 	addrA, addrB, pingTarget = vethAddrsForIndex(pairIndex)
+
+	if err := assertSlotClean(pairIndex, vethAddrPool.last[pairIndex]); err != nil {
+		t.Fatalf("acquireVethAddrs: %v", err)
+	}
+
+	vethAddrPool.used[pairIndex] = true
+	vethAddrPool.last[pairIndex] = slotProvenance{
+		testName:  t.Name(),
+		nsName:    nsName,
+		linkAName: linkAName,
+	}
 	return addrA, addrB, pingTarget, pairIndex
+}
+
+// assertSlotClean verifies that no kernel state attributable to
+// the slot's previous occupant is still present. Checks the two
+// resources the previous occupant owned by name:
+//
+//   - the A-side veth in root namespace (LinkByName)
+//   - the netns the B-side lived in (netns.GetFromName)
+//
+// Both must be absent; if either remains, the previous
+// occupant's t.Cleanup did not finish. On a leak the error
+// names the test that previously held the slot, the kind of
+// leak, and how long ago the slot was released. The caller
+// raises this via t.Fatalf so the leak fails the *next* test
+// as a canary, surfaced loudly with attribution rather than
+// silently propagating into mysterious EBUSY/EEXIST further
+// down the line.
+//
+// Targeted lookups (rather than dumping the whole link table)
+// avoid NLM_F_DUMP_INTR under heavy parallel churn and answer
+// the exact "did the previous tenant clean up?" question.
+func assertSlotClean(idx uint32, prev slotProvenance) error {
+	if prev.linkAName != "" {
+		if lnk, err := netlink.LinkByName(prev.linkAName); err == nil {
+			attrs := lnk.Attrs()
+			return fmt.Errorf("pair index %d: root-ns interface %q (ifindex %d) from previous tenant test=%q still exists (released %s ago); cleanup did not delete it",
+				idx, attrs.Name, attrs.Index, prev.testName,
+				time.Since(prev.releasedAt))
+		}
+	}
+	if prev.nsName != "" {
+		if h, err := netns.GetFromName(prev.nsName); err == nil {
+			h.Close()
+			return fmt.Errorf("pair index %d: netns %q from previous tenant test=%q still exists (released %s ago); cleanup did not delete it",
+				idx, prev.nsName, prev.testName,
+				time.Since(prev.releasedAt))
+		}
+	}
+	return nil
 }
 
 // releaseVethAddrs returns an index to vethAddrPool so the next
@@ -897,6 +972,7 @@ func releaseVethAddrs(pairIndex uint32) {
 		return
 	}
 	vethAddrPool.used[pairIndex] = false
+	vethAddrPool.last[pairIndex].releasedAt = time.Now()
 	vethAddrPool.free = append(vethAddrPool.free, pairIndex)
 }
 
@@ -1007,7 +1083,7 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// has removed the interface (and with it the addresses and
 	// routes) so a concurrent acquirer reusing the same index
 	// doesn't try to add the still-present /32 to a new veth.
-	ipA, ipB, pingTarget, pairIdx := acquireVethAddrs()
+	ipA, ipB, pingTarget, pairIdx := acquireVethAddrs(t, nsName, nameA)
 	t.Cleanup(func() { releaseVethAddrs(pairIdx) })
 
 	// Create named network namespace. NewNamed switches the calling
