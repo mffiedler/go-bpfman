@@ -38,6 +38,7 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
+	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 	"github.com/frobware/go-bpfman/platform/image/oci"
@@ -1086,37 +1087,15 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	ipA, ipB, pingTarget, pairIdx := acquireVethAddrs(t, nsName, nameA)
 	t.Cleanup(func() { releaseVethAddrs(pairIdx) })
 
-	// Create named network namespace. NewNamed switches the calling
-	// thread's netns, so we must lock the OS thread and restore.
-	runtime.LockOSThread()
-	origNs, err := netns.Get()
-	if err != nil {
-		runtime.UnlockOSThread()
-		t.Fatalf("failed to get current network namespace: %v", err)
+	// Create the named netns. CreateNamed handles the
+	// LockOSThread / NewNamed / restore / UnlockOSThread
+	// dance correctly: on any error after the new netns is
+	// created the OS thread is left locked so that t.Fatalf
+	// retires it rather than returning a poisoned thread
+	// (still in the named netns) to Go's scheduler.
+	if err := bpfnetns.CreateNamed(nsName); err != nil {
+		t.Fatalf("%v", err)
 	}
-	newNs, err := netns.NewNamed(nsName)
-	if err != nil {
-		origNs.Close()
-		// Do NOT UnlockOSThread: NewNamed may have already
-		// switched this thread into the (partially-created)
-		// named netns. Let Go's runtime retire the OS thread
-		// when this goroutine exits via t.Fatalf rather than
-		// returning a poisoned thread (still in a non-root
-		// netns) to the scheduler, where the next goroutine
-		// that lands on it would inherit the wrong netns
-		// identity. See runtime.LockOSThread docs.
-		t.Fatalf("failed to create network namespace %s: %v", nsName, err)
-	}
-	newNs.Close()
-	if err := netns.Set(origNs); err != nil {
-		origNs.Close()
-		// Do NOT UnlockOSThread: the restore failed and this
-		// thread is still in the named netns; same reasoning
-		// as the NewNamed error branch above.
-		t.Fatalf("failed to restore network namespace: %v", err)
-	}
-	origNs.Close()
-	runtime.UnlockOSThread()
 
 	t.Cleanup(func() {
 		netns.DeleteNamed(nsName)
