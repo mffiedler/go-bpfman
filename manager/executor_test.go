@@ -234,6 +234,10 @@ func (k *stubKernel) AttachTCExtension(ctx context.Context, spec dispatcher.TCEx
 	panic("stubKernel.AttachTCExtension not implemented")
 }
 
+func (k *stubKernel) ExtensionLinkInfo(ctx context.Context, linkPinPath string) (platform.ExtensionLinkInfo, error) {
+	return platform.ExtensionLinkInfo{}, nil
+}
+
 func (k *stubKernel) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTCX not implemented")
 }

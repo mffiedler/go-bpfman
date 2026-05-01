@@ -240,6 +240,17 @@ type TCDispatcherResult struct {
 	Priority      uint16           // tc filter priority (typically 50)
 }
 
+// ExtensionLinkInfo is the kernel-reported state of a pinned freplace
+// extension link, read via BPF_LINK_GET_INFO_BY_FD. Diagnostic; used
+// to verify each freplace's trampoline is observably installed before
+// the dispatcher swap.
+type ExtensionLinkInfo struct {
+	LinkID       kernel.LinkID    // Kernel link ID
+	TargetProgID kernel.ProgramID // Kernel program ID of the dispatcher being replaced into
+	TargetBtfID  uint32           // BTF type ID of the stub function being replaced
+	AttachType   uint32           // Kernel attach type
+}
+
 // DispatcherAttacher attaches dispatcher programs for multi-program chaining.
 type DispatcherAttacher interface {
 	// AttachXDPDispatcher loads and attaches an XDP dispatcher to an interface.
@@ -260,6 +271,12 @@ type DispatcherAttacher interface {
 	// AttachTCExtension attaches a pinned Extension program to a TC
 	// dispatcher slot via freplace link.
 	AttachTCExtension(ctx context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error)
+
+	// ExtensionLinkInfo reads BPF_LINK_GET_INFO_BY_FD on a pinned
+	// freplace extension link and returns the kernel-reported
+	// trampoline target. Diagnostic; used to verify each freplace
+	// is observably installed before swapping the dispatcher.
+	ExtensionLinkInfo(ctx context.Context, linkPinPath string) (ExtensionLinkInfo, error)
 
 	// UpdateXDPDispatcherLink atomically updates an existing XDP
 	// dispatcher BPF link to point to a new dispatcher program.

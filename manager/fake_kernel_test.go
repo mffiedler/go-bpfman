@@ -936,6 +936,10 @@ func (f *fakeKernel) FindTCFilterHandle(_ context.Context, ifindex int, parent u
 	return handle, nil
 }
 
+func (f *fakeKernel) ExtensionLinkInfo(_ context.Context, _ string) (platform.ExtensionLinkInfo, error) {
+	return platform.ExtensionLinkInfo{}, nil
+}
+
 func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExtensionAttachSpec) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(spec.LinkPinPath)

@@ -199,6 +199,37 @@ func (e *executor) rebuildXDPDispatcher(
 		}
 	}
 
+	// Diagnostic: read each just-pinned freplace link back via
+	// BPF_LINK_GET_INFO_BY_FD. This forces a syscall round-trip per
+	// link before the dispatcher swap, giving the kernel another
+	// chance to publish trampoline state, and surfaces any slot
+	// whose target_obj_id does not match the new dispatcher (which
+	// would mean the freplace is bound to a stale program). Errors
+	// are logged but do not abort the rebuild.
+	for _, ext := range attached {
+		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
+		if infoErr != nil {
+			e.logger.WarnContext(ctx, "verify: extension link info failed",
+				"type", dispType.String(),
+				"ifindex", ops.ifindex,
+				"revision", revision,
+				"position", ext.position,
+				"path", ext.pinPath,
+				"error", infoErr)
+			continue
+		}
+		e.logger.InfoContext(ctx, "verify: extension link",
+			"type", dispType.String(),
+			"ifindex", ops.ifindex,
+			"revision", revision,
+			"position", ext.position,
+			"link_id", uint64(info.LinkID),
+			"target_prog_id", uint64(info.TargetProgID),
+			"target_btf_id", info.TargetBtfID,
+			"attach_type", info.AttachType,
+			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+	}
+
 	// Atomic swap: create link (first-attach) or update existing link.
 	dispLinkPinPath := e.bpffs.DispatcherLinkPath(dispType, nsid, ops.ifindex)
 	var linkID kernel.LinkID
@@ -468,6 +499,37 @@ func (e *executor) rebuildTCDispatcher(
 		}
 	}
 
+	// Diagnostic: read each just-pinned freplace link back via
+	// BPF_LINK_GET_INFO_BY_FD. This forces a syscall round-trip per
+	// link before the dispatcher swap, giving the kernel another
+	// chance to publish trampoline state, and surfaces any slot
+	// whose target_obj_id does not match the new dispatcher (which
+	// would mean the freplace is bound to a stale program). Errors
+	// are logged but do not abort the rebuild.
+	for _, ext := range attached {
+		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
+		if infoErr != nil {
+			e.logger.WarnContext(ctx, "verify: extension link info failed",
+				"type", dispType.String(),
+				"ifindex", ops.ifindex,
+				"revision", revision,
+				"position", ext.position,
+				"path", ext.pinPath,
+				"error", infoErr)
+			continue
+		}
+		e.logger.InfoContext(ctx, "verify: extension link",
+			"type", dispType.String(),
+			"ifindex", ops.ifindex,
+			"revision", revision,
+			"position", ext.position,
+			"link_id", uint64(info.LinkID),
+			"target_prog_id", uint64(info.TargetProgID),
+			"target_btf_id", info.TargetBtfID,
+			"attach_type", info.AttachType,
+			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+	}
+
 	// Atomic swap: create filter (first-attach) or swap (add new, remove old).
 	var oldHandle uint32
 	var oldPriority uint16
@@ -710,6 +772,31 @@ func (e *executor) rebuildXDPForDetach(
 		attached = append(attached, attachedExt{out: out, pinPath: linkPinPath})
 	}
 
+	// Diagnostic: see rebuildXDPDispatcher for rationale.
+	for i, ext := range attached {
+		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
+		if infoErr != nil {
+			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)",
+				"type", key.Type.String(),
+				"ifindex", key.Ifindex,
+				"revision", revision,
+				"position", i,
+				"path", ext.pinPath,
+				"error", infoErr)
+			continue
+		}
+		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)",
+			"type", key.Type.String(),
+			"ifindex", key.Ifindex,
+			"revision", revision,
+			"position", i,
+			"link_id", uint64(info.LinkID),
+			"target_prog_id", uint64(info.TargetProgID),
+			"target_btf_id", info.TargetBtfID,
+			"attach_type", info.AttachType,
+			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
+	}
+
 	// Swap link.
 	linkPinPath := e.bpffs.DispatcherLinkPath(key.Type, key.Nsid, key.Ifindex)
 	if err := e.kernel.UpdateXDPDispatcherLink(ctx, linkPinPath, progPinPath); err != nil {
@@ -775,7 +862,7 @@ func (e *executor) rebuildTCForDetach(
 		cfg.RunPrios[i] = uint32(effectivePriority(slot.Priority))
 	}
 
-	_, err = e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
+	dispatcherID, err := e.kernel.LoadAndPinTCDispatcher(ctx, cfg, progPinPath)
 	if err != nil {
 		return fmt.Errorf("load TC dispatcher for detach rebuild: %w", err)
 	}
@@ -799,6 +886,31 @@ func (e *executor) rebuildTCForDetach(
 			return fmt.Errorf("re-attach TC extension %s at position %d: %w", slot.ProgramName, i, err)
 		}
 		attached = append(attached, attachedExt{out: out, pinPath: linkPinPath})
+	}
+
+	// Diagnostic: see rebuildTCDispatcher for rationale.
+	for i, ext := range attached {
+		info, infoErr := e.kernel.ExtensionLinkInfo(ctx, ext.pinPath)
+		if infoErr != nil {
+			e.logger.WarnContext(ctx, "verify: extension link info failed (detach rebuild)",
+				"type", key.Type.String(),
+				"ifindex", key.Ifindex,
+				"revision", revision,
+				"position", i,
+				"path", ext.pinPath,
+				"error", infoErr)
+			continue
+		}
+		e.logger.InfoContext(ctx, "verify: extension link (detach rebuild)",
+			"type", key.Type.String(),
+			"ifindex", key.Ifindex,
+			"revision", revision,
+			"position", i,
+			"link_id", uint64(info.LinkID),
+			"target_prog_id", uint64(info.TargetProgID),
+			"target_btf_id", info.TargetBtfID,
+			"attach_type", info.AttachType,
+			"matches_dispatcher", uint64(info.TargetProgID) == uint64(dispatcherID))
 	}
 
 	// Record old handle before swap.
