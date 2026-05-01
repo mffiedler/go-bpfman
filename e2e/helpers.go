@@ -1015,10 +1015,23 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 
 	t.Logf("creating veth pair %s/%s in namespace %s", nameA, nameB, nsName)
 
-	// Create veth pair in root namespace.
+	// Compute deterministic MACs and pass them at create time
+	// rather than overwriting after creation. See the long
+	// comment further down for the format and history. Setting
+	// the address at LinkAdd time (via LinkAttrs.HardwareAddr /
+	// PeerHardwareAddr) means the kernel never assigns a random
+	// MAC in the first place; subsequent NETDEV_CHANGE storms
+	// from sibling subtests' teardown cannot regenerate an
+	// address that wasn't kernel-generated.
+	pid := os.Getpid()
+	macA, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:01", (pid>>8)&0xff, pid&0xff, pairIdx))
+	macB, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:02", (pid>>8)&0xff, pid&0xff, pairIdx))
+
+	// Create veth pair in root namespace with MACs baked in.
 	veth := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{Name: nameA, TxQLen: 1000},
-		PeerName:  nameB,
+		LinkAttrs:        netlink.LinkAttrs{Name: nameA, TxQLen: 1000, HardwareAddr: macA},
+		PeerName:         nameB,
+		PeerHardwareAddr: macB,
 	}
 	if err := netlink.LinkAdd(veth); err != nil {
 		t.Fatalf("failed to create veth pair %s/%s: %v", nameA, nameB, err)
@@ -1120,11 +1133,11 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// not help because the MAC regeneration is kernel-internal
 	// and asynchronous.
 	//
-	// Switching to explicit MACs reduced the failure rate from
-	// ~40% to ~5% but did not eliminate it. Disabling IPv6 on
-	// both veth ends (see disableIPv6/disableIPv6InNs calls
-	// below) eliminated the remaining failures entirely (50/50
-	// under stress).
+	// First mitigation was to call LinkSetHardwareAddr after
+	// LinkAdd, which reduced the failure rate from ~40% to ~5%
+	// but did not eliminate it. Layering disableIPv6 on both
+	// veth ends (see calls below) drove it to 0% in our
+	// original stress runs.
 	//
 	// Examining the kernel 6.12 source revealed the likely
 	// chain of events: when a veth peer is deleted,
@@ -1136,18 +1149,19 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// triggers EUI-64 link-local address generation from the
 	// device's MAC. This processing chain appears to cause MAC
 	// regeneration on other veth interfaces as a side effect.
-	// When IPv6 is disabled, addrconf_notify returns early
-	// without processing the event, breaking the chain. We did
-	// not identify the exact kernel function that rewrites the
-	// MAC, but the empirical evidence is unambiguous: disabling
-	// IPv6 prevents it. The tests only need IPv4, so this has
-	// no functional impact. Observed on kernel 6.12.74.
-	pid := os.Getpid()
-	macA, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:01", (pid>>8)&0xff, pid&0xff, pairIdx))
-	macB, _ := net.ParseMAC(fmt.Sprintf("02:%02x:%02x:00:%02x:02", (pid>>8)&0xff, pid&0xff, pairIdx))
-	if err := netlink.LinkSetHardwareAddr(linkA, macA); err != nil {
-		t.Fatalf("failed to set MAC on %s: %v", nameA, err)
-	}
+	//
+	// On aarch64 (Asahi, kernel 6.12.x) we observed the
+	// LinkSetHardwareAddr-then-disableIPv6 combination still
+	// flaking: A's MAC reverted to a kernel-random value
+	// between LinkSetHardwareAddr and the post-warmup ARP
+	// check, even with IPv6 disabled. The current strategy
+	// passes the deterministic MAC at LinkAdd time via
+	// LinkAttrs.HardwareAddr and PeerHardwareAddr, so the
+	// kernel never assigns a random MAC in the first place.
+	// There is no "original" address for any later code path
+	// to regenerate back to. disableIPv6 is retained as a
+	// secondary defence and to avoid wasting cycles on
+	// IPv6 link-local plumbing the tests do not use.
 
 	// Disable IPv6 on A before link-up. We only need IPv4 for
 	// the ping traffic, and IPv6 link-local address generation
@@ -1181,9 +1195,7 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	if err != nil {
 		t.Fatalf("failed to find %s in namespace: %v", nameB, err)
 	}
-	if err := nlh.LinkSetHardwareAddr(nsLinkB, macB); err != nil {
-		t.Fatalf("failed to set MAC on %s: %v", nameB, err)
-	}
+	// B's MAC was set at LinkAdd time via PeerHardwareAddr.
 
 	// Disable IPv6 on B inside the namespace.
 	disableIPv6InNs(t, nsName, nameB)
