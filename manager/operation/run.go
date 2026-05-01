@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/frobware/go-bpfman/manager/action"
 )
@@ -54,9 +55,11 @@ func interpret(
 			continue
 		}
 
+		stepStart := time.Now()
 		switch n.flavour {
 		case flavourDo:
 			err := n.execFn(ctx, exec, bindings)
+			logger.DebugContext(ctx, "step", "label", n.label, "target", n.target, "ms", time.Since(stepStart).Milliseconds())
 			if err != nil {
 				opErr = err
 			} else {
@@ -65,6 +68,7 @@ func interpret(
 
 		case flavourProduce:
 			val, err := n.produceFn(ctx, exec, bindings)
+			logger.DebugContext(ctx, "step", "label", n.label, "target", n.target, "ms", time.Since(stepStart).Milliseconds())
 			if err != nil {
 				opErr = err
 			} else {
@@ -77,6 +81,7 @@ func interpret(
 				logger.DebugContext(ctx, "try node failed (non-fatal)",
 					"label", n.label, "target", n.target, "error", err)
 			}
+			logger.DebugContext(ctx, "step", "label", n.label, "target", n.target, "ms", time.Since(stepStart).Milliseconds())
 		}
 	}
 
