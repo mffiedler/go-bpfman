@@ -46,10 +46,16 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the link.
-	lnk.Close()
+	// Hand the live link to the kernelAdapter so DetachLink can
+	// Close it after unpinning. For probe-style attachments,
+	// pin-removal alone does not run perf_event_free_bpf_prog;
+	// the program stays attached to the perf_event until the
+	// link object is explicitly Closed.
+	if linkPinPath != "" {
+		k.trackLink(linkPinPath, lnk)
+	} else {
+		lnk.Close()
+	}
 
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
@@ -102,10 +108,16 @@ func (k *kernelAdapter) AttachKprobe(ctx context.Context, progPinPath, fnName st
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the link.
-	lnk.Close()
+	// Hand the live link to the kernelAdapter so DetachLink can
+	// Close it after unpinning. For probe-style attachments,
+	// pin-removal alone does not run perf_event_free_bpf_prog;
+	// the program stays attached to the perf_event until the
+	// link object is explicitly Closed.
+	if linkPinPath != "" {
+		k.trackLink(linkPinPath, lnk)
+	} else {
+		lnk.Close()
+	}
 
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
@@ -158,10 +170,16 @@ func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName, 
 		return bpfman.AttachOutput{}, fmt.Errorf("get link info: %w", err)
 	}
 
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the link.
-	lnk.Close()
+	// Hand the live link to the kernelAdapter so DetachLink can
+	// Close it after unpinning. For probe-style attachments,
+	// pin-removal alone does not run perf_event_free_bpf_prog;
+	// the program stays attached to the perf_event until the
+	// link object is explicitly Closed.
+	if linkPinPath != "" {
+		k.trackLink(linkPinPath, lnk)
+	} else {
+		lnk.Close()
+	}
 
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),

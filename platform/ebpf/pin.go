@@ -2,11 +2,13 @@ package ebpf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -164,16 +166,89 @@ func (k *kernelAdapter) Unpin(pinDir string) (int, error) {
 	return count, nil
 }
 
-// DetachLink removes a pinned link by deleting its pin from bpffs.
-// This releases the kernel link if it was the last reference.
+// DetachLink tears down a previously-attached link in three
+// stages: explicit kernel-side Detach() where supported, removal
+// of the bpffs pin, then Close of the live *link.Link FD.
+//
+// Stage 1 (Detach): for link types that implement the kernel's
+// bpf_link_ops.detach callback -- XDP, TCX, cgroup, netfilter,
+// netkit, struct_ops, sockmap -- this synchronously disconnects
+// the program from its hook before we touch the pin or the FD.
+// Returns EOPNOTSUPP (wrapped as ebpf.ErrNotSupported) for
+// perf-event / tracing link types (kprobe, uprobe, tracepoint,
+// fentry/fexit), where there is no kernel-side sync detach API.
+// Best-effort: a non-EOPNOTSUPP failure is logged but does not
+// abort cleanup.
+//
+// Stage 2 (Remove): removes the bpffs pin entry. For perf-event
+// link types where Detach() is not supported, this is the step
+// that gets bpf_perf_link_release running synchronously enough
+// for the program to stop firing -- the order Remove-then-Close
+// (rather than the reverse) is load-bearing here, see
+// docs/DETACH-DOES-NOT-STOP-PROGRAM.md.
+//
+// Stage 3 (Close): drops the last user reference to the link
+// FD; the kernel reclaims the link object.
+//
+// For Detach-supporting types the program is already provably
+// offline by the time we reach Close. For non-supporting types
+// the test surface still observes async kernel teardown lag
+// (see waitForDetachComplete in e2e/helpers.go) -- there is no
+// userspace primitive to make perf-event teardown synchronous.
 func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath string) error {
 	k.logger.Debug("detaching link by removing pin", "link_pin_path", linkPinPath)
+
+	// Stage 1: synchronous kernel-side detach for supported
+	// link types. Prefer the in-process tracked link (saved by
+	// trackLink at attach time) so we don't open a fresh FD;
+	// fall back to LoadPinnedLink when the attach path closed
+	// the original FD after pinning (TCX, XDP, dispatcher
+	// extensions). Either way the resulting *link.Link is
+	// asked to Detach. EOPNOTSUPP comes back for perf-event /
+	// tracing link types where the kernel has no synchronous
+	// detach API; those rely on the Remove-then-Close ordering
+	// below.
+	var detachLnk link.Link
+	var detachLnkOpened bool
+	if v, ok := k.liveLinks.Load(linkPinPath); ok {
+		detachLnk = v.(link.Link)
+	} else if lnk, err := link.LoadPinnedLink(linkPinPath, nil); err == nil {
+		detachLnk = lnk
+		detachLnkOpened = true
+	} else if !os.IsNotExist(err) {
+		k.logger.Warn("LoadPinnedLink failed", "link_pin_path", linkPinPath, "err", err)
+	}
+	if detachLnk != nil {
+		if err := detachLnk.Detach(); err != nil && !errors.Is(err, ebpf.ErrNotSupported) {
+			k.logger.Warn("link Detach failed", "link_pin_path", linkPinPath, "err", err)
+			// continue: cleanup must still happen
+		}
+		if detachLnkOpened {
+			// We opened this FD ourselves; close it. The
+			// tracked-link case (if any) is closed later
+			// via releaseLink.
+			_ = detachLnk.Close()
+		}
+	}
+
+	// Stage 2: remove the pin.
 	if err := os.Remove(linkPinPath); err != nil {
 		if os.IsNotExist(err) {
 			k.logger.Debug("link pin already gone", "link_pin_path", linkPinPath)
-			return nil // Already gone
+			// Pin gone, but a tracked link may still be live
+			// (in-process attach by the same adapter). Drop it.
+			if cerr := k.releaseLink(linkPinPath); cerr != nil {
+				k.logger.Warn("close tracked link after missing pin", "link_pin_path", linkPinPath, "err", cerr)
+			}
+			return nil
 		}
 		return fmt.Errorf("remove link pin %s: %w", linkPinPath, err)
+	}
+
+	// Stage 3: close the FD via releaseLink (which also drops
+	// the tracking-map entry).
+	if err := k.releaseLink(linkPinPath); err != nil {
+		k.logger.Warn("close tracked link", "link_pin_path", linkPinPath, "err", err)
 	}
 	k.logger.Debug("link pin removed", "link_pin_path", linkPinPath)
 	// Best-effort removal of the parent directory. This races

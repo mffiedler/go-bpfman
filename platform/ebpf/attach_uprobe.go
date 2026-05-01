@@ -130,10 +130,14 @@ func (k *kernelAdapter) doAttachUprobeLocal(progPinPath, target, fnName string, 
 		k.logger.Debug("link pinned successfully", "path", linkPinPath)
 	}
 
-	// Close the fd now that the link is pinned. The pin keeps the
-	// kernel link alive; leaking the fd would prevent DetachLink
-	// (which only removes the pin) from fully releasing the link.
-	lnk.Close()
+	// Hand the live link to the kernelAdapter so DetachLink can
+	// Close it after unpinning. Pin-removal alone does not run
+	// perf_event_free_bpf_prog for probe-style attachments.
+	if linkPinPath != "" {
+		k.trackLink(linkPinPath, lnk)
+	} else {
+		lnk.Close()
+	}
 
 	return linkID, ToKernelLink(linkInfo), nil
 }

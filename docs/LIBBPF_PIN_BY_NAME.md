@@ -34,7 +34,7 @@ is excluded from the default proceed-on set to match Rust bpfman.
 
 ## The Root Cause: LIBBPF_PIN_BY_NAME
 
-### What tc_counter.bpf.o declares
+### What tc_counter_pinned.bpf.o declares
 
 The tc_counter BPF program (used by the operator tests) declares its
 map with the `LIBBPF_PIN_BY_NAME` pinning flag:
