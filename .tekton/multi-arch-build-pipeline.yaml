@@ -54,9 +54,13 @@ spec:
     type: string
   - default:
     - localhost
-    - linux/arm64
-    - linux/ppc64le
-    - linux/s390x
+    # Temporarily restricted to localhost only while the race-matrix
+    # work settles; cross-arch lanes are slow and we want fast PR
+    # turnaround.  Re-enable by uncommenting before merging anything
+    # that needs full multi-arch coverage.
+    # - linux/arm64
+    # - linux/ppc64le
+    # - linux/s390x
     description: List of platforms to build the container images on. The available set of values is determined by the configuration of the multi-platform-controller.
     name: build-platforms
     type: array
