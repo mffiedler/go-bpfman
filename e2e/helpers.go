@@ -839,12 +839,30 @@ func uniqueTestName() string {
 // releases it. Pre-release the counter was monotonic and a
 // `-test.count=N` run quickly exceeded the 127 ceiling even
 // though peak concurrency stayed well under it.
+//
+// Allocation order is FIFO: the oldest released index is handed
+// out first. Each pair index pins a (deterministic MAC, IP)
+// pair; reusing the most recently released index immediately
+// would put a fresh test on top of kernel state (ARP entries,
+// refcount-pending XDP links on the just-deleted veth's
+// ifindex) that has not finished tearing down. FIFO maximises
+// the cooldown each freed index gets before reuse without
+// growing the pool.
 var vethAddrPool = struct {
 	mu   sync.Mutex
 	used [128]bool // index 0 unused; valid range is [1, 127]
-}{}
+	free []uint32  // FIFO queue of free indices; head = oldest
+}{
+	free: func() []uint32 {
+		q := make([]uint32, 0, 127)
+		for i := uint32(1); i <= 127; i++ {
+			q = append(q, i)
+		}
+		return q
+	}(),
+}
 
-// acquireVethAddrs takes the lowest free index from vethAddrPool
+// acquireVethAddrs takes the oldest free index from vethAddrPool
 // and returns its /32 addresses. Panics if the pool is
 // exhausted -- that means more than 127 veth pairs are alive
 // concurrently, which is well past expected parallelism and
@@ -853,27 +871,33 @@ var vethAddrPool = struct {
 func acquireVethAddrs() (addrA, addrB, pingTarget string, pairIndex uint32) {
 	vethAddrPool.mu.Lock()
 	defer vethAddrPool.mu.Unlock()
-	for i := uint32(1); i <= 127; i++ {
-		if !vethAddrPool.used[i] {
-			vethAddrPool.used[i] = true
-			addrA, addrB, pingTarget = vethAddrsForIndex(i)
-			return addrA, addrB, pingTarget, i
-		}
+	if len(vethAddrPool.free) == 0 {
+		panic("veth address pool exhausted: more than 127 concurrent veth pairs in flight (leak or excessive parallelism)")
 	}
-	panic("veth address pool exhausted: more than 127 concurrent veth pairs in flight (leak or excessive parallelism)")
+	pairIndex = vethAddrPool.free[0]
+	vethAddrPool.free = vethAddrPool.free[1:]
+	vethAddrPool.used[pairIndex] = true
+	addrA, addrB, pingTarget = vethAddrsForIndex(pairIndex)
+	return addrA, addrB, pingTarget, pairIndex
 }
 
 // releaseVethAddrs returns an index to vethAddrPool so the next
-// acquireVethAddrs can reuse its addresses. Idempotent for the
-// no-op case (already-free index) so a double-cleanup doesn't
-// crash, but logs nothing -- the index becoming free twice is
-// benign.
+// acquireVethAddrs can reuse its addresses. Released indices go
+// to the tail of the FIFO queue, ensuring maximum cooldown
+// before reuse. Idempotent for the no-op case (already-free
+// index) so a double-cleanup doesn't crash; the index becoming
+// free twice is benign and the second release is dropped.
 func releaseVethAddrs(pairIndex uint32) {
 	vethAddrPool.mu.Lock()
 	defer vethAddrPool.mu.Unlock()
-	if pairIndex >= 1 && pairIndex <= 127 {
-		vethAddrPool.used[pairIndex] = false
+	if pairIndex < 1 || pairIndex > 127 {
+		return
 	}
+	if !vethAddrPool.used[pairIndex] {
+		return
+	}
+	vethAddrPool.used[pairIndex] = false
+	vethAddrPool.free = append(vethAddrPool.free, pairIndex)
 }
 
 // vethAddrsForIndex returns unique /32 addresses for the given pair
