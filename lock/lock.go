@@ -106,7 +106,22 @@ func acquireWriter(ctx context.Context, path string) (*os.File, error) {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
 
-	backoff := 25 * time.Millisecond
+	// Polling-style retry instead of a blocking flock so ctx
+	// cancellation is honoured.  Start at 1ms (an uncontended lock
+	// is free immediately, and a contended one usually clears in a
+	// handful of milliseconds because the work-under-lock at the
+	// other end is typically a few sqlite writes plus a kernel-side
+	// op of similar order).  Double on every miss, capped at 500ms,
+	// so deep queues do not spin hot but the common case sees
+	// near-instant pickup as soon as the lock is released.  An
+	// earlier 25ms initial value forced every contended waiter to
+	// pay a full 25ms even when the holder released after 1-2ms,
+	// making lock wait time the dominant factor in shared-runtime
+	// e2e wall-clock once the per-mutation work itself was small.
+	// The proper kernel-managed wait (F_OFD_SETLKW with signal-
+	// based interrupt) is the longer-term fix and would remove the
+	// polling entirely.
+	backoff := 1 * time.Millisecond
 	const maxBackoff = 500 * time.Millisecond
 
 	for {
