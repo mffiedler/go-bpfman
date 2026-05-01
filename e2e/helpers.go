@@ -864,8 +864,8 @@ type slotProvenance struct {
 // the test that leaked.
 var vethAddrPool = struct {
 	mu   sync.Mutex
-	used [128]bool // index 0 unused; valid range is [1, 127]
-	free []uint32  // FIFO queue of free indices; head = oldest
+	used [128]bool         // index 0 unused; valid range is [1, 127]
+	free []uint32          // FIFO queue of free indices; head = oldest
 	last [128]slotProvenance
 }{
 	free: func() []uint32 {
@@ -881,8 +881,8 @@ var vethAddrPool = struct {
 // vethAddrPool, asserts that no kernel state from the slot's
 // previous occupant is still present, and returns the slot's
 // /32 addresses. Panics if the pool is exhausted -- that means
-// more than 127 veth pairs are alive concurrently, which is
-// well past expected parallelism and indicates either a leak
+// more than 127 veth pairs are alive concurrently, which is well
+// past expected parallelism and indicates either a leak
 // (releaseVethAddrs not called) or genuinely too many parallel
 // tests for this address range.
 //
@@ -1097,13 +1097,22 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	newNs, err := netns.NewNamed(nsName)
 	if err != nil {
 		origNs.Close()
-		runtime.UnlockOSThread()
+		// Do NOT UnlockOSThread: NewNamed may have already
+		// switched this thread into the (partially-created)
+		// named netns. Let Go's runtime retire the OS thread
+		// when this goroutine exits via t.Fatalf rather than
+		// returning a poisoned thread (still in a non-root
+		// netns) to the scheduler, where the next goroutine
+		// that lands on it would inherit the wrong netns
+		// identity. See runtime.LockOSThread docs.
 		t.Fatalf("failed to create network namespace %s: %v", nsName, err)
 	}
 	newNs.Close()
 	if err := netns.Set(origNs); err != nil {
 		origNs.Close()
-		runtime.UnlockOSThread()
+		// Do NOT UnlockOSThread: the restore failed and this
+		// thread is still in the named netns; same reasoning
+		// as the NewNamed error branch above.
 		t.Fatalf("failed to restore network namespace: %v", err)
 	}
 	origNs.Close()
