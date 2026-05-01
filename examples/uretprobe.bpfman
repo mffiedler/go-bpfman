@@ -12,7 +12,7 @@
 #   sudo bpfman repl -f examples/uretprobe.bpfman
 
 let prog = [bpfman program load file \
-    --path e2e/testdata/bpf/uprobe_counter_nopin.bpf.o \
+    --path e2e/testdata/bpf/uprobe_counter.bpf.o \
     --programs uretprobe:uprobe_counter]
 
 let link = [bpfman link attach uprobe \

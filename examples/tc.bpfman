@@ -12,7 +12,7 @@ require ok exec ip link add bpfman-tc type dummy
 require ok exec ip link set bpfman-tc up
 
 let prog = [bpfman program load file \
-    --path e2e/testdata/bpf/tc_counter_nopin.bpf.o \
+    --path e2e/testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats]
 
 let link = [bpfman link attach tc --iface bpfman-tc --direction ingress $prog]

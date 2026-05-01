@@ -43,19 +43,19 @@ var commandExamples = map[string]string{
 	"program load image": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs xdp:pass \
   --image-url quay.io/bpfman-bytecode/xdp_pass:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 `,
 
 	"program load file": `BPFMAN_PROG_ID=$(bpfman program load file \
   --path ./program.o \
   --programs tracepoint:my_prog \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 `,
 
 	"link attach xdp": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs xdp:pass \
   --image-url quay.io/bpfman-bytecode/xdp_pass:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach xdp --iface lo "$BPFMAN_PROG_ID"
 `,
@@ -63,7 +63,7 @@ bpfman link attach xdp --iface lo "$BPFMAN_PROG_ID"
 	"link attach tc": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs tc:stats \
   --image-url quay.io/bpfman-bytecode/go-tc-counter:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach tc --iface lo --direction ingress "$BPFMAN_PROG_ID"
 `,
@@ -71,7 +71,7 @@ bpfman link attach tc --iface lo --direction ingress "$BPFMAN_PROG_ID"
 	"link attach tcx": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs tcx:stats \
   --image-url quay.io/bpfman-bytecode/go-tc-counter:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach tcx --iface lo --direction ingress "$BPFMAN_PROG_ID"
 `,
@@ -79,7 +79,7 @@ bpfman link attach tcx --iface lo --direction ingress "$BPFMAN_PROG_ID"
 	"link attach tracepoint": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs tracepoint:tracepoint_kill_recorder \
   --image-url quay.io/bpfman-bytecode/go-tracepoint-counter:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach tracepoint "$BPFMAN_PROG_ID" syscalls/sys_enter_kill
 `,
@@ -87,7 +87,7 @@ bpfman link attach tracepoint "$BPFMAN_PROG_ID" syscalls/sys_enter_kill
 	"link attach kprobe": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs kprobe:kprobe_counter \
   --image-url quay.io/bpfman-bytecode/go-kprobe-counter:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach kprobe --fn-name try_to_wake_up "$BPFMAN_PROG_ID"
 `,
@@ -95,7 +95,7 @@ bpfman link attach kprobe --fn-name try_to_wake_up "$BPFMAN_PROG_ID"
 	"link attach uprobe": `BPFMAN_PROG_ID=$(bpfman program load image \
   --programs uprobe:uprobe_counter \
   --image-url quay.io/bpfman-bytecode/go-uprobe-counter:latest \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach uprobe --target /lib64/libc.so.6 --fn-name malloc "$BPFMAN_PROG_ID"
 `,
@@ -103,7 +103,7 @@ bpfman link attach uprobe --target /lib64/libc.so.6 --fn-name malloc "$BPFMAN_PR
 	"link attach fentry": `BPFMAN_PROG_ID=$(bpfman program load file \
   --path ./fentry.o \
   --programs fentry:test_fentry:do_unlinkat \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach fentry "$BPFMAN_PROG_ID"
 `,
@@ -111,7 +111,7 @@ bpfman link attach fentry "$BPFMAN_PROG_ID"
 	"link attach fexit": `BPFMAN_PROG_ID=$(bpfman program load file \
   --path ./fexit.o \
   --programs fexit:test_fexit:do_unlinkat \
-  -o 'jsonpath={[0].record.program_id}')
+  -o 'jsonpath={.programs[0].record.program_id}')
 
 bpfman link attach fexit "$BPFMAN_PROG_ID"
 `,

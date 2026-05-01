@@ -1,0 +1,53 @@
+# -*- mode: bpfman -*-
+# e2e/lib.bpfman
+#
+# Shared helpers for the Test*_LoadAttachDetachUnload REPL scripts.
+# Sourced from each lifecycle script via `source ../lib.bpfman`
+# (the scripts run with cwd=e2e/, so the relative path resolves to
+# this file).
+#
+# This file is deliberately placed one level above e2e/scripts/ so
+# the test-e2e-scripts harness glob (e2e/scripts/*.bpfman) does not
+# pick it up as a standalone test.
+
+# Assert the structural shape of a program load response.
+#
+# load_tp and kernel_tp are taken separately because they only agree
+# for a subset of program types (kprobe, tracepoint).  fentry/fexit
+# load as their declared type but the kernel reports them as
+# "tracing"; uprobe/uretprobe report "kprobe"; tc and xdp load as
+# BPF_PROG_TYPE_EXT and report "extension"; tcx reports "schedcls".
+#
+#   prog:      structured value returned by `bpfman program load file ...`
+#   load_tp:   expected record.load.program_type (the user-declared type)
+#   kernel_tp: expected status.kernel.program_type (what the kernel reports)
+#   name:      expected record.meta.name (the user-supplied program name)
+def expect_program_load(prog, load_tp, kernel_tp, name) {
+    assert $prog matches {
+        record.load.program_type:    $load_tp
+        status.kernel.program_type:  $kernel_tp
+        record.meta.name:            $name
+        status.kernel.id:            $prog.record.program_id
+        status.kernel.name:          not-empty
+        status.kernel.tag:           not-empty
+        status.kernel.loaded_at:     not-empty
+        record.handles.pin_path:     not-empty
+    }
+}
+
+# Assert that a Get response round-trips a program load response on
+# the fields the user controls or that the kernel locks in at load
+# time. Anything outside this list is allowed to vary.
+#
+#   got:  result of `bpfman program get $pid`
+#   prog: the original load response
+def expect_program_round_trip(got, prog) {
+    assert $got matches {
+        status.kernel.id:            $prog.status.kernel.id
+        status.kernel.program_type:  $prog.status.kernel.program_type
+        status.kernel.name:          $prog.status.kernel.name
+        status.kernel.tag:           $prog.status.kernel.tag
+        record.meta.name:            $prog.record.meta.name
+        record.handles.pin_path:     $prog.record.handles.pin_path
+    }
+}

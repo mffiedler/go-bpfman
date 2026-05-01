@@ -13,7 +13,7 @@
 #   sudo bpfman repl -f examples/fexit.bpfman
 
 let prog = [bpfman program load file \
-    --path e2e/testdata/bpf/fentry_counter_nopin.bpf.o \
+    --path e2e/testdata/bpf/fentry_counter.bpf.o \
     --programs fexit:test_fexit:do_unlinkat]
 
 let link = [bpfman link attach fexit $prog]

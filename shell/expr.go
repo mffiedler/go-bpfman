@@ -319,6 +319,8 @@ func stmtLoc(s Stmt) Loc {
 		return v.Loc
 	case *ContinueStmt:
 		return v.Loc
+	case *DefStmt:
+		return v.Loc
 	}
 	return Loc{}
 }
@@ -358,8 +360,87 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return errBreak
 	case *ContinueStmt:
 		return errContinue
+	case *DefStmt:
+		return evalDefStmt(s, env)
 	default:
 		return fmt.Errorf("unknown statement type %T", stmt)
+	}
+}
+
+// evalDefStmt registers s in the session's def table. Redefining an
+// existing def replaces it silently; this matches let and alias.
+func evalDefStmt(s *DefStmt, env *Env) error {
+	env.Session.SetDef(&DefValue{
+		Name:   s.Name,
+		Params: s.Params,
+		Body:   s.Body,
+		Loc:    s.Loc,
+	})
+	return nil
+}
+
+// callDef binds def parameters from args, runs def.Body in env, and
+// restores the prior session bindings on return. Arity is checked
+// against len(def.Params) and a mismatch yields a runtime error
+// citing both the call site and the def's declaration site.
+//
+// The shadow-and-restore is implemented over the existing flat
+// session map: each parameter's prior value is captured (or noted as
+// absent) before the body runs and reinstated afterwards. Recursion
+// works naturally because each call's saves slice is local to its
+// invocation.
+func callDef(def *DefValue, args []Arg, callLoc Loc, env *Env) error {
+	if len(args) != len(def.Params) {
+		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
+			def.Name, len(def.Params), len(args), def.Loc.Line, def.Loc.Col)
+	}
+	type saved struct {
+		name string
+		val  Value
+		had  bool
+	}
+	saves := make([]saved, len(def.Params))
+	for i, p := range def.Params {
+		v, ok := env.Session.Get(p)
+		saves[i] = saved{name: p, val: v, had: ok}
+		env.Session.Set(p, argToValue(args[i]))
+	}
+	defer func() {
+		for _, s := range saves {
+			if s.had {
+				env.Session.Set(s.name, s.val)
+			} else {
+				env.Session.Delete(s.name)
+			}
+		}
+	}()
+	for _, stmt := range def.Body {
+		if err := evalStmt(stmt, env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// argToValue converts a post-expansion Arg into a Value suitable for
+// binding to a def parameter. Word and quoted args become string
+// values; resolved scalar args become string values; structured and
+// adapter args carry their already-resolved Value through; a
+// MatchesBlockArg has no positional value form and is rejected.
+func argToValue(a Arg) Value {
+	switch v := a.(type) {
+	case WordArg:
+		return StringValue(v.Text)
+	case QuotedArg:
+		return StringValue(v.Text)
+	case ScalarValueArg:
+		return StringValue(v.Text)
+	case StructuredValueArg:
+		return v.Value
+	case AdapterArg:
+		return v.Value
+	default:
+		return Value{}
 	}
 }
 
@@ -560,11 +641,31 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	if err != nil {
 		return err
 	}
+	if len(args) > 0 {
+		if name, ok := commandHeadName(args[0]); ok {
+			if def, hit := env.Session.GetDef(name); hit {
+				return callDef(def, args[1:], s.Loc, env)
+			}
+		}
+	}
 	if env.ExecCommand == nil {
 		return locErrorf(s.Loc, "command execution is not configured")
 	}
 	_, err = env.ExecCommand(args)
 	return err
+}
+
+// commandHeadName extracts the command name from the first argument
+// of a command call, but only when the first argument is a literal
+// word (the syntactic shape that names a command). Quoted strings,
+// resolved scalars, and structured values do not name commands and
+// are not eligible to dispatch as defs.
+func commandHeadName(a Arg) (string, bool) {
+	w, ok := a.(WordArg)
+	if !ok {
+		return "", false
+	}
+	return w.Text, true
 }
 
 // evalExprStmt evaluates a top-level expression statement and, when
@@ -843,6 +944,8 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 			return nil, locErrorf(e.Loc, "thread: %v", err)
 		}
 		return ScalarValueArg{Text: s}, nil
+	case *MatchesBlockExpr:
+		return evalMatchesBlockArg(e, env)
 	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *NegateExpr, *TimeoutExpr, *IterationExpr:
 		return nil, locErrorf(exprLoc(expr), "boolean/comparison/arithmetic expression cannot be used as a command argument")
 	default:
@@ -1320,6 +1423,8 @@ func exprLoc(e Expr) Loc {
 	case *TimeoutExpr:
 		return v.Loc
 	case *IterationExpr:
+		return v.Loc
+	case *MatchesBlockExpr:
 		return v.Loc
 	}
 	return Loc{}

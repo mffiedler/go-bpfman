@@ -50,8 +50,8 @@ require ok exec ip link set bpfman-example up
 
 # Two kernel program IDs from the same object file; bpfman assigns
 # each its own ID, and the dispatcher multiplexes by priority.
-let p1 = [b program load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m role=first]
-let p2 = [b program load file --path e2e/testdata/bpf/xdp_pass.bpf.o --programs xdp:pass -m role=second]
+let p1 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=first]
+let p2 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=second]
 require not nil p1
 require not nil p2
 assert $p1.record.program_id ne $p2.record.program_id

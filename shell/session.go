@@ -2,12 +2,24 @@ package shell
 
 import "sort"
 
-// Session holds variable bindings and aliases for the REPL. It is
-// the runtime state that persists across commands within a session.
+// Session holds variable bindings, aliases, and user-defined commands
+// (defs) for the REPL. It is the runtime state that persists across
+// commands within a session.
 type Session struct {
 	vars           map[string]Value
 	aliases        map[string]string
+	defs           map[string]*DefValue
 	assertFailures int
+}
+
+// DefValue is a user-defined command registered via the `def NAME(P1,
+// P2, ...) { BODY }` form. It holds the parameter list, the parsed
+// body, and the source location of the declaration for diagnostics.
+type DefValue struct {
+	Name   string
+	Params []string
+	Body   []Stmt
+	Loc    Loc
 }
 
 // RecordAssertFailure increments the assertion failure counter.
@@ -25,7 +37,41 @@ func NewSession() *Session {
 	return &Session{
 		vars:    make(map[string]Value),
 		aliases: make(map[string]string),
+		defs:    make(map[string]*DefValue),
 	}
+}
+
+// SetDef registers (or replaces) a user-defined command. The caller
+// is responsible for validating the name and parameter list.
+func (s *Session) SetDef(d *DefValue) {
+	s.defs[d.Name] = d
+}
+
+// GetDef retrieves a user-defined command. The second return value
+// indicates whether a def with that name exists.
+func (s *Session) GetDef(name string) (*DefValue, bool) {
+	d, ok := s.defs[name]
+	return d, ok
+}
+
+// DeleteDef removes a user-defined command. Returns true if the def
+// existed.
+func (s *Session) DeleteDef(name string) bool {
+	if _, ok := s.defs[name]; !ok {
+		return false
+	}
+	delete(s.defs, name)
+	return true
+}
+
+// DefNames returns the sorted list of registered def names.
+func (s *Session) DefNames() []string {
+	names := make([]string, 0, len(s.defs))
+	for k := range s.defs {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Set binds a value to a variable name, replacing any existing binding.

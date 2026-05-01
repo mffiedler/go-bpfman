@@ -16,10 +16,52 @@ import (
 	"github.com/frobware/go-bpfman/platform"
 )
 
-// executeJSONPath parses and executes a JSONPath expression against the given data.
-// The data is marshalled to JSON and back to ensure consistent field access.
-// UseNumber is enabled so that large integers (e.g. synthetic link IDs)
-// render as decimal rather than scientific notation.
+// CLI output trailing-newline contract.
+//
+// Every formatter that returns a string for CLI emission MUST end
+// its output with exactly one "\n", matching the Unix convention
+// for text streams and what every comparable CLI does (kubectl,
+// aws, gcloud, jq, ...). Two paths reach this contract differently:
+//
+//   - Marshaller-driven formatters (formatProgramJSON,
+//     formatLoadedProgramsJSON, etc.) lean on the encoding/json
+//     contract. encoding/json.Marshal and MarshalIndent never emit
+//     a trailing newline (see Marshal / MarshalIndent godoc),
+//     so `string(output) + "\n"` produces exactly one. No trim
+//     needed; the producer-side guarantee is checked by
+//     TestStdlibJSONMarshal_NoTrailingNewline so a future Go
+//     upgrade that changes the stdlib behaviour is caught.
+//
+//   - executeJSONPath is template-driven: a user-supplied template
+//     may or may not emit trailing newlines (`{range...}{"\n"}{end}`
+//     ends in one, `{.id}` does not). There is no producer-side
+//     contract to lean on, so the function normalises by trimming
+//     trailing newlines before appending exactly one. The trim
+//     here is required for the contract to hold; it is NOT a
+//     workaround for double-newline output.
+//
+// Code that emits CLI strings should not reinvent either path.
+// Marshaller paths use `string(jsonBytes) + "\n"`. JSONPath paths
+// route through executeJSONPath. Anything else risks breaking the
+// shape that consumers (examples/tracepoint.sh, integration tests,
+// downstream scripts) rely on.
+
+// executeJSONPath parses and executes a JSONPath expression against
+// the given data and returns the rendered string with exactly one
+// trailing newline.
+//
+// Input contract: the user-supplied template `expr` may emit any
+// shape; this function does not constrain it.
+//
+// Output contract: the returned string ends with exactly one "\n",
+// regardless of whether the template's last token emits a newline.
+// The buffer is normalised with TrimRight(..., "\n") + "\n" to
+// enforce this; do not "simplify" the trim away.
+//
+// The data is marshalled to JSON and back to ensure consistent
+// field access. UseNumber is enabled so that large integers (e.g.
+// synthetic link IDs) render as decimal rather than scientific
+// notation.
 func executeJSONPath(data any, expr string) (string, error) {
 	jp := jsonpath.New("output")
 	if err := jp.Parse(expr); err != nil {
@@ -43,7 +85,11 @@ func executeJSONPath(data any, expr string) (string, error) {
 		return "", fmt.Errorf("jsonpath execution failed: %w", err)
 	}
 
-	return buf.String() + "\n", nil
+	// Output contract enforcement: see file-level comment block.
+	// Trim then re-append so the result has exactly one trailing
+	// "\n" regardless of the template's terminating shape.
+	out := strings.TrimRight(buf.String(), "\n")
+	return out + "\n", nil
 }
 
 // FormatProgram formats a bpfman.Program according to the specified output flags.
@@ -697,7 +743,10 @@ func FormatLoadedPrograms(programs []bpfman.Program, flags *OutputFlags) (string
 }
 
 func formatLoadedProgramsJSON(programs []bpfman.Program) (string, error) {
-	output, err := json.MarshalIndent(programs, "", "  ")
+	if programs == nil {
+		programs = []bpfman.Program{}
+	}
+	output, err := json.MarshalIndent(bpfman.LoadResult{Programs: programs}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal result: %w", err)
 	}
@@ -705,7 +754,10 @@ func formatLoadedProgramsJSON(programs []bpfman.Program) (string, error) {
 }
 
 func formatLoadedProgramsJSONPath(programs []bpfman.Program, expr string) (string, error) {
-	return executeJSONPath(programs, expr)
+	if programs == nil {
+		programs = []bpfman.Program{}
+	}
+	return executeJSONPath(bpfman.LoadResult{Programs: programs}, expr)
 }
 
 func formatLoadedProgramsTable(programs []bpfman.Program) string {

@@ -86,6 +86,34 @@ func replUnalias(cli *CLI, session *shell.Session, args []string) error {
 	return nil
 }
 
+// replDefs lists all user-defined commands and their parameter lists.
+func replDefs(cli *CLI, session *shell.Session) error {
+	names := session.DefNames()
+	if len(names) == 0 {
+		return cli.PrintOut("No defs defined\n")
+	}
+	var b strings.Builder
+	for _, name := range names {
+		d, _ := session.GetDef(name)
+		fmt.Fprintf(&b, "  %s(%s)\n", d.Name, strings.Join(d.Params, ", "))
+	}
+	return cli.PrintOut(b.String())
+}
+
+// replUndef removes one or more user-defined commands from the
+// session.
+func replUndef(session *shell.Session, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("undef requires at least one def name")
+	}
+	for _, name := range args {
+		if !session.DeleteDef(name) {
+			return fmt.Errorf("undefined def %q", name)
+		}
+	}
+	return nil
+}
+
 // replAliases lists all defined aliases.
 func replAliases(cli *CLI, session *shell.Session) error {
 	names := session.AliasNames()

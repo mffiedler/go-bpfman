@@ -46,6 +46,31 @@ func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, sess
 		}
 	}
 
+	// Matches form: <target> followed by a parsed `matches { ... }`
+	// block. The shell parser strips the bare "matches" keyword and
+	// produces a single MatchesBlockArg; arity is exactly two
+	// (target plus block).
+	if len(args) == 2 {
+		if block, ok := args[1].(shell.MatchesBlockArg); ok {
+			if negate {
+				return fmt.Errorf("\"not\" is not supported with the matches form")
+			}
+			result, err := evalAssertMatches(args[0], block, loc)
+			if err != nil {
+				return err
+			}
+			if result.pass {
+				return nil
+			}
+			_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+			if isRequire {
+				return errRequireFailed
+			}
+			session.RecordAssertFailure()
+			return nil
+		}
+	}
+
 	// Value-based assertion: binary comparison or unary predicate.
 	// These route through the expression grammar. "not" is legal
 	// before unary predicates but banned before binary comparisons
@@ -311,6 +336,83 @@ func assertContains(args []string) (assertResult, error) {
 	return assertResult{
 		pass:    pass,
 		message: fmt.Sprintf("expected %q to contain %q", args[0], args[1]),
+	}, nil
+}
+
+// evalAssertMatches implements `assert <target> matches { ... }`
+// with subset-match semantics: each entry is checked individually
+// and all mismatches are collected so the failure message reports
+// every diverging path in one go. Extra fields in the actual record
+// are ignored — the entry list is the entire contract.
+func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourceLoc) (assertResult, error) {
+	sva, ok := target.(shell.StructuredValueArg)
+	if !ok {
+		return assertResult{}, fmt.Errorf("matches requires a structured value as the target (got %s)", argText(target))
+	}
+	if len(block.Entries) == 0 {
+		return assertResult{}, fmt.Errorf("matches block must contain at least one entry")
+	}
+
+	// locate prefixes a path message with the entry's source
+	// location so multi-mismatch failures point at the specific
+	// offending line inside the block. The shell.Loc carried by
+	// each entry is relative to the accumulated REPL chunk; when
+	// the assert statement has a known file/start-line, translate
+	// the chunk-local line into an absolute file line so the
+	// diagnostic agrees with the rest of the REPL's "file:line:"
+	// convention.
+	locate := func(loc shell.Loc, msg string) string {
+		if loc.Line == 0 {
+			return msg
+		}
+		if base.file != "" && base.line > 0 {
+			absLine := base.line + loc.Line - 1
+			return fmt.Sprintf("%s:%d:%d: %s", base.file, absLine, loc.Col, msg)
+		}
+		return fmt.Sprintf("%d:%d: %s", loc.Line, loc.Col, msg)
+	}
+
+	var mismatches []string
+	for _, entry := range block.Entries {
+		actual, err := sva.Value.LookupValue(sva.Name, entry.Path)
+		if err != nil {
+			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: %v", entry.Path, err)))
+			continue
+		}
+		if entry.NotEmpty {
+			s, err := actual.Scalar()
+			if err != nil {
+				mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected non-empty scalar, got %s", entry.Path, actual.Kind())))
+				continue
+			}
+			if s == "" {
+				mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected non-empty, got \"\"", entry.Path)))
+			}
+			continue
+		}
+		actualS, err := actual.Scalar()
+		if err != nil {
+			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected scalar value, got %s", entry.Path, actual.Kind())))
+			continue
+		}
+		expected, err := entry.Value.Scalar()
+		if err != nil {
+			return assertResult{}, fmt.Errorf("matches entry %q: pattern is not a scalar value", entry.Path)
+		}
+		if actualS != expected {
+			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected %q, got %q", entry.Path, expected, actualS)))
+		}
+	}
+	if len(mismatches) == 0 {
+		return assertResult{pass: true, message: "matches block held"}, nil
+	}
+	noun := "mismatch"
+	if len(mismatches) > 1 {
+		noun = "mismatches"
+	}
+	return assertResult{
+		pass:    false,
+		message: fmt.Sprintf("matches: %d %s\n  %s", len(mismatches), noun, strings.Join(mismatches, "\n  ")),
 	}, nil
 }
 

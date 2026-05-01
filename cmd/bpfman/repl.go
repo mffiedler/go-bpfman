@@ -287,6 +287,7 @@ var shellCommands = map[string]bool{
 	"alias":   true,
 	"aliases": true,
 	"assert":  true,
+	"defs":    true,
 	"exec":    true,
 	"file":    true,
 	"jq":      true,
@@ -295,6 +296,7 @@ var shellCommands = map[string]bool{
 	"help":    true,
 	"source":  true,
 	"unalias": true,
+	"undef":   true,
 	"unset":   true,
 	"vars":    true,
 	"version": true,
@@ -319,6 +321,10 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 		return true, shell.Value{}, replAlias(cli, session, argTexts(args[1:]))
 	case "aliases":
 		return true, shell.Value{}, replAliases(cli, session)
+	case "defs":
+		return true, shell.Value{}, replDefs(cli, session)
+	case "undef":
+		return true, shell.Value{}, replUndef(session, argTexts(args[1:]))
 	case "assert":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
 	case "exec":
@@ -516,19 +522,49 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 
 	ctx = context.WithValue(ctx, replSourcingKey, true)
 
+	// Accumulate physical lines into logical statements, mirroring the
+	// continuation logic that replLoop uses for the interactive REPL
+	// and for `bpfman repl -f`. Without this, multi-line forms in a
+	// sourced file (def / if / foreach / retry blocks, command
+	// substitutions that span lines) would each fail to parse on
+	// their first line because the open brace or bracket has not yet
+	// been closed.
 	var lineNo int
+	var buf strings.Builder
+	var startLine int
+	var cs contState
 	for {
 		input, err := lr.Readline()
 		if err != nil {
 			if err == io.EOF {
+				if buf.Len() > 0 {
+					return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", args[0], startLine)
+				}
 				return nil
 			}
 			return err
 		}
 		lineNo++
 
-		loc := sourceLoc{file: args[0], line: lineNo}
-		if err := replEval(ctx, cli, mgr, session, input, loc); err != nil {
+		if buf.Len() == 0 {
+			startLine = lineNo
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(input)
+		cs.advance(input)
+
+		if cs.open() {
+			continue
+		}
+
+		accumulated := buf.String()
+		buf.Reset()
+		cs = contState{}
+
+		loc := sourceLoc{file: args[0], line: startLine}
+		if err := replEval(ctx, cli, mgr, session, accumulated, loc); err != nil {
 			return err
 		}
 	}

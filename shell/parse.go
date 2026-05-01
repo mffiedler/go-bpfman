@@ -125,6 +125,18 @@ type RetryStmt struct {
 	Loc
 }
 
+// DefStmt declares a user-defined command. Name is the command name,
+// Params is the ordered parameter list (parameter names, no default
+// or type information), and Body is the parsed block executed at
+// call time. Evaluation registers the def in the session under Name;
+// invocation routes through evalCommandStmt's def-lookup path.
+type DefStmt struct {
+	Name   string
+	Params []string
+	Body   []Stmt
+	Loc
+}
+
 func (*LetStmt) stmtNode()      {}
 func (*IfStmt) stmtNode()       {}
 func (*CommandStmt) stmtNode()  {}
@@ -133,6 +145,7 @@ func (*ForEachStmt) stmtNode()  {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*RetryStmt) stmtNode()    {}
+func (*DefStmt) stmtNode()      {}
 
 // Parse turns a token stream into a *Program. Every parse error
 // carries a source location derived from the offending token.
@@ -193,12 +206,23 @@ func (p *parser) parseStmts(isEnd func() bool) ([]Stmt, error) {
 		if p.atEOF() || isEnd() {
 			break
 		}
+		before := p.pos
 		stmt, err := p.parseStmt()
 		if err != nil {
 			return nil, err
 		}
 		if stmt != nil {
 			stmts = append(stmts, stmt)
+		}
+		// Forward-progress guard: every parseStmt call must either
+		// return an error or consume at least one token. Without
+		// this guard a parser branch that silently returns (nil,
+		// nil) without advancing causes an infinite loop here. The
+		// guard converts that class of bug into an actionable parse
+		// error at the offending token rather than a hang.
+		if stmt == nil && p.pos == before {
+			t := p.peek()
+			return nil, locErrorf(t.Loc, "unexpected token %q", t.Text)
 		}
 	}
 	return stmts, nil
@@ -220,6 +244,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseBreakStmt()
 		case "continue":
 			return p.parseContinueStmt()
+		case "def":
+			return p.parseDefStmt()
 		}
 	}
 	if leadsExpression(t) {
@@ -362,6 +388,15 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 func (p *parser) parseCommandStmt() (Stmt, error) {
 	first := p.peek()
 	startLoc := first.Loc
+	// A bare `{` or `}` at statement position is not the start of a
+	// command (parseStmt has already routed if/foreach/retry/...
+	// keywords away from here), so reject it explicitly. Returning
+	// (nil, nil) without consuming the token would let parseStmts
+	// loop forever on the same token; this surfaces a real parse
+	// error at the offending location instead.
+	if first.Kind == TokenWord && (first.Text == "{" || first.Text == "}") {
+		return nil, locErrorf(first.Loc, "unexpected %q at statement start", first.Text)
+	}
 	isAlias := first.Kind == TokenWord && first.Text == "alias"
 	var buf []Token
 	for !p.atEOF() {
@@ -381,11 +416,166 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 	if len(buf) == 0 {
 		return nil, nil
 	}
+
+	// Detect "... matches {" tail: the previous token must be the
+	// bare keyword "matches" and the next token must be "{".  When
+	// this shape fires, the "matches" word is consumed as part of
+	// the block syntax (it does not appear in the host command's
+	// argument list) and the block parses into a MatchesBlockExpr
+	// that becomes the command's last argument.
+	var matchesBlock *MatchesBlockExpr
+	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "{" &&
+		len(buf) > 0 && buf[len(buf)-1].Kind == TokenWord && buf[len(buf)-1].Text == "matches" {
+		matchesTok := buf[len(buf)-1]
+		buf = buf[:len(buf)-1]
+		if len(buf) == 0 {
+			return nil, locErrorf(matchesTok.Loc, "matches { ... } requires a target expression and a host command")
+		}
+		mb, err := p.parseMatchesBlock(matchesTok.Loc)
+		if err != nil {
+			return nil, err
+		}
+		matchesBlock = mb
+	}
+
 	args, err := parseCommandArgs(buf, isAlias)
 	if err != nil {
 		return nil, err
 	}
+	if matchesBlock != nil {
+		args = append(args, matchesBlock)
+	}
 	return &CommandStmt{Args: args, Loc: startLoc}, nil
+}
+
+// reservedDefNames lists identifiers that cannot be used as a def
+// name because the parser routes them away from the command-statement
+// grammar. Allowing a def to shadow these would either be unreachable
+// (the keyword wins at parseStmt) or break statement parsing.
+var reservedDefNames = map[string]bool{
+	"def":       true,
+	"let":       true,
+	"if":        true,
+	"elif":      true,
+	"else":      true,
+	"foreach":   true,
+	"in":        true,
+	"retry":     true,
+	"until":     true,
+	"break":     true,
+	"continue":  true,
+	"and":       true,
+	"or":        true,
+	"not":       true,
+	"matches":   true,
+	"timeout":   true,
+	"iteration": true,
+	"true":      true,
+	"false":     true,
+	"bpfman":    true,
+}
+
+// parseDefStmt parses a `def NAME(P1, P2, ...) { BODY }` declaration.
+// The body is parsed eagerly via parseBlock so a syntactically broken
+// body fails at declaration time and the def is never installed.
+// Parameter names must be identifiers and must be unique within the
+// declaration.
+func (p *parser) parseDefStmt() (Stmt, error) {
+	defTok := p.advance() // "def"
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return nil, locErrorf(defTok.Loc, "def requires: def <name>(<params>) { ... }")
+	}
+	if p.peek().Text == "(" {
+		return nil, locErrorf(defTok.Loc, "def requires a name before '('")
+	}
+	nameTok := p.advance()
+	name := nameTok.Text
+	if !IsIdent(name) {
+		return nil, locErrorf(nameTok.Loc, "invalid def name: %q", name)
+	}
+	if reservedDefNames[name] {
+		return nil, locErrorf(nameTok.Loc, "cannot use reserved word %q as a def name", name)
+	}
+	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "(") {
+		return nil, locErrorf(defTok.Loc, "def requires '(' after the name")
+	}
+	p.advance() // "("
+	params, err := p.parseDefParams(defTok.Loc)
+	if err != nil {
+		return nil, err
+	}
+	// Skip separators between ')' and '{'.
+	for !p.atEOF() && p.peek().Kind == TokenSep {
+		p.pos++
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, fmt.Errorf("def %s: %w", name, err)
+	}
+	return &DefStmt{Name: name, Params: params, Body: body, Loc: defTok.Loc}, nil
+}
+
+// parseDefParams consumes the parameter list up to and including the
+// closing ')'. Parameters are comma-separated identifiers; a trailing
+// comma is permitted; an empty list (immediately closing ')') is
+// permitted. Duplicate parameter names are rejected. The tokeniser
+// does not split on `,` so a comma may arrive glued to an identifier
+// ("a," is one TokenWord); the parser strips the trailing comma in
+// that case and treats it as a separator, mirroring how matches
+// blocks handle the same pattern.
+func (p *parser) parseDefParams(defLoc Loc) ([]string, error) {
+	var params []string
+	seen := make(map[string]bool)
+	expectName := true
+	for {
+		// Allow newlines/semis inside the parameter list so a long
+		// def signature can wrap.
+		for !p.atEOF() && p.peek().Kind == TokenSep {
+			p.pos++
+		}
+		if p.atEOF() {
+			return nil, locErrorf(defLoc, "def: unterminated parameter list (missing ')')")
+		}
+		t := p.peek()
+		if t.Kind == TokenWord && t.Text == ")" {
+			p.advance()
+			return params, nil
+		}
+		if t.Kind == TokenWord && t.Text == "," {
+			if expectName {
+				return nil, locErrorf(t.Loc, "def: missing parameter name before ','")
+			}
+			p.advance()
+			expectName = true
+			continue
+		}
+		if !expectName {
+			return nil, locErrorf(t.Loc, "def: expected ',' or ')' in parameter list, got %q", t.Text)
+		}
+		if t.Kind != TokenWord {
+			return nil, locErrorf(t.Loc, "def: expected parameter name, got %q", t.Text)
+		}
+		// Strip a trailing comma glued to the identifier ("a," tokenises
+		// as one WORD because ',' is not a tokenisation boundary). The
+		// stripped identifier is the parameter name; the comma becomes
+		// the separator for the next iteration.
+		nameText := t.Text
+		trailingComma := false
+		if strings.HasSuffix(nameText, ",") && len(nameText) > 1 {
+			nameText = nameText[:len(nameText)-1]
+			trailingComma = true
+		}
+		if !IsIdent(nameText) {
+			return nil, locErrorf(t.Loc, "def: invalid parameter name %q", nameText)
+		}
+		if seen[nameText] {
+			return nil, locErrorf(t.Loc, "def: duplicate parameter name %q", nameText)
+		}
+		seen[nameText] = true
+		params = append(params, nameText)
+		p.advance()
+		expectName = trailingComma
+	}
 }
 
 func (p *parser) parseRetryStmt() (Stmt, error) {

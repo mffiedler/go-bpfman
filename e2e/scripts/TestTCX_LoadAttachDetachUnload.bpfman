@@ -16,6 +16,9 @@
 # Requires root, bpftool, and kernel 6.6+ for native TCX multi-prog
 # support.
 
+# Pull in the shared lifecycle assertion helpers.
+source lib.bpfman
+
 # Best-effort cleanup of leftover netns/veth from a prior run.
 exec status ip link del veth-tcx-host
 exec status ip netns del bpfman-tcx
@@ -29,31 +32,19 @@ require ok exec ip link set veth-tcx-host up
 require ok exec ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tcx-ns
 require ok exec ip netns exec bpfman-tcx ip link set veth-tcx-ns up
 
-# Load the TCX counter. The _nopin variant isolates the map.
-let prog = [bpfman program load file --path testdata/bpf/tcx_counter_nopin.bpf.o --programs tcx:tcx_stats]
+# Load the TCX counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
+let prog = [bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats]
 require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
 # program_type "schedcls" for TCX.
-assert $prog.record.load.program_type eq tcx
-assert $prog.status.kernel.program_type eq schedcls
-assert $prog.record.meta.name eq tcx_stats
-assert $prog.status.kernel.id == $pid
-assert not-empty $prog.status.kernel.name
-assert not-empty $prog.status.kernel.tag
-assert not-empty $prog.status.kernel.loaded_at
-assert not-empty $prog.record.handles.pin_path
+expect_program_load $prog tcx schedcls tcx_stats
 
 # Round-trip: Get returns the same program record.
 let got = [bpfman program get $pid]
 require not nil got
-assert $got.status.kernel.id == $prog.status.kernel.id
-assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
-assert $got.status.kernel.name eq $prog.status.kernel.name
-assert $got.status.kernel.tag eq $prog.status.kernel.tag
-assert $got.record.meta.name eq $prog.record.meta.name
-assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
+expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.

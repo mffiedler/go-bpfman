@@ -50,8 +50,29 @@ type AdapterArg struct {
 	Value   Value
 }
 
+// MatchesBlockArg carries the entries of a parsed `matches { ... }`
+// block to the host command. Patterns are evaluated eagerly at the
+// argument-expansion boundary: NotEmpty entries set NotEmpty true
+// and leave Value zero; value-pattern entries store the resolved
+// scalar (or structured value, kept for completeness) of the
+// pattern expression.
+type MatchesBlockArg struct {
+	Entries []MatchesBlockEntry
+}
+
+// MatchesBlockEntry is the post-expansion form of one matches row.
+// Path is verbatim from the source. Exactly one of NotEmpty / Value
+// is meaningful.
+type MatchesBlockEntry struct {
+	Path     string
+	Value    Value
+	NotEmpty bool
+	Loc      Loc
+}
+
 func (WordArg) isArg()            {}
 func (QuotedArg) isArg()          {}
 func (ScalarValueArg) isArg()     {}
 func (StructuredValueArg) isArg() {}
 func (AdapterArg) isArg()         {}
+func (MatchesBlockArg) isArg()    {}

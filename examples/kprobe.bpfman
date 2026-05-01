@@ -9,7 +9,7 @@
 #   sudo bpfman repl -f examples/kprobe.bpfman
 
 let prog = [bpfman program load file \
-    --path e2e/testdata/bpf/kprobe_counter_nopin.bpf.o \
+    --path e2e/testdata/bpf/kprobe_counter.bpf.o \
     --programs kprobe:kprobe_counter]
 
 let link = [bpfman link attach kprobe --fn-name try_to_wake_up $prog]

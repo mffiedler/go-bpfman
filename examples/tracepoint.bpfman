@@ -9,7 +9,7 @@
 #   sudo bpfman repl -f examples/tracepoint.bpfman
 
 let prog = [bpfman program load file \
-    --path e2e/testdata/bpf/tracepoint_counter_nopin.bpf.o \
+    --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder]
 
 let link = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]

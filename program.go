@@ -285,6 +285,16 @@ type ProgramListResult struct {
 	Programs   []Program `json:"programs"`
 }
 
+// LoadResult wraps the programs returned by Manager.Load. The
+// wrapper exists so CLI JSON output exposes a stable top-level
+// `programs` key matching ProgramListResult and LinkListResult.
+//
+// Programs are returned in the same order as the input ProgramSpec
+// slice. Tests rely on this ordering contract; do not break it.
+type LoadResult struct {
+	Programs []Program `json:"programs"`
+}
+
 // ListOption configures program list filtering.
 type ListOption func(*listOptions)
 

@@ -18,30 +18,21 @@
 # Load the kprobe counter ELF as a kretprobe program. The same
 # object serves both kprobe and kretprobe; the program type at
 # load time governs whether attaches fire on entry or return.
-let prog = [bpfman program load file --path testdata/bpf/kprobe_counter_nopin.bpf.o --programs kretprobe:kprobe_counter]
+# Pull in the shared lifecycle assertion helpers.
+source lib.bpfman
+
+let prog = [bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter]
 require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
 # program_type "kprobe" for both kprobe and kretprobe.
-assert $prog.record.load.program_type eq kretprobe
-assert $prog.status.kernel.program_type eq kprobe
-assert $prog.record.meta.name eq kprobe_counter
-assert $prog.status.kernel.id == $pid
-assert not-empty $prog.status.kernel.name
-assert not-empty $prog.status.kernel.tag
-assert not-empty $prog.status.kernel.loaded_at
-assert not-empty $prog.record.handles.pin_path
+expect_program_load $prog kretprobe kprobe kprobe_counter
 
 # Round-trip: Get returns the same program record.
 let got = [bpfman program get $pid]
 require not nil got
-assert $got.status.kernel.id == $prog.status.kernel.id
-assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
-assert $got.status.kernel.name eq $prog.status.kernel.name
-assert $got.status.kernel.tag eq $prog.status.kernel.tag
-assert $got.record.meta.name eq $prog.record.meta.name
-assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
+expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.

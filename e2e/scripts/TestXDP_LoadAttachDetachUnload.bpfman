@@ -15,6 +15,9 @@
 #
 # Requires root and bpftool.
 
+# Pull in the shared lifecycle assertion helpers.
+source lib.bpfman
+
 # Best-effort cleanup of leftover netns/veth from a prior run.
 exec status ip link del veth-xdp-host
 exec status ip netns del bpfman-xdp
@@ -28,32 +31,20 @@ require ok exec ip link set veth-xdp-host up
 require ok exec ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xdp-ns
 require ok exec ip netns exec bpfman-xdp ip link set veth-xdp-ns up
 
-# Load the XDP pass program. The _nopin variant isolates the map.
-let prog = [bpfman program load file --path testdata/bpf/xdp_pass_nopin.bpf.o --programs xdp:pass]
+# Load the XDP pass program. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
+let prog = [bpfman program load file --path testdata/bpf/xdp_pass.bpf.o --programs xdp:pass]
 require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. XDP programs are
 # loaded as BPF_PROG_TYPE_EXT targeting a dispatcher, so the
 # kernel reports program_type "extension".
-assert $prog.record.load.program_type eq xdp
-assert $prog.status.kernel.program_type eq extension
-assert $prog.record.meta.name eq pass
-assert $prog.status.kernel.id == $pid
-assert not-empty $prog.status.kernel.name
-assert not-empty $prog.status.kernel.tag
-assert not-empty $prog.status.kernel.loaded_at
-assert not-empty $prog.record.handles.pin_path
+expect_program_load $prog xdp extension pass
 
 # Round-trip: Get returns the same program record.
 let got = [bpfman program get $pid]
 require not nil got
-assert $got.status.kernel.id == $prog.status.kernel.id
-assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
-assert $got.status.kernel.name eq $prog.status.kernel.name
-assert $got.status.kernel.tag eq $prog.status.kernel.tag
-assert $got.record.meta.name eq $prog.record.meta.name
-assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
+expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.
