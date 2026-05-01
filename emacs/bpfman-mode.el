@@ -1,6 +1,6 @@
 ;;; bpfman-mode.el --- Major mode for bpfman REPL scripts -*- lexical-binding: t; -*-
 
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Keywords: languages, bpf
 ;; Package-Requires: ((emacs "25.1"))
 
@@ -10,8 +10,9 @@
 ;; retry/until/timeout polling, logical operators (and/or/not),
 ;; parenthesised expressions, command substitution, value-threading
 ;; (|>), variable references with path access, string literals,
-;; flags, and comments.  See docs/repl/language.md for the full
-;; specification.
+;; flags, comments, user-defined commands (def name(params) { body }),
+;; and the `assert <expr> matches { ... }' subset-match form.  See
+;; docs/repl/language.md for the full specification.
 
 ;;; Commentary:
 
@@ -68,12 +69,14 @@
     (dolist (w '(;; binding and control flow
                  "let" "if" "elif" "else"
                  "foreach" "retry" "until" "break" "continue"
+                 ;; user-defined commands
+                 "def"
                  ;; domain gateway
                  "bpfman"
                  ;; shell-language builtins
-                 "alias" "aliases" "assert" "exec" "file"
+                 "alias" "aliases" "assert" "defs" "exec" "file"
                  "help" "jq" "print" "require" "source"
-                 "unalias" "unset" "vars" "version"))
+                 "unalias" "undef" "unset" "vars" "version"))
       (puthash w t ht))
     ht)
   "Hash table of top-level bpfman REPL keywords and commands.")
@@ -99,6 +102,8 @@
                  "and" "or"
                  ;; foreach / retry auxiliaries
                  "in" "timeout" "iteration"
+                 ;; matches block keyword (assert <expr> matches { ... })
+                 "matches"
                  ;; comparison operators: textual (lexicographic)
                  "eq" "ne" "lt" "le" "gt" "ge"
                  ;; comparison operators: numeric
@@ -149,14 +154,29 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
            ((= ch ?#)
             (throw 'done nil))
 
-           ;; Quoted string (single or double).
+           ;; Quoted string (single or double).  Double-quoted
+           ;; strings honour the same backslash escapes the shell
+           ;; tokeniser does (\\, \", \$, \n, \t, \r): a backslash
+           ;; followed by any character consumes both, so an
+           ;; embedded "\"" does not terminate the string at the
+           ;; escaped quote.  Single-quoted strings are fully
+           ;; literal -- a backslash inside them is just a
+           ;; backslash, matching the runtime semantics.
            ((or (= ch ?\") (= ch ?'))
             (let ((quote-char ch)
                   (start pos))
               (setq pos (1+ pos))
               (while (and (< pos eol)
                           (/= (char-after pos) quote-char))
-                (setq pos (1+ pos)))
+                (if (and (= quote-char ?\")
+                         (= (char-after pos) ?\\)
+                         (< (1+ pos) eol))
+                    ;; Escape sequence in a double-quoted string:
+                    ;; consume the backslash and the following
+                    ;; character together so an escaped quote does
+                    ;; not close the string.
+                    (setq pos (+ pos 2))
+                  (setq pos (1+ pos))))
               (when (< pos eol)
                 (setq pos (1+ pos)))   ; consume closing quote
               (push (list bpfman--tok-string start pos) tokens)))
@@ -340,44 +360,55 @@ strings; single-quoted strings are fully literal and stay pure
     (let ((pos beg)
           (lit-start beg))
       (while (< pos end)
-        (if (and (= (char-after pos) ?$)
-                 (< (1+ pos) end)
-                 (= (char-after (1+ pos)) ?{))
-            (progn
-              ;; Flush the literal run that precedes this "${".
-              (when (< lit-start pos)
-                (put-text-property lit-start pos 'face 'font-lock-string-face))
-              ;; Face the "${" opener.
-              (put-text-property pos (+ pos 2) 'face 'font-lock-keyword-face)
-              ;; Locate the matching "}" using a brace-depth counter
-              ;; so nested braces (unlikely today, but cheap to
-              ;; support) do not close the interpolation early.
-              (let ((body-start (+ pos 2))
-                    (body-end (+ pos 2))
-                    (depth 1))
-                (while (and (< body-end end) (> depth 0))
-                  (let ((c (char-after body-end)))
-                    (cond
-                     ((= c ?{) (setq depth (1+ depth)))
-                     ((= c ?}) (setq depth (1- depth)))))
-                  (unless (= depth 0)
-                    (setq body-end (1+ body-end))))
-                (if (and (< body-end end) (= depth 0))
-                    (progn
-                      (when (> body-end body-start)
-                        (put-text-property body-start body-end
-                                           'face 'font-lock-variable-name-face))
-                      (put-text-property body-end (1+ body-end)
-                                         'face 'font-lock-keyword-face)
-                      (setq pos (1+ body-end))
-                      (setq lit-start pos))
-                  ;; Unterminated "${..." — keep the remainder as a
-                  ;; string so the line still reads as a string in
-                  ;; the common case of mid-edit state.
-                  (put-text-property pos end 'face 'font-lock-string-face)
-                  (setq pos end)
-                  (setq lit-start end))))
-          (setq pos (1+ pos))))
+        (cond
+         ;; Backslash escape inside a double-quoted string consumes
+         ;; the next character too, so `\$' does not trigger the
+         ;; interpolation scanner.  The runtime collapses the
+         ;; backslash and the following character into the decoded
+         ;; literal; here we just need to skip past the pair so the
+         ;; literal/interp split lines up.
+         ((and (= (char-after pos) ?\\) (< (1+ pos) end))
+          (setq pos (+ pos 2)))
+         ;; Interpolation start: "${...}".
+         ((and (= (char-after pos) ?$)
+               (< (1+ pos) end)
+               (= (char-after (1+ pos)) ?{))
+          ;; Flush the literal run that precedes this "${".
+          (when (< lit-start pos)
+            (put-text-property lit-start pos 'face 'font-lock-string-face))
+          ;; Face the "${" opener.
+          (put-text-property pos (+ pos 2) 'face 'font-lock-keyword-face)
+          ;; Locate the matching "}" using a brace-depth counter
+          ;; so nested braces (unlikely today, but cheap to
+          ;; support) do not close the interpolation early.
+          (let ((body-start (+ pos 2))
+                (body-end (+ pos 2))
+                (depth 1))
+            (while (and (< body-end end) (> depth 0))
+              (let ((c (char-after body-end)))
+                (cond
+                 ((= c ?{) (setq depth (1+ depth)))
+                 ((= c ?}) (setq depth (1- depth)))))
+              (unless (= depth 0)
+                (setq body-end (1+ body-end))))
+            (if (and (< body-end end) (= depth 0))
+                (progn
+                  (when (> body-end body-start)
+                    (put-text-property body-start body-end
+                                       'face 'font-lock-variable-name-face))
+                  (put-text-property body-end (1+ body-end)
+                                     'face 'font-lock-keyword-face)
+                  (setq pos (1+ body-end))
+                  (setq lit-start pos))
+              ;; Unterminated "${..." — keep the remainder as a
+              ;; string so the line still reads as a string in
+              ;; the common case of mid-edit state.
+              (put-text-property pos end 'face 'font-lock-string-face)
+              (setq pos end)
+              (setq lit-start end))))
+         ;; Plain literal character: advance one byte.
+         (t
+          (setq pos (1+ pos)))))
       (when (< lit-start end)
         (put-text-property lit-start end 'face 'font-lock-string-face)))))
 
@@ -446,6 +477,16 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
               (setq state 'start))
              ((= dch ?\])
               (setq state 'args))
+             ;; `(` after `def NAME` opens the parameter list; switch
+             ;; to a sub-state that fontifies words inside as
+             ;; parameter names.
+             ((and (= dch ?\() (eq state 'def-params))
+              (setq state 'def-params-list))
+             ;; `)` closing the def parameter list returns to start;
+             ;; the body's `{` (a delimiter that also resets to
+             ;; start) follows.
+             ((and (= dch ?\)) (eq state 'def-params-list))
+              (setq state 'start))
              ((or (= dch ?\() (= dch ?\))))
              (t
               (setq state 'start)))))
@@ -476,6 +517,9 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                 ((string= text "foreach")
                  (put-text-property beg end 'face 'font-lock-keyword-face)
                  (setq state 'foreach-name))
+                ((string= text "def")
+                 (put-text-property beg end 'face 'font-lock-keyword-face)
+                 (setq state 'def-name))
                 ((or (string= text "if")
                      (string= text "elif")
                      (string= text "else")
@@ -503,6 +547,33 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
                (when (bpfman--ident-p text)
                  (put-text-property beg end 'face 'font-lock-variable-name-face))
                (setq state 'args))
+
+              ('def-name
+               ;; Word after "def": user-defined command name.  The
+               ;; opening '(' of the parameter list is handled by the
+               ;; delimiter branch and switches state to
+               ;; def-params-list.
+               (when (bpfman--ident-p text)
+                 (put-text-property beg end 'face 'font-lock-variable-name-face))
+               (setq state 'def-params))
+
+              ('def-params-list
+               ;; Word inside a def parameter list.  Parameter names
+               ;; may have a trailing comma glued to them ("a,") --
+               ;; ',' is not a tokeniser stop character -- so the
+               ;; identifier portion (up to the comma, if any) gets
+               ;; the variable-name face and the trailing comma is
+               ;; left plain.
+               (let ((ident-end end))
+                 (save-excursion
+                   (goto-char beg)
+                   (skip-chars-forward "a-zA-Z0-9_" end)
+                   (setq ident-end (point)))
+                 (when (and (> ident-end beg)
+                            (bpfman--ident-p
+                             (buffer-substring-no-properties beg ident-end)))
+                   (put-text-property beg ident-end
+                                      'face 'font-lock-variable-name-face))))
 
               ('let-eq
                ;; Expected = after variable name; got a word instead.

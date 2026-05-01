@@ -47,14 +47,14 @@ Open `syntax-gallery.bpfman` in Emacs:
 emacs syntax-gallery.bpfman
 ```
 
-Scroll top to bottom. The gallery is organised into 18 numbered
+Scroll top to bottom. The gallery is organised into 25 numbered
 sections, each comment-delimited. Scan each section and confirm
 tokens are fontified according to this table:
 
 | Face                          | Applied to                                                      |
 |-------------------------------|-----------------------------------------------------------------|
-| `font-lock-keyword-face`      | `let`, `if`, `elif`, `else`, `alias`, `assert`, `exec`, `json`, `file`, `require`, `print`, `vars`, `unset`, `source`, `help`, `version`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
-| `font-lock-builtin-face`      | domain subcommands (`program`, `link`, `show`, `attach`, ...), attach kinds (`xdp`, `tc`, `tracepoint`, ...), comparison operators (`eq`, `==`, `<`, ...), assertion verbs (`not-empty`, `ok`, `fail`, `path`, `contains`, `nil`, `not`, `true`, `false`) |
+| `font-lock-keyword-face`      | `let`, `def`, `if`, `elif`, `else`, `foreach`, `retry`, `until`, `break`, `continue`, `alias`, `assert`, `defs`, `exec`, `file`, `jq`, `print`, `require`, `source`, `unalias`, `undef`, `unset`, `vars`, `version`, `help`, `bpfman`; the `${` and `}` delimiters of a string interpolation |
+| `font-lock-builtin-face`      | domain subcommands (`program`, `link`, `show`, `attach`, ...), attach kinds (`xdp`, `tc`, `tracepoint`, ...), comparison operators (`eq`, `==`, `<`, ...), assertion verbs (`not-empty`, `ok`, `fail`, `path`, `contains`, `nil`, `not`, `true`, `false`), the `matches` block keyword |
 | `font-lock-variable-name-face`| `$var` references, braced `${var}`, the identifier after `let`, adapter refs (`file:$var`), the body inside a `"${...}"` interpolation |
 | `font-lock-string-face`       | literal runs of `"double-quoted"` and `'single-quoted'` strings (including the quote marks themselves) |
 | `font-lock-comment-face`      | `# to end of line` (outside quotes)                             |
@@ -77,6 +77,17 @@ Specific lines to watch:
   plainly.
 - Section 17 places `=` and `==` on adjacent lines to verify the
   tokeniser distinguishes them.
+- Section 24 exercises `assert <expr> matches { ... }`. The keyword
+  `matches` should be builtin-face; the path entries (e.g.
+  `record.load.program_type:`) and the literal patterns are plain;
+  `$var` patterns get the variable-name face; the `not-empty`
+  predicate is builtin-face.
+- Section 25 exercises `def NAME(P1, P2) { BODY }`. The keyword
+  `def` is keyword-face; the def name and each parameter name (with
+  trailing-comma support) get the variable-name face. Body
+  statements fontify by the usual rules. Call sites of a registered
+  def do *not* highlight the name specially — the fontifier has no
+  cross-line memory of which words have been registered.
 
 ## Maintaining
 

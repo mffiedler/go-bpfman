@@ -404,4 +404,74 @@ let names   = [jq "[ .[].name ]" $raw]
 let first   = [jq ".[0]" $raw]
 let scalar  = [jq "." '{"answer": 42}']
 
+# ---- 24. assert <expr> matches { ... } ----
+
+# A subset-match block: every listed path is checked against its
+# pattern; unlisted fields on the record are allowed.  Patterns may
+# be literals, $variables, $variable.path lookups, or the
+# `not-empty' unary form.  The keyword `matches' is highlighted as
+# a builtin; the block's `{' / `}' delimiters are plain.  Entries
+# are separated by newlines -- the block is a table of relations,
+# not a sequence of statements, so `,' and `;' between entries are
+# both syntax errors (a deliberate departure from the rest of the
+# language, where `\n' and `;' are interchangeable inside braces).
+assert $prog matches {
+    record.load.program_type:    tracepoint
+    status.kernel.program_type:  tracepoint
+    record.meta.name:            tracepoint_kill_recorder
+    status.kernel.id:            $prog.record.program_id
+    status.kernel.tag:           not-empty
+    record.handles.pin_path:     not-empty
+}
+
+# Bare `not-empty' is the unary predicate. To assert that a field
+# equals the literal string "not-empty", quote it -- the quoted
+# form falls through to a normal literal comparison. The same
+# escape rule covers `true' and `false' if you ever need to
+# compare against those literal strings rather than the booleans.
+assert $prog matches {
+    record.meta.name:    "not-empty"
+    record.meta.flag:    "true"
+}
+
+# ---- 25. User-defined commands (def) ----
+
+# `def NAME(P1, P2, ...) { BODY }' registers NAME as a callable.
+# The keyword `def' is fontified like `let'/`foreach'; the def name
+# and each parameter name carry the variable-name face.  Inside the
+# body, statements fontify exactly as they do at the top level.
+def expect_program_load(prog, load_tp, kernel_tp, name) {
+    assert $prog matches {
+        record.load.program_type:    $load_tp
+        status.kernel.program_type:  $kernel_tp
+        record.meta.name:            $name
+        status.kernel.id:            $prog.record.program_id
+        status.kernel.tag:           not-empty
+        record.handles.pin_path:     not-empty
+    }
+}
+
+# A def with no parameters.
+def banner() {
+    print "running lifecycle checks"
+}
+
+# Trailing comma in the parameter list is permitted.
+def expect_link(link, prog, kind,) {
+    assert $link.record.kind eq $kind
+    assert $link.record.program_id == $prog.record.program_id
+}
+
+# Calling a registered def reads exactly like any other command;
+# the def name is not specially highlighted at the call site
+# because the fontifier sees it as an unknown command word.
+expect_program_load $prog tracepoint tracepoint tp_a
+banner
+expect_link $link $prog tracepoint
+
+# `defs' lists registered defs; `undef' removes them.  Both are
+# shell-language builtins and fontify as keywords.
+defs
+undef expect_link banner
+
 # ---- End of gallery ----
