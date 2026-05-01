@@ -277,7 +277,7 @@ but the rollback complication above.
 
 ```sh
 # build without race detector so timing reflects production
-make NORACE=1 bin/e2e.test
+make bin/e2e.test
 
 # isolated mode (default)
 time sudo ./bin/e2e.test -test.failfast > /dev/null

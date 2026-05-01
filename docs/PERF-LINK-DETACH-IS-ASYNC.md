@@ -122,7 +122,7 @@ event fires (workload syscall)
 - **x86 reproduces the same failures locally** at sufficient
   iteration count. `sudo -E ./bin/e2e.test -test.count=100
   -test.failfast` reliably surfaces the same shape. Building
-  without `-race` (`make NORACE=1 bin/e2e.test`) surfaces it
+  without `-race` (`make bin/e2e.test`, the default) surfaces it
   more aggressively because the race detector's overhead
   inflates `env.Detach` past the deferral budget.
 - **Failure shape is consistent:** over-count is precisely one

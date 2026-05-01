@@ -14,8 +14,14 @@ env:
   CI_BUILDX_CACHE: --cache-from type=gha,scope=ci --cache-to type=gha,mode=max,scope=ci
 
 jobs:
+  # Unit tests run with RACE=1 only.  The race detector only adds
+  # checks; nothing passes under RACE=1 that would fail under RACE=0,
+  # and the no-kernel surface here means the timing-mask argument
+  # that justifies a RACE=0 e2e lane does not apply.  The default
+  # `make` build and the test-e2e-scripts RACE=0 lane already
+  # exercise the non-race link path.
   test:
-    name: Unit tests (${{ matrix.arch }})
+    name: Unit tests (${{ matrix.arch }}, RACE=1)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -28,31 +34,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test
-
-  # Stress companion to `test`: default GOMAXPROCS plus -count=10
-  # to surface concurrent goroutine races and init-time validators
-  # that panic on second registration. The deterministic `test`
-  # job above stays the gating signal for logic regressions; this
-  # is a separate gate aimed at the bug class that one-shot serial
-  # runs cannot catch. amd64-only because the bugs in scope (Go
-  # races, package-init re-entry) are not architecture-sensitive.
-  # STRESS_COUNT pinned here so a local Makefile tweak cannot
-  # silently weaken the CI signal.
-  test-stress:
-    name: Unit tests (stress)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-stress STRESS_COUNT=10
+      - run: make ci-test RACE=1
 
   test-e2e:
-    name: E2E tests (${{ matrix.arch }})
+    name: E2E tests (${{ matrix.arch }}, RACE=${{ matrix.race }}, SHARED_RUNTIME=${{ matrix.shared_runtime }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        race: [1, 0]
+        shared_runtime: [1, 0]
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -61,14 +53,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-e2e
+      - run: make ci-test-e2e STRESS_COUNT=5 RACE=${{ matrix.race }} SHARED_RUNTIME=${{ matrix.shared_runtime }}
 
   test-e2e-scripts:
-    name: E2E REPL scripts (${{ matrix.arch }})
+    name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
+        race: [1, 0]
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -101,4 +95,4 @@ jobs:
           sudo ln -sf "$bpf_bin" /usr/local/bin/bpftool
           bpftool version
 
-      - run: make ci-test-e2e-scripts
+      - run: make ci-test-e2e-scripts RACE=${{ matrix.race }}

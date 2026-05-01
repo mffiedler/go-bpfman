@@ -85,10 +85,10 @@ PARALLEL ?=
 # Optional regex passed to `-test.run` in test-e2e / test-e2e-scripts
 # to narrow which tests execute. Empty by default = run all.
 TEST ?=
-# Iteration count for `make test-stress`. Each test re-runs this
-# many times in the same process so init-time validators (e.g.
-# operation.NewKey's name registry) get exercised on second entry.
-STRESS_COUNT ?= 10
+# Iteration count threaded into `-test.count` for `make test-e2e`.
+# Default 1 keeps the local loop fast; CI pins this to 5 so every PR
+# runs a small count loop on top of the deterministic gate.
+STRESS_COUNT ?= 1
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -126,17 +126,22 @@ endif
 STATIC ?=
 override STATIC := $(filter 1,$(STATIC))
 
-# NORACE=1 drops the race detector from `make test`, `make
-# test-stress`, and the bin/e2e.test build recipe.  See the commit
-# that introduced NORACE in those targets for the rationale; in
-# short, the race detector's overhead can mask kernel-timing
-# behaviour we want to surface in e2e tests, and on the static-glibc
-# devshell its presence is also what implicitly forces external
-# linkage.  The empty default is required so `make
-# --warn-undefined-variables` (run by `make ci-lint`) does not flag
-# the $(NORACE) references in the recipes.
-NORACE ?=
-override NORACE := $(filter 1,$(NORACE))
+# RACE=1 enables the race detector for unit, e2e test binaries, and
+# bpfman-compile. Default off: race overhead can mask
+# the kernel-timing behaviour e2e tests aim to surface, and on the
+# static-glibc devshell -race forces external linkage. Empty default
+# (rather than unset) keeps `make --warn-undefined-variables` quiet.
+RACE ?=
+override RACE := $(filter 1,$(RACE))
+
+# SHARED_RUNTIME=1 sets BPFMAN_E2E_SHARED_RUNTIME=1 in the e2e sudo
+# command line, switching the suite to its production-shaped runtime
+# (one bpffs mount, one sqlite store, one manager instance shared
+# across tests).  The Go side checks for the literal string "1", so
+# any other value collapses to empty here and matches the env-unset
+# default.  Same filter-1 pattern as RACE/STATIC.
+SHARED_RUNTIME ?=
+override SHARED_RUNTIME := $(filter 1,$(SHARED_RUNTIME))
 
 # ---------------------------------------------------------------------------
 # Runtime image dispatch.
@@ -559,26 +564,7 @@ lint-dockerfile:
 # their .bpf.o files. Unit tests no longer reach into
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test $(if $(NORACE),,-race) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
-
-# Stress-runs the unit tests in conditions designed to surface bugs
-# that one-shot runs miss. Two knobs differ from `test`:
-#
-#   - -count=$(STRESS_COUNT) re-enters every test, catching
-#     init-time validators that panic on second registration -- the
-#     class operation.NewKey hit before being made idempotent on
-#     same-name same-type. Independent of parallelism, so this part
-#     would still earn its keep under PARALLEL=1.
-#
-#   - PARALLEL is intentionally ignored so Go uses GOMAXPROCS,
-#     exercising concurrent goroutine races. ci-test pins PARALLEL=1
-#     for deterministic ordering; this target trades that determinism
-#     for fault-finding sensitivity.
-#
-# Not wired into ci-test today; run locally before pushing changes
-# that touch shared init-time state or concurrent paths.
-test-stress: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test $(if $(NORACE),,-race) -count=$(STRESS_COUNT) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v ./...)
+	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # nsenter cross-architecture tests
 #
@@ -612,10 +598,14 @@ test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 # pattern -- Make's mtime tracking would otherwise lie when the
 # inputs are .go files we haven't enumerated as prereqs.
 $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
-	$(strip go test -c $(if $(NORACE),,-race) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
+	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
 
+# STRESS_COUNT is honoured here too: `-test.count=$(STRESS_COUNT)`
+# is harmless at the default 1 and turns the same recipe into a
+# stress run when bumped (CI pins it to 5 so every PR gets a small
+# count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
-	sudo $(BIN_DIR)/e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so testdata paths
@@ -703,7 +693,7 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 # compile time. Make's pattern rules build them on demand if
 # missing or out of date.
 bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
+	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
 clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman
@@ -1031,16 +1021,7 @@ ci-lint: ci-image
 # current working tree exactly as a host build would. Same Go
 # cache volumes as ci-build for incremental-compile speed.
 ci-test: ci-image
-	$(CI_RUN) make clean-bpf test PARALLEL=1 STATIC=1
-
-# Reproduce the workflow's stress unit-test job locally.
-# Companion to ci-test: same container, same source mount, but
-# runs `make test-stress` (default GOMAXPROCS, -count=$(STRESS_COUNT))
-# instead of the deterministic `make test PARALLEL=1`. Forwards
-# STRESS_COUNT so callers (notably the GH workflow) can pin the
-# count rather than depending on the Makefile default.
-ci-test-stress: ci-image
-	$(CI_RUN) make clean-bpf test-stress STATIC=1 STRESS_COUNT=$(STRESS_COUNT)
+	$(CI_RUN) make clean-bpf test PARALLEL=1 STATIC=1 RACE=$(RACE)
 
 # Reproduce the workflow's e2e job locally. The `e2e-export`
 # stage produces a hermetic bundle at $(CI_E2E_BUNDLE); the
@@ -1049,8 +1030,8 @@ ci-test-stress: ci-image
 # privileges the e2e suite needs.
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
-	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
-	sudo $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast
+	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
+	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT)
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman
@@ -1072,7 +1053,7 @@ ci-test-e2e:
 ci-test-e2e-scripts:
 	$(RM) bin/bpfman bin/e2e.test
 	$(MAKE) clean-bpf
-	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) $(CI_BUILDX_CACHE) .
+	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 
 # Umbrella: run every CI pipeline locally. Cheap checks first

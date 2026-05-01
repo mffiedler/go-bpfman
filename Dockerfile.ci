@@ -83,6 +83,10 @@ WORKDIR /src
 # ---------------------------------------------------------------------------
 FROM base AS e2e-builder
 
+# RACE is forwarded from the buildx --build-arg by the ci-test-e2e
+# and ci-test-e2e-scripts make recipes; empty by default.
+ARG RACE=
+
 COPY . .
 
 # Build artefacts via Make's dep graph: `e2e.test` pulls in
@@ -94,8 +98,8 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
-    make bin/e2e.test STATIC=1; \
-    make bpfman-compile STATIC=1; \
+    make bin/e2e.test STATIC=1 RACE=${RACE}; \
+    make bpfman-compile STATIC=1 RACE=${RACE}; \
     mkdir -p /ci-e2e-bundle/bin /ci-e2e-bundle/e2e/testdata/bpf; \
     cp bin/e2e.test /ci-e2e-bundle/bin/; \
     cp bin/bpfman /ci-e2e-bundle/bin/; \
