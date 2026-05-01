@@ -80,6 +80,12 @@
             jq
             shellcheck
 
+            # Load generation for chasing async-teardown lag in
+            # the e2e suite. Use alongside `bin/e2e.test
+            # -test.count N` to surface the timing races that
+            # arm64 CI hits naturally on slower runners.
+            stress-ng
+
             # SQLite (CLI for inspection; dev headers for -tags cgo_sqlite).
             sqlite
             sqlite.dev

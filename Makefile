@@ -126,6 +126,18 @@ endif
 STATIC ?=
 override STATIC := $(filter 1,$(STATIC))
 
+# NORACE=1 drops the race detector from `make test`, `make
+# test-stress`, and the bin/e2e.test build recipe.  See the commit
+# that introduced NORACE in those targets for the rationale; in
+# short, the race detector's overhead can mask kernel-timing
+# behaviour we want to surface in e2e tests, and on the static-glibc
+# devshell its presence is also what implicitly forces external
+# linkage.  The empty default is required so `make
+# --warn-undefined-variables` (run by `make ci-lint`) does not flag
+# the $(NORACE) references in the recipes.
+NORACE ?=
+override NORACE := $(filter 1,$(NORACE))
+
 # ---------------------------------------------------------------------------
 # Runtime image dispatch.
 #
@@ -193,7 +205,7 @@ OIDC_ISSUER     ?=
 # those so `:=` captures their final values.
 # ---------------------------------------------------------------------------
 GO_LDFLAGS := $(strip \
-    $(if $(STATIC),-extldflags '-static') \
+    $(if $(STATIC),-linkmode=external -extldflags '-static') \
     -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
     -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
     -X $(VERSION_PKG).gitState=$(GIT_STATE) \
@@ -547,7 +559,7 @@ lint-dockerfile:
 # their .bpf.o files. Unit tests no longer reach into
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test -race $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+	$(strip go test $(if $(NORACE),,-race) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # Stress-runs the unit tests in conditions designed to surface bugs
 # that one-shot runs miss. Two knobs differ from `test`:
@@ -566,7 +578,7 @@ test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 # Not wired into ci-test today; run locally before pushing changes
 # that touch shared init-time state or concurrent paths.
 test-stress: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test -race -count=$(STRESS_COUNT) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v ./...)
+	$(strip go test $(if $(NORACE),,-race) -count=$(STRESS_COUNT) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v ./...)
 
 # nsenter cross-architecture tests
 #
@@ -600,7 +612,7 @@ test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 # pattern -- Make's mtime tracking would otherwise lie when the
 # inputs are .go files we haven't enumerated as prereqs.
 $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
-	$(strip go test -c -race $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
+	$(strip go test -c $(if $(NORACE),,-race) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
 
 test-e2e: $(BIN_DIR)/e2e.test
 	sudo $(BIN_DIR)/e2e.test -test.v -test.failfast $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
