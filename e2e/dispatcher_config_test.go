@@ -362,6 +362,46 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 		rankByPriority[p] = int32(i)
 	}
 
+	// Diagnostic dump: log every link's full TCXDetails before
+	// asserting on positions. The position formula in
+	// link_tcx_details's GetTCXDetails subquery counts siblings
+	// matching (nsid, ifindex, direction); a flake where one link
+	// reports an off-by-one position is consistent with one row
+	// drifting on one of those tuple fields. Surfacing the raw
+	// tuple values for every entry makes the drift attributable
+	// directly when the assertion fails.
+	type linkDump struct {
+		index    int
+		linkID   kernel.LinkID
+		priority int32
+		ifindex  uint32
+		direction bpfman.TCDirection
+		nsid     uint64
+		netns    string
+		position int32
+	}
+	dumps := make([]linkDump, 0, len(entries))
+	for i, entry := range entries {
+		_, details, err := env.GetLink(ctx, entry.link.ID)
+		require.NoError(t, err)
+		tcxDetails, ok := details.(bpfman.TCXDetails)
+		require.True(t, ok, "expected TCXDetails, got %T", details)
+		dumps = append(dumps, linkDump{
+			index:     i,
+			linkID:    entry.link.ID,
+			priority:  tcxDetails.Priority,
+			ifindex:   tcxDetails.Ifindex,
+			direction: tcxDetails.Direction,
+			nsid:      tcxDetails.Nsid,
+			netns:     tcxDetails.Netns,
+			position:  tcxDetails.Position,
+		})
+	}
+	for _, d := range dumps {
+		t.Logf("tcx-link dump: index=%d link_id=%d priority=%d ifindex=%d direction=%s nsid=%d netns=%q position=%d",
+			d.index, d.linkID, d.priority, d.ifindex, d.direction, d.nsid, d.netns, d.position)
+	}
+
 	for i, entry := range entries {
 		_, details, err := env.GetLink(ctx, entry.link.ID)
 		require.NoError(t, err)
