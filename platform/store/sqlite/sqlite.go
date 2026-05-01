@@ -116,7 +116,7 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}}))
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}}))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
