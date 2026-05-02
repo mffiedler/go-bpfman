@@ -318,6 +318,7 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireTracepoint(t, "syscalls", "sys_enter_unlinkat")
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -479,6 +480,7 @@ func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -599,6 +601,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -738,6 +741,7 @@ func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -859,6 +863,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	t.Parallel()
 	RequireRoot(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1524,7 +1529,7 @@ func TestMultiProgFentry_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
-	lockUnlinkAtTrampoline(t)
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1662,7 +1667,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
-	lockUnlinkAtTrampoline(t)
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1805,7 +1810,7 @@ func TestMultiProgFexit_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
-	lockUnlinkAtTrampoline(t)
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1937,7 +1942,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
-	lockUnlinkAtTrampoline(t)
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()

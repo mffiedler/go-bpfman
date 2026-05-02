@@ -2162,28 +2162,36 @@ func (h *tLogHandler) WithGroup(name string) slog.Handler {
 	return &nh
 }
 
-// unlinkAtTrampolineMu serialises tests that attach fentry/fexit
-// programs to do_unlinkat. fentry/fexit attach and detach rebuild
-// the BPF trampoline image for the target function via
-// bpf_trampoline_update + text_poke_bp; under concurrent rebuilds
-// from multiple parallel tests on the same hook there is a window
-// during which an in-flight call can pass through the function
-// without running every program in the rebuilt image, dropping
-// events from our exact-equality counters. Holding this mutex from
-// before the first Attach until the test ends keeps only one
-// trampoline-rebuilder active on the hook at a time. Tests that
-// share the hook with non-suite attachers (system observability
-// tools, an interactive bpftrace) remain vulnerable; the long-term
-// fix is the private kmod design in
+// doUnlinkAtHookMu serialises every test that attaches anything --
+// fentry, fexit, kprobe, or kretprobe -- to do_unlinkat. All four
+// attach types ride on the kernel's __fentry__ patch site for the
+// target function: ftrace owns that site and re-merges its callback
+// list (kprobe handlers + the BPF trampoline + ...) on every
+// attach and detach. Under concurrent rebuilds there is a window
+// during which an in-flight call lands in the gap and the BPF
+// trampoline misses an event, dropping it from our exact-equality
+// counters.
+//
+// Empirically a narrower mutex covering only fentry/fexit was
+// insufficient: a parallel kprobe attach on do_unlinkat can still
+// kick the ftrace rebuild and drop one of our quiescence probes
+// (the off-by-one mfx_a control-sibling failure).
+//
+// Holding this mutex from before the first Attach until the test
+// ends keeps only one do_unlinkat-attaching test active at a time.
+// Tests that share the hook with non-suite attachers (system
+// observability tools, an interactive bpftrace) remain vulnerable;
+// the long-term fix is the private kmod design in
 // docs/HERMETIC-FENTRY-FEXIT-KMOD.md.
-var unlinkAtTrampolineMu sync.Mutex
+var doUnlinkAtHookMu sync.Mutex
 
-// lockUnlinkAtTrampoline blocks until the suite-wide do_unlinkat
-// trampoline mutex is acquired, then registers a t.Cleanup that
-// releases it. Call this at the top of any fentry/fexit test that
-// attaches to do_unlinkat, after the Require* gates.
-func lockUnlinkAtTrampoline(t *testing.T) {
+// lockDoUnlinkAtHook blocks until the suite-wide do_unlinkat hook
+// mutex is acquired, then registers a t.Cleanup that releases it.
+// Call this at the top of any test that attaches a fentry, fexit,
+// kprobe, or kretprobe program to do_unlinkat, after the Require*
+// gates.
+func lockDoUnlinkAtHook(t *testing.T) {
 	t.Helper()
-	unlinkAtTrampolineMu.Lock()
-	t.Cleanup(unlinkAtTrampolineMu.Unlock)
+	doUnlinkAtHookMu.Lock()
+	t.Cleanup(doUnlinkAtHookMu.Unlock)
 }

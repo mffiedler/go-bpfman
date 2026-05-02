@@ -36,6 +36,7 @@ import (
 func TestDebug_DetachDeferral_Kretprobe(t *testing.T) {
 	RequireRoot(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockDoUnlinkAtHook(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
