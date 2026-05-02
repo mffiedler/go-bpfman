@@ -795,7 +795,10 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "tc", "filter", "show", "dev", iface, direction).CombinedOutput()
+	// Wrapped via `ip netns exec root` so the netns is
+	// determined by the bind-mount at /run/netns/root rather
+	// than by whichever Go thread happens to perform the fork.
+	out, err := exec.CommandContext(ctx, "ip", "netns", "exec", rootNetnsName, "tc", "filter", "show", "dev", iface, direction).CombinedOutput()
 	if err != nil {
 		t.Logf("tc filter show dev %s %s: %v (output: %s)", iface, direction, err, out)
 		return 0
@@ -1330,7 +1333,10 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	// Start ip monitor to capture link state events for this
 	// veth pair. Output is logged on test completion.
 	var monBuf bytes.Buffer
-	monCmd := exec.Command("ip", "monitor", "link", "address", "route", "neigh")
+	// Wrapped via `ip netns exec root` so monitor is bound
+	// to the bind-mounted root netns regardless of caller
+	// thread state.
+	monCmd := exec.Command("ip", "netns", "exec", rootNetnsName, "ip", "monitor", "link", "address", "route", "neigh")
 	monCmd.Stdout = &monBuf
 	monCmd.Stderr = &monBuf
 	if err := monCmd.Start(); err != nil {
