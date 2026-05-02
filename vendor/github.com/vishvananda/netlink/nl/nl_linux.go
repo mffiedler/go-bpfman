@@ -756,7 +756,17 @@ func executeInNetns(newNs, curNs netns.NsHandle) (func(), error) {
 	restore := func() {
 		// order matters
 		if moveBack != nil {
-			moveBack(curNs)
+			// LOCAL PATCH: do NOT swallow the restore error.
+			// On failure the OS thread is in newNs and must
+			// not be returned to Go's scheduler; panic so the
+			// goroutine unwinds and the runtime retires the
+			// thread (see runtime.LockOSThread). Diagnostic
+			// patch to confirm this path is the source of
+			// thread-poisoning under e2e parallel stress; will
+			// be reverted after upstream fix.
+			if err := moveBack(curNs); err != nil {
+				panic(fmt.Errorf("netlink/nl.executeInNetns: failed to restore original netns; OS thread is poisoned: %w", err))
+			}
 		}
 		if closeNs != nil {
 			closeNs()
