@@ -84,6 +84,23 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		programType = inferProgramType(progSpec.SectionName)
 	}
 
+	// For fentry/fexit/lsm and other tracing programs that
+	// require an attach function name, propagate the spec's
+	// AttachFunc into ProgramSpec.AttachTo so the load-time
+	// attach target overrides whatever the ELF SEC name said.
+	// Without this, a program compiled with
+	// SEC("fexit/some_placeholder") loads bound to that
+	// placeholder regardless of the AttachFunc the caller passes
+	// at attach time -- the kernel ties tracing programs to their
+	// target at LOAD, not at link-create. cilium/ebpf resolves
+	// AttachTo through vmlinux + loaded module BTF, so this also
+	// makes fentry/fexit work against kernel-module functions
+	// (e.g. the bpfman_e2e_targets slot pool used by the
+	// hermetic e2e tests).
+	if programType.RequiresAttachFunc() && spec.AttachFunc() != "" {
+		progSpec.AttachTo = spec.AttachFunc()
+	}
+
 	// For XDP/TC programs: load as BPF_PROG_TYPE_EXT targeting a test
 	// dispatcher. This matches Rust bpfman's approach where extension
 	// programs are loaded once and reused from their pin on every
