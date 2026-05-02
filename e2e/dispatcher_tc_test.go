@@ -1045,17 +1045,28 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	// Send traffic through the veth pair.
 	veth.Ping(t, 20)
 
-	// Both per-program map pins reference the same kernel map, so
-	// both must report the same non-zero packet count.
+	// Detach both programs before reading the map, so the
+	// per-CPU array is frozen while we sample it. Reading a
+	// live counter via two sequential Lookups would race
+	// against in-flight packets (ARP, NAPI batching) and
+	// give different totals even though both pins reference
+	// the same kernel map. Quiescence makes the equality
+	// assertion deterministic and turns it into a real
+	// functional check: writes via either pin must be
+	// observable through both.
+	for _, id := range linkIDs {
+		require.NoError(t, env.Detach(ctx, id), "detach link %d", id)
+	}
+
 	countA := readStatsMap(t, filepath.Join(progA.mapPinPath, "tc_stats_map"))
 	countB := readStatsMap(t, filepath.Join(progB.mapPinPath, "tc_stats_map"))
 
 	t.Logf("program A packets=%d, program B packets=%d", countA, countB)
 
 	assert.Greater(t, countA, uint64(0),
-		"program A should have counted packets")
+		"shared tc_stats_map should have counted packets")
 	assert.Equal(t, countA, countB,
-		"both programs should report the same packet count (shared map)")
+		"shared map: writes via either pin must be observable through both")
 
 	// Verify shared pin cleanup on unload.
 	sharedPinPath := env.Layout.BPFFS().SharedMapPin("tc_stats_map")
