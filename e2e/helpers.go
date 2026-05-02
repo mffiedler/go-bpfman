@@ -2161,3 +2161,29 @@ func (h *tLogHandler) WithGroup(name string) slog.Handler {
 	}
 	return &nh
 }
+
+// unlinkAtTrampolineMu serialises tests that attach fentry/fexit
+// programs to do_unlinkat. fentry/fexit attach and detach rebuild
+// the BPF trampoline image for the target function via
+// bpf_trampoline_update + text_poke_bp; under concurrent rebuilds
+// from multiple parallel tests on the same hook there is a window
+// during which an in-flight call can pass through the function
+// without running every program in the rebuilt image, dropping
+// events from our exact-equality counters. Holding this mutex from
+// before the first Attach until the test ends keeps only one
+// trampoline-rebuilder active on the hook at a time. Tests that
+// share the hook with non-suite attachers (system observability
+// tools, an interactive bpftrace) remain vulnerable; the long-term
+// fix is the private kmod design in
+// docs/HERMETIC-FENTRY-FEXIT-KMOD.md.
+var unlinkAtTrampolineMu sync.Mutex
+
+// lockUnlinkAtTrampoline blocks until the suite-wide do_unlinkat
+// trampoline mutex is acquired, then registers a t.Cleanup that
+// releases it. Call this at the top of any fentry/fexit test that
+// attaches to do_unlinkat, after the Require* gates.
+func lockUnlinkAtTrampoline(t *testing.T) {
+	t.Helper()
+	unlinkAtTrampolineMu.Lock()
+	t.Cleanup(unlinkAtTrampolineMu.Unlock)
+}

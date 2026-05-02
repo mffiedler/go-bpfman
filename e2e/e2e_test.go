@@ -1524,6 +1524,7 @@ func TestMultiProgFentry_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockUnlinkAtTrampoline(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1661,6 +1662,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockUnlinkAtTrampoline(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1803,6 +1805,7 @@ func TestMultiProgFexit_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockUnlinkAtTrampoline(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
@@ -1934,6 +1937,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 	RequireBTF(t)
 	RequireKernelFunction(t, "do_unlinkat")
+	lockUnlinkAtTrampoline(t)
 
 	env := NewTestEnv(t)
 	ctx := context.Background()
