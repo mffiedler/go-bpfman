@@ -79,9 +79,32 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// The user's CLI specification (e.g., --programs kretprobe:func) takes precedence
 	// because a kprobe program CAN be attached as either entry or return probe.
 	programType := spec.ProgramType()
+	secInferredType := inferProgramType(progSpec.SectionName)
 	if programType == (bpfman.ProgramType{}) {
 		// Fall back to inferring from ELF section name
-		programType = inferProgramType(progSpec.SectionName)
+		programType = secInferredType
+	}
+
+	// fentry/fexit/lsm tracing programs are bound to their target
+	// kernel function and to BPF_TRACE_{FENTRY,FEXIT} at LOAD
+	// time via expected_attach_type. If the caller asks for one
+	// type but the .bpf.o was compiled with the SEC of the other,
+	// the kernel will load the program according to SEC and
+	// silently ignore the caller's intent. Surface that as a
+	// hard error: any subsequent metadata bpfman records about
+	// the program would be a lie, and the program would attach
+	// at the wrong site (fentry vs fexit affects retval access
+	// and verifier rules). Kprobe/kretprobe deliberately remain
+	// interchangeable here because the entry/return distinction
+	// is set at perf_event_open time, not at load.
+	if programType.RequiresAttachFunc() &&
+		secInferredType != (bpfman.ProgramType{}) &&
+		secInferredType.RequiresAttachFunc() &&
+		programType != secInferredType {
+		return bpfman.LoadOutput{}, fmt.Errorf(
+			"program type mismatch: caller specified %s but ELF section %q implies %s; "+
+				"recompile the .bpf.o with the matching SEC or pass the matching ProgramType",
+			programType, progSpec.SectionName, secInferredType)
 	}
 
 	// For fentry/fexit/lsm and other tracing programs that
