@@ -49,6 +49,15 @@ type Manager struct {
 	// GC coordination - separate from request-level locking
 	gcMu           sync.Mutex
 	mutatedSinceGC bool
+
+	// Diagnostic: per-(iface, direction) nsid that this manager
+	// has captured for prior TCX attaches. Used to detect when a
+	// new attach computes a different nsid than its siblings on
+	// the same interface, which indicates the calling OS thread
+	// is in the wrong netns and bpfman's per-thread nsid capture
+	// has been corrupted by an upstream thread-leak. Loaded /
+	// stored from manager/attach_tc.go.
+	tcxIfaceNsids sync.Map
 }
 
 // New creates a new Manager with all required dependencies.
