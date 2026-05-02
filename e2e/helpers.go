@@ -2195,3 +2195,89 @@ func lockDoUnlinkAtHook(t *testing.T) {
 	doUnlinkAtHookMu.Lock()
 	t.Cleanup(doUnlinkAtHookMu.Unlock)
 }
+
+// kmodTargetsRoot is the debugfs directory the bpfman_e2e_targets
+// kernel module exposes once loaded. Each entry trigger_NNN under
+// it, when written, invokes bpfman_e2e_target_N once.
+const kmodTargetsRoot = "/sys/kernel/debug/bpfman_e2e"
+
+// kmodSlotPoolSize is the number of slots the bpfman_e2e_targets
+// module exports. Must match BPFMAN_E2E_NUM_SLOTS in the module
+// source.
+const kmodSlotPoolSize = 32
+
+var (
+	kmodSlotPool     chan int
+	kmodSlotPoolOnce sync.Once
+)
+
+func initKmodSlotPool() {
+	kmodSlotPool = make(chan int, kmodSlotPoolSize)
+	for i := 0; i < kmodSlotPoolSize; i++ {
+		kmodSlotPool <- i
+	}
+}
+
+// KmodSlot identifies one slot in the bpfman_e2e_targets module.
+// Each fentry/fexit test that uses a slot owns it for its lifetime;
+// no two tests share a slot, so attach/detach against the slot's
+// function does not contend with sibling tests on the trampoline.
+type KmodSlot struct {
+	// Index is the slot number, 0 <= Index < kmodSlotPoolSize.
+	Index int
+	// Func is the kernel-resolvable name of the function this
+	// slot exports. Use as bpfman ProgramSpec.AttachFunc when
+	// loading a fentry/fexit program against this slot.
+	Func string
+	// TriggerPath is the debugfs file whose write(2) invokes
+	// Func once. Test code uses this to drive events.
+	TriggerPath string
+}
+
+// RequireKmodTargets skips the test if the bpfman_e2e_targets
+// kernel module is not loaded. The module must be loaded once
+// per host (typically via the NixOS module that ships its .ko)
+// before any kmod-targeting test can run.
+func RequireKmodTargets(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(kmodTargetsRoot); err != nil {
+		t.Skipf("bpfman_e2e_targets kmod not available at %s: %v (load the module first)",
+			kmodTargetsRoot, err)
+	}
+}
+
+// acquireKmodSlot reserves an unused slot from the
+// bpfman_e2e_targets module and registers a t.Cleanup that
+// returns the slot to the pool when the test ends. Blocks if
+// every slot is in use; in practice the pool size exceeds the
+// concurrent count of kmod-targeting tests by a wide margin so
+// this is effectively non-blocking.
+func acquireKmodSlot(t *testing.T) KmodSlot {
+	t.Helper()
+	kmodSlotPoolOnce.Do(initKmodSlotPool)
+
+	idx := <-kmodSlotPool
+	t.Cleanup(func() { kmodSlotPool <- idx })
+
+	return KmodSlot{
+		Index:       idx,
+		Func:        fmt.Sprintf("bpfman_e2e_target_%d", idx),
+		TriggerPath: fmt.Sprintf("%s/trigger_%03d", kmodTargetsRoot, idx),
+	}
+}
+
+// Fire issues n write(2) calls to the slot's trigger file, each
+// invoking the slot's function once. Buffer contents are
+// ignored by the kernel module; callers control event count by
+// the number of writes.
+func (s KmodSlot) Fire(t *testing.T, n int) {
+	t.Helper()
+	f, err := os.OpenFile(s.TriggerPath, os.O_WRONLY, 0)
+	require.NoError(t, err, "open trigger %s", s.TriggerPath)
+	defer f.Close()
+	for i := 0; i < n; i++ {
+		if _, err := f.Write([]byte{0}); err != nil {
+			t.Fatalf("write trigger %s (event %d/%d): %v", s.TriggerPath, i+1, n, err)
+		}
+	}
+}
