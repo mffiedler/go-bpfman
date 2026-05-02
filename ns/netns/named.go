@@ -18,54 +18,62 @@ import (
 //
 // FAILURE SEMANTICS:
 //
-// On any error after the new netns is created, the calling OS
-// thread may be in a non-root netns. To prevent a poisoned
-// thread from being returned to Go's scheduler -- where the
-// next goroutine that lands on it would inherit the wrong
-// netns identity, leading to subtle cross-goroutine state
-// contamination -- this function does NOT unlock the OS thread
-// on error. The caller's goroutine is still pinned to that
-// thread when the error returns. The caller MUST exit the
-// goroutine (via t.Fatalf, log.Fatal, runtime.Goexit, or
-// panic) so Go's runtime destroys the thread instead of
-// recycling it.
+// If creating the new netns fails (the kernel rejected the
+// unshare/mount that NewNamed performs), the function panics:
+// NewNamed may have already moved the thread into a
+// partially-created netns, and silently returning would put a
+// poisoned thread back into Go's scheduler.
 //
-// If the caller ignores the error and returns normally, the
-// thread will be returned to the scheduler in a non-root
-// netns and will silently corrupt every goroutine that later
-// runs on it -- including any code that reads
-// /proc/self/ns/net to identify the "current" netns, which is
-// per-thread.
+// If restoring the original netns fails (rare; would mean the
+// kernel rejected setns back to the originally-open fd), the
+// function panics for the same reason: the thread is in the
+// named netns and cannot be safely returned to the scheduler.
 //
-// See runtime.LockOSThread for the runtime-level guarantee
-// that an unmatched lock retires the thread on goroutine
-// exit.
+// The panic propagates out of CreateNamed, unwinds the
+// goroutine, and the deferred unlock guard skips
+// runtime.UnlockOSThread (because safeUnlock stays false).
+// Go's runtime retires the thread on goroutine exit (see
+// runtime.LockOSThread). Loud failure beats quiet rot:
+// returning while the goroutine remains pinned to a poisoned
+// thread would let it continue doing work against the wrong
+// netns, leaking state corruption all the while.
+//
+// In normal operation the create and restore both succeed, no
+// panic fires, and the OS thread is unlocked cleanly.
 func CreateNamed(name string) error {
 	runtime.LockOSThread()
+	safeUnlock := false
+	defer func() {
+		if safeUnlock {
+			runtime.UnlockOSThread()
+		}
+	}()
 
 	origNs, err := vishvananda.Get()
 	if err != nil {
-		// The thread did not move; safe to unlock.
-		runtime.UnlockOSThread()
+		// Thread did not move; safe to unlock.
+		safeUnlock = true
 		return fmt.Errorf("get current netns: %w", err)
 	}
 	defer origNs.Close()
 
 	newNs, err := vishvananda.NewNamed(name)
 	if err != nil {
-		// NewNamed may have already moved the thread into a
-		// partially-created named netns. Do NOT unlock.
-		return fmt.Errorf("create netns %s: %w", name, err)
+		// NewNamed may have moved the thread into a
+		// partially-created netns; the OS thread state is
+		// indeterminate. Panic so the goroutine unwinds and
+		// the runtime retires the thread.
+		panic(fmt.Errorf("netns.CreateNamed: NewNamed(%s) failed and may have left this OS thread in a partially-created netns; cannot safely continue: %w", name, err))
 	}
 	newNs.Close()
 
 	if err := vishvananda.Set(origNs); err != nil {
-		// Restore failed; thread is still in the named netns.
-		// Do NOT unlock.
-		return fmt.Errorf("restore netns: %w", err)
+		// Restore failed; thread is in the named netns.
+		// Same reasoning as the NewNamed branch above.
+		panic(fmt.Errorf("netns.CreateNamed: failed to restore original netns; OS thread is in named netns %q and cannot be safely returned to the scheduler: %w", name, err))
 	}
 
 	// Restore succeeded; thread is back at the original netns.
-	runtime.UnlockOSThread()
+	safeUnlock = true
 	return nil
 }
