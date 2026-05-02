@@ -168,6 +168,16 @@ func NewTestEnv(t *testing.T) *TestEnv {
 		if err != nil {
 			t.Fatalf("invalid BPFMAN_LOG spec: %v", err)
 		}
+	} else if false {
+		// Disabled diagnostic path: route every record through
+		// t.Logf at Info level so the verify: extension link
+		// lines from the dispatcher rebuild paths surface in
+		// test output on failure. Re-enable by changing
+		// `if false` to a true condition. Disabled because
+		// the per-record t.Logf call alters timing enough to
+		// hide the chain race we are currently hunting; we
+		// want the original stderr-only path for repro.
+		logger = slog.New(newTLogHandler(t, slog.LevelInfo))
 	} else {
 		// Default: only errors
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -2096,4 +2106,58 @@ func readPerCPUCounterByID(t *testing.T, mapID kernel.MapID, key uint32) uint64 
 		total += v
 	}
 	return total
+}
+
+// tLogHandler is an slog.Handler that emits records via t.Logf
+// at the configured minimum level. Go's testing framework
+// buffers t.Logf output per test and shows it only when the
+// test fails (or is run with -v), so wiring bpfman's logger
+// through it surfaces diagnostic lines exactly when they help
+// without spamming successful runs. Each NewTestEnv call wires
+// its own handler bound to its own *testing.T so logs are
+// attributed to the right test even under -test.parallel.
+type tLogHandler struct {
+	t     *testing.T
+	level slog.Leveler
+	attrs []slog.Attr
+	group string
+}
+
+func newTLogHandler(t *testing.T, level slog.Level) *tLogHandler {
+	return &tLogHandler{t: t, level: level}
+}
+
+func (h *tLogHandler) Enabled(_ context.Context, lvl slog.Level) bool {
+	return lvl >= h.level.Level()
+}
+
+func (h *tLogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.t.Helper()
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "%s %s", r.Level, r.Message)
+	for _, a := range h.attrs {
+		fmt.Fprintf(&b, " %s=%v", a.Key, a.Value.Any())
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		fmt.Fprintf(&b, " %s=%v", a.Key, a.Value.Any())
+		return true
+	})
+	h.t.Logf("%s", b.String())
+	return nil
+}
+
+func (h *tLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	nh := *h
+	nh.attrs = append(append([]slog.Attr{}, h.attrs...), attrs...)
+	return &nh
+}
+
+func (h *tLogHandler) WithGroup(name string) slog.Handler {
+	nh := *h
+	if h.group != "" {
+		nh.group = h.group + "." + name
+	} else {
+		nh.group = name
+	}
+	return &nh
 }
