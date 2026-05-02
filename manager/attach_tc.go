@@ -1,12 +1,12 @@
 package manager
 
 import (
+	"context"
+	"fmt"
+	"golang.org/x/sys/unix"
 	"os"
 	"strings"
 	"syscall"
-	"golang.org/x/sys/unix"
-	"context"
-	"fmt"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
@@ -150,7 +150,6 @@ func dumpThreadNetns() string {
 	}
 	return b.String()
 }
-
 
 func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpfman.Link, error) {
 	// --- Preflight (outside plan, plain errors) ---
