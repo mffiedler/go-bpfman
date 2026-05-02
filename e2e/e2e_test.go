@@ -3470,3 +3470,174 @@ func fireUprobe() error {
 	cmd.Env = append(os.Environ(), e2eModeEnv+"="+e2eModeUprobeTriggerCallMalloc)
 	return cmd.Run()
 }
+
+// TestFexit_KmodSlot_LoadAttachDetachUnload is the kmod-targeting
+// counterpart of TestFexit_LoadAttachDetachUnload. Instead of
+// attaching to the public do_unlinkat kernel function -- which
+// every fentry/fexit test in the suite (and any host-side BPF
+// tooling) shares, forcing trampoline-rebuild contention -- it
+// claims a private slot in the bpfman_e2e_targets kernel module
+// and attaches there. No other test or process drives that slot's
+// function, so the rebuild window is private and exact-equality
+// holds without the suite-wide do_unlinkat mutex.
+//
+// Skipped if the bpfman_e2e_targets module is not loaded.
+func TestFexit_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireBTF(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
+
+	env := NewTestEnv(t)
+	ctx := context.Background()
+	env.AssertCleanState()
+
+	weights := uniqueWeights(t, 1)
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fexit_kmod_exact.bpf.o", []manager.ProgramSpec{
+		{Name: "test_fexit", Type: bpfman.ProgramTypeFexit, AttachFunc: slot.Func},
+	}, manager.LoadOpts{
+		GlobalData: map[string][]byte{
+			"weight": uint64LE(weights[0]),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	fxSpec, err := bpfman.NewFexitAttachSpec(prog.Status.Kernel.ID)
+	require.NoError(t, err)
+	link, err := env.Attach(ctx, fxSpec)
+	require.NoError(t, err)
+	require.Equal(t, bpfman.LinkKindFexit, link.Kind)
+	t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+
+	// Wait for attach to be live before counting. On a private
+	// slot the trampoline rebuild has no contending writers, so
+	// the warm-up typically settles on the first probe.
+	mapIDFx := mapIDByName(t, prog, "fx_count")
+	qa := waitProgramActive(t, AttachActiveProbe{
+		AttachedMap: mapIDFx, AttachedWeight: weights[0],
+		FireOne: func() { slot.Fire(t, 1) },
+	})
+	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s",
+		qa.Probes, qa.LostProbes, qa.Latency)
+
+	const events = 5
+	slot.Fire(t, events)
+	want := uint64(events+qa.EventsCounted) * weights[0]
+	got := readArrayCounterByID(t, mapIDFx)
+	t.Logf("fexit: events=%d weight=%d want=%d got=%d",
+		events+qa.EventsCounted, weights[0], want, got)
+	require.Equal(t, want, got,
+		"fexit counter on private slot %s should equal events(%d) * weight(%d) = %d",
+		slot.Func, events+qa.EventsCounted, weights[0], want)
+
+	require.NoError(t, env.Detach(ctx, link.ID))
+	env.AssertLinkCount(0)
+	require.NoError(t, env.Unload(ctx, prog.Status.Kernel.ID))
+	env.AssertCleanState()
+}
+
+// TestFentry_KmodSlot_LoadAttachDetachUnload is the kmod-targeting
+// counterpart of TestFentry_LoadAttachDetachUnload. See the fexit
+// variant for rationale.
+func TestFentry_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireBTF(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+	t.Logf("kmod slot: index=%d func=%s", slot.Index, slot.Func)
+
+	env := NewTestEnv(t)
+	ctx := context.Background()
+	env.AssertCleanState()
+
+	weights := uniqueWeights(t, 1)
+	programs, err := env.LoadFile(ctx, "testdata/bpf/fentry_kmod_exact.bpf.o", []manager.ProgramSpec{
+		{Name: "test_fentry", Type: bpfman.ProgramTypeFentry, AttachFunc: slot.Func},
+	}, manager.LoadOpts{
+		GlobalData: map[string][]byte{
+			"weight": uint64LE(weights[0]),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, programs, 1)
+	prog := programs[0]
+	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
+
+	feSpec, err := bpfman.NewFentryAttachSpec(prog.Status.Kernel.ID)
+	require.NoError(t, err)
+	link, err := env.Attach(ctx, feSpec)
+	require.NoError(t, err)
+	require.Equal(t, bpfman.LinkKindFentry, link.Kind)
+	t.Cleanup(func() { env.Detach(context.Background(), link.ID) })
+
+	mapIDFe := mapIDByName(t, prog, "fe_count")
+	qa := waitProgramActive(t, AttachActiveProbe{
+		AttachedMap: mapIDFe, AttachedWeight: weights[0],
+		FireOne: func() { slot.Fire(t, 1) },
+	})
+	t.Logf("post-attach activation: probes=%d, lostProbes=%d, latency=%s",
+		qa.Probes, qa.LostProbes, qa.Latency)
+
+	const events = 5
+	slot.Fire(t, events)
+	want := uint64(events+qa.EventsCounted) * weights[0]
+	got := readArrayCounterByID(t, mapIDFe)
+	t.Logf("fentry: events=%d weight=%d want=%d got=%d",
+		events+qa.EventsCounted, weights[0], want, got)
+	require.Equal(t, want, got,
+		"fentry counter on private slot %s should equal events(%d) * weight(%d) = %d",
+		slot.Func, events+qa.EventsCounted, weights[0], want)
+
+	require.NoError(t, env.Detach(ctx, link.ID))
+	env.AssertLinkCount(0)
+	require.NoError(t, env.Unload(ctx, prog.Status.Kernel.ID))
+	env.AssertCleanState()
+}
+
+// TestLoad_FentryFexit_TypeMismatchFailsLoudly verifies that
+// bpfman rejects a load where the caller-specified ProgramType
+// disagrees with the .bpf.o's SEC-inferred type for fentry/fexit
+// programs. The kernel binds fentry vs fexit at load time via
+// expected_attach_type (different verifier rules, retval access
+// rules, and trampoline shape), so silently loading the program
+// according to SEC while bpfman records the caller's intent
+// would be a long-tail bug source. The latent version of this
+// only surfaced by accident -- when we wrote the kmod-targeting
+// tests with a SEC placeholder different from the runtime
+// AttachFunc -- so we lock the invariant in with an explicit
+// test.
+func TestLoad_FentryFexit_TypeMismatchFailsLoudly(t *testing.T) {
+	t.Parallel()
+	RequireRoot(t)
+	RequireBTF(t)
+	RequireKmodTargets(t)
+
+	slot := acquireKmodSlot(t)
+
+	env := NewTestEnv(t)
+	ctx := context.Background()
+	env.AssertCleanState()
+
+	// fentry_kmod_exact.bpf.o has SEC("fentry/bpfman_e2e_target_0").
+	// Asking for Fexit must error before any kernel state is
+	// created; AssertCleanState afterwards catches any leak.
+	_, err := env.LoadFile(ctx, "testdata/bpf/fentry_kmod_exact.bpf.o", []manager.ProgramSpec{
+		{Name: "test_fentry", Type: bpfman.ProgramTypeFexit, AttachFunc: slot.Func},
+	}, manager.LoadOpts{
+		GlobalData: map[string][]byte{
+			"weight": uint64LE(1),
+		},
+	})
+	require.Error(t, err, "load with type=Fexit against fentry SEC should fail")
+	require.Contains(t, err.Error(), "program type mismatch",
+		"error should name the mismatch explicitly; got: %v", err)
+	env.AssertCleanState()
+}
