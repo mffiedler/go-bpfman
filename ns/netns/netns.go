@@ -10,15 +10,23 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// GetCurrentNsid returns the inode number of the current network namespace.
-// This inode uniquely identifies the network namespace and is used to
-// construct dispatcher paths that match the Rust bpfman convention.
+// GetCurrentNsid returns the inode number of the network namespace
+// this process was started in, captured once at package init.
+//
+// Despite its name, this does NOT read the calling thread's current
+// netns. Per-thread reads of /proc/self/ns/net are unsafe under
+// heavy parallel netns activity (an upstream library that fails to
+// restore on its way out can leave a Go OS thread in a non-root
+// netns, and the next goroutine that lands on it will read the
+// wrong value). Every caller in this codebase wants the same
+// source of truth bpfman uses to key its dispatcher records --
+// which is the process-startup netns -- so returning that here
+// closes the gap between storage-side and lookup-side keys.
+//
+// Callers that genuinely need "this thread's current netns" must
+// stat /proc/self/ns/net or /proc/<tid>/ns/net themselves.
 func GetCurrentNsid() (uint64, error) {
-	var stat syscall.Stat_t
-	if err := syscall.Stat("/proc/self/ns/net", &stat); err != nil {
-		return 0, fmt.Errorf("stat /proc/self/ns/net: %w", err)
-	}
-	return stat.Ino, nil
+	return processNsid, nil
 }
 
 // processNsid is the inode number of the network namespace this
