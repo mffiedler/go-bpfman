@@ -100,6 +100,17 @@ func TestMain(m *testing.M) {
 	// kernel/filesystem state.
 	acquireSuiteLock()
 
+	// Bind-mount /proc/self/ns/net at /run/netns/root so that
+	// `ip netns exec root <cmd>` can target the test process's
+	// root netns. Test commands that need to run in root can
+	// then do so explicitly rather than depending on the
+	// calling Go thread's current netns. See
+	// netns_root_mount_test.go for rationale.
+	if err := setupRootNetnsMount(); err != nil {
+		fmt.Fprintf(os.Stderr, "setup root netns bind-mount: %v\n", err)
+		os.Exit(1)
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "os.Executable: %v\n", err)
