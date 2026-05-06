@@ -1072,7 +1072,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	sharedPinPath := env.Layout.BPFFS().SharedMapPin("tc_stats_map")
 
 	// The shared pin should exist while both programs are loaded.
-	_, err := os.Stat(sharedPinPath)
+	_, err := os.Stat(sharedPinPath.String())
 	require.NoError(t, err, "shared map pin should exist while programs are loaded")
 
 	// Detach links before unloading (unload requires no active links
@@ -1082,13 +1082,13 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 	// program B still references it.
 	require.NoError(t, env.Unload(ctx, progA.kernelID), "unload program A")
 
-	_, err = os.Stat(sharedPinPath)
+	_, err = os.Stat(sharedPinPath.String())
 	require.NoError(t, err, "shared map pin should still exist after unloading A (B still uses it)")
 
 	// Unload program B (last user). The shared pin should now be
 	// removed.
 	require.NoError(t, env.Unload(ctx, progB.kernelID), "unload program B")
 
-	_, err = os.Stat(sharedPinPath)
+	_, err = os.Stat(sharedPinPath.String())
 	require.True(t, os.IsNotExist(err), "shared map pin should be removed after last user unloads: %v", err)
 }

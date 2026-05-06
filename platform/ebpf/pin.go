@@ -197,7 +197,7 @@ func (k *kernelAdapter) Unpin(pinDir string) (int, error) {
 // (see waitForDetachComplete in e2e/helpers.go) -- there is no
 // userspace primitive to make perf-event teardown synchronous.
 func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath bpfman.LinkPath) error {
-	pin := string(linkPinPath)
+	pin := linkPinPath.String()
 	k.logger.Debug("detaching link by removing pin", "link_pin_path", pin)
 
 	// Stage 1: synchronous kernel-side detach for supported

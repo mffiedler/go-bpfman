@@ -78,7 +78,7 @@ func (LoadProgram) isAction() {}
 
 // UnloadProgram removes a BPF program from the kernel.
 type UnloadProgram struct {
-	PinPath string
+	PinPath bpfman.ProgPinPath
 }
 
 func (UnloadProgram) isAction() {}
@@ -94,7 +94,7 @@ func (RemoveMapsPins) isAction() {}
 
 // AttachTracepoint attaches a pinned program to a kernel tracepoint.
 type AttachTracepoint struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	Group       string
 	Name        string
 	LinkPinPath bpfman.LinkPath
@@ -105,7 +105,7 @@ func (AttachTracepoint) isAction() {}
 // AttachKprobe attaches a pinned program to a kernel function.
 // If Retprobe is true, attaches as a kretprobe.
 type AttachKprobe struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	FnName      string
 	Offset      uint64
 	Retprobe    bool
@@ -117,7 +117,7 @@ func (AttachKprobe) isAction() {}
 // AttachUprobeLocal attaches a pinned program to a user-space function
 // in the current namespace.
 type AttachUprobeLocal struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	Target      string
 	FnName      string
 	Offset      uint64
@@ -132,7 +132,7 @@ func (AttachUprobeLocal) isAction() {}
 // to pass the lock fd to the helper subprocess.
 type AttachUprobeContainer struct {
 	Scope        lock.WriterScope
-	ProgPinPath  string
+	ProgPinPath  bpfman.ProgPinPath
 	Target       string
 	FnName       string
 	Offset       uint64
@@ -145,7 +145,7 @@ func (AttachUprobeContainer) isAction() {}
 
 // AttachFentry attaches a pinned program to a kernel function entry point.
 type AttachFentry struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	FnName      string
 	LinkPinPath bpfman.LinkPath
 }
@@ -154,7 +154,7 @@ func (AttachFentry) isAction() {}
 
 // AttachFexit attaches a pinned program to a kernel function exit point.
 type AttachFexit struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	FnName      string
 	LinkPinPath bpfman.LinkPath
 }
@@ -291,7 +291,7 @@ func (RemoveStagingDir) isAction() {}
 type AttachTCX struct {
 	Ifindex     int
 	Direction   string
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	LinkPinPath bpfman.LinkPath
 	NetnsPath   string
 	Order       bpfman.TCXAttachOrder
@@ -330,7 +330,7 @@ func (CleanupSharedMapPins) isAction() {}
 // RemoveSharedMapPin removes a shared map pin file from the
 // filesystem. Used by GC rules for orphan cleanup.
 type RemoveSharedMapPin struct {
-	Path string
+	Path bpfman.MapPinPath
 }
 
 func (RemoveSharedMapPin) isAction() {}
@@ -350,7 +350,7 @@ type RebuildXDPDispatcher struct {
 	Ifindex     uint32
 	Ifname      string
 	NetnsPath   string
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	ProgramName string
 	Priority    int
 	ProceedOn   uint32
@@ -368,7 +368,7 @@ type RebuildTCDispatcher struct {
 	Direction   bpfman.TCDirection
 	DispType    dispatcher.DispatcherType
 	NetnsPath   string
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	ProgramName string
 	Priority    int
 	ProceedOn   uint32

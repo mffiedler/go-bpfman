@@ -143,7 +143,7 @@ func presenceSuffix(present bool) string {
 // 15 characters; the pin path preserves the full ELF section name.
 func mapDisplayName(m bpfman.MapStatus) string {
 	if m.PinPath != "" {
-		return filepath.Base(m.PinPath)
+		return filepath.Base(m.PinPath.String())
 	}
 	return m.Name
 }

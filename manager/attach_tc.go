@@ -249,7 +249,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 func (m *Manager) attachTCXPlan(
 	programID kernel.ProgramID, ifindex int, ifname string,
 	direction bpfman.TCDirection, priority int, nsid uint64,
-	netnsPath string, linkPinPath bpfman.LinkPath, progPinPath, target string,
+	netnsPath string, linkPinPath bpfman.LinkPath, progPinPath bpfman.ProgPinPath, target string,
 	order bpfman.TCXAttachOrder,
 ) operation.Plan {
 	return operation.Build(

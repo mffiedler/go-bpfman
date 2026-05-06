@@ -423,7 +423,7 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 	if err := os.MkdirAll(bpffs.MountPoint(), 0755); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: mkdir pin dir: %w", err)
 	}
-	if err := os.WriteFile(progPinPath, nil, 0644); err != nil {
+	if err := os.WriteFile(progPinPath.String(), nil, 0644); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("fake kernel: create pin file: %w", err)
 	}
 
@@ -431,13 +431,13 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 		id:          progID,
 		name:        spec.ProgramName(),
 		programType: spec.ProgramType(),
-		pinPath:     progPinPath,
+		pinPath:     progPinPath.String(),
 		pinDir:      mapsDir,
 	}
 	f.programs[progID] = fp
 	f.recordOp("load", spec.ProgramName(), uint32(progID), nil)
 	return bpfman.LoadOutput{
-		PinPath:      fp.pinPath,
+		PinPath:      bpfman.ProgPinPath(fp.pinPath),
 		MapsDir:      fp.pinDir,
 		License:      "GPL",
 		InferredType: fp.programType,
@@ -462,10 +462,10 @@ func (f *fakeKernel) Unload(_ context.Context, pinPath string) error {
 	return nil
 }
 
-func (f *fakeKernel) UnloadProgram(_ context.Context, progPinPath, mapsDir string) error {
+func (f *fakeKernel) UnloadProgram(_ context.Context, progPinPath bpfman.ProgPinPath, mapsDir string) error {
 	// Fake implementation - just removes any program whose pin path matches
 	for id, p := range f.programs {
-		if p.pinPath == progPinPath || p.pinDir == mapsDir {
+		if p.pinPath == progPinPath.String() || p.pinDir == mapsDir {
 			delete(f.programs, id)
 			f.recordOp("unload", p.name, uint32(id), nil)
 			return nil
@@ -581,7 +581,7 @@ func (f *fakeKernel) GetPinned(_ context.Context, pinPath string) (*kernel.Pinne
 	return nil, nil
 }
 
-func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath bpfman.ProgPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	// Check error injection
 	f.mu.Lock()
 	failErr := f.failOnAttach["tracepoint"]
@@ -618,7 +618,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 	}, nil
 }
 
-func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "xdp"}
@@ -645,7 +645,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 	}, nil
 }
 
-func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath bpfman.ProgPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
 	linkKind := bpfman.LinkKindKprobe
@@ -678,7 +678,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 	}, nil
 }
 
-func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
 	linkKind := bpfman.LinkKindUprobe
@@ -711,7 +711,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, f
 	}, nil
 }
 
-func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
 	// Container uprobes are synthetic - they use perf_event and have no kernel link
 	linkID := kernel.LinkID(bpfman.SyntheticLinkIDBase + f.nextID.Add(1))
 	linkKind := bpfman.LinkKindUprobe
@@ -742,7 +742,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 	}, nil
 }
 
-func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "fentry"}
@@ -769,7 +769,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName string,
 	}, nil
 }
 
-func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	linkID := kernel.LinkID(f.nextID.Add(1))
 	createPinFile(linkPinPath)
 	kl := kernel.Link{ID: linkID, ProgramID: 0, LinkType: "fexit"}
@@ -802,22 +802,22 @@ func (f *fakeKernel) DetachLink(_ context.Context, linkPinPath bpfman.LinkPath) 
 		if link.Record.PinPath != nil {
 			pinPath = link.Record.PinPath.String()
 		}
-		if pinPath == string(linkPinPath) {
+		if pinPath == linkPinPath.String() {
 			// Check error injection
 			f.mu.Lock()
 			failErr := f.failOnDetach[id]
 			f.mu.Unlock()
 			if failErr != nil {
-				f.recordOp("detach", string(linkPinPath), uint32(id), failErr)
+				f.recordOp("detach", linkPinPath.String(), uint32(id), failErr)
 				return failErr
 			}
 			delete(f.links, id)
-			f.recordOp("detach", string(linkPinPath), uint32(id), nil)
+			f.recordOp("detach", linkPinPath.String(), uint32(id), nil)
 			return nil
 		}
 	}
 	// Link not found - still record the detach attempt
-	f.recordOp("detach", string(linkPinPath), 0, nil)
+	f.recordOp("detach", linkPinPath.String(), 0, nil)
 	return nil
 }
 
@@ -837,7 +837,7 @@ func (f *fakeKernel) AttachXDPDispatcher(_ context.Context, spec dispatcher.XDPD
 		id:          dispatcherID,
 		name:        "xdp_dispatcher",
 		programType: bpfman.ProgramTypeXDP,
-		pinPath:     spec.ProgPinPath,
+		pinPath:     spec.ProgPinPath.String(),
 	}
 	return &platform.XDPDispatcherResult{
 		DispatcherID:  dispatcherID,
@@ -868,7 +868,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 	}
 	f.links[linkID] = &link
 	// Record the operation with progPinPath for test verification
-	f.recordExtensionAttach("attach-xdp-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath)
+	f.recordExtensionAttach("attach-xdp-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath.String())
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
@@ -892,7 +892,7 @@ func (f *fakeKernel) AttachTCDispatcher(_ context.Context, spec dispatcher.TCDis
 		id:          dispatcherID,
 		name:        "tc_dispatcher",
 		programType: bpfman.ProgramTypeTC,
-		pinPath:     spec.ProgPinPath,
+		pinPath:     spec.ProgPinPath.String(),
 	}
 
 	// Determine parent handle from direction
@@ -962,7 +962,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 	}
 	f.links[linkID] = &link
 	// Record the operation with progPinPath for test verification
-	f.recordExtensionAttach("attach-tc-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath)
+	f.recordExtensionAttach("attach-tc-ext", spec.ProgramName, uint32(linkID), spec.ProgPinPath.String())
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
@@ -970,7 +970,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 	}, nil
 }
 
-func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, programPinPath string, linkPinPath bpfman.LinkPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
+func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction string, programPinPath bpfman.ProgPinPath, linkPinPath bpfman.LinkPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfindex[ifindex]; ok {
@@ -998,7 +998,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 	}
 	f.links[linkID] = &link
 	// Record the operation with programPinPath for test verification
-	f.recordTCXAttach(programPinPath, uint32(linkID))
+	f.recordTCXAttach(programPinPath.String(), uint32(linkID))
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
@@ -1062,38 +1062,38 @@ func (f *fakeKernel) RepinMap(_ context.Context, srcPath, dstPath string) error 
 	return nil // Fake implementation - no-op
 }
 
-func (f *fakeKernel) UpdateXDPDispatcherLink(_ context.Context, linkPinPath bpfman.LinkPath, newProgPinPath string) error {
-	f.recordOp("update-xdp-link", string(linkPinPath)+" -> "+newProgPinPath, 0, nil)
+func (f *fakeKernel) UpdateXDPDispatcherLink(_ context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
+	f.recordOp("update-xdp-link", linkPinPath.String()+" -> "+newProgPinPath.String(), 0, nil)
 	return nil
 }
 
-func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+func (f *fakeKernel) LoadAndPinXDPDispatcher(_ context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
 	createPinFile(progPinPath)
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "xdp_dispatcher",
 		programType: bpfman.ProgramTypeXDP,
-		pinPath:     progPinPath,
+		pinPath:     progPinPath.String(),
 	}
-	f.recordOp("load-pin-xdp-dispatcher", progPinPath, uint32(dispatcherID), nil)
+	f.recordOp("load-pin-xdp-dispatcher", progPinPath.String(), uint32(dispatcherID), nil)
 	return dispatcherID, nil
 }
 
-func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+func (f *fakeKernel) LoadAndPinTCDispatcher(_ context.Context, cfg dispatcher.TCConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	dispatcherID := kernel.ProgramID(f.nextID.Add(1))
 	createPinFile(progPinPath)
 	f.programs[dispatcherID] = fakeProgram{
 		id:          dispatcherID,
 		name:        "tc_dispatcher",
 		programType: bpfman.ProgramTypeTC,
-		pinPath:     progPinPath,
+		pinPath:     progPinPath.String(),
 	}
-	f.recordOp("load-pin-tc-dispatcher", progPinPath, uint32(dispatcherID), nil)
+	f.recordOp("load-pin-tc-dispatcher", progPinPath.String(), uint32(dispatcherID), nil)
 	return dispatcherID, nil
 }
 
-func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
+func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfindex[ifindex]; ok {
@@ -1105,7 +1105,7 @@ func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath string, ifinde
 	createPinFile(linkPinPath)
 	dispatcherID := kernel.ProgramID(0) // Not easily available from pin
 	linkID := kernel.LinkID(f.nextID.Add(1))
-	f.recordOp("create-xdp-link", string(linkPinPath), uint32(linkID), nil)
+	f.recordOp("create-xdp-link", linkPinPath.String(), uint32(linkID), nil)
 	return &platform.XDPDispatcherResult{
 		DispatcherID:  dispatcherID,
 		LinkID:        linkID,
@@ -1114,7 +1114,7 @@ func (f *fakeKernel) CreateXDPLink(_ context.Context, progPinPath string, ifinde
 	}, nil
 }
 
-func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
 	// Check for interface-specific failure injection
 	f.mu.Lock()
 	if err, ok := f.failOnIfname[ifname]; ok {
@@ -1138,7 +1138,7 @@ func (f *fakeKernel) CreateTCFilter(_ context.Context, progPinPath string, ifind
 	f.tcFilters[tcFilterKey{ifindex: ifindex, parent: parent, priority: 50}] = handle
 	f.mu.Unlock()
 
-	f.recordOp("create-tc-filter", progPinPath, handle, nil)
+	f.recordOp("create-tc-filter", progPinPath.String(), handle, nil)
 	return &platform.TCDispatcherResult{
 		DispatcherID:  dispatcherID,
 		DispatcherPin: progPinPath,

@@ -12,7 +12,7 @@ import (
 type DispatcherMember struct {
 	ProgramID   kernel.ProgramID
 	ProgramName string
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	LinkID      kernel.LinkID
 	LinkPinPath bpfman.LinkPath
 	Position    int

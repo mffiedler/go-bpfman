@@ -150,7 +150,7 @@ func (v ProgramView) Type() string {
 // PinPath returns the pin path (from store if available, else FS).
 func (v ProgramView) PinPath() string {
 	if v.Managed != nil && v.Managed.Handles.PinPath != "" {
-		return v.Managed.Handles.PinPath
+		return v.Managed.Handles.PinPath.String()
 	}
 	return v.FSPinPath
 }
@@ -680,8 +680,8 @@ func GetProgram(
 	// Try filesystem
 	// If we have store metadata with a pin path, check that specific path
 	if row.Managed != nil && row.Managed.Handles.PinPath != "" {
-		if scanner.PathExists(row.Managed.Handles.PinPath) {
-			row.FSPinPath = row.Managed.Handles.PinPath
+		if scanner.PathExists(row.Managed.Handles.PinPath.String()) {
+			row.FSPinPath = row.Managed.Handles.PinPath.String()
 			row.Presence.InFS = true
 		}
 	}

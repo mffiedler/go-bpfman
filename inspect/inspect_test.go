@@ -404,7 +404,7 @@ func TestGetProgram_FullyPresent(t *testing.T) {
 
 	store := &fakeStore{
 		programs: map[kernel.ProgramID]bpfman.ProgramRecord{
-			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: pinPath}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
+			100: {ProgramID: 100, Load: bpfman.TestLoadSpec(bpfman.ProgramTypeXDP), Handles: bpfman.ProgramHandles{PinPath: bpfman.ProgPinPath(pinPath)}, Meta: bpfman.ProgramMeta{Name: "xdp_pass"}},
 		},
 	}
 

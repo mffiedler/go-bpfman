@@ -79,7 +79,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.store.DeleteLink(ctx, a.LinkID)
 
 	case action.UnloadProgram:
-		return nil, e.kernel.Unload(ctx, a.PinPath)
+		return nil, e.kernel.Unload(ctx, a.PinPath.String())
 
 	case action.RemoveMapsPins:
 		return nil, e.kernel.Unload(ctx, a.PinPath)

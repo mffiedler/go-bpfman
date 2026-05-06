@@ -102,7 +102,7 @@ func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, progra
 // When persisted is false the delete-program node is omitted. This
 // is used during batch Load cleanup where programs have not yet been
 // saved to the store.
-func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
+func (m *Manager) unloadPlan(programID kernel.ProgramID, programName string, progPinPath bpfman.ProgPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
 	var nodes []operation.Node
 
 	for _, link := range links {

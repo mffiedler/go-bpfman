@@ -138,7 +138,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			pinPath := filepath.Join(mapDir, name)
 
 			ms := bpfman.MapStatus{
-				PinPath: pinPath,
+				PinPath: bpfman.MapPinPath(pinPath),
 				Present: true,
 			}
 
@@ -178,7 +178,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			mapStatuses = append(mapStatuses, bpfman.MapStatus{
 				Map:     km,
 				PinPath: pinPath,
-				Present: scanner.PathExists(pinPath),
+				Present: scanner.PathExists(string(pinPath)),
 			})
 		}
 	}
@@ -189,8 +189,8 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			Kernel: &kp,
 			Stats:  stats,
 			ProgPin: bpfman.PathPresence{
-				Path:    bpffs.ProgPinPath(programID),
-				Present: scanner.PathExists(bpffs.ProgPinPath(programID)),
+				Path:    bpffs.ProgPinPath(programID).String(),
+				Present: scanner.PathExists(bpffs.ProgPinPath(programID).String()),
 			},
 			MapDir: bpfman.PathPresence{
 				Path:    bpffs.MapPinDir(mapOwner),

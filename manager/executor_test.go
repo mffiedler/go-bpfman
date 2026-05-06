@@ -170,7 +170,7 @@ func (k *stubKernel) Unload(ctx context.Context, pinPath string) error {
 	panic("stubKernel.Unload not implemented")
 }
 
-func (k *stubKernel) UnloadProgram(ctx context.Context, progPinPath, mapsDir string) error {
+func (k *stubKernel) UnloadProgram(ctx context.Context, progPinPath bpfman.ProgPinPath, mapsDir string) error {
 	panic("stubKernel.UnloadProgram not implemented")
 }
 
@@ -184,31 +184,31 @@ func (k *stubKernel) GetPinned(ctx context.Context, pinPath string) (*kernel.Pin
 }
 
 // ProgramAttacher
-func (k *stubKernel) AttachTracepoint(ctx context.Context, progPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachTracepoint(ctx context.Context, progPinPath bpfman.ProgPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTracepoint not implemented")
 }
 
-func (k *stubKernel) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachXDP not implemented")
 }
 
-func (k *stubKernel) AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachKprobe(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachKprobe not implemented")
 }
 
-func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachUprobeLocal(ctx context.Context, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeLocal not implemented")
 }
 
-func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath bpfman.ProgPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachUprobeContainer not implemented")
 }
 
-func (k *stubKernel) AttachFentry(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachFentry(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachFentry not implemented")
 }
 
-func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachFexit(ctx context.Context, progPinPath bpfman.ProgPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachFexit not implemented")
 }
 
@@ -238,7 +238,7 @@ func (k *stubKernel) ExtensionLinkInfo(ctx context.Context, linkPinPath bpfman.L
 	return platform.ExtensionLinkInfo{}, nil
 }
 
-func (k *stubKernel) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath string, linkPinPath bpfman.LinkPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
+func (k *stubKernel) AttachTCX(ctx context.Context, ifindex int, direction string, programPinPath bpfman.ProgPinPath, linkPinPath bpfman.LinkPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
 	panic("stubKernel.AttachTCX not implemented")
 }
 
@@ -266,23 +266,23 @@ func (k *stubKernel) FindTCFilterHandle(ctx context.Context, ifindex int, parent
 	panic("stubKernel.FindTCFilterHandle not implemented")
 }
 
-func (k *stubKernel) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath string) error {
+func (k *stubKernel) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
 	panic("stubKernel.UpdateXDPDispatcherLink not implemented")
 }
 
-func (k *stubKernel) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+func (k *stubKernel) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	panic("stubKernel.LoadAndPinXDPDispatcher not implemented")
 }
 
-func (k *stubKernel) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+func (k *stubKernel) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	panic("stubKernel.LoadAndPinTCDispatcher not implemented")
 }
 
-func (k *stubKernel) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
+func (k *stubKernel) CreateXDPLink(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
 	panic("stubKernel.CreateXDPLink not implemented")
 }
 
-func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+func (k *stubKernel) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
 	panic("stubKernel.CreateTCFilter not implemented")
 }
 

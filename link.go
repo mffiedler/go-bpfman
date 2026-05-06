@@ -64,6 +64,24 @@ type LinkPath string
 // String returns the path as a string.
 func (p LinkPath) String() string { return string(p) }
 
+// ProgPinPath represents a pinned program path within a bpffs. The
+// newtype prevents feeding a path of another domain (a link pin, a
+// map pin, an arbitrary string) to a primitive that expects a
+// program pin -- in particular, ebpf.LoadPinnedProgram and the kernel
+// adapter's program-side actions.
+type ProgPinPath string
+
+// String returns the path as a string.
+func (p ProgPinPath) String() string { return string(p) }
+
+// MapPinPath represents a pinned map path within a bpffs. The newtype
+// prevents feeding a path of another domain to map-side primitives
+// (ebpf.LoadPinnedMap, shared-map pin tracking).
+type MapPinPath string
+
+// String returns the path as a string.
+func (p MapPinPath) String() string { return string(p) }
+
 // NewLinkPath wraps a string-derived path (LinkPath or plain string)
 // into a *LinkPath, returning nil if empty. The generic constraint
 // lets callers pass the already-typed bpfman.LinkPath without a cast,

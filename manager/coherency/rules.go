@@ -3,6 +3,7 @@ package coherency
 import (
 	"fmt"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/manager/action"
 )
@@ -647,7 +648,7 @@ Category: gc-orphan-pin`,
 		kinds:   []OrphanKind{OrphanSharedMapPin},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
 		actionFn: func(o FsOrphan) action.Action {
-			return action.RemoveSharedMapPin{Path: o.Path}
+			return action.RemoveSharedMapPin{Path: bpfman.MapPinPath(o.Path)}
 		},
 		describeFn: func(o FsOrphan) (string, string) {
 			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),

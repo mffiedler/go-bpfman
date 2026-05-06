@@ -195,7 +195,7 @@ func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcH
 	}
 
 	actions = append(actions,
-		action.RemovePin{Path: progPinPath},
+		action.RemovePin{Path: progPinPath.String()},
 		action.RemovePin{Path: revisionDir},
 		action.DeleteDispatcher{
 			Type:    state.Type,

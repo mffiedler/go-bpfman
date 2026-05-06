@@ -75,7 +75,7 @@ func ProgramColumnRegistry() []ColumnInfo {
 			}},
 		{Name: "PIN_PATH", Description: "Pinned path in bpffs",
 			Extract: func(p bpfman.Program) string {
-				return nonEmpty(p.Record.Handles.PinPath)
+				return nonEmpty(p.Record.Handles.PinPath.String())
 			}},
 		{Name: "LOADED_AT", Description: "Load timestamp",
 			Extract: func(p bpfman.Program) string {

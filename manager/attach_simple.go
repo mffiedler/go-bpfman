@@ -49,7 +49,7 @@ type attachParams struct {
 	// prepare inspects the program record and returns the plan.
 	// progPinPath is the program's bpffs pin path, precomputed
 	// from the kernel ID.
-	prepare func(prog bpfman.ProgramRecord, progPinPath string) (attachPlan, error)
+	prepare func(prog bpfman.ProgramRecord, progPinPath bpfman.ProgPinPath) (attachPlan, error)
 }
 
 // simpleAttach implements the common skeleton for non-dispatcher attach

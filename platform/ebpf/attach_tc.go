@@ -227,7 +227,7 @@ func (k *kernelAdapter) DetachTCFilter(ctx context.Context, ifindex int, ifname 
 // LoadAndPinTCDispatcher loads a TC dispatcher program with .rodata config
 // and pins it at progPinPath without creating a TC filter. Used during
 // rebuild to prepare a new dispatcher before atomically swapping.
-func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath string) (kernel.ProgramID, error) {
+func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatcher.TCConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	collSpec, err := dispatcher.LoadTCDispatcher(cfg)
 	if err != nil {
 		return 0, fmt.Errorf("load TC dispatcher spec: %w", err)
@@ -267,8 +267,8 @@ func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatch
 // CreateTCFilter creates a TC filter from a pinned dispatcher program
 // on a network interface, optionally in a specific network namespace.
 // Creates the clsact qdisc if needed.
-func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath string, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
-	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
+func (k *kernelAdapter) CreateTCFilter(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, ifname string, direction bpfman.TCDirection, netnsPath string) (*platform.TCDispatcherResult, error) {
+	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
@@ -357,17 +357,17 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
-	linkPin := string(spec.LinkPinPath)
+	linkPin := spec.LinkPinPath.String()
 
 	// Load the pinned dispatcher to use as attach target.
-	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
+	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned TC dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
 	// Load the pinned extension program.
-	extensionProg, err := ebpf.LoadPinnedProgram(spec.ProgPinPath, nil)
+	extensionProg, err := ebpf.LoadPinnedProgram(spec.ProgPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned TC extension %s: %w", spec.ProgPinPath, err)
 	}
@@ -427,10 +427,10 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 // AttachTCX attaches a loaded program directly to an interface using TCX link.
 // Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
 // The order parameter specifies where to insert the program in the TCX chain.
-func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath string, linkPinPath bpfman.LinkPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
-	linkPin := string(linkPinPath)
+func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction string, programPinPath bpfman.ProgPinPath, linkPinPath bpfman.LinkPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
+	linkPin := linkPinPath.String()
 	// Load the pinned program
-	prog, err := ebpf.LoadPinnedProgram(programPinPath, nil)
+	prog, err := ebpf.LoadPinnedProgram(programPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", programPinPath, err)
 	}

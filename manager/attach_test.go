@@ -1033,7 +1033,7 @@ func TestPinBasedExtension_XDPAttach_UsesProgPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedProgPinPath := prog.Record.Handles.PinPath
+	expectedProgPinPath := prog.Record.Handles.PinPath.String()
 	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
@@ -1068,7 +1068,7 @@ func TestPinBasedExtension_TCAttach_UsesProgPinPath(t *testing.T) {
 	prog, err := fix.Load(ctx, spec, manager.LoadOpts{})
 	require.NoError(t, err, "Load should succeed")
 
-	expectedProgPinPath := prog.Record.Handles.PinPath
+	expectedProgPinPath := prog.Record.Handles.PinPath.String()
 	require.NotEmpty(t, expectedProgPinPath, "PinPath should be set")
 
 	// Attach the program
@@ -1125,7 +1125,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	// Verify the kernel received the XDP program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one XDP extension attach")
-	assert.Equal(t, prog2.Record.Handles.PinPath, extOps[0].ProgPinPath,
+	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath,
 		"XDP attach should use the program's own PinPath")
 }
 
@@ -1169,7 +1169,7 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	// Verify the kernel received the TC program's own PinPath
 	extOps := fix.Kernel.ExtensionAttachOps()
 	require.Len(t, extOps, 1, "expected one TC extension attach")
-	assert.Equal(t, prog2.Record.Handles.PinPath, extOps[0].ProgPinPath,
+	assert.Equal(t, prog2.Record.Handles.PinPath.String(), extOps[0].ProgPinPath,
 		"TC attach should use the program's own PinPath")
 }
 
@@ -1548,7 +1548,7 @@ func TestTCX_AttachUsesProgramPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// The expected pin path follows bpffs conventions
-	expectedPinPath := fix.Layout.BPFFS().ProgPinPath(prog.Record.ProgramID)
+	expectedPinPath := fix.Layout.BPFFS().ProgPinPath(prog.Record.ProgramID).String()
 
 	// Attach the program
 	attachSpec, err := bpfman.NewTCXAttachSpec(prog.Record.ProgramID, "eth0", 2, bpfman.TCDirectionIngress)

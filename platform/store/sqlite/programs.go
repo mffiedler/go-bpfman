@@ -126,7 +126,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 		License:       licenseVal,
 		GPLCompatible: sp.gplCompatible != 0,
 		Handles: bpfman.ProgramHandles{
-			PinPath:    sp.pinPath,
+			PinPath:    bpfman.ProgPinPath(sp.pinPath),
 			MapPinPath: mapPinPathVal,
 			MapOwnerID: mapOwnerIDPtr,
 		},

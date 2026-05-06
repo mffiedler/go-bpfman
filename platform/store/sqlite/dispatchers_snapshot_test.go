@@ -21,7 +21,7 @@ func testXDPProgram(name string) bpfman.ProgramRecord {
 	return bpfman.ProgramRecord{
 		Load: bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeXDP, "/test/path/"+name+".o"),
 		Handles: bpfman.ProgramHandles{
-			PinPath: "/sys/fs/bpf/" + name,
+			PinPath: bpfman.ProgPinPath("/sys/fs/bpf/" + name),
 		},
 		Meta: bpfman.ProgramMeta{
 			Name: name,
@@ -35,7 +35,7 @@ func testTCProgram(name string) bpfman.ProgramRecord {
 	return bpfman.ProgramRecord{
 		Load: bpfman.TestLoadSpecWithPath(bpfman.ProgramTypeTC, "/test/path/"+name+".o"),
 		Handles: bpfman.ProgramHandles{
-			PinPath: "/sys/fs/bpf/" + name,
+			PinPath: bpfman.ProgPinPath("/sys/fs/bpf/" + name),
 		},
 		Meta: bpfman.ProgramMeta{
 			Name: name,

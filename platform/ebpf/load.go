@@ -166,7 +166,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				continue
 			}
 			mapPath := bpffs.MapPinPath(mapOwnerID, name)
-			m, err := ebpf.LoadPinnedMap(mapPath, nil)
+			m, err := ebpf.LoadPinnedMap(string(mapPath), nil)
 			if err != nil {
 				// Clean up any maps we've already loaded
 				for _, loaded := range mapReplacements {
@@ -186,7 +186,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	if len(pinByNameMaps) > 0 && mapOwnerID == 0 {
 		for name := range pinByNameMaps {
 			sharedPath := bpffs.SharedMapPin(name)
-			m, err := ebpf.LoadPinnedMap(sharedPath, nil)
+			m, err := ebpf.LoadPinnedMap(sharedPath.String(), nil)
 			if err != nil {
 				continue // not yet pinned; will create after load
 			}
@@ -245,10 +245,10 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 
 	// Pin program using bpffs convention
 	progPinPath := bpffs.ProgPinPath(programID)
-	if err := prog.Pin(progPinPath); err != nil {
+	if err := prog.Pin(progPinPath.String()); err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to pin program: %w", err)
 	}
-	pinnedPaths = append(pinnedPaths, progPinPath)
+	pinnedPaths = append(pinnedPaths, progPinPath.String())
 
 	// Determine the maps directory to use:
 	// - If sharing maps (map_owner_id set): use owner's mapsDir, don't create/pin maps
@@ -286,14 +286,14 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 					continue
 				}
 				sharedPath := bpffs.SharedMapPin(name)
-				if err := m.Pin(sharedPath); err != nil {
+				if err := m.Pin(sharedPath.String()); err != nil {
 					cleanup()
 					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin shared map %q: %w", name, err)
 				}
-				pinnedPaths = append(pinnedPaths, sharedPath)
+				pinnedPaths = append(pinnedPaths, sharedPath.String())
 				k.logger.Debug("pinned PinByName map to shared directory", "name", name, "path", sharedPath)
 			}
 		}
@@ -316,7 +316,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to clone map %q for per-program pin: %w", name, cloneErr)
 				}
-				if err := clone.Pin(mapPinPath); err != nil {
+				if err := clone.Pin(mapPinPath.String()); err != nil {
 					clone.Close()
 					cleanup()
 					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
@@ -326,7 +326,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				}
 				clone.Close()
 			} else {
-				if err := m.Pin(mapPinPath); err != nil {
+				if err := m.Pin(mapPinPath.String()); err != nil {
 					cleanup()
 					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
@@ -334,7 +334,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
 				}
 			}
-			pinnedPaths = append(pinnedPaths, mapPinPath)
+			pinnedPaths = append(pinnedPaths, mapPinPath.String())
 		}
 	}
 
@@ -410,9 +410,9 @@ func (k *kernelAdapter) Unload(ctx context.Context, pinPath string) error {
 // UnloadProgram removes a program and its maps using the upstream pin layout.
 // progPinPath is the program pin (e.g., /run/bpfman/fs/prog_123)
 // mapsDir is the maps directory (e.g., /run/bpfman/fs/maps/123)
-func (k *kernelAdapter) UnloadProgram(ctx context.Context, progPinPath, mapsDir string) error {
+func (k *kernelAdapter) UnloadProgram(ctx context.Context, progPinPath bpfman.ProgPinPath, mapsDir string) error {
 	// Remove program pin
-	if err := os.Remove(progPinPath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(progPinPath.String()); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to unpin program %s: %w", progPinPath, err)
 	}
 

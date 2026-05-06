@@ -101,9 +101,9 @@ func (b BPFFS) SharedMapPinDir() string {
 
 // SharedMapPin returns the pin path for a shared PinByName map.
 // Format: {base}/fs/shared/{map_name}
-func (b BPFFS) SharedMapPin(mapName string) string {
+func (b BPFFS) SharedMapPin(mapName string) bpfman.MapPinPath {
 	b.mustValid()
-	return filepath.Join(b.mountPoint(), "shared", mapName)
+	return bpfman.MapPinPath(filepath.Join(b.mountPoint(), "shared", mapName))
 }
 
 // EnsureSharedMapPinDir creates the shared map pin directory if it
@@ -119,9 +119,9 @@ func (b BPFFS) EnsureSharedMapPinDir() error {
 
 // ProgPinPath returns the pin path for a program.
 // Format: {base}/fs/prog_{id}
-func (b BPFFS) ProgPinPath(programID kernel.ProgramID) string {
+func (b BPFFS) ProgPinPath(programID kernel.ProgramID) bpfman.ProgPinPath {
 	b.mustValid()
-	return filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(programID), 10))
+	return bpfman.ProgPinPath(filepath.Join(b.mountPoint(), "prog_"+strconv.FormatUint(uint64(programID), 10)))
 }
 
 // MapPinDir returns the directory for a program's map pins.
@@ -147,9 +147,9 @@ func (b BPFFS) LinkPinPath(programID kernel.ProgramID, linkName string) bpfman.L
 
 // MapPinPath returns the pin path for a specific map.
 // Format: {base}/fs/maps/{program_id}/{map_name}
-func (b BPFFS) MapPinPath(programID kernel.ProgramID, mapName string) string {
+func (b BPFFS) MapPinPath(programID kernel.ProgramID, mapName string) bpfman.MapPinPath {
 	b.mustValid()
-	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10), mapName)
+	return bpfman.MapPinPath(filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10), mapName))
 }
 
 // Scanner returns a new Scanner for reading bpfman's bpffs layout.
@@ -193,9 +193,9 @@ func (b BPFFS) DispatcherRevisionDir(dispType dispatcher.DispatcherType, nsid ui
 // DispatcherProgPath returns the path for the dispatcher program within a revision.
 //
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
-func (b BPFFS) DispatcherProgPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32) string {
+func (b BPFFS) DispatcherProgPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32) bpfman.ProgPinPath {
 	b.mustValid()
-	return filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), "dispatcher")
+	return bpfman.ProgPinPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), "dispatcher"))
 }
 
 // ExtensionLinkPath returns the path for an extension link within a dispatcher revision.

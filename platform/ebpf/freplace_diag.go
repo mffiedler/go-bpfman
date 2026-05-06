@@ -16,7 +16,7 @@ import (
 // just-attached freplace is observably installed in the kernel before
 // committing the dispatcher swap.
 func (k *kernelAdapter) ExtensionLinkInfo(ctx context.Context, linkPinPath bpfman.LinkPath) (platform.ExtensionLinkInfo, error) {
-	lnk, err := link.LoadPinnedLink(string(linkPinPath), nil)
+	lnk, err := link.LoadPinnedLink(linkPinPath.String(), nil)
 	if err != nil {
 		return platform.ExtensionLinkInfo{}, fmt.Errorf("load pinned extension link %s: %w", linkPinPath, err)
 	}

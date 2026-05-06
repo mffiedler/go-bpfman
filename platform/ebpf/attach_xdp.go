@@ -41,9 +41,9 @@ func attachXDPWithRetry(opts link.XDPOptions) (link.Link, error) {
 }
 
 // AttachXDP attaches a pinned XDP program to a network interface.
-func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
-	linkPin := string(linkPinPath)
-	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
+func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+	linkPin := linkPinPath.String()
+	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
@@ -186,7 +186,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 
 		// Pin link to the stable path (outside revision directory).
 		if err := pinWithRetry(spec.LinkPinPath, lnk.Pin); err != nil {
-			if rmErr := k.RemovePin(ctx, spec.ProgPinPath); rmErr != nil {
+			if rmErr := k.RemovePin(ctx, spec.ProgPinPath.String()); rmErr != nil {
 				k.logger.Warn("failed to remove program pin during cleanup",
 					"path", spec.ProgPinPath, "error", rmErr)
 			}
@@ -210,14 +210,14 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 // UpdateXDPDispatcherLink atomically updates an existing XDP
 // dispatcher's BPF link to point to a new dispatcher program.
 // This is used during rebuild to swap from old to new dispatcher.
-func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath string) error {
-	lnk, err := link.LoadPinnedLink(string(linkPinPath), nil)
+func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath bpfman.ProgPinPath) error {
+	lnk, err := link.LoadPinnedLink(linkPinPath.String(), nil)
 	if err != nil {
 		return fmt.Errorf("load pinned link %s: %w", linkPinPath, err)
 	}
 	defer lnk.Close()
 
-	newProg, err := ebpf.LoadPinnedProgram(newProgPinPath, nil)
+	newProg, err := ebpf.LoadPinnedProgram(newProgPinPath.String(), nil)
 	if err != nil {
 		return fmt.Errorf("load pinned program %s: %w", newProgPinPath, err)
 	}
@@ -237,7 +237,7 @@ func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath
 // config and pins it at progPinPath without creating an XDP link.
 // Used during rebuild to prepare a new dispatcher before atomically
 // swapping the link.
-func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath string) (kernel.ProgramID, error) {
+func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatcher.XDPConfig, progPinPath bpfman.ProgPinPath) (kernel.ProgramID, error) {
 	collSpec, err := dispatcher.LoadXDPDispatcher(cfg)
 	if err != nil {
 		return 0, fmt.Errorf("load XDP dispatcher spec: %w", err)
@@ -276,9 +276,9 @@ func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatc
 
 // CreateXDPLink creates an XDP link from a pinned dispatcher program
 // to a network interface, optionally in a specific network namespace.
-func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
-	linkPin := string(linkPinPath)
-	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
+func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath bpfman.ProgPinPath, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
+	linkPin := linkPinPath.String()
+	prog, err := ebpf.LoadPinnedProgram(progPinPath.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
 	}
@@ -355,17 +355,17 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
-	linkPin := string(spec.LinkPinPath)
+	linkPin := spec.LinkPinPath.String()
 
 	// Load the pinned dispatcher to use as attach target.
-	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
+	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned dispatcher %s: %w", spec.DispatcherPinPath, err)
 	}
 	defer dispatcherProg.Close()
 
 	// Load the pinned extension program.
-	extensionProg, err := ebpf.LoadPinnedProgram(spec.ProgPinPath, nil)
+	extensionProg, err := ebpf.LoadPinnedProgram(spec.ProgPinPath.String(), nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned extension %s: %w", spec.ProgPinPath, err)
 	}

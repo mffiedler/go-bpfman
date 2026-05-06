@@ -10,7 +10,7 @@ import (
 // XDPDispatcherAttachSpec contains parameters for creating an XDP dispatcher.
 type XDPDispatcherAttachSpec struct {
 	Target      bpfman.AttachTarget `json:"target"`
-	ProgPinPath string              `json:"prog_pin_path"` // where to pin dispatcher program
+	ProgPinPath bpfman.ProgPinPath  `json:"prog_pin_path"` // where to pin dispatcher program
 	LinkPinPath bpfman.LinkPath     `json:"link_pin_path"` // where to pin dispatcher link
 	NumProgs    int                 `json:"num_progs"`     // extension slot count
 	ProceedOn   uint32              `json:"proceed_on"`    // bitmask of actions to proceed on; 0 means "none"
@@ -39,7 +39,7 @@ func (s XDPDispatcherAttachSpec) Validate() error {
 type TCDispatcherAttachSpec struct {
 	Target      bpfman.AttachTarget `json:"target"`
 	IfName      string              `json:"ifname"` // needed for netlink operations
-	ProgPinPath string              `json:"prog_pin_path"`
+	ProgPinPath bpfman.ProgPinPath  `json:"prog_pin_path"`
 	Direction   bpfman.TCDirection  `json:"direction"`
 	NumProgs    int                 `json:"num_progs"`
 	ProceedOn   uint32              `json:"proceed_on"` // bitmask of actions to proceed on; 0 means "none"
@@ -69,10 +69,10 @@ func (s TCDispatcherAttachSpec) Validate() error {
 // program to a dispatcher slot. The extension program is loaded from its
 // bpffs pin rather than re-read from the original ELF file.
 type XDPExtensionAttachSpec struct {
-	DispatcherPinPath string `json:"dispatcher_pin_path"` // pinned dispatcher program
-	ProgPinPath       string `json:"prog_pin_path"`       // pinned extension program
-	ProgramName       string `json:"program_name"`        // program name for slot derivation
-	Position          int    `json:"position"`            // dispatcher slot [0, MaxPrograms)
+	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"` // pinned dispatcher program
+	ProgPinPath       bpfman.ProgPinPath `json:"prog_pin_path"`       // pinned extension program
+	ProgramName       string             `json:"program_name"`        // program name for slot derivation
+	Position          int                `json:"position"`            // dispatcher slot [0, MaxPrograms)
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
 	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`
@@ -99,10 +99,10 @@ func (s XDPExtensionAttachSpec) Validate() error {
 // program to a dispatcher slot. The extension program is loaded from its
 // bpffs pin rather than re-read from the original ELF file.
 type TCExtensionAttachSpec struct {
-	DispatcherPinPath string `json:"dispatcher_pin_path"` // pinned dispatcher program
-	ProgPinPath       string `json:"prog_pin_path"`       // pinned extension program
-	ProgramName       string `json:"program_name"`        // program name for slot derivation
-	Position          int    `json:"position"`            // dispatcher slot [0, MaxPrograms)
+	DispatcherPinPath bpfman.ProgPinPath `json:"dispatcher_pin_path"` // pinned dispatcher program
+	ProgPinPath       bpfman.ProgPinPath `json:"prog_pin_path"`       // pinned extension program
+	ProgramName       string             `json:"program_name"`        // program name for slot derivation
+	Position          int                `json:"position"`            // dispatcher slot [0, MaxPrograms)
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
 	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	bpfman "github.com/frobware/go-bpfman"
 )
 
 // removePinFile removes a file under the bpffs mount.
@@ -155,8 +157,8 @@ func (b BPFFS) RemoveDispatcherLinkPin(path string) error {
 
 // RemoveSharedMapPin removes a shared map pin file under the
 // {bpffs}/shared/ directory.
-func (b BPFFS) RemoveSharedMapPin(path string) error {
-	path, err := b.cleanUnderMount(path)
+func (b BPFFS) RemoveSharedMapPin(p bpfman.MapPinPath) error {
+	path, err := b.cleanUnderMount(string(p))
 	if err != nil {
 		return err
 	}

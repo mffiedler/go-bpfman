@@ -88,7 +88,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	for _, p := range world.ManagedPrograms() {
 		dbProgIDs[p.ProgramID] = true
 		if p.Managed != nil && p.Managed.Handles.PinPath != "" {
-			dbProgPins[p.Managed.Handles.PinPath] = true
+			dbProgPins[p.Managed.Handles.PinPath.String()] = true
 		}
 	}
 	for _, d := range world.ManagedDispatchers() {
@@ -370,7 +370,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			DB:         state,
 			KernelProg: dr.ProgPresence.InKernel,
 			RevDir:     revDir,
-			ProgPin:    progPin,
+			ProgPin:    string(progPin),
 			LinkCount:  -1,
 		}
 
@@ -383,7 +383,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
 			ds.LinkPinExist = &linkExists
-			ds.LinkPin = string(bpffs.DispatcherLinkPath(dt, nsid, ifindex))
+			ds.LinkPin = bpffs.DispatcherLinkPath(dt, nsid, ifindex).String()
 		}
 
 		// TC filter check from gathered facts.

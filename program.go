@@ -103,8 +103,8 @@ func ParseProgramType(s string) (ProgramType, error) {
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
-	PinPath    string `json:"pin_path"`
-	MapPinPath string `json:"map_pin_path"` // empty when the program has no maps
+	PinPath    ProgPinPath `json:"pin_path"`
+	MapPinPath string      `json:"map_pin_path"` // empty when the program has no maps
 	// MapOwnerID nil means this program is not a shared-map consumer of another
 	// program; pointer + omitempty encodes that absence.
 	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`
@@ -198,8 +198,8 @@ type PathPresence struct {
 // filesystem pin path and presence.
 type MapStatus struct {
 	kernel.Map
-	PinPath string `json:"pin_path"`
-	Present bool   `json:"present"`
+	PinPath MapPinPath `json:"pin_path"`
+	Present bool       `json:"present"`
 }
 
 // ToMapStatus converts kernel maps to MapStatus values with zero-
@@ -235,7 +235,7 @@ func cloneMap[K comparable, V any](m map[K]V) map[K]V {
 // LoadOutput is the raw result of kernel.Load().
 // This is transient I/O boundary data, not stored in the DB.
 type LoadOutput struct {
-	PinPath        string          // where program was pinned
+	PinPath        ProgPinPath     // where program was pinned
 	MapsDir        string          // where maps were pinned
 	Program        *kernel.Program // kernel info (ID, MapIDs, etc)
 	License        string          // from ELF, for GPL check

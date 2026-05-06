@@ -24,7 +24,7 @@ import (
 
 // rebuildSlot carries per-extension data for the rebuild.
 type rebuildSlot struct {
-	ProgPinPath string
+	ProgPinPath bpfman.ProgPinPath
 	ProgramName string
 	Priority    int // user-specified priority (may be 0 for unspecified)
 	ProceedOn   uint32
@@ -59,7 +59,7 @@ func (e *executor) rebuildXDPDispatcher(
 	ctx context.Context,
 	managedProgramID kernel.ProgramID,
 	ops xdpRebuildOps,
-	progPinPath string,
+	progPinPath bpfman.ProgPinPath,
 	programName string,
 	priority int,
 	proceedOn uint32,
@@ -149,7 +149,7 @@ func (e *executor) rebuildXDPDispatcher(
 
 	// Track cleanup for rollback on failure.
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath.String()); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed",
 				"path", dispProgPinPath, "error", rbErr)
 		}
@@ -360,7 +360,7 @@ func (e *executor) rebuildTCDispatcher(
 	ctx context.Context,
 	managedProgramID kernel.ProgramID,
 	ops tcRebuildOps,
-	progPinPath string,
+	progPinPath bpfman.ProgPinPath,
 	programName string,
 	priority int,
 	proceedOn uint32,
@@ -450,7 +450,7 @@ func (e *executor) rebuildTCDispatcher(
 	}
 
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath.String()); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed",
 				"path", dispProgPinPath, "error", rbErr)
 		}
@@ -732,7 +732,7 @@ func (e *executor) rebuildXDPForDetach(
 	snap platform.DispatcherSnapshot,
 	slots []rebuildSlot,
 	revision uint32,
-	progPinPath string,
+	progPinPath bpfman.ProgPinPath,
 ) error {
 	key := snap.Key
 
@@ -848,7 +848,7 @@ func (e *executor) rebuildTCForDetach(
 	snap platform.DispatcherSnapshot,
 	slots []rebuildSlot,
 	revision uint32,
-	progPinPath string,
+	progPinPath bpfman.ProgPinPath,
 ) error {
 	key := snap.Key
 	dispType := key.Type
