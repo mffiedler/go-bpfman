@@ -128,14 +128,14 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	// characters, but pins use the full ELF section name.
 	var mapStatuses []bpfman.MapStatus
 	mapDir := bpffs.MapPinDir(mapOwner)
-	if entries, err := os.ReadDir(mapDir); err == nil {
+	if entries, err := os.ReadDir(mapDir.String()); err == nil {
 		matched := make(map[int]bool)
 		for _, entry := range entries {
 			if entry.IsDir() {
 				continue
 			}
 			name := entry.Name()
-			pinPath := filepath.Join(mapDir, name)
+			pinPath := filepath.Join(mapDir.String(), name)
 
 			ms := bpfman.MapStatus{
 				PinPath: bpfman.MapPinPath(pinPath),
@@ -193,12 +193,12 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 				Present: scanner.PathExists(bpffs.ProgPinPath(programID).String()),
 			},
 			MapDir: bpfman.PathPresence{
-				Path:    bpffs.MapPinDir(mapOwner),
-				Present: scanner.PathExists(bpffs.MapPinDir(mapOwner)),
+				Path:    bpffs.MapPinDir(mapOwner).String(),
+				Present: scanner.PathExists(bpffs.MapPinDir(mapOwner).String()),
 			},
 			LinkDir: bpfman.PathPresence{
-				Path:    bpffs.LinkPinDir(programID),
-				Present: scanner.PathExists(bpffs.LinkPinDir(programID)),
+				Path:    bpffs.LinkPinDir(programID).String(),
+				Present: scanner.PathExists(bpffs.LinkPinDir(programID).String()),
 			},
 			Bytecode: bpfman.PathPresence{
 				Path:    bc.ProgramBytecodePath(programID),

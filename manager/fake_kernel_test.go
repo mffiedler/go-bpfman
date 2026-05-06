@@ -409,7 +409,7 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 	progPinPath := bpffs.ProgPinPath(progID)
 
 	// Map sharing: if MapOwnerID is set, use the owner's maps directory
-	var mapsDir string
+	var mapsDir bpfman.MapDir
 	if spec.MapOwnerID() != 0 {
 		// Share maps with the owner program
 		mapsDir = bpffs.MapPinDir(spec.MapOwnerID())
@@ -432,13 +432,13 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 		name:        spec.ProgramName(),
 		programType: spec.ProgramType(),
 		pinPath:     progPinPath.String(),
-		pinDir:      mapsDir,
+		pinDir:      mapsDir.String(),
 	}
 	f.programs[progID] = fp
 	f.recordOp("load", spec.ProgramName(), uint32(progID), nil)
 	return bpfman.LoadOutput{
 		PinPath:      bpfman.ProgPinPath(fp.pinPath),
-		MapsDir:      fp.pinDir,
+		MapsDir:      bpfman.MapDir(fp.pinDir),
 		License:      "GPL",
 		InferredType: fp.programType,
 		Program: &kernel.Program{

@@ -102,7 +102,7 @@ func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, progra
 // When persisted is false the delete-program node is omitted. This
 // is used during batch Load cleanup where programs have not yet been
 // saved to the store.
-func (m *Manager) unloadPlan(programID kernel.ProgramID, programName string, progPinPath bpfman.ProgPinPath, mapsDir, linksDir string, links []bpfman.LinkRecord, persisted bool) operation.Plan {
+func (m *Manager) unloadPlan(programID kernel.ProgramID, programName string, progPinPath bpfman.ProgPinPath, mapsDir bpfman.MapDir, linksDir bpfman.LinkDir, links []bpfman.LinkRecord, persisted bool) operation.Plan {
 	var nodes []operation.Node
 
 	for _, link := range links {
@@ -114,9 +114,9 @@ func (m *Manager) unloadPlan(programID kernel.ProgramID, programName string, pro
 	}
 
 	nodes = append(nodes,
-		operation.DoAction("remove-links-dir", linksDir, action.RemovePin{Path: linksDir}),
+		operation.DoAction("remove-links-dir", linksDir.String(), action.RemoveLinkDir{Path: linksDir}),
 		operation.DoAction("unload-prog", programName, action.UnloadProgram{PinPath: progPinPath}),
-		operation.DoAction("unload-maps", programName, action.RemoveMapsPins{PinPath: mapsDir}),
+		operation.DoAction("unload-maps", programName, action.RemoveMapsPins{PinPath: mapsDir.String()}),
 		operation.TryAction("cleanup-shared-maps", programName, action.CleanupSharedMapPins{ProgramID: programID}),
 	)
 

@@ -126,16 +126,16 @@ func (b BPFFS) ProgPinPath(programID kernel.ProgramID) bpfman.ProgPinPath {
 
 // MapPinDir returns the directory for a program's map pins.
 // Format: {base}/fs/maps/{program_id}/
-func (b BPFFS) MapPinDir(programID kernel.ProgramID) string {
+func (b BPFFS) MapPinDir(programID kernel.ProgramID) bpfman.MapDir {
 	b.mustValid()
-	return filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10))
+	return bpfman.MapDir(filepath.Join(b.mapsDir(), strconv.FormatUint(uint64(programID), 10)))
 }
 
 // LinkPinDir returns the directory for a program's link pins.
 // Format: {base}/fs/links/{program_id}/
-func (b BPFFS) LinkPinDir(programID kernel.ProgramID) string {
+func (b BPFFS) LinkPinDir(programID kernel.ProgramID) bpfman.LinkDir {
 	b.mustValid()
-	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10))
+	return bpfman.LinkDir(filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10)))
 }
 
 // LinkPinPath returns the pin path for a specific link.
@@ -182,12 +182,12 @@ func (b BPFFS) DispatcherLinkPath(dispType dispatcher.DispatcherType, nsid uint6
 // Each revision contains the dispatcher program and extension links.
 //
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}
-func (b BPFFS) DispatcherRevisionDir(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32) string {
+func (b BPFFS) DispatcherRevisionDir(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32) bpfman.DispatcherRevDir {
 	b.mustValid()
-	return filepath.Join(
+	return bpfman.DispatcherRevDir(filepath.Join(
 		b.dispatcherTypeDir(dispType),
 		fmt.Sprintf("dispatcher_%d_%d_%d", nsid, ifindex, revision),
-	)
+	))
 }
 
 // DispatcherProgPath returns the path for the dispatcher program within a revision.
@@ -195,7 +195,7 @@ func (b BPFFS) DispatcherRevisionDir(dispType dispatcher.DispatcherType, nsid ui
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
 func (b BPFFS) DispatcherProgPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32) bpfman.ProgPinPath {
 	b.mustValid()
-	return bpfman.ProgPinPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), "dispatcher"))
+	return bpfman.ProgPinPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision).String(), "dispatcher"))
 }
 
 // ExtensionLinkPath returns the path for an extension link within a dispatcher revision.
@@ -204,7 +204,7 @@ func (b BPFFS) DispatcherProgPath(dispType dispatcher.DispatcherType, nsid uint6
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
 func (b BPFFS) ExtensionLinkPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32, position int) bpfman.LinkPath {
 	b.mustValid()
-	return bpfman.LinkPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), fmt.Sprintf("link_%d", position)))
+	return bpfman.LinkPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision).String(), fmt.Sprintf("link_%d", position)))
 }
 
 // TCXLinkPath returns the path for a TCX link pin.
@@ -227,7 +227,7 @@ func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, progra
 // Format: {base}/fs/maps/{program_id}/
 func (b BPFFS) EnsureMapsDir(programID kernel.ProgramID) error {
 	b.mustValid()
-	dir := b.MapPinDir(programID)
+	dir := b.MapPinDir(programID).String()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return &PathError{Op: "ensure_maps_dir", Path: dir, Err: err}
 	}

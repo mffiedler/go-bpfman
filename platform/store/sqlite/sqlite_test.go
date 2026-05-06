@@ -518,7 +518,7 @@ func TestMapOwnership_MapPinPathPersisted(t *testing.T) {
 	// Retrieve and verify MapPinPath is persisted.
 	got, err := store.Get(ctx, programID)
 	require.NoError(t, err, "Get failed")
-	assert.Equal(t, "/sys/fs/bpf/bpfman/42", got.Handles.MapsDir, "MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/42", got.Handles.MapsDir.String(), "MapPinPath mismatch")
 }
 
 func TestMapOwnership_MapOwnerIDPersisted(t *testing.T) {
@@ -583,12 +583,12 @@ func TestMapOwnership_ListIncludesMapFields(t *testing.T) {
 
 	// Verify owner has MapPinPath but no MapOwnerID.
 	owner := programs[ownerID]
-	assert.Equal(t, "/sys/fs/bpf/bpfman/100", owner.Handles.MapsDir, "owner MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/100", owner.Handles.MapsDir.String(), "owner MapPinPath mismatch")
 	assert.Nil(t, owner.Handles.MapOwnerID, "owner should have no MapOwnerID")
 
 	// Verify dependent has both fields.
 	dep := programs[depID]
-	assert.Equal(t, "/sys/fs/bpf/bpfman/100", dep.Handles.MapsDir, "dependent MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/100", dep.Handles.MapsDir.String(), "dependent MapPinPath mismatch")
 	require.NotNil(t, dep.Handles.MapOwnerID, "dependent should have MapOwnerID set")
 	assert.Equal(t, ownerID, *dep.Handles.MapOwnerID, "dependent MapOwnerID mismatch")
 }

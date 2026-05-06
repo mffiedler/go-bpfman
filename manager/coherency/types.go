@@ -85,16 +85,16 @@ type LinkState struct {
 // DispatcherState correlates a dispatcher across all three sources.
 // Primary key: (type, nsid, ifindex).
 type DispatcherState struct {
-	DB           *dispatcher.State // nil = no DB record
-	KernelProg   bool              // true = dispatcher kernel program alive
-	KernelLink   bool              // true = XDP link alive (irrelevant for TC)
-	ProgPinExist *bool             // nil = not checked
-	LinkPinExist *bool             // nil = not checked (XDP only)
-	TCFilterOK   *bool             // nil = not checked (TC only)
-	LinkCount    int               // number of extension links (-1 = unknown)
-	RevDir       string            // computed revision directory path
-	ProgPin      string            // computed prog pin path
-	LinkPin      string            // computed link pin path (XDP only; empty for TC)
+	DB           *dispatcher.State       // nil = no DB record
+	KernelProg   bool                    // true = dispatcher kernel program alive
+	KernelLink   bool                    // true = XDP link alive (irrelevant for TC)
+	ProgPinExist *bool                   // nil = not checked
+	LinkPinExist *bool                   // nil = not checked (XDP only)
+	TCFilterOK   *bool                   // nil = not checked (TC only)
+	LinkCount    int                     // number of extension links (-1 = unknown)
+	RevDir       bpfman.DispatcherRevDir // computed revision directory path
+	ProgPin      bpfman.ProgPinPath      // computed prog pin path
+	LinkPin      bpfman.LinkPath         // computed link pin path (XDP only; empty for TC)
 }
 
 // OrphanKind identifies the type of orphaned filesystem artefact.

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 )
 
@@ -74,7 +75,7 @@ func TestBPFFS_RemoveDispatcherRevDir_RefusesMountRoot(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	if err := b.RemoveDispatcherRevDir(b.MountPoint()); err == nil {
+	if err := b.RemoveDispatcherRevDir(bpfman.DispatcherRevDir(b.MountPoint())); err == nil {
 		t.Errorf("RemoveDispatcherRevDir(mount root) = nil; want error")
 	}
 }
@@ -129,7 +130,7 @@ func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
 	if err := os.MkdirAll(ok, 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := b.RemoveLinkDir(ok); err != nil {
+	if err := b.RemoveLinkDir(bpfman.LinkDir(ok)); err != nil {
 		t.Errorf("RemoveLinkDir(%s) = %v; want nil", ok, err)
 	}
 
@@ -138,7 +139,7 @@ func TestBPFFS_RemoveLinkDir_ValidatesNumericName(t *testing.T) {
 	if err := os.MkdirAll(bad, 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := b.RemoveLinkDir(bad); err == nil {
+	if err := b.RemoveLinkDir(bpfman.LinkDir(bad)); err == nil {
 		t.Errorf("RemoveLinkDir(%s) = nil; want error", bad)
 	}
 }

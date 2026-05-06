@@ -204,7 +204,7 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 				l := operation.Get(b, loadedKey)
 				return []action.Action{
 					action.UnloadProgram{PinPath: l.PinPath},
-					action.RemoveMapsPins{PinPath: l.MapsDir},
+					action.RemoveMapsPins{PinPath: l.MapsDir.String()},
 				}
 			}),
 		),

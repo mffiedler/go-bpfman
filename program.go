@@ -109,7 +109,7 @@ type ProgramHandles struct {
 	// MapsDir when the program shares maps via map_owner_id).
 	// JSON tag preserved as map_pin_path for compatibility with
 	// existing on-disk records.
-	MapsDir string `json:"map_pin_path"`
+	MapsDir MapDir `json:"map_pin_path"`
 	// MapOwnerID nil means this program is not a shared-map consumer of another
 	// program; pointer + omitempty encodes that absence.
 	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`
@@ -241,7 +241,7 @@ func cloneMap[K comparable, V any](m map[K]V) map[K]V {
 // This is transient I/O boundary data, not stored in the DB.
 type LoadOutput struct {
 	PinPath        ProgPinPath     // where program was pinned
-	MapsDir        string          // where maps were pinned
+	MapsDir        MapDir          // where maps were pinned
 	Program        *kernel.Program // kernel info (ID, MapIDs, etc)
 	License        string          // from ELF, for GPL check
 	InferredType   ProgramType     // inferred from ELF if user didn't specify

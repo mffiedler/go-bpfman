@@ -241,14 +241,14 @@ func (RemoveProgPin) isAction() {}
 
 // RemoveLinkDir removes a link directory via BPFFS.RemoveLinkDir.
 type RemoveLinkDir struct {
-	Path string
+	Path bpfman.LinkDir
 }
 
 func (RemoveLinkDir) isAction() {}
 
 // RemoveMapDir removes a map directory via BPFFS.RemoveMapDir.
 type RemoveMapDir struct {
-	Path string
+	Path bpfman.MapDir
 }
 
 func (RemoveMapDir) isAction() {}
@@ -264,7 +264,7 @@ func (RemoveDispatcherProgPin) isAction() {}
 // RemoveDispatcherRevDir removes a dispatcher revision directory via
 // BPFFS.RemoveDispatcherRevDir.
 type RemoveDispatcherRevDir struct {
-	Path string
+	Path bpfman.DispatcherRevDir
 }
 
 func (RemoveDispatcherRevDir) isAction() {}

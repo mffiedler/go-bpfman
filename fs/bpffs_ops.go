@@ -70,15 +70,15 @@ func (b BPFFS) RemoveProgPin(path string) error {
 // RemoveLinkDir removes a link directory of the form:
 //
 //	{bpffs}/links/{program_id}
-func (b BPFFS) RemoveLinkDir(path string) error {
-	return b.removeNumericChildDir(b.Links(), path, "link dir")
+func (b BPFFS) RemoveLinkDir(p bpfman.LinkDir) error {
+	return b.removeNumericChildDir(b.Links(), p.String(), "link dir")
 }
 
 // RemoveMapDir removes a map directory of the form:
 //
 //	{bpffs}/maps/{program_id}
-func (b BPFFS) RemoveMapDir(path string) error {
-	return b.removeNumericChildDir(b.Maps(), path, "map dir")
+func (b BPFFS) RemoveMapDir(p bpfman.MapDir) error {
+	return b.removeNumericChildDir(b.Maps(), p.String(), "map dir")
 }
 
 // RemoveDispatcherProgPin removes a dispatcher program pin.
@@ -111,8 +111,8 @@ func (b BPFFS) RemoveDispatcherProgPin(path string) error {
 //
 // The directory is owned by bpfman and safe to delete when deemed
 // stale or orphaned.
-func (b BPFFS) RemoveDispatcherRevDir(path string) error {
-	path, err := b.cleanUnderMount(path)
+func (b BPFFS) RemoveDispatcherRevDir(p bpfman.DispatcherRevDir) error {
+	path, err := b.cleanUnderMount(p.String())
 	if err != nil {
 		return err
 	}

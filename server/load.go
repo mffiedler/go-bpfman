@@ -124,7 +124,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 			Bytecode:   req.Bytecode,
 			Metadata:   req.Metadata,
 			GlobalData: req.GlobalData,
-			MapPinPath: prog.Record.Handles.MapsDir,
+			MapPinPath: prog.Record.Handles.MapsDir.String(),
 		}
 		// Set MapOwnerId for dependent programs
 		if prog.Record.Load.MapOwnerID() != 0 {

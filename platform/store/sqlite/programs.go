@@ -127,7 +127,7 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 		GPLCompatible: sp.gplCompatible != 0,
 		Handles: bpfman.ProgramHandles{
 			PinPath:    bpfman.ProgPinPath(sp.pinPath),
-			MapsDir:    mapPinPathVal,
+			MapsDir:    bpfman.MapDir(mapPinPathVal),
 			MapOwnerID: mapOwnerIDPtr,
 		},
 		Meta: bpfman.ProgramMeta{
@@ -230,7 +230,7 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 	}
 	var mapPinPath sql.NullString
 	if metadata.Handles.MapsDir != "" {
-		mapPinPath = sql.NullString{String: metadata.Handles.MapsDir, Valid: true}
+		mapPinPath = sql.NullString{String: metadata.Handles.MapsDir.String(), Valid: true}
 	}
 	var attachFunc, owner, description, license sql.NullString
 	if metadata.Load.AttachFunc() != "" {

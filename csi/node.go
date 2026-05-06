@@ -159,7 +159,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	// 2. Get the maps directory from the program (may differ from PinPath if sharing maps)
-	mapPinPath := metadata.Handles.MapsDir
+	mapPinPath := metadata.Handles.MapsDir.String()
 	if mapPinPath == "" {
 		return nil, status.Errorf(codes.Internal, "program %q has no map pin path", programName)
 	}

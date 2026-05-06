@@ -82,6 +82,32 @@ type MapPinPath string
 // String returns the path as a string.
 func (p MapPinPath) String() string { return string(p) }
 
+// MapDir is a per-program maps directory within a bpffs. The newtype
+// distinguishes it from LinkDir, DispatcherRevDir, and other bpffs
+// directory domains so that directory-removal actions cannot be fed
+// a path of the wrong domain (e.g. RemoveLinkDir on a maps dir).
+type MapDir string
+
+// String returns the path as a string.
+func (d MapDir) String() string { return string(d) }
+
+// LinkDir is a per-program links directory within a bpffs. The
+// newtype prevents feeding a directory of another domain to
+// RemoveLinkDir or other link-directory primitives.
+type LinkDir string
+
+// String returns the path as a string.
+func (d LinkDir) String() string { return string(d) }
+
+// DispatcherRevDir is a per-revision dispatcher directory within a
+// bpffs (containing the dispatcher program pin and extension link
+// pins for one revision). The newtype prevents confusion with
+// per-program LinkDir/MapDir.
+type DispatcherRevDir string
+
+// String returns the path as a string.
+func (d DispatcherRevDir) String() string { return string(d) }
+
 // NewLinkPath wraps a string-derived path (LinkPath or plain string)
 // into a *LinkPath, returning nil if empty. The generic constraint
 // lets callers pass the already-typed bpfman.LinkPath without a cast,

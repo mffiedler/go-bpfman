@@ -370,7 +370,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			DB:         state,
 			KernelProg: dr.ProgPresence.InKernel,
 			RevDir:     revDir,
-			ProgPin:    progPin.String(),
+			ProgPin:    progPin,
 			LinkCount:  -1,
 		}
 
@@ -383,7 +383,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
 			ds.LinkPinExist = &linkExists
-			ds.LinkPin = bpffs.DispatcherLinkPath(dt, nsid, ifindex).String()
+			ds.LinkPin = bpffs.DispatcherLinkPath(dt, nsid, ifindex)
 		}
 
 		// TC filter check from gathered facts.

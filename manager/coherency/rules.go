@@ -509,11 +509,11 @@ Category: gc-dispatcher`,
 						continue
 					}
 					actions := []action.Action{
-						action.RemoveDispatcherProgPin{Path: d.ProgPin},
+						action.RemoveDispatcherProgPin{Path: d.ProgPin.String()},
 						action.RemoveDispatcherRevDir{Path: d.RevDir},
 					}
 					if d.DB.Type == dispatcher.DispatcherTypeXDP {
-						actions = append(actions, action.RemoveDispatcherLinkPin{Path: d.LinkPin})
+						actions = append(actions, action.RemoveDispatcherLinkPin{Path: d.LinkPin.String()})
 					}
 					actions = append(actions, action.DeleteDispatcher{
 						Type: d.DB.Type, Nsid: d.DB.Nsid, Ifindex: d.DB.Ifindex,
@@ -600,7 +600,7 @@ Category: gc-orphan-pin`,
 		actionFn: func(o FsOrphan) action.Action {
 			switch o.Kind {
 			case OrphanDispatcherDir:
-				return action.RemoveDispatcherRevDir{Path: o.Path}
+				return action.RemoveDispatcherRevDir{Path: bpfman.DispatcherRevDir(o.Path)}
 			case OrphanDispatcherLink:
 				return action.RemoveDispatcherLinkPin{Path: o.Path}
 			default:
@@ -758,9 +758,9 @@ func orphanPinAction(o FsOrphan) action.Action {
 	case OrphanProgPin:
 		return action.RemoveProgPin{Path: o.Path}
 	case OrphanLinkDir:
-		return action.RemoveLinkDir{Path: o.Path}
+		return action.RemoveLinkDir{Path: bpfman.LinkDir(o.Path)}
 	case OrphanMapDir:
-		return action.RemoveMapDir{Path: o.Path}
+		return action.RemoveMapDir{Path: bpfman.MapDir(o.Path)}
 	default:
 		panic(fmt.Sprintf("orphanPinAction: unexpected kind %s", o.Kind))
 	}

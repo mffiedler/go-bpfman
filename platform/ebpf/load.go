@@ -147,7 +147,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// When set, we load the owner's pinned maps and pass them as replacements
 	// so this program uses the same map instances.
 	var mapReplacements map[string]*ebpf.Map
-	var ownerMapsDir string
+	var ownerMapsDir bpfman.MapDir
 	mapOwnerID := spec.MapOwnerID()
 
 	if mapOwnerID != 0 {
@@ -253,7 +253,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// Determine the maps directory to use:
 	// - If sharing maps (map_owner_id set): use owner's mapsDir, don't create/pin maps
 	// - Otherwise: create our own mapsDir and pin maps
-	var mapsDir string
+	var mapsDir bpfman.MapDir
 	if mapOwnerID != 0 {
 		// Use owner's maps directory - maps are already pinned there
 		mapsDir = ownerMapsDir
@@ -288,7 +288,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				sharedPath := bpffs.SharedMapPin(name)
 				if err := m.Pin(sharedPath.String()); err != nil {
 					cleanup()
-					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+					if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin shared map %q: %w", name, err)
@@ -311,7 +311,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				clone, cloneErr := m.Clone()
 				if cloneErr != nil {
 					cleanup()
-					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+					if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to clone map %q for per-program pin: %w", name, cloneErr)
@@ -319,7 +319,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				if err := clone.Pin(mapPinPath.String()); err != nil {
 					clone.Close()
 					cleanup()
-					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+					if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
@@ -328,7 +328,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 			} else {
 				if err := m.Pin(mapPinPath.String()); err != nil {
 					cleanup()
-					if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+					if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
 						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 					}
 					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin map %q: %w", name, err)
@@ -342,7 +342,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	if !ok {
 		cleanup()
 		if mapOwnerID == 0 {
-			if rmErr := bpffs.SafeRemoveAll(mapsDir); rmErr != nil {
+			if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
 				k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
 			}
 		}
