@@ -50,7 +50,7 @@ func buildProgramRecord(
 		GPLCompatible: bpfman.IsGPLCompatible(loaded.License),
 		Handles: bpfman.ProgramHandles{
 			PinPath:    loaded.PinPath,
-			MapPinPath: loaded.MapsDir,
+			MapsDir:    loaded.MapsDir,
 			MapOwnerID: mapOwnerID,
 		},
 		Meta: bpfman.ProgramMeta{

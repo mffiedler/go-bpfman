@@ -247,7 +247,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 		require.Len(t, programs, 1)
 		p := programs[0]
 		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
-		return prog{p.Status.Kernel.ID, p.Record.Handles.MapPinPath}
+		return prog{p.Status.Kernel.ID, p.Record.Handles.MapsDir}
 	}
 
 	attachProg := func(p prog, priority int) bpfman.LinkRecord {
@@ -470,7 +470,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 
 		progs = append(progs, loadedProg{
 			kernelID:   prog.Status.Kernel.ID,
-			mapPinPath: prog.Record.Handles.MapPinPath,
+			mapPinPath: prog.Record.Handles.MapsDir,
 		})
 	}
 
@@ -574,7 +574,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 
 				progs = append(progs, loadedProg{
 					kernelID:   prog.Status.Kernel.ID,
-					mapPinPath: prog.Record.Handles.MapPinPath,
+					mapPinPath: prog.Record.Handles.MapsDir,
 				})
 			}
 
@@ -663,7 +663,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 
 		progs = append(progs, loadedProg{
 			kernelID:   prog.Status.Kernel.ID,
-			mapPinPath: prog.Record.Handles.MapPinPath,
+			mapPinPath: prog.Record.Handles.MapsDir,
 		})
 	}
 
@@ -741,7 +741,7 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 		require.Len(t, programs, 1)
 		p := programs[0]
 		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
-		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapsDir}
 	}
 
 	attach := func(p prog, priority int) {
@@ -835,7 +835,7 @@ func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
 		require.Len(t, programs, 1)
 		p := programs[0]
 		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
-		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapsDir}
 	}
 
 	// Attach WITHOUT specifying proceed-on, relying on the manager
@@ -911,7 +911,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 		require.Len(t, programs, 1)
 		p := programs[0]
 		t.Cleanup(func() { env.Unload(context.Background(), p.Status.Kernel.ID) })
-		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapPinPath}
+		return prog{id: p.Status.Kernel.ID, mapPinPath: p.Record.Handles.MapsDir}
 	}
 
 	attach := func(p prog, priority int) {
@@ -990,7 +990,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, programs, 1)
 		p := programs[0]
-		return prog{p.Status.Kernel.ID, p.Record.Handles.MapPinPath}
+		return prog{p.Status.Kernel.ID, p.Record.Handles.MapsDir}
 	}
 
 	progA := load()

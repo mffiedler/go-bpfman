@@ -264,7 +264,7 @@ func formatProgramTable(prog bpfman.Program) string {
 	} else {
 		specFields = append(specFields, "    Map Owner ID:\tNone")
 	}
-	specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapPinPath))
+	specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapsDir))
 	if len(p.Meta.Metadata) > 0 {
 		specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(p.Meta.Metadata)))
 	} else {
@@ -805,7 +805,7 @@ func formatLoadedProgramsTable(programs []bpfman.Program) string {
 		} else {
 			specFields = append(specFields, "    Map Owner ID:\tNone")
 		}
-		specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapPinPath))
+		specFields = append(specFields, fmt.Sprintf("    Map Pin Path:\t%s", p.Handles.MapsDir))
 		if len(p.Meta.Metadata) > 0 {
 			specFields = append(specFields, fmt.Sprintf("    Metadata:\t%s", formatMetadata(p.Meta.Metadata)))
 		} else {

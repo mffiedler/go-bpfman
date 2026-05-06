@@ -111,7 +111,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				r := operation.Get(b, extResultKey)
 				return []action.Action{
-					action.DetachLink{PinPath: bpfman.LinkPath(r.pinPath)},
+					action.DetachLink{PinPath: r.pinPath},
 				}
 			}),
 		),

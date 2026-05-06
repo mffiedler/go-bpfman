@@ -47,7 +47,7 @@ func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListRespons
 			Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
 			Metadata:   prog.Record.Meta.Metadata,
 			GlobalData: prog.Record.Load.GlobalData(),
-			MapPinPath: prog.Record.Handles.MapPinPath,
+			MapPinPath: prog.Record.Handles.MapsDir,
 		}
 		if prog.Record.Handles.MapOwnerID != nil {
 			v := uint32(*prog.Record.Handles.MapOwnerID)
@@ -107,7 +107,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
 		Metadata:   prog.Record.Meta.Metadata,
 		GlobalData: prog.Record.Load.GlobalData(),
-		MapPinPath: prog.Record.Handles.MapPinPath,
+		MapPinPath: prog.Record.Handles.MapsDir,
 		Links:      linkIDs,
 	}
 	if prog.Record.Handles.MapOwnerID != nil {

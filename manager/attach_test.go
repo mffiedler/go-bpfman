@@ -977,19 +977,19 @@ func TestMapSharing_MultiProgramLoad_FirstIsOwner(t *testing.T) {
 
 	// Verify map sharing through pin directories
 	// First program owns maps - uses its own ID in pin dir
-	assert.Contains(t, prog1.Record.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog1.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
 		"first program should have its own maps directory")
 
 	// Second and third programs share maps with owner
-	assert.Contains(t, prog2.Record.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog2.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
 		"second program should share owner's maps directory")
-	assert.Contains(t, prog3.Record.Handles.MapPinPath, fmt.Sprintf("/%d", ownerID),
+	assert.Contains(t, prog3.Record.Handles.MapsDir, fmt.Sprintf("/%d", ownerID),
 		"third program should share owner's maps directory")
 
 	// All should have same pin dir
-	assert.Equal(t, prog1.Record.Handles.MapPinPath, prog2.Record.Handles.MapPinPath,
+	assert.Equal(t, prog1.Record.Handles.MapsDir, prog2.Record.Handles.MapsDir,
 		"second program should have same PinDir as owner")
-	assert.Equal(t, prog1.Record.Handles.MapPinPath, prog3.Record.Handles.MapPinPath,
+	assert.Equal(t, prog1.Record.Handles.MapsDir, prog3.Record.Handles.MapsDir,
 		"third program should have same PinDir as owner")
 }
 
@@ -1011,7 +1011,7 @@ func TestMapSharing_SingleProgram_NoMapOwner(t *testing.T) {
 	require.NoError(t, err, "Load should succeed")
 
 	// Single program owns its own maps - pin dir contains its own ID
-	assert.Contains(t, prog.Record.Handles.MapPinPath, fmt.Sprintf("/%d", prog.Record.ProgramID),
+	assert.Contains(t, prog.Record.Handles.MapsDir, fmt.Sprintf("/%d", prog.Record.ProgramID),
 		"single program should have its own maps directory")
 }
 
@@ -1103,7 +1103,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 	ownerID := prog1.Record.ProgramID
-	ownerMapPinPath := prog1.Record.Handles.MapPinPath
+	ownerMapPinPath := prog1.Record.Handles.MapsDir
 
 	// Load XDP program with MapOwnerID pointing to first
 	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "xdp_stats", bpfman.ProgramTypeXDP)
@@ -1113,7 +1113,7 @@ func TestPinBasedExtension_MultiProgram_XDPAttach_UsesOwnPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify XDP program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapPinPath,
+	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir,
 		"XDP program should have same MapPinPath as owner")
 
 	// Attach the XDP program
@@ -1146,7 +1146,7 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	prog1, err := fix.Load(ctx, spec1, manager.LoadOpts{})
 	require.NoError(t, err)
 	ownerID := prog1.Record.ProgramID
-	ownerMapPinPath := prog1.Record.Handles.MapPinPath
+	ownerMapPinPath := prog1.Record.Handles.MapsDir
 
 	// Load TC program with MapOwnerID pointing to first
 	spec2, err := bpfman.NewLoadSpec(fix.BytecodeFile("multi.o"), "tc_stats", bpfman.ProgramTypeTC)
@@ -1156,7 +1156,7 @@ func TestPinBasedExtension_MultiProgram_TCAttach_UsesOwnPinPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify TC program has same MapPinPath as owner
-	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapPinPath,
+	assert.Equal(t, ownerMapPinPath, prog2.Record.Handles.MapsDir,
 		"TC program should have same MapPinPath as owner")
 
 	// Attach the TC program

@@ -152,7 +152,7 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 
 				progs = append(progs, loadedProg{
 					kernelID:   prog.Status.Kernel.ID,
-					mapPinPath: prog.Record.Handles.MapPinPath,
+					mapPinPath: prog.Record.Handles.MapsDir,
 				})
 			}
 

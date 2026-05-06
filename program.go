@@ -103,8 +103,13 @@ func ParseProgramType(s string) (ProgramType, error) {
 // ProgramHandles contains stable filesystem handles for management.
 // These are outputs of load, used for lifecycle operations.
 type ProgramHandles struct {
-	PinPath    ProgPinPath `json:"pin_path"`
-	MapPinPath string      `json:"map_pin_path"` // empty when the program has no maps
+	PinPath ProgPinPath `json:"pin_path"`
+	// MapsDir is the directory where this program's maps are pinned
+	// (per-program when the program owns its maps, the owner's
+	// MapsDir when the program shares maps via map_owner_id).
+	// JSON tag preserved as map_pin_path for compatibility with
+	// existing on-disk records.
+	MapsDir string `json:"map_pin_path"`
 	// MapOwnerID nil means this program is not a shared-map consumer of another
 	// program; pointer + omitempty encodes that absence.
 	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`

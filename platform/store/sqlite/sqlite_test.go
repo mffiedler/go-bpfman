@@ -432,7 +432,7 @@ func TestMapOwnership_CountDependentPrograms(t *testing.T) {
 	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "kprobe_counter"
-	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	ownerProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
 
 	// Initially no dependents.
@@ -445,7 +445,7 @@ func TestMapOwnership_CountDependentPrograms(t *testing.T) {
 		depProg := testProgram()
 		depProg.Meta.Name = "dependent_" + string(rune('0'+i))
 		depProg.Handles.MapOwnerID = &ownerID
-		depProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100" // Same as owner
+		depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100" // Same as owner
 		require.NoError(t, store.Save(ctx, 100+i, depProg), "Save dependent %d failed", i)
 	}
 
@@ -476,14 +476,14 @@ func TestMapOwnership_ForeignKeyPreventsDeletingOwner(t *testing.T) {
 	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "owner"
-	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	ownerProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
 
 	// Create a dependent program.
 	depProg := testProgram()
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
-	depProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(101), depProg), "Save dependent failed")
 
 	// Attempt to delete the owner while dependent exists - should fail due to FK.
@@ -511,14 +511,14 @@ func TestMapOwnership_MapPinPathPersisted(t *testing.T) {
 	// Create a program with MapPinPath set.
 	programID := kernel.ProgramID(42)
 	prog := testProgram()
-	prog.Handles.MapPinPath = "/sys/fs/bpf/bpfman/42"
+	prog.Handles.MapsDir = "/sys/fs/bpf/bpfman/42"
 
 	require.NoError(t, store.Save(ctx, programID, prog), "Save failed")
 
 	// Retrieve and verify MapPinPath is persisted.
 	got, err := store.Get(ctx, programID)
 	require.NoError(t, err, "Get failed")
-	assert.Equal(t, "/sys/fs/bpf/bpfman/42", got.Handles.MapPinPath, "MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/42", got.Handles.MapsDir, "MapPinPath mismatch")
 }
 
 func TestMapOwnership_MapOwnerIDPersisted(t *testing.T) {
@@ -541,7 +541,7 @@ func TestMapOwnership_MapOwnerIDPersisted(t *testing.T) {
 	depProg := testProgram()
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
-	depProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 
 	require.NoError(t, store.Save(ctx, depID, depProg), "Save dependent failed")
 
@@ -565,7 +565,7 @@ func TestMapOwnership_ListIncludesMapFields(t *testing.T) {
 	ownerID := kernel.ProgramID(100)
 	ownerProg := testProgram()
 	ownerProg.Meta.Name = "owner"
-	ownerProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	ownerProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, ownerID, ownerProg), "Save owner failed")
 
 	// Create dependent.
@@ -573,7 +573,7 @@ func TestMapOwnership_ListIncludesMapFields(t *testing.T) {
 	depProg := testProgram()
 	depProg.Meta.Name = "dependent"
 	depProg.Handles.MapOwnerID = &ownerID
-	depProg.Handles.MapPinPath = "/sys/fs/bpf/bpfman/100"
+	depProg.Handles.MapsDir = "/sys/fs/bpf/bpfman/100"
 	require.NoError(t, store.Save(ctx, depID, depProg), "Save dependent failed")
 
 	// List all programs.
@@ -583,12 +583,12 @@ func TestMapOwnership_ListIncludesMapFields(t *testing.T) {
 
 	// Verify owner has MapPinPath but no MapOwnerID.
 	owner := programs[ownerID]
-	assert.Equal(t, "/sys/fs/bpf/bpfman/100", owner.Handles.MapPinPath, "owner MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/100", owner.Handles.MapsDir, "owner MapPinPath mismatch")
 	assert.Nil(t, owner.Handles.MapOwnerID, "owner should have no MapOwnerID")
 
 	// Verify dependent has both fields.
 	dep := programs[depID]
-	assert.Equal(t, "/sys/fs/bpf/bpfman/100", dep.Handles.MapPinPath, "dependent MapPinPath mismatch")
+	assert.Equal(t, "/sys/fs/bpf/bpfman/100", dep.Handles.MapsDir, "dependent MapPinPath mismatch")
 	require.NotNil(t, dep.Handles.MapOwnerID, "dependent should have MapOwnerID set")
 	assert.Equal(t, ownerID, *dep.Handles.MapOwnerID, "dependent MapOwnerID mismatch")
 }

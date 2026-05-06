@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cilium/ebpf/link"
+
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
