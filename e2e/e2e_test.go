@@ -420,7 +420,7 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 	}
 
 	// Wave 1: tp, kp, krp -> detach krp, drain. Wave 2: tp, kp -> detach kp, drain. Wave 3: tp.
-	mapIDTp := mapIDByName(t, programs[0], plans[0].mapName)  // control: always attached
+	mapIDTp := mapIDByName(t, programs[0], plans[0].mapName) // control: always attached
 	mapIDKp := mapIDByName(t, programs[1], plans[1].mapName)
 	mapIDKrp := mapIDByName(t, programs[2], plans[2].mapName)
 	workload.Unlink(eventsPerWave)
@@ -446,9 +446,9 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 	workload.Unlink(eventsPerWave)
 
 	expectEvents := []uint64{
-		3*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.Probes),       // tp (always attached)
+		3*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.Probes),        // tp (always attached)
 		2*uint64(eventsPerWave) + uint64(qkrp.Probes) + uint64(qkp.EventsCounted), // kp
-		1*uint64(eventsPerWave) + uint64(qkrp.EventsCounted),                     // krp
+		1*uint64(eventsPerWave) + uint64(qkrp.EventsCounted),                      // krp
 	}
 
 	for i, prog := range programs {
@@ -3002,9 +3002,9 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 	env.AssertCleanState()
 
 	const (
-		xdpPass int32 = 2 // chain-continue under default
-		xdpDrop int32 = 1 // chain-continue here, packet dropped
-		eventsPer     = 5
+		xdpPass   int32 = 2 // chain-continue under default
+		xdpDrop   int32 = 1 // chain-continue here, packet dropped
+		eventsPer       = 5
 	)
 
 	type plan struct {
@@ -3079,9 +3079,9 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 	env.AssertCleanState()
 
 	const (
-		xdpPass int32 = 2 // chain-continue under default; excluded here
-		xdpDrop int32 = 1 // chain-continue under custom
-		eventsPer     = 5
+		xdpPass   int32 = 2 // chain-continue under default; excluded here
+		xdpDrop   int32 = 1 // chain-continue under custom
+		eventsPer       = 5
 	)
 
 	type plan struct {

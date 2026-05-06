@@ -11,10 +11,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
 	"hash/fnv"
 	iofs "io/fs"
 	"log/slog"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -38,15 +38,15 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
+	"github.com/frobware/go-bpfman/logging"
+	"github.com/frobware/go-bpfman/manager"
 	bpfnetns "github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 	"github.com/frobware/go-bpfman/platform/image/oci"
 	"github.com/frobware/go-bpfman/platform/image/verify"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/logging"
-	"github.com/frobware/go-bpfman/manager"
 )
 
 // bpfFS embeds the compiled BPF objects under testdata/bpf/ so the
@@ -830,7 +830,6 @@ type TestInterface struct {
 
 var testNameSeq atomic.Uint64
 
-
 // uniqueTestName generates a unique name for test network interfaces
 // and namespaces. The name starts with "b" and ends with "n" (the
 // first and last letters of "bpfman"), with 12 hex characters
@@ -878,8 +877,8 @@ type slotProvenance struct {
 // the test that leaked.
 var vethAddrPool = struct {
 	mu   sync.Mutex
-	used [128]bool         // index 0 unused; valid range is [1, 127]
-	free []uint32          // FIFO queue of free indices; head = oldest
+	used [128]bool // index 0 unused; valid range is [1, 127]
+	free []uint32  // FIFO queue of free indices; head = oldest
 	last [128]slotProvenance
 }{
 	free: func() []uint32 {
@@ -997,7 +996,7 @@ func vethAddrsForIndex(n uint32) (addrA, addrB, pingTarget string) {
 		panic(fmt.Sprintf("veth pair index %d out of range [1, 127]", n))
 	}
 	hostA := n*2 + 1 // 3, 5, 7, ...
-	hostB := n * 2    // 2, 4, 6, ...
+	hostB := n * 2   // 2, 4, 6, ...
 	addrA = fmt.Sprintf("198.51.100.%d/32", hostA)
 	addrB = fmt.Sprintf("198.51.100.%d/32", hostB)
 	pingTarget = fmt.Sprintf("198.51.100.%d", hostA)
@@ -1645,7 +1644,6 @@ func cleanupStaleTestDirs() error {
 
 	return nil
 }
-
 
 // validateStaleTestDir ensures path is safe to remove.
 func validateStaleTestDir(path, tempDir string) error {

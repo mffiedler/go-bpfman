@@ -371,14 +371,14 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 	// tuple values for every entry makes the drift attributable
 	// directly when the assertion fails.
 	type linkDump struct {
-		index    int
-		linkID   kernel.LinkID
-		priority int32
-		ifindex  uint32
+		index     int
+		linkID    kernel.LinkID
+		priority  int32
+		ifindex   uint32
 		direction bpfman.TCDirection
-		nsid     uint64
-		netns    string
-		position int32
+		nsid      uint64
+		netns     string
+		position  int32
 	}
 	dumps := make([]linkDump, 0, len(entries))
 	for i, entry := range entries {
