@@ -61,7 +61,7 @@ func (k *kernelAdapter) AttachTracepoint(ctx context.Context, progPinPath, group
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPin,
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -124,24 +124,25 @@ func (k *kernelAdapter) AttachKprobe(ctx context.Context, progPinPath, fnName st
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPin,
+		PinPath:    linkPinPath,
 	}, nil
 }
 
 // AttachFentry attaches a pinned fentry program to a kernel function.
 // The target function was specified at load time and is stored in the program.
 func (k *kernelAdapter) AttachFentry(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
-	return k.attachTracing(ctx, progPinPath, fnName, string(linkPinPath))
+	return k.attachTracing(ctx, progPinPath, fnName, linkPinPath)
 }
 
 // AttachFexit attaches a pinned fexit program to a kernel function.
 // The target function was specified at load time and is stored in the program.
 func (k *kernelAdapter) AttachFexit(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
-	return k.attachTracing(ctx, progPinPath, fnName, string(linkPinPath))
+	return k.attachTracing(ctx, progPinPath, fnName, linkPinPath)
 }
 
 // attachTracing is the shared implementation for fentry and fexit attachment.
-func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error) {
+func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+	linkPin := string(linkPinPath)
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -177,8 +178,8 @@ func (k *kernelAdapter) attachTracing(ctx context.Context, progPinPath, fnName, 
 	// pin-removal alone does not run perf_event_free_bpf_prog;
 	// the program stays attached to the perf_event until the
 	// link object is explicitly Closed.
-	if linkPinPath != "" {
-		k.trackLink(linkPinPath, lnk)
+	if linkPin != "" {
+		k.trackLink(linkPin, lnk)
 	} else {
 		lnk.Close()
 	}

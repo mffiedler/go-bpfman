@@ -464,7 +464,7 @@ func (r LinkRecord) KernelLinkID() kernel.LinkID { return r.ID }
 type AttachOutput struct {
 	LinkID     kernel.LinkID // kernel-assigned link ID, or synthetic ID for perf_event
 	KernelLink *kernel.Link  // kernel info, nil for synthetic links
-	PinPath    string        // where link was pinned, empty if ephemeral
+	PinPath    LinkPath      // where link was pinned, empty if ephemeral
 	Synthetic  bool          // true if this is a synthetic link (no kernel link)
 }
 

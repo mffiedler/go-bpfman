@@ -45,7 +45,7 @@ func (k *kernelAdapter) AttachUprobeLocal(ctx context.Context, progPinPath, targ
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: kernelLink,
-		PinPath:    linkPin,
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -84,7 +84,7 @@ func (k *kernelAdapter) AttachUprobeContainer(ctx context.Context, scope lock.Wr
 	return bpfman.AttachOutput{
 		LinkID:     syntheticID,
 		KernelLink: nil, // No kernel link for perf_event-based uprobes
-		PinPath:    linkPin,
+		PinPath:    linkPinPath,
 		Synthetic:  true,
 	}, nil
 }

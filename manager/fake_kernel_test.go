@@ -614,7 +614,7 @@ func (f *fakeKernel) AttachTracepoint(_ context.Context, progPinPath, group, nam
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -641,7 +641,7 @@ func (f *fakeKernel) AttachXDP(_ context.Context, progPinPath string, ifindex in
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -674,7 +674,7 @@ func (f *fakeKernel) AttachKprobe(_ context.Context, progPinPath, fnName string,
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -707,7 +707,7 @@ func (f *fakeKernel) AttachUprobeLocal(_ context.Context, progPinPath, target, f
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -737,7 +737,7 @@ func (f *fakeKernel) AttachUprobeContainer(_ context.Context, _ lock.WriterScope
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: nil, // No kernel link for perf_event-based uprobes
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 		Synthetic:  true,
 	}, nil
 }
@@ -765,7 +765,7 @@ func (f *fakeKernel) AttachFentry(_ context.Context, progPinPath, fnName string,
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -792,7 +792,7 @@ func (f *fakeKernel) AttachFexit(_ context.Context, progPinPath, fnName string, 
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 
@@ -872,7 +872,7 @@ func (f *fakeKernel) AttachXDPExtension(_ context.Context, spec dispatcher.XDPEx
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(spec.LinkPinPath),
+		PinPath:    spec.LinkPinPath,
 	}, nil
 }
 
@@ -966,7 +966,7 @@ func (f *fakeKernel) AttachTCExtension(_ context.Context, spec dispatcher.TCExte
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(spec.LinkPinPath),
+		PinPath:    spec.LinkPinPath,
 	}, nil
 }
 
@@ -1002,7 +1002,7 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction, progra
 	return bpfman.AttachOutput{
 		LinkID:     linkID,
 		KernelLink: &kl,
-		PinPath:    string(linkPinPath),
+		PinPath:    linkPinPath,
 	}, nil
 }
 

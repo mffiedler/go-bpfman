@@ -420,7 +420,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPin,
+		PinPath:    spec.LinkPinPath,
 	}, nil
 }
 
@@ -517,7 +517,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		result = bpfman.AttachOutput{
 			LinkID:     kernel.LinkID(linkInfo.ID),
 			KernelLink: ToKernelLink(linkInfo),
-			PinPath:    linkPin,
+			PinPath:    linkPinPath,
 		}
 		return nil
 	})
