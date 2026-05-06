@@ -690,8 +690,21 @@ bpfman-build: bpfman-fmt bpfman-vet bpfman-compile
 bpfman-fmt:
 	@find . -type f -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -w
 
-bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
+# Run go vet over every build-tag combination present in the tree.
+# `go vet ./...` honours the active tag set; a single pass under the
+# default tags would skip files behind //go:build e2e (entire e2e/
+# package), //go:build nsenter (CGO-namespaced helper), and the
+# cgo_sqlite alternate driver path.  Cover them in three passes:
+#   - Default pass: most code plus the modernc.org/sqlite branch
+#     (!cgo_sqlite).
+#   - e2e+nsenter pass: adds the build-tagged files; supersets the
+#     default pass for everything not gated by cgo_sqlite.
+#   - cgo_sqlite pass: covers the mattn/go-sqlite3 alternate, which
+#     is mutually exclusive with !cgo_sqlite.
+bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	go vet ./...
+	go vet -tags 'e2e,nsenter' ./...
+	go vet -tags 'cgo_sqlite,e2e,nsenter' ./...
 
 # Compile bpfman. Depends on the dispatcher BPF embeds because
 # the dispatcher Go package's go:embed directives need them at
