@@ -191,7 +191,7 @@ func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcH
 		}
 	} else {
 		linkPinPath := bpffs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
-		actions = append(actions, action.RemovePin{Path: linkPinPath})
+		actions = append(actions, action.DetachLink{PinPath: linkPinPath})
 	}
 
 	actions = append(actions,
