@@ -682,8 +682,13 @@ doc-text:
 # ---------------------------------------------------------------------------
 bpfman-build: bpfman-fmt bpfman-vet bpfman-compile
 
+# Format every .go file in the tree.  `go fmt ./...` skips files that
+# don't compile under the default build tags (e.g. anything behind
+# //go:build e2e), so we'd silently miss formatting drift in e2e/.
+# gofmt invoked directly on the file list ignores build tags and
+# formats every source file, matching what ci-check-fmt expects.
 bpfman-fmt:
-	go fmt ./...
+	@find . -type f -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -w
 
 bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
 	go vet ./...
