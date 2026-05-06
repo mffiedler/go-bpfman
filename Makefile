@@ -404,7 +404,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity build-image-openshift \
-	ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts \
+	ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -453,6 +453,7 @@ help:
 	@echo "  ci-build                    Compile bpfman binary inside the CI container"
 	@echo "  ci-check-fmt                Verify Go formatting is tidy (matches CI check-fmt)"
 	@echo "  ci-check-vendor             Verify go.mod and vendor are tidy (matches CI check-vendor)"
+	@echo "  ci-check-vet                Run go vet over every build-tag combo (matches CI check-vet)"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
 	@echo "  ci-lint                     Run \`make lint\` inside the CI container"
 	@echo "  ci-test                     Run unit tests inside the CI container"
@@ -680,7 +681,7 @@ doc-text:
 # CGO is required for the ns/nsenter package which uses a C constructor to call
 # setns() before Go runtime starts (needed for uprobe container attachment).
 # ---------------------------------------------------------------------------
-bpfman-build: bpfman-fmt bpfman-vet bpfman-compile
+bpfman-build: bpfman-fmt bpfman-compile
 
 # Format every .go file in the tree.  `go fmt ./...` skips files that
 # don't compile under the default build tags (e.g. anything behind
@@ -1034,6 +1035,14 @@ ci-check-fmt:
 ci-lint: ci-image
 	$(CI_RUN) make clean-bpf lint
 
+# Reproduce the workflow's check-vet job locally. Runs every vet
+# pass (default + e2e/nsenter + cgo_sqlite) inside the CI container
+# so the BPF embeds and CGO toolchain match what CI sees. Symmetric
+# with ci-check-fmt and ci-check-vendor: a separate gate, not a
+# side effect of bpfman-build.
+ci-check-vet: ci-image
+	$(CI_RUN) make clean-bpf bpfman-vet
+
 # Reproduce the workflow's unit-test job locally. Source is
 # mounted into the container so the test process sees the
 # current working tree exactly as a host build would. Same Go
@@ -1087,7 +1096,7 @@ ci-test-e2e-scripts:
 # attach failures to REPL counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+ci: ci-check-vendor ci-check-fmt ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1106,7 +1115,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: clean-bpf
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
