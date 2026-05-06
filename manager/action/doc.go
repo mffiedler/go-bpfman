@@ -22,7 +22,7 @@
 //     RemoveDispatcherProgPin,
 //     RemoveDispatcherRevDir, RemoveDispatcherLinkPin
 //   - Rebuild:    RebuildXDPDispatcher, RebuildTCDispatcher,
-//     RebuildDispatcherForDetach, CleanupEmptyDispatcher
+//     RebuildDispatcherForDetach, RemoveDispatcher
 //
 // Rebuild actions are cross-subsystem operations that the executor
 // handles internally (kernel + store with inline rollback).  They

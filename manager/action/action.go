@@ -299,14 +299,17 @@ type AttachTCX struct {
 
 func (AttachTCX) isAction() {}
 
-// CleanupEmptyDispatcher checks whether the given dispatcher has any
-// remaining extension links and, if empty, removes it from both the
-// kernel and the store. A no-op when extensions remain.
-type CleanupEmptyDispatcher struct {
+// RemoveDispatcher removes a dispatcher from the kernel, the bpffs,
+// and the store. The action is the single domain-level intent for
+// dispatcher teardown: the executor owns the type-specific recipe
+// (XDP link detach vs. TC filter delete) and the ordering between
+// kernel detach and filesystem cleanup. A no-op when extension
+// links remain.
+type RemoveDispatcher struct {
 	Key dispatcher.Key
 }
 
-func (CleanupEmptyDispatcher) isAction() {}
+func (RemoveDispatcher) isAction() {}
 
 // Shared map pin actions - reference-counted cleanup for PinByName maps
 

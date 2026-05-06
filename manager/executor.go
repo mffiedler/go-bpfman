@@ -191,8 +191,8 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.RebuildDispatcherForDetach:
 		return nil, e.rebuildDispatcherForDetach(ctx, a.Key, a.ExcludeLinkID)
 
-	case action.CleanupEmptyDispatcher:
-		return nil, e.rebuildDispatcherForDetach(ctx, a.Key, 0)
+	case action.RemoveDispatcher:
+		return nil, e.removeDispatcherIfEmpty(ctx, a.Key)
 
 	default:
 		return nil, fmt.Errorf("unknown action type: %T", a)

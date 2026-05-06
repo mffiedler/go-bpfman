@@ -670,6 +670,27 @@ func (e *executor) rebuildTCDispatcher(
 	}, nil
 }
 
+// removeDispatcherIfEmpty removes a dispatcher when no extension
+// links remain in its snapshot, and is a no-op otherwise. This is
+// the implementation of action.RemoveDispatcher --- the manager's
+// single domain intent for nominal empty-dispatcher teardown.
+//
+// It is intentionally *not* the same as
+// rebuildDispatcherForDetach(ctx, key, 0): that helper rebuilds
+// the dispatcher with all current members when none are excluded,
+// which would be a wasteful no-op behavioural surprise for an
+// action whose contract is "remove if empty".
+func (e *executor) removeDispatcherIfEmpty(ctx context.Context, key dispatcher.Key) error {
+	snap, err := e.store.GetDispatcherSnapshot(ctx, key)
+	if err != nil {
+		return fmt.Errorf("get dispatcher snapshot: %w", err)
+	}
+	if len(snap.Members) != 0 {
+		return nil
+	}
+	return e.removeEmptyDispatcher(ctx, snap)
+}
+
 // rebuildDispatcherForDetach rebuilds the dispatcher after an
 // extension has been detached. If no extensions remain, the
 // dispatcher is removed entirely.
@@ -990,7 +1011,42 @@ func (e *executor) rebuildTCForDetach(
 	return nil
 }
 
-// removeEmptyDispatcher removes a dispatcher when no extensions remain.
+// removeEmptyDispatcher removes a dispatcher when no extensions
+// remain. It orchestrates a fixed sequence of named lifecycle
+// operations directly, rather than building a generic action list
+// and handing it to ExecuteAll.
+//
+// Failure contract for destructive teardown:
+//
+//  1. Kernel-side detach (XDP outer link or TC filter) is the point
+//     of no return. If it fails, packets can still reach the
+//     dispatcher program; the function aborts teardown and surfaces
+//     the error so the caller can retry or hand off to repair.
+//
+//  2. Once kernel detach succeeds, the dispatcher is no longer
+//     attached and the remaining steps are bpffs/store hygiene.
+//     They run best-effort: any failure is recorded and joined
+//     into the returned error, but later steps still execute.
+//     Stopping at the first cleanup failure would only leave more
+//     residue without any compensating value, since the kernel
+//     attachment is already gone and re-creation is not a
+//     well-defined inverse for destructive teardown. Coherency,
+//     doctor, and GC repair residual state.
+//
+// This contract was implicit and wrong in the previous action-list
+// version: ExecuteAll stops on first error, which for teardown
+// meant a transient bpffs failure could leave the store row
+// referencing a kernel attachment that no longer existed --- the
+// worst of both worlds. Naming the steps and stating the contract
+// here makes the intended semantics reviewable.
+//
+// Ordering is also load-bearing for safety. Splitting the kernel
+// detach step across layers is what allowed the ARM detach race
+// fixed in commit 32024a9 (a manager-level recipe emitted
+// RemovePin --- os.Remove on a bpffs path --- where the XDP outer
+// link required BPF_LINK_DETACH). The lifecycle methods are
+// private to the executor; nothing outside this file can compose
+// them differently.
 func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.DispatcherSnapshot) error {
 	key := snap.Key
 	e.logger.DebugContext(ctx, "removing empty dispatcher",
@@ -1000,39 +1056,125 @@ func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.Disp
 		"program_id", snap.Runtime.ProgramID,
 		"link_id", snap.Runtime.LinkID)
 
-	// Convert snapshot to dispatcher.State for
-	// computeDispatcherCleanupActions (to be migrated later).
-	state := dispatcher.State{
-		Type:      key.Type,
-		Nsid:      key.Nsid,
-		Ifindex:   key.Ifindex,
-		Revision:  snap.Revision,
-		ProgramID: snap.Runtime.ProgramID,
-	}
-	if snap.Runtime.LinkID != nil {
-		state.LinkID = *snap.Runtime.LinkID
-	}
-	if snap.Runtime.FilterPriority != nil {
-		state.Priority = *snap.Runtime.FilterPriority
-	}
-
-	// For TC dispatchers, query the kernel for the filter handle.
-	var tcHandle uint32
-	if key.Type == dispatcher.DispatcherTypeTCIngress || key.Type == dispatcher.DispatcherTypeTCEgress {
-		parent := dispatcher.TCParentHandle(key.Type)
-		handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, state.Priority)
-		if err != nil {
-			e.logger.WarnContext(ctx, "failed to find TC filter handle", "error", err)
-		} else {
-			tcHandle = handle
+	// Point of no return.
+	if isTCDispatcherType(key.Type) {
+		if err := e.detachTCDispatcherFilter(ctx, key, snap.Runtime.FilterPriority); err != nil {
+			return fmt.Errorf("detach TC dispatcher filter: %w", err)
+		}
+	} else {
+		if err := e.detachXDPOuterLink(ctx, key); err != nil {
+			return fmt.Errorf("detach XDP outer link: %w", err)
 		}
 	}
 
-	cleanupActions := computeDispatcherCleanupActions(e.bpffs, state, tcHandle)
-	if err := e.ExecuteAll(ctx, cleanupActions); err != nil {
-		return fmt.Errorf("execute dispatcher cleanup actions: %w", err)
+	// Best-effort cleanup. Each step is independent; later steps
+	// run even if earlier steps fail. Failures join into the
+	// returned error and are repaired by coherency/doctor/GC.
+	var errs []error
+	if err := e.removeDispatcherProgPin(ctx, key, snap.Revision); err != nil {
+		errs = append(errs, fmt.Errorf("remove dispatcher program pin: %w", err))
 	}
-	return nil
+	if err := e.removeDispatcherRevisionDir(ctx, key, snap.Revision); err != nil {
+		errs = append(errs, fmt.Errorf("remove dispatcher revision directory: %w", err))
+	}
+	if err := e.deleteDispatcherSnapshot(ctx, key); err != nil {
+		errs = append(errs, fmt.Errorf("delete dispatcher snapshot: %w", err))
+	}
+	return errors.Join(errs...)
+}
+
+// detachXDPOuterLink performs BPF_LINK_DETACH on the dispatcher's
+// outer XDP link, then unpins it. The kernel detaches the link from
+// the netdev synchronously before this returns, which is what
+// stops packets reaching the dispatcher program. RemovePin alone
+// is not equivalent: dropping the userland reference does not
+// detach the link, and the netdev continues to run the dispatcher
+// until RCU grace and deferred work complete.
+func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) error {
+	linkPinPath := e.bpffs.DispatcherLinkPath(key.Type, key.Nsid, key.Ifindex)
+	return e.kernel.DetachLink(ctx, linkPinPath)
+}
+
+// detachTCDispatcherFilter removes the dispatcher's TC filter via
+// RTM_DELTFILTER. TC dispatchers predate BPF links and are managed
+// through legacy netlink. The filter handle is queried from the
+// kernel because it is assigned at install time and is not
+// persisted in the snapshot.
+//
+// This path is a deliberate weakening of the failure contract
+// described on removeEmptyDispatcher. For XDP, kernel detach is
+// fail-fast because BPF_LINK_DETACH has a single, well-defined
+// outcome: either the link is detached or it is not. For TC, the
+// handle lookup and filter delete go through netlink and the lookup
+// can fail for two reasons that the current API does not
+// distinguish:
+//
+//   - The filter is genuinely already gone (a previous teardown
+//     attempt got this far, or coherency cleaned it up). This is
+//     the expected case for retries and is safe to treat as
+//     success.
+//   - A transient netlink error (rtnetlink dump failure, ENOBUFS,
+//     etc.). Treating this as success is incorrect, but failing the
+//     whole teardown also blocks the bpffs and store hygiene that
+//     would let coherency notice the residue and repair it.
+//
+// We log and proceed in both cases, accepting the risk of leaving
+// a stranded TC filter on transient errors. Coherency and the
+// doctor are responsible for catching residual filters. This
+// asymmetry should disappear once FindTCFilterHandle distinguishes
+// not-found from transient errors via a sentinel; the path of
+// least resistance is to do that alongside step 3 of the
+// hardening ladder, where TC dispatcher resources gain typed
+// representation.
+func (e *executor) detachTCDispatcherFilter(ctx context.Context, key dispatcher.Key, filterPriority *uint16) error {
+	var priority uint16
+	if filterPriority != nil {
+		priority = *filterPriority
+	}
+	parent := dispatcher.TCParentHandle(key.Type)
+	handle, err := e.kernel.FindTCFilterHandle(ctx, int(key.Ifindex), parent, priority)
+	if err != nil {
+		e.logger.WarnContext(ctx, "failed to find TC filter handle; assuming already gone",
+			"ifindex", key.Ifindex,
+			"parent", fmt.Sprintf("%x", parent),
+			"priority", priority,
+			"error", err)
+		return nil
+	}
+	if handle == 0 {
+		return nil
+	}
+	return e.kernel.DetachTCFilter(ctx, int(key.Ifindex), "", parent, priority, handle)
+}
+
+// removeDispatcherProgPin unpins the dispatcher program. After the
+// outer link or TC filter is gone the kernel program has no
+// attachment, and dropping the bpffs pin lets the kernel reclaim
+// it once the userland refcount hits zero.
+func (e *executor) removeDispatcherProgPin(ctx context.Context, key dispatcher.Key, revision uint32) error {
+	progPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, revision)
+	return e.kernel.RemovePin(ctx, progPinPath.String())
+}
+
+// removeDispatcherRevisionDir removes the per-revision directory
+// containing the extension link pins.
+func (e *executor) removeDispatcherRevisionDir(_ context.Context, key dispatcher.Key, revision uint32) error {
+	revDir := e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, revision)
+	return e.bpffs.RemoveDispatcherRevDir(revDir)
+}
+
+// deleteDispatcherSnapshot removes the dispatcher row from the
+// store. This is the last step: by the time it runs, the kernel
+// attachment is gone and the bpffs is clean, so a failure here
+// only leaves a stale row that coherency can repair.
+func (e *executor) deleteDispatcherSnapshot(ctx context.Context, key dispatcher.Key) error {
+	return e.store.DeleteDispatcherSnapshot(ctx, key)
+}
+
+// isTCDispatcherType reports whether the dispatcher type is one of
+// the TC variants (ingress or egress).
+func isTCDispatcherType(t dispatcher.DispatcherType) bool {
+	return t == dispatcher.DispatcherTypeTCIngress || t == dispatcher.DispatcherTypeTCEgress
 }
 
 // isNotFound returns true if the error wraps platform.ErrRecordNotFound.

@@ -143,11 +143,11 @@ func TestDescribe(t *testing.T) {
 			contains: "rebuild xdp dispatcher for detach nsid=1 ifindex=2 excluding link 99",
 		},
 		{
-			name: "CleanupEmptyDispatcher",
-			action: CleanupEmptyDispatcher{Key: dispatcher.Key{
+			name: "RemoveDispatcher",
+			action: RemoveDispatcher{Key: dispatcher.Key{
 				Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2,
 			}},
-			contains: "cleanup empty xdp dispatcher nsid=1 ifindex=2",
+			contains: "remove xdp dispatcher nsid=1 ifindex=2",
 		},
 
 		// GC filesystem cleanup
@@ -250,7 +250,7 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		RemoveDispatcherRevDir{},
 		RemoveDispatcherLinkPin{},
 		RemoveStagingDir{},
-		CleanupEmptyDispatcher{},
+		RemoveDispatcher{},
 		RebuildXDPDispatcher{},
 		RebuildTCDispatcher{},
 		RebuildDispatcherForDetach{},

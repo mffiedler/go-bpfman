@@ -7,7 +7,6 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -158,7 +157,7 @@ func collectDispatcherKeys(links []bpfman.LinkRecord) map[dispatcher.Key]struct{
 // but do not prevent cleanup of remaining dispatchers.
 func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[dispatcher.Key]struct{}) {
 	for key := range dispatchers {
-		if err := m.executor.Execute(ctx, action.CleanupEmptyDispatcher{Key: key}); err != nil {
+		if err := m.executor.Execute(ctx, action.RemoveDispatcher{Key: key}); err != nil {
 			m.logger.WarnContext(ctx, "dispatcher cleanup failed",
 				"type", key.Type,
 				"nsid", key.Nsid,
@@ -166,43 +165,4 @@ func (m *Manager) cleanupEmptyDispatchers(ctx context.Context, dispatchers map[d
 				"error", err)
 		}
 	}
-}
-
-// computeDispatcherCleanupActions computes the actions needed to fully
-// remove a dispatcher. It is only called when no extension links remain.
-// For TC dispatchers, tcHandle is the kernel-assigned filter handle
-// (queried at detach time); it is zero for XDP dispatchers.
-func computeDispatcherCleanupActions(bpffs fs.BPFFS, state dispatcher.State, tcHandle uint32) []action.Action {
-	progPinPath := bpffs.DispatcherProgPath(state.Type, state.Nsid, state.Ifindex, state.Revision)
-	revisionDir := bpffs.DispatcherRevisionDir(state.Type, state.Nsid, state.Ifindex, state.Revision)
-	var actions []action.Action
-
-	// TC dispatchers use legacy netlink and must be detached via
-	// RTM_DELTFILTER. XDP dispatchers use BPF links and are
-	// detached by removing the link pin.
-	if state.Type == dispatcher.DispatcherTypeTCIngress || state.Type == dispatcher.DispatcherTypeTCEgress {
-		if tcHandle != 0 {
-			actions = append(actions, action.DetachTCFilter{
-				Ifindex:  int(state.Ifindex),
-				Parent:   dispatcher.TCParentHandle(state.Type),
-				Priority: state.Priority,
-				Handle:   tcHandle,
-			})
-		}
-	} else {
-		linkPinPath := bpffs.DispatcherLinkPath(state.Type, state.Nsid, state.Ifindex)
-		actions = append(actions, action.DetachLink{PinPath: linkPinPath})
-	}
-
-	actions = append(actions,
-		action.RemovePin{Path: progPinPath.String()},
-		action.RemoveDispatcherRevDir{Path: revisionDir},
-		action.DeleteDispatcher{
-			Type:    state.Type,
-			Nsid:    state.Nsid,
-			Ifindex: state.Ifindex,
-		},
-	)
-
-	return actions
 }
