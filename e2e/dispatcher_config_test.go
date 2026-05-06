@@ -210,7 +210,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 			require.NoError(t, err)
 			linkPin := env.Layout.BPFFS().DispatcherLinkPath(
 				dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
-			_, err = os.Stat(string(linkPin))
+			_, err = os.Stat(linkPin.String())
 			require.NoError(t, err, "XDP link pin should exist: %s", linkPin)
 		},
 
@@ -220,7 +220,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 			require.NoError(t, err)
 			linkPin := env.Layout.BPFFS().DispatcherLinkPath(
 				dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
-			_, err = os.Stat(string(linkPin))
+			_, err = os.Stat(linkPin.String())
 			assert.True(t, os.IsNotExist(err),
 				"XDP link pin should not exist: %s", linkPin)
 		},

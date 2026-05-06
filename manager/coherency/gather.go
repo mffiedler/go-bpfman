@@ -370,7 +370,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			DB:         state,
 			KernelProg: dr.ProgPresence.InKernel,
 			RevDir:     revDir,
-			ProgPin:    string(progPin),
+			ProgPin:    progPin.String(),
 			LinkCount:  -1,
 		}
 

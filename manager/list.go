@@ -178,7 +178,7 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 			mapStatuses = append(mapStatuses, bpfman.MapStatus{
 				Map:     km,
 				PinPath: pinPath,
-				Present: scanner.PathExists(string(pinPath)),
+				Present: scanner.PathExists(pinPath.String()),
 			})
 		}
 	}

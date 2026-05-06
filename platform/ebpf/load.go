@@ -166,7 +166,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 				continue
 			}
 			mapPath := bpffs.MapPinPath(mapOwnerID, name)
-			m, err := ebpf.LoadPinnedMap(string(mapPath), nil)
+			m, err := ebpf.LoadPinnedMap(mapPath.String(), nil)
 			if err != nil {
 				// Clean up any maps we've already loaded
 				for _, loaded := range mapReplacements {
