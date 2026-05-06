@@ -186,7 +186,7 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 
 		// Pin link to the stable path (outside revision directory).
 		if err := pinWithRetry(spec.LinkPinPath, lnk.Pin); err != nil {
-			if rmErr := k.RemovePin(ctx, spec.ProgPinPath.String()); rmErr != nil {
+			if rmErr := k.RemovePin(ctx, spec.ProgPinPath); rmErr != nil {
 				k.logger.Warn("failed to remove program pin during cleanup",
 					"path", spec.ProgPinPath, "error", rmErr)
 			}

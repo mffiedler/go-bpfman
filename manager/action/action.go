@@ -180,23 +180,15 @@ func (DeleteDispatcher) isAction() {}
 // typed bpfman.LinkPath so the action cannot be invoked on an
 // arbitrary path; only layout helpers that produce link pin paths
 // can satisfy the type. This makes it a build error to feed a
-// non-link path here, and conversely to feed a link path to
-// action.RemovePin (which is plain os.Remove and would leave the
+// non-link path here, and conversely to feed a link path to the
+// program-pin removal path on KernelOperations (RemovePin takes a
+// bpfman.ProgPinPath, which is plain os.Remove and would leave a
 // kernel link live until RCU teardown completes).
 type DetachLink struct {
 	PinPath bpfman.LinkPath
 }
 
 func (DetachLink) isAction() {}
-
-// Filesystem actions - operations on bpffs pins
-
-// RemovePin removes a pin from bpffs. Ignores "not exist" errors.
-type RemovePin struct {
-	Path string
-}
-
-func (RemovePin) isAction() {}
 
 // DetachTCFilter removes a legacy TC BPF filter via netlink.
 // Used to detach TC dispatchers which are attached as clsact filters
@@ -234,7 +226,7 @@ func (RemoveProgramDir) isAction() {}
 
 // RemoveProgPin removes a program pin via BPFFS.RemoveProgPin.
 type RemoveProgPin struct {
-	Path string
+	Path bpfman.ProgPinPath
 }
 
 func (RemoveProgPin) isAction() {}
@@ -256,7 +248,7 @@ func (RemoveMapDir) isAction() {}
 // RemoveDispatcherProgPin removes a dispatcher program pin via
 // BPFFS.RemoveDispatcherProgPin.
 type RemoveDispatcherProgPin struct {
-	Path string
+	Path bpfman.ProgPinPath
 }
 
 func (RemoveDispatcherProgPin) isAction() {}
@@ -272,7 +264,7 @@ func (RemoveDispatcherRevDir) isAction() {}
 // RemoveDispatcherLinkPin removes a dispatcher link pin via
 // BPFFS.RemoveDispatcherLinkPin.
 type RemoveDispatcherLinkPin struct {
-	Path string
+	Path bpfman.LinkPath
 }
 
 func (RemoveDispatcherLinkPin) isAction() {}

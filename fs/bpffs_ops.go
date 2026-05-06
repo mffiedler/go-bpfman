@@ -47,8 +47,8 @@ func (b BPFFS) removeDir(path string) error {
 //	{bpffs}/prog_{program_id}
 //
 // The suffix must be a valid numeric program ID.
-func (b BPFFS) RemoveProgPin(path string) error {
-	path, err := b.cleanUnderMount(path)
+func (b BPFFS) RemoveProgPin(p bpfman.ProgPinPath) error {
+	path, err := b.cleanUnderMount(p.String())
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,8 @@ func (b BPFFS) RemoveMapDir(p bpfman.MapDir) error {
 //
 // We validate both the revision directory name pattern and the pin
 // filename (must be "dispatcher").
-func (b BPFFS) RemoveDispatcherProgPin(path string) error {
-	path, err := b.cleanUnderMount(path)
+func (b BPFFS) RemoveDispatcherProgPin(p bpfman.ProgPinPath) error {
+	path, err := b.cleanUnderMount(p.String())
 	if err != nil {
 		return err
 	}
@@ -125,8 +125,8 @@ func (b BPFFS) RemoveDispatcherRevDir(p bpfman.DispatcherRevDir) error {
 // RemoveDispatcherLinkPin removes a dispatcher link pin of the form:
 //
 //	{bpffs}/{type}/dispatcher_{nsid}_{ifindex}_link
-func (b BPFFS) RemoveDispatcherLinkPin(path string) error {
-	path, err := b.cleanUnderMount(path)
+func (b BPFFS) RemoveDispatcherLinkPin(p bpfman.LinkPath) error {
+	path, err := b.cleanUnderMount(p.String())
 	if err != nil {
 		return err
 	}

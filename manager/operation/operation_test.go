@@ -7,13 +7,19 @@ import (
 	"log/slog"
 	"testing"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/manager/action"
 )
 
-// testAction creates a labelled action using action.RemovePin. The
-// Path field serves as the label for matching in the fake executor.
+// testAction creates a labelled action for matching in the fake
+// executor. It uses action.RemoveProgPin as a structural stand-in
+// because the action.Action interface is sealed within the action
+// package; a local test-only action cannot implement it. The
+// operation tests do not care about RemoveProgPin's production
+// semantics --- only that the action carries a path-shaped field
+// that can serve as a label.
 func testAction(label string) action.Action {
-	return action.RemovePin{Path: label}
+	return action.RemoveProgPin{Path: bpfman.ProgPinPath(label)}
 }
 
 // fakeExecutor lets tests configure per-action success or failure.
@@ -31,12 +37,13 @@ func (f *fakeExecutor) failOn(label string, err error) {
 }
 
 func (f *fakeExecutor) Execute(_ context.Context, a action.Action) error {
-	rp, ok := a.(action.RemovePin)
+	rp, ok := a.(action.RemoveProgPin)
 	if !ok {
 		return fmt.Errorf("unexpected action type: %T", a)
 	}
-	f.executed = append(f.executed, rp.Path)
-	if err, ok := f.errs[rp.Path]; ok {
+	label := rp.Path.String()
+	f.executed = append(f.executed, label)
+	if err, ok := f.errs[label]; ok {
 		return err
 	}
 	return nil

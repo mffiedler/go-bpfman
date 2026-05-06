@@ -248,7 +248,7 @@ func (k *stubKernel) DetachLink(ctx context.Context, linkPinPath bpfman.LinkPath
 }
 
 // PinRemover
-func (k *stubKernel) RemovePin(ctx context.Context, path string) error {
+func (k *stubKernel) RemovePin(ctx context.Context, p bpfman.ProgPinPath) error {
 	panic("stubKernel.RemovePin not implemented")
 }
 

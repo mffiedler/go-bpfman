@@ -108,11 +108,6 @@ func TestDescribe(t *testing.T) {
 			contains: "detach link at /sys/fs/bpf/bpfman/link_10",
 		},
 		{
-			name:     "RemovePin",
-			action:   RemovePin{Path: "/sys/fs/bpf/bpfman/prog_42"},
-			contains: "remove pin /sys/fs/bpf/bpfman/prog_42",
-		},
-		{
 			name:     "PublishBytecode",
 			action:   PublishBytecode{ProgramID: kernel.ProgramID(42)},
 			contains: "publish bytecode for program 42",
@@ -239,7 +234,6 @@ func TestDescribe_Exhaustive(t *testing.T) {
 		AttachTCX{},
 		DeleteDispatcher{},
 		DetachLink{},
-		RemovePin{},
 		DetachTCFilter{},
 		PublishBytecode{},
 		RemoveProgramDir{},

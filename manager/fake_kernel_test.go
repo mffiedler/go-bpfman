@@ -1006,7 +1006,8 @@ func (f *fakeKernel) AttachTCX(_ context.Context, ifindex int, direction string,
 	}, nil
 }
 
-func (f *fakeKernel) RemovePin(_ context.Context, path string) error {
+func (f *fakeKernel) RemovePin(_ context.Context, p bpfman.ProgPinPath) error {
+	path := p.String()
 	f.mu.Lock()
 	f.removePins = append(f.removePins, path)
 	f.mu.Unlock()

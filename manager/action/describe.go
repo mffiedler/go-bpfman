@@ -46,8 +46,6 @@ func Describe(a Action) string {
 	// Link/pin actions
 	case DetachLink:
 		return fmt.Sprintf("detach link at %s", a.PinPath)
-	case RemovePin:
-		return fmt.Sprintf("remove pin %s", a.Path)
 	case PublishBytecode:
 		return fmt.Sprintf("publish bytecode for program %d", a.ProgramID)
 

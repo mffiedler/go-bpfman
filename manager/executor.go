@@ -113,9 +113,6 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 	case action.DetachLink:
 		return nil, e.kernel.DetachLink(ctx, a.PinPath)
 
-	case action.RemovePin:
-		return nil, e.kernel.RemovePin(ctx, a.Path)
-
 	case action.DetachTCFilter:
 		return nil, e.kernel.DetachTCFilter(ctx, a.Ifindex, a.Ifname, a.Parent, a.Priority, a.Handle)
 

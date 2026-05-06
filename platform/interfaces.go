@@ -324,11 +324,15 @@ type LinkDetacher interface {
 	DetachLink(ctx context.Context, linkPinPath bpfman.LinkPath) error
 }
 
-// PinRemover removes pins from bpffs.
+// PinRemover removes program pins from bpffs.
 type PinRemover interface {
-	// RemovePin removes a pin or empty directory from bpffs.
-	// Returns nil if the path does not exist.
-	RemovePin(ctx context.Context, path string) error
+	// RemovePin removes a program pin from bpffs. The bpfman.ProgPinPath
+	// type ensures only program pin paths --- not link pins, map pins,
+	// or arbitrary strings --- can be passed in. For a kernel-attached
+	// BPF link, DetachLink is required because dropping the userland
+	// reference does not synchronously detach the link from its
+	// attach point. Returns nil if the path does not exist.
+	RemovePin(ctx context.Context, p bpfman.ProgPinPath) error
 }
 
 // TCFilterDetacher removes legacy TC BPF filters via netlink.

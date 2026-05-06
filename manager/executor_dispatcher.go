@@ -149,7 +149,7 @@ func (e *executor) rebuildXDPDispatcher(
 
 	// Track cleanup for rollback on failure.
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath.String()); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new dispatcher pin failed",
 				"path", dispProgPinPath, "error", rbErr)
 		}
@@ -450,7 +450,7 @@ func (e *executor) rebuildTCDispatcher(
 	}
 
 	cleanupNewDispatcher := func() {
-		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath.String()); rbErr != nil {
+		if rbErr := e.kernel.RemovePin(ctx, dispProgPinPath); rbErr != nil {
 			e.logger.ErrorContext(ctx, "rollback: remove new TC dispatcher pin failed",
 				"path", dispProgPinPath, "error", rbErr)
 		}
@@ -1153,7 +1153,7 @@ func (e *executor) detachTCDispatcherFilter(ctx context.Context, key dispatcher.
 // it once the userland refcount hits zero.
 func (e *executor) removeDispatcherProgPin(ctx context.Context, key dispatcher.Key, revision uint32) error {
 	progPinPath := e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, revision)
-	return e.kernel.RemovePin(ctx, progPinPath.String())
+	return e.kernel.RemovePin(ctx, progPinPath)
 }
 
 // removeDispatcherRevisionDir removes the per-revision directory

@@ -290,9 +290,11 @@ func pinWithRetry[P ~string](path P, pin func(string) error) error {
 	return fmt.Errorf("pin %s: directory removed between retries", s)
 }
 
-// RemovePin removes a pin or empty directory from bpffs.
+// RemovePin removes a program pin from bpffs. The typed parameter
+// rejects link, map, and arbitrary-string paths at compile time.
 // Returns nil if the path does not exist.
-func (k *kernelAdapter) RemovePin(ctx context.Context, path string) error {
+func (k *kernelAdapter) RemovePin(ctx context.Context, p bpfman.ProgPinPath) error {
+	path := p.String()
 	k.logger.Debug("removing pin", "path", path)
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
