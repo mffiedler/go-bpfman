@@ -136,7 +136,7 @@ func TestTracepoint_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "tp_count"))
 	t.Logf("tracepoint: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"tracepoint counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -294,7 +294,7 @@ func TestMultiProgTracepoint_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "tp_"+plans[i].suffix+"_count"))
 		t.Logf("tp_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"tp_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -455,7 +455,7 @@ func TestMultiProgMixed_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, plans[i].mapName))
 		t.Logf("%s: events=%d weight=%d want=%d got=%d", plans[i].name, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].name, expectEvents[i], plans[i].weight, want)
 	}
@@ -583,7 +583,7 @@ func TestMultiProgKprobe_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mkp_"+plans[i].suffix+"_count"))
 		t.Logf("mkp_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mkp_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -702,7 +702,7 @@ func TestKprobe_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "kp_count"))
 	t.Logf("kprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"kprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -845,7 +845,7 @@ func TestMultiProgKretprobe_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mkp_"+plans[i].suffix+"_count"))
 		t.Logf("mkp_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mkp_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -966,7 +966,7 @@ func TestKretprobe_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "kp_count"))
 	t.Logf("kretprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"kretprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -1103,7 +1103,7 @@ func TestMultiProgUprobe_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mup_"+plans[i].suffix+"_count"))
 		t.Logf("mup_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mup_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -1227,7 +1227,7 @@ func TestUprobe_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "up_count"))
 	t.Logf("uprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"uprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -1364,7 +1364,7 @@ func TestMultiProgUretprobe_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mup_"+plans[i].suffix+"_count"))
 		t.Logf("mup_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mup_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -1488,7 +1488,7 @@ func TestUretprobe_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "up_count"))
 	t.Logf("uretprobe: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"uretprobe counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -1648,7 +1648,7 @@ func TestMultiProgFentry_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mfe_"+plans[i].suffix+"_count"))
 		t.Logf("mfe_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mfe_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -1770,7 +1770,7 @@ func TestFentry_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events+qa.EventsCounted) * weights[0]
 	got := readArrayCounterByID(t, mapIDFe)
 	t.Logf("fentry: events=%d weight=%d want=%d got=%d", events+qa.EventsCounted, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"fentry counter should equal events(%d) * weight(%d) = %d", events+qa.EventsCounted, weights[0], want)
 
 	// When: detach
@@ -1923,7 +1923,7 @@ func TestMultiProgFexit_LoadAttachDetachUnload(t *testing.T) {
 		want := expectEvents[i] * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mfx_"+plans[i].suffix+"_count"))
 		t.Logf("mfx_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, expectEvents[i], plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mfx_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, expectEvents[i], plans[i].weight, want)
 	}
@@ -2045,7 +2045,7 @@ func TestFexit_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events+qa.EventsCounted) * weights[0]
 	got := readArrayCounterByID(t, mapIDFx)
 	t.Logf("fexit: events=%d weight=%d want=%d got=%d", events+qa.EventsCounted, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"fexit counter should equal events(%d) * weight(%d) = %d", events+qa.EventsCounted, weights[0], want)
 
 	// When: detach
@@ -2145,7 +2145,7 @@ func TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, plans[i].mapName))
 		t.Logf("%s: events=%d weight=%d want=%d got=%d", plans[i].name, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"%s should equal events(%d) * weight(%d) = %d",
 			plans[i].name, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2235,7 +2235,7 @@ func TestMultiProgTC_AllProceed_CustomProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mtcv_"+plans[i].suffix+"_count"))
 		t.Logf("mtcv_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mtcv_%s should equal events(%d) * weight(%d) = %d (custom proceed-on includes OK)",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2315,7 +2315,7 @@ func TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mtcv_"+plans[i].suffix+"_count"))
 		t.Logf("mtcv_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mtcv_%s should equal events(%d) * weight(%d) = %d (custom proceed-on excludes PIPE)",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2403,7 +2403,7 @@ func TestMultiProgTC_AllProceed_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mtc_"+plans[i].suffix+"_count"))
 		t.Logf("mtc_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mtc_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2549,7 +2549,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "tc_count"))
 	t.Logf("tc: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"tc counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -2652,7 +2652,7 @@ func TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, plans[i].mapName))
 		t.Logf("%s: events=%d weight=%d want=%d got=%d", plans[i].name, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"%s should equal events(%d) * weight(%d) = %d",
 			plans[i].name, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2749,7 +2749,7 @@ func TestMultiProgTCX_AllProceed_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mtcx_"+plans[i].suffix+"_count"))
 		t.Logf("mtcx_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mtcx_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -2871,7 +2871,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "tcx_count"))
 	t.Logf("tcx: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"tcx counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -2965,7 +2965,7 @@ func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, plans[i].mapName))
 		t.Logf("%s: events=%d weight=%d want=%d got=%d", plans[i].name, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"%s should equal events(%d) * weight(%d) = %d",
 			plans[i].name, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -3054,7 +3054,7 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mxdv_"+plans[i].suffix+"_count"))
 		t.Logf("mxdv_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mxdv_%s should equal events(%d) * weight(%d) = %d (custom proceed-on includes DROP)",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -3132,7 +3132,7 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mxdv_"+plans[i].suffix+"_count"))
 		t.Logf("mxdv_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mxdv_%s should equal events(%d) * weight(%d) = %d (custom proceed-on excludes PASS)",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -3219,7 +3219,7 @@ func TestMultiProgXDP_AllProceed_DefaultProceedOn(t *testing.T) {
 		want := plans[i].expectEvents * plans[i].weight
 		got := readArrayCounterByID(t, mapIDByName(t, prog, "mxdp_"+plans[i].suffix+"_count"))
 		t.Logf("mxdp_%s: events=%d weight=%d want=%d got=%d", plans[i].suffix, plans[i].expectEvents, plans[i].weight, want, got)
-		require.Equal(t, want, got,
+		requireCounterEqual(t, want, got,
 			"mxdp_%s should equal events(%d) * weight(%d) = %d after staggered detach",
 			plans[i].suffix, plans[i].expectEvents, plans[i].weight, want)
 	}
@@ -3343,7 +3343,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	want := uint64(events) * weights[0]
 	got := readArrayCounterByID(t, mapIDByName(t, prog, "xdp_count"))
 	t.Logf("xdp: events=%d weight=%d want=%d got=%d", events, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"xdp counter should equal events(%d) * weight(%d) = %d", events, weights[0], want)
 
 	// When: detach
@@ -3532,7 +3532,7 @@ func TestFexit_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
 	got := readArrayCounterByID(t, mapIDFx)
 	t.Logf("fexit: events=%d weight=%d want=%d got=%d",
 		events+qa.EventsCounted, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"fexit counter on private slot %s should equal events(%d) * weight(%d) = %d",
 		slot.Func, events+qa.EventsCounted, weights[0], want)
 
@@ -3592,7 +3592,7 @@ func TestFentry_KmodSlot_LoadAttachDetachUnload(t *testing.T) {
 	got := readArrayCounterByID(t, mapIDFe)
 	t.Logf("fentry: events=%d weight=%d want=%d got=%d",
 		events+qa.EventsCounted, weights[0], want, got)
-	require.Equal(t, want, got,
+	requireCounterEqual(t, want, got,
 		"fentry counter on private slot %s should equal events(%d) * weight(%d) = %d",
 		slot.Func, events+qa.EventsCounted, weights[0], want)
 

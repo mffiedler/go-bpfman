@@ -1776,9 +1776,24 @@ func assertCounterQuiet(t *testing.T, prog bpfman.Program, mapName string, fire 
 	before := readArrayCounterByID(t, mapID)
 	fire()
 	after := readArrayCounterByID(t, mapID)
-	require.Equal(t, before, after,
-		"counter %q should be quiet after detach (before=%d after=%d, delta=%d)",
-		mapName, before, after, after-before)
+	requireCounterEqual(t, before, after,
+		"counter %q should be quiet after detach", mapName)
+}
+
+// requireCounterEqual asserts want == got and, on mismatch, prints
+// both sides plus the delta in decimal.  testify's require.Equal
+// renders uint64 mismatches through spew which prefixes them with
+// 0x; the surrounding test diagnostics (events, weights, before/
+// after counts) are decimal, so the hex/decimal split makes failure
+// triage harder than it needs to be.  Using a plain t.Fatalf keeps
+// every number in one base.
+func requireCounterEqual(t *testing.T, want, got uint64, format string, args ...any) {
+	t.Helper()
+	if want == got {
+		return
+	}
+	prefix := fmt.Sprintf(format, args...)
+	t.Fatalf("%s: want=%d got=%d delta=%d", prefix, want, got, int64(got)-int64(want))
 }
 
 // ActiveResult is what waitProgramActive reports back. Mirror of
