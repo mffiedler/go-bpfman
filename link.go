@@ -64,9 +64,12 @@ type LinkPath string
 // String returns the path as a string.
 func (p LinkPath) String() string { return string(p) }
 
-// NewLinkPath creates a *LinkPath from a string, returning nil if empty.
-// This is a convenience function for converting optional string pin paths.
-func NewLinkPath(s string) *LinkPath {
+// NewLinkPath wraps a string-derived path (LinkPath or plain string)
+// into a *LinkPath, returning nil if empty. The generic constraint
+// lets callers pass the already-typed bpfman.LinkPath without a cast,
+// while keeping the SQLite-boundary case ergonomic where rows arrive
+// as plain strings.
+func NewLinkPath[P ~string](s P) *LinkPath {
 	if s == "" {
 		return nil
 	}

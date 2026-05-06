@@ -41,7 +41,8 @@ func attachXDPWithRetry(opts link.XDPOptions) (link.Link, error) {
 }
 
 // AttachXDP attaches a pinned XDP program to a network interface.
-func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error) {
+func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error) {
+	linkPin := string(linkPinPath)
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -63,10 +64,10 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	cleanup := func() {
 		if !success {
 			lnk.Close()
-			if linkPinPath != "" {
-				if err := os.Remove(linkPinPath); err != nil && !os.IsNotExist(err) {
+			if linkPin != "" {
+				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
 					k.logger.Warn("failed to remove pinned link during cleanup",
-						"path", linkPinPath, "error", err)
+						"path", linkPin, "error", err)
 				}
 			}
 		}
@@ -74,9 +75,9 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	defer cleanup()
 
 	// Pin the link if a path is provided
-	if linkPinPath != "" {
-		if err := pinWithRetry(lnk, linkPinPath); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin link to %s: %w", linkPinPath, err)
+	if linkPin != "" {
+		if err := pinWithRetry(linkPin, lnk.Pin); err != nil {
+			return bpfman.AttachOutput{}, fmt.Errorf("pin link to %s: %w", linkPin, err)
 		}
 	}
 
@@ -95,7 +96,7 @@ func (k *kernelAdapter) AttachXDP(ctx context.Context, progPinPath string, ifind
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    linkPinPath,
+		PinPath:    linkPin,
 	}, nil
 }
 
@@ -177,14 +178,14 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 		result.LinkID = kernel.LinkID(linkInfo.ID)
 
 		// Pin dispatcher program to the revision-specific path.
-		if err := pinWithRetry(dispatcherProg, spec.ProgPinPath); err != nil {
+		if err := pinWithRetry(spec.ProgPinPath, dispatcherProg.Pin); err != nil {
 			lnk.Close()
 			return fmt.Errorf("pin dispatcher program to %s: %w", spec.ProgPinPath, err)
 		}
 		result.DispatcherPin = spec.ProgPinPath
 
 		// Pin link to the stable path (outside revision directory).
-		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
+		if err := pinWithRetry(spec.LinkPinPath, lnk.Pin); err != nil {
 			if rmErr := k.RemovePin(ctx, spec.ProgPinPath); rmErr != nil {
 				k.logger.Warn("failed to remove program pin during cleanup",
 					"path", spec.ProgPinPath, "error", rmErr)
@@ -209,8 +210,8 @@ func (k *kernelAdapter) AttachXDPDispatcher(ctx context.Context, spec dispatcher
 // UpdateXDPDispatcherLink atomically updates an existing XDP
 // dispatcher's BPF link to point to a new dispatcher program.
 // This is used during rebuild to swap from old to new dispatcher.
-func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath, newProgPinPath string) error {
-	lnk, err := link.LoadPinnedLink(linkPinPath, nil)
+func (k *kernelAdapter) UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath string) error {
+	lnk, err := link.LoadPinnedLink(string(linkPinPath), nil)
 	if err != nil {
 		return fmt.Errorf("load pinned link %s: %w", linkPinPath, err)
 	}
@@ -262,7 +263,7 @@ func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatc
 		return 0, fmt.Errorf("failed to get dispatcher program ID from kernel")
 	}
 
-	if err := pinWithRetry(dispatcherProg, progPinPath); err != nil {
+	if err := pinWithRetry(progPinPath, dispatcherProg.Pin); err != nil {
 		return 0, fmt.Errorf("pin dispatcher program to %s: %w", progPinPath, err)
 	}
 
@@ -275,7 +276,8 @@ func (k *kernelAdapter) LoadAndPinXDPDispatcher(ctx context.Context, cfg dispatc
 
 // CreateXDPLink creates an XDP link from a pinned dispatcher program
 // to a network interface, optionally in a specific network namespace.
-func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*platform.XDPDispatcherResult, error) {
+func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*platform.XDPDispatcherResult, error) {
+	linkPin := string(linkPinPath)
 	prog, err := ebpf.LoadPinnedProgram(progPinPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("load pinned program %s: %w", progPinPath, err)
@@ -324,9 +326,9 @@ func (k *kernelAdapter) CreateXDPLink(ctx context.Context, progPinPath string, i
 			return fmt.Errorf("get link info: %w", err)
 		}
 
-		if err := pinWithRetry(lnk, linkPinPath); err != nil {
+		if err := pinWithRetry(linkPin, lnk.Pin); err != nil {
 			lnk.Close()
-			return fmt.Errorf("pin link to %s: %w", linkPinPath, err)
+			return fmt.Errorf("pin link to %s: %w", linkPin, err)
 		}
 
 		lnk.Close()
@@ -353,6 +355,7 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
+	linkPin := string(spec.LinkPinPath)
 
 	// Load the pinned dispatcher to use as attach target.
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
@@ -382,10 +385,10 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	cleanup := func() {
 		if !success {
 			lnk.Close()
-			if spec.LinkPinPath != "" {
-				if err := os.Remove(spec.LinkPinPath); err != nil && !os.IsNotExist(err) {
+			if linkPin != "" {
+				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
 					k.logger.Warn("failed to remove pinned extension link during cleanup",
-						"path", spec.LinkPinPath, "error", err)
+						"path", linkPin, "error", err)
 				}
 			}
 		}
@@ -393,9 +396,9 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	defer cleanup()
 
 	// Pin the link if path provided.
-	if spec.LinkPinPath != "" {
-		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin extension link to %s: %w", spec.LinkPinPath, err)
+	if linkPin != "" {
+		if err := pinWithRetry(linkPin, lnk.Pin); err != nil {
+			return bpfman.AttachOutput{}, fmt.Errorf("pin extension link to %s: %w", linkPin, err)
 		}
 	}
 
@@ -415,6 +418,6 @@ func (k *kernelAdapter) AttachXDPExtension(ctx context.Context, spec dispatcher.
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    spec.LinkPinPath,
+		PinPath:    linkPin,
 	}, nil
 }

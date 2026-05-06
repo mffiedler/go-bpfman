@@ -156,7 +156,7 @@ func (k *kernelAdapter) AttachTCDispatcher(ctx context.Context, spec dispatcher.
 		}
 		result.DispatcherID = kernel.ProgramID(progID)
 
-		if err := pinWithRetry(dispatcherProg, spec.ProgPinPath); err != nil {
+		if err := pinWithRetry(spec.ProgPinPath, dispatcherProg.Pin); err != nil {
 			return fmt.Errorf("pin TC dispatcher program to %s: %w", spec.ProgPinPath, err)
 		}
 		result.DispatcherPin = spec.ProgPinPath
@@ -253,7 +253,7 @@ func (k *kernelAdapter) LoadAndPinTCDispatcher(ctx context.Context, cfg dispatch
 		return 0, fmt.Errorf("failed to get TC dispatcher program ID from kernel")
 	}
 
-	if err := pinWithRetry(dispatcherProg, progPinPath); err != nil {
+	if err := pinWithRetry(progPinPath, dispatcherProg.Pin); err != nil {
 		return 0, fmt.Errorf("pin TC dispatcher program to %s: %w", progPinPath, err)
 	}
 
@@ -357,6 +357,7 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	if err := spec.Validate(); err != nil {
 		return bpfman.AttachOutput{}, fmt.Errorf("invalid spec: %w", err)
 	}
+	linkPin := string(spec.LinkPinPath)
 
 	// Load the pinned dispatcher to use as attach target.
 	dispatcherProg, err := ebpf.LoadPinnedProgram(spec.DispatcherPinPath, nil)
@@ -386,10 +387,10 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	cleanup := func() {
 		if !success {
 			lnk.Close()
-			if spec.LinkPinPath != "" {
-				if err := os.Remove(spec.LinkPinPath); err != nil && !os.IsNotExist(err) {
+			if linkPin != "" {
+				if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
 					k.logger.Warn("failed to remove pinned TC extension link during cleanup",
-						"path", spec.LinkPinPath, "error", err)
+						"path", linkPin, "error", err)
 				}
 			}
 		}
@@ -397,9 +398,9 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	defer cleanup()
 
 	// Pin the link if path provided.
-	if spec.LinkPinPath != "" {
-		if err := pinWithRetry(lnk, spec.LinkPinPath); err != nil {
-			return bpfman.AttachOutput{}, fmt.Errorf("pin TC extension link to %s: %w", spec.LinkPinPath, err)
+	if linkPin != "" {
+		if err := pinWithRetry(spec.LinkPinPath, lnk.Pin); err != nil {
+			return bpfman.AttachOutput{}, fmt.Errorf("pin TC extension link to %s: %w", linkPin, err)
 		}
 	}
 
@@ -419,14 +420,15 @@ func (k *kernelAdapter) AttachTCExtension(ctx context.Context, spec dispatcher.T
 	return bpfman.AttachOutput{
 		LinkID:     kernel.LinkID(linkInfo.ID),
 		KernelLink: ToKernelLink(linkInfo),
-		PinPath:    spec.LinkPinPath,
+		PinPath:    linkPin,
 	}, nil
 }
 
 // AttachTCX attaches a loaded program directly to an interface using TCX link.
 // Unlike TC which uses dispatchers, TCX uses native kernel multi-program support.
 // The order parameter specifies where to insert the program in the TCX chain.
-func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
+func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, programPinPath string, linkPinPath bpfman.LinkPath, netnsPath string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error) {
+	linkPin := string(linkPinPath)
 	// Load the pinned program
 	prog, err := ebpf.LoadPinnedProgram(programPinPath, nil)
 	if err != nil {
@@ -483,10 +485,10 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		cleanup := func() {
 			if !success {
 				lnk.Close()
-				if linkPinPath != "" {
-					if err := os.Remove(linkPinPath); err != nil && !os.IsNotExist(err) {
+				if linkPin != "" {
+					if err := os.Remove(linkPin); err != nil && !os.IsNotExist(err) {
 						k.logger.Warn("failed to remove pinned TCX link during cleanup",
-							"path", linkPinPath, "error", err)
+							"path", linkPin, "error", err)
 					}
 				}
 			}
@@ -494,9 +496,9 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		defer cleanup()
 
 		// Pin the link if path provided
-		if linkPinPath != "" {
-			if err := pinWithRetry(lnk, linkPinPath); err != nil {
-				return fmt.Errorf("pin TCX link to %s: %w", linkPinPath, err)
+		if linkPin != "" {
+			if err := pinWithRetry(linkPinPath, lnk.Pin); err != nil {
+				return fmt.Errorf("pin TCX link to %s: %w", linkPin, err)
 			}
 		}
 
@@ -515,7 +517,7 @@ func (k *kernelAdapter) AttachTCX(ctx context.Context, ifindex int, direction, p
 		result = bpfman.AttachOutput{
 			LinkID:     kernel.LinkID(linkInfo.ID),
 			KernelLink: ToKernelLink(linkInfo),
-			PinPath:    linkPinPath,
+			PinPath:    linkPin,
 		}
 		return nil
 	})

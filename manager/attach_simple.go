@@ -22,7 +22,7 @@ var (
 // by subsequent plan nodes via bindings.
 type preparedAttach struct {
 	plan        attachPlan
-	linkPinPath string
+	linkPinPath bpfman.LinkPath
 }
 
 // attachPlan captures the variable parts of a simple attach operation.
@@ -35,7 +35,7 @@ type attachPlan struct {
 	// details is the sealed LinkDetails value for the link record.
 	details bpfman.LinkDetails
 	// attachAction constructs the kernel attach action for the given link pin path.
-	attachAction func(linkPinPath string) action.Action
+	attachAction func(linkPinPath bpfman.LinkPath) action.Action
 }
 
 // attachParams describes a non-dispatcher attach operation.
@@ -118,7 +118,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 			}),
 		),
 
-		saveLinkNode(p.programID, p.defaultTarget, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
+		saveLinkNode(p.programID, p.defaultTarget, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput) {
 			pa := operation.Get(b, preparedKey)
 			out := operation.Get(b, attachOutKey)
 			return out.LinkID, pa.plan.details, pa.linkPinPath, out
@@ -133,7 +133,7 @@ func (m *Manager) simpleAttachPlan(p attachParams) operation.Plan {
 func saveLinkNode(
 	programID kernel.ProgramID,
 	target string,
-	extract func(*operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput),
+	extract func(*operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput),
 ) operation.Node {
 	return operation.Produce(linkKey, target,
 		func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) (bpfman.Link, error) {

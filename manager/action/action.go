@@ -97,7 +97,7 @@ type AttachTracepoint struct {
 	ProgPinPath string
 	Group       string
 	Name        string
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 }
 
 func (AttachTracepoint) isAction() {}
@@ -109,7 +109,7 @@ type AttachKprobe struct {
 	FnName      string
 	Offset      uint64
 	Retprobe    bool
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 }
 
 func (AttachKprobe) isAction() {}
@@ -122,7 +122,7 @@ type AttachUprobeLocal struct {
 	FnName      string
 	Offset      uint64
 	Retprobe    bool
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 }
 
 func (AttachUprobeLocal) isAction() {}
@@ -137,7 +137,7 @@ type AttachUprobeContainer struct {
 	FnName       string
 	Offset       uint64
 	Retprobe     bool
-	LinkPinPath  string
+	LinkPinPath  bpfman.LinkPath
 	ContainerPid int32
 }
 
@@ -147,7 +147,7 @@ func (AttachUprobeContainer) isAction() {}
 type AttachFentry struct {
 	ProgPinPath string
 	FnName      string
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 }
 
 func (AttachFentry) isAction() {}
@@ -156,7 +156,7 @@ func (AttachFentry) isAction() {}
 type AttachFexit struct {
 	ProgPinPath string
 	FnName      string
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 }
 
 func (AttachFexit) isAction() {}
@@ -175,9 +175,16 @@ func (DeleteDispatcher) isAction() {}
 
 // Kernel link actions - operations on kernel links
 
-// DetachLink removes a link pin from bpffs, releasing the kernel link.
+// DetachLink tears down a kernel-attached BPF link synchronously
+// (BPF_LINK_DETACH) and removes its bpffs pin. The PinPath field is
+// typed bpfman.LinkPath so the action cannot be invoked on an
+// arbitrary path; only layout helpers that produce link pin paths
+// can satisfy the type. This makes it a build error to feed a
+// non-link path here, and conversely to feed a link path to
+// action.RemovePin (which is plain os.Remove and would leave the
+// kernel link live until RCU teardown completes).
 type DetachLink struct {
-	PinPath string
+	PinPath bpfman.LinkPath
 }
 
 func (DetachLink) isAction() {}
@@ -285,7 +292,7 @@ type AttachTCX struct {
 	Ifindex     int
 	Direction   string
 	ProgPinPath string
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 	NetnsPath   string
 	Order       bpfman.TCXAttachOrder
 }

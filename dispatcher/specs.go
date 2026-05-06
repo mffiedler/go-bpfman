@@ -11,7 +11,7 @@ import (
 type XDPDispatcherAttachSpec struct {
 	Target      bpfman.AttachTarget `json:"target"`
 	ProgPinPath string              `json:"prog_pin_path"` // where to pin dispatcher program
-	LinkPinPath string              `json:"link_pin_path"` // where to pin dispatcher link
+	LinkPinPath bpfman.LinkPath     `json:"link_pin_path"` // where to pin dispatcher link
 	NumProgs    int                 `json:"num_progs"`     // extension slot count
 	ProceedOn   uint32              `json:"proceed_on"`    // bitmask of actions to proceed on; 0 means "none"
 }
@@ -75,7 +75,7 @@ type XDPExtensionAttachSpec struct {
 	Position          int    `json:"position"`            // dispatcher slot [0, MaxPrograms)
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
-	LinkPinPath string `json:"link_pin_path,omitempty"`
+	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`
 }
 
 // Validate checks the spec for invalid or missing values.
@@ -105,7 +105,7 @@ type TCExtensionAttachSpec struct {
 	Position          int    `json:"position"`            // dispatcher slot [0, MaxPrograms)
 	// LinkPinPath empty means the extension link is ephemeral (not pinned); the
 	// empty string is the discriminator for ephemeral versus pinned extensions.
-	LinkPinPath string `json:"link_pin_path,omitempty"`
+	LinkPinPath bpfman.LinkPath `json:"link_pin_path,omitempty"`
 }
 
 // Validate checks the spec for invalid or missing values.

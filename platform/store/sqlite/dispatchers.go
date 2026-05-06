@@ -225,7 +225,7 @@ func (s *sqliteStore) GetDispatcherSnapshot(ctx context.Context, key dispatcher.
 			return platform.DispatcherSnapshot{}, fmt.Errorf("scan dispatcher member: %w", err)
 		}
 		if linkPinPath.Valid {
-			m.LinkPinPath = linkPinPath.String
+			m.LinkPinPath = bpfman.LinkPath(linkPinPath.String)
 		}
 
 		var actions []int32

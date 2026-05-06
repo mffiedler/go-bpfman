@@ -25,7 +25,7 @@ func (m *Manager) attachTracepoint(ctx context.Context, spec bpfman.TracepointAt
 				target:   target,
 				linkName: fmt.Sprintf("%s_%s", group, name),
 				details:  bpfman.TracepointDetails{Group: group, Name: name},
-				attachAction: func(linkPinPath string) action.Action {
+				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachTracepoint{
 						ProgPinPath: progPinPath,
 						Group:       group,
@@ -81,7 +81,7 @@ func (m *Manager) attachKprobe(ctx context.Context, spec bpfman.KprobeAttachSpec
 				target:   fnName,
 				linkName: linkName,
 				details:  bpfman.KprobeDetails{FnName: fnName, Offset: offset, Retprobe: retprobe},
-				attachAction: func(linkPinPath string) action.Action {
+				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachKprobe{
 						ProgPinPath: progPinPath,
 						FnName:      fnName,
@@ -118,9 +118,9 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 			if retprobe {
 				linkName = "ret_" + linkName
 			}
-			var attachFn func(linkPinPath string) action.Action
+			var attachFn func(linkPinPath bpfman.LinkPath) action.Action
 			if containerPid > 0 {
-				attachFn = func(linkPinPath string) action.Action {
+				attachFn = func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachUprobeContainer{
 						Scope:        scope,
 						ProgPinPath:  progPinPath,
@@ -133,7 +133,7 @@ func (m *Manager) attachUprobe(ctx context.Context, scope lock.WriterScope, spec
 					}
 				}
 			} else {
-				attachFn = func(linkPinPath string) action.Action {
+				attachFn = func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachUprobeLocal{
 						ProgPinPath: progPinPath,
 						Target:      binaryTarget,
@@ -169,7 +169,7 @@ func (m *Manager) attachFentry(ctx context.Context, spec bpfman.FentryAttachSpec
 				target:   fnName,
 				linkName: "fentry_" + fnName,
 				details:  bpfman.FentryDetails{FnName: fnName},
-				attachAction: func(linkPinPath string) action.Action {
+				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachFentry{
 						ProgPinPath: progPinPath,
 						FnName:      fnName,
@@ -196,7 +196,7 @@ func (m *Manager) attachFexit(ctx context.Context, spec bpfman.FexitAttachSpec) 
 				target:   fnName,
 				linkName: "fexit_" + fnName,
 				details:  bpfman.FexitDetails{FnName: fnName},
-				attachAction: func(linkPinPath string) action.Action {
+				attachAction: func(linkPinPath bpfman.LinkPath) action.Action {
 					return action.AttachFexit{
 						ProgPinPath: progPinPath,
 						FnName:      fnName,

@@ -383,7 +383,7 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
 			ds.LinkPinExist = &linkExists
-			ds.LinkPin = bpffs.DispatcherLinkPath(dt, nsid, ifindex)
+			ds.LinkPin = string(bpffs.DispatcherLinkPath(dt, nsid, ifindex))
 		}
 
 		// TC filter check from gathered facts.

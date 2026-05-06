@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -139,9 +140,9 @@ func (b BPFFS) LinkPinDir(programID kernel.ProgramID) string {
 
 // LinkPinPath returns the pin path for a specific link.
 // Format: {base}/fs/links/{program_id}/{link_name}
-func (b BPFFS) LinkPinPath(programID kernel.ProgramID, linkName string) string {
+func (b BPFFS) LinkPinPath(programID kernel.ProgramID, linkName string) bpfman.LinkPath {
 	b.mustValid()
-	return filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10), linkName)
+	return bpfman.LinkPath(filepath.Join(b.linksDir(), strconv.FormatUint(uint64(programID), 10), linkName))
 }
 
 // MapPinPath returns the pin path for a specific map.
@@ -169,12 +170,12 @@ func (b BPFFS) dispatcherTypeDir(dispType dispatcher.DispatcherType) string {
 // This path remains constant across revisions, enabling atomic updates.
 //
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_link
-func (b BPFFS) DispatcherLinkPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) string {
+func (b BPFFS) DispatcherLinkPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32) bpfman.LinkPath {
 	b.mustValid()
-	return filepath.Join(
+	return bpfman.LinkPath(filepath.Join(
 		b.dispatcherTypeDir(dispType),
 		fmt.Sprintf("dispatcher_%d_%d_link", nsid, ifindex),
-	)
+	))
 }
 
 // DispatcherRevisionDir returns the directory for a specific dispatcher revision.
@@ -201,21 +202,21 @@ func (b BPFFS) DispatcherProgPath(dispType dispatcher.DispatcherType, nsid uint6
 // Each extension is attached to a dispatcher slot identified by position (0-9).
 //
 // Format: {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/link_{position}
-func (b BPFFS) ExtensionLinkPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32, position int) string {
+func (b BPFFS) ExtensionLinkPath(dispType dispatcher.DispatcherType, nsid uint64, ifindex uint32, revision uint32, position int) bpfman.LinkPath {
 	b.mustValid()
-	return filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), fmt.Sprintf("link_%d", position))
+	return bpfman.LinkPath(filepath.Join(b.DispatcherRevisionDir(dispType, nsid, ifindex, revision), fmt.Sprintf("link_%d", position)))
 }
 
 // TCXLinkPath returns the path for a TCX link pin.
 //
 // Format: {bpffs}/tcx-{direction}/link_{nsid}_{ifindex}_{programID}
-func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, programID kernel.ProgramID) string {
+func (b BPFFS) TCXLinkPath(direction string, nsid uint64, ifindex uint32, programID kernel.ProgramID) bpfman.LinkPath {
 	b.mustValid()
-	return filepath.Join(
+	return bpfman.LinkPath(filepath.Join(
 		b.mountPoint(),
 		fmt.Sprintf("tcx-%s", direction),
 		fmt.Sprintf("link_%d_%d_%d", nsid, ifindex, programID),
-	)
+	))
 }
 
 // --------------------------------------------------------------------

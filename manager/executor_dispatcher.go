@@ -159,7 +159,7 @@ func (e *executor) rebuildXDPDispatcher(
 	type attachedExt struct {
 		out      bpfman.AttachOutput
 		position int
-		pinPath  string
+		pinPath  bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(allSlots))
 
@@ -460,7 +460,7 @@ func (e *executor) rebuildTCDispatcher(
 	type attachedExt struct {
 		out      bpfman.AttachOutput
 		position int
-		pinPath  string
+		pinPath  bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(allSlots))
 
@@ -754,7 +754,7 @@ func (e *executor) rebuildXDPForDetach(
 	// Attach remaining extensions.
 	type attachedExt struct {
 		out     bpfman.AttachOutput
-		pinPath string
+		pinPath bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(slots))
 	for i, slot := range slots {
@@ -870,7 +870,7 @@ func (e *executor) rebuildTCForDetach(
 	// Attach remaining extensions.
 	type attachedExt struct {
 		out     bpfman.AttachOutput
-		pinPath string
+		pinPath bpfman.LinkPath
 	}
 	attached := make([]attachedExt, 0, len(slots))
 	for i, slot := range slots {

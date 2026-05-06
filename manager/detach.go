@@ -96,7 +96,7 @@ func (m *Manager) detachPlan(
 	target := fmt.Sprintf("%d", record.ID)
 
 	if record.PinPath != nil {
-		nodes = append(nodes, operation.DoAction("detach-link", target, action.DetachLink{PinPath: record.PinPath.String()}))
+		nodes = append(nodes, operation.DoAction("detach-link", target, action.DetachLink{PinPath: *record.PinPath}))
 	}
 
 	if dispKey != nil {

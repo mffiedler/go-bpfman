@@ -1,6 +1,7 @@
 package platform
 
 import (
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 )
@@ -13,7 +14,7 @@ type DispatcherMember struct {
 	ProgramName string
 	ProgPinPath string
 	LinkID      kernel.LinkID
-	LinkPinPath string
+	LinkPinPath bpfman.LinkPath
 	Position    int
 	Priority    int
 	ProceedOn   uint32

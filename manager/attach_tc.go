@@ -196,9 +196,14 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 
 	linkPinPath := m.rt.BPFFS().TCXLinkPath(direction.String(), nsid, uint32(ifindex), programID)
 
-	// Stale pin removal (preflight I/O).
-	if err := m.executor.Execute(ctx, action.RemovePin{Path: linkPinPath}); err != nil {
-		return bpfman.Link{}, fmt.Errorf("remove stale TCX link pin %s: %w", linkPinPath, err)
+	// Stale pin removal (preflight I/O). Use DetachLink, not RemovePin:
+	// if a previous attach crashed leaving a live kernel link behind
+	// the bpffs pin, raw os.Remove drops only the userland reference
+	// and the netdev keeps running the program until RCU teardown
+	// completes. DetachLink performs BPF_LINK_DETACH first, so the
+	// kernel link is provably gone before we touch the pin file.
+	if err := m.executor.Execute(ctx, action.DetachLink{PinPath: linkPinPath}); err != nil {
+		return bpfman.Link{}, fmt.Errorf("detach stale TCX link %s: %w", linkPinPath, err)
 	}
 
 	progPinPath := prog.Handles.PinPath
@@ -244,7 +249,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 func (m *Manager) attachTCXPlan(
 	programID kernel.ProgramID, ifindex int, ifname string,
 	direction bpfman.TCDirection, priority int, nsid uint64,
-	netnsPath, linkPinPath, progPinPath, target string,
+	netnsPath string, linkPinPath bpfman.LinkPath, progPinPath, target string,
 	order bpfman.TCXAttachOrder,
 ) operation.Plan {
 	return operation.Build(
@@ -266,7 +271,7 @@ func (m *Manager) attachTCXPlan(
 			}),
 		),
 
-		saveLinkNode(programID, target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, string, bpfman.AttachOutput) {
+		saveLinkNode(programID, target, func(b *operation.Bindings) (kernel.LinkID, bpfman.LinkDetails, bpfman.LinkPath, bpfman.AttachOutput) {
 			out := operation.Get(b, attachOutKey)
 			return out.LinkID, bpfman.TCXDetails{
 				Interface: ifname,

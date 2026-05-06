@@ -109,7 +109,7 @@ func (m *Manager) unloadPlan(programID kernel.ProgramID, programName, progPinPat
 		if link.PinPath == nil {
 			continue
 		}
-		pinPath := link.PinPath.String()
+		pinPath := *link.PinPath
 		nodes = append(nodes, operation.DoAction("detach-link", fmt.Sprintf("%d", link.ID), action.DetachLink{PinPath: pinPath}))
 	}
 

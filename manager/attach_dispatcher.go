@@ -35,7 +35,7 @@ type extensionResult struct {
 	key      dispatcher.Key
 	revision uint32
 	position int
-	pinPath  string
+	pinPath  bpfman.LinkPath
 }
 
 // Binding keys for dispatcherAttach plan nodes.
@@ -111,7 +111,7 @@ func (m *Manager) dispatcherAttachPlan(p dispatcherAttachParams) operation.Plan 
 			operation.UndoFrom(func(b *operation.Bindings) []action.Action {
 				r := operation.Get(b, extResultKey)
 				return []action.Action{
-					action.DetachLink{PinPath: r.pinPath},
+					action.DetachLink{PinPath: bpfman.LinkPath(r.pinPath)},
 				}
 			}),
 		),

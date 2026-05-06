@@ -195,30 +195,30 @@ type PinInspector interface {
 // allowing the manager to construct LinkRecord from AttachSpec + AttachOutput.
 type ProgramAttacher interface {
 	// AttachTracepoint attaches a pinned program to a tracepoint.
-	AttachTracepoint(ctx context.Context, progPinPath, group, name, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachTracepoint(ctx context.Context, progPinPath, group, name string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachXDP attaches a pinned XDP program to a network interface.
-	AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachXDP(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachKprobe attaches a pinned program to a kernel function.
 	// If retprobe is true, attaches as a kretprobe instead of kprobe.
-	AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachKprobe(ctx context.Context, progPinPath, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachUprobeLocal attaches a pinned program to a user-space function
 	// in the current namespace. Does not spawn a helper, so no lock scope needed.
 	// target is the path to the binary or library (e.g., /usr/lib/libc.so.6).
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
-	AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachUprobeLocal(ctx context.Context, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachUprobeContainer attaches a pinned program to a user-space function
 	// in a container's mount namespace. Spawns bpfman-ns helper, so requires
 	// lock scope to pass fd.
 	// target is the path to the binary or library (resolved in the container's namespace).
 	// If retprobe is true, attaches as a uretprobe instead of uprobe.
 	// containerPid identifies the target container.
-	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath string, containerPid int32) (bpfman.AttachOutput, error)
+	AttachUprobeContainer(ctx context.Context, scope lock.WriterScope, progPinPath, target, fnName string, offset uint64, retprobe bool, linkPinPath bpfman.LinkPath, containerPid int32) (bpfman.AttachOutput, error)
 	// AttachFentry attaches a pinned program to a kernel function entry point.
 	// The fnName was specified at load time and stored with the program.
-	AttachFentry(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachFentry(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 	// AttachFexit attaches a pinned program to a kernel function exit point.
 	// The fnName was specified at load time and stored with the program.
-	AttachFexit(ctx context.Context, progPinPath, fnName, linkPinPath string) (bpfman.AttachOutput, error)
+	AttachFexit(ctx context.Context, progPinPath, fnName string, linkPinPath bpfman.LinkPath) (bpfman.AttachOutput, error)
 }
 
 // XDPDispatcherResult holds the result of loading an XDP dispatcher.
@@ -226,7 +226,7 @@ type XDPDispatcherResult struct {
 	DispatcherID  kernel.ProgramID // Kernel program ID of the dispatcher
 	LinkID        kernel.LinkID    // Kernel link ID
 	DispatcherPin string           // Pin path for dispatcher program
-	LinkPin       string           // Pin path for link
+	LinkPin       bpfman.LinkPath  // Pin path for link
 }
 
 // TCDispatcherResult holds the result of loading a TC dispatcher.
@@ -276,12 +276,12 @@ type DispatcherAttacher interface {
 	// freplace extension link and returns the kernel-reported
 	// trampoline target. Diagnostic; used to verify each freplace
 	// is observably installed before swapping the dispatcher.
-	ExtensionLinkInfo(ctx context.Context, linkPinPath string) (ExtensionLinkInfo, error)
+	ExtensionLinkInfo(ctx context.Context, linkPinPath bpfman.LinkPath) (ExtensionLinkInfo, error)
 
 	// UpdateXDPDispatcherLink atomically updates an existing XDP
 	// dispatcher BPF link to point to a new dispatcher program.
 	// Used during rebuild to swap from old to new dispatcher.
-	UpdateXDPDispatcherLink(ctx context.Context, linkPinPath, newProgPinPath string) error
+	UpdateXDPDispatcherLink(ctx context.Context, linkPinPath bpfman.LinkPath, newProgPinPath string) error
 
 	// LoadAndPinXDPDispatcher loads an XDP dispatcher program with
 	// the given .rodata config and pins it at progPinPath. Does not
@@ -296,7 +296,7 @@ type DispatcherAttacher interface {
 	// CreateXDPLink creates an XDP link from a pinned dispatcher
 	// program to a network interface, optionally in a specific
 	// network namespace. Returns the link info.
-	CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath string, netnsPath string) (*XDPDispatcherResult, error)
+	CreateXDPLink(ctx context.Context, progPinPath string, ifindex int, linkPinPath bpfman.LinkPath, netnsPath string) (*XDPDispatcherResult, error)
 
 	// CreateTCFilter creates a TC filter from a pinned dispatcher
 	// program on a network interface, optionally in a specific
@@ -314,14 +314,14 @@ type DispatcherAttacher interface {
 	//   - linkPinPath: Path to pin the TCX link
 	//   - netns: Optional network namespace path. If non-empty, attachment is performed in that namespace.
 	//   - order: Specifies where to insert the program in the TCX chain based on priority.
-	AttachTCX(ctx context.Context, ifindex int, direction, programPinPath, linkPinPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error)
+	AttachTCX(ctx context.Context, ifindex int, direction, programPinPath string, linkPinPath bpfman.LinkPath, netns string, order bpfman.TCXAttachOrder) (bpfman.AttachOutput, error)
 }
 
 // LinkDetacher detaches links from hooks.
 type LinkDetacher interface {
 	// DetachLink removes a pinned link by deleting its pin from bpffs.
 	// This releases the kernel link if it was the last reference.
-	DetachLink(ctx context.Context, linkPinPath string) error
+	DetachLink(ctx context.Context, linkPinPath bpfman.LinkPath) error
 }
 
 // PinRemover removes pins from bpffs.

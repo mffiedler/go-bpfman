@@ -10,6 +10,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 )
 
@@ -195,8 +196,9 @@ func (k *kernelAdapter) Unpin(pinDir string) (int, error) {
 // the test surface still observes async kernel teardown lag
 // (see waitForDetachComplete in e2e/helpers.go) -- there is no
 // userspace primitive to make perf-event teardown synchronous.
-func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath string) error {
-	k.logger.Debug("detaching link by removing pin", "link_pin_path", linkPinPath)
+func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath bpfman.LinkPath) error {
+	pin := string(linkPinPath)
+	k.logger.Debug("detaching link by removing pin", "link_pin_path", pin)
 
 	// Stage 1: synchronous kernel-side detach for supported
 	// link types. Prefer the in-process tracked link (saved by
@@ -210,17 +212,17 @@ func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath string) erro
 	// below.
 	var detachLnk link.Link
 	var detachLnkOpened bool
-	if v, ok := k.liveLinks.Load(linkPinPath); ok {
+	if v, ok := k.liveLinks.Load(pin); ok {
 		detachLnk = v.(link.Link)
-	} else if lnk, err := link.LoadPinnedLink(linkPinPath, nil); err == nil {
+	} else if lnk, err := link.LoadPinnedLink(pin, nil); err == nil {
 		detachLnk = lnk
 		detachLnkOpened = true
 	} else if !os.IsNotExist(err) {
-		k.logger.Warn("LoadPinnedLink failed", "link_pin_path", linkPinPath, "err", err)
+		k.logger.Warn("LoadPinnedLink failed", "link_pin_path", pin, "err", err)
 	}
 	if detachLnk != nil {
 		if err := detachLnk.Detach(); err != nil && !errors.Is(err, ebpf.ErrNotSupported) {
-			k.logger.Warn("link Detach failed", "link_pin_path", linkPinPath, "err", err)
+			k.logger.Warn("link Detach failed", "link_pin_path", pin, "err", err)
 			// continue: cleanup must still happen
 		}
 		if detachLnkOpened {
@@ -232,51 +234,51 @@ func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath string) erro
 	}
 
 	// Stage 2: remove the pin.
-	if err := os.Remove(linkPinPath); err != nil {
+	if err := os.Remove(pin); err != nil {
 		if os.IsNotExist(err) {
-			k.logger.Debug("link pin already gone", "link_pin_path", linkPinPath)
+			k.logger.Debug("link pin already gone", "link_pin_path", pin)
 			// Pin gone, but a tracked link may still be live
 			// (in-process attach by the same adapter). Drop it.
-			if cerr := k.releaseLink(linkPinPath); cerr != nil {
-				k.logger.Warn("close tracked link after missing pin", "link_pin_path", linkPinPath, "err", cerr)
+			if cerr := k.releaseLink(pin); cerr != nil {
+				k.logger.Warn("close tracked link after missing pin", "link_pin_path", pin, "err", cerr)
 			}
 			return nil
 		}
-		return fmt.Errorf("remove link pin %s: %w", linkPinPath, err)
+		return fmt.Errorf("remove link pin %s: %w", pin, err)
 	}
 
 	// Stage 3: close the FD via releaseLink (which also drops
 	// the tracking-map entry).
-	if err := k.releaseLink(linkPinPath); err != nil {
-		k.logger.Warn("close tracked link", "link_pin_path", linkPinPath, "err", err)
+	if err := k.releaseLink(pin); err != nil {
+		k.logger.Warn("close tracked link", "link_pin_path", pin, "err", err)
 	}
-	k.logger.Debug("link pin removed", "link_pin_path", linkPinPath)
+	k.logger.Debug("link pin removed", "link_pin_path", pin)
 	// Best-effort removal of the parent directory. This races
 	// with concurrent attach in non-daemon mode (no global lock),
 	// but attach calls MkdirAll before pinning, so it recovers
 	// if the directory disappears underneath it.
-	os.Remove(filepath.Dir(linkPinPath))
+	os.Remove(filepath.Dir(pin))
 	return nil
 }
 
-// pinnable is satisfied by any object that can be pinned to bpffs
-// (e.g. *link.Link, *ebpf.Program).
-type pinnable interface {
-	Pin(string) error
-}
-
-// pinWithRetry creates the parent directory and pins the object. If
-// the pin fails because a concurrent detach removed the directory, it
+// pinWithRetry creates the parent directory and invokes pin. If the
+// pin fails because a concurrent detach removed the directory, it
 // retries once. This covers the race between detach (which removes
 // empty link directories) and attach (which creates them) when
 // running outside daemon mode with no global lock.
-func pinWithRetry(obj pinnable, path string) error {
+//
+// Generic over any string-derived path type (bpfman.LinkPath, plain
+// string, future newtypes) so callers preserve their type discipline
+// to the pin call site; the single cast to string lives here, at the
+// cilium/ebpf boundary.
+func pinWithRetry[P ~string](path P, pin func(string) error) error {
+	s := string(path)
 	// Two attempts total: one initial attempt plus one retry.
 	for attempt := range 2 {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(s), 0755); err != nil {
 			return fmt.Errorf("create pin directory: %w", err)
 		}
-		err := obj.Pin(path)
+		err := pin(s)
 		if err == nil {
 			return nil
 		}
@@ -285,7 +287,7 @@ func pinWithRetry(obj pinnable, path string) error {
 		}
 		return err
 	}
-	return fmt.Errorf("pin %s: directory removed between retries", path)
+	return fmt.Errorf("pin %s: directory removed between retries", s)
 }
 
 // RemovePin removes a pin or empty directory from bpffs.

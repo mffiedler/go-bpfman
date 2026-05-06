@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cilium/ebpf/link"
+	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -14,8 +15,8 @@ import (
 // target. Diagnostic only: callers use this to verify each
 // just-attached freplace is observably installed in the kernel before
 // committing the dispatcher swap.
-func (k *kernelAdapter) ExtensionLinkInfo(ctx context.Context, linkPinPath string) (platform.ExtensionLinkInfo, error) {
-	lnk, err := link.LoadPinnedLink(linkPinPath, nil)
+func (k *kernelAdapter) ExtensionLinkInfo(ctx context.Context, linkPinPath bpfman.LinkPath) (platform.ExtensionLinkInfo, error) {
+	lnk, err := link.LoadPinnedLink(string(linkPinPath), nil)
 	if err != nil {
 		return platform.ExtensionLinkInfo{}, fmt.Errorf("load pinned extension link %s: %w", linkPinPath, err)
 	}
