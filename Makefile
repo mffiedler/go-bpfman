@@ -1031,7 +1031,7 @@ ci-test: ci-image
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
-	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT)
+	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman
