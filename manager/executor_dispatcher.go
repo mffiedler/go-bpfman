@@ -1023,15 +1023,17 @@ func (e *executor) rebuildTCForDetach(
 //     dispatcher program; the function aborts teardown and surfaces
 //     the error so the caller can retry or hand off to repair.
 //
-//  2. Once kernel detach succeeds, the dispatcher is no longer
-//     attached and the remaining steps are bpffs/store hygiene.
-//     They run best-effort: any failure is recorded and joined
-//     into the returned error, but later steps still execute.
-//     Stopping at the first cleanup failure would only leave more
-//     residue without any compensating value, since the kernel
-//     attachment is already gone and re-creation is not a
-//     well-defined inverse for destructive teardown. Coherency,
-//     doctor, and GC repair residual state.
+//  2. Once kernel detach succeeds, the user-visible state is "the
+//     dispatcher is gone". The contract from here is two-state:
+//     either the kernel detach above failed (dispatcher still live,
+//     retry safe) or it succeeded and the caller never sees a
+//     residue error. Only deleteDispatcherSnapshot joins into the
+//     returned error: a phantom row is the worst residue class and,
+//     unlike the other failures, retries cleanly without a
+//     false-negative. Removing the dispatcher program pin and the
+//     per-revision directory are warned and discarded; both leave
+//     only userland orphans that coherency, doctor, and GC repair.
+//     This mirrors the post-detach contract on Manager.unload.
 //
 // This contract was implicit and wrong in the previous action-list
 // version: ExecuteAll stops on first error, which for teardown
@@ -1067,15 +1069,29 @@ func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.Disp
 		}
 	}
 
-	// Best-effort cleanup. Each step is independent; later steps
-	// run even if earlier steps fail. Failures join into the
-	// returned error and are repaired by coherency/doctor/GC.
+	// Post-detach cleanup. Each step is independent; later steps
+	// run even if earlier steps fail. Only deleteDispatcherSnapshot
+	// joins into the returned error (see the failure contract
+	// above): every other step is warned and left for
+	// coherency/doctor/GC.
 	var errs []error
 	if err := e.removeDispatcherProgPin(ctx, key, snap.Revision); err != nil {
-		errs = append(errs, fmt.Errorf("remove dispatcher program pin: %w", err))
+		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher program pin",
+			"type", key.Type,
+			"nsid", key.Nsid,
+			"ifindex", key.Ifindex,
+			"revision", snap.Revision,
+			"path", e.bpffs.DispatcherProgPath(key.Type, key.Nsid, key.Ifindex, snap.Revision),
+			"error", err)
 	}
 	if err := e.removeDispatcherRevisionDir(ctx, key, snap.Revision); err != nil {
-		errs = append(errs, fmt.Errorf("remove dispatcher revision directory: %w", err))
+		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher revision directory",
+			"type", key.Type,
+			"nsid", key.Nsid,
+			"ifindex", key.Ifindex,
+			"revision", snap.Revision,
+			"path", e.bpffs.DispatcherRevisionDir(key.Type, key.Nsid, key.Ifindex, snap.Revision),
+			"error", err)
 	}
 	if err := e.deleteDispatcherSnapshot(ctx, key); err != nil {
 		errs = append(errs, fmt.Errorf("delete dispatcher snapshot: %w", err))

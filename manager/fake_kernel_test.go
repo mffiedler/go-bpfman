@@ -185,6 +185,16 @@ type fakeKernel struct {
 	// Detach error injection
 	failOnDetach map[kernel.LinkID]error // fail detach by link ID
 
+	// Unload error injection: fail Unload when called with the
+	// matching pin path. Used to simulate post-detach hygiene
+	// failures such as a transient bpffs error on the program's
+	// maps directory. failOnUnloadCalls counts how many times each
+	// configured path was actually hit, so tests can assert the
+	// injection fired rather than silently no-opping when the test's
+	// computed path drifts from production's.
+	failOnUnload      map[string]error
+	failOnUnloadCalls map[string]int
+
 	// Interface error injection
 	failOnIfname  map[string]error // fail attach if interface name matches
 	failOnIfindex map[int]error    // fail attach if interface index matches
@@ -221,14 +231,16 @@ func createPinFile[P ~string](p P) {
 
 func newFakeKernel() *fakeKernel {
 	fk := &fakeKernel{
-		programs:      make(map[kernel.ProgramID]fakeProgram),
-		links:         make(map[kernel.LinkID]*bpfman.Link),
-		tcFilters:     make(map[tcFilterKey]uint32),
-		failOnProgram: make(map[string]error),
-		failOnAttach:  make(map[string]error),
-		failOnDetach:  make(map[kernel.LinkID]error),
-		failOnIfname:  make(map[string]error),
-		failOnIfindex: make(map[int]error),
+		programs:          make(map[kernel.ProgramID]fakeProgram),
+		links:             make(map[kernel.LinkID]*bpfman.Link),
+		tcFilters:         make(map[tcFilterKey]uint32),
+		failOnProgram:     make(map[string]error),
+		failOnAttach:      make(map[string]error),
+		failOnDetach:      make(map[kernel.LinkID]error),
+		failOnIfname:      make(map[string]error),
+		failOnIfindex:     make(map[int]error),
+		failOnUnload:      make(map[string]error),
+		failOnUnloadCalls: make(map[string]int),
 	}
 	fk.nextID.Store(100)
 	return fk
@@ -347,6 +359,24 @@ func (f *fakeKernel) FailOnDetach(linkID kernel.LinkID, err error) {
 	f.failOnDetach[linkID] = err
 }
 
+// FailOnUnload configures Unload to return err when invoked with the
+// given pin path. Used to simulate a post-detach hygiene failure.
+func (f *fakeKernel) FailOnUnload(path string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failOnUnload[path] = err
+}
+
+// UnloadFailureCount returns how many times the configured Unload
+// fault for path has actually fired. Tests use this to assert that
+// the injection matched a real call, guarding against the case where
+// the test's computed path no longer matches what production passes.
+func (f *fakeKernel) UnloadFailureCount(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.failOnUnloadCalls[path]
+}
+
 // FailOnIfname configures the kernel to fail when attaching to a specific interface.
 func (f *fakeKernel) FailOnIfname(ifname string, err error) {
 	f.mu.Lock()
@@ -374,6 +404,8 @@ func (f *fakeKernel) Reset() {
 	f.failOnDetach = make(map[kernel.LinkID]error)
 	f.failOnIfname = make(map[string]error)
 	f.failOnIfindex = make(map[int]error)
+	f.failOnUnload = make(map[string]error)
+	f.failOnUnloadCalls = make(map[string]int)
 	f.failOnNthLoad = 0
 	f.loadCount = 0
 }
@@ -451,6 +483,13 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 }
 
 func (f *fakeKernel) Unload(_ context.Context, pinPath string) error {
+	f.mu.Lock()
+	if err, ok := f.failOnUnload[pinPath]; ok {
+		f.failOnUnloadCalls[pinPath]++
+		f.mu.Unlock()
+		return err
+	}
+	f.mu.Unlock()
 	for id, p := range f.programs {
 		// Match by either program pin path or maps directory
 		if p.pinPath == pinPath || p.pinDir == pinPath {
