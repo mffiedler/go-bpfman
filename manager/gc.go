@@ -126,7 +126,7 @@ func countByType[T action.Action](actions []action.Action) int {
 	return n
 }
 
-// storeGCInputs holds the data extracted from an inspect.World that
+// storeGCInputs holds the data extracted from an inspect.Observation that
 // computeStoreGC needs to decide which store entries are stale.
 type storeGCInputs struct {
 	programs       map[kernel.ProgramID]bpfman.ProgramRecord
@@ -137,18 +137,18 @@ type storeGCInputs struct {
 }
 
 // deriveStoreGCInputs extracts the inputs for computeStoreGC from
-// an inspect.World snapshot. For store-managed programs with a live
+// an inspect.Observation snapshot. For store-managed programs with a live
 // kernel ID but a missing pin, the kernel ID is excluded from the
 // alive set; the ID may have been recycled to a program we do not
 // own.
-func deriveStoreGCInputs(world *inspect.World) storeGCInputs {
+func deriveStoreGCInputs(obs *inspect.Observation) storeGCInputs {
 	in := storeGCInputs{
 		kernelPrograms: make(map[kernel.ProgramID]bool),
 		programs:       make(map[kernel.ProgramID]bpfman.ProgramRecord),
 		kernelLinks:    make(map[kernel.LinkID]bool),
 	}
 
-	for _, p := range world.Programs {
+	for _, p := range obs.Programs {
 		if p.Presence.InStore && p.Managed != nil {
 			in.programs[p.ProgramID] = *p.Managed
 		}
@@ -163,13 +163,13 @@ func deriveStoreGCInputs(world *inspect.World) storeGCInputs {
 		}
 	}
 
-	for _, d := range world.ManagedDispatchers() {
+	for _, d := range obs.ManagedDispatchers() {
 		if d.Managed != nil {
 			in.dispatchers = append(in.dispatchers, *d.Managed)
 		}
 	}
 
-	for _, l := range world.Links {
+	for _, l := range obs.Links {
 		if l.Presence.InKernel {
 			if id := l.KernelLinkID(); id != nil {
 				in.kernelLinks[*id] = true

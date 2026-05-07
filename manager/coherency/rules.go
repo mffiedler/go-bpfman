@@ -62,8 +62,8 @@ Severity: WARNING
 Category: enumeration`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
-				progErrors := s.world.Meta.ProgramEnumErrors
-				linkErrors := s.world.Meta.LinkEnumErrors
+				progErrors := s.obs.Meta.ProgramEnumErrors
+				linkErrors := s.obs.Meta.LinkEnumErrors
 				if progErrors+linkErrors > 0 {
 					out = append(out, Violation{
 						Severity:    SeverityWarning,

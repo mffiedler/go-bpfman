@@ -189,7 +189,7 @@ var errRollback = errors.New("rollback")
 //
 // State is gathered once via GatherState (which includes a full
 // inspect.Snapshot). The store GC inputs are derived from the
-// resulting World, avoiding the redundant kernel and store
+// resulting Observation, avoiding the redundant kernel and store
 // enumeration that previously occurred between ComputeGC's direct
 // queries and the Snapshot inside evaluateCoherency.
 //
@@ -206,14 +206,14 @@ func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opt
 		return plan, fmt.Errorf("gather state: %w", err)
 	}
 
-	// Derive store GC inputs from the correlated world.
-	world := state.World()
-	in := deriveStoreGCInputs(world)
+	// Derive store GC inputs from the correlated observation.
+	obs := state.Observation()
+	in := deriveStoreGCInputs(obs)
 
 	// Log pin-missing programs for visibility. A store-managed
 	// program with a live kernel ID but no pin suggests the ID
 	// was recycled; the program will be reaped.
-	for _, p := range world.Programs {
+	for _, p := range obs.Programs {
 		if p.Presence.InStore && p.Presence.InKernel && !in.kernelPrograms[p.ProgramID] {
 			m.logger.InfoContext(ctx, "pin missing for live kernel ID, marking for reap",
 				"program_id", p.ProgramID, "pin_path", p.PinPath())
@@ -229,17 +229,17 @@ func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opt
 	// to program-side phases. The doctor rule
 	// kernel-enumeration-incomplete (manager/coherency/rules.go:55)
 	// continues to surface this state for operator visibility.
-	if world.Meta.ProgramEnumErrors == 0 && world.Meta.LinkEnumErrors == 0 {
+	if obs.Meta.ProgramEnumErrors == 0 && obs.Meta.LinkEnumErrors == 0 {
 		plan.StoreActions = computeStoreGC(in.programs, in.dispatchers, in.links, in.kernelPrograms, in.kernelLinks)
 	} else {
 		m.logger.WarnContext(ctx, "skipping store-GC: kernel enumeration incomplete",
-			"program_enum_errors", world.Meta.ProgramEnumErrors,
-			"link_enum_errors", world.Meta.LinkEnumErrors)
+			"program_enum_errors", obs.Meta.ProgramEnumErrors,
+			"link_enum_errors", obs.Meta.LinkEnumErrors)
 	}
 
 	// Coherency rule engine. When there are store actions, apply
 	// them inside a rolled-back transaction and re-gather coherency
-	// state so the rules see the post-deletion world. When there
+	// state so the rules see the post-deletion observation. When there
 	// are no store actions, reuse the state we already gathered.
 	if len(plan.StoreActions) > 0 {
 		txErr := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
@@ -362,7 +362,7 @@ func (m *Manager) ExecuteGC(ctx context.Context, writeLock lock.WriterScope, pla
 	}
 
 	// Phase 2: coherency violations. When store actions were
-	// executed, re-gather state to see the post-deletion world
+	// executed, re-gather state to see the post-deletion observation
 	// (artefacts may have become orphaned by store deletions).
 	// When no store actions exist, the plan's violations from
 	// ComputeGC are already current; reuse them.

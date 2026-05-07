@@ -92,7 +92,7 @@ type ProgramView struct {
 	FSPinPath   string `json:"fs_pin_path"`  // empty when no bpffs pin was found
 	MapsPresent bool   `json:"maps_present"` // true if map pin directory exists
 
-	// Links attached to this program (correlated from World.Links)
+	// Links attached to this program (correlated from Observation.Links)
 	Links []LinkRow `json:"links"` // [] when the program has no links
 
 	Presence Presence `json:"presence"`
@@ -274,8 +274,8 @@ type SnapshotMeta struct {
 	LinkEnumErrors int `json:"link_enum_errors"`
 }
 
-// World is a point-in-time snapshot of bpfman's state across all sources.
-type World struct {
+// Observation is a point-in-time correlated view of bpfman's state across all sources.
+type Observation struct {
 	Programs    []ProgramView   `json:"programs"`
 	Links       []LinkRow       `json:"links"`
 	Dispatchers []DispatcherRow `json:"dispatchers"`
@@ -283,9 +283,9 @@ type World struct {
 }
 
 // ManagedPrograms returns only store-managed programs.
-func (w *World) ManagedPrograms() []ProgramView {
+func (o *Observation) ManagedPrograms() []ProgramView {
 	var out []ProgramView
-	for _, r := range w.Programs {
+	for _, r := range o.Programs {
 		if r.Presence.InStore {
 			out = append(out, r)
 		}
@@ -294,9 +294,9 @@ func (w *World) ManagedPrograms() []ProgramView {
 }
 
 // ManagedLinks returns only store-managed links.
-func (w *World) ManagedLinks() []LinkRow {
+func (o *Observation) ManagedLinks() []LinkRow {
 	var out []LinkRow
-	for _, r := range w.Links {
+	for _, r := range o.Links {
 		if r.Presence.InStore {
 			out = append(out, r)
 		}
@@ -305,9 +305,9 @@ func (w *World) ManagedLinks() []LinkRow {
 }
 
 // ManagedDispatchers returns only store-managed dispatchers.
-func (w *World) ManagedDispatchers() []DispatcherRow {
+func (o *Observation) ManagedDispatchers() []DispatcherRow {
 	var out []DispatcherRow
-	for _, r := range w.Dispatchers {
+	for _, r := range o.Dispatchers {
 		if r.ProgPresence.InStore {
 			out = append(out, r)
 		}
@@ -315,16 +315,16 @@ func (w *World) ManagedDispatchers() []DispatcherRow {
 	return out
 }
 
-// Snapshot builds a World by reading from store, kernel, and filesystem.
-// The returned World contains all objects from all sources, correlated
+// Snapshot builds an Observation by reading from store, kernel, and filesystem.
+// The returned Observation contains all objects from all sources, correlated
 // by kernel ID. Use ManagedPrograms() etc. for the default store-first view.
 func Snapshot(
 	ctx context.Context,
 	store StoreLister,
 	kern KernelLister,
 	scanner *fs.Scanner,
-) (*World, error) {
-	w := &World{
+) (*Observation, error) {
+	obs := &Observation{
 		Meta: SnapshotMeta{
 			ObservedAt: time.Now(),
 		},
@@ -338,8 +338,8 @@ func Snapshot(
 
 	for kp, err := range kern.Programs(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
-			w.Meta.ProgramEnumErrors++
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
+			obs.Meta.ProgramEnumErrors++
 			continue
 		}
 		kernelProgs[kp.ID] = kp
@@ -347,8 +347,8 @@ func Snapshot(
 
 	for kl, err := range kern.Links(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
-			w.Meta.LinkEnumErrors++
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
+			obs.Meta.LinkEnumErrors++
 			continue
 		}
 		kernelLinks[kl.ID] = kl
@@ -363,7 +363,7 @@ func Snapshot(
 
 	for pin, err := range scanner.ProgPins(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
 		fsProgPins[pin.ProgramID] = pin.Path
@@ -371,7 +371,7 @@ func Snapshot(
 
 	for dir, err := range scanner.LinkDirs(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
 		fsLinkDirs[dir.ProgramID] = dir.Path
@@ -379,7 +379,7 @@ func Snapshot(
 
 	for dir, err := range scanner.MapDirs(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
 		fsMapDirs[dir.ProgramID] = dir.Path
@@ -387,7 +387,7 @@ func Snapshot(
 
 	for dir, err := range scanner.DispatcherDirs(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
 		key := dispatcherKey(dir.DispType, dir.Nsid, dir.Ifindex)
@@ -397,7 +397,7 @@ func Snapshot(
 
 	for pin, err := range scanner.DispatcherLinkPins(ctx) {
 		if err != nil {
-			w.Meta.Errors = append(w.Meta.Errors, err)
+			obs.Meta.Errors = append(obs.Meta.Errors, err)
 			continue
 		}
 		key := dispatcherKey(pin.DispType, pin.Nsid, pin.Ifindex)
@@ -431,7 +431,7 @@ func Snapshot(
 		if inKernel {
 			row.Kernel = &kp
 		}
-		w.Programs = append(w.Programs, row)
+		obs.Programs = append(obs.Programs, row)
 	}
 
 	// Add kernel-only programs (not in store)
@@ -450,7 +450,7 @@ func Snapshot(
 				InFS:     inFS,
 			},
 		}
-		w.Programs = append(w.Programs, row)
+		obs.Programs = append(obs.Programs, row)
 		seenProgIDs[programID] = true
 	}
 
@@ -468,7 +468,7 @@ func Snapshot(
 				InFS:     true,
 			},
 		}
-		w.Programs = append(w.Programs, row)
+		obs.Programs = append(obs.Programs, row)
 	}
 
 	// Phase 3: Build link rows (store-first).
@@ -508,7 +508,7 @@ func Snapshot(
 				InFS:     inFS,
 			},
 		}
-		w.Links = append(w.Links, row)
+		obs.Links = append(obs.Links, row)
 	}
 
 	// Add kernel-only links (not in store)
@@ -524,7 +524,7 @@ func Snapshot(
 				InFS:     false,
 			},
 		}
-		w.Links = append(w.Links, row)
+		obs.Links = append(obs.Links, row)
 	}
 
 	// Phase 4: Build dispatcher rows (store-first)
@@ -581,7 +581,7 @@ func Snapshot(
 				InFS:     linkPinExists,
 			},
 		}
-		w.Dispatchers = append(w.Dispatchers, row)
+		obs.Dispatchers = append(obs.Dispatchers, row)
 	}
 
 	// Add FS-only dispatchers (orphan dirs)
@@ -607,31 +607,31 @@ func Snapshot(
 				InFS:     linkPinExists,
 			},
 		}
-		w.Dispatchers = append(w.Dispatchers, row)
+		obs.Dispatchers = append(obs.Dispatchers, row)
 	}
 
 	// Correlate links to programs by ProgramID
-	programIndex := make(map[kernel.ProgramID]int, len(w.Programs))
-	for i := range w.Programs {
-		programIndex[w.Programs[i].ProgramID] = i
+	programIndex := make(map[kernel.ProgramID]int, len(obs.Programs))
+	for i := range obs.Programs {
+		programIndex[obs.Programs[i].ProgramID] = i
 	}
-	for _, link := range w.Links {
+	for _, link := range obs.Links {
 		if link.Managed == nil {
 			continue
 		}
 		if idx, ok := programIndex[link.Managed.ProgramID]; ok {
-			w.Programs[idx].Links = append(w.Programs[idx].Links, link)
+			obs.Programs[idx].Links = append(obs.Programs[idx].Links, link)
 		}
 	}
 
 	// Sort all slices for deterministic output
-	slices.SortFunc(w.Programs, func(a, b ProgramView) int {
+	slices.SortFunc(obs.Programs, func(a, b ProgramView) int {
 		return cmp.Compare(a.ProgramID, b.ProgramID)
 	})
-	slices.SortFunc(w.Links, func(a, b LinkRow) int {
+	slices.SortFunc(obs.Links, func(a, b LinkRow) int {
 		return cmp.Compare(a.ID(), b.ID())
 	})
-	slices.SortFunc(w.Dispatchers, func(a, b DispatcherRow) int {
+	slices.SortFunc(obs.Dispatchers, func(a, b DispatcherRow) int {
 		if c := cmp.Compare(a.DispType, b.DispType); c != 0 {
 			return c
 		}
@@ -641,7 +641,7 @@ func Snapshot(
 		return cmp.Compare(a.Ifindex, b.Ifindex)
 	})
 
-	return w, nil
+	return obs, nil
 }
 
 // GetProgram retrieves a single program by kernel ID, correlating state

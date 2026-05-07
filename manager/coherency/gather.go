@@ -16,10 +16,10 @@ import (
 // they never reach back into raw maps. All I/O happens during
 // GatherState; view builders and rules are pure joins over facts.
 type ObservedState struct {
-	// Correlated world from inspect.Snapshot.
-	world *inspect.World
+	// Correlated observation from inspect.Snapshot.
+	obs *inspect.Observation
 
-	// Kernel-alive index derived from World.
+	// Kernel-alive index derived from Observation.
 	kernelAlive map[kernel.ProgramID]bool
 
 	// Filesystem facts: directory scans.
@@ -59,22 +59,22 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	}
 
 	// ----------------------------------------------------------------
-	// Phase 1: Correlated world via inspect.Snapshot
+	// Phase 1: Correlated observation via inspect.Snapshot
 	// ----------------------------------------------------------------
 
 	scanner := layout.BPFFS().Scanner()
-	world, err := inspect.Snapshot(ctx, store, kops, scanner)
+	obs, err := inspect.Snapshot(ctx, store, kops, scanner)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot: %w", err)
 	}
-	s.world = world
+	s.obs = obs
 
 	// ----------------------------------------------------------------
-	// Phase 2: Build indexes from World
+	// Phase 2: Build indexes from Observation
 	// ----------------------------------------------------------------
 
 	// Kernel-alive index: any program present in the kernel.
-	for _, p := range world.Programs {
+	for _, p := range obs.Programs {
 		if p.Presence.InKernel {
 			s.kernelAlive[p.ProgramID] = true
 		}
@@ -85,13 +85,13 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	dbProgIDs := make(map[kernel.ProgramID]bool)
 	dbDispatcherKeys := make(map[string]bool)
 
-	for _, p := range world.ManagedPrograms() {
+	for _, p := range obs.ManagedPrograms() {
 		dbProgIDs[p.ProgramID] = true
 		if p.Managed != nil && p.Managed.Handles.PinPath != "" {
 			dbProgPins[p.Managed.Handles.PinPath.String()] = true
 		}
 	}
-	for _, d := range world.ManagedDispatchers() {
+	for _, d := range obs.ManagedDispatchers() {
 		dt, err := dispatcher.ParseDispatcherType(d.DispType)
 		if err != nil {
 			return nil, fmt.Errorf("parse dispatcher type %q: %w", d.DispType, err)
@@ -103,7 +103,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Phase 3: Store-derived facts (dispatcher extension counts)
 	// ----------------------------------------------------------------
 
-	for _, d := range world.ManagedDispatchers() {
+	for _, d := range obs.ManagedDispatchers() {
 		if d.Managed == nil {
 			continue
 		}
@@ -114,7 +114,7 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 	// Phase 4: Netlink facts (TC filter checks)
 	// ----------------------------------------------------------------
 
-	for _, d := range world.ManagedDispatchers() {
+	for _, d := range obs.ManagedDispatchers() {
 		if d.Managed == nil {
 			continue
 		}
@@ -278,17 +278,17 @@ func GatherState(ctx context.Context, store platform.Store, kops platform.Kernel
 }
 
 // --------------------------------------------------------------------
-// View builders: construct correlated tuples from World facts.
+// View builders: construct correlated tuples from Observation facts.
 // All joins happen here. Rules never touch raw maps.
 // --------------------------------------------------------------------
 
 // Programs returns one ProgramState per managed program, correlated
-// with kernel and filesystem state. Derived from the World snapshot.
+// with kernel and filesystem state. Derived from the Observation snapshot.
 func (s *ObservedState) Programs() []ProgramState {
 	if s.programs != nil {
 		return s.programs
 	}
-	for _, p := range s.world.ManagedPrograms() {
+	for _, p := range s.obs.ManagedPrograms() {
 		ps := ProgramState{
 			ProgramID: p.ProgramID,
 			DB:        p.Managed,
@@ -307,12 +307,12 @@ func (s *ObservedState) Programs() []ProgramState {
 }
 
 // Links returns one LinkState per managed link, correlated with
-// kernel state and filesystem. Derived from the World snapshot.
+// kernel state and filesystem. Derived from the Observation snapshot.
 func (s *ObservedState) Links() []LinkState {
 	if s.links != nil {
 		return s.links
 	}
-	for _, lr := range s.world.ManagedLinks() {
+	for _, lr := range s.obs.ManagedLinks() {
 		synthetic := lr.IsSynthetic()
 		ls := LinkState{
 			DB:        lr.Managed,
@@ -330,13 +330,13 @@ func (s *ObservedState) Links() []LinkState {
 
 // Dispatchers returns one DispatcherState per managed dispatcher,
 // correlated with kernel, filesystem, and extension link counts.
-// Derived from the World snapshot plus additional gathered facts.
+// Derived from the Observation snapshot plus additional gathered facts.
 func (s *ObservedState) Dispatchers() []DispatcherState {
 	if s.dispatchers != nil {
 		return s.dispatchers
 	}
 	bpffs := s.layout.BPFFS()
-	for _, dr := range s.world.ManagedDispatchers() {
+	for _, dr := range s.obs.ManagedDispatchers() {
 		if dr.Managed == nil {
 			continue
 		}
@@ -374,11 +374,11 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 			LinkCount:  -1,
 		}
 
-		// Prog pin existence from World presence.
+		// Prog pin existence from Observation presence.
 		exists := dr.ProgPresence.InFS
 		ds.ProgPinExist = &exists
 
-		// XDP link checks from World presence.
+		// XDP link checks from Observation presence.
 		if dt == dispatcher.DispatcherTypeXDP {
 			ds.KernelLink = dr.LinkPresence.InKernel
 			linkExists := dr.LinkPresence.InFS
@@ -405,11 +405,12 @@ func (s *ObservedState) Dispatchers() []DispatcherState {
 	return s.dispatchers
 }
 
-// World returns the underlying inspect.World snapshot. This provides
-// access to the full correlated state for callers that need to derive
-// additional views (e.g. store GC inputs) without re-enumerating.
-func (s *ObservedState) World() *inspect.World {
-	return s.world
+// Observation returns the underlying inspect.Observation snapshot.
+// This provides access to the full correlated state for callers
+// that need to derive additional views (e.g. store GC inputs)
+// without re-enumerating.
+func (s *ObservedState) Observation() *inspect.Observation {
+	return s.obs
 }
 
 // OrphanFsEntries returns filesystem entries under the bpffs tree

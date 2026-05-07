@@ -1154,7 +1154,7 @@ func TestListLinks_ReturnsDetails(t *testing.T) {
 
 	// Verify that ListLinks() returns LinkSpec with Details populated
 	// for ALL link detail types. This is critical for inspect.Snapshot()
-	// to build a complete World where the ATTACH column can display
+	// to build a complete Observation where the ATTACH column can display
 	// meaningful information.
 	store, err := sqlite.NewInMemory(context.Background(), testLogger())
 	require.NoError(t, err, "failed to create store")

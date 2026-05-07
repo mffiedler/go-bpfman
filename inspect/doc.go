@@ -17,8 +17,8 @@
 //
 // # Snapshot
 //
-// [Snapshot] builds a point-in-time [World] by reading from all three
-// sources in parallel. The returned World contains every known BPF
+// [Snapshot] builds a point-in-time [Observation] by reading from all three
+// sources in parallel. The returned Observation contains every known BPF
 // object, correlated by kernel ID:
 //
 //   - [ProgramView]: programs with store record, kernel info, and
@@ -26,8 +26,8 @@
 //   - [LinkRow]: links with store record and kernel presence
 //   - [DispatcherRow]: dispatchers with program and link presence
 //
-// Use [World.ManagedPrograms], [World.ManagedLinks], and
-// [World.ManagedDispatchers] for the store-first view (objects that
+// Use [Observation.ManagedPrograms], [Observation.ManagedLinks], and
+// [Observation.ManagedDispatchers] for the store-first view (objects that
 // bpfman is actively managing).
 //
 // # Targeted Lookups

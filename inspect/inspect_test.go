@@ -588,7 +588,7 @@ func TestGetLink_NotFound(t *testing.T) {
 func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	t.Parallel()
 
-	// Verify that Snapshot() returns a World where links have Details populated.
+	// Verify that Snapshot() returns an Observation where links have Details populated.
 	// This is critical for the ATTACH column in CLI output.
 	bpfFS := testBPFFS(t)
 	scanner := bpfFS.Scanner()
@@ -625,7 +625,7 @@ func TestSnapshot_LinksHaveDetails(t *testing.T) {
 	w, err := inspect.Snapshot(context.Background(), store, kern, scanner)
 	require.NoError(t, err)
 
-	// Verify links in World have details
+	// Verify links in Observation have details
 	managed := w.ManagedLinks()
 	require.Len(t, managed, 2)
 

@@ -286,14 +286,14 @@ func (m *Manager) GetLinkInfo(ctx context.Context, linkID kernel.LinkID) (inspec
 // (data inconsistency).
 func (m *Manager) FindLoadedProgramByMetadata(ctx context.Context, key, value string) (bpfman.ProgramRecord, kernel.ProgramID, error) {
 	scanner := m.rt.BPFFS().Scanner()
-	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
+	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramRecord{}, 0, fmt.Errorf("snapshot: %w", err)
 	}
 
 	// Find managed programs that are also in kernel and match the metadata
 	var matches []inspect.ProgramView
-	for _, row := range world.Programs {
+	for _, row := range obs.Programs {
 		if !row.Presence.InStore || !row.Presence.InKernel {
 			continue
 		}
@@ -358,13 +358,13 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 	filter := bpfman.ApplyListOptions(opts...)
 
 	scanner := m.rt.BPFFS().Scanner()
-	world, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
+	obs, err := inspect.Snapshot(ctx, m.store, m.kernel, scanner)
 	if err != nil {
 		return bpfman.ProgramListResult{}, fmt.Errorf("snapshot: %w", err)
 	}
 
 	var programs []bpfman.Program
-	for _, row := range world.ManagedPrograms() {
+	for _, row := range obs.ManagedPrograms() {
 		if prog, ok := row.AsProgram(); ok {
 			p := prog // explicit copy for clarity
 			if filter.Matches(&p) {
@@ -386,7 +386,7 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 	})
 
 	return bpfman.ProgramListResult{
-		ObservedAt: world.Meta.ObservedAt,
+		ObservedAt: obs.Meta.ObservedAt,
 		Host:       GetHostInfo(),
 		Programs:   programs,
 	}, nil
