@@ -22,9 +22,20 @@ func Evaluate(state *ObservedState, rules []Rule) []Violation {
 	return out
 }
 
-// AllRules returns all rules (doctor + GC) for introspection.
+// AllRules returns all rules (doctor + GC) for introspection. Panics
+// if any name appears twice across the two registries; rule names are
+// the only handle FindRule and RuleNames expose, so duplicates would
+// silently shadow.
 func AllRules() []Rule {
-	return append(CoherencyRules(), GCRules()...)
+	rules := append(CoherencyRules(), GCRules()...)
+	seen := make(map[string]struct{}, len(rules))
+	for _, r := range rules {
+		if _, dup := seen[r.Name]; dup {
+			panic(fmt.Sprintf("coherency: duplicate rule name %q registered across CoherencyRules and GCRules", r.Name))
+		}
+		seen[r.Name] = struct{}{}
+	}
+	return rules
 }
 
 // FindRule returns the rule with the given name, or nil if not found.
@@ -407,31 +418,6 @@ Category: kernel-vs-db`,
 						Severity:    SeverityWarning,
 						Category:    "kernel-vs-db",
 						Description: fmt.Sprintf("Kernel program %d is pinned under %s but not tracked in DB; may cause EBUSY", o.ProgramID, o.Path),
-					})
-				}
-				return out
-			},
-		},
-		// Orphan program directories under <base>/programs/ with no DB record.
-		{
-			Name: "orphan-program-dirs",
-			Description: `Reports orphan program directories under <base>/programs/ that have
-no corresponding database record. These directories contain persisted
-bytecode from a previous load that was rolled back, crashed, or whose
-DB row was removed. GC will remove them.
-
-Severity: WARNING
-Category: fs-vs-db`,
-			Eval: func(s *ObservedState) []Violation {
-				var out []Violation
-				for _, o := range s.OrphanFsEntries() {
-					if o.Kind != OrphanProgramDir && o.Kind != OrphanProgramDirUnk {
-						continue
-					}
-					out = append(out, Violation{
-						Severity:    SeverityWarning,
-						Category:    "fs-vs-db",
-						Description: fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
 					})
 				}
 				return out

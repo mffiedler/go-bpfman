@@ -53,6 +53,23 @@ func assertActions(t *testing.T, violations []Violation, expected [][]action.Act
 	}
 }
 
+// TestAllRules_NamesUnique guards against accidental name collisions
+// across CoherencyRules and GCRules. Duplicates would silently shadow
+// in FindRule and double-list in RuleNames, with no compile-time check.
+func TestAllRules_NamesUnique(t *testing.T) {
+	t.Parallel()
+
+	seen := make(map[string]int)
+	for _, r := range AllRules() {
+		seen[r.Name]++
+	}
+	for name, count := range seen {
+		if count > 1 {
+			t.Errorf("rule name %q registered %d times; names must be unique across CoherencyRules and GCRules", name, count)
+		}
+	}
+}
+
 func TestStaleDispatcher_XDP(t *testing.T) {
 	t.Parallel()
 
