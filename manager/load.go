@@ -99,17 +99,11 @@ type LoadOpts struct {
 //
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
-func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source LoadSource, programs []ProgramSpec, opts LoadOpts) (_ []bpfman.Program, retErr error) {
-	ctx, err := m.beginOp(ctx, writeLock)
+func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
+	ctx, err := m.gcOnEntry(ctx, writeLock)
 	if err != nil {
 		return nil, err
 	}
-	executed := false
-	defer func() {
-		if executed {
-			m.endOp(retErr)
-		}
-	}()
 
 	objectPath, pulled, err := m.resolveBatchSource(ctx, source)
 	if err != nil {
@@ -143,7 +137,6 @@ func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source L
 		}
 	}
 
-	executed = true
 	for i, spec := range specs {
 		if opts.ShareMaps && i > 0 && spec.MapOwnerID() == 0 {
 			spec = spec.WithMapOwnerID(loaded[0].Record.ProgramID)

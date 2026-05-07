@@ -104,12 +104,16 @@
 // # Garbage Collection
 //
 // GC reconciles the store against kernel and filesystem state. Each
-// mutating method (Load, Unload, Attach, Detach) calls gcIfNeeded
-// internally, so callers never need to coordinate GC themselves. The
-// constructor sets mutatedSinceGC to true, so the first mutating call
-// after construction runs GC automatically (replacing any explicit
-// startup GC). Subsequent GC cycles run only when a prior mutation
-// has dirtied state.
+// mutating method (Load, Unload, Attach, Detach) runs GC on the way
+// in via gcOnEntry, so callers never need to coordinate GC
+// themselves. There is no flag, no scheduling state: every mutating
+// method simply runs GC as its first step. The active-marker in the
+// context prevents nested mutating calls within the same outer
+// operation from re-running GC.
+//
+// computeStoreGC inside ComputeGC is gated on kernel-enumeration
+// completeness; partial enumeration skips the store-deletion phases
+// rather than misclassifying healthy state as stale.
 //
 // GC removes:
 //
@@ -143,9 +147,8 @@
 // serialise access, typically via the lock package (lock/) which
 // provides writer-exclusive locking at the server level.
 //
-// GC has its own mutex (gcMu) to coordinate with the mutation flag.
-// Mutating methods use gcIfNeeded and markMutated internally, so
-// external callers do not need to interact with this coordination.
+// Mutating methods run GC on entry via gcOnEntry; callers do not
+// need to coordinate GC explicitly.
 //
 // # Dependencies
 //

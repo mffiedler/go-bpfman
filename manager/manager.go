@@ -19,7 +19,7 @@ import (
 type opIDKey struct{}
 
 // opActiveKey is the context key that marks a manager operation as
-// active. When present, beginOp skips GC because coherence was
+// active. When present, gcOnEntry skips GC because coherence was
 // already established by the outermost caller.
 type opActiveKey struct{}
 
@@ -45,10 +45,6 @@ type Manager struct {
 	programDiscoverer platform.ProgramDiscoverer
 	imagePuller       platform.ImagePuller // optional, nil if not configured
 	logger            *slog.Logger
-
-	// GC coordination - separate from request-level locking
-	gcMu           sync.Mutex
-	mutatedSinceGC bool
 
 	// Diagnostic: per-(iface, direction) nsid that this manager
 	// has captured for prior TCX attaches. Used to detect when a
@@ -97,7 +93,6 @@ func New(
 		imagePuller:       imagePuller,
 		executor:          newExecutor(store, kernel, rt.Bytecode(), rt.BPFFS(), logger).(action.ExecutorWithResult),
 		logger:            logger.With("component", "manager"),
-		mutatedSinceGC:    true,
 	}, nil
 }
 
@@ -137,20 +132,29 @@ type GCOptions struct {
 	Prune bool
 }
 
-// GC removes stale database entries that no longer exist in the kernel.
-// This should be called at startup before accepting requests. After GC,
-// the database is authoritative for the session.
+// GC removes stale database entries that no longer exist in the
+// kernel. Every mutating manager method (Load, Unload, Attach,
+// Detach) runs GC on the way in via gcOnEntry, so callers do not
+// normally need to invoke this explicitly. Operators can run GC
+// directly via `bpfman gc`.
 //
 // Stale entries can occur when:
-//   - The daemon restarts but kernel state was lost (e.g., system reboot)
-//   - A previous unload operation failed partway through
-//   - External tools removed BPF objects without updating the database
-//   - The kernel reused a program ID after unload
+//   - A previous unload operation failed partway through.
+//   - External tools removed BPF objects without updating the
+//     database.
+//   - The kernel reused a program ID after unload.
+//   - Persistent state from a prior process is reconciled on the
+//     first mutation of a new process.
 //
-// A DB program is only preserved if both the kernel ID is live and our
-// bpffs pin path exists. This prevents stale DB rows from surviving
-// when the kernel reuses an ID that now belongs to a different program.
-// GC runs garbage collection with all rules.
+// A DB program is only preserved if both the kernel ID is live and
+// our bpffs pin path exists. This prevents stale DB rows from
+// surviving when the kernel reuses an ID that now belongs to a
+// different program.
+//
+// computeStoreGC's deletion phases are gated on kernel-enumeration
+// completeness inside ComputeGC; under partial enumeration the
+// store-deletion phases are skipped to avoid misclassifying healthy
+// state as stale.
 func (m *Manager) GC(ctx context.Context, writeLock lock.WriterScope) (GCResult, error) {
 	return m.GCWithOptions(ctx, writeLock, GCOptions{})
 }
@@ -216,7 +220,22 @@ func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opt
 		}
 	}
 
-	plan.StoreActions = computeStoreGC(in.programs, in.dispatchers, in.links, in.kernelPrograms, in.kernelLinks)
+	// Gate computeStoreGC on kernel-enumeration completeness. Phase 3
+	// of computeStoreGC (manager/gc.go:74) deletes any non-synthetic,
+	// non-XDP/TC store link whose ID is missing from the kernel link
+	// set. Under partial enumeration, healthy links look stale and
+	// would be incorrectly deleted; the next mutating call on those
+	// links would then surface ErrLinkNotManaged. Same hazard applies
+	// to program-side phases. The doctor rule
+	// kernel-enumeration-incomplete (manager/coherency/rules.go:55)
+	// continues to surface this state for operator visibility.
+	if world.Meta.ProgramEnumErrors == 0 && world.Meta.LinkEnumErrors == 0 {
+		plan.StoreActions = computeStoreGC(in.programs, in.dispatchers, in.links, in.kernelPrograms, in.kernelLinks)
+	} else {
+		m.logger.WarnContext(ctx, "skipping store-GC: kernel enumeration incomplete",
+			"program_enum_errors", world.Meta.ProgramEnumErrors,
+			"link_enum_errors", world.Meta.LinkEnumErrors)
+	}
 
 	// Coherency rule engine. When there are store actions, apply
 	// them inside a rolled-back transaction and re-gather coherency
@@ -401,67 +420,32 @@ func (m *Manager) GCWithOptions(ctx context.Context, writeLock lock.WriterScope,
 	return m.ExecuteGC(ctx, writeLock, plan, opts)
 }
 
-// beginOp prepares a mutating manager operation. If the context
-// already carries the opActiveKey marker (re-entry from an outer
-// operation), it returns immediately. Otherwise it runs GC when
-// the mutatedSinceGC flag is set, clears the flag, and returns a
-// context with the marker so that nested calls skip GC.
-func (m *Manager) beginOp(ctx context.Context, writeLock lock.WriterScope) (context.Context, error) {
+// gcOnEntry prepares a mutating manager operation by running GC on
+// the way in. Every mutating method (Load, Attach, Detach, Unload)
+// goes through here, so every mutation begins with a coherency
+// sweep that reconciles store, kernel, and bpffs state.
+//
+// Re-entry: if the context already carries the opActiveKey marker
+// (a nested mutating call within the same outer operation), GC is
+// skipped because the outer caller already swept. The marker is
+// set before the GC call so any internal recursion sees it and
+// bails.
+//
+// computeStoreGC has its own gate on kernel-enumeration
+// completeness inside ComputeGC; partial enumeration skips the
+// store-deletion phases rather than misclassifying healthy state.
+//
+// There is no flag, no endOp, and no constructor default. Every
+// process's first mutation runs GC because every mutation runs
+// GC. The bpfman-server does not need a separate bootstrap GC
+// call.
+func (m *Manager) gcOnEntry(ctx context.Context, writeLock lock.WriterScope) (context.Context, error) {
 	if ctx.Value(opActiveKey{}) != nil {
 		return ctx, nil
 	}
-
-	m.gcMu.Lock()
-	needsGC := m.mutatedSinceGC
-	m.gcMu.Unlock()
-
-	if needsGC {
-		if _, err := m.GC(ctx, writeLock); err != nil {
-			return ctx, err
-		}
-		m.gcMu.Lock()
-		m.mutatedSinceGC = false
-		m.gcMu.Unlock()
+	ctx = context.WithValue(ctx, opActiveKey{}, true)
+	if _, err := m.GC(ctx, writeLock); err != nil {
+		return ctx, err
 	}
-
-	return context.WithValue(ctx, opActiveKey{}, true), nil
-}
-
-// endOp completes a mutating manager operation. If the operation
-// failed, the mutatedSinceGC flag is set so that the next operation
-// runs GC to clean up any partial side effects. Successful
-// operations leave the flag clear.
-//
-// The post-detach log-only contract on Manager.unload and
-// removeEmptyDispatcher relies on the next GC eventually repairing
-// any swallowed residue. Two things keep that promise without
-// arming GC on every successful op:
-//
-//   - In CLI-only invocations the constructor sets
-//     mutatedSinceGC=true, so the first mutating call in each new
-//     process runs GC and sweeps any residue left by the previous
-//     invocation.
-//   - In long-running server processes, residue from a successful
-//     log-only failure persists until the next failing operation
-//     or an explicit GC. The bpfman-server is being phased out,
-//     and the cost of a transient orphan inside a single server
-//     lifetime is acceptable against the alternative.
-//
-// The alternative considered here was arming mutatedSinceGC
-// unconditionally on every op. That was dropped because
-// computeStoreGC's Phase 3 (manager/gc.go:74) deletes any
-// non-synthetic, non-XDP/TC store link whose ID is missing from the
-// kernel link set, with no gate on kernel-enumeration completeness.
-// Running GC at the start of every Detach exposed that latent bug
-// on ARM under parallel-canary load: a partial kernel link iter
-// classified healthy tracepoint link rows as stale and deleted
-// them, and the next Detach surfaced ErrLinkNotManaged. Gating
-// computeStoreGC on kernel-enumeration-incomplete is the right
-// follow-up, but it is its own change.
-func (m *Manager) endOp(err error) {
-	if err != nil {
-		m.gcMu.Lock()
-		m.mutatedSinceGC = true
-		m.gcMu.Unlock()
-	}
+	return ctx, nil
 }

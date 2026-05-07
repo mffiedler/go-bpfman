@@ -25,17 +25,11 @@ import (
 //
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
-func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID) (retErr error) {
-	ctx, err := m.beginOp(ctx, writeLock)
+func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID) error {
+	ctx, err := m.gcOnEntry(ctx, writeLock)
 	if err != nil {
 		return err
 	}
-	executed := false
-	defer func() {
-		if executed {
-			m.endOp(retErr)
-		}
-	}()
 
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)
@@ -64,7 +58,6 @@ func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID
 	m.logger.InfoContext(ctx, "detaching link",
 		"link_id", linkID, "kind", record.Kind, "pin_path", record.PinPath)
 
-	executed = true
 	plan := m.detachPlan(record, dispKey)
 	if err := operation.Run0(ctx, m.logger, m.executor, plan); err != nil {
 		return err

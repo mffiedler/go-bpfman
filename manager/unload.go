@@ -218,17 +218,11 @@ func (m *Manager) removeProgramBytecodeDir(programID kernel.ProgramID) error {
 // deleteProgramRecord can produce a returned error, and both retry
 // cleanly. ErrProgramNotFound from preflight is informative ("you
 // asked to unload an ID that does not exist") and is left in place.
-func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID) (retErr error) {
-	ctx, err := m.beginOp(ctx, writeLock)
+func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID) error {
+	ctx, err := m.gcOnEntry(ctx, writeLock)
 	if err != nil {
 		return err
 	}
-	executed := false
-	defer func() {
-		if executed {
-			m.endOp(retErr)
-		}
-	}()
 
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.getProgram(ctx, programID)
@@ -262,7 +256,6 @@ func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, progra
 
 	m.logger.InfoContext(ctx, "unloading program", "program_id", programID, "links", len(links))
 
-	executed = true
 	if err := m.unload(ctx, programID, programName, links, true); err != nil {
 		return err
 	}

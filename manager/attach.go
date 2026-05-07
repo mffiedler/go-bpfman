@@ -16,12 +16,11 @@ import (
 //
 // On failure, returns a plain error. Completed steps are rolled back
 // automatically by the plan interpreter.
-func (m *Manager) Attach(ctx context.Context, writeLock lock.WriterScope, spec bpfman.AttachSpec) (_ bpfman.Link, retErr error) {
-	ctx, err := m.beginOp(ctx, writeLock)
+func (m *Manager) Attach(ctx context.Context, writeLock lock.WriterScope, spec bpfman.AttachSpec) (bpfman.Link, error) {
+	ctx, err := m.gcOnEntry(ctx, writeLock)
 	if err != nil {
 		return bpfman.Link{}, err
 	}
-	defer func() { m.endOp(retErr) }()
 
 	switch s := spec.(type) {
 	case bpfman.TracepointAttachSpec:
