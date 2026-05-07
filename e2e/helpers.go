@@ -60,16 +60,16 @@ import (
 //go:embed testdata/bpf/*.bpf.o
 var bpfFS embed.FS
 
-// TestEnv provides an isolated test environment for e2e tests.
-// Each test gets a fully isolated environment with unique directories,
-// database, and socket, enabling t.Parallel() across all tests.
+// TestEnv provides a test environment for e2e tests.
 //
-// When BPFMAN_E2E_SHARED_RUNTIME=1 is set, NewTestEnv hands back a
-// view onto the suite-wide runtime instead of creating one per test;
-// the per-test cleanup (unmount bpffs, remove temp dir, close store)
-// is then a no-op and the suite owns those operations end-to-end via
-// teardownSharedRuntime in TestMain.  See shared_runtime_test.go for
-// the rationale.
+// By default (BPFMAN_E2E_ISOLATED_RUNTIME unset) NewTestEnv hands
+// back a view onto the suite-wide runtime; the per-test cleanup
+// (unmount bpffs, remove temp dir, close store) is then a no-op and
+// the suite owns those operations end-to-end via teardownSharedRuntime
+// in TestMain. Setting BPFMAN_E2E_ISOLATED_RUNTIME=1 opts each test
+// out and gives it its own runtime, enabling fully-isolated parallel
+// runs at the cost of cross-test concurrency coverage. See
+// shared_runtime_test.go for the rationale.
 type TestEnv struct {
 	T           *testing.T
 	Layout      fs.Layout
@@ -83,7 +83,7 @@ type TestEnv struct {
 	// in that case and the suite-end teardown owns global teardown.
 	shared bool
 
-	// scopeMu guards the per-test scope sets below.  In shared mode
+	// scopeMu guards the per-test scope sets below. In shared mode
 	// concurrent tests run against the same manager, so the
 	// TestEnv's bookkeeping has to be safe against the test's own
 	// callers parallelising helpers (none today, but cheap to keep
@@ -105,11 +105,11 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	t.Helper()
 
 	// Shared-runtime mode: hand back a view onto the suite-wide
-	// runtime that TestMain stood up.  The per-test bpffs mount,
-	// store, and manager are skipped; cleanup is a no-op.  Note
+	// runtime that TestMain stood up. The per-test bpffs mount,
+	// store, and manager are skipped; cleanup is a no-op. Note
 	// that AssertCleanState and friends still operate on global
 	// state in this mode -- phase 2 of the shared-runtime work
-	// makes them scope-aware.  Today, running multiple tests
+	// makes them scope-aware. Today, running multiple tests
 	// concurrently in shared mode will trip the global checks.
 	if sharedRuntimeMode() {
 		rt := requireSharedRuntimeForTest(t)
@@ -267,7 +267,7 @@ func (e *TestEnv) cleanup() {
 	}
 }
 
-// runWithLock executes a function under the writer lock.  Routes
+// runWithLock executes a function under the writer lock. Routes
 // through lock.RunWithTiming so wait_ms / held_ms appear in the
 // log stream tagged component=lock; emit at Debug level, so the
 // default e2e logger (Error level) still drops them and the
@@ -284,9 +284,9 @@ func (e *TestEnv) runWithLock(ctx context.Context, fn func(context.Context, lock
 }
 
 // callerOp returns the unqualified name of the function that
-// called runWithLock -- e.g. "LoadFile", "Attach".  Used to tag
+// called runWithLock -- e.g. "LoadFile", "Attach". Used to tag
 // the lock-timing log entries so shared-runtime BPFMAN_LOG runs
-// can be aggregated by operation type.  Returns "?" if the stack
+// can be aggregated by operation type. Returns "?" if the stack
 // inspection fails; callers must not rely on this for control
 // flow.
 func callerOp() string {
@@ -383,7 +383,7 @@ func (e *TestEnv) Unload(ctx context.Context, programID kernel.ProgramID) error 
 // List returns the managed programs visible to this TestEnv.
 //
 // In isolated mode (the default) this is everything the manager
-// knows about, since the manager is per-test.  In shared-runtime
+// knows about, since the manager is per-test. In shared-runtime
 // mode the result is filtered to programs this TestEnv created via
 // LoadFile / LoadImage and not yet Unloaded -- callers that wrote
 // against the historical "shows my programs" expectation continue
@@ -416,7 +416,7 @@ func (e *TestEnv) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	return e.Manager.Get(ctx, programID)
 }
 
-// Attach attaches a program using the given spec.  The writer lock is
+// Attach attaches a program using the given spec. The writer lock is
 // acquired automatically and passed to the manager.
 func (e *TestEnv) Attach(ctx context.Context, spec bpfman.AttachSpec) (bpfman.LinkRecord, error) {
 	var result bpfman.Link
@@ -449,7 +449,7 @@ func (e *TestEnv) Detach(ctx context.Context, linkID kernel.LinkID) error {
 
 // trackPrograms records every successfully loaded program in the
 // TestEnv's local set so AssertProgramCount and AssertCleanState
-// can return scope-local answers under shared mode.  Cheap in
+// can return scope-local answers under shared mode. Cheap in
 // isolated mode (the assertion helpers ignore the set there).
 func (e *TestEnv) trackPrograms(progs []bpfman.Program) {
 	if len(progs) == 0 {
@@ -567,7 +567,7 @@ func (e *TestEnv) AssertCleanState() {
 // In shared-runtime mode the assertion is scoped to programs this
 // TestEnv created (via env.LoadFile / env.LoadImage and not yet
 // Unloaded), since the manager's global view also contains other
-// concurrent tests' programs.  In isolated mode the per-test
+// concurrent tests' programs. In isolated mode the per-test
 // manager has only this test's programs, so a global list is
 // equivalent; we keep the global path for that mode unchanged.
 func (e *TestEnv) AssertProgramCount(expected int) {
@@ -633,18 +633,19 @@ func RequireRoot(t *testing.T) {
 	}
 }
 
-// RequireIsolatedRuntime skips the test when BPFMAN_E2E_SHARED_RUNTIME=1
-// is in effect. Use it for tests whose assertions are globally
-// scoped -- e.g. "after my last unload the shared bpffs pin is
-// removed" -- which are correct in the per-test runtime where this
-// test owns the entire bpffs, but cannot hold under shared mode
-// where concurrent tests legitimately keep the same shared resources
-// alive. The skip carries a reason so a shared-mode run still
-// reports clearly that something was deliberately not exercised.
+// RequireIsolatedRuntime skips the test under the shared-runtime
+// default (BPFMAN_E2E_ISOLATED_RUNTIME unset). Use it for tests
+// whose assertions are globally scoped -- e.g. "after my last
+// unload the shared bpffs pin is removed" -- which are correct in
+// the per-test runtime where this test owns the entire bpffs, but
+// cannot hold under shared mode where concurrent tests legitimately
+// keep the same shared resources alive. The skip carries a reason
+// so a shared-mode run still reports clearly that something was
+// deliberately not exercised.
 func RequireIsolatedRuntime(t *testing.T, reason string) {
 	t.Helper()
 	if sharedRuntimeMode() {
-		t.Skipf("skipped under BPFMAN_E2E_SHARED_RUNTIME=1: %s", reason)
+		t.Skipf("skipped under shared runtime (set BPFMAN_E2E_ISOLATED_RUNTIME=1 to exercise): %s", reason)
 	}
 }
 
@@ -1781,11 +1782,11 @@ func assertCounterQuiet(t *testing.T, prog bpfman.Program, mapName string, fire 
 }
 
 // requireCounterEqual asserts want == got and, on mismatch, prints
-// both sides plus the delta in decimal.  testify's require.Equal
+// both sides plus the delta in decimal. testify's require.Equal
 // renders uint64 mismatches through spew which prefixes them with
 // 0x; the surrounding test diagnostics (events, weights, before/
 // after counts) are decimal, so the hex/decimal split makes failure
-// triage harder than it needs to be.  Using a plain t.Fatalf keeps
+// triage harder than it needs to be. Using a plain t.Fatalf keeps
 // every number in one base.
 func requireCounterEqual(t *testing.T, want, got uint64, format string, args ...any) {
 	t.Helper()

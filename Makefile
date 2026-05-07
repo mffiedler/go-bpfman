@@ -134,14 +134,19 @@ override STATIC := $(filter 1,$(STATIC))
 RACE ?=
 override RACE := $(filter 1,$(RACE))
 
-# SHARED_RUNTIME=1 sets BPFMAN_E2E_SHARED_RUNTIME=1 in the e2e sudo
-# command line, switching the suite to its production-shaped runtime
-# (one bpffs mount, one sqlite store, one manager instance shared
-# across tests).  The Go side checks for the literal string "1", so
-# any other value collapses to empty here and matches the env-unset
-# default.  Same filter-1 pattern as RACE/STATIC.
-SHARED_RUNTIME ?=
-override SHARED_RUNTIME := $(filter 1,$(SHARED_RUNTIME))
+# ISOLATED_RUNTIME=1 sets BPFMAN_E2E_ISOLATED_RUNTIME=1 in the e2e
+# sudo command line, switching the suite from its production-shaped
+# default (one bpffs mount, one sqlite store, one manager instance
+# shared across tests) to per-test isolated runtimes (each test
+# gets its own). Use the isolated lane when chasing a specific
+# feature where orthogonal cross-test contention would muddy
+# attribution; CI exercises both lanes, so the default just decides
+# which one a developer hits first when they type `make test-e2e`.
+# The Go side checks for the literal string "1", so any other value
+# collapses to empty here and matches the env-unset (= shared)
+# behaviour. Same filter-1 pattern as RACE/STATIC.
+ISOLATED_RUNTIME ?=
+override ISOLATED_RUNTIME := $(filter 1,$(ISOLATED_RUNTIME))
 
 # ---------------------------------------------------------------------------
 # Runtime image dispatch.
@@ -606,7 +611,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # stress run when bumped (CI pins it to 5 so every PR gets a small
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
-	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ against the built
 # bpfman binary. Each script executes from e2e/ so testdata paths
@@ -683,7 +688,7 @@ doc-text:
 # ---------------------------------------------------------------------------
 bpfman-build: bpfman-fmt bpfman-compile
 
-# Format every .go file in the tree.  `go fmt ./...` skips files that
+# Format every .go file in the tree. `go fmt ./...` skips files that
 # don't compile under the default build tags (e.g. anything behind
 # //go:build e2e), so we'd silently miss formatting drift in e2e/.
 # gofmt invoked directly on the file list ignores build tags and
@@ -695,7 +700,7 @@ bpfman-fmt:
 # `go vet ./...` honours the active tag set; a single pass under the
 # default tags would skip files behind //go:build e2e (entire e2e/
 # package), //go:build nsenter (CGO-namespaced helper), and the
-# cgo_sqlite alternate driver path.  Cover them in three passes:
+# cgo_sqlite alternate driver path. Cover them in three passes:
 #   - Default pass: most code plus the modernc.org/sqlite branch
 #     (!cgo_sqlite).
 #   - e2e+nsenter pass: adds the build-tagged files; supersets the
@@ -1058,7 +1063,7 @@ ci-test: ci-image
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
 	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
-	sudo $(if $(SHARED_RUNTIME),BPFMAN_E2E_SHARED_RUNTIME=$(SHARED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
+	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
 # scripts under e2e/scripts/ are interpreted by the bpfman

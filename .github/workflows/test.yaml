@@ -14,10 +14,10 @@ env:
   CI_BUILDX_CACHE: --cache-from type=gha,scope=ci --cache-to type=gha,mode=max,scope=ci
 
 jobs:
-  # Unit tests run with RACE=1 only.  The race detector only adds
+  # Unit tests run with RACE=1 only. The race detector only adds
   # checks; nothing passes under RACE=1 that would fail under RACE=0,
   # and the no-kernel surface here means the timing-mask argument
-  # that justifies a RACE=0 e2e lane does not apply.  The default
+  # that justifies a RACE=0 e2e lane does not apply. The default
   # `make` build and the test-e2e-scripts RACE=0 lane already
   # exercise the non-race link path.
   test:
@@ -37,14 +37,14 @@ jobs:
       - run: make ci-test RACE=1
 
   test-e2e:
-    name: E2E tests (${{ matrix.arch }}, RACE=${{ matrix.race }}, SHARED_RUNTIME=${{ matrix.shared_runtime }})
+    name: E2E tests (${{ matrix.arch }}, RACE=${{ matrix.race }}, ISOLATED_RUNTIME=${{ matrix.isolated_runtime }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         race: [1, 0]
-        shared_runtime: [1, 0]
+        isolated_runtime: [0, 1]
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -53,20 +53,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} SHARED_RUNTIME=${{ matrix.shared_runtime }}
+      - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} ISOLATED_RUNTIME=${{ matrix.isolated_runtime }}
 
-  # Parallel-mode canary for the e2e suite.  Mirrors test-e2e but
+  # Parallel-mode canary for the e2e suite. Mirrors test-e2e but
   # omits the PARALLEL=1 override so go test runs at GOMAXPROCS,
   # which exercises the suite's intra-binary parallelism (50 of 58
-  # tests opt into t.Parallel()).  Race detector is off here by
+  # tests opt into t.Parallel()). Race detector is off here by
   # design -- race+parallelism is its own beast and the existing
-  # test-e2e matrix already gates RACE=1.  shared_runtime=1 is on
-  # so this lane specifically stresses the shared-state path under
-  # contention (the per-test mode is already covered by the serial
-  # matrix above).  Blocking from day one: a regression here is
-  # treated as a real failure, not a canary warning.
+  # test-e2e matrix already gates RACE=1. ISOLATED_RUNTIME=0 keeps
+  # this lane on the production-shaped shared-state path so it
+  # specifically stresses contention there (the per-test isolated
+  # mode is already covered by the serial matrix above). Blocking
+  # from day one: a regression here is treated as a real failure,
+  # not a canary warning.
   test-e2e-parallel:
-    name: E2E tests parallel (${{ matrix.arch }}, RACE=0, SHARED_RUNTIME=1)
+    name: E2E tests parallel (${{ matrix.arch }}, RACE=0, ISOLATED_RUNTIME=0)
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -80,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
-      - run: make ci-test-e2e STRESS_COUNT=5 RACE=0 SHARED_RUNTIME=1
+      - run: make ci-test-e2e STRESS_COUNT=5 RACE=0 ISOLATED_RUNTIME=0
 
   test-e2e-scripts:
     name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }})

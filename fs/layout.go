@@ -5,6 +5,12 @@ import (
 	"path/filepath"
 )
 
+// DefaultRoot is the canonical bpfman runtime root. It is the
+// default both for the bpfman CLI (--runtime-dir) and for the e2e
+// suite when BPFMAN_E2E_SUITE_ROOT is unset, so production-shaped
+// callers and production-shaped tests share one source of truth.
+const DefaultRoot = "/run/bpfman"
+
 // Layout is an immutable, validated filesystem layout. Fields are
 // unexported; external packages cannot construct a non-zero Layout
 // without calling New.

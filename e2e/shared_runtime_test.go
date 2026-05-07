@@ -22,27 +22,43 @@ import (
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
 
-// e2eSharedRuntimeEnv selects the production-shaped runtime mode:
-// every test runs against one bpffs mount, one sqlite store, and one
-// manager instance.  The default (env unset) keeps the per-test
-// isolated runtime.  Shared mode exists to surface concurrency,
-// resource-tracking, and cross-tenant interactions that the isolated
-// per-test path papers over.  See docs/SHARED-RUNTIME.md (planned)
-// for the full rationale.
-const e2eSharedRuntimeEnv = "BPFMAN_E2E_SHARED_RUNTIME"
+// e2eIsolatedRuntimeEnv opts the suite out of its production-shaped
+// default (one bpffs mount, one sqlite store, one manager instance
+// shared across tests) and into per-test isolated runtimes (each
+// test gets its own). Set BPFMAN_E2E_ISOLATED_RUNTIME=1 to opt in;
+// the default (env unset) keeps the shared production-shaped path,
+// which surfaces concurrency, resource-tracking, and cross-tenant
+// interactions that the isolated lane papers over.
+const e2eIsolatedRuntimeEnv = "BPFMAN_E2E_ISOLATED_RUNTIME"
 
-// e2eSuiteRootEnv overrides the default suite root path (used in
-// shared mode) so debug paths can be predictable across runs.
+// e2eSuiteRootEnv opts out of the production-shaped runtime root
+// (/run/bpfman) and points the suite at a custom path instead.
+// Useful when a real bpfman-rpc daemon is live on the host, when
+// running multiple e2e processes side by side, or when a clean
+// slate is genuinely needed for attribution. Unset by default so
+// the suite exercises the same paths a real daemon does -- that is
+// the only configuration where GC has to converge against actual
+// inter-run residue, where kernel-program-pinned-but-not-in-db is
+// a meaningful rule, and where end-of-suite teardown does work
+// rather than just `rm -rf`.
 const e2eSuiteRootEnv = "BPFMAN_E2E_SUITE_ROOT"
 
-// sharedRuntimeMode reports whether tests should reuse a single
-// process-wide runtime instead of building one per test.
+// e2eDaemonSocket is the canonical bpfman-rpc socket path. Its
+// presence indicates a live daemon owns fs.DefaultRoot; the e2e
+// suite refuses to run against the production layout in that
+// case to prevent silent data corruption.
+const e2eDaemonSocket = fs.DefaultRoot + "-sock/bpfman.sock"
+
+// sharedRuntimeMode reports whether tests should reuse the suite-wide
+// runtime (the default) instead of building one per test. Setting
+// BPFMAN_E2E_ISOLATED_RUNTIME=1 inverts this and gives each test a
+// fresh runtime.
 func sharedRuntimeMode() bool {
-	return os.Getenv(e2eSharedRuntimeEnv) == "1"
+	return os.Getenv(e2eIsolatedRuntimeEnv) != "1"
 }
 
 // suiteRuntime is the singleton runtime stood up by TestMain when
-// shared mode is active.  Tests read it via NewTestEnv; the package
+// shared mode is active. Tests read it via NewTestEnv; the package
 // is not the access boundary -- tests still reach it through TestEnv
 // so the rest of the helpers can stay mode-agnostic.
 type suiteRuntime struct {
@@ -60,9 +76,9 @@ var (
 	sharedRuntimeErr  error
 )
 
-// initSharedRuntime stands up the suite-wide runtime.  Idempotent:
+// initSharedRuntime stands up the suite-wide runtime. Idempotent:
 // the first call performs setup, subsequent calls return the cached
-// instance.  Caller is TestMain; tests just observe sharedRuntime.
+// instance. Caller is TestMain; tests just observe sharedRuntime.
 func initSharedRuntime() (*suiteRuntime, error) {
 	sharedRuntimeOnce.Do(func() {
 		sharedRuntime, sharedRuntimeErr = buildSuiteRuntime()
@@ -73,7 +89,11 @@ func initSharedRuntime() (*suiteRuntime, error) {
 func buildSuiteRuntime() (*suiteRuntime, error) {
 	baseDir := os.Getenv(e2eSuiteRootEnv)
 	if baseDir == "" {
-		baseDir = filepath.Join(os.TempDir(), fmt.Sprintf("bpfman-e2e-suite-%d", os.Getpid()))
+		baseDir = fs.DefaultRoot
+		if _, err := os.Stat(e2eDaemonSocket); err == nil {
+			return nil, fmt.Errorf("refusing to run e2e against %s: bpfman-rpc daemon is live (socket present at %s); stop the daemon or set %s to a writable path elsewhere",
+				baseDir, e2eDaemonSocket, e2eSuiteRootEnv)
+		}
 	}
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create suite root %s: %w", baseDir, err)
@@ -150,7 +170,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 // Returns true if any leak was detected so TestMain can promote a
 // passing exit code to a failure -- if tests passed individually
 // but the suite as a whole left programs or links behind, that's a
-// real bug and worth surfacing as a non-zero exit.  Cleanup
+// real bug and worth surfacing as a non-zero exit. Cleanup
 // failures (close, unmount, rm) are logged but do not promote the
 // exit code: they are operational, not behavioural, and shouldn't
 // drown out the leak signal we actually care about.
@@ -177,11 +197,11 @@ func teardownSharedRuntime(rt *suiteRuntime) (leaked bool) {
 }
 
 // assertSuiteCleanState lists the manager's residual state at suite
-// end and reports any leaked programs or links to stderr.  Returns
-// true if anything leaked.  This is the final safety net of shared
+// end and reports any leaked programs or links to stderr. Returns
+// true if anything leaked. This is the final safety net of shared
 // mode: every test's t.Cleanup is supposed to detach links and
 // unload programs before the test returns, so post-suite the
-// manager should be empty.  Anything left over is a bug -- either a
+// manager should be empty. Anything left over is a bug -- either a
 // missing t.Cleanup, a Detach/Unload that didn't actually persist,
 // or a manager-side leak.
 func assertSuiteCleanState(rt *suiteRuntime) bool {
@@ -240,13 +260,13 @@ func buildLogger() (*slog.Logger, error) {
 }
 
 // requireSharedRuntimeForTest pulls the shared runtime out for use
-// by NewTestEnv when sharedRuntimeMode() is true.  Tests should
+// by NewTestEnv when sharedRuntimeMode() is true. Tests should
 // never call this directly; it exists as the boundary helpers.go
 // crosses to wire a TestEnv against the singleton.
 func requireSharedRuntimeForTest(t *testing.T) *suiteRuntime {
 	t.Helper()
 	if sharedRuntime == nil {
-		t.Fatalf("shared runtime requested but not initialised; TestMain must call initSharedRuntime when %s=1", e2eSharedRuntimeEnv)
+		t.Fatalf("shared runtime requested but not initialised; TestMain must call initSharedRuntime in shared mode (the default; opt out with %s=1)", e2eIsolatedRuntimeEnv)
 	}
 	return sharedRuntime
 }
