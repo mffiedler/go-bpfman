@@ -74,7 +74,19 @@ func TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testi
 // pins the differentiated post-detach contract: once kernel state and
 // store state are gone, a bytecode-directory removal failure leaves
 // only a userland orphan and must not make Unload report failure.
+//
+// Fault injection here is via os.Chmod 0555 on the parent directory,
+// which only fails the inner os.RemoveAll for non-root users; root
+// bypasses DAC so the chmod is a no-op there. CI runs as root in the
+// container, so the test is skipped there. Local developers exercise
+// the path normally. The broader contract (Unload returns nil after
+// post-detach hygiene failure, dispatcher cleanup still runs) is
+// gated in CI by TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher,
+// which uses fakeKernel-level fault injection that works under root.
 func TestUnload_BytecodeDirFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("chmod-based fault injection requires non-root user; CI gating is via TestUnload_MapsPinsFailure")
+	}
 	t.Parallel()
 
 	fix := newTestFixture(t)
@@ -163,7 +175,16 @@ func TestUnload_PreDetachFailure_LeavesDispatcherInPlace(t *testing.T) {
 // distinction on dispatcher teardown: once the dispatcher link and
 // program pin are gone, failing to rmdir the now-empty revision
 // directory leaves only a filesystem orphan and must not fail Detach.
+//
+// Fault injection here is via os.Chmod 0555 on the parent directory,
+// which only fails the inner os.RemoveAll for non-root users; root
+// bypasses DAC. CI runs as root and skips this test. The broader
+// post-detach log-only contract is gated in CI by
+// TestUnload_MapsPinsFailure_IsNonFatalAndStillCleansEmptyDispatcher.
 func TestDetach_DispatcherRevisionDirFailure_IsNonFatal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("chmod-based fault injection requires non-root user; CI gating is via TestUnload_MapsPinsFailure")
+	}
 	t.Parallel()
 
 	fix := newTestFixture(t)
