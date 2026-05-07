@@ -427,23 +427,41 @@ func (m *Manager) beginOp(ctx context.Context, writeLock lock.WriterScope) (cont
 	return context.WithValue(ctx, opActiveKey{}, true), nil
 }
 
-// endOp completes a mutating manager operation. It always arms
-// mutatedSinceGC so the next mutating operation runs GC.
+// endOp completes a mutating manager operation. If the operation
+// failed, the mutatedSinceGC flag is set so that the next operation
+// runs GC to clean up any partial side effects. Successful
+// operations leave the flag clear.
 //
-// Under the post-detach log-only contract documented on
-// Manager.unload and removeEmptyDispatcher, a successful destructive
-// operation can swallow residue errors (orphan map pins, orphan
-// dispatcher prog pin, etc.) and still return nil to the caller.
-// Arming GC unconditionally keeps coherency, doctor, and GC able to
-// repair that residue without depending on the operation having
-// returned a non-nil error.
+// The post-detach log-only contract on Manager.unload and
+// removeEmptyDispatcher relies on the next GC eventually repairing
+// any swallowed residue. Two things keep that promise without
+// arming GC on every successful op:
 //
-// In CLI-only mode the cost is effectively zero: the process exits
-// before the next op, and the next CLI invocation re-arms via
-// New()'s constructor default anyway. In a long-running server, the
-// cost is one GC scan per mutating op.
-func (m *Manager) endOp(_ error) {
-	m.gcMu.Lock()
-	m.mutatedSinceGC = true
-	m.gcMu.Unlock()
+//   - In CLI-only invocations the constructor sets
+//     mutatedSinceGC=true, so the first mutating call in each new
+//     process runs GC and sweeps any residue left by the previous
+//     invocation.
+//   - In long-running server processes, residue from a successful
+//     log-only failure persists until the next failing operation
+//     or an explicit GC. The bpfman-server is being phased out,
+//     and the cost of a transient orphan inside a single server
+//     lifetime is acceptable against the alternative.
+//
+// The alternative considered here was arming mutatedSinceGC
+// unconditionally on every op. That was dropped because
+// computeStoreGC's Phase 3 (manager/gc.go:74) deletes any
+// non-synthetic, non-XDP/TC store link whose ID is missing from the
+// kernel link set, with no gate on kernel-enumeration completeness.
+// Running GC at the start of every Detach exposed that latent bug
+// on ARM under parallel-canary load: a partial kernel link iter
+// classified healthy tracepoint link rows as stale and deleted
+// them, and the next Detach surfaced ErrLinkNotManaged. Gating
+// computeStoreGC on kernel-enumeration-incomplete is the right
+// follow-up, but it is its own change.
+func (m *Manager) endOp(err error) {
+	if err != nil {
+		m.gcMu.Lock()
+		m.mutatedSinceGC = true
+		m.gcMu.Unlock()
+	}
 }
