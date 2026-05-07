@@ -135,7 +135,7 @@ func TestUnload_BytecodeDirFailure_IsNonFatalAndStillCleansEmptyDispatcher(t *te
 // TestUnload_PreDetachFailure_LeavesDispatcherInPlace pins the
 // symmetric contract: if the kernel-side detach itself fails, we are
 // not past the point of no return and dispatcher cleanup must NOT
-// run. Coherency, doctor, and GC are responsible for repair when the
+// run. Coherency, audit, and GC are responsible for repair when the
 // destructive teardown is interrupted.
 func TestUnload_PreDetachFailure_LeavesDispatcherInPlace(t *testing.T) {
 	t.Parallel()

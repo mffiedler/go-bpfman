@@ -1230,8 +1230,8 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			wantReplace: 0,
 		},
 		{
-			name:        "bpfman doctor completes subcommands",
-			line:        "bpfman doctor ",
+			name:        "bpfman audit completes subcommands",
+			line:        "bpfman audit ",
 			wantAny:     []string{"checkup ", "explain "},
 			wantReplace: 0,
 		},
@@ -1246,12 +1246,6 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			line:        "ver",
 			wantAny:     []string{"version "},
 			wantReplace: 3,
-		},
-		{
-			name:        "bpfman gc in domain completions",
-			line:        "bpfman g",
-			wantAny:     []string{"gc "},
-			wantReplace: 1,
 		},
 		{
 			name:        "bpfman link attach completes types",
@@ -1285,11 +1279,11 @@ func TestReplComplete_NewCommands(t *testing.T) {
 	}
 }
 
-func TestReplLoop_DoctorExplain(t *testing.T) {
+func TestReplLoop_AuditExplain(t *testing.T) {
 	t.Parallel()
 
-	// "bpfman doctor explain" without a rule should list all rules.
-	input := "bpfman doctor explain\n"
+	// "bpfman audit explain" without a rule should list all rules.
+	input := "bpfman audit explain\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1299,10 +1293,10 @@ func TestReplLoop_DoctorExplain(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "Available coherency rules")
 }
 
-func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
+func TestReplLoop_AuditExplainUnknown(t *testing.T) {
 	t.Parallel()
 
-	input := "bpfman doctor explain nosuch-rule\n"
+	input := "bpfman audit explain nosuch-rule\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1312,10 +1306,10 @@ func TestReplLoop_DoctorExplainUnknown(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "unknown rule")
 }
 
-func TestReplLoop_DoctorUnknownSubcommand(t *testing.T) {
+func TestReplLoop_AuditUnknownSubcommand(t *testing.T) {
 	t.Parallel()
 
-	input := "bpfman doctor bogus\n"
+	input := "bpfman audit bogus\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1420,8 +1414,8 @@ func TestReplLoop_AliasBasic(t *testing.T) {
 	t.Parallel()
 
 	// Define an alias and use it to invoke a domain command.
-	// "bpfman doctor explain" lists rules; the alias should work the same.
-	input := "alias b = bpfman\nb doctor explain\n"
+	// "bpfman audit explain" lists rules; the alias should work the same.
+	input := "alias b = bpfman\nb audit explain\n"
 	var outBuf bytes.Buffer
 	cli := &CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1528,10 +1522,10 @@ func TestReplLoop_AliasesEmpty(t *testing.T) {
 func TestReplLoop_AliasInLetBinding(t *testing.T) {
 	t.Parallel()
 
-	// "let x = b doctor explain" should fail to bind (doctor
+	// "let x = b audit explain" should fail to bind (audit
 	// produces no assignable value) but should reach the domain
 	// dispatcher, proving alias expansion works in let context.
-	input := "alias b = bpfman\nlet x = [b doctor explain]\n"
+	input := "alias b = bpfman\nlet x = [b audit explain]\n"
 	var errBuf bytes.Buffer
 	cli := &CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)

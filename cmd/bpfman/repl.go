@@ -576,12 +576,10 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 // "this word is not a command at all" (just say unknown).
 var domainNouns = map[string]bool{
 	"program":    true,
-	"programs":   true,
 	"show":       true,
 	"link":       true,
 	"dispatcher": true,
-	"gc":         true,
-	"doctor":     true,
+	"audit":      true,
 }
 
 // replDispatch routes expanded domain command arguments to the
@@ -641,9 +639,8 @@ func replHelp(cli *CLI) error {
 	b.WriteString("    bpfman dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher\n")
 	b.WriteString("\n")
 	b.WriteString("  Diagnostics:\n")
-	b.WriteString("    bpfman gc [--dry-run] [--prune] [rule...]       Garbage collect stale resources\n")
-	b.WriteString("    bpfman doctor [checkup]                         Run coherency checks\n")
-	b.WriteString("    bpfman doctor explain [rule]                    Explain a coherency rule\n")
+	b.WriteString("    bpfman audit [rule...]                          Audit coherency (read-only; use CLI for --repair)\n")
+	b.WriteString("    bpfman audit explain [rule]                     Explain a coherency rule\n")
 	b.WriteString("\n")
 	b.WriteString("Shell commands:\n")
 	b.WriteString("\n")

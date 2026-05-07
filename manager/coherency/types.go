@@ -4,7 +4,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager/action"
 )
 
 // Severity indicates the severity of a coherency finding.
@@ -38,25 +37,38 @@ type Finding struct {
 	Description string
 }
 
-// DoctorReport contains the results of a coherency check.
-type DoctorReport struct {
-	Findings []Finding
+// AuditReport carries the raw violations produced by a coherency
+// check. Violations preserve their RepairIntent so callers can render
+// planned actions or pass them to the GC executor; use Findings() for
+// the projected diagnostic view.
+type AuditReport struct {
+	Violations []Violation
 }
 
-// HasErrors returns true if any finding has error severity.
-func (r DoctorReport) HasErrors() bool {
-	for _, f := range r.Findings {
-		if f.Severity == SeverityError {
+// Findings returns the report's violations projected to Finding
+// values for display.
+func (r AuditReport) Findings() []Finding {
+	out := make([]Finding, len(r.Violations))
+	for i, v := range r.Violations {
+		out[i] = v.Finding()
+	}
+	return out
+}
+
+// HasErrors returns true if any violation has error severity.
+func (r AuditReport) HasErrors() bool {
+	for _, v := range r.Violations {
+		if v.Severity == SeverityError {
 			return true
 		}
 	}
 	return false
 }
 
-// HasWarnings returns true if any finding has warning severity.
-func (r DoctorReport) HasWarnings() bool {
-	for _, f := range r.Findings {
-		if f.Severity == SeverityWarning {
+// HasWarnings returns true if any violation has warning severity.
+func (r AuditReport) HasWarnings() bool {
+	for _, v := range r.Violations {
+		if v.Severity == SeverityWarning {
 			return true
 		}
 	}
@@ -119,24 +131,19 @@ type FsOrphan struct {
 	Kind      OrphanKind       // type of orphaned artefact
 }
 
-// Operation is a planned mutation. Rules emit operations; the
-// executor applies them. This separates planning from doing.
-type Operation struct {
-	Description string
-	Actions     []action.Action
-}
-
-// Violation is a coherency rule violation with an optional planned
-// operation for GC to execute.
+// Violation is a coherency rule result. A nil Intent means
+// diagnostic-only (audit-style finding, no automatic repair); a
+// non-nil Intent describes the cleanup the GC interpreter would
+// perform if the violation is acted on.
 type Violation struct {
 	Severity    Severity
 	Category    string
 	RuleName    string
 	Description string
-	Op          *Operation // nil = report only
+	Intent      RepairIntent // nil = report only
 }
 
-// Finding returns the violation as a Finding for doctor output.
+// Finding returns the violation as a Finding for audit output.
 func (v Violation) Finding() Finding {
 	return Finding{
 		Severity:    v.Severity,
@@ -150,6 +157,6 @@ func (v Violation) Finding() Finding {
 // ObservedState snapshot.
 type Rule struct {
 	Name        string
-	Description string // detailed explanation for 'doctor explain'
+	Description string // detailed explanation for 'audit explain'
 	Eval        func(s *ObservedState) []Violation
 }

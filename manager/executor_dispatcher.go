@@ -1032,7 +1032,7 @@ func (e *executor) rebuildTCForDetach(
 //     unlike the other failures, retries cleanly without a
 //     false-negative. Removing the dispatcher program pin and the
 //     per-revision directory are warned and discarded; both leave
-//     only userland orphans that coherency, doctor, and GC repair.
+//     only userland orphans that coherency, audit, and GC repair.
 //     This mirrors the post-detach contract on Manager.unload.
 //
 // This contract was implicit and wrong in the previous action-list
@@ -1073,7 +1073,7 @@ func (e *executor) removeEmptyDispatcher(ctx context.Context, snap platform.Disp
 	// run even if earlier steps fail. Only deleteDispatcherSnapshot
 	// joins into the returned error (see the failure contract
 	// above): every other step is warned and left for
-	// coherency/doctor/GC.
+	// coherency/audit/GC.
 	var errs []error
 	if err := e.removeDispatcherProgPin(ctx, key, snap.Revision); err != nil {
 		e.logger.WarnContext(ctx, "failed to remove orphaned dispatcher program pin",
@@ -1136,7 +1136,7 @@ func (e *executor) detachXDPOuterLink(ctx context.Context, key dispatcher.Key) e
 //
 // We log and proceed in both cases, accepting the risk of leaving
 // a stranded TC filter on transient errors. Coherency and the
-// doctor are responsible for catching residual filters. This
+// audit are responsible for catching residual filters. This
 // asymmetry should disappear once FindTCFilterHandle distinguishes
 // not-found from transient errors via a sentinel; the path of
 // least resistance is to do that alongside step 3 of the

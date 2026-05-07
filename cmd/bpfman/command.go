@@ -15,7 +15,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/shell"
 )
@@ -47,7 +46,7 @@ func parseCommand(args []shell.Arg) (Command, error) {
 
 	switch {
 	// program commands
-	case len(args) >= 2 && (cmd == "program" || cmd == "programs") && arg(1) == "list":
+	case len(args) >= 2 && cmd == "program" && arg(1) == "list":
 		return parseListPrograms(args[2:])
 	case len(args) >= 3 && cmd == "program" && arg(1) == "load" && arg(2) == "file":
 		return parseLoadFile(args[3:])
@@ -83,10 +82,21 @@ func parseCommand(args []shell.Arg) (Command, error) {
 		return parseDispatcherDelete(args[2:])
 
 	// diagnostics
-	case cmd == "gc":
-		return parseGC(args[1:])
-	case cmd == "doctor":
-		return parseDoctor(args[1:])
+	case cmd == "audit":
+		return parseAudit(args[1:])
+
+	// known nouns reached without a usable subcommand: emit a
+	// targeted message instead of the generic "unknown command".
+	case cmd == "program" && arg(1) == "load":
+		return nil, fmt.Errorf("program load: requires 'file' or 'image'")
+	case cmd == "program":
+		return nil, fmt.Errorf("program: subcommand required (list, load, get, unload, delete)")
+	case cmd == "link":
+		return nil, fmt.Errorf("link: subcommand required (attach, detach, list, get, delete)")
+	case cmd == "dispatcher":
+		return nil, fmt.Errorf("dispatcher: subcommand required (list, get, delete)")
+	case cmd == "show":
+		return nil, fmt.Errorf("show: subcommand required (program)")
 
 	default:
 		return nil, fmt.Errorf("unknown command %q. Type \"help\" for available commands.", strings.Join(argTexts(args), " "))
@@ -128,10 +138,8 @@ func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Comman
 		return shell.Value{}, execDispatcherGet(ctx, cli, mgr, c)
 	case *DispatcherDeleteCommand:
 		return shell.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
-	case *GCCommand:
-		return shell.Value{}, execGC(ctx, cli, mgr, c)
-	case *DoctorCommand:
-		return shell.Value{}, execDoctor(ctx, cli, mgr, c)
+	case *AuditCommand:
+		return shell.Value{}, execAudit(ctx, cli, mgr, c)
 	default:
 		return shell.Value{}, fmt.Errorf("unhandled command type %T", cmd)
 	}
@@ -2352,123 +2360,56 @@ func execDispatcherDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, c
 	})
 }
 
-// GCCommand represents a fully parsed "gc" command with flags and
-// optional rule names.
-type GCCommand struct {
-	DryRun bool
-	Prune  bool
-	Rules  []string
-}
-
-func (*GCCommand) isCommand() {}
-
-// parseGC resolves expanded REPL arguments into a GCCommand. The
-// grammar is:
-//
-//	[--dry-run] [--prune] [rule...]
-func parseGC(args []shell.Arg) (*GCCommand, error) {
-	cmd := &GCCommand{}
-
-	for i := 0; i < len(args); i++ {
-		text := argText(args[i])
-		switch text {
-		case "--dry-run":
-			cmd.DryRun = true
-		case "--prune":
-			cmd.Prune = true
-		default:
-			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("gc: unknown flag %q", text)
-			}
-			cmd.Rules = append(cmd.Rules, text)
-		}
-	}
-
-	if len(cmd.Rules) > 0 {
-		gcRuleNames := make(map[string]bool)
-		for _, r := range coherency.GCRules() {
-			gcRuleNames[r.Name] = true
-		}
-		for _, name := range cmd.Rules {
-			if !gcRuleNames[name] {
-				return nil, fmt.Errorf("gc: unknown rule: %s\n\nAvailable GC rules:\n%s",
-					name, formatGCRuleNames())
-			}
-		}
-	}
-
-	return cmd, nil
-}
-
-// execGC executes a parsed GCCommand, running garbage collection.
-func execGC(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GCCommand) error {
-	gcCmd := &GCCmd{
-		DryRun: cmd.DryRun,
-		Prune:  cmd.Prune,
-		Rules:  cmd.Rules,
-	}
-
-	gcOpts := manager.GCOptions{
-		Rules: cmd.Rules,
-		Prune: cmd.Prune,
-	}
-
-	if cmd.DryRun {
-		return gcCmd.runDryRun(cli, ctx, mgr, gcOpts)
-	}
-	return gcCmd.runExecute(cli, ctx, mgr, gcOpts)
-}
-
-// DoctorCommand represents a fully parsed "doctor" command.
-type DoctorCommand struct {
+// AuditCommand represents a fully parsed "audit" command.
+type AuditCommand struct {
 	Subcommand string // "checkup" or "explain"
 	RuleName   string // for "explain" subcommand
 }
 
-func (*DoctorCommand) isCommand() {}
+func (*AuditCommand) isCommand() {}
 
-// parseDoctor resolves expanded REPL arguments into a
-// DoctorCommand. The grammar is:
+// parseAudit resolves expanded REPL arguments into a
+// AuditCommand. The grammar is:
 //
 //	[checkup]
 //	explain [rule]
-func parseDoctor(args []shell.Arg) (*DoctorCommand, error) {
+func parseAudit(args []shell.Arg) (*AuditCommand, error) {
 	if len(args) == 0 {
-		return &DoctorCommand{Subcommand: "checkup"}, nil
+		return &AuditCommand{Subcommand: "checkup"}, nil
 	}
 
 	sub := argText(args[0])
 	switch sub {
 	case "checkup":
 		if len(args) > 1 {
-			return nil, fmt.Errorf("doctor checkup: unexpected argument %q", argText(args[1]))
+			return nil, fmt.Errorf("audit checkup: unexpected argument %q", argText(args[1]))
 		}
-		return &DoctorCommand{Subcommand: "checkup"}, nil
+		return &AuditCommand{Subcommand: "checkup"}, nil
 	case "explain":
-		cmd := &DoctorCommand{Subcommand: "explain"}
+		cmd := &AuditCommand{Subcommand: "explain"}
 		if len(args) > 1 {
 			cmd.RuleName = argText(args[1])
 		}
 		if len(args) > 2 {
-			return nil, fmt.Errorf("doctor explain: unexpected argument %q", argText(args[2]))
+			return nil, fmt.Errorf("audit explain: unexpected argument %q", argText(args[2]))
 		}
 		return cmd, nil
 	default:
-		return nil, fmt.Errorf("doctor: unknown subcommand %q (valid: checkup, explain)", sub)
+		return nil, fmt.Errorf("audit: unknown subcommand %q (valid: checkup, explain)", sub)
 	}
 }
 
-// execDoctor executes a parsed DoctorCommand.
-func execDoctor(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DoctorCommand) error {
+// execAudit executes a parsed AuditCommand.
+func execAudit(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *AuditCommand) error {
 	switch cmd.Subcommand {
 	case "checkup":
-		return replDoctorCheckup(ctx, cli, mgr)
+		return replAuditCheckup(ctx, cli, mgr)
 	case "explain":
 		if cmd.RuleName == "" {
-			return replDoctorExplain(cli, nil)
+			return replAuditExplain(cli, nil)
 		}
-		return replDoctorExplain(cli, []string{cmd.RuleName})
+		return replAuditExplain(cli, []string{cmd.RuleName})
 	default:
-		return fmt.Errorf("doctor: unknown subcommand %q", cmd.Subcommand)
+		return fmt.Errorf("audit: unknown subcommand %q", cmd.Subcommand)
 	}
 }

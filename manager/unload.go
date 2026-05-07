@@ -41,7 +41,7 @@ import (
 //     Joining their failures into the returned error only produced
 //     ErrProgramNotFound on the caller's retry, which is a false
 //     negative: the program really is gone, the residue is
-//     internal and not actionable from outside. Coherency, doctor,
+//     internal and not actionable from outside. Coherency, audit,
 //     and GC repair the residue.
 //
 // This mirrors the contract on removeEmptyDispatcher. The previous
@@ -74,7 +74,7 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	// Post-detach cleanup. Each step is independent; later steps run
 	// even if earlier steps fail. Only deleteProgramRecord joins into
 	// the returned error (see the failure contract above): every
-	// other step is warned and left for coherency/doctor/GC, so a
+	// other step is warned and left for coherency/audit/GC, so a
 	// transient bpffs or store-cleanup failure cannot turn a
 	// completed unload into a false-negative on the caller's retry.
 	var errs []error
@@ -111,7 +111,7 @@ func (m *Manager) unload(ctx context.Context, programID kernel.ProgramID, progra
 	// because the SQL ON DELETE CASCADE on links.kernel_prog_id is
 	// what makes the dispatcher observably empty. cleanupEmptyDispatchers
 	// returns no error: per-dispatcher failures are logged inside it
-	// and repaired by coherency/doctor/GC. If deleteProgramRecord
+	// and repaired by coherency/audit/GC. If deleteProgramRecord
 	// itself failed, the link rows remain, the dispatcher is
 	// observed non-empty, and this call is a no-op --- correct under
 	// the documented contract.

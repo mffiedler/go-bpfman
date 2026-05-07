@@ -3,9 +3,7 @@ package coherency
 import (
 	"fmt"
 
-	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
-	"github.com/frobware/go-bpfman/manager/action"
 )
 
 // Evaluate runs all rules against the observed state and returns
@@ -22,25 +20,46 @@ func Evaluate(state *ObservedState, rules []Rule) []Violation {
 	return out
 }
 
-// AllRules returns all rules (doctor + GC) for introspection. Panics
-// if any name appears twice across the two registries; rule names are
-// the only handle FindRule and RuleNames expose, so duplicates would
-// silently shadow.
-func AllRules() []Rule {
-	rules := append(CoherencyRules(), GCRules()...)
-	seen := make(map[string]struct{}, len(rules))
+// PruneRuleName is the name of the prune-live-orphans rule. The rule
+// is destructive (removes pins for live kernel programs) and is not
+// part of Rules(); callers opt in via the manager's --prune flag.
+const PruneRuleName = "prune-live-orphans"
+
+// Rules returns the always-on coherency rule registry. Each rule
+// emits violations with an optional RepairIntent: nil for
+// diagnostic-only findings, non-nil for findings GC can act on.
+// Panics if any name appears twice; rule names are the only handle
+// FindRule and RuleNames expose, so duplicates would silently shadow.
+//
+// PruneRule is intentionally excluded; it must be opted into and is
+// surfaced separately via FindRule/RuleNames for introspection.
+func Rules() []Rule {
+	rules := append(diagnosticRules(), repairRules()...)
+	seen := make(map[string]struct{}, len(rules)+1)
 	for _, r := range rules {
 		if _, dup := seen[r.Name]; dup {
-			panic(fmt.Sprintf("coherency: duplicate rule name %q registered across CoherencyRules and GCRules", r.Name))
+			panic(fmt.Sprintf("coherency: duplicate rule name %q registered", r.Name))
 		}
 		seen[r.Name] = struct{}{}
+	}
+	if _, dup := seen[PruneRuleName]; dup {
+		panic(fmt.Sprintf("coherency: duplicate rule name %q registered (collides with PruneRule)", PruneRuleName))
 	}
 	return rules
 }
 
+// allRulesIncludingPrune returns Rules() plus the opt-in PruneRule,
+// for introspection callers (FindRule, RuleNames) that need the
+// complete name set.
+func allRulesIncludingPrune() []Rule {
+	return append(Rules(), PruneRule())
+}
+
 // FindRule returns the rule with the given name, or nil if not found.
+// Searches the full registry including the opt-in prune rule, so
+// `bpfman audit explain prune-live-orphans` works.
 func FindRule(name string) *Rule {
-	for _, r := range AllRules() {
+	for _, r := range allRulesIncludingPrune() {
 		if r.Name == name {
 			return &r
 		}
@@ -48,9 +67,10 @@ func FindRule(name string) *Rule {
 	return nil
 }
 
-// RuleNames returns the names of all rules.
+// RuleNames returns the names of all rules including the opt-in
+// prune rule, in registry order.
 func RuleNames() []string {
-	rules := AllRules()
+	rules := allRulesIncludingPrune()
 	names := make([]string, len(rules))
 	for i, r := range rules {
 		names[i] = r.Name
@@ -58,19 +78,20 @@ func RuleNames() []string {
 	return names
 }
 
-// CoherencyRules returns all doctor rules.
-func CoherencyRules() []Rule {
+// diagnosticRules returns rules that classify state without producing
+// repair intents. They surface in audit output only.
+func diagnosticRules() []Rule {
 	return []Rule{
 		// Warn if kernel enumeration was incomplete.
 		{
 			Name: "kernel-enumeration-incomplete",
-			Description: `Reports when bpfman failed to enumerate all kernel BPF programs
-or links. This can happen due to permission errors or kernel bugs.
-When enumeration is incomplete, other coherency checks may miss
-violations because they lack full visibility into kernel state.
-
-Severity: WARNING
-Category: enumeration`,
+			Description: `Bpfman could not enumerate every kernel BPF program or link the
+kernel currently holds. Other audit findings that compare the
+database against the kernel may therefore be incomplete: a finding
+that looks like "DB row with no kernel program" may simply be a
+program we failed to see. If this fires, investigate the cause
+(reduced privileges, kernel-side limits) before acting on other
+findings.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				progErrors := s.obs.Meta.ProgramEnumErrors
@@ -88,16 +109,11 @@ Category: enumeration`,
 		// Each DB program must have a corresponding kernel program.
 		{
 			Name: "program-in-kernel",
-			Description: `Checks that every program recorded in the database has a
-corresponding kernel BPF program. A mismatch means the database
-references a program that no longer exists in the kernel - it was
-unloaded externally or the kernel reclaimed it.
-
-This is an error because the database is out of sync with reality.
-Operations referencing this program will fail.
-
-Severity: ERROR
-Category: db-vs-kernel`,
+			Description: `Every program tracked in the database must exist in the kernel. A
+violation means the database references a program ID the kernel no
+longer reports — typically because something else unloaded it, or
+a previous unload was interrupted between kernel and database.
+Operations targeting this program will fail.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, p := range s.Programs() {
@@ -115,16 +131,12 @@ Category: db-vs-kernel`,
 		// Each DB link must have a corresponding kernel link.
 		{
 			Name: "link-in-kernel",
-			Description: `Checks that every BPF link recorded in the database has a
-corresponding kernel link. A mismatch means the link was detached
-externally. Synthetic link IDs (used for perf_event attachments) are
-skipped since they are not enumerable via the kernel iterator.
+			Description: `Every BPF link tracked in the database must have a kernel link
+with the same ID. A violation means the link was detached outside
+bpfman or the database survived a kernel-side teardown.
 
-This is an error because the database believes a link exists that
-the kernel has already removed.
-
-Severity: ERROR
-Category: db-vs-kernel`,
+Synthetic perf_event link IDs are not enumerable by the kernel
+iterator and are skipped.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, l := range s.Links() {
@@ -146,15 +158,12 @@ Category: db-vs-kernel`,
 		// Each DB dispatcher must have a corresponding kernel program.
 		{
 			Name: "dispatcher-prog-in-kernel",
-			Description: `Checks that every dispatcher recorded in the database has its
-kernel program still loaded. A dispatcher is a BPF program that
-multiplexes multiple user programs through tail calls.
-
-If the dispatcher program is gone, the entire dispatch chain is
-broken and no attached programs can run.
-
-Severity: ERROR
-Category: db-vs-kernel`,
+			Description: `Every dispatcher in the database must have its multiplexing BPF
+program loaded in the kernel. Dispatchers fan out a single hook
+(XDP, TC ingress, TC egress) to multiple attached programs via
+tail calls; if the dispatcher program is gone, every program
+attached to that interface is broken — packets bypass the dispatch
+chain entirely.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -172,15 +181,9 @@ Category: db-vs-kernel`,
 		// Each XDP dispatcher with a link ID must have a corresponding kernel link.
 		{
 			Name: "xdp-link-in-kernel",
-			Description: `Checks that every XDP dispatcher has its BPF link still active in
-the kernel. XDP dispatchers use BPF links to attach to network
-interfaces.
-
-If the link is gone, the dispatcher program is loaded but not
-attached - packets bypass it entirely.
-
-Severity: ERROR
-Category: db-vs-kernel`,
+			Description: `Every XDP dispatcher must keep its kernel BPF link active. If the
+link is gone, the dispatcher program is loaded but no longer
+attached to the interface: traffic bypasses BPF entirely.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -203,17 +206,15 @@ Category: db-vs-kernel`,
 		// state eligible for GC, not a correctness failure).
 		{
 			Name: "tc-filter-exists",
-			Description: `Checks that every TC dispatcher has its netlink filter installed.
-TC dispatchers (ingress/egress) use netlink filters rather than BPF
-links to attach to network interfaces.
+			Description: `Every TC dispatcher (ingress or egress) must have its netlink
+filter installed. TC uses netlink filters rather than BPF links
+to attach to interfaces.
 
-If the filter is missing and the dispatcher has active extensions,
-this is an ERROR - traffic should be routed through the dispatcher
-but cannot be. If there are no extensions, it is a WARNING indicating
-stale state eligible for garbage collection.
-
-Severity: ERROR (with extensions) or WARNING (without)
-Category: db-vs-kernel`,
+Severity depends on whether the dispatcher has attached programs:
+with extensions, a missing filter is an error — traffic should be
+flowing through bpfman but isn't. With no extensions the
+dispatcher is functionally dead, so a missing filter is only a
+warning, and stale-dispatcher will offer to clean it up.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -235,16 +236,10 @@ Category: db-vs-kernel`,
 		// Each DB program with a pin path must have the pin on the filesystem.
 		{
 			Name: "program-pin-exists",
-			Description: `Checks that every program in the database has its pin file on the
-bpffs filesystem. Pin files keep BPF programs alive and addressable
-by path.
-
-A missing pin means the program may be unloaded by the kernel when
-its reference count drops to zero. This is a warning because the
-program might still be running (held by other references).
-
-Severity: WARNING
-Category: db-vs-fs`,
+			Description: `Every program in the database must have its bpffs pin file. The
+pin keeps the program addressable by path and holds a reference
+that prevents the kernel from reclaiming it. A missing pin means
+the program may disappear once other references drop.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, p := range s.Programs() {
@@ -262,15 +257,10 @@ Category: db-vs-fs`,
 		// Each DB link with a pin path must have the pin on the filesystem.
 		{
 			Name: "link-pin-exists",
-			Description: `Checks that every BPF link in the database has its pin file on the
-bpffs filesystem. Pin files keep links alive and prevent automatic
-detachment.
-
-A missing pin means the link may be detached when its reference count
-drops. Synthetic link IDs (for perf_event attachments) are skipped.
-
-Severity: WARNING
-Category: db-vs-fs`,
+			Description: `Every BPF link in the database must have its bpffs pin file. The
+pin holds a reference that keeps the link attached; a missing pin
+means the link may detach once other references drop. Synthetic
+perf_event link IDs are skipped.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, l := range s.Links() {
@@ -295,15 +285,11 @@ Category: db-vs-fs`,
 		// Each DB dispatcher must have its prog pin on the filesystem.
 		{
 			Name: "dispatcher-prog-pin-exists",
-			Description: `Checks that every dispatcher has its program pin file on the bpffs.
-The dispatcher program pin is located at:
-  {bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher
-
-A missing pin indicates the dispatcher may be unloaded, breaking the
-entire dispatch chain for that interface.
-
-Severity: WARNING
-Category: db-vs-fs`,
+			Description: `Every dispatcher must have its program pin file on bpffs (under
+{bpffs}/{type}/dispatcher_{nsid}_{ifindex}_{revision}/dispatcher).
+A missing pin means the dispatcher program may be reclaimed by
+the kernel — which would break every program attached to that
+interface.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -321,15 +307,10 @@ Category: db-vs-fs`,
 		// Each XDP dispatcher must have its link pin on the filesystem.
 		{
 			Name: "xdp-link-pin-exists",
-			Description: `Checks that every XDP dispatcher has its link pin file on the bpffs.
-The link pin is located at:
-  {bpffs}/xdp/dispatcher_{nsid}_{ifindex}_link
-
-A missing link pin means the XDP attachment may be released, causing
-the dispatcher to detach from the interface.
-
-Severity: WARNING
-Category: db-vs-fs`,
+			Description: `Every XDP dispatcher must have its link pin on bpffs (under
+{bpffs}/xdp/dispatcher_{nsid}_{ifindex}_link). A missing pin means
+the XDP attachment may be released, detaching the dispatcher from
+the interface.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -349,22 +330,13 @@ Category: db-vs-fs`,
 		// kernel-program-pinned-but-not-in-db rule with EBUSY context.
 		{
 			Name: "orphan-fs-entries",
-			Description: `Reports filesystem entries under the bpffs tree that have no
-corresponding database record. These include:
-  - prog-pin: orphan program pin files (dead programs only)
-  - link-dir: orphan link directories
-  - map-dir: orphan map directories
-  - dispatcher-dir: orphan dispatcher revision directories
-  - dispatcher-link: orphan dispatcher link pins
-
-Orphans waste filesystem space and may indicate incomplete cleanup
-from a previous crash or failed operation.
-
-Live program pins are reported separately by the
-kernel-program-pinned-but-not-in-db rule with EBUSY risk context.
-
-Severity: WARNING
-Category: fs-vs-db`,
+			Description: `Reports filesystem entries under bpfman's bpffs root that have
+no matching database row: program pins (dead programs only),
+link directories, map directories, dispatcher revision
+directories, and dispatcher link pins. These are usually
+leftovers from a crash or interrupted operation. Live program
+pins are reported separately by kernel-program-pinned-but-not-in-db,
+which carries EBUSY risk context.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
@@ -388,23 +360,17 @@ Category: fs-vs-db`,
 		// attempting to attach to the same interface.
 		{
 			Name: "kernel-program-pinned-but-not-in-db",
-			Description: `Reports kernel BPF programs that are:
-  1. Pinned under bpfman's bpffs root (e.g., /run/bpfman/fs/prog_*)
-  2. Still alive in the kernel
-  3. Not tracked in bpfman's database
+			Description: `Reports kernel BPF programs that are still alive, pinned under
+bpfman's bpffs root, but not tracked in the database. Usually
+programs bpfman loaded before its database was wiped or recreated.
 
-These are "live orphans" - programs that bpfman likely created but
-has lost track of (e.g., after database deletion or corruption).
+EBUSY risk: if such a program occupies an XDP or TC hook on an
+interface, future attaches to that interface will fail with EBUSY
+because the hook is already taken.
 
-EBUSY RISK: If such a program is a dispatcher occupying a hook point
-(XDP, TC), attempting to attach a new program to the same interface
-will fail with EBUSY because the hook is already occupied.
-
-GC will not remove these because removing the pin would unload a
-running program. Manual cleanup: rm /run/bpfman/fs/prog_XXXXX
-
-Severity: WARNING
-Category: kernel-vs-db`,
+audit --repair will NOT remove these — removing the pin would
+unload a running program. Use --repair --prune (which kills the
+program) or remove the pin manually with rm /run/bpfman/fs/prog_XXXXX.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, o := range s.OrphanFsEntries() {
@@ -426,16 +392,10 @@ Category: kernel-vs-db`,
 		// DB dispatcher link count must match the filesystem link count.
 		{
 			Name: "dispatcher-link-count",
-			Description: `Checks that the number of extension links recorded in the database
-matches the number of link_* files in the dispatcher's revision
-directory on the filesystem.
-
-A mismatch indicates inconsistent state - either a link was added
-without updating the filesystem, or a filesystem entry was removed
-without updating the database.
-
-Severity: WARNING
-Category: consistency`,
+			Description: `For each dispatcher, the number of extension links recorded in
+the database must match the number of link_* files under its
+revision directory on bpffs. A mismatch usually means a previous
+attach or detach completed in one place but failed in the other.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -460,33 +420,23 @@ Category: consistency`,
 	}
 }
 
-// GCRules returns rules that detect and plan repairs for stale state.
-func GCRules() []Rule {
+// repairRules returns rules whose violations carry a RepairIntent.
+// Audit surfaces them as warnings with the intent's Describe text;
+// GC executes the lowered actions.
+func repairRules() []Rule {
 	rules := []Rule{
 		// Dispatchers with zero extension links and missing attachment
 		// mechanism (prog pin or TC filter) are functionally dead.
 		{
 			Name: "stale-dispatcher",
-			Description: `Detects dispatchers that are functionally dead and can be removed.
-A dispatcher is stale when:
-  1. It has zero extension links (no programs attached), AND
-  2. Its attachment mechanism is missing — for XDP either the prog
-     pin is gone or the outer kernel link is detached; for TC the
-     filter is not installed.
+			Description: `Reports dispatchers that have nothing to do: zero attached
+programs, plus a missing attachment mechanism. For XDP that means
+the program pin is gone or the kernel BPF link has been detached;
+for TC it means the netlink filter is not installed.
 
-Such dispatchers serve no purpose - they have no programs to dispatch
-and cannot receive traffic anyway. GC removes the database record and
-cleans up any remaining filesystem artefacts.
-
-The XDP "outer link detached but prog pin still present" case is the
-residue class produced when Manager.unload's empty-dispatcher cleanup
-fails post-detach: the kernel detach succeeded but removeDispatcherProgPin
-or deleteDispatcherSnapshot did not, and the post-detach contract
-swallows those errors so they reach the next GC instead of a
-joined-error retry.
-
-Severity: WARNING
-Category: gc-dispatcher`,
+Such dispatchers serve no purpose — they have no programs to
+multiplex and cannot receive traffic. audit --repair removes the
+database row and any remaining filesystem artefacts.`,
 			Eval: func(s *ObservedState) []Violation {
 				var out []Violation
 				for _, d := range s.Dispatchers() {
@@ -504,24 +454,29 @@ Category: gc-dispatcher`,
 					if !stale {
 						continue
 					}
-					actions := []action.Action{
-						action.RemoveDispatcherProgPin{Path: d.ProgPin},
-						action.RemoveDispatcherRevDir{Path: d.RevDir},
-					}
+					var intent RepairIntent
 					if d.DB.Type == dispatcher.DispatcherTypeXDP {
-						actions = append(actions, action.RemoveDispatcherLinkPin{Path: d.LinkPin})
+						intent = StaleXDPDispatcher{
+							Nsid:    d.DB.Nsid,
+							Ifindex: d.DB.Ifindex,
+							ProgPin: d.ProgPin,
+							RevDir:  d.RevDir,
+							LinkPin: d.LinkPin,
+						}
+					} else {
+						intent = StaleTCDispatcher{
+							Type:    d.DB.Type,
+							Nsid:    d.DB.Nsid,
+							Ifindex: d.DB.Ifindex,
+							ProgPin: d.ProgPin,
+							RevDir:  d.RevDir,
+						}
 					}
-					actions = append(actions, action.DeleteDispatcher{
-						Type: d.DB.Type, Nsid: d.DB.Nsid, Ifindex: d.DB.Ifindex,
-					})
 					out = append(out, Violation{
 						Severity:    SeverityWarning,
 						Category:    "gc-dispatcher",
 						Description: fmt.Sprintf("Stale dispatcher %s nsid=%d ifindex=%d: no extensions, functionally dead", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
-						Op: &Operation{
-							Description: fmt.Sprintf("delete dispatcher %s/%d/%d and filesystem artefacts", d.DB.Type, d.DB.Nsid, d.DB.Ifindex),
-							Actions:     actions,
-						},
+						Intent:      intent,
 					})
 				}
 				return out
@@ -538,14 +493,15 @@ Category: gc-dispatcher`,
 
 // orphanGCSpec describes a table-driven orphan GC rule. Each spec
 // produces a Rule whose Eval iterates OrphanFsEntries, filters by
-// kind and liveness, and emits violations with removal actions.
+// kind and liveness, and emits violations carrying a
+// RemoveOrphanArtefact intent. The action-level lowering lives on
+// the intent, not on the spec.
 type orphanGCSpec struct {
 	name        string
 	description string
 	kinds       []OrphanKind
 	include     func(*ObservedState, FsOrphan) bool
-	actionFn    func(FsOrphan) action.Action
-	describeFn  func(FsOrphan) (violation, opDesc string)
+	describeFn  func(FsOrphan) string
 }
 
 // orphanGCSpecs defines the four orphan GC rules. Each is
@@ -554,127 +510,77 @@ type orphanGCSpec struct {
 var orphanGCSpecs = []orphanGCSpec{
 	{
 		name: "orphan-program-artefacts",
-		description: `Removes orphan filesystem artefacts for programs that are no longer
-alive in the kernel. This includes:
-  - prog_* pin files (when the kernel program is dead)
-  - link directories under fs/links/
-  - map directories under fs/maps/
+		description: `Reports filesystem artefacts (program pins, link directories,
+map directories) for programs the kernel no longer holds. They
+have no database row and no live kernel object — only consumed
+disk space. audit --repair removes them.
 
-These artefacts have no database record and no live kernel object,
-so they serve no purpose and waste filesystem space.
-
-Note: Live program pins (kernel program still running) are NOT
-removed - doing so would unload the program.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+Live program pins are skipped here — handled by
+kernel-program-pinned-but-not-in-db (or --prune for forced
+removal).`,
 		kinds: []OrphanKind{OrphanProgPin, OrphanLinkDir, OrphanMapDir},
 		include: func(s *ObservedState, o FsOrphan) bool {
 			return o.ProgramID == 0 || !s.KernelAlive(o.ProgramID)
 		},
-		actionFn: orphanPinAction,
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-				fmt.Sprintf("remove %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path)
 		},
 	},
 	{
 		name: "orphan-dispatcher-artefacts",
-		description: `Removes orphan dispatcher filesystem artefacts that have no
-corresponding database record. This includes:
-  - dispatcher_* revision directories
-  - dispatcher_*_link pin files
-
-These artefacts indicate a dispatcher that was partially cleaned up
-or created by a different bpfman instance. They waste filesystem
-space and can cause confusion.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+		description: `Reports dispatcher revision directories and dispatcher link pins
+under bpfman's bpffs root with no matching database row. Usually
+leftovers from a partially completed teardown or a previous
+bpfman instance. audit --repair removes them.`,
 		kinds:   []OrphanKind{OrphanDispatcherDir, OrphanDispatcherLink},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
-		actionFn: func(o FsOrphan) action.Action {
-			switch o.Kind {
-			case OrphanDispatcherDir:
-				return action.RemoveDispatcherRevDir{Path: bpfman.DispatcherRevDir(o.Path)}
-			case OrphanDispatcherLink:
-				return action.RemoveDispatcherLinkPin{Path: bpfman.LinkPath(o.Path)}
-			default:
-				panic(fmt.Sprintf("orphan-dispatcher-artefacts: unexpected kind %s", o.Kind))
-			}
-		},
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-				fmt.Sprintf("remove %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path)
 		},
 	},
 	{
 		name: "orphan-program-dirs",
-		description: `Removes orphan program directories under <base>/programs/ that
-have no corresponding database record. These directories contain
-persisted bytecode and provenance from a previous load that was
-either rolled back, crashed, or whose DB row was removed.
-
-Both numeric (program-dir) and non-numeric (program-dir-unknown)
-directory names are removed. All entries under <base>/programs/
-are owned by bpfman and safe to delete when not backed by a DB row.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+		description: `Reports program directories under <base>/programs/ with no
+matching database row. These hold persisted bytecode and
+provenance from a load that was rolled back, crashed, or whose
+database row was later removed. Everything under <base>/programs/
+is owned by bpfman, so audit --repair removes the directory
+whether the name is a numeric program ID or anything else.`,
 		kinds:   []OrphanKind{OrphanProgramDir, OrphanProgramDirUnk},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
-		actionFn: func(o FsOrphan) action.Action {
-			return action.RemoveProgramDir{Path: o.Path}
-		},
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-				fmt.Sprintf("remove program dir %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path)
 		},
 	},
 	{
 		name: "orphan-shared-map-pins",
-		description: `Removes orphan shared map pin files under {bpffs}/shared/ that
-have no corresponding entry in the shared_map_pins table. These pins
-reference kernel maps that will be garbage-collected once no FD or pin
-holds them. They indicate incomplete cleanup from a crash or database
-wipe.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+		description: `Reports shared map pin files under {bpffs}/shared/ with no
+matching shared_map_pins row. Usually leftovers from a crash or
+a database wipe. audit --repair removes the pins; the kernel
+reclaims the underlying map once nothing else holds a reference.`,
 		kinds:   []OrphanKind{OrphanSharedMapPin},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
-		actionFn: func(o FsOrphan) action.Action {
-			return action.RemoveSharedMapPin{Path: bpfman.MapPinPath(o.Path)}
-		},
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-				fmt.Sprintf("remove shared map pin %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path)
 		},
 	},
 	{
 		name: "orphan-staging-dirs",
-		description: `Removes orphan staging directories under <base>/.staging/.
-Staging directories are transient scratch space used during atomic
-publish operations. They are never referenced by DB rows and are
-always safe to delete.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+		description: `Reports leftover staging directories under <base>/.staging/.
+Staging is transient scratch space used during atomic publish
+operations; nothing under it is referenced by the database, so
+audit --repair always removes them.`,
 		kinds:   []OrphanKind{OrphanStagingDir},
 		include: func(_ *ObservedState, _ FsOrphan) bool { return true },
-		actionFn: func(o FsOrphan) action.Action {
-			return action.RemoveStagingDir{Path: o.Path}
-		},
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path),
-				fmt.Sprintf("remove staging dir %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Orphan %s: %s", o.Kind, o.Path)
 		},
 	},
 }
 
-// orphanRule builds a Rule from an orphanGCSpec. The shared
-// evaluation logic iterates OrphanFsEntries, filters by kind set
-// and liveness, and emits violations with removal actions.
+// orphanRule builds a Rule from an orphanGCSpec. Each emitted
+// violation carries a RemoveOrphanArtefact intent; the action-level
+// lowering lives on the intent, not on the spec.
 func orphanRule(spec orphanGCSpec) Rule {
 	kindSet := make(map[OrphanKind]bool, len(spec.kinds))
 	for _, k := range spec.kinds {
@@ -692,15 +598,11 @@ func orphanRule(spec orphanGCSpec) Rule {
 				if !spec.include(s, o) {
 					continue
 				}
-				desc, opDesc := spec.describeFn(o)
 				out = append(out, Violation{
 					Severity:    SeverityWarning,
 					Category:    "gc-orphan-pin",
-					Description: desc,
-					Op: &Operation{
-						Description: opDesc,
-						Actions:     []action.Action{spec.actionFn(o)},
-					},
+					Description: spec.describeFn(o),
+					Intent:      RemoveOrphanArtefact{Kind: o.Kind, Path: o.Path},
 				})
 			}
 			return out
@@ -723,41 +625,22 @@ func orphanRule(spec orphanGCSpec) Rule {
 func PruneRule() Rule {
 	return orphanRule(orphanGCSpec{
 		name: "prune-live-orphans",
-		description: `Removes live orphan program pins, link directories, and map
-directories. A live orphan is a program that bpfman originally loaded
-(pinned under bpfman's bpffs root) but no longer tracks in its
-database. This typically occurs when the database is wiped or recreated
-while bpffs pins survive across restarts.
+		description: `Removes program pins, link directories, and map directories
+that are pinned under bpfman's bpffs root and still alive in the
+kernel, but not tracked in bpfman's database. Removing the pin
+releases bpfman's reference; the kernel reclaims the program
+once no other references remain.
 
-Unlike orphan-program-artefacts (which only removes dead orphans),
-this rule removes the pin even when the kernel program is alive.
-Removing the pin releases bpfman's reference; the kernel reclaims the
-program when no other references remain.
-
-Severity: WARNING
-Category: gc-orphan-pin`,
+This rule is destructive: it can unload programs that are
+currently routing traffic. It only runs when --prune is passed
+explicitly. Use it when you have decided the leftover state must
+go.`,
 		kinds: []OrphanKind{OrphanProgPin, OrphanLinkDir, OrphanMapDir},
 		include: func(s *ObservedState, o FsOrphan) bool {
 			return o.ProgramID != 0 && s.KernelAlive(o.ProgramID)
 		},
-		actionFn: orphanPinAction,
-		describeFn: func(o FsOrphan) (string, string) {
-			return fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.ProgramID),
-				fmt.Sprintf("remove %s", o.Path)
+		describeFn: func(o FsOrphan) string {
+			return fmt.Sprintf("Live orphan %s: %s (kernel program %d alive)", o.Kind, o.Path, o.ProgramID)
 		},
 	})
-}
-
-// orphanPinAction maps an orphan's kind to the appropriate removal action.
-func orphanPinAction(o FsOrphan) action.Action {
-	switch o.Kind {
-	case OrphanProgPin:
-		return action.RemoveProgPin{Path: bpfman.ProgPinPath(o.Path)}
-	case OrphanLinkDir:
-		return action.RemoveLinkDir{Path: bpfman.LinkDir(o.Path)}
-	case OrphanMapDir:
-		return action.RemoveMapDir{Path: bpfman.MapDir(o.Path)}
-	default:
-		panic(fmt.Sprintf("orphanPinAction: unexpected kind %s", o.Kind))
-	}
 }

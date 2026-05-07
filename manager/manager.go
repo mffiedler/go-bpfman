@@ -226,7 +226,7 @@ func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opt
 	// set. Under partial enumeration, healthy links look stale and
 	// would be incorrectly deleted; the next mutating call on those
 	// links would then surface ErrLinkNotManaged. Same hazard applies
-	// to program-side phases. The doctor rule
+	// to program-side phases. The audit rule
 	// kernel-enumeration-incomplete (manager/coherency/rules.go:55)
 	// continues to surface this state for operator visibility.
 	if obs.Meta.ProgramEnumErrors == 0 && obs.Meta.LinkEnumErrors == 0 {
@@ -273,12 +273,7 @@ func (m *Manager) evaluateCoherency(ctx context.Context, store platform.Store, o
 	}
 
 	gcRules := buildGCRules(opts)
-	var violations []coherency.Violation
-	for _, v := range coherency.Evaluate(state, gcRules) {
-		if v.Op != nil {
-			violations = append(violations, v)
-		}
-	}
+	violations := coherency.Evaluate(state, gcRules)
 
 	var liveOrphans int
 	if !opts.Prune {
@@ -291,15 +286,12 @@ func (m *Manager) evaluateCoherency(ctx context.Context, store platform.Store, o
 // evaluateCoherencyFromState runs the coherency rules against an
 // already-gathered ObservedState, avoiding a redundant GatherState
 // call. Used when no store actions were computed and the existing
-// state is still valid.
+// state is still valid. Returns all violations including
+// diagnostic-only (no-intent) findings; callers that execute repairs
+// must filter to Intent != nil themselves.
 func evaluateCoherencyFromState(state *coherency.ObservedState, opts GCOptions) ([]coherency.Violation, int) {
 	gcRules := buildGCRules(opts)
-	var violations []coherency.Violation
-	for _, v := range coherency.Evaluate(state, gcRules) {
-		if v.Op != nil {
-			violations = append(violations, v)
-		}
-	}
+	violations := coherency.Evaluate(state, gcRules)
 
 	var liveOrphans int
 	if !opts.Prune {
@@ -309,9 +301,11 @@ func evaluateCoherencyFromState(state *coherency.ObservedState, opts GCOptions) 
 	return violations, liveOrphans
 }
 
-// buildGCRules constructs the rule set from options.
+// buildGCRules constructs the rule set from options. The destructive
+// prune-live-orphans rule is opt-in and only included when
+// opts.Prune is set.
 func buildGCRules(opts GCOptions) []coherency.Rule {
-	gcRules := coherency.GCRules()
+	gcRules := coherency.Rules()
 	if opts.Prune {
 		gcRules = append(gcRules, coherency.PruneRule())
 	}
@@ -377,12 +371,16 @@ func (m *Manager) ExecuteGC(ctx context.Context, writeLock lock.WriterScope, pla
 	}
 
 	for _, v := range violations {
-		if err := m.executor.ExecuteAll(ctx, v.Op.Actions); err != nil {
-			m.logger.WarnContext(ctx, "gc operation failed", "op", v.Op.Description, "error", err)
-			retErr = fmt.Errorf("gc operation failed: %s: %w", v.Op.Description, err)
+		if v.Intent == nil {
 			continue
 		}
-		m.logger.InfoContext(ctx, "gc operation applied", "op", v.Op.Description)
+		desc := v.Intent.Describe()
+		if err := m.executor.ExecuteAll(ctx, v.Intent.Actions()); err != nil {
+			m.logger.WarnContext(ctx, "gc operation failed", "op", desc, "error", err)
+			retErr = fmt.Errorf("gc operation failed: %s: %w", desc, err)
+			continue
+		}
+		m.logger.InfoContext(ctx, "gc operation applied", "op", desc)
 		switch v.Category {
 		case "gc-dispatcher":
 			result.DispatchersRemoved++

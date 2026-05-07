@@ -49,13 +49,12 @@ type CLI struct {
 	// kctx is the parsed Kong context, stored for Execute to dispatch.
 	kctx *kong.Context `kong:"-"`
 
-	Program    ProgramCmd    `cmd:"" aliases:"programs" group:"resources" help:"Manage BPF programs."`
-	Link       LinkCmd       `cmd:"" aliases:"links" group:"resources" help:"Manage BPF links."`
-	Dispatcher DispatcherCmd `cmd:"" aliases:"dispatchers" group:"resources" help:"Manage dispatchers."`
+	Program    ProgramCmd    `cmd:"" group:"resources" help:"Manage BPF programs."`
+	Link       LinkCmd       `cmd:"" group:"resources" help:"Manage BPF links."`
+	Dispatcher DispatcherCmd `cmd:"" group:"resources" help:"Manage dispatchers."`
 	Image      ImageCmd      `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
 	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
-	GC         GCCmd         `cmd:"" group:"diag" help:"Garbage collect stale resources."`
-	Doctor     DoctorCmd     `cmd:"" group:"diag" help:"Check coherency of database, kernel, and filesystem state."`
+	Audit      AuditCmd      `cmd:"" group:"diag" help:"Audit database, kernel, and filesystem coherency; --repair to execute the cleanup plan."`
 	Repl       ReplCmd       `cmd:"" group:"diag" help:"Start an interactive inspection shell."`
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
 }

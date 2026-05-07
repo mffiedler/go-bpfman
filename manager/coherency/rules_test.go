@@ -5,7 +5,6 @@ import (
 
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/manager/action"
 )
 
 func newTestState() *ObservedState {
@@ -28,44 +27,40 @@ func ruleByName(rules []Rule, name string) Rule {
 
 func boolPtr(v bool) *bool { return &v }
 
-// assertActions checks that the violations contain exactly the
-// expected action types in order. Each inner slice corresponds to one
-// violation's Op.Actions.
-func assertActions(t *testing.T, violations []Violation, expected [][]action.Action) {
+// assertIntent checks that violations carry exactly the expected
+// RepairIntent values in order. Asserting on the typed intent
+// (rather than its lowered actions) keeps rule tests focused on
+// classification; intent lowering is verified separately in
+// intents_test.go.
+func assertIntent(t *testing.T, violations []Violation, expected []RepairIntent) {
 	t.Helper()
 	if len(violations) != len(expected) {
 		t.Fatalf("got %d violations, want %d", len(violations), len(expected))
 	}
 	for i, v := range violations {
-		if v.Op == nil {
-			t.Fatalf("violation[%d]: Op is nil", i)
+		if v.Intent == nil {
+			t.Fatalf("violation[%d]: Intent is nil", i)
 		}
-		got := v.Op.Actions
-		want := expected[i]
-		if len(got) != len(want) {
-			t.Fatalf("violation[%d]: got %d actions, want %d\n  got:  %+v\n  want: %+v", i, len(got), len(want), got, want)
-		}
-		for j := range got {
-			if got[j] != want[j] {
-				t.Errorf("violation[%d].Actions[%d]:\n  got:  %+v\n  want: %+v", i, j, got[j], want[j])
-			}
+		if v.Intent != expected[i] {
+			t.Errorf("violation[%d].Intent:\n  got:  %#v\n  want: %#v", i, v.Intent, expected[i])
 		}
 	}
 }
 
 // TestAllRules_NamesUnique guards against accidental name collisions
-// across CoherencyRules and GCRules. Duplicates would silently shadow
-// in FindRule and double-list in RuleNames, with no compile-time check.
+// in the unified rule registry. Duplicates would silently shadow in
+// FindRule and double-list in RuleNames; Rules() panics when this
+// invariant is violated.
 func TestAllRules_NamesUnique(t *testing.T) {
 	t.Parallel()
 
 	seen := make(map[string]int)
-	for _, r := range AllRules() {
+	for _, r := range Rules() {
 		seen[r.Name]++
 	}
 	for name, count := range seen {
 		if count > 1 {
-			t.Errorf("rule name %q registered %d times; names must be unique across CoherencyRules and GCRules", name, count)
+			t.Errorf("rule name %q registered %d times", name, count)
 		}
 	}
 }
@@ -88,15 +83,18 @@ func TestStaleDispatcher_XDP(t *testing.T) {
 		LinkPin:      "/bpffs/xdp/dispatcher_1_2_link",
 	}}
 
-	rule := ruleByName(GCRules(), "stale-dispatcher")
+	rule := ruleByName(Rules(), "stale-dispatcher")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveDispatcherProgPin{Path: "/bpffs/xdp/dispatcher_1_2_1/dispatcher"},
-		action.RemoveDispatcherRevDir{Path: "/bpffs/xdp/dispatcher_1_2_1"},
-		action.RemoveDispatcherLinkPin{Path: "/bpffs/xdp/dispatcher_1_2_link"},
-		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		StaleXDPDispatcher{
+			Nsid:    1,
+			Ifindex: 2,
+			ProgPin: "/bpffs/xdp/dispatcher_1_2_1/dispatcher",
+			RevDir:  "/bpffs/xdp/dispatcher_1_2_1",
+			LinkPin: "/bpffs/xdp/dispatcher_1_2_link",
+		},
+	})
 }
 
 func TestStaleDispatcher_TC(t *testing.T) {
@@ -118,15 +116,18 @@ func TestStaleDispatcher_TC(t *testing.T) {
 		RevDir:     "/bpffs/tc_ingress/dispatcher_1_3_1",
 	}}
 
-	rule := ruleByName(GCRules(), "stale-dispatcher")
+	rule := ruleByName(Rules(), "stale-dispatcher")
 	violations := rule.Eval(s)
 
-	// TC dispatchers do not have a link pin.
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveDispatcherProgPin{Path: "/bpffs/tc_ingress/dispatcher_1_3_1/dispatcher"},
-		action.RemoveDispatcherRevDir{Path: "/bpffs/tc_ingress/dispatcher_1_3_1"},
-		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeTCIngress, Nsid: 1, Ifindex: 3},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		StaleTCDispatcher{
+			Type:    dispatcher.DispatcherTypeTCIngress,
+			Nsid:    1,
+			Ifindex: 3,
+			ProgPin: "/bpffs/tc_ingress/dispatcher_1_3_1/dispatcher",
+			RevDir:  "/bpffs/tc_ingress/dispatcher_1_3_1",
+		},
+	})
 }
 
 // TestStaleDispatcher_XDP_OuterLinkDetachedResidue covers the
@@ -161,15 +162,18 @@ func TestStaleDispatcher_XDP_OuterLinkDetachedResidue(t *testing.T) {
 		LinkPin:      "/bpffs/xdp/dispatcher_1_2_link",
 	}}
 
-	rule := ruleByName(GCRules(), "stale-dispatcher")
+	rule := ruleByName(Rules(), "stale-dispatcher")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveDispatcherProgPin{Path: "/bpffs/xdp/dispatcher_1_2_1/dispatcher"},
-		action.RemoveDispatcherRevDir{Path: "/bpffs/xdp/dispatcher_1_2_1"},
-		action.RemoveDispatcherLinkPin{Path: "/bpffs/xdp/dispatcher_1_2_link"},
-		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		StaleXDPDispatcher{
+			Nsid:    1,
+			Ifindex: 2,
+			ProgPin: "/bpffs/xdp/dispatcher_1_2_1/dispatcher",
+			RevDir:  "/bpffs/xdp/dispatcher_1_2_1",
+			LinkPin: "/bpffs/xdp/dispatcher_1_2_link",
+		},
+	})
 }
 
 // TestStaleDispatcher_XDP_OuterLinkAliveNoResidue verifies the
@@ -197,7 +201,7 @@ func TestStaleDispatcher_XDP_OuterLinkAliveNoResidue(t *testing.T) {
 		LinkPin:      "/bpffs/xdp/dispatcher_1_2_link",
 	}}
 
-	rule := ruleByName(GCRules(), "stale-dispatcher")
+	rule := ruleByName(Rules(), "stale-dispatcher")
 	violations := rule.Eval(s)
 
 	if len(violations) != 0 {
@@ -223,7 +227,7 @@ func TestStaleDispatcher_NotStale(t *testing.T) {
 		RevDir:       "/bpffs/xdp/dispatcher_1_2_1",
 	}}
 
-	rule := ruleByName(GCRules(), "stale-dispatcher")
+	rule := ruleByName(Rules(), "stale-dispatcher")
 	violations := rule.Eval(s)
 
 	if len(violations) != 0 {
@@ -240,12 +244,12 @@ func TestOrphanProgramArtefacts_DeadProgPin(t *testing.T) {
 	}
 	// kernel ID 42 is not alive
 
-	rule := ruleByName(GCRules(), "orphan-program-artefacts")
+	rule := ruleByName(Rules(), "orphan-program-artefacts")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgPin{Path: "/bpffs/prog_42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanProgPin, Path: "/bpffs/prog_42"},
+	})
 }
 
 func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
@@ -256,12 +260,12 @@ func TestOrphanProgramArtefacts_LinkDir(t *testing.T) {
 		{Path: "/bpffs/links/42", ProgramID: 42, Kind: OrphanLinkDir},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-program-artefacts")
+	rule := ruleByName(Rules(), "orphan-program-artefacts")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveLinkDir{Path: "/bpffs/links/42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanLinkDir, Path: "/bpffs/links/42"},
+	})
 }
 
 func TestOrphanProgramArtefacts_MapDir(t *testing.T) {
@@ -272,12 +276,12 @@ func TestOrphanProgramArtefacts_MapDir(t *testing.T) {
 		{Path: "/bpffs/maps/42", ProgramID: 42, Kind: OrphanMapDir},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-program-artefacts")
+	rule := ruleByName(Rules(), "orphan-program-artefacts")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveMapDir{Path: "/bpffs/maps/42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanMapDir, Path: "/bpffs/maps/42"},
+	})
 }
 
 func TestOrphanProgramArtefacts_LiveSkipped(t *testing.T) {
@@ -289,7 +293,7 @@ func TestOrphanProgramArtefacts_LiveSkipped(t *testing.T) {
 		{Path: "/bpffs/prog_42", ProgramID: 42, Kind: OrphanProgPin},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-program-artefacts")
+	rule := ruleByName(Rules(), "orphan-program-artefacts")
 	violations := rule.Eval(s)
 
 	if len(violations) != 0 {
@@ -305,12 +309,12 @@ func TestOrphanDispatcherArtefacts_Dir(t *testing.T) {
 		{Path: "/bpffs/xdp/dispatcher_1_2_1", Kind: OrphanDispatcherDir},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-dispatcher-artefacts")
+	rule := ruleByName(Rules(), "orphan-dispatcher-artefacts")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveDispatcherRevDir{Path: "/bpffs/xdp/dispatcher_1_2_1"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanDispatcherDir, Path: "/bpffs/xdp/dispatcher_1_2_1"},
+	})
 }
 
 func TestOrphanDispatcherArtefacts_Link(t *testing.T) {
@@ -321,12 +325,12 @@ func TestOrphanDispatcherArtefacts_Link(t *testing.T) {
 		{Path: "/bpffs/xdp/dispatcher_1_2_link", Kind: OrphanDispatcherLink},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-dispatcher-artefacts")
+	rule := ruleByName(Rules(), "orphan-dispatcher-artefacts")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveDispatcherLinkPin{Path: "/bpffs/xdp/dispatcher_1_2_link"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanDispatcherLink, Path: "/bpffs/xdp/dispatcher_1_2_link"},
+	})
 }
 
 func TestOrphanProgramDirs(t *testing.T) {
@@ -337,12 +341,12 @@ func TestOrphanProgramDirs(t *testing.T) {
 		{Path: "/data/programs/42", ProgramID: 42, Kind: OrphanProgramDir},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-program-dirs")
+	rule := ruleByName(Rules(), "orphan-program-dirs")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgramDir{Path: "/data/programs/42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanProgramDir, Path: "/data/programs/42"},
+	})
 }
 
 func TestOrphanProgramDirs_Unknown(t *testing.T) {
@@ -353,12 +357,12 @@ func TestOrphanProgramDirs_Unknown(t *testing.T) {
 		{Path: "/data/programs/bad-name", Kind: OrphanProgramDirUnk},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-program-dirs")
+	rule := ruleByName(Rules(), "orphan-program-dirs")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgramDir{Path: "/data/programs/bad-name"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanProgramDirUnk, Path: "/data/programs/bad-name"},
+	})
 }
 
 func TestOrphanStagingDirs(t *testing.T) {
@@ -369,12 +373,12 @@ func TestOrphanStagingDirs(t *testing.T) {
 		{Path: "/data/.staging/abc123", Kind: OrphanStagingDir},
 	}
 
-	rule := ruleByName(GCRules(), "orphan-staging-dirs")
+	rule := ruleByName(Rules(), "orphan-staging-dirs")
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveStagingDir{Path: "/data/.staging/abc123"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanStagingDir, Path: "/data/.staging/abc123"},
+	})
 }
 
 func TestPruneLiveOrphans_ProgPin(t *testing.T) {
@@ -389,9 +393,9 @@ func TestPruneLiveOrphans_ProgPin(t *testing.T) {
 	rule := PruneRule()
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveProgPin{Path: "/bpffs/prog_42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanProgPin, Path: "/bpffs/prog_42"},
+	})
 }
 
 func TestPruneLiveOrphans_LinkDir(t *testing.T) {
@@ -406,9 +410,9 @@ func TestPruneLiveOrphans_LinkDir(t *testing.T) {
 	rule := PruneRule()
 	violations := rule.Eval(s)
 
-	assertActions(t, violations, [][]action.Action{{
-		action.RemoveLinkDir{Path: "/bpffs/links/42"},
-	}})
+	assertIntent(t, violations, []RepairIntent{
+		RemoveOrphanArtefact{Kind: OrphanLinkDir, Path: "/bpffs/links/42"},
+	})
 }
 
 func TestPruneLiveOrphans_SkipsDeadOrphans(t *testing.T) {

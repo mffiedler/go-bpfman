@@ -27,7 +27,7 @@ var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-e
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{
 	"assert":  replAssertVerbs,
-	"bpfman":  {"dispatcher", "doctor", "gc", "link", "program", "programs", "show"},
+	"bpfman":  {"dispatcher", "audit", "link", "program", "show"},
 	"exec":    {"status"},
 	"file":    {"temp"},
 	"require": replAssertVerbs,
@@ -37,10 +37,9 @@ var replSubcommands = map[string][]string{
 // subcommands for completion.
 var bpfmanSubcommands = map[string][]string{
 	"dispatcher": {"delete", "get", "list"},
-	"doctor":     {"checkup", "explain"},
+	"audit":      {"checkup", "explain"},
 	"link":       {"attach", "delete", "detach", "get", "list"},
 	"program":    {"delete", "get", "list", "load", "unload"},
-	"programs":   {"list"},
 	"show":       {"program"},
 }
 
