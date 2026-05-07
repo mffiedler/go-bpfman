@@ -484,12 +484,20 @@ func GCRules() []Rule {
 			Description: `Detects dispatchers that are functionally dead and can be removed.
 A dispatcher is stale when:
   1. It has zero extension links (no programs attached), AND
-  2. Its attachment mechanism is missing (prog pin gone, or TC filter
-     not installed)
+  2. Its attachment mechanism is missing — for XDP either the prog
+     pin is gone or the outer kernel link is detached; for TC the
+     filter is not installed.
 
 Such dispatchers serve no purpose - they have no programs to dispatch
 and cannot receive traffic anyway. GC removes the database record and
 cleans up any remaining filesystem artefacts.
+
+The XDP "outer link detached but prog pin still present" case is the
+residue class produced when Manager.unload's empty-dispatcher cleanup
+fails post-detach: the kernel detach succeeded but removeDispatcherProgPin
+or deleteDispatcherSnapshot did not, and the post-detach contract
+swallows those errors so they reach the next GC instead of a
+joined-error retry.
 
 Severity: WARNING
 Category: gc-dispatcher`,
@@ -504,6 +512,8 @@ Category: gc-dispatcher`,
 						stale = true // G5: prog pin missing
 					} else if d.TCFilterOK != nil && !*d.TCFilterOK {
 						stale = true // G6: TC filter missing
+					} else if d.DB.Type == dispatcher.DispatcherTypeXDP && d.DB.LinkID != 0 && !d.KernelLink {
+						stale = true // outer link detached, post-detach cleanup left residue
 					}
 					if !stale {
 						continue

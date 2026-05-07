@@ -112,6 +112,82 @@ func TestStaleDispatcher_TC(t *testing.T) {
 	}})
 }
 
+// TestStaleDispatcher_XDP_OuterLinkDetachedResidue covers the
+// post-detach residue class where Manager.unload detached the
+// dispatcher's outer kernel link successfully but a later step in
+// removeEmptyDispatcher (deleteDispatcherSnapshot, typically due to
+// a transient store-transaction failure) left the DB row behind.
+// Under the post-detach log-only contract that residue reaches the
+// next GC instead of a joined-error retry; the stale-dispatcher rule
+// must recognise it and trigger repair.
+//
+// State: zero members, prog pin reported as still present (so the
+// existing prog-pin-missing branch does not fire), but the recorded
+// LinkID's kernel link is no longer alive.
+func TestStaleDispatcher_XDP_OuterLinkDetachedResidue(t *testing.T) {
+	t.Parallel()
+
+	s := newTestState()
+	s.dispatchers = []DispatcherState{{
+		DB: &dispatcher.State{
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      1,
+			Ifindex:   2,
+			ProgramID: 100,
+			LinkID:    999,
+		},
+		ProgPinExist: boolPtr(true),
+		KernelLink:   false,
+		LinkCount:    0,
+		ProgPin:      "/bpffs/xdp/dispatcher_1_2_1/dispatcher",
+		RevDir:       "/bpffs/xdp/dispatcher_1_2_1",
+		LinkPin:      "/bpffs/xdp/dispatcher_1_2_link",
+	}}
+
+	rule := ruleByName(GCRules(), "stale-dispatcher")
+	violations := rule.Eval(s)
+
+	assertActions(t, violations, [][]action.Action{{
+		action.RemoveDispatcherProgPin{Path: "/bpffs/xdp/dispatcher_1_2_1/dispatcher"},
+		action.RemoveDispatcherRevDir{Path: "/bpffs/xdp/dispatcher_1_2_1"},
+		action.RemoveDispatcherLinkPin{Path: "/bpffs/xdp/dispatcher_1_2_link"},
+		action.DeleteDispatcher{Type: dispatcher.DispatcherTypeXDP, Nsid: 1, Ifindex: 2},
+	}})
+}
+
+// TestStaleDispatcher_XDP_OuterLinkAliveNoResidue verifies the
+// negative case for the new branch: an XDP dispatcher with a live
+// outer kernel link is not stale, even with zero members. Without
+// the LinkID != 0 guard the branch would falsely fire on every
+// freshly-loaded dispatcher before its first attach.
+func TestStaleDispatcher_XDP_OuterLinkAliveNoResidue(t *testing.T) {
+	t.Parallel()
+
+	s := newTestState()
+	s.dispatchers = []DispatcherState{{
+		DB: &dispatcher.State{
+			Type:      dispatcher.DispatcherTypeXDP,
+			Nsid:      1,
+			Ifindex:   2,
+			ProgramID: 100,
+			LinkID:    999,
+		},
+		ProgPinExist: boolPtr(true),
+		KernelLink:   true,
+		LinkCount:    0,
+		ProgPin:      "/bpffs/xdp/dispatcher_1_2_1/dispatcher",
+		RevDir:       "/bpffs/xdp/dispatcher_1_2_1",
+		LinkPin:      "/bpffs/xdp/dispatcher_1_2_link",
+	}}
+
+	rule := ruleByName(GCRules(), "stale-dispatcher")
+	violations := rule.Eval(s)
+
+	if len(violations) != 0 {
+		t.Errorf("expected zero violations for live-outer-link dispatcher, got %d", len(violations))
+	}
+}
+
 func TestStaleDispatcher_NotStale(t *testing.T) {
 	t.Parallel()
 
