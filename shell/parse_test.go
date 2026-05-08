@@ -234,12 +234,12 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 	}{
 		{"varref", "$x", "expr"},
 		{"varref with path", "$x.a.b", "expr"},
-		{"varref with comparison", "$x eq 5", "expr"},
+		{"varref with comparison", "$x == 5", "expr"},
 		{"varref with thread", "$x |> jq \".\"", "expr"},
-		{"exprsub", "[[1 eq 1]]", "expr"},
+		{"exprsub", "[[1 == 1]]", "expr"},
 		{"quoted", "\"hello\"", "expr"},
 		{"single-quoted", "'hello'", "expr"},
-		{"paren expression", "(1 eq 1)", "expr"},
+		{"paren expression", "(1 == 1)", "expr"},
 		{"not prefix", "not $x", "expr"},
 		{"unary pred with operand", "not-empty $x", "expr"},
 		{"bare word", "foo", "command"},
@@ -509,7 +509,7 @@ func TestParse_Continue_Simple(t *testing.T) {
 func TestParse_Break_InsideIf(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "foreach x in $xs {\n  if $x eq skip { break }\n  print x\n}")
+	prog, err := parseSource(t, "foreach x in $xs {\n  if $x == skip { break }\n  print x\n}")
 	require.NoError(t, err)
 	fe := firstStmt(t, prog).(*ForEachStmt)
 	require.Len(t, fe.Body, 2)
@@ -607,9 +607,9 @@ func TestParse_Logical_Precedence_NotTighterThanAnd(t *testing.T) {
 func TestParse_Logical_Precedence_NotLooserThanComparison(t *testing.T) {
 	t.Parallel()
 
-	// "not $a eq $b" should parse as "not ($a eq $b)" per SQL /
-	// Python convention, not "(not $a) eq $b" per C.
-	prog, err := parseSource(t, "if not $a eq $b { help }")
+	// "not $a == $b" should parse as "not ($a == $b)" per SQL /
+	// Python convention, not "(not $a) == $b" per C.
+	prog, err := parseSource(t, "if not $a == $b { help }")
 	require.NoError(t, err)
 	ifStmt := firstStmt(t, prog).(*IfStmt)
 	notExpr, ok := ifStmt.Cond.(*NotExpr)
@@ -652,12 +652,12 @@ func TestParse_Logical_ParensOverridePrecedence(t *testing.T) {
 func TestParse_Logical_PredBeforeCloseParen(t *testing.T) {
 	t.Parallel()
 
-	// "($a eq true) and $b": the 'true' inside the parens is
+	// "($a == true) and $b": the 'true' inside the parens is
 	// on the RHS of a comparison, and the next token is ')' —
 	// not an operand.  operandFollowsPred must treat ')' as an
 	// expression terminator so 'true' parses as a literal, not
 	// a UnaryExpr that greedily eats the ')'.
-	prog, err := parseSource(t, "if ($a eq true) and $b { help }")
+	prog, err := parseSource(t, "if ($a == true) and $b { help }")
 	require.NoError(t, err)
 	ifStmt := firstStmt(t, prog).(*IfStmt)
 	and, ok := ifStmt.Cond.(*LogicalExpr)
@@ -700,7 +700,7 @@ func TestParse_Logical_StrayCloseParen(t *testing.T) {
 func TestParse_Retry_Basic(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "retry { help } until $done eq true")
+	prog, err := parseSource(t, "retry { help } until $done == true")
 	require.NoError(t, err)
 	rs, ok := firstStmt(t, prog).(*RetryStmt)
 	require.True(t, ok, "expected RetryStmt, got %T", prog.Stmts[0])
@@ -741,7 +741,7 @@ func TestParse_Retry_TimeoutExpr(t *testing.T) {
 func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "retry { help } until $done eq true or timeout 60s")
+	prog, err := parseSource(t, "retry { help } until $done == true or timeout 60s")
 	require.NoError(t, err)
 	rs := firstStmt(t, prog).(*RetryStmt)
 	or, ok := rs.Until.(*LogicalExpr)
@@ -893,13 +893,13 @@ func TestParse_Arithmetic_LeftAssociativeChain(t *testing.T) {
 func TestParse_Arithmetic_LooserThanComparison(t *testing.T) {
 	t.Parallel()
 
-	// $x + 1 eq 5: 'eq' at the root, additive as the left operand.
-	prog, err := parseSource(t, "let r = $x + 1 eq 5")
+	// $x + 1 == 5: '==' at the root, additive as the left operand.
+	prog, err := parseSource(t, "let r = $x + 1 == 5")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
 	cmp, ok := let.RHS.(*BinaryExpr)
 	require.True(t, ok)
-	assert.Equal(t, "eq", cmp.Op)
+	assert.Equal(t, "==", cmp.Op)
 	add, ok := cmp.Left.(*BinaryExpr)
 	require.True(t, ok, "comparison LHS should be BinaryExpr (additive), got %T", cmp.Left)
 	assert.Equal(t, "+", add.Op)

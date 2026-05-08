@@ -11,9 +11,9 @@ asserting on individual fields of the returned records. The
 existing assertion form is one path per line:
 
 ```
-assert $prog.record.load.program_type eq tracepoint
-assert $prog.status.kernel.program_type eq tracepoint
-assert $prog.record.meta.name eq tracepoint_kill_recorder
+assert $prog.record.load.program_type == tracepoint
+assert $prog.status.kernel.program_type == tracepoint
+assert $prog.record.meta.name == tracepoint_kill_recorder
 assert $prog.status.kernel.id == $pid
 assert not-empty $prog.status.kernel.name
 assert not-empty $prog.status.kernel.tag
@@ -101,7 +101,7 @@ assert $prog matches { ... }: 2 mismatches at testdata/foo.bpfman:42
   record.handles.pin_path: expected non-empty, got ""
 ```
 
-Match precision matches the existing per-line `assert path eq
+Match precision matches the existing per-line `assert path ==
 value` form; only the call shape changes.
 
 ### What it replaces
@@ -135,7 +135,7 @@ The design deliberately does **not** add:
   `matches /foo/`). Those expand the pattern grammar and start
   competing with `jq`. Keep patterns to: literal, `$var`,
   `not-empty`. If a user needs more, they fall back to a
-  separate `assert path eq value` line or a `|> jq` filter.
+  separate `assert path == value` line or a `|> jq` filter.
 * **List patterns** (asserting array shape). Use repeated
   `matches` against indexed paths (`programs.0.record.meta.name`)
   or fall back to `jq`.
@@ -168,7 +168,7 @@ the parser, plus tests.
 
 ## Migration
 
-Existing `assert path eq value` lines stay valid. The two forms
+Existing `assert path == value` lines stay valid. The two forms
 co-exist. Per-script migration is opportunistic: when a maintainer
 opens a `.bpfman` script for any reason, replace the per-line
 block with a `matches { ... }` block in the same commit. No

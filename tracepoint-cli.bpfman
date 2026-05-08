@@ -29,9 +29,9 @@ let pid = $prog.record.program_id
 let link = [bpfman link attach tracepoint $pid syscalls/sys_enter_kill]
 require not nil link
 
-assert $link.record.kind eq tracepoint
-assert $link.record.details.group eq syscalls
-assert $link.record.details.name eq sys_enter_kill
+assert $link.record.kind == tracepoint
+assert $link.record.details.group == syscalls
+assert $link.record.details.name == sys_enter_kill
 
 # ---- Shape-validation errors ---------------------------------------
 #

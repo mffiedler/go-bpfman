@@ -17,7 +17,7 @@ let prog = [bpfman program load file \
 require not nil prog
 let pid = $prog.record.program_id
 
-# One block replaces eight separate `assert path eq value` /
+# One block replaces eight separate `assert path == value` /
 # `assert not-empty path` lines.
 assert $prog matches {
     record.load.program_type:    tracepoint

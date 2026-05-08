@@ -1697,7 +1697,7 @@ func TestNegateMessage(t *testing.T) {
 func TestReplLoop_AssertEqPass(t *testing.T) {
 	t.Parallel()
 
-	input := "assert hello eq hello\n"
+	input := "assert hello == hello\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1712,7 +1712,7 @@ func TestReplLoop_AssertEqPass(t *testing.T) {
 func TestReplLoop_AssertEqFail(t *testing.T) {
 	t.Parallel()
 
-	input := "assert hello eq world\n"
+	input := "assert hello == world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1727,7 +1727,7 @@ func TestReplLoop_AssertEqFail(t *testing.T) {
 func TestReplLoop_AssertNeFail(t *testing.T) {
 	t.Parallel()
 
-	input := "assert hello ne hello\n"
+	input := "assert hello != hello\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1743,7 +1743,7 @@ func TestReplLoop_AssertNeFail(t *testing.T) {
 func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
 	t.Parallel()
 
-	input := "assert not hello eq world\n"
+	input := "assert not hello == world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -1759,8 +1759,8 @@ func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 
 	// The second line should never run because require halts.
 	input := strings.Join([]string{
-		"require hello eq world",
-		"assert a eq a",
+		"require hello == world",
+		"assert a == a",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -1778,9 +1778,9 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 	t.Parallel()
 
 	input := strings.Join([]string{
-		"assert a eq b",
-		"assert c eq d",
-		"assert e eq e",
+		"assert a == b",
+		"assert c == d",
+		"assert e == e",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -1905,7 +1905,7 @@ func TestReplLoop_LetScalarAndAssert(t *testing.T) {
 
 	input := strings.Join([]string{
 		"let x = 42",
-		"assert $x eq 42",
+		"assert $x == 42",
 	}, "\n")
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -2136,7 +2136,7 @@ func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
 	t.Parallel()
 
 	// Phase 2: prefix binary verbs are removed; infix form required.
-	input := "assert eq hello world\n"
+	input := "assert == hello world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2183,7 +2183,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 		},
 	}))
 
-	input := "let pid = $prog.record.program_id\nassert $pid eq 199421\n"
+	input := "let pid = $prog.record.program_id\nassert $pid == 199421\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2197,7 +2197,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 func TestReplLoop_RequireNePass(t *testing.T) {
 	t.Parallel()
 
-	input := "require a ne b\n"
+	input := "require a != b\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2210,7 +2210,7 @@ func TestReplLoop_RequireNePass(t *testing.T) {
 func TestReplLoop_AssertNe(t *testing.T) {
 	t.Parallel()
 
-	input := "assert foo ne bar\n"
+	input := "assert foo != bar\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2241,11 +2241,11 @@ func TestReplComplete_AssertVerbs(t *testing.T) {
 	assert.Contains(t, candidates, "nil ")
 	assert.Contains(t, candidates, "ok ")
 	assert.Contains(t, candidates, "not ")
-	// Binary comparison verbs (eq, ne, etc.) are infix operators,
+	// Binary comparison verbs (==, !=, etc.) are infix operators,
 	// not prefix verbs; they do not appear in prefix completion.
-	assert.NotContains(t, candidates, "eq ")
-	assert.NotContains(t, candidates, "ne ")
-	assert.NotContains(t, candidates, "lt ")
+	assert.NotContains(t, candidates, "== ")
+	assert.NotContains(t, candidates, "!= ")
+	assert.NotContains(t, candidates, "< ")
 }
 
 func TestReplComplete_RequireVerbs(t *testing.T) {
@@ -2253,7 +2253,7 @@ func TestReplComplete_RequireVerbs(t *testing.T) {
 
 	_, candidates := replComplete(context.Background(), nil, nil, "require ", len("require "))
 	assert.Contains(t, candidates, "fail ")
-	assert.NotContains(t, candidates, "eq ")
+	assert.NotContains(t, candidates, "== ")
 }
 
 func TestReplComplete_SetIsRetired(t *testing.T) {
@@ -2346,7 +2346,7 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 	t.Parallel()
 
 	// require failures should also carry the file:line: prefix.
-	input := "require a eq b\n"
+	input := "require a == b\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2359,7 +2359,7 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
 	t.Parallel()
 
-	input := "assert a eq b\n"
+	input := "assert a == b\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -2501,7 +2501,7 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 func TestReplLoop_ExecLetBinding(t *testing.T) {
 	t.Parallel()
 
-	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
+	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code == 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2727,7 +2727,7 @@ func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 	t.Parallel()
 
 	// exec status captures non-zero exit as data, not error.
-	input := "let r = [exec status false]\nassert $r.exit_code eq 1\n"
+	input := "let r = [exec status false]\nassert $r.exit_code == 1\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2746,7 +2746,7 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 	t.Parallel()
 
 	// exec status also works for exit 0.
-	input := "let r = [exec status true]\nassert $r.exit_code eq 0\n"
+	input := "let r = [exec status true]\nassert $r.exit_code == 0\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2760,7 +2760,7 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
 	t.Parallel()
 
-	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
+	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code == 0\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2802,7 +2802,7 @@ func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 	t.Parallel()
 
 	// exec status works with file adapters.
-	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
+	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code == 1\nassert not-empty $r.stdout\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2817,7 +2817,7 @@ func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
 	t.Parallel()
 
 	// diff exits 0 when files are identical.
-	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 0\n"
+	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code == 0\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2861,7 +2861,7 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
+	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name == test\nassert $data.id == 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2880,7 +2880,7 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 	t.Parallel()
 
-	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
+	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] == 1\nassert $arr[2] == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2894,7 +2894,7 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 	t.Parallel()
 
-	input := `let v = [jq "." 123]` + "\nassert $v eq 123\n"
+	input := `let v = [jq "." 123]` + "\nassert $v == 123\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3058,7 +3058,7 @@ func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
 func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
+	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c == deep\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3074,7 +3074,7 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 
 	// End-to-end: exec produces JSON text, jq on JSON text makes it
 	// structured.
-	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
+	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status == ok\nassert $data.count == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3309,7 +3309,7 @@ func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
 	t.Parallel()
 
-	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code eq 0\n"
+	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code == 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()

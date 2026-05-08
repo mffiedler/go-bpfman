@@ -33,9 +33,9 @@ let pid = $prog.record.program_id
 # Structural assertions on the load response. The program type is
 # XDP (reported by the kernel as "extension" because XDP loads go
 # through a dispatcher).
-assert $prog.record.load.program_type eq xdp
-assert $prog.status.kernel.program_type eq extension
-assert $prog.record.meta.name eq pass
+assert $prog.record.load.program_type == xdp
+assert $prog.status.kernel.program_type == extension
+assert $prog.record.meta.name == pass
 assert $prog.status.kernel.id == $pid
 assert not-empty $prog.status.kernel.name
 assert not-empty $prog.status.kernel.tag
@@ -43,25 +43,25 @@ assert not-empty $prog.status.kernel.loaded_at
 assert not-empty $prog.record.handles.pin_path
 
 # User metadata and global data on the freshly-loaded record.
-assert $prog.record.meta.metadata.owner eq test-team
-assert $prog.record.meta.metadata.environment eq e2e-testing
-assert $prog.record.load.global_data.config_u8 eq "Qg=="
-assert $prog.record.load.global_data.config_u32 eq "3q2+7w=="
+assert $prog.record.meta.metadata.owner == test-team
+assert $prog.record.meta.metadata.environment == e2e-testing
+assert $prog.record.load.global_data.config_u8 == "Qg=="
+assert $prog.record.load.global_data.config_u32 == "3q2+7w=="
 
 # Round-trip: Get returns the same values from the store, not
 # just from the in-process load response.
 let got = [bpfman program get $pid]
 require not nil got
 assert $got.status.kernel.id == $prog.status.kernel.id
-assert $got.status.kernel.program_type eq $prog.status.kernel.program_type
-assert $got.status.kernel.name eq $prog.status.kernel.name
-assert $got.status.kernel.tag eq $prog.status.kernel.tag
-assert $got.record.meta.name eq $prog.record.meta.name
-assert $got.record.handles.pin_path eq $prog.record.handles.pin_path
-assert $got.record.meta.metadata.owner eq test-team
-assert $got.record.meta.metadata.environment eq e2e-testing
-assert $got.record.load.global_data.config_u8 eq "Qg=="
-assert $got.record.load.global_data.config_u32 eq "3q2+7w=="
+assert $got.status.kernel.program_type == $prog.status.kernel.program_type
+assert $got.status.kernel.name == $prog.status.kernel.name
+assert $got.status.kernel.tag == $prog.status.kernel.tag
+assert $got.record.meta.name == $prog.record.meta.name
+assert $got.record.handles.pin_path == $prog.record.handles.pin_path
+assert $got.record.meta.metadata.owner == test-team
+assert $got.record.meta.metadata.environment == e2e-testing
+assert $got.record.load.global_data.config_u8 == "Qg=="
+assert $got.record.load.global_data.config_u32 == "3q2+7w=="
 
 # Round-trip: our program appears in the program list with the
 # same meta, kernel ids, metadata, and global data.
@@ -69,10 +69,10 @@ let listed = [bpfman program list -o json]
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
-assert $ours.record.meta.name eq $prog.record.meta.name
+assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
-assert $ours.record.meta.metadata.owner eq test-team
-assert $ours.record.load.global_data.config_u8 eq "Qg=="
+assert $ours.record.meta.metadata.owner == test-team
+assert $ours.record.load.global_data.config_u8 == "Qg=="
 
 # Clean up.
 bpfman program unload $pid

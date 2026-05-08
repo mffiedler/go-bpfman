@@ -104,9 +104,10 @@
                  "in" "timeout" "iteration"
                  ;; matches block keyword (assert <expr> matches { ... })
                  "matches"
-                 ;; comparison operators: textual (lexicographic)
-                 "eq" "ne" "lt" "le" "gt" "ge"
-                 ;; comparison operators: numeric
+                 ;; comparison operators (semantics chosen by
+                 ;; operand type: number-vs-number numeric,
+                 ;; string-vs-string textual, bool-vs-bool only
+                 ;; supports == and !=, cross-type errors)
                  "==" "!=" "<" "<=" ">" ">="
                  ;; arithmetic operators (binary '+', '-', '*',
                  ;; '/', '%'; unary '-' reuses the same token).
@@ -589,7 +590,7 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
               ('args
                ;; In argument position: subcommands (comparison
                ;; operators and assertion verbs) still get the
-               ;; builtin face so `$a eq $b' and `assert not-empty
+               ;; builtin face so `$a == $b' and `assert not-empty
                ;; $x' read right.
                (when (gethash text bpfman--subcommands)
                  (put-text-property beg end 'face 'font-lock-builtin-face)))))))))))

@@ -49,7 +49,7 @@ exec sleep 1
 # a single CPU slot.
 let raw2  = [exec bpftool map dump id $prog.status.maps[0].id]
 let snap2 = [jq "." $raw2.stdout]
-assert $raw1.stdout ne $raw2.stdout
+assert $raw1.stdout != $raw2.stdout
 
 # Show the actual differences between the two snapshots. Use exec
 # status because diff exits 1 when files differ, which is a domain

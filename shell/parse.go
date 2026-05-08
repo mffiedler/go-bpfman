@@ -70,8 +70,8 @@ type CommandStmt struct {
 
 // ExprStmt is an expression appearing in statement position.  It is
 // only produced inside a command substitution "[EXPR]" when the
-// bracketed content parses as an expression (e.g. "[1 eq 1]" or
-// "[$x eq $y]").  At the program level the parser never emits
+// bracketed content parses as an expression (e.g. "[1 == 1]" or
+// "[$x == $y]"). At the program level the parser never emits
 // ExprStmt; the only statement forms are the named ones above plus
 // a plain CommandStmt.  dispatchCmdSub treats an ExprStmt as
 // "evaluate this expression and use its value as the substitution
@@ -759,7 +759,7 @@ func (p *parser) parseBlock() ([]Stmt, error) {
 // recursive-descent parser.  Each precedence level has its own
 // method, loosest to tightest:
 //
-//	parseComparison     -- binary comparison (eq, ne, <, >= ...)
+//	parseComparison     -- binary comparison (==, !=, <, <=, >, >=)
 //	parseAdditive       -- '+' / '-' left-associative
 //	parseMultiplicative -- '*' / '/' / '%' left-associative
 //	parsePredicate      -- unary predicate (not-empty, true, false)
@@ -974,8 +974,8 @@ func (p *exprParser) parseAnd() (Expr, error) {
 
 // parseNot recognises the 'not' prefix.  It binds tighter than
 // 'and' / 'or' but looser than the comparison level, matching
-// SQL and Python conventions (so "not $a eq $b" parses as
-// "not ($a eq $b)", not "(not $a) eq $b").  Multiple 'not's are
+// SQL and Python conventions (so "not $a == $b" parses as
+// "not ($a == $b)", not "(not $a) == $b"). Multiple 'not's are
 // accepted via right-associative recursion.
 func (p *exprParser) parseNot() (Expr, error) {
 	if isKeywordWord(p.peek(), "not") {
@@ -1074,7 +1074,7 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 // parsePredicate recognises a unary-predicate prefix applied to a
 // primary operand.  Because "true" and "false" are both
 // unary-predicate words AND common literals (e.g. the RHS of
-// "eq true"), the rule is context-sensitive: a pred word
+// "== true"), the rule is context-sensitive: a pred word
 // becomes a UnaryExpr only when the following token could be
 // its operand — a primary position, not a binary operator,
 // arithmetic operator, thread, or end of input.  Otherwise it

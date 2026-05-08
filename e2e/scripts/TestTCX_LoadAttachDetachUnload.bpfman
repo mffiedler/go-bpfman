@@ -52,7 +52,7 @@ let listed = [bpfman program list -o json]
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
-assert $ours.record.meta.name eq $prog.record.meta.name
+assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
 # Attach to veth-tcx-host ingress, priority 50. TCX uses native
@@ -62,20 +62,20 @@ require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
-assert $link.record.kind eq tcx
+assert $link.record.kind == tcx
 assert $link.record.program_id == $pid
-assert $link.record.details.interface eq veth-tcx-host
-assert $link.record.details.direction eq ingress
+assert $link.record.details.interface == veth-tcx-host
+assert $link.record.details.direction == ingress
 assert $link.record.details.priority == 50
-assert $link.status.kernel_seen eq true
+assert $link.status.kernel_seen == true
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]
 require not nil gotLink
 assert $gotLink.record.id == $linkID
-assert $gotLink.record.kind eq $link.record.kind
-assert $gotLink.record.details.interface eq $link.record.details.interface
-assert $gotLink.record.details.direction eq $link.record.details.direction
+assert $gotLink.record.kind == $link.record.kind
+assert $gotLink.record.details.interface == $link.record.details.interface
+assert $gotLink.record.details.direction == $link.record.details.direction
 assert $gotLink.record.details.priority == $link.record.details.priority
 
 
@@ -86,7 +86,7 @@ let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
 assert $ourLink.id == $link.record.id
-assert $ourLink.kind eq $link.record.kind
+assert $ourLink.kind == $link.record.kind
 
 # Snapshot the per-CPU counter before and after a burst of pings.
 let mapID     = $prog.status.maps[0].id

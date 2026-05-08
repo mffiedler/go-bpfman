@@ -41,17 +41,17 @@ require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
-assert $link.record.kind eq fentry
+assert $link.record.kind == fentry
 assert $link.record.program_id == $pid
-assert $link.record.details.fn_name eq do_unlinkat
-assert $link.status.kernel_seen eq true
+assert $link.record.details.fn_name == do_unlinkat
+assert $link.status.kernel_seen == true
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]
 require not nil gotLink
 assert $gotLink.record.id == $linkID
-assert $gotLink.record.kind eq $link.record.kind
-assert $gotLink.record.details.fn_name eq $link.record.details.fn_name
+assert $gotLink.record.kind == $link.record.kind
+assert $gotLink.record.details.fn_name == $link.record.details.fn_name
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
@@ -60,7 +60,7 @@ let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
 assert $ourLink.id == $link.record.id
-assert $ourLink.kind eq $link.record.kind
+assert $ourLink.kind == $link.record.kind
 
 # The counter map has two entries: key 0 for fentry, key 1 for
 # fexit. This program writes to key 0. do_unlinkat() fires on any

@@ -87,7 +87,7 @@ func TestParse_IfMissingBrace(t *testing.T) {
 func TestParse_IfUnterminatedBlock(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseSource(t, "if $x eq 1 {\n let a = yes")
+	_, err := parseSource(t, "if $x == 1 {\n let a = yes")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unterminated block")
 }

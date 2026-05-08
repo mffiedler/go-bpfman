@@ -126,8 +126,7 @@ thread       := term ('|>' command)*
 term         := literal | varref | cmdsub | adapter | '(' expr ')'
               | 'timeout' DURATION | 'iteration' INTEGER
 
-BINOP        := 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
-              | '==' | '!=' | '<' | '<=' | '>' | '>='
+BINOP        := '==' | '!=' | '<' | '<=' | '>' | '>='
 UNARY-PRED   := 'true' | 'false' | 'not-empty'
 ```
 
@@ -232,7 +231,7 @@ wrapped in a `Value` to match how jq-emitted numbers arrive.
 
 - Precedence: `1 + 2 * 3` → AST has `+` at root, `*` nested.
 - Precedence: `(1 + 2) * 3` → `*` at root, parens contain `+`.
-- Mixed with comparison: `$x + 1 eq 5` → `eq` at root,
+- Mixed with comparison: `$x + 1 == 5` -> `==` at root,
   additive as left operand.
 - Unary negate: `-$x`, `-(1 + 2)`, `- -3` (double negation).
 - Negative literal: `let x = -3` (unchanged behaviour —

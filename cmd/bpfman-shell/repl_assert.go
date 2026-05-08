@@ -3,7 +3,7 @@
 // isRequire flag deciding whether failure increments the session
 // counter (assert) or halts execution via errRequireFailed
 // (require).  All the verbs, plus the expression-assertion path
-// for predicate/comparison forms ("$a eq $b"), live here.
+// for predicate/comparison forms ("$a == $b"), live here.
 package main
 
 import (
@@ -29,7 +29,7 @@ type assertResult struct {
 // counter and execution continues.
 func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
-		return fmt.Errorf("expected an assertion (e.g. \"$a eq $b\", \"true $flag\", \"ok exec ...\")")
+		return fmt.Errorf("expected an assertion (e.g. \"$a == $b\", \"true $flag\", \"ok exec ...\")")
 	}
 
 	label := "assert"
@@ -78,7 +78,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 	// (use the complementary operator instead).
 	if isExprAssertion(args) {
 		if negate && len(args) == 3 {
-			return fmt.Errorf("\"not\" is not supported with infix comparisons; use the complementary operator (ne, le, ge, !=, <=, >=)")
+			return fmt.Errorf("\"not\" is not supported with infix comparisons; use the complementary operator (!=, <=, >=)")
 		}
 		result, err := evalExprAssertion(session, args)
 		if err != nil {
@@ -177,12 +177,10 @@ func formatExprFailure(e shell.Expr, session *shell.Session) string {
 		left := exprScalar(x.Left, session)
 		right := exprScalar(x.Right, session)
 		switch x.Op {
-		case "eq":
+		case "==":
 			return fmt.Sprintf("expected %q to equal %q", left, right)
-		case "ne":
+		case "!=":
 			return fmt.Sprintf("expected %q to not equal %q", left, right)
-		case "lt", "le", "gt", "ge":
-			return fmt.Sprintf("expected %q %s %q (lexicographic)", left, x.Op, right)
 		default:
 			return fmt.Sprintf("expected %s %s %s", left, x.Op, right)
 		}
@@ -240,7 +238,7 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return assertContains(ss)
 	case "nil":
 		return assertNil(session, ss)
-	case "eq", "ne", "lt", "le", "gt", "ge":
+	case "==", "!=", "<", "<=", ">", ">=":
 		return assertResult{}, fmt.Errorf("%q is not a prefix verb; use infix form: assert <left> %s <right>", verb, verb)
 	case "true", "false", "not-empty":
 		return assertResult{}, fmt.Errorf("%q requires exactly one operand: assert %s <operand>", verb, verb)

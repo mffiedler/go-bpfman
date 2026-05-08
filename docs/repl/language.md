@@ -68,8 +68,7 @@ cmdsub       := '[' (expr | command) ']'
 path         := ('.' IDENT | '[' DIGITS ']')+
 adapter      := 'file' ':' varref
 
-BINOP        := 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
-              | '==' | '!=' | '<' | '<=' | '>' | '>='
+BINOP        := '==' | '!=' | '<' | '<=' | '>' | '>='
 UNARY-PRED   := 'true' | 'false' | 'not-empty'
 SEP          := newline | ';'
 ```
@@ -112,13 +111,13 @@ grammar.
 ```
 $prog                    # prints the binding
 $prog.record.program_id  # prints the scalar
-$prog.kind eq "xdp"      # prints a boolean
-[1 eq 1]                 # prints true
+$prog.kind == "xdp"      # prints a boolean
+[1 == 1]                 # prints true
 (not-empty $name)        # prints a boolean
 ```
 
 To print a bare literal (or an expression whose first token does
-not lead an expression), wrap it: `[1 eq 1]`, `["hello"]`.  To run
+not lead an expression), wrap it: `[1 == 1]`, `["hello"]`. To run
 a command, start the line with its name as usual.
 
 ## Statements
@@ -161,7 +160,7 @@ is used interactively, an unclosed `{` puts the line reader into a
 continuation state that accumulates lines until the braces balance.
 
 ```
-if $prog.record.status.kernel_seen eq true {
+if $prog.record.status.kernel_seen == true {
     bpfman show program $prog.record.program_id
 } elif not-empty $prog.record.tag {
     bpfman show program $prog.record.program_id paths
@@ -207,8 +206,8 @@ location.
 
 ```
 foreach p in [bpfman program list -o json] {
-    if $p.record.meta.stale eq true { continue }
-    if $p.record.program_id eq $target        { break }
+    if $p.record.meta.stale == true { continue }
+    if $p.record.program_id == $target        { break }
     assert ok bpfman program get $p.record.program_id
 }
 ```
@@ -246,7 +245,7 @@ retry {
 } until timeout 30s                                      # pure timeout
 
 retry { let phase = [bpfman doctor checkup] |> jq ".phase" }
-until $phase eq ready or timeout 60s                     # condition or timeout
+until $phase == ready or timeout 60s                     # condition or timeout
 
 retry { require ok exec ping -W 1 198.51.100.2 }
 until iteration 5                                        # retry up to five times
@@ -376,7 +375,7 @@ are both legal command forms.
 let p = [bpfman program get 123]        # command invocation
 let j = [jq "." '{"name":"test"}']      # command invocation
 let r = [exec echo hello]               # command invocation
-let a = [1 eq 1]                        # expression: true
+let a = [1 == 1]                        # expression: true
 let b = [$count > 0]                    # expression: boolean
 let c = [$prog.id + 1]                  # expression: arithmetic
 ```
@@ -391,23 +390,27 @@ Bracketed evaluation is mandatory when binding a command's result
 (`let p = bpfman program get 123` is a parse error — commands as
 bare RHS are not allowed). It is also the canonical way to embed
 an expression where the surrounding grammar expects a value:
-`print [[1 eq 1]]`, `foreach x in [jq ".[]" $data] { ... }`.
+`print [[1 == 1]]`, `foreach x in [jq ".[]" $data] { ... }`.
 
 ### Comparisons
 
-Word operators (`eq`, `ne`, `lt`, `le`, `gt`, `ge`) compare
-**textually** (lexicographic). Symbol operators (`==`, `!=`, `<`,
-`<=`, `>`, `>=`) compare **numerically** (floating-point parsed from
-both operands).
+The DSL provides one comparison family: `==`, `!=`, `<`, `<=`, `>`,
+`>=`. Semantics is selected by the operand types at evaluation time,
+not by the operator's spelling -- jq's strict-equality model:
 
-```
-assert $prog.record.name eq tracepoint_kill_recorder   # textual
-assert $count > 0                                      # numeric
-assert $a lt $b                                        # textual
-```
+- Both numeric (`json.Number`, `float64`) -- compare as floats.
+- Both stringy (plain strings) -- compare textually (lexicographic).
+- Both boolean -- only `==` and `!=` are defined; ordering errors.
+- Mixed kinds -- error rather than silent false. Coerce explicitly
+  via `[$x |> jq tonumber]` to compare stringy numeric input
+  (e.g. `exec` stdout) against a number.
 
-Both operand positions may be arbitrary expressions, including
-command substitutions: `assert $count > [length $items]`.
+Unquoted literals are typed by shape: `5` is a number, `true` and
+`false` are booleans, `"5"` (quoted) is a string. So
+`assert $prog.record.name == tracepoint_kill_recorder` compares text;
+`assert $count > 0` compares numbers; `assert $kind == fentry`
+compares text. Both operand positions may be arbitrary expressions,
+including command substitutions: `assert $count > [length $items]`.
 
 ### Arithmetic
 
@@ -449,8 +452,8 @@ single-WORD negative literal; `- 3` with space is
 
 Precedence (tightest arithmetic rung first): unary negation →
 multiplicative (`*`, `/`, `%`) → additive (`+`, `-`).  All three
-rungs bind **tighter than comparison**, so `$x + 1 eq 5` reads
-as `(($x) + 1) eq 5`.  Parenthesise to force a different shape:
+rungs bind **tighter than comparison**, so `$x + 1 == 5` reads
+as `(($x) + 1) == 5`. Parenthesise to force a different shape:
 `($a + $b) / 2`.
 
 ```
@@ -499,13 +502,13 @@ Parentheses `(` `)` override precedence:
 
 ```
 if $count > 0 and $count < 100 { ... }
-if not $ready eq true { ... }                 # not ($ready eq true)
+if not $ready == true { ... }                 # not ($ready == true)
 if $count == 0 or $count > 100 { ... }
 if ($flag1 or $flag2) and $enabled { ... }    # parens invert the default
 ```
 
-`not $a` binds looser than `$a eq b`, so `not $a eq b` reads as
-`not ($a eq b)` — SQL / Python convention rather than C
+`not $a` binds looser than `$a == b`, so `not $a == b` reads as
+`not ($a == b)` -- SQL / Python convention rather than C
 convention.
 
 ## Values and origin types
@@ -587,7 +590,7 @@ Binary comparisons and unary predicates are assertions over values:
 
 ```
 assert $count > 0
-assert $prog.record.name eq tracepoint_kill_recorder
+assert $prog.record.name == tracepoint_kill_recorder
 assert not-empty $ipv6_addr
 assert $a == $b
 ```
@@ -606,8 +609,8 @@ assert fail exec ip link show does-not-exist
 ### Negation
 
 `not` negates a unary-predicate or command-based assertion. It is
-**not** allowed before binary comparisons — use the complementary
-operator instead (e.g. `ne` for `not eq`):
+**not** allowed before binary comparisons -- use the complementary
+operator instead (e.g. `!=` for `not ==`):
 
 ```
 assert not-empty $name     # unary predicate

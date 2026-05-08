@@ -11,7 +11,7 @@
 #   keywords           font-lock-keyword-face    (let, if, elif, else,
 #                                                 alias, assert, exec, ...)
 #   domain subcommands font-lock-builtin-face    (program, link, attach,
-#                                                 eq, ==, lt, not-empty, ...)
+#                                                 not-empty, ...)
 #   variables          font-lock-variable-name-face ($foo, file:$bar, the
 #                                                    identifier after `let')
 #   strings            font-lock-string-face      ("double", 'single')
@@ -82,12 +82,12 @@ let arg_after = [exec diff file:$a file:$b]
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
 
-assert $prog.record.name eq xdp_pass
-assert $prog.record.name ne tc_ingress
-assert $name lt $other
-assert $name le $other
-assert $name gt $other
-assert $name ge $other
+assert $prog.record.name == xdp_pass
+assert $prog.record.name != tc_ingress
+assert $name < $other
+assert $name <= $other
+assert $name > $other
+assert $name >= $other
 
 assert $count == 5
 assert $count != 5
@@ -96,11 +96,11 @@ assert $count <= 10
 assert $count >  0
 assert $count >= 0
 
-# Mixed: numeric and textual on the same page.
-assert 9 lt 10            # textual: true  (`9' < `10' lexicographically)
-assert 9 <  10            # numeric: true
-assert 9 gt 10            # textual: true  (again lexicographically)
-assert 9 >  10            # numeric: false
+# Comparison semantics is chosen by operand type, not by operator.
+assert 9 < 10                       # numeric: 9 < 10 is true
+assert "a" < "b"                    # textual: "a" < "b" is true
+assert "fentry" == $kind            # textual when both sides are strings
+assert $count == 5                  # numeric when both sides are numbers
 
 # ---- 6. Unary predicates (expression grammar) ----
 
@@ -126,7 +126,7 @@ assert not contains $haystack needle
 # `require' is the fatal counterpart; same grammar otherwise.
 require ok      bpfman program get 42
 require not nil prog
-require $count gt 0
+require $count > 0
 
 # ---- 8. if / elif / else blocks ----
 
@@ -152,8 +152,8 @@ if $x == 1 {
 
 # ---- 9. Nested if ----
 
-if $outer eq yes {
-    if $inner eq yes {
+if $outer == yes {
+    if $inner == yes {
         bpfman show program 42
     } elif not-empty $maybe {
         bpfman show program 42 maps
@@ -165,7 +165,7 @@ if $outer eq yes {
 # ---- 10. One-liner blocks with `;' separator ----
 
 if $x > 0 { let a = 1; let b = 2; print a }
-if $ready eq true { bpfman list programs; bpfman link list } else { require fail }
+if $ready == true { bpfman list programs; bpfman link list } else { require fail }
 
 # ---- 11. Aliases ----
 
@@ -278,8 +278,7 @@ exec sha256sum file:${parsed.name}
 # ---- 17. Assignment vs comparison on adjacent lines ----
 
 let x = 5            # `=' is assignment
-assert $x == 5       # `==' is numeric equality
-assert $x eq 5       # `eq' is textual equality
+assert $x == 5       # `==' compares (numeric here, both sides are numbers)
 
 # ---- 18. The `select' projection keyword ----
 
@@ -293,9 +292,9 @@ bpfman link list     select id,kind,program_id
 assert $ready and $healthy
 assert $ready or  $booting
 assert not $failing
-assert not ($a eq 1 and $b eq 2)
+assert not ($a == 1 and $b == 2)
 assert ($x > 0 and $x < 10) or $unbounded
-if (not-empty $progs) and ($count gt 0) { print progs }
+if (not-empty $progs) and ($count > 0) { print progs }
 
 # ---- 19a. Arithmetic operators ----
 
@@ -342,7 +341,7 @@ let scaled   = [[$count * 2 + 1]]  # mixed precedence
 print [[$count * 2]]
 
 # Expression in a condition, auto-entering expression grammar.
-if [[$count - 1]] gt 0 { print $count }
+if [[$count - 1]] > 0 { print $count }
 
 # `[cmd args]' stays command substitution; the parser rejects
 # misuse at parse time and points at `[[...]]'.  `[1/2]' and
@@ -354,8 +353,8 @@ if [[$count - 1]] gt 0 { print $count }
 
 # ---- 20. Value-threading with `|>' ----
 
-# LHS becomes the last arg of the RHS command.  Chains are common.
-let n = $count |> assert gt 0
+# LHS becomes the last arg of the RHS command. Chains are common.
+let n = $raw_count |> jq tonumber
 let f = $progs |> jq ".[] | select(.kind == \"xdp\")"
 let g = [bpfman program list -o json] |> jq ".[].name" |> assert not-empty
 
@@ -369,10 +368,10 @@ foreach id in $ids {
 }
 
 foreach item in $progs {
-    if $item.kind eq xdp {
+    if $item.kind == xdp {
         continue
     }
-    if $item.kind eq blacklisted {
+    if $item.kind == blacklisted {
         break
     }
     print $item
@@ -385,16 +384,16 @@ foreach item in $progs {
 # polling terminate on wall-clock or attempt count.
 retry {
     let status = [bpfman program get 42 -o json]
-} until $status.ready eq true or timeout 60s
+} until $status.ready == true or timeout 60s
 
 retry {
     let status = [bpfman program get 42 -o json]
-    if $status.ready eq true { break }
+    if $status.ready == true { break }
 } until iteration 10
 
 retry {
     let link = [bpfman link get 8801 -o json]
-} until ($link.state eq active) or timeout 2m or iteration 20
+} until ($link.state == active) or timeout 2m or iteration 20
 
 # ---- 23. jq as a higher-order operator over structured data ----
 
@@ -458,7 +457,7 @@ def banner() {
 
 # Trailing comma in the parameter list is permitted.
 def expect_link(link, prog, kind,) {
-    assert $link.record.kind eq $kind
+    assert $link.record.kind == $kind
     assert $link.record.program_id == $prog.record.program_id
 }
 

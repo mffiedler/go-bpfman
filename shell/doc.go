@@ -41,8 +41,12 @@
 //     primary forms.
 //   - [UnaryExpr] — a single-operand predicate (true, false,
 //     not-empty).
-//   - [BinaryExpr] — a two-operand comparison (eq/ne/lt/le/gt/ge,
-//     ==/!=/</</=/>/>=).
+//   - [BinaryExpr] -- a two-operand comparison (==, !=, <, <=, >, >=).
+//     Comparison semantics is selected by operand type rather than
+//     by operator spelling: number-vs-number compares numerically,
+//     string-vs-string textually, bool-vs-bool only supports == and
+//     !=. Cross-type compares error rather than silently returning
+//     false. See evalCompare in expr.go for the dispatch rules.
 //
 // Every AST node carries a [Loc] for diagnostic reporting.
 //

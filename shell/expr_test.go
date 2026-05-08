@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -25,6 +26,38 @@ func TestEvalExpr_Literal(t *testing.T) {
 	got, err := v.Scalar()
 	require.NoError(t, err)
 	assert.Equal(t, "hello", got)
+}
+
+func TestEvalExpr_Literal_Classification(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		expr    *LiteralExpr
+		wantRaw any
+	}{
+		{"unquoted_int", &LiteralExpr{Text: "5"}, json.Number("5")},
+		{"unquoted_float", &LiteralExpr{Text: "5.5"}, json.Number("5.5")},
+		{"unquoted_negative", &LiteralExpr{Text: "-3"}, json.Number("-3")},
+		{"unquoted_zero_padded", &LiteralExpr{Text: "007"}, json.Number("007")},
+		{"unquoted_true", &LiteralExpr{Text: "true"}, true},
+		{"unquoted_false", &LiteralExpr{Text: "false"}, false},
+		{"unquoted_word", &LiteralExpr{Text: "fentry"}, "fentry"},
+		{"unquoted_path", &LiteralExpr{Text: "/tmp/x"}, "/tmp/x"},
+		{"unquoted_hex_stays_string", &LiteralExpr{Text: "0xff"}, "0xff"},
+		{"quoted_numeric_text_stays_string", &LiteralExpr{Text: "5", Quoted: true}, "5"},
+		{"quoted_true_stays_string", &LiteralExpr{Text: "true", Quoted: true}, "true"},
+		{"quoted_word", &LiteralExpr{Text: "hello", Quoted: true}, "hello"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := NewSession()
+			v, err := EvalExpr(tt.expr, evalEnv(s))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRaw, v.Raw())
+		})
+	}
 }
 
 func TestEvalExpr_VarRef_Bare(t *testing.T) {
@@ -113,15 +146,15 @@ func TestEvalExpr_Binary_Textual(t *testing.T) {
 		right      string
 		wantResult bool
 	}{
-		{"eq", "foo", "foo", true},
-		{"eq", "foo", "bar", false},
-		{"ne", "foo", "bar", true},
-		{"ne", "foo", "foo", false},
-		{"lt", "a", "b", true},
-		{"lt", "b", "a", false},
-		{"le", "a", "a", true},
-		{"gt", "b", "a", true},
-		{"ge", "a", "a", true},
+		{"==", "foo", "foo", true},
+		{"==", "foo", "bar", false},
+		{"!=", "foo", "bar", true},
+		{"!=", "foo", "foo", false},
+		{"<", "a", "b", true},
+		{"<", "b", "a", false},
+		{"<=", "a", "a", true},
+		{">", "b", "a", true},
+		{">=", "a", "a", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.op+" "+tc.left+" "+tc.right, func(t *testing.T) {
@@ -189,7 +222,51 @@ func TestEvalExpr_Binary_NumericNonNumericError(t *testing.T) {
 	}
 	_, err := EvalExpr(e, evalEnv(s))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not numeric")
+	assert.Contains(t, err.Error(), "cannot compare string to number")
+}
+
+func TestEvalExpr_Binary_StrictDispatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		left      Expr
+		op        string
+		right     Expr
+		wantBool  bool
+		wantError string
+	}{
+		{"number_eq_number_true", &LiteralExpr{Text: "10"}, "==", &LiteralExpr{Text: "10.0"}, true, ""},
+		{"number_eq_number_false", &LiteralExpr{Text: "10"}, "==", &LiteralExpr{Text: "11"}, false, ""},
+		{"number_lt_number", &LiteralExpr{Text: "9"}, "<", &LiteralExpr{Text: "10"}, true, ""},
+		{"string_eq_string_true", &LiteralExpr{Text: "fentry"}, "==", &LiteralExpr{Text: "fentry"}, true, ""},
+		{"string_eq_string_false", &LiteralExpr{Text: "fentry"}, "==", &LiteralExpr{Text: "fexit"}, false, ""},
+		{"string_lt_string_lex", &LiteralExpr{Text: "9"}, "<", &LiteralExpr{Text: "10", Quoted: true}, false, "cannot compare number to string"},
+		{"bool_eq_bool_true", &LiteralExpr{Text: "true"}, "==", &LiteralExpr{Text: "true"}, true, ""},
+		{"bool_ne_bool", &LiteralExpr{Text: "true"}, "!=", &LiteralExpr{Text: "false"}, true, ""},
+		{"bool_ordering_rejected", &LiteralExpr{Text: "true"}, "<", &LiteralExpr{Text: "false"}, false, "booleans support only == and !="},
+		{"cross_type_string_number", &LiteralExpr{Text: "fentry"}, "==", &LiteralExpr{Text: "5"}, false, "cannot compare string to number"},
+		{"cross_type_bool_number", &LiteralExpr{Text: "true"}, "==", &LiteralExpr{Text: "1"}, false, "cannot compare bool to number"},
+		{"cross_type_bool_string", &LiteralExpr{Text: "true"}, "==", &LiteralExpr{Text: "true", Quoted: true}, false, "cannot compare bool to string"},
+		{"quoted_numeric_is_string", &LiteralExpr{Text: "5", Quoted: true}, "==", &LiteralExpr{Text: "5", Quoted: true}, true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := NewSession()
+			e := &BinaryExpr{Left: tt.left, Op: tt.op, Right: tt.right}
+			v, err := EvalExpr(e, evalEnv(s))
+			if tt.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			b, err := AsBool(v)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantBool, b)
+		})
+	}
 }
 
 func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
@@ -301,7 +378,7 @@ func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
 func TestExprFromArgs_Binary(t *testing.T) {
 	t.Parallel()
 
-	ops := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
+	ops := []string{"==", "!=", "<", "<=", ">", ">="}
 	for _, op := range ops {
 		t.Run(op, func(t *testing.T) {
 			t.Parallel()
@@ -366,8 +443,8 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 func TestIsBinaryOp(t *testing.T) {
 	t.Parallel()
 
-	true_ := []string{"eq", "ne", "lt", "le", "gt", "ge", "==", "!=", "<", "<=", ">", ">="}
-	false_ := []string{"", "foo", "=", "<=>"}
+	true_ := []string{"==", "!=", "<", "<=", ">", ">="}
+	false_ := []string{"", "foo", "=", "<=>", "eq", "ne", "lt", "le", "gt", "ge"}
 	for _, s := range true_ {
 		assert.True(t, IsBinaryOp(s), s)
 	}
@@ -759,7 +836,7 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 		},
 	}
 	// foreach x in $xs {
-	//   if $x eq c { break }
+	//   if $x == c { break }
 	//   $x
 	// }
 	prog := &Program{Stmts: []Stmt{
@@ -770,7 +847,7 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 				&IfStmt{
 					Cond: &BinaryExpr{
 						Left:  &VarRefExpr{Name: "x"},
-						Op:    "eq",
+						Op:    "==",
 						Right: &LiteralExpr{Text: "c"},
 					},
 					Then: []Stmt{&BreakStmt{}},
@@ -800,7 +877,7 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 		},
 	}
 	// foreach x in $xs {
-	//   if $x eq b { continue }
+	//   if $x == b { continue }
 	//   $x
 	// }
 	prog := &Program{Stmts: []Stmt{
@@ -811,7 +888,7 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 				&IfStmt{
 					Cond: &BinaryExpr{
 						Left:  &VarRefExpr{Name: "x"},
-						Op:    "eq",
+						Op:    "==",
 						Right: &LiteralExpr{Text: "b"},
 					},
 					Then: []Stmt{&ContinueStmt{}},
@@ -847,7 +924,7 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 	}
 	// foreach a in $outer {
 	//   foreach b in $inner {
-	//     if $b eq y { break }
+	//     if $b == y { break }
 	//     $b
 	//   }
 	//   $a
@@ -864,7 +941,7 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 						&IfStmt{
 							Cond: &BinaryExpr{
 								Left:  &VarRefExpr{Name: "b"},
-								Op:    "eq",
+								Op:    "==",
 								Right: &LiteralExpr{Text: "y"},
 							},
 							Then: []Stmt{&BreakStmt{}},
@@ -1658,13 +1735,13 @@ func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 func TestEvalExpr_ExprSub_InCondition(t *testing.T) {
 	t.Parallel()
 
-	// `if [[$count - 1]] gt 0 { ... }`: condition grammar is
+	// `if [[$count - 1]] > 0 { ... }`: condition grammar is
 	// already expression-mode at the parser level, so an
 	// expression substitution is a legal primary whose numeric
 	// result feeds into the comparison.
 	s := NewSession()
 	s.Set("count", StringValue("5"))
-	prog, err := parseSource(t, "let out = 0\nif [[$count - 1]] gt 0 { let out = 1 }")
+	prog, err := parseSource(t, "let out = 0\nif [[$count - 1]] > 0 { let out = 1 }")
 	require.NoError(t, err)
 	require.NoError(t, EvalProgram(prog, evalEnv(s)))
 	v, ok := s.Get("out")

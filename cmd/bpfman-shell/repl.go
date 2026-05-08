@@ -672,8 +672,10 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("  require <verb> [args...]      Check condition, stop on failure\n")
 	b.WriteString("  assert not <verb> [args...]   Negate condition\n")
 	b.WriteString("\n")
-	b.WriteString("  Verbs: eq, ne, nil, not-empty, ok, fail, path exists,\n")
-	b.WriteString("         contains, true, false, lt, le, gt, ge\n")
+	b.WriteString("  Operators (infix): == != < <= > >=  (semantics chosen by operand type)\n")
+	b.WriteString("  Verbs: nil, not-empty, ok, fail, path exists, contains, true, false\n")
+	b.WriteString("\n")
+	b.WriteString("Coerce stringy numeric input via [$x |> jq tonumber] before comparing.\n")
 	return cli.PrintOut(b.String())
 }
 

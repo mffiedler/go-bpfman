@@ -26,7 +26,7 @@
 # Feature-detect bpftool; it is optional for load/attach but we use
 # it for the cross-validation section below.
 let bpftool = [exec status which bpftool]
-if $bpftool.exit_code eq 0 {
+if $bpftool.exit_code == 0 {
     let have_bpftool = yes
 } else {
     let have_bpftool = no
@@ -54,7 +54,7 @@ let p1 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --pr
 let p2 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=second]
 require not nil p1
 require not nil p2
-assert $p1.record.program_id ne $p2.record.program_id
+assert $p1.record.program_id != $p2.record.program_id
 
 let l1 = [b link attach xdp -i bpfman-example --priority 50  $p1]
 let l2 = [b link attach xdp -i bpfman-example --priority 100 $p2]
@@ -72,7 +72,7 @@ if $l1.record.details.priority < $l2.record.details.priority {
     let order = same-priority
 }
 print $order
-assert $order eq l1-runs-first
+assert $order == l1-runs-first
 
 # ---- bpfman inspection ---------------------------------------------
 
@@ -81,7 +81,7 @@ b link list
 
 # ---- Cross-validate with bpftool (if available) --------------------
 
-if $have_bpftool eq yes {
+if $have_bpftool == yes {
     # bpftool's view should include at least the two user programs
     # plus the dispatcher.  We parse its JSON output and assert
     # the stdout isn't empty; deeper structural checks would need a

@@ -97,8 +97,10 @@ type InterpStringSegment struct {
 }
 
 // BinaryExpr is a two-operand comparison. Op is one of the
-// recognised binary operators (word ops for textual comparison,
-// symbol ops for numeric). Evaluation produces a BoolValue.
+// recognised binary operators (==, !=, <, <=, >, >=). The
+// comparison's semantics is selected at evaluation time by the
+// operand types, not by the operator's spelling: see evalCompare
+// for the strict-dispatch rules. Evaluation produces a BoolValue.
 type BinaryExpr struct {
 	Left  Expr
 	Op    string
@@ -161,7 +163,7 @@ type NegateExpr struct {
 // time.ParseDuration.  Outside a retry context evaluation is a
 // runtime error, cited at the 'timeout' token.
 //
-//	until $phase eq ready or timeout 60s
+//	until $phase == ready or timeout 60s
 //	until not timeout 5s and $converged
 //	until $ready or timeout $max_wait
 type TimeoutExpr struct {
@@ -225,7 +227,7 @@ type Env struct {
 
 	// PrintResult is called when a top-level ExprStmt produces a
 	// value.  It is the "REPL-style auto-print" hook: typing "$x"
-	// or "$x eq 5" at the prompt lands here.  A nil callback
+	// or "$x == 5" at the prompt lands here.  A nil callback
 	// discards the value silently, which is the right behaviour
 	// for embedded evaluators and for tests that do not care
 	// about side output.
@@ -246,12 +248,12 @@ type Env struct {
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
-// Word operators compare textually (lexicographic); symbol
-// operators compare numerically.
+// The DSL provides one comparison family in symbol form; semantics
+// is selected by operand type, not by operator spelling. See
+// evalCompare for the strict-dispatch rules.
 func IsBinaryOp(s string) bool {
 	switch s {
-	case "eq", "ne", "lt", "le", "gt", "ge",
-		"==", "!=", "<", "<=", ">", ">=":
+	case "==", "!=", "<", "<=", ">", ">=":
 		return true
 	}
 	return false
@@ -263,14 +265,6 @@ func IsBinaryOp(s string) bool {
 func IsUnaryPred(s string) bool {
 	switch s {
 	case "true", "false", "not-empty":
-		return true
-	}
-	return false
-}
-
-func isNumericOp(op string) bool {
-	switch op {
-	case "==", "!=", "<", "<=", ">", ">=":
 		return true
 	}
 	return false
@@ -481,7 +475,7 @@ const retryBackoff = 100 * time.Millisecond
 // through the evaluator yet, so a retry with a never-satisfied
 // Until loops until the process is killed.  Users writing
 // long-running retries are expected to include a cap in their
-// Until expression ("$x eq done or timeout 60s").
+// Until expression ("$x == done or timeout 60s").
 func evalRetryStmt(s *RetryStmt, env *Env) error {
 	prevStart := env.retryStart
 	prevIter := env.retryIter
@@ -670,7 +664,7 @@ func commandHeadName(a Arg) (string, bool) {
 
 // evalExprStmt evaluates a top-level expression statement and, when
 // a PrintResult callback is wired, forwards the result to it.  This
-// is how "$x" and "$x eq 5" typed at the prompt get their
+// is how "$x" and "$x == 5" typed at the prompt get their
 // auto-printed values: the parser wraps expression-led statements
 // in ExprStmt, and the REPL's PrintResult handler renders the
 // value through the same path print uses.  When PrintResult is nil
@@ -696,7 +690,7 @@ func evalExprStmt(s *ExprStmt, env *Env) error {
 func EvalExpr(expr Expr, env *Env) (Value, error) {
 	switch e := expr.(type) {
 	case *LiteralExpr:
-		return StringValue(e.Text), nil
+		return literalValue(e), nil
 	case *VarRefExpr:
 		return resolveVarRefValue(e, env)
 	case *AdapterExpr:
@@ -1069,8 +1063,8 @@ func valueToArg(v Value) (Arg, error) {
 
 // dispatchCmdSub evaluates a command-substitution expression and
 // returns its value.  The inner program must contain exactly one
-// statement.  An ExprStmt is a bracketed expression ("[1 eq 1]",
-// "[$x eq $y]") and is evaluated directly.  A CommandStmt is a
+// statement.  An ExprStmt is a bracketed expression ("[1 == 1]",
+// "[$x == $y]") and is evaluated directly.  A CommandStmt is a
 // command invocation ("[bpfman ...]", "[jq ...]") and is dispatched
 // via env.ExecSubstitution.  Any other statement form — let, if,
 // foreach, retry, break, continue — is rejected.
@@ -1107,25 +1101,81 @@ func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	left, err := leftV.Scalar()
-	if err != nil {
-		return Value{}, locErrorf(e.Loc, "binary %s: left: %v", e.Op, err)
-	}
-	right, err := rightV.Scalar()
-	if err != nil {
-		return Value{}, locErrorf(e.Loc, "binary %s: right: %v", e.Op, err)
-	}
 	if isArithmeticOpText(e.Op) {
+		left, err := leftV.Scalar()
+		if err != nil {
+			return Value{}, locErrorf(e.Loc, "binary %s: left: %v", e.Op, err)
+		}
+		right, err := rightV.Scalar()
+		if err != nil {
+			return Value{}, locErrorf(e.Loc, "binary %s: right: %v", e.Op, err)
+		}
 		v, err := evalArithmetic(e.Op, left, right)
 		if err != nil {
 			return Value{}, locErrorf(e.Loc, "%v", err)
 		}
 		return v, nil
 	}
-	if isNumericOp(e.Op) {
-		return evalNumericComparison(e.Op, left, right)
+	return evalCompare(e.Op, leftV, rightV, e.Loc)
+}
+
+// compareKind classifies a Value for the purpose of strict comparison
+// dispatch. Numbers (json.Number, float64) are "number"; plain
+// strings are "string"; booleans are "bool". Anything else (nil,
+// map, slice, absent values) returns "" and is rejected by
+// evalCompare with an error citing the actual underlying type so
+// users see why the operands are incomparable.
+func compareKind(v Value) string {
+	switch v.Raw().(type) {
+	case json.Number, float64:
+		return "number"
+	case string:
+		return "string"
+	case bool:
+		return "bool"
 	}
-	return evalTextualComparison(e.Op, left, right)
+	return ""
+}
+
+// evalCompare performs a strict, type-aware comparison. Both
+// operands must classify as the same compareKind: number-vs-number
+// compares as floats, string-vs-string as text, bool-vs-bool only
+// supports == and != (booleans have no defined ordering). Cross-type
+// comparisons are an error rather than a silent false, matching
+// jq's strict equality and surfacing operator misuse loudly. To
+// compare stringy numeric input (e.g. exec stdout) against a
+// number, coerce explicitly via "$x |> jq tonumber" first.
+func evalCompare(op string, l, r Value, loc Loc) (Value, error) {
+	lk := compareKind(l)
+	rk := compareKind(r)
+	if lk == "" {
+		return Value{}, locErrorf(loc, "binary %s: left operand is not a comparable scalar (got %T)", op, l.Raw())
+	}
+	if rk == "" {
+		return Value{}, locErrorf(loc, "binary %s: right operand is not a comparable scalar (got %T)", op, r.Raw())
+	}
+	if lk != rk {
+		return Value{}, locErrorf(loc, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
+	}
+	left, err := l.Scalar()
+	if err != nil {
+		return Value{}, locErrorf(loc, "binary %s: left: %v", op, err)
+	}
+	right, err := r.Scalar()
+	if err != nil {
+		return Value{}, locErrorf(loc, "binary %s: right: %v", op, err)
+	}
+	switch lk {
+	case "number":
+		return evalNumericComparison(op, left, right)
+	case "bool":
+		if op != "==" && op != "!=" {
+			return Value{}, locErrorf(loc, "binary %s: booleans support only == and !=", op)
+		}
+		return evalSymbolicTextComparison(op, left, right)
+	default:
+		return evalSymbolicTextComparison(op, left, right)
+	}
 }
 
 // isArithmeticOpText reports whether op is one of the five
@@ -1181,13 +1231,39 @@ func evalArithmetic(op, left, right string) (Value, error) {
 }
 
 // numericValue wraps a float64 result as a Value whose raw
-// representation is a json.Number.  That matches how
-// jq-produced numbers land in the session and keeps
-// Value.Scalar() on a common rendering path: integer-valued
-// results print without a trailing ".0".
+// representation is a json.Number. That matches how jq-produced
+// numbers land in the session and keeps Value.Scalar() on a common
+// rendering path: integer-valued results print without a trailing
+// ".0".
 func numericValue(x float64) Value {
 	text := strconv.FormatFloat(x, 'f', -1, 64)
 	return Value{v: json.Number(text), kind: OriginScalar}
+}
+
+// literalValue classifies the text of a LiteralExpr into a typed
+// Value. Quoted literals are always strings: the user opted into
+// stringy interpretation by quoting. Unquoted literals are
+// classified by shape: "true"/"false" become BoolValue, anything
+// strconv.ParseFloat accepts becomes a numeric Value carrying the
+// original text as a json.Number, and everything else stays a
+// string. This is jq's literal model: bare 5 is the number 5, "5"
+// is the string "5", and the comparison operator picks numeric or
+// textual semantics from the operand types rather than from the
+// operator's spelling.
+func literalValue(e *LiteralExpr) Value {
+	if e.Quoted {
+		return StringValue(e.Text)
+	}
+	switch e.Text {
+	case "true":
+		return BoolValue(true)
+	case "false":
+		return BoolValue(false)
+	}
+	if _, err := strconv.ParseFloat(e.Text, 64); err == nil {
+		return Value{v: json.Number(e.Text), kind: OriginScalar}
+	}
+	return StringValue(e.Text)
 }
 
 // evalNegate evaluates a unary '-' prefix.  The operand must
@@ -1238,20 +1314,25 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 	}
 }
 
-func evalTextualComparison(op, left, right string) (Value, error) {
+// evalSymbolicTextComparison compares two strings under the
+// canonical symbol-form operator. Both operands have already been
+// reduced to their scalar text by evalCompare; this function is the
+// single textual-compare path for strings and (after the canonical
+// "true"/"false" rendering) booleans.
+func evalSymbolicTextComparison(op, left, right string) (Value, error) {
 	var pass bool
 	switch op {
-	case "eq":
+	case "==":
 		pass = left == right
-	case "ne":
+	case "!=":
 		pass = left != right
-	case "lt":
+	case "<":
 		pass = left < right
-	case "le":
+	case "<=":
 		pass = left <= right
-	case "gt":
+	case ">":
 		pass = left > right
-	case "ge":
+	case ">=":
 		pass = left >= right
 	default:
 		return Value{}, fmt.Errorf("unknown textual operator %q", op)
