@@ -476,6 +476,7 @@ help:
 	@echo "  ci                          Run every ci-* target"
 	@echo "  ci-build                    Compile bpfman binary inside the CI container"
 	@echo "  ci-check-fmt                Verify Go formatting is tidy (matches CI check-fmt)"
+	@echo "  ci-check-goimports          Verify Go imports are tidy (matches CI check-goimports)"
 	@echo "  ci-check-vendor             Verify go.mod and vendor are tidy (matches CI check-vendor)"
 	@echo "  ci-check-vet                Run go vet over every build-tag combo (matches CI check-vet)"
 	@echo "  ci-image                    Build the CI base image (loaded as bpfman-ci)"
@@ -714,6 +715,16 @@ bpfman-build: bpfman-fmt bpfman-compile
 # formats every source file, matching what ci-check-fmt expects.
 bpfman-fmt:
 	@find . -type f -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -w
+
+# Apply gofmt + goimports to every .go file via golangci-lint's `fmt`
+# subcommand, which honours the formatters block in .golangci.yml --
+# notably the goimports local-prefixes pin. Goes via golangci-lint
+# rather than a standalone goimports binary because the static dev
+# shell's glibc.static link path makes a freshly-installed
+# goimports segfault at runtime (NSS dlopen). golangci-lint is
+# already pinned for `make lint` so reusing it costs nothing.
+bpfman-goimports: $(BIN_DIR)/golangci-lint
+	$(BIN_DIR)/golangci-lint fmt
 
 # Run go vet over every build-tag combination present in the tree.
 # `go vet ./...` honours the active tag set; a single pass under the
@@ -1064,6 +1075,12 @@ ci-check-fmt:
 	$(MAKE) bpfman-fmt
 	git diff --exit-code
 
+# Reproduce the workflow's check-goimports job locally. Same host /
+# clean-tree contract as ci-check-fmt.
+ci-check-goimports:
+	$(MAKE) bpfman-goimports
+	git diff --exit-code
+
 # Reproduce the workflow's lint job locally. Runs the full
 # `make lint` umbrella (golangci-lint + hadolint + shellcheck +
 # checkmake) inside the CI container.
@@ -1131,7 +1148,7 @@ ci-test-e2e-scripts:
 # attach failures to REPL counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1148,10 +1165,10 @@ bpfman-test-grpc: build-image-dev
 # stand-alone declaration.
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
-.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
+.PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
