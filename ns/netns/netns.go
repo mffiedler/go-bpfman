@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
 // GetCurrentNsid returns the inode number of the network namespace
-// this process was started in, captured once at package init.
+// this process was started in, captured the first time any caller
+// asks.
 //
 // Despite its name, this does NOT read the calling thread's current
 // netns. Per-thread reads of /proc/self/ns/net are unsafe under
@@ -23,49 +25,68 @@ import (
 // which is the process-startup netns -- so returning that here
 // closes the gap between storage-side and lookup-side keys.
 //
+// The capture is done lazily under a sync.Once rather than at
+// package init. The contamination defence still works because the
+// daemon, the CLI, and the test suite all reach this function from
+// their main goroutine well before any worker goroutine has had a
+// chance to call setns; the first call lands on a still-pristine
+// thread and that result is cached for everyone else. The lazy
+// shape matters for binaries that share this package transitively
+// but legitimately run in environments where /proc may not be
+// mounted at startup -- the uprobe helper subprocess, after the C
+// constructor switches it into the target container's mount
+// namespace, is the motivating case. The helper never calls this
+// function, so the stat never runs and the helper does not crash
+// in package init.
+//
 // Callers that genuinely need "this thread's current netns" must
 // stat /proc/self/ns/net or /proc/<tid>/ns/net themselves.
 func GetCurrentNsid() (uint64, error) {
-	return processNsid, nil
-}
-
-// processNsid is the inode number of the network namespace this
-// process was started in, captured once at package init before
-// any goroutine has had a chance to perturb thread state via
-// setns/unshare. Used by GetNsid("") to return a stable,
-// process-level value instead of reading per-thread
-// /proc/self/ns/net (which is unsafe under heavy parallel netns
-// activity: see ns/netns/named.go for the OS-thread
-// contamination story). Captured at init() so the read happens
-// from the still-pristine main thread.
-var processNsid uint64
-
-func init() {
-	var stat syscall.Stat_t
-	if err := syscall.Stat("/proc/self/ns/net", &stat); err != nil {
-		panic(fmt.Errorf("netns: cannot stat /proc/self/ns/net at startup: %w", err))
-	}
-	processNsid = stat.Ino
+	return getProcessNsid()
 }
 
 // GetNsid returns the inode number of the network namespace at
-// the given path. If path is empty, returns the netns the
-// process was started in (captured once at init), NOT the
-// calling thread's current netns. The latter is per-thread and
-// can be poisoned by upstream library bugs in concurrent
-// programs; reading the captured process value insulates the
-// caller from that hazard. Callers wanting "this thread's
-// current netns" must explicitly stat /proc/self/ns/net or
-// /proc/<tid>/ns/net themselves.
+// the given path. If path is empty, returns the netns the process
+// was started in (captured on first call), NOT the calling
+// thread's current netns. The latter is per-thread and can be
+// poisoned by upstream library bugs in concurrent programs;
+// reading the captured process value insulates the caller from
+// that hazard. Callers wanting "this thread's current netns" must
+// explicitly stat /proc/self/ns/net or /proc/<tid>/ns/net
+// themselves.
 func GetNsid(path string) (uint64, error) {
 	if path == "" {
-		return processNsid, nil
+		return getProcessNsid()
 	}
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
 		return 0, fmt.Errorf("stat %s: %w", path, err)
 	}
 	return stat.Ino, nil
+}
+
+// processNsid caches the netns inode captured on first call.
+// processNsidErr remembers the failure mode if the capture stat
+// failed, so subsequent callers see the same error instead of the
+// stat being retried -- a retry might land on a different thread
+// in a different netns and silently return a stale value, which
+// is exactly what the capture is meant to prevent.
+var (
+	processNsidOnce sync.Once
+	processNsid     uint64
+	processNsidErr  error
+)
+
+func getProcessNsid() (uint64, error) {
+	processNsidOnce.Do(func() {
+		var stat syscall.Stat_t
+		if err := syscall.Stat("/proc/self/ns/net", &stat); err != nil {
+			processNsidErr = fmt.Errorf("netns: stat /proc/self/ns/net: %w", err)
+			return
+		}
+		processNsid = stat.Ino
+	})
+	return processNsid, processNsidErr
 }
 
 // Run executes fn in the network namespace specified by path.
