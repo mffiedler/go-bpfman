@@ -37,9 +37,13 @@ DOC_PORT ?= 6060
 # ---------------------------------------------------------------------------
 # Image names and deployment knobs.
 # ---------------------------------------------------------------------------
-IMAGE_TAG ?= dev
-BPFMAN_IMAGE ?= bpfman
-CSI_SANITY_IMAGE ?= csi-sanity
+# BPFMAN_IMG matches the variable name used by the upstream Rust
+# bpfman repository and the bpfman-operator: a single full pullspec
+# (registry/repository:tag) rather than separate name + tag knobs.
+# To override, pass the entire ref, e.g.
+#   make build-image BPFMAN_IMG=ttl.sh/me/bpfman-test:debug
+BPFMAN_IMG ?= quay.io/bpfman/bpfman:latest
+CSI_SANITY_IMG ?= csi-sanity:latest
 
 # ---------------------------------------------------------------------------
 # CI build environment knobs. The `ci-*` make targets drive a
@@ -815,7 +819,7 @@ clean-bpf:
 build-image-dev: bpfman-build
 	docker build \
 		$(if $(filter-out 0,$(DOCKER_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
-		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+		-t $(BPFMAN_IMG) \
 		--build-arg RUNTIME_IMAGE=$(DEV_RUNTIME_IMAGE) \
 		-f Dockerfile.bpfman.dev \
 		$(EXTRA_DOCKER_BUILD_ARGS) .
@@ -846,8 +850,7 @@ build-image-dev: bpfman-build
 #   make build-image \
 #       PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
 #       PUSH=1 \
-#       BPFMAN_IMAGE=<registry/repo> \
-#       IMAGE_TAG=$(GIT_COMMIT)
+#       BPFMAN_IMG=<registry/repo:tag>
 #       CI publish path: pushes a multi-arch manifest to the
 #       registry, with SLSA build provenance (mode=max) and SBOM
 #       attestations attached per platform.
@@ -878,16 +881,17 @@ build-image:
 		--build-arg SIGNER_IDENTITY="$(SIGNER_IDENTITY)" \
 		--build-arg OIDC_ISSUER="$(OIDC_ISSUER)" \
 		-f $(BPFMAN_DOCKERFILE) \
-		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+		-t $(BPFMAN_IMG) \
 		$(BUILDX_EXTRA_ARGS) .
 
 # Per-arch presets pinning PLATFORMS to a single foreign arch.
 # Each invocation builds one platform and --loads it into the local
-# Docker store under the default $(BPFMAN_IMAGE):$(IMAGE_TAG) tag
-# (e.g. bpfman:dev). The arch is implicit in the make target
-# chosen, so the tag does not encode it; each invocation overwrites
-# the previous one. To keep multiple arches loaded simultaneously,
-# pass IMAGE_TAG explicitly.
+# Docker store under the default $(BPFMAN_IMG) ref (e.g.
+# quay.io/bpfman/bpfman:latest). The arch is implicit in the make
+# target chosen, so the pullspec does not encode it; each
+# invocation overwrites the previous one. To keep multiple arches
+# loaded simultaneously, pass BPFMAN_IMG explicitly with distinct
+# tags.
 #
 #   make build-image-amd64
 #   make build-image-arm64
@@ -911,12 +915,11 @@ build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build
 #
 #   make build-image \
 #     PUSH=1 \
-#     BPFMAN_IMAGE=<registry/repo> \
-#     IMAGE_TAG=latest \
+#     BPFMAN_IMG=<registry/repo:tag> \
 #     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json \
 #     ...
 #   make cosign-sign \
-#     BPFMAN_IMAGE=<registry/repo> \
+#     BPFMAN_IMG=<registry/repo:tag> \
 #     BUILDX_METADATA_FILE=$${RUNNER_TEMP}/buildx-meta.json
 #
 # Local usage (interactive OAuth signing identity):
@@ -926,11 +929,11 @@ build-image-amd64 build-image-arm64 build-image-ppc64le build-image-s390x: build
 #   make build-image \
 #     PLATFORMS=linux/amd64 \
 #     PUSH=1 \
-#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman-test \
+#     BPFMAN_IMG=ttl.sh/frobware/go-bpfman-test:latest \
 #     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
 #
 #   make cosign-sign \
-#     BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman-test \
+#     BPFMAN_IMG=ttl.sh/frobware/go-bpfman-test:latest \
 #     BUILDX_METADATA_FILE=/tmp/buildx-meta.json
 #
 # The local invocation triggers an interactive browser OAuth flow;
@@ -962,12 +965,12 @@ cosign-sign:
 		cat "$(BUILDX_METADATA_FILE)" >&2; \
 		exit 1; \
 	fi; \
-	echo "Signing $(BPFMAN_IMAGE)@$$digest"; \
-	cosign sign -y "$(BPFMAN_IMAGE)@$$digest"
+	echo "Signing $(BPFMAN_IMG)@$$digest"; \
+	cosign sign -y "$(BPFMAN_IMG)@$$digest"
 
 # CSI conformance testing
 build-image-csi-sanity:
-	docker build -t $(CSI_SANITY_IMAGE):$(IMAGE_TAG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
+	docker build -t $(CSI_SANITY_IMG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
 
 build-image-openshift:
 	docker build \
@@ -978,7 +981,7 @@ build-image-openshift:
 		--build-arg BUILD_BRANCH=$(GIT_BRANCH) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		--build-arg BUILD_VERSION=$(GIT_VERSION) \
-		-t $(BPFMAN_IMAGE):$(IMAGE_TAG) \
+		-t $(BPFMAN_IMG) \
 		$(EXTRA_DOCKER_BUILD_ARGS) .
 
 # ---------------------------------------------------------------------------
@@ -1122,7 +1125,7 @@ ci: ci-check-vendor ci-check-fmt ci-check-vet ci-build ci-lint ci-test ci-test-e
 # gRPC integration test.
 # ---------------------------------------------------------------------------
 bpfman-test-grpc: build-image-dev
-	BPFMAN_IMAGE=$(BPFMAN_IMAGE):$(IMAGE_TAG) scripts/test-grpc.sh
+	BPFMAN_IMG=$(BPFMAN_IMG) scripts/test-grpc.sh
 
 
 # ============================================================================

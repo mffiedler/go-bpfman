@@ -70,8 +70,7 @@ jobs:
             OIDC_ISSUER=https://token.actions.githubusercontent.com \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
             PUSH=1 \
-            BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
-            IMAGE_TAG=latest \
+            BPFMAN_IMG=ttl.sh/frobware/go-bpfman:latest \
             BUILDX_EXTRA_ARGS="--cache-from type=gha --cache-to type=gha,mode=max --metadata-file=${RUNNER_TEMP}/buildx-meta.json"
 
       - name: Sign published image with cosign
@@ -99,7 +98,7 @@ jobs:
         #       https://token.actions.githubusercontent.com
         run: |
           make cosign-sign \
-            BPFMAN_IMAGE=ttl.sh/frobware/go-bpfman \
+            BPFMAN_IMG=ttl.sh/frobware/go-bpfman:latest \
             BUILDX_METADATA_FILE="${RUNNER_TEMP}/buildx-meta.json"
 
   verify-image:

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Integration test for bpfman gRPC API using grpcurl.
-# Requires: docker, bpfman:dev image built
+# Requires: docker, quay.io/bpfman/bpfman:latest image available locally
 #
 set -euo pipefail
 
@@ -11,7 +11,7 @@ SOCKET_DIR="/run/bpfman-sock"
 SOCKET_PATH="$SOCKET_DIR/bpfman.sock"
 CONTAINER_NAME="bpfman-grpc-test"
 GRPCURL_IMAGE="fullstorydev/grpcurl"
-BPFMAN_IMAGE="${BPFMAN_IMAGE:-bpfman:dev}"
+BPFMAN_IMG="${BPFMAN_IMG:-quay.io/bpfman/bpfman:latest}"
 
 cleanup() {
     echo "Cleaning up..."
@@ -44,7 +44,7 @@ docker run -d --name "$CONTAINER_NAME" --rm --privileged \
     --group-add "$BPF_GID" \
     -v /sys/fs/bpf:/sys/fs/bpf:rshared \
     -v "$SOCKET_DIR:$SOCKET_DIR" \
-    "$BPFMAN_IMAGE" serve
+    "$BPFMAN_IMG" serve
 
 echo "Waiting for server to start..."
 sleep 2
