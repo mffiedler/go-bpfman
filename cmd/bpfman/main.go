@@ -34,13 +34,12 @@ func RunNamespaceSwitcher() NamespaceSwitcherResult {
 
 // rootExempt reports whether the argument vector indicates an
 // invocation that does not need root: "version" as a positional
-// (the version subcommand), "help" / --help / -h (usage output),
-// or --check / -c (repl in syntax-check mode). None of these
-// touch kernel, store, or filesystem state.
+// (the version subcommand) or "help" / --help / -h (usage output).
+// Neither touches kernel, store, or filesystem state.
 func rootExempt(args []string) bool {
 	for _, a := range args {
 		switch a {
-		case "version", "help", "--help", "-h", "--check", "-c":
+		case "version", "help", "--help", "-h":
 			return true
 		}
 	}
@@ -48,8 +47,8 @@ func rootExempt(args []string) bool {
 }
 
 func main() {
-	// Allow version and syntax-only repl checks to run without
-	// root.  Neither touches kernel, store, or filesystem state.
+	// Allow version and help to run without root. Neither touches
+	// kernel, store, or filesystem state.
 	if os.Geteuid() != 0 && !rootExempt(os.Args[1:]) {
 		fmt.Fprintln(os.Stderr, "bpfman: error: must run as root")
 		os.Exit(1)
