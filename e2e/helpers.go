@@ -824,9 +824,20 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 }
 
 // TestInterface holds information about a test network interface.
+//
+// Nsid is the inode of the network namespace this interface lives
+// in, captured at construction time. Tests that need to look up
+// the manager's per-(type, nsid, ifindex) records must use this
+// field rather than calling netns.GetCurrentNsid() on the fly:
+// that latter reads /proc/self/ns/net per-thread and is unsafe
+// under concurrent test goroutines that switch netns and don't
+// restore. The construction-time capture happens on whichever
+// goroutine created the interface, which by definition is the
+// goroutine that knows what netns it intended.
 type TestInterface struct {
 	Name    string
 	Ifindex int
+	Nsid    uint64
 }
 
 var testNameSeq atomic.Uint64
@@ -1043,9 +1054,15 @@ func NewTestInterface(t *testing.T) TestInterface {
 		t.Fatalf("failed to bring up interface %s: %v", name, err)
 	}
 
+	rootNsid, err := bpfnetns.GetCurrentNsid()
+	if err != nil {
+		t.Fatalf("get root nsid: %v", err)
+	}
+
 	return TestInterface{
 		Name:    name,
 		Ifindex: link.Attrs().Index,
+		Nsid:    rootNsid,
 	}
 }
 
@@ -1364,13 +1381,24 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 		})
 	}
 
+	rootNsid, err := bpfnetns.GetCurrentNsid()
+	if err != nil {
+		t.Fatalf("get root nsid: %v", err)
+	}
+	bNsid, err := bpfnetns.GetNsid("/var/run/netns/" + nsName)
+	if err != nil {
+		t.Fatalf("get nsid for test netns %s: %v", nsName, err)
+	}
+
 	return TestVethPair{
 		A: TestInterface{
 			Name:    nameA,
 			Ifindex: linkA.Attrs().Index,
+			Nsid:    rootNsid,
 		},
 		B: TestInterface{
 			Name: nameB,
+			Nsid: bNsid,
 		},
 		Netns:      nsName,
 		PingTarget: pingTarget,

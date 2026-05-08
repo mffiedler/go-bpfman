@@ -15,7 +15,6 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/ns/netns"
 )
 
 // TestXDP_DispatcherConfigAfterDetach verifies that filling all 10
@@ -54,10 +53,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 		env.Detach(context.Background(), linkIDs[9].ID)
 	})
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
-
-	dispKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: nsid, Ifindex: uint32(iface.Ifindex)}
+	dispKey := dispatcher.Key{Type: dispatcher.DispatcherTypeXDP, Nsid: iface.Nsid, Ifindex: uint32(iface.Ifindex)}
 
 	// Verify 10 members before detach.
 	snap, err := env.GetDispatcherSnapshot(ctx, dispKey)

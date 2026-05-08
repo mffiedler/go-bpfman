@@ -17,7 +17,6 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -44,8 +43,6 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	prog := programs[0]
 	t.Cleanup(func() { env.Unload(context.Background(), prog.Status.Kernel.ID) })
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
 	ifindex := uint32(iface.Ifindex)
 
 	// Attach 3 programs to ingress.
@@ -67,8 +64,8 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 		}
 	})
 
-	ingressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: ifindex}
-	egressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCEgress, Nsid: nsid, Ifindex: ifindex}
+	ingressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCIngress, Nsid: iface.Nsid, Ifindex: ifindex}
+	egressKey := dispatcher.Key{Type: dispatcher.DispatcherTypeTCEgress, Nsid: iface.Nsid, Ifindex: ifindex}
 
 	// Verify ingress has 3 members.
 	ingressSnap, err := env.GetDispatcherSnapshot(ctx, ingressKey)
@@ -262,9 +259,6 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 		return link
 	}
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
-
 	type slotEntry struct {
 		prog     prog
 		link     bpfman.LinkRecord
@@ -332,7 +326,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	verifyMemberCount := func(phase string) {
 		t.Helper()
 		snap, err := env.GetDispatcherSnapshot(ctx, dispatcher.Key{
-			Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: uint32(veth.A.Ifindex),
+			Type: dispatcher.DispatcherTypeTCIngress, Nsid: veth.A.Nsid, Ifindex: uint32(veth.A.Ifindex),
 		})
 		require.NoError(t, err)
 		expected := occupiedCount()
@@ -770,10 +764,8 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	attach(incoming, 55)
 
 	// Dump snapshot for diagnostics.
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
 	snap, err := env.GetDispatcherSnapshot(ctx, dispatcher.Key{
-		Type: dispatcher.DispatcherTypeTCIngress, Nsid: nsid, Ifindex: uint32(veth.A.Ifindex),
+		Type: dispatcher.DispatcherTypeTCIngress, Nsid: veth.A.Nsid, Ifindex: uint32(veth.A.Ifindex),
 	})
 	require.NoError(t, err)
 	for _, m := range snap.Members {

@@ -15,7 +15,6 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -73,10 +72,8 @@ func (h *dispatcherTestHarness) tryAttach(t *testing.T, progID kernel.ProgramID,
 // dispatcher for the harness's default interface.
 func (h *dispatcherTestHarness) memberCount(t *testing.T) int {
 	t.Helper()
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
 	snap, err := h.env.GetDispatcherSnapshot(context.Background(), dispatcher.Key{
-		Type: h.dispType, Nsid: nsid, Ifindex: uint32(h.iface.Ifindex),
+		Type: h.dispType, Nsid: h.iface.Nsid, Ifindex: uint32(h.iface.Ifindex),
 	})
 	require.NoError(t, err, "dispatcher should exist")
 	return len(snap.Members)
@@ -206,21 +203,17 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 
 		verifyAttachPresent: func(t *testing.T) {
 			t.Helper()
-			nsid, err := netns.GetCurrentNsid()
-			require.NoError(t, err)
 			linkPin := env.Layout.BPFFS().DispatcherLinkPath(
-				dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
-			_, err = os.Stat(linkPin.String())
+				dispatcher.DispatcherTypeXDP, iface.Nsid, uint32(iface.Ifindex))
+			_, err := os.Stat(linkPin.String())
 			require.NoError(t, err, "XDP link pin should exist: %s", linkPin)
 		},
 
 		verifyAttachAbsent: func(t *testing.T) {
 			t.Helper()
-			nsid, err := netns.GetCurrentNsid()
-			require.NoError(t, err)
 			linkPin := env.Layout.BPFFS().DispatcherLinkPath(
-				dispatcher.DispatcherTypeXDP, nsid, uint32(iface.Ifindex))
-			_, err = os.Stat(linkPin.String())
+				dispatcher.DispatcherTypeXDP, iface.Nsid, uint32(iface.Ifindex))
+			_, err := os.Stat(linkPin.String())
 			assert.True(t, os.IsNotExist(err),
 				"XDP link pin should not exist: %s", linkPin)
 		},
@@ -577,11 +570,9 @@ func TestDispatcher_LifecycleAfterLastDetach(t *testing.T) {
 func testLifecycleAfterLastDetach(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
 	ifindex := uint32(h.iface.Ifindex)
 
-	dispKey := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: ifindex}
+	dispKey := dispatcher.Key{Type: h.dispType, Nsid: h.iface.Nsid, Ifindex: ifindex}
 
 	// Phase 1: attach a single program. A dispatcher should exist.
 	link := h.attach(t, progID, 100)
@@ -635,9 +626,6 @@ func TestDispatcher_MultipleInterfacesIndependent(t *testing.T) {
 func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
-
 	ifaceB := NewTestInterface(t)
 
 	// Attach 3 programs to default interface (A).
@@ -659,8 +647,8 @@ func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 		linksB = append(linksB, link)
 	}
 
-	keyA := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(h.iface.Ifindex)}
-	keyB := dispatcher.Key{Type: h.dispType, Nsid: nsid, Ifindex: uint32(ifaceB.Ifindex)}
+	keyA := dispatcher.Key{Type: h.dispType, Nsid: h.iface.Nsid, Ifindex: uint32(h.iface.Ifindex)}
+	keyB := dispatcher.Key{Type: h.dispType, Nsid: ifaceB.Nsid, Ifindex: uint32(ifaceB.Ifindex)}
 
 	// Verify A has 3 members.
 	snapA, err := h.env.GetDispatcherSnapshot(context.Background(), keyA)
@@ -716,8 +704,6 @@ func testMemberLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 	ctx := context.Background()
 	progID := h.loadProg(t)
 
-	nsid, err := netns.GetCurrentNsid()
-	require.NoError(t, err)
 	ifindex := uint32(h.iface.Ifindex)
 
 	// Attach first program. This creates the dispatcher.
@@ -728,7 +714,7 @@ func testMemberLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 
 	// Run GC. Link 1's kernel ID may already be stale from the
 	// initial dispatcher build. It must survive.
-	_, err = h.env.GC(ctx)
+	_, err := h.env.GC(ctx)
 	require.NoError(t, err, "GC after first attach")
 
 	// Verify the link still exists and is retrievable.
@@ -776,7 +762,7 @@ func testMemberLinksSurviveGC(t *testing.T, h dispatcherTestHarness) {
 
 	// Verify the dispatcher itself is still present.
 	_, err = h.env.GetDispatcherSnapshot(ctx, dispatcher.Key{
-		Type: h.dispType, Nsid: nsid, Ifindex: ifindex,
+		Type: h.dispType, Nsid: h.iface.Nsid, Ifindex: ifindex,
 	})
 	require.NoError(t, err, "dispatcher should still exist after GC")
 
