@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -17,9 +18,9 @@ import (
 // program is deleted.
 type ProgramDeleteCmd struct {
 	cliformat.OutputFlags
-	Recursive  bool        `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
-	All        bool        `name:"all" help:"Delete all managed programs."`
-	ProgramIDs []ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
+	Recursive  bool                  `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
+	All        bool                  `name:"all" help:"Delete all managed programs."`
+	ProgramIDs []bpfmancli.ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
 }
 
 // Validate ensures exactly one of --all or explicit program IDs is
@@ -52,7 +53,7 @@ func (c *ProgramDeleteCmd) Run(cli *CLI, ctx context.Context) error {
 // collectDeleteIDs resolves the set of program IDs to delete. When
 // all is true, every managed program ID is returned via
 // ListPrograms. Otherwise the explicit IDs are extracted.
-func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []ProgramID) ([]kernel.ProgramID, error) {
+func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []bpfmancli.ProgramID) ([]kernel.ProgramID, error) {
 	if all {
 		result, err := mgr.ListPrograms(ctx)
 		if err != nil {
@@ -113,8 +114,8 @@ func executeDeletePrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 // that depend on the orphaned program through map ownership.
 type LinkDeleteCmd struct {
 	cliformat.OutputFlags
-	Recursive bool     `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
-	LinkIDs   []LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
+	Recursive bool               `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
+	LinkIDs   []bpfmancli.LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
 }
 
 // Run executes the link delete command with cascading cleanup.

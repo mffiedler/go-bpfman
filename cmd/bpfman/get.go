@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
 // GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
 	cliformat.OutputFlags
-	ProgramID ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
+	ProgramID bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
 }
 
 // Run executes the get program command.
@@ -37,7 +38,7 @@ func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
 // GetLinkCmd gets details of a link by link ID.
 type GetLinkCmd struct {
 	cliformat.OutputFlags
-	LinkID LinkID `arg:"" name:"link-id" help:"Link ID."`
+	LinkID bpfmancli.LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 
 // Run executes the get link command.

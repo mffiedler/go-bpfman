@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/shell"
 )
@@ -449,7 +450,7 @@ func replCompleteProgramIDs(ctx context.Context, mgr *manager.Manager, session *
 				if err != nil {
 					continue
 				}
-				if _, err := ParseProgramID(s); err != nil {
+				if _, err := bpfmancli.ParseProgramID(s); err != nil {
 					continue
 				}
 				candidates = append(candidates, candidate+" ")
@@ -518,7 +519,7 @@ func replCompleteLinkIDs(ctx context.Context, mgr *manager.Manager, session *she
 				if err != nil {
 					continue
 				}
-				if _, err := ParseLinkID(s); err != nil {
+				if _, err := bpfmancli.ParseLinkID(s); err != nil {
 					continue
 				}
 				candidates = append(candidates, candidate+" ")

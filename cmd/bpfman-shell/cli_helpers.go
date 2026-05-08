@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
@@ -27,7 +28,7 @@ type loadFileResult struct {
 // collectDeleteIDs resolves the set of program IDs to delete. When
 // all is true, every managed program ID is returned via ListPrograms.
 // Otherwise the explicit IDs are extracted.
-func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []ProgramID) ([]kernel.ProgramID, error) {
+func collectDeleteIDs(ctx context.Context, mgr *manager.Manager, all bool, explicit []bpfmancli.ProgramID) ([]kernel.ProgramID, error) {
 	if all {
 		result, err := mgr.ListPrograms(ctx)
 		if err != nil {

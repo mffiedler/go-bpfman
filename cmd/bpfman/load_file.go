@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -23,11 +24,11 @@ type LoadFileCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Example     ExampleFlag      `name:"example" help:"Show working examples and exit."`
-	Path        string           `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
-	Programs    []ProgramSpec    `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
-	Application string           `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID  kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	Example     ExampleFlag             `name:"example" help:"Show working examples and exit."`
+	Path        string                  `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
+	Programs    []bpfmancli.ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	Application string                  `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+	MapOwnerID  kernel.ProgramID        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // loadFileResult captures the result of a load file operation.
@@ -51,7 +52,7 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 // formatting. Both the CLI command and the REPL call this function.
 func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
 	// Validate object file exists (before acquiring lock)
-	objPath, err := ParseObjectPath(c.Path)
+	objPath, err := bpfmancli.ParseObjectPath(c.Path)
 	if err != nil {
 		return loadFileResult{}, err
 	}
@@ -60,11 +61,11 @@ func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
-			globalData = GlobalDataMap(c.GlobalData)
+			globalData = bpfmancli.GlobalDataMap(c.GlobalData)
 		}
 
 		// Build metadata map, adding application if specified
-		metadata := MetadataMap(c.Metadata)
+		metadata := bpfmancli.MetadataMap(c.Metadata)
 		if c.Application != "" {
 			if metadata == nil {
 				metadata = make(map[string]string)
@@ -72,7 +73,7 @@ func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 			metadata["bpfman.io/application"] = c.Application
 		}
 
-		// Convert CLI ProgramSpec to manager.ProgramSpec
+		// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec
 		var programs []manager.ProgramSpec
 		for _, prog := range c.Programs {
 			programs = append(programs, manager.ProgramSpec{

@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -201,7 +202,7 @@ func displayName(name string) string {
 // parseProgramIDText parses a program ID from text into a
 // kernel.ProgramID.
 func parseProgramIDText(s string) (kernel.ProgramID, error) {
-	parsed, err := ParseProgramID(s)
+	parsed, err := bpfmancli.ParseProgramID(s)
 	if err != nil {
 		return 0, err
 	}
@@ -249,7 +250,7 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 
 // parseLinkIDText parses a link ID from text into a kernel.LinkID.
 func parseLinkIDText(s string) (kernel.LinkID, error) {
-	parsed, err := ParseLinkID(s)
+	parsed, err := bpfmancli.ParseLinkID(s)
 	if err != nil {
 		return 0, err
 	}
@@ -384,9 +385,9 @@ func execShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *S
 // LoadFileCommand represents a fully parsed "load file" command.
 type LoadFileCommand struct {
 	Path        string
-	Programs    []ProgramSpec
-	Metadata    []KeyValue
-	GlobalData  []GlobalData
+	Programs    []bpfmancli.ProgramSpec
+	Metadata    []bpfmancli.KeyValue
+	GlobalData  []bpfmancli.GlobalData
 	Application string
 	MapOwnerID  kernel.ProgramID
 	Output      cliformat.OutputFlags
@@ -418,7 +419,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load file: --programs requires a value")
 			}
-			spec, err := ParseProgramSpec(argText(args[i]))
+			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load file: %w", err)
 			}
@@ -428,7 +429,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load file: %s requires a value", text)
 			}
-			kv, err := ParseKeyValue(argText(args[i]))
+			kv, err := bpfmancli.ParseKeyValue(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load file: %w", err)
 			}
@@ -438,7 +439,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load file: %s requires a value", text)
 			}
-			gd, err := ParseGlobalData(argText(args[i]))
+			gd, err := bpfmancli.ParseGlobalData(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load file: %w", err)
 			}
@@ -454,7 +455,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load file: --map-owner-id requires a value")
 			}
-			parsed, err := ParseProgramID(argText(args[i]))
+			parsed, err := bpfmancli.ParseProgramID(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load file: %w", err)
 			}
@@ -487,7 +488,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 // program from a local object file, printing output, and returning a
 // structured Value for optional variable assignment.
 func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadFileCommand) (shell.Value, error) {
-	objPath, err := ParseObjectPath(cmd.Path)
+	objPath, err := bpfmancli.ParseObjectPath(cmd.Path)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -495,10 +496,10 @@ func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Load
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
-			globalData = GlobalDataMap(cmd.GlobalData)
+			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
 		}
 
-		metadata := MetadataMap(cmd.Metadata)
+		metadata := bpfmancli.MetadataMap(cmd.Metadata)
 		if cmd.Application != "" {
 			if metadata == nil {
 				metadata = make(map[string]string)
@@ -982,7 +983,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
 
-	tp, err := ParseTracepointName(tracepoint)
+	tp, err := bpfmancli.ParseTracepointName(tracepoint)
 	if err != nil {
 		return nil, fmt.Errorf("link attach tracepoint: %w", err)
 	}
@@ -1351,12 +1352,12 @@ func splitComma(s string) []string {
 // LoadImageCommand represents a fully parsed "load image" command.
 type LoadImageCommand struct {
 	ImageURL     string
-	Programs     []ProgramSpec
+	Programs     []bpfmancli.ProgramSpec
 	PullPolicy   string
 	RegistryAuth string
 	Application  string
-	Metadata     []KeyValue
-	GlobalData   []GlobalData
+	Metadata     []bpfmancli.KeyValue
+	GlobalData   []bpfmancli.GlobalData
 	MapOwnerID   kernel.ProgramID
 	Output       cliformat.OutputFlags
 }
@@ -1389,7 +1390,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load image: --programs requires a value")
 			}
-			spec, err := ParseProgramSpec(argText(args[i]))
+			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load image: %w", err)
 			}
@@ -1417,7 +1418,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load image: --map-owner-id requires a value")
 			}
-			parsed, err := ParseProgramID(argText(args[i]))
+			parsed, err := bpfmancli.ParseProgramID(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load image: %w", err)
 			}
@@ -1427,7 +1428,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load image: %s requires a value", text)
 			}
-			kv, err := ParseKeyValue(argText(args[i]))
+			kv, err := bpfmancli.ParseKeyValue(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load image: %w", err)
 			}
@@ -1437,7 +1438,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load image: %s requires a value", text)
 			}
-			gd, err := ParseGlobalData(argText(args[i]))
+			gd, err := bpfmancli.ParseGlobalData(argText(args[i]))
 			if err != nil {
 				return nil, fmt.Errorf("load image: %w", err)
 			}
@@ -1482,10 +1483,10 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
-			globalData = GlobalDataMap(cmd.GlobalData)
+			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
 		}
 
-		metadata := MetadataMap(cmd.Metadata)
+		metadata := bpfmancli.MetadataMap(cmd.Metadata)
 		if cmd.Application != "" {
 			if metadata == nil {
 				metadata = make(map[string]string)
@@ -1823,11 +1824,11 @@ func execDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd 
 }
 
 // programIDsToProgramIDs converts a slice of kernel.ProgramID to the
-// ProgramID wrapper type used by collectDeleteIDs.
-func programIDsToProgramIDs(ids []kernel.ProgramID) []ProgramID {
-	result := make([]ProgramID, len(ids))
+// bpfmancli.ProgramID wrapper type used by collectDeleteIDs.
+func programIDsToProgramIDs(ids []kernel.ProgramID) []bpfmancli.ProgramID {
+	result := make([]bpfmancli.ProgramID, len(ids))
 	for i, id := range ids {
-		result[i] = ProgramID{Value: id}
+		result[i] = bpfmancli.ProgramID{Value: id}
 	}
 	return result
 }
@@ -1992,7 +1993,7 @@ func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *
 	}
 
 	if len(cmd.Types) > 0 {
-		types, err := ParseProgramTypesSlice(cmd.Types)
+		types, err := bpfmancli.ParseProgramTypesSlice(cmd.Types)
 		if err != nil {
 			return shell.Value{}, err
 		}
@@ -2110,7 +2111,7 @@ func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Lis
 	}
 
 	if len(cmd.Kinds) > 0 {
-		kinds, err := ParseLinkKindsSlice(cmd.Kinds)
+		kinds, err := bpfmancli.ParseLinkKindsSlice(cmd.Kinds)
 		if err != nil {
 			return shell.Value{}, err
 		}

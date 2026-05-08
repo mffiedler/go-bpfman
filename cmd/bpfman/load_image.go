@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -20,13 +21,13 @@ type LoadImageCmd struct {
 	MetadataFlags
 	GlobalDataFlags
 
-	Example      ExampleFlag      `name:"example" help:"Show working examples and exit."`
-	ImageURL     string           `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
-	Programs     []ProgramSpec    `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
-	PullPolicy   ImagePullPolicy  `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
-	RegistryAuth string           `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
-	Application  string           `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
-	MapOwnerID   kernel.ProgramID `name:"map-owner-id" help:"Program ID of another program to share maps with."`
+	Example      ExampleFlag               `name:"example" help:"Show working examples and exit."`
+	ImageURL     string                    `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
+	Programs     []bpfmancli.ProgramSpec   `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+	PullPolicy   bpfmancli.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
+	RegistryAuth string                    `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
+	Application  string                    `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
+	MapOwnerID   kernel.ProgramID          `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
 
 // Run executes the load image command.
@@ -77,11 +78,11 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
-			globalData = GlobalDataMap(c.GlobalData)
+			globalData = bpfmancli.GlobalDataMap(c.GlobalData)
 		}
 
 		// Build metadata map, adding application if specified
-		metadata := MetadataMap(c.Metadata)
+		metadata := bpfmancli.MetadataMap(c.Metadata)
 		if c.Application != "" {
 			if metadata == nil {
 				metadata = make(map[string]string)
@@ -96,7 +97,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 			Auth:       auth,
 		}
 
-		// Convert CLI ProgramSpec to manager.ProgramSpec
+		// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec
 		var programs []manager.ProgramSpec
 		for _, prog := range c.Programs {
 			programs = append(programs, manager.ProgramSpec{

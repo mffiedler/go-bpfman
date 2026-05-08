@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -12,7 +13,7 @@ import (
 // DetachCmd detaches links.
 type DetachCmd struct {
 	cliformat.OutputFlags
-	LinkIDs []LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
+	LinkIDs []bpfmancli.LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
 }
 
 // Run executes the detach command: mutation under lock, output outside.

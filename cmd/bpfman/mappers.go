@@ -6,17 +6,18 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
-// programIDMapper creates a Kong mapper for ProgramID.
+// programIDMapper creates a Kong mapper for bpfmancli.ProgramID.
 func programIDMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("program-id", &s); err != nil {
 			return err
 		}
-		id, err := ParseProgramID(s)
+		id, err := bpfmancli.ParseProgramID(s)
 		if err != nil {
 			return err
 		}
@@ -25,14 +26,14 @@ func programIDMapper() kong.MapperFunc {
 	}
 }
 
-// linkIDMapper creates a Kong mapper for LinkID.
+// linkIDMapper creates a Kong mapper for bpfmancli.LinkID.
 func linkIDMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("link-id", &s); err != nil {
 			return err
 		}
-		id, err := ParseLinkID(s)
+		id, err := bpfmancli.ParseLinkID(s)
 		if err != nil {
 			return err
 		}
@@ -41,14 +42,14 @@ func linkIDMapper() kong.MapperFunc {
 	}
 }
 
-// keyValueMapper creates a Kong mapper for KeyValue.
+// keyValueMapper creates a Kong mapper for bpfmancli.KeyValue.
 func keyValueMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("key=value", &s); err != nil {
 			return err
 		}
-		kv, err := ParseKeyValue(s)
+		kv, err := bpfmancli.ParseKeyValue(s)
 		if err != nil {
 			return err
 		}
@@ -57,14 +58,14 @@ func keyValueMapper() kong.MapperFunc {
 	}
 }
 
-// globalDataMapper creates a Kong mapper for GlobalData.
+// globalDataMapper creates a Kong mapper for bpfmancli.GlobalData.
 func globalDataMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("name=hex", &s); err != nil {
 			return err
 		}
-		gd, err := ParseGlobalData(s)
+		gd, err := bpfmancli.ParseGlobalData(s)
 		if err != nil {
 			return err
 		}
@@ -73,14 +74,14 @@ func globalDataMapper() kong.MapperFunc {
 	}
 }
 
-// objectPathMapper creates a Kong mapper for ObjectPath.
+// objectPathMapper creates a Kong mapper for bpfmancli.ObjectPath.
 func objectPathMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("path", &s); err != nil {
 			return err
 		}
-		op, err := ParseObjectPath(s)
+		op, err := bpfmancli.ParseObjectPath(s)
 		if err != nil {
 			return err
 		}
@@ -89,14 +90,14 @@ func objectPathMapper() kong.MapperFunc {
 	}
 }
 
-// programSpecMapper creates a Kong mapper for ProgramSpec.
+// programSpecMapper creates a Kong mapper for bpfmancli.ProgramSpec.
 func programSpecMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("type:name", &s); err != nil {
 			return err
 		}
-		ps, err := ParseProgramSpec(s)
+		ps, err := bpfmancli.ParseProgramSpec(s)
 		if err != nil {
 			return err
 		}
@@ -105,14 +106,14 @@ func programSpecMapper() kong.MapperFunc {
 	}
 }
 
-// tracepointNameMapper creates a Kong mapper for TracepointName.
+// tracepointNameMapper creates a Kong mapper for bpfmancli.TracepointName.
 func tracepointNameMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("group/name", &s); err != nil {
 			return err
 		}
-		tp, err := ParseTracepointName(s)
+		tp, err := bpfmancli.ParseTracepointName(s)
 		if err != nil {
 			return err
 		}
@@ -121,14 +122,14 @@ func tracepointNameMapper() kong.MapperFunc {
 	}
 }
 
-// imagePullPolicyMapper creates a Kong mapper for ImagePullPolicy.
+// imagePullPolicyMapper creates a Kong mapper for bpfmancli.ImagePullPolicy.
 func imagePullPolicyMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("policy", &s); err != nil {
 			return err
 		}
-		pp, err := ParseImagePullPolicy(s)
+		pp, err := bpfmancli.ParseImagePullPolicy(s)
 		if err != nil {
 			return err
 		}

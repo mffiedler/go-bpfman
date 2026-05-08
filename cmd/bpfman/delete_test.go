@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
 
 func TestProgramDeleteCmd_Validate(t *testing.T) {
@@ -24,7 +26,7 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 			name: "both --all and IDs",
 			cmd: ProgramDeleteCmd{
 				All:        true,
-				ProgramIDs: []ProgramID{{Value: 1}},
+				ProgramIDs: []bpfmancli.ProgramID{{Value: 1}},
 			},
 			wantErr: "--all and explicit program IDs are mutually exclusive",
 		},
@@ -34,7 +36,7 @@ func TestProgramDeleteCmd_Validate(t *testing.T) {
 		},
 		{
 			name: "IDs alone is valid",
-			cmd:  ProgramDeleteCmd{ProgramIDs: []ProgramID{{Value: 1}}},
+			cmd:  ProgramDeleteCmd{ProgramIDs: []bpfmancli.ProgramID{{Value: 1}}},
 		},
 	}
 

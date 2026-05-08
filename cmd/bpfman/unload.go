@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
@@ -12,7 +13,7 @@ import (
 // UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
 	cliformat.OutputFlags
-	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
+	ProgramIDs []bpfmancli.ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
 }
 
 // Run executes the unload command: mutation under lock, output outside.

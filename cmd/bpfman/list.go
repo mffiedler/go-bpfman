@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
@@ -41,7 +42,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 
 	// Type filter
 	if len(c.Type) > 0 {
-		types, err := ParseProgramTypesSlice(c.Type)
+		types, err := bpfmancli.ParseProgramTypesSlice(c.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -104,9 +105,9 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 // ListLinksCmd lists managed links.
 type ListLinksCmd struct {
 	cliformat.OutputFlags
-	Quiet     bool       `short:"q" help:"Output only link IDs, one per line."`
-	ProgramID *ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
-	Kind      []string   `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
+	Quiet     bool                 `short:"q" help:"Output only link IDs, one per line."`
+	ProgramID *bpfmancli.ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
+	Kind      []string             `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
 }
 
 func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
@@ -117,7 +118,7 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 	}
 
 	if len(c.Kind) > 0 {
-		kinds, err := ParseLinkKindsSlice(c.Kind)
+		kinds, err := bpfmancli.ParseLinkKindsSlice(c.Kind)
 		if err != nil {
 			return nil, err
 		}
