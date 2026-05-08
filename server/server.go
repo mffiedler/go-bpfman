@@ -71,20 +71,20 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Capture the process's startup netns inode now, before any
 	// goroutine that might call setns has been spawned. The
 	// ns/netns package caches this under a sync.Once and every
-	// later call to GetCurrentNsid / GetNsid("") returns the
-	// captured value. Priming on the calling goroutine -- which
-	// is whatever drove main() to here, still on a thread that
-	// has not switched namespaces -- locks in a known-good
-	// value. Subsequent manager attaches that resolve an empty
-	// netns path to "root" via the GetNsid("") -> processNsid
-	// fallback then see the right inode regardless of which
-	// thread the request landed on. Failure here means
-	// /proc/self/ns/net is unreadable, which makes the rest of
-	// the daemon meaningless -- panic so a stack trace makes the
-	// startup failure obvious rather than a generic error from
-	// every later attach. Symmetric with the equivalent prime in
-	// the e2e TestMain.
-	if _, err := netns.GetCurrentNsid(); err != nil {
+	// later call to CurrentNSID / NSID("") returns the captured
+	// value. Priming on the calling goroutine -- which is
+	// whatever drove main() to here, still on a thread that has
+	// not switched namespaces -- locks in a known-good value.
+	// Subsequent manager attaches that resolve an empty netns
+	// path to "root" via the NSID("") -> processNSID fallback
+	// then see the right inode regardless of which thread the
+	// request landed on. Failure here means /proc/self/ns/net is
+	// unreadable, which makes the rest of the daemon meaningless
+	// -- panic so a stack trace makes the startup failure
+	// obvious rather than a generic error from every later
+	// attach. Symmetric with the equivalent prime in the e2e
+	// TestMain.
+	if _, err := netns.CurrentNSID(); err != nil {
 		panic(fmt.Errorf("server: prime ns/netns capture: %v", err))
 	}
 

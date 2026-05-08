@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// GetCurrentNsid returns the inode number of the network namespace
+// CurrentNSID returns the inode number of the network namespace
 // this process was started in, captured the first time any caller
 // asks.
 //
@@ -41,22 +41,21 @@ import (
 //
 // Callers that genuinely need "this thread's current netns" must
 // stat /proc/self/ns/net or /proc/<tid>/ns/net themselves.
-func GetCurrentNsid() (uint64, error) {
-	return getProcessNsid()
+func CurrentNSID() (uint64, error) {
+	return getProcessNSID()
 }
 
-// GetNsid returns the inode number of the network namespace at
-// the given path. If path is empty, returns the netns the process
-// was started in (captured on first call), NOT the calling
-// thread's current netns. The latter is per-thread and can be
-// poisoned by upstream library bugs in concurrent programs;
-// reading the captured process value insulates the caller from
-// that hazard. Callers wanting "this thread's current netns" must
-// explicitly stat /proc/self/ns/net or /proc/<tid>/ns/net
-// themselves.
-func GetNsid(path string) (uint64, error) {
+// NSID returns the inode number of the network namespace at the
+// given path. If path is empty, returns the netns the process was
+// started in (captured on first call), NOT the calling thread's
+// current netns. The latter is per-thread and can be poisoned by
+// upstream library bugs in concurrent programs; reading the
+// captured process value insulates the caller from that hazard.
+// Callers wanting "this thread's current netns" must explicitly
+// stat /proc/self/ns/net or /proc/<tid>/ns/net themselves.
+func NSID(path string) (uint64, error) {
 	if path == "" {
-		return getProcessNsid()
+		return getProcessNSID()
 	}
 	var stat syscall.Stat_t
 	if err := syscall.Stat(path, &stat); err != nil {
@@ -65,28 +64,28 @@ func GetNsid(path string) (uint64, error) {
 	return stat.Ino, nil
 }
 
-// processNsid caches the netns inode captured on first call.
-// processNsidErr remembers the failure mode if the capture stat
+// processNSID caches the netns inode captured on first call.
+// processNSIDErr remembers the failure mode if the capture stat
 // failed, so subsequent callers see the same error instead of the
 // stat being retried -- a retry might land on a different thread
 // in a different netns and silently return a stale value, which
 // is exactly what the capture is meant to prevent.
 var (
-	processNsidOnce sync.Once
-	processNsid     uint64
-	processNsidErr  error
+	processNSIDOnce sync.Once
+	processNSID     uint64
+	processNSIDErr  error
 )
 
-func getProcessNsid() (uint64, error) {
-	processNsidOnce.Do(func() {
+func getProcessNSID() (uint64, error) {
+	processNSIDOnce.Do(func() {
 		var stat syscall.Stat_t
 		if err := syscall.Stat("/proc/self/ns/net", &stat); err != nil {
-			processNsidErr = fmt.Errorf("netns: stat /proc/self/ns/net: %w", err)
+			processNSIDErr = fmt.Errorf("netns: stat /proc/self/ns/net: %w", err)
 			return
 		}
-		processNsid = stat.Ino
+		processNSID = stat.Ino
 	})
-	return processNsid, processNsidErr
+	return processNSID, processNSIDErr
 }
 
 // Run executes fn in the network namespace specified by path.

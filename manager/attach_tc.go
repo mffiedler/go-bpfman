@@ -106,7 +106,7 @@ func (m *Manager) attachTC(ctx context.Context, spec bpfman.TCAttachSpec) (bpfma
 // Pin paths follow the convention:
 //   - Link: /sys/fs/bpf/bpfman/tcx-{direction}/link_{nsid}_{ifindex}_{linkid}
 //
-// Preflight failures (getProgram, type check, GetNsid, stale pin
+// Preflight failures (getProgram, type check, NSID, stale pin
 // removal, link listing) return plain errors.
 
 // processNsid captures the network-namespace inode of this
@@ -169,7 +169,7 @@ func (m *Manager) attachTCX(ctx context.Context, spec bpfman.TCXAttachSpec) (bpf
 	if prog.Load.ProgramType() != bpfman.ProgramTypeTCX {
 		return bpfman.Link{}, fmt.Errorf("program %d is type %s, not tcx", programID, prog.Load.ProgramType())
 	}
-	nsid, err := netns.GetNsid(netnsPath)
+	nsid, err := netns.NSID(netnsPath)
 	if err != nil {
 		return bpfman.Link{}, fmt.Errorf("get nsid: %w", err)
 	}

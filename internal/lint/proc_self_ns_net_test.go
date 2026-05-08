@@ -31,11 +31,11 @@ import (
 // /proc/self/ns/net silently gets the wrong answer.
 //
 // All callers that want the process startup nsid go through
-// ns/netns.GetCurrentNsid, which captures the value once on a
+// ns/netns.CurrentNSID, which captures the value once on a
 // pristine thread under a sync.Once and returns it for the
 // lifetime of the process. Callers that genuinely need a
 // specific netns's inode pass the explicit path to
-// ns/netns.GetNsid, which stat's that path independent of thread
+// ns/netns.NSID, which stat's that path independent of thread
 // state.
 //
 // The check is AST-aware: comments mentioning the path are
@@ -148,7 +148,7 @@ func TestNoDirectProcSelfNsNetReads(t *testing.T) {
 		for _, v := range violations {
 			fmt.Fprintf(&msg, "  %s:%d  %s(...)\n", v.file, v.line, v.call)
 		}
-		fmt.Fprint(&msg, "\nUse ns/netns.GetCurrentNsid() instead. ")
+		fmt.Fprint(&msg, "\nUse ns/netns.CurrentNSID() instead. ")
 		fmt.Fprint(&msg, "It returns the cached process-startup value, captured once on a pristine thread; ")
 		fmt.Fprint(&msg, "direct reads of /proc/self/ns/net are per-thread and unsafe under concurrent setns.")
 		t.Fatal(msg.String())

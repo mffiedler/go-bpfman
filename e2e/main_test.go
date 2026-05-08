@@ -101,16 +101,16 @@ func TestMain(m *testing.M) {
 	// pristine TestMain goroutine (which runs on Go's main OS
 	// thread before any test goroutine has had a chance to call
 	// setns). The ns/netns package caches this under a sync.Once
-	// and every later call to GetCurrentNsid / GetNsid("")
-	// returns the captured value, regardless of which thread the
-	// caller has landed on. Without this priming the first
-	// caller might be a goroutine that an upstream library has
-	// left in a non-root netns, and the cached value would be
-	// wrong for the rest of the run. Failure here means
-	// /proc/self/ns/net is unreadable, which makes the rest of
-	// the suite meaningless -- abort loudly rather than carry on
-	// against a stale cached zero.
-	if _, err := netns.GetCurrentNsid(); err != nil {
+	// and every later call to CurrentNSID / NSID("") returns the
+	// captured value, regardless of which thread the caller has
+	// landed on. Without this priming the first caller might be
+	// a goroutine that an upstream library has left in a
+	// non-root netns, and the cached value would be wrong for
+	// the rest of the run. Failure here means /proc/self/ns/net
+	// is unreadable, which makes the rest of the suite
+	// meaningless -- abort loudly rather than carry on against a
+	// stale cached zero.
+	if _, err := netns.CurrentNSID(); err != nil {
 		panic(fmt.Errorf("e2e: prime ns/netns capture: %v", err))
 	}
 

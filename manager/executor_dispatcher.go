@@ -73,7 +73,7 @@ func (e *executor) rebuildXDPDispatcher(
 		Ifname:      ops.ifname,
 	}
 
-	nsid, err := netns.GetNsid(ops.netnsPath)
+	nsid, err := netns.NSID(ops.netnsPath)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("get nsid: %w", err)
 	}
@@ -374,7 +374,7 @@ func (e *executor) rebuildTCDispatcher(
 		Ifname:      ops.ifname,
 	}
 
-	nsid, err := netns.GetNsid(ops.netnsPath)
+	nsid, err := netns.NSID(ops.netnsPath)
 	if err != nil {
 		return extensionResult{}, fmt.Errorf("get nsid: %w", err)
 	}
