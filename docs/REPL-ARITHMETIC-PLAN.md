@@ -303,7 +303,7 @@ $count + 1
 $count > $doubled / 3
 ```
 
-Verify the gallery still parses with `bpfman repl --check -f`
+Verify the gallery still parses with `bpfman-shell repl --check -f`
 after the update.
 
 ## Implementation order

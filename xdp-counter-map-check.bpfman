@@ -5,7 +5,7 @@
 # attached but actually processed packets.
 #
 # Requires root. Run with:
-#   sudo bpfman repl -f xdp-counter-map-check.bpfman
+#   sudo bpfman-shell repl -f xdp-counter-map-check.bpfman
 #
 # Uses the xdp_stats program from the bpfman go-xdp-counter example.
 # That program maintains a per-CPU array map keyed by XDP action,

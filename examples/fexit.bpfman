@@ -10,7 +10,7 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman repl -f examples/fexit.bpfman
+#   sudo bpfman-shell repl -f examples/fexit.bpfman
 
 let prog = [bpfman program load file \
     --path e2e/testdata/bpf/fentry_counter.bpf.o \

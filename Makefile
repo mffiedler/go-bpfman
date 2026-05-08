@@ -643,7 +643,7 @@ test-e2e: $(BIN_DIR)/e2e.test
 # stage) and invoke `run-e2e-scripts` directly on the runner
 # without re-triggering the build deps. Local invocations of
 # `test-e2e-scripts` still build first.
-build-e2e-scripts: bpfman-compile $(BIN_DIR)/e2e.test
+build-e2e-scripts: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
 
 run-e2e-scripts:
 	@echo "Running REPL e2e scripts (requires root)..."
@@ -656,7 +656,7 @@ test-e2e-scripts: build-e2e-scripts run-e2e-scripts
 # walk-throughs; running them in CI catches drift between the
 # shipped examples and the actual CLI surface. Pass TEST=<name> to
 # restrict to scripts whose filename contains <name>.
-test-examples: bpfman-compile $(BIN_DIR)/e2e.test
+test-examples: bpfman-compile bpfman-shell-compile $(BIN_DIR)/e2e.test
 	@echo "Running REPL example scripts (requires root)..."
 	BIN_DIR=$(BIN_DIR) hack/test-examples.sh $(TEST)
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# Run every REPL script under e2e/scripts/ against the built bpfman
-# binary. Each script executes from e2e/ so testdata paths match
-# the Go e2e tests. The loop reports failures as it goes and exits
-# non-zero at the end if any script failed.
+# Run every REPL script under e2e/scripts/ against the built
+# bpfman-shell binary. Each script executes from e2e/ so testdata
+# paths match the Go e2e tests. The loop reports failures as it goes
+# and exits non-zero at the end if any script failed.
 #
 # Usage: test-e2e-scripts.sh [filter]
 #   filter  substring match against the script basename (optional)
 #
 # Environment:
-#   BIN_DIR   directory containing the built bpfman binary
+#   BIN_DIR   directory containing the built bpfman-shell binary
 #             (default: bin)
 
 set -euo pipefail
@@ -25,7 +25,7 @@ for f in e2e/scripts/*.bpfman; do
         continue
     fi
     printf "=== %s ===\n" "$name"
-    if (cd e2e && sudo "../$bin_dir/bpfman" repl -f "scripts/$name"); then
+    if (cd e2e && sudo "../$bin_dir/bpfman-shell" repl -f "scripts/$name"); then
         echo "    pass: $name"
     else
         echo "    FAIL: $name"

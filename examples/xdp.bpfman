@@ -6,7 +6,7 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman repl -f examples/xdp.bpfman
+#   sudo bpfman-shell repl -f examples/xdp.bpfman
 
 require ok exec ip link add bpfman-xdp type dummy
 require ok exec ip link set bpfman-xdp up

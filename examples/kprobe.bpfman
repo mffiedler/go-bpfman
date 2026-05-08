@@ -6,7 +6,7 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman repl -f examples/kprobe.bpfman
+#   sudo bpfman-shell repl -f examples/kprobe.bpfman
 
 let prog = [bpfman program load file \
     --path e2e/testdata/bpf/kprobe_counter.bpf.o \

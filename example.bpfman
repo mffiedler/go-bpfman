@@ -19,7 +19,7 @@
 # Runs against a dummy interface so it is safe on any host.  Needs
 # root and bpftool.  Run with:
 #
-#   sudo bpfman repl -f example.bpfman
+#   sudo bpfman-shell repl -f example.bpfman
 
 # ---- Prerequisite probes -------------------------------------------
 

@@ -524,7 +524,7 @@ func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 
 	// Accumulate physical lines into logical statements, mirroring the
 	// continuation logic that replLoop uses for the interactive REPL
-	// and for `bpfman repl -f`. Without this, multi-line forms in a
+	// and for `bpfman-shell repl -f`. Without this, multi-line forms in a
 	// sourced file (def / if / foreach / retry blocks, command
 	// substitutions that span lines) would each fail to parse on
 	// their first line because the open brace or bracket has not yet

@@ -9,7 +9,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman repl -f scripts/TestLoadWithMetadataAndGlobalData.bpfman
+#   sudo bpfman-shell repl -f scripts/TestLoadWithMetadataAndGlobalData.bpfman
 #
 # Requires root. Does not require bpftool.
 

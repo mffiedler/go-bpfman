@@ -9,7 +9,7 @@
 # without edits.
 #
 # Run from the repo root with:
-#   sudo bpfman repl -f examples/tracepoint-matches.bpfman
+#   sudo bpfman-shell repl -f examples/tracepoint-matches.bpfman
 
 let prog = [bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \

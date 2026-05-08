@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Run every REPL script under examples/ against the built bpfman
-# binary. Each script executes from the repo root because the
-# scripts reference testdata with paths like
+# Run every REPL script under examples/ against the built
+# bpfman-shell binary. Each script executes from the repo root
+# because the scripts reference testdata with paths like
 # "e2e/testdata/bpf/<obj>.bpf.o". The loop reports failures as it
 # goes and exits non-zero at the end if any script failed.
 #
@@ -10,7 +10,7 @@
 #   filter  substring match against the script basename (optional)
 #
 # Environment:
-#   BIN_DIR   directory containing the built bpfman binary
+#   BIN_DIR   directory containing the built bpfman-shell binary
 #             (default: bin)
 
 set -euo pipefail
@@ -26,7 +26,7 @@ for f in examples/*.bpfman; do
         continue
     fi
     printf "=== %s ===\n" "$name"
-    if sudo "$bin_dir/bpfman" repl -f "$f"; then
+    if sudo "$bin_dir/bpfman-shell" repl -f "$f"; then
         echo "    pass: $name"
     else
         echo "    FAIL: $name"

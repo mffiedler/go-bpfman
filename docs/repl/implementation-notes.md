@@ -146,7 +146,7 @@ conditions (unusual but legal) work naturally.
 
 ## Parse-only check mode
 
-`bpfman repl --check` (or `-c`) reads the same input as a regular
+`bpfman-shell repl --check` (or `-c`) reads the same input as a regular
 REPL invocation but stops after tokenise and parse: no Session,
 Manager, or evaluator is constructed. It reports each chunk's
 first error with a `file:line:` prefix followed by the tokeniser
