@@ -416,55 +416,6 @@ func formatMetadata(meta map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// FormatProgramList formats a list of bpfman.Program according to the specified output flags.
-func FormatProgramList(programs []bpfman.Program, flags *OutputFlags) (string, error) {
-	format, err := flags.Format()
-	if err != nil {
-		return "", err
-	}
-	switch format {
-	case OutputFormatJSON:
-		return formatProgramListJSON(programs)
-	case OutputFormatTable:
-		return formatProgramListTable(programs), nil
-	case OutputFormatJSONPath:
-		return formatProgramListJSONPath(programs, flags.JSONPathExpr())
-	default:
-		return formatProgramListTable(programs), nil
-	}
-}
-
-func formatProgramListJSON(programs []bpfman.Program) (string, error) {
-	output, err := json.MarshalIndent(programs, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal result: %w", err)
-	}
-	return string(output) + "\n", nil
-}
-
-func formatProgramListJSONPath(programs []bpfman.Program, expr string) (string, error) {
-	return executeJSONPath(programs, expr)
-}
-
-func formatProgramListTable(programs []bpfman.Program) string {
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-
-	fmt.Fprintln(w, "PROGRAM ID\tTYPE\tNAME\tSOURCE")
-
-	for _, p := range programs {
-		id := p.Record.ProgramID
-		name := p.Record.Meta.Name
-		progType := p.Record.Load.ProgramType()
-		source := p.Record.Load.ObjectPath()
-
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", id, progType, name, source)
-	}
-
-	w.Flush()
-	return b.String()
-}
-
 // FormatLinkList formats a list of LinkRecord according to the specified output flags.
 func FormatLinkList(links []bpfman.LinkRecord, flags *OutputFlags) (string, error) {
 	format, err := flags.Format()
