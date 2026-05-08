@@ -64,6 +64,16 @@ const (
 	e2eModeEnv                     = "BPFMAN_E2E_MODE"
 	e2eModeUprobeTriggerCallMalloc = "uprobe-trigger-call-malloc"
 	e2eModeWorkloadDriver          = "workload-driver"
+	// e2eModeHelperInitProbe lets a parent test re-exec the e2e
+	// binary to verify package-init runs cleanly in a constrained
+	// mount namespace. Used by helper_init_test.go to reproduce
+	// the bpfman-ns subprocess environment where /proc may not
+	// be mounted. The handler simply prints the marker line and
+	// exits 0 -- if any imported package's init() touches a path
+	// that requires /proc, the binary panics before reaching
+	// here and the parent test sees the failure.
+	e2eModeHelperInitProbe = "helper-init-probe"
+	helperInitProbeMarker  = "HELPER_INIT_OK"
 )
 
 // selfExe is the absolute path of the running e2e.test binary,
@@ -84,6 +94,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	case e2eModeWorkloadDriver:
 		runWorkloadDriver()
+		os.Exit(0)
+	case e2eModeHelperInitProbe:
+		fmt.Println(helperInitProbeMarker)
 		os.Exit(0)
 	case "":
 		// normal test driver mode
