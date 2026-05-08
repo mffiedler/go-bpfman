@@ -278,45 +278,6 @@ func ParseTracepointName(s string) (TracepointName, error) {
 	return TracepointName{Group: group, Name: name}, nil
 }
 
-// ImagePullPolicy represents a CLI-friendly pull policy string.
-type ImagePullPolicy struct {
-	Value string
-}
-
-// ParseImagePullPolicy parses a pull policy string.
-func ParseImagePullPolicy(s string) (ImagePullPolicy, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ImagePullPolicy{Value: "IfNotPresent"}, nil
-	}
-
-	switch strings.ToLower(s) {
-	case "always", "ifnotpresent", "never":
-		return ImagePullPolicy{Value: s}, nil
-	default:
-		return ImagePullPolicy{}, fmt.Errorf("invalid pull policy %q: must be Always, IfNotPresent, or Never", s)
-	}
-}
-
-// ParseProgramTypes parses a slice of program type strings (case-insensitive).
-// Returns a set for O(1) lookup during filtering.
-func ParseProgramTypes(types []string) (map[bpfman.ProgramType]struct{}, error) {
-	result := make(map[bpfman.ProgramType]struct{}, len(types))
-	for _, raw := range types {
-		t := strings.TrimSpace(raw)
-		if t == "" {
-			continue
-		}
-		pt, err := bpfman.ParseProgramType(strings.ToLower(t))
-		if err != nil {
-			return nil, fmt.Errorf("unknown program type %q (valid: %s)",
-				raw, strings.Join(bpfman.ProgramTypeNames(), ", "))
-		}
-		result[pt] = struct{}{}
-	}
-	return result, nil
-}
-
 // ParseProgramTypesSlice parses a slice of program type strings (case-insensitive).
 // Returns a slice of ProgramType values.
 func ParseProgramTypesSlice(types []string) ([]bpfman.ProgramType, error) {
