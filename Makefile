@@ -449,7 +449,7 @@ LINT_DOCKERFILES := \
 # ---------------------------------------------------------------------------
 # Meta: default target, help, clean, version prints, bin directory.
 # ---------------------------------------------------------------------------
-all: bpfman-build
+all: bpfman-build bpfman-shell-build
 
 help:
 	@echo "Build:"
@@ -523,7 +523,7 @@ print-fedora-version:
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
-clean: clean-bpfman clean-bpf clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpf clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -740,6 +740,18 @@ bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
 
 clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman
+
+# bpfman-shell is the development / test / ops companion to bpfman.
+# It hosts the REPL, the DSL script runner, and (in time) the test
+# scaffolding subcommands. Production deployments must ship only
+# bin/bpfman; bin/bpfman-shell is intended for dev and CI.
+bpfman-shell-build: bpfman-fmt bpfman-shell-compile
+
+bpfman-shell-compile: | $(BIN_DIR)
+	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
+
+clean-bpfman-shell:
+	$(RM) $(BIN_DIR)/bpfman-shell
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
@@ -1137,6 +1149,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: all build-all clean clean-mrproper help lint lint-dockerfile lint-go lint-hack lint-make
 .PHONY: clean-bpf
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-proto bpfman-test-grpc bpfman-vet
+.PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
 .PHONY: ci ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
