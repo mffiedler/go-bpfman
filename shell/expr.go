@@ -108,9 +108,11 @@ type BinaryExpr struct {
 	Loc
 }
 
-// UnaryExpr is a single-operand predicate. Pred is one of the
-// recognised unary predicates (true, false, not-empty). Evaluation
-// produces a BoolValue.
+// UnaryExpr is a single-operand predicate. Pred is the only
+// surviving unary predicate, "not-empty"; truthiness is read
+// directly via AsBool on a single-arg expression assertion, and
+// "true"/"false" are bare boolean literals (see literalValue).
+// Evaluation produces a BoolValue.
 type UnaryExpr struct {
 	Pred    string
 	Operand Expr
@@ -261,13 +263,13 @@ func IsBinaryOp(s string) bool {
 
 // IsUnaryPred reports whether s is a recognised unary predicate in
 // the expression grammar. The nil check is handled as a prefix
-// verb in the assertion layer, not as a unary expression.
+// verb in the assertion layer, not as a unary expression. Truthy
+// boolean checks live in the strict comparison family: bare "true"
+// and "false" literals evaluate to BoolValue, "assert $flag"
+// reads truthiness directly via AsBool, and "$flag == true" stays
+// available for the explicit form.
 func IsUnaryPred(s string) bool {
-	switch s {
-	case "true", "false", "not-empty":
-		return true
-	}
-	return false
+	return s == "not-empty"
 }
 
 // EvalProgram executes each statement in prog against env in order.
@@ -1297,18 +1299,6 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 			return Value{}, fmt.Errorf("not-empty: %w", err)
 		}
 		return BoolValue(s != ""), nil
-	case "true":
-		s, err := operand.Scalar()
-		if err != nil {
-			return Value{}, fmt.Errorf("true: %w", err)
-		}
-		return BoolValue(s == "true"), nil
-	case "false":
-		s, err := operand.Scalar()
-		if err != nil {
-			return Value{}, fmt.Errorf("false: %w", err)
-		}
-		return BoolValue(s == "false"), nil
 	default:
 		return Value{}, fmt.Errorf("unknown unary predicate %q", e.Pred)
 	}

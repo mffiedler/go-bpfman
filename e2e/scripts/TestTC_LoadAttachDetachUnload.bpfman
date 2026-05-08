@@ -70,7 +70,7 @@ assert $link.record.details.direction == ingress
 assert $link.record.details.priority == 50
 assert $link.record.details.dispatcher_id > 0
 assert $link.record.details.revision > 0
-assert $link.status.kernel_seen == true
+assert $link.status.kernel_seen
 
 # Verify the dispatcher is visible to tc(8).
 require ok exec tc filter show dev veth-tc-host ingress

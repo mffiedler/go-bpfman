@@ -160,7 +160,7 @@ is used interactively, an unclosed `{` puts the line reader into a
 continuation state that accumulates lines until the braces balance.
 
 ```
-if $prog.record.status.kernel_seen == true {
+if $prog.record.status.kernel_seen {
     bpfman show program $prog.record.program_id
 } elif not-empty $prog.record.tag {
     bpfman show program $prog.record.program_id paths
@@ -206,7 +206,7 @@ location.
 
 ```
 foreach p in [bpfman program list -o json] {
-    if $p.record.meta.stale == true { continue }
+    if $p.record.meta.stale { continue }
     if $p.record.program_id == $target        { break }
     assert ok bpfman program get $p.record.program_id
 }
@@ -481,12 +481,15 @@ $count > $doubled / 3                # auto-prints a boolean
 
 ### Unary predicates
 
-- `true OPERAND` — tests whether the operand equals the string
-  `"true"`.
-- `false OPERAND` — tests whether the operand equals the string
-  `"false"`.
-- `not-empty OPERAND` — tests whether the operand is a non-empty
+- `not-empty OPERAND` -- tests whether the operand is a non-empty
   string.
+
+For boolean truthiness, use the operand directly as a single-arg
+expression assertion: `assert $flag` reads the bool via `AsBool`,
+`assert not $flag` negates. Bare `true` and `false` are boolean
+literals: `assert true` trivially passes, `assert false` fails.
+The explicit comparison `assert $flag == true` is still valid but
+redundant when `$flag` is already a `BoolValue`.
 
 ### Logical operators
 
@@ -502,7 +505,7 @@ Parentheses `(` `)` override precedence:
 
 ```
 if $count > 0 and $count < 100 { ... }
-if not $ready == true { ... }                 # not ($ready == true)
+if not $ready { ... }                         # truthiness via AsBool
 if $count == 0 or $count > 100 { ... }
 if ($flag1 or $flag2) and $enabled { ... }    # parens invert the default
 ```

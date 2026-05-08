@@ -95,9 +95,11 @@
                  "uprobe" "xdp"
                  ;; show subviews
                  "links" "maps" "paths" "summary"
-                 ;; assertion verbs (prefix unary / command-status)
-                 "contains" "fail" "false" "nil" "not" "not-empty"
-                 "ok" "path" "true"
+                 ;; assertion verbs (prefix unary / command-status).
+                 ;; "true" and "false" are bare boolean literals, not
+                 ;; predicates -- they get default face like other
+                 ;; literals.
+                 "contains" "fail" "nil" "not" "not-empty" "ok" "path"
                  ;; logical operators
                  "and" "or"
                  ;; foreach / retry auxiliaries

@@ -67,7 +67,7 @@ assert $link.record.program_id == $pid
 assert $link.record.details.interface == veth-tcx-host
 assert $link.record.details.direction == ingress
 assert $link.record.details.priority == 50
-assert $link.status.kernel_seen == true
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]

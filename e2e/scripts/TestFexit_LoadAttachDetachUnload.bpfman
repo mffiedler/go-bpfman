@@ -44,7 +44,7 @@ let linkID = $link.record.id
 assert $link.record.kind == fexit
 assert $link.record.program_id == $pid
 assert $link.record.details.fn_name == do_unlinkat
-assert $link.status.kernel_seen == true
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]

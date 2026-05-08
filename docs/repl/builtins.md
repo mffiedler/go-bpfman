@@ -143,7 +143,7 @@ which is almost always easier on the eye than nested brackets:
 ```
 let total  = $raw |> jq ".items | map(.v) | add"
 let big    = $raw |> jq ".items | length > 2"
-assert $big == true
+assert $big
 ```
 
 Note that `|` inside a `jq` filter string is jq's own pipe
@@ -163,7 +163,7 @@ token boundary is ordinary word content.
   collected into a list Value so the pipeline has a single
   bindable result.
 - A boolean result gets `OriginBool`, so `assert`/`require` work
-  directly on it (`assert $big == true`).
+  directly on it (`assert $big`).
 
 ### Errors
 

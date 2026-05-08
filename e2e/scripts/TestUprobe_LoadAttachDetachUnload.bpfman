@@ -60,8 +60,8 @@ assert $link.record.program_id == $pid
 assert $link.record.details.target == ../bin/e2e.test
 assert $link.record.details.fn_name == e2e_uprobe_call_malloc
 assert $link.record.details.offset == 0
-assert $link.record.details.retprobe == false
-assert $link.status.kernel_seen == true
+assert not $link.record.details.retprobe
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]

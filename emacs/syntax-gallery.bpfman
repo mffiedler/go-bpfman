@@ -105,8 +105,8 @@ assert $count == 5                  # numeric when both sides are numbers
 # ---- 6. Unary predicates (expression grammar) ----
 
 assert not-empty $name
-assert true      $flag
-assert false     $flag
+assert $flag
+assert not $flag
 
 # ---- 7. Prefix-verb assertions (outside expression grammar) ----
 
@@ -165,7 +165,7 @@ if $outer == yes {
 # ---- 10. One-liner blocks with `;' separator ----
 
 if $x > 0 { let a = 1; let b = 2; print a }
-if $ready == true { bpfman list programs; bpfman link list } else { require fail }
+if $ready { bpfman list programs; bpfman link list } else { require fail }
 
 # ---- 11. Aliases ----
 
@@ -384,11 +384,11 @@ foreach item in $progs {
 # polling terminate on wall-clock or attempt count.
 retry {
     let status = [bpfman program get 42 -o json]
-} until $status.ready == true or timeout 60s
+} until $status.ready or timeout 60s
 
 retry {
     let status = [bpfman program get 42 -o json]
-    if $status.ready == true { break }
+    if $status.ready { break }
 } until iteration 10
 
 retry {

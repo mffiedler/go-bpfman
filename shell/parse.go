@@ -1072,14 +1072,12 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 }
 
 // parsePredicate recognises a unary-predicate prefix applied to a
-// primary operand.  Because "true" and "false" are both
-// unary-predicate words AND common literals (e.g. the RHS of
-// "== true"), the rule is context-sensitive: a pred word
-// becomes a UnaryExpr only when the following token could be
-// its operand — a primary position, not a binary operator,
-// arithmetic operator, thread, or end of input.  Otherwise it
-// falls through to the tighter negate level where it is parsed
-// as a literal.
+// primary operand. The only surviving predicate is "not-empty";
+// "true" and "false" are now plain boolean literals. The rule is
+// still context-sensitive in shape because the predicate word
+// must actually have an operand to its right -- "not-empty" alone
+// at end of input falls through to the tighter negate level
+// where it is parsed as a literal.
 func (p *exprParser) parsePredicate() (Expr, error) {
 	if pred, ok := unaryPredFromToken(p.peek()); ok && p.operandFollowsPred() {
 		predTok := p.advance()

@@ -291,26 +291,6 @@ func TestEvalExpr_Unary_NotEmpty(t *testing.T) {
 	assert.False(t, b)
 }
 
-func TestEvalExpr_Unary_TrueFalse(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	s.Set("flag", StringValue("true"))
-	e := &UnaryExpr{Pred: "true", Operand: &VarRefExpr{Name: "flag"}}
-	v, err := EvalExpr(e, evalEnv(s))
-	require.NoError(t, err)
-	b, err := AsBool(v)
-	require.NoError(t, err)
-	assert.True(t, b)
-
-	e = &UnaryExpr{Pred: "false", Operand: &VarRefExpr{Name: "flag"}}
-	v, err = EvalExpr(e, evalEnv(s))
-	require.NoError(t, err)
-	b, err = AsBool(v)
-	require.NoError(t, err)
-	assert.False(t, b)
-}
-
 func TestExprFromArgs_Primary(t *testing.T) {
 	t.Parallel()
 
@@ -456,8 +436,8 @@ func TestIsBinaryOp(t *testing.T) {
 func TestIsUnaryPred(t *testing.T) {
 	t.Parallel()
 
-	true_ := []string{"true", "false", "not-empty"}
-	false_ := []string{"", "ok", "fail", "eq", "nil"}
+	true_ := []string{"not-empty"}
+	false_ := []string{"", "ok", "fail", "eq", "nil", "true", "false"}
 	for _, s := range true_ {
 		assert.True(t, IsUnaryPred(s), s)
 	}

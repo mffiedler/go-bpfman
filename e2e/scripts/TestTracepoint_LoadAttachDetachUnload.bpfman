@@ -52,7 +52,7 @@ assert $link.record.kind == tracepoint
 assert $link.record.program_id == $pid
 assert $link.record.details.group == syscalls
 assert $link.record.details.name == sys_enter_kill
-assert $link.status.kernel_seen == true
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]

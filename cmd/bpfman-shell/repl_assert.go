@@ -131,14 +131,34 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 
 // isExprAssertion reports whether args matches the shape of a
 // value-based assertion that should be routed through the expression
-// grammar: either [lhs op rhs] with a binary operator, or [pred
-// operand] with a unary predicate.
+// grammar: a single bool-shaped operand, [pred operand] with a
+// unary predicate, or [lhs op rhs] with a binary operator. The
+// single-arg form covers "assert $flag", "assert true", and any
+// parenthesised compound expression that already produces a boolean.
+// Bare prefix-verb names (e.g. "assert ok" with no command) fall
+// through to verb dispatch so the user gets a helpful arity error
+// rather than an opaque "not a boolean" diagnosis.
 func isExprAssertion(args []shell.Arg) bool {
 	switch len(args) {
+	case 1:
+		return !isPrefixVerbName(argText(args[0]))
 	case 2:
 		return shell.IsUnaryPred(argText(args[0]))
 	case 3:
 		return shell.IsBinaryOp(argText(args[1]))
+	}
+	return false
+}
+
+// isPrefixVerbName reports whether s names one of the prefix-verb
+// assertions handled by evalAssertVerb. Used by isExprAssertion's
+// single-arg branch to keep "assert ok" (and friends, with the
+// command argument forgotten) on the verb-dispatch path so the
+// user sees the verb's own arity error.
+func isPrefixVerbName(s string) bool {
+	switch s {
+	case "ok", "fail", "path", "contains", "nil":
+		return true
 	}
 	return false
 }
@@ -191,15 +211,11 @@ func formatExprFailure(e shell.Expr, session *shell.Session) string {
 			return fmt.Sprintf("expected %s to be nil", operand)
 		case "not-empty":
 			return fmt.Sprintf("expected non-empty string, got %q", operand)
-		case "true":
-			return fmt.Sprintf("expected %s to be true", operand)
-		case "false":
-			return fmt.Sprintf("expected %s to be false", operand)
 		default:
 			return fmt.Sprintf("expected predicate %s to hold on %s", x.Pred, operand)
 		}
 	}
-	return "assertion failed"
+	return fmt.Sprintf("expected %s to be true", exprScalar(e, session))
 }
 
 // exprScalar is a best-effort scalar stringification of an expression
@@ -240,7 +256,7 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return assertNil(session, ss)
 	case "==", "!=", "<", "<=", ">", ">=":
 		return assertResult{}, fmt.Errorf("%q is not a prefix verb; use infix form: assert <left> %s <right>", verb, verb)
-	case "true", "false", "not-empty":
+	case "not-empty":
 		return assertResult{}, fmt.Errorf("%q requires exactly one operand: assert %s <operand>", verb, verb)
 	default:
 		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)

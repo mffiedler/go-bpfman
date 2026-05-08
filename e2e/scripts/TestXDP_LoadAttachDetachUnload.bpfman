@@ -65,7 +65,7 @@ assert $link.record.kind == xdp
 assert $link.record.details.interface == veth-xdp-host
 assert $link.record.details.dispatcher_id > 0
 assert $link.record.details.revision > 0
-assert $link.status.kernel_seen == true
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]

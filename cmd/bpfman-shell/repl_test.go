@@ -2009,30 +2009,42 @@ func TestReplLoop_AssertContains(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_AssertTrue(t *testing.T) {
+func TestReplLoop_AssertSingleBoolExpr(t *testing.T) {
 	t.Parallel()
 
-	input := "assert true true\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_AssertFalse(t *testing.T) {
-	t.Parallel()
-
-	input := "assert false false\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
+	cases := []struct {
+		name      string
+		input     string
+		wantFail  bool
+		wantError string
+	}{
+		{"true_literal_passes", "assert true\n", false, ""},
+		{"false_literal_fails", "assert false\n", true, ""},
+		{"not_false_passes", "assert not false\n", false, ""},
+		{"compound_via_let", "let r = true and true\nassert $r\n", false, ""},
+		{"compound_or_via_let", "let r = false or true\nassert $r\n", false, ""},
+		{"non_bool_literal_errors", "assert hello\n", false, "condition is not a boolean"},
+		{"bare_prefix_verb_keeps_arity_error", "assert nil\n", false, "nil requires"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var errBuf bytes.Buffer
+			cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+			lr := NewScannerReader(strings.NewReader(tc.input), nil)
+			err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+			require.NoError(t, err)
+			if tc.wantError != "" {
+				assert.Contains(t, errBuf.String(), tc.wantError)
+				return
+			}
+			if tc.wantFail {
+				assert.Contains(t, errBuf.String(), "FAIL")
+			} else {
+				assert.Empty(t, errBuf.String())
+			}
+		})
+	}
 }
 
 func TestReplLoop_AssertOkHelp(t *testing.T) {

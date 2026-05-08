@@ -53,8 +53,8 @@ assert $link.record.kind == kprobe
 assert $link.record.program_id == $pid
 assert $link.record.details.fn_name == try_to_wake_up
 assert $link.record.details.offset == 0
-assert $link.record.details.retprobe == false
-assert $link.status.kernel_seen == true
+assert not $link.record.details.retprobe
+assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 let gotLink = [bpfman link get $linkID]
