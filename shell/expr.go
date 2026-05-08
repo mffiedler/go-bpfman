@@ -227,6 +227,13 @@ type Env struct {
 	// be non-nil or the evaluator reports an error.
 	ExecSubstitution func(args []Arg) (Value, error)
 
+	// ExecAssertStmt runs an AssertStmt: evaluate its expression,
+	// AsBool the result, apply the optional Negate, and dispatch
+	// failure-handling (printing, the session's assertion-failure
+	// counter, halt-on-require). Set by the REPL driver; nil
+	// makes any AssertStmt a runtime error.
+	ExecAssertStmt func(*AssertStmt, *Env) error
+
 	// PrintResult is called when a top-level ExprStmt produces a
 	// value.  It is the "REPL-style auto-print" hook: typing "$x"
 	// or "$x == 5" at the prompt lands here.  A nil callback
@@ -317,6 +324,8 @@ func stmtLoc(s Stmt) Loc {
 		return v.Loc
 	case *DefStmt:
 		return v.Loc
+	case *AssertStmt:
+		return v.Loc
 	}
 	return Loc{}
 }
@@ -358,6 +367,11 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return errContinue
 	case *DefStmt:
 		return evalDefStmt(s, env)
+	case *AssertStmt:
+		if env.ExecAssertStmt == nil {
+			return locErrorf(s.Loc, "assert/require has no executor on the env")
+		}
+		return env.ExecAssertStmt(s, env)
 	default:
 		return fmt.Errorf("unknown statement type %T", stmt)
 	}
@@ -1447,19 +1461,21 @@ func argDisplay(a Arg) string {
 	}
 }
 
-// AsBool extracts a boolean from a Value. It succeeds only for
-// OriginBool values; other origins return a type error. This is
-// what if/elif/assert use to check condition expressions — there
-// is no generic truthiness.
+// AsBool extracts a boolean from a Value. It succeeds when the
+// underlying raw value is a Go bool, regardless of the OriginKind
+// tag: comparison results carry OriginBool explicitly, while a
+// path lookup that lands on a JSON boolean field arrives with
+// kind OriginUnknown but raw type bool. Both should drive
+// if/assert truthiness without forcing the caller to add a
+// redundant "== true". Anything else returns a type error.
 func AsBool(v Value) (bool, error) {
-	if v.Kind() != OriginBool {
-		return false, fmt.Errorf("condition is not a boolean (got %s); use a comparison or unary predicate", v.Kind())
+	if b, ok := v.Raw().(bool); ok {
+		return b, nil
 	}
-	b, ok := v.Raw().(bool)
-	if !ok {
+	if v.Kind() == OriginBool {
 		return false, fmt.Errorf("condition has boolean origin but non-boolean value %T", v.Raw())
 	}
-	return b, nil
+	return false, fmt.Errorf("condition is not a boolean (got %s); use a comparison or unary predicate", v.Kind())
 }
 
 // exprLoc extracts the Loc embedded in any Expr variant. Used for

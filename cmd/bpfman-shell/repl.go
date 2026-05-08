@@ -392,6 +392,7 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 		Session:          session,
 		ExecCommand:      makeExecCommand(ctx, cli, mgr, session, loc),
 		ExecSubstitution: makeExecSubstitution(ctx, cli, mgr, session, loc),
+		ExecAssertStmt:   makeExecAssertStmt(cli, session, loc),
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
 		},

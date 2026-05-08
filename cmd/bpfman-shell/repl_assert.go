@@ -23,6 +23,40 @@ type assertResult struct {
 	message string
 }
 
+// makeExecAssertStmt returns the Env.ExecAssertStmt callback used
+// by the new expression-form path. It evaluates the AssertStmt's
+// expression, applies AsBool and the optional negation, and routes
+// pass/fail through the same printing, counter, and halt-on-require
+// machinery the legacy verb-form path uses. The returned function
+// closes over the CLI, session, and source-location prefix so the
+// caller does not need to thread them through Env explicitly.
+func makeExecAssertStmt(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) func(*shell.AssertStmt, *shell.Env) error {
+	return func(s *shell.AssertStmt, env *shell.Env) error {
+		v, err := shell.EvalExpr(s.Expr, env)
+		if err != nil {
+			return err
+		}
+		pass, err := shell.AsBool(v)
+		if err != nil {
+			return err
+		}
+		if pass {
+			return nil
+		}
+		label := "assert"
+		if s.IsRequire {
+			label = "require"
+		}
+		message := formatExprFailure(s.Expr, session)
+		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, message)
+		if s.IsRequire {
+			return errRequireFailed
+		}
+		session.RecordAssertFailure()
+		return nil
+	}
+}
+
 // replAssertRequire handles both "assert" and "require" commands.
 // When isRequire is true, failure halts execution immediately via
 // errRequireFailed. When false, failure is recorded in the session

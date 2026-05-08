@@ -125,6 +125,24 @@ type RetryStmt struct {
 	Loc
 }
 
+// AssertStmt is the expression-form of "assert"/"require": the
+// keyword followed by a single boolean expression. Verb-form
+// assertions ("assert ok exec ...", "assert nil $var", matches
+// blocks) stay on the CommandStmt path; the parser routes between
+// the two by peeking the first non-"not" token after the keyword.
+//
+// Negation is encoded inside Expr as a NotExpr (the expression
+// grammar already handles "not"); AssertStmt itself carries no
+// separate negate flag. The shell layer does not own the
+// assertion's failure-reporting policy: evaluation delegates to
+// Env.ExecAssertStmt, which the REPL driver supplies with the
+// printing, counter, and halt-on-require behaviour.
+type AssertStmt struct {
+	IsRequire bool
+	Expr      Expr
+	Loc
+}
+
 // DefStmt declares a user-defined command. Name is the command name,
 // Params is the ordered parameter list (parameter names, no default
 // or type information), and Body is the parsed block executed at
@@ -146,6 +164,7 @@ func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
 func (*RetryStmt) stmtNode()    {}
 func (*DefStmt) stmtNode()      {}
+func (*AssertStmt) stmtNode()   {}
 
 // Parse turns a token stream into a *Program. Every parse error
 // carries a source location derived from the offending token.
@@ -246,12 +265,85 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseContinueStmt()
 		case "def":
 			return p.parseDefStmt()
+		case "assert", "require":
+			if p.assertTakesExprForm() {
+				return p.parseAssertStmt(t.Text == "require")
+			}
 		}
 	}
 	if leadsExpression(t) {
 		return p.parseExprStmt()
 	}
 	return p.parseCommandStmt()
+}
+
+// assertTakesExprForm reports whether the assert/require statement
+// at the current cursor should be parsed as the new expression
+// form (AssertStmt) rather than the legacy command form
+// (CommandStmt). The peek must not consume any tokens. The rule:
+// after the keyword, optionally skip a leading "not", look at the
+// next meaningful token; if it names a verb-style assertion
+// (ok/fail/path/contains/nil), or if a "matches {" tail appears
+// anywhere in the buffered statement, fall through to the legacy
+// path. Otherwise the statement has expression-grade content.
+func (p *parser) assertTakesExprForm() bool {
+	pos := p.pos + 1
+	if pos < len(p.tokens) && p.tokens[pos].Kind == TokenWord && p.tokens[pos].Text == "not" {
+		pos++
+	}
+	for pos < len(p.tokens) && p.tokens[pos].Kind == TokenSep {
+		pos++
+	}
+	if pos >= len(p.tokens) {
+		return true
+	}
+	t := p.tokens[pos]
+	if t.Kind == TokenWord {
+		switch t.Text {
+		case "ok", "fail", "path", "contains", "nil":
+			return false
+		}
+	}
+	for j := pos; j < len(p.tokens); j++ {
+		jt := p.tokens[j]
+		if jt.Kind == TokenSep {
+			break
+		}
+		if jt.Kind == TokenWord && (jt.Text == "{" || jt.Text == "}") {
+			if jt.Text == "{" && j > 0 && p.tokens[j-1].Kind == TokenWord && p.tokens[j-1].Text == "matches" {
+				return false
+			}
+			break
+		}
+	}
+	return true
+}
+
+// parseAssertStmt consumes "assert"/"require" followed by an
+// expression body, returning an AssertStmt. The caller (parseStmt)
+// has already established that the form is expression-shaped via
+// assertTakesExprForm. A leading "not" is parsed by the expression
+// grammar as a NotExpr, so this function does not consume it
+// eagerly: that would race with the expression parser's own
+// handling and produce a doubly-negated tree.
+func (p *parser) parseAssertStmt(isRequire bool) (Stmt, error) {
+	keywordTok := p.advance()
+	tokens, err := p.takeStmtTokens(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, locErrorf(keywordTok.Loc, "%s requires an expression target", keywordTok.Text)
+	}
+	expr, err := parseExpression(tokens)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", keywordTok.Text, err)
+	}
+	return &AssertStmt{
+		IsRequire: isRequire,
+		Expr:      expr,
+		Loc:       keywordTok.Loc,
+	}, nil
 }
 
 // leadsExpression reports whether a token can only start an

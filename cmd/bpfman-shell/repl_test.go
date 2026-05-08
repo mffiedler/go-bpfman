@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -1740,9 +1741,15 @@ func TestReplLoop_AssertNeFail(t *testing.T) {
 	assert.Equal(t, 1, session.AssertFailures())
 }
 
-func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
+func TestReplLoop_AssertNotWithInfix(t *testing.T) {
 	t.Parallel()
 
+	// "assert not hello == world" parses as a NotExpr wrapping a
+	// BinaryExpr (precedence: "not" looser than comparison). It
+	// evaluates true because hello != world, so the assertion
+	// passes silently. The legacy guardrail that rejected this
+	// shape was a workaround for the rebundle-args dispatch
+	// pipeline; the parser now handles the precedence directly.
 	input := "assert not hello == world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -1751,7 +1758,8 @@ func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "not\" is not supported with infix")
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, 0, session.AssertFailures())
 }
 
 func TestReplLoop_RequireHaltsExecution(t *testing.T) {
@@ -2047,6 +2055,45 @@ func TestReplLoop_AssertSingleBoolExpr(t *testing.T) {
 	}
 }
 
+func TestReplLoop_AssertCompoundExpression(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		input     string
+		wantFail  bool
+		wantError string
+	}{
+		{"and_passes", "let a = hello\nlet b = world\nassert (not-empty $a) and (not-empty $b)\n", false, ""},
+		{"and_fails", "let a = hello\nlet b = ''\nassert (not-empty $a) and (not-empty $b)\n", true, ""},
+		{"or_passes", "let a = ''\nlet b = world\nassert (not-empty $a) or (not-empty $b)\n", false, ""},
+		{"or_fails", "let a = ''\nlet b = ''\nassert (not-empty $a) or (not-empty $b)\n", true, ""},
+		{"not_compound", "let a = hello\nassert not (not-empty $a)\n", true, ""},
+		{"numeric_compound", "let n = 50\nassert $n > 0 and $n < 100\n", false, ""},
+		{"numeric_compound_fail", "let n = 200\nassert $n > 0 and $n < 100\n", true, ""},
+		{"deep_paren", "assert ((1 == 1) and (2 == 2)) or (3 == 4)\n", false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var errBuf bytes.Buffer
+			cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+			lr := NewScannerReader(strings.NewReader(tc.input), nil)
+			err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+			require.NoError(t, err)
+			if tc.wantError != "" {
+				assert.Contains(t, errBuf.String(), tc.wantError)
+				return
+			}
+			if tc.wantFail {
+				assert.Contains(t, errBuf.String(), "FAIL")
+			} else {
+				assert.Empty(t, errBuf.String())
+			}
+		})
+	}
+}
+
 func TestReplLoop_AssertOkHelp(t *testing.T) {
 	t.Parallel()
 
@@ -2131,7 +2178,7 @@ func TestReplLoop_AssertNumericGeFail(t *testing.T) {
 	assert.Equal(t, 1, session.AssertFailures())
 }
 
-func TestReplLoop_AssertUnknownVerb(t *testing.T) {
+func TestReplLoop_AssertExtraTokens(t *testing.T) {
 	t.Parallel()
 
 	input := "assert bogusverb x y\n"
@@ -2141,13 +2188,14 @@ func TestReplLoop_AssertUnknownVerb(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "unknown assertion verb")
+	assert.Contains(t, errBuf.String(), "unexpected token")
 }
 
-func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
+func TestReplLoop_AssertBareBinaryOpErrors(t *testing.T) {
 	t.Parallel()
 
-	// Phase 2: prefix binary verbs are removed; infix form required.
+	// "assert == hello world" routes through the expression-form
+	// path, which rejects "==" at the start of an expression.
 	input := "assert == hello world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -2155,11 +2203,10 @@ func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "not a prefix verb")
-	assert.Contains(t, errBuf.String(), "infix form")
+	assert.Contains(t, errBuf.String(), "assert: ")
 }
 
-func TestReplLoop_AssertNoVerb(t *testing.T) {
+func TestReplLoop_AssertNoTarget(t *testing.T) {
 	t.Parallel()
 
 	input := "assert\n"
@@ -2169,10 +2216,10 @@ func TestReplLoop_AssertNoVerb(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "expected an assertion")
+	assert.Contains(t, errBuf.String(), "requires an expression target")
 }
 
-func TestReplLoop_AssertNotNoVerb(t *testing.T) {
+func TestReplLoop_AssertNotNoTarget(t *testing.T) {
 	t.Parallel()
 
 	input := "assert not\n"
@@ -2182,7 +2229,7 @@ func TestReplLoop_AssertNotNoVerb(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "expected a verb after")
+	assert.NotEmpty(t, errBuf.String())
 }
 
 func TestReplLoop_SetWithExpandedVar(t *testing.T) {
@@ -2191,7 +2238,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 	session := shell.NewSession()
 	session.Set("prog", shell.ValueFromMap(map[string]any{
 		"record": map[string]any{
-			"program_id": "199421",
+			"program_id": json.Number("199421"),
 		},
 	}))
 
