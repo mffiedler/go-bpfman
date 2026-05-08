@@ -10,11 +10,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
 
 // replVars lists all session variables and their types.
-func replVars(cli *CLI, session *shell.Session) error {
+func replVars(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.Names()
 	if len(names) == 0 {
 		return cli.PrintOut("No variables defined.\n")
@@ -54,7 +55,7 @@ func applyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
 
 // replAlias defines a first-token alias. Syntax: alias <name> = <expansion>.
 // The name must not collide with shell commands or "bpfman".
-func replAlias(cli *CLI, session *shell.Session, args []string) error {
+func replAlias(cli *bpfmancli.CLI, session *shell.Session, args []string) error {
 	if len(args) != 3 || args[1] != "=" {
 		return fmt.Errorf("usage: alias <name> = <expansion>")
 	}
@@ -73,7 +74,7 @@ func replAlias(cli *CLI, session *shell.Session, args []string) error {
 }
 
 // replUnalias removes one or more alias bindings.
-func replUnalias(cli *CLI, session *shell.Session, args []string) error {
+func replUnalias(cli *bpfmancli.CLI, session *shell.Session, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("unalias requires at least one alias name")
 	}
@@ -87,7 +88,7 @@ func replUnalias(cli *CLI, session *shell.Session, args []string) error {
 }
 
 // replDefs lists all user-defined commands and their parameter lists.
-func replDefs(cli *CLI, session *shell.Session) error {
+func replDefs(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.DefNames()
 	if len(names) == 0 {
 		return cli.PrintOut("No defs defined\n")
@@ -115,7 +116,7 @@ func replUndef(session *shell.Session, args []string) error {
 }
 
 // replAliases lists all defined aliases.
-func replAliases(cli *CLI, session *shell.Session) error {
+func replAliases(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.AliasNames()
 	if len(names) == 0 {
 		return cli.PrintOut("No aliases defined\n")
@@ -129,7 +130,7 @@ func replAliases(cli *CLI, session *shell.Session) error {
 }
 
 // replUnset removes one or more variable bindings from the session.
-func replUnset(cli *CLI, session *shell.Session, args []string) error {
+func replUnset(cli *bpfmancli.CLI, session *shell.Session, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("unset requires at least one variable name")
 	}
@@ -159,7 +160,7 @@ func replUnset(cli *CLI, session *shell.Session, args []string) error {
 // are joined by a single space and terminated by one newline,
 // matching how Python and JavaScript spread multiple arguments
 // across a print call.
-func replPrint(cli *CLI, args []shell.Arg) error {
+func replPrint(cli *bpfmancli.CLI, args []shell.Arg) error {
 	if len(args) == 0 {
 		return fmt.Errorf("print requires at least one argument: print $var[.path] | [cmd] | [[expr]] | \"literal\" ...")
 	}
@@ -212,7 +213,7 @@ func printValue(arg shell.Arg) (shell.Value, error) {
 // writeValue renders a shell.Value onto cli: nil as "null", scalars
 // as plain text, structured values as indented JSON. Shared between
 // print and any other "print me this value" caller.
-func writeValue(cli *CLI, v shell.Value) error {
+func writeValue(cli *bpfmancli.CLI, v shell.Value) error {
 	if v.IsNil() {
 		return cli.PrintOut("null\n")
 	}

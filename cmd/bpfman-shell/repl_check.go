@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
 
@@ -25,7 +26,7 @@ import (
 // Manager, or evaluator is involved. Returns ErrSilent when any
 // error was reported so the process exits non-zero without an extra
 // message from Kong.
-func (c *ReplCmd) runCheck(cli *CLI) error {
+func (c *ReplCmd) runCheck(cli *bpfmancli.CLI) error {
 	reader, err := c.checkReader()
 	if err != nil {
 		return err

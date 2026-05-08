@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/shell"
 )
@@ -26,7 +27,7 @@ type assertResult struct {
 // When isRequire is true, failure halts execution immediately via
 // errRequireFailed. When false, failure is recorded in the session
 // counter and execution continues.
-func replAssertRequire(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
+func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
 		return fmt.Errorf("expected an assertion (e.g. \"$a eq $b\", \"true $flag\", \"ok exec ...\")")
 	}
@@ -226,7 +227,7 @@ func exprScalar(e shell.Expr, session *shell.Session) string {
 // fail), filesystem checks (path), and string containment
 // (contains). Value-based comparisons and unary predicates go
 // through the expression path (see evalExprAssertion).
-func evalAssertVerb(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
+func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
 	switch verb {
 	case "ok":
@@ -270,7 +271,7 @@ func assertNil(session *shell.Session, args []string) (assertResult, error) {
 // runCommand executes a command through both the shell command layer
 // and the domain dispatch layer. It is used by assertion verbs (ok,
 // fail) to test whether a sub-command succeeds or fails.
-func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
+func runCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
 	handled, _, err := replShellCmd(ctx, cli, mgr, session, args, sourceLoc{})
 	if err != nil {
 		return err
@@ -282,7 +283,7 @@ func runCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *sh
 	return err
 }
 
-func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
+func assertOk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("ok requires a command")
 	}
@@ -299,7 +300,7 @@ func assertOk(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 	}, nil
 }
 
-func assertFail(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
+func assertFail(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
 		return assertResult{}, fmt.Errorf("fail requires a command")
 	}

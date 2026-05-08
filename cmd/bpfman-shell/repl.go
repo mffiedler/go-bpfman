@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/shell"
 	"github.com/frobware/go-bpfman/version"
@@ -39,7 +40,7 @@ var errScriptError = errors.New("script error")
 // --check is set, Run short-circuits to a parse-only mode that reads
 // the same input, reports syntax errors, and exits without touching
 // the manager, session, or evaluator.
-func (c *ReplCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ReplCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if c.Check {
 		return c.runCheck(cli)
 	}
@@ -99,7 +100,7 @@ func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *
 // shell.Tokenise. Variable assignment and expansion use the
 // shell.Session. When file is non-empty, error messages include a
 // file:line: prefix for compiler-style diagnostics.
-func replLoop(ctx context.Context, cli *CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
+func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
 	var lineNo int
 	var buf strings.Builder
 	var startLine int
@@ -307,7 +308,7 @@ var shellCommands = map[string]bool{
 // non-nil for commands that produce an assignable result (e.g. exec).
 // Returns (false, Value{}, nil) if the command is not a shell command
 // and should be dispatched to the domain layer.
-func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
+func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
 	if len(args) == 0 {
 		return false, shell.Value{}, nil
 	}
@@ -365,7 +366,7 @@ func replShellCmd(ctx context.Context, cli *CLI, mgr *manager.Manager, session *
 // interactive mode (loc has no file), non-fatal errors are printed
 // and replEval returns nil so the session continues. In script mode
 // (loc has a file), errors return errScriptError to halt execution.
-func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
+func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
 	scriptErr := func(format string, args ...any) error {
 		_ = cli.PrintErrf(format, args...)
 		if loc.file != "" {
@@ -411,7 +412,7 @@ func replEval(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shel
 // The returned Value is ignored by the evaluator for top-level
 // commands; it is still produced so shell builtins can compute
 // values that callers happen to observe in tests.
-func makeExecCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
+func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
 	return func(args []shell.Arg) (shell.Value, error) {
 		if len(args) == 0 {
 			return shell.Value{}, nil
@@ -432,7 +433,7 @@ func makeExecCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, sessio
 // Output is suppressed so bindings do not clutter the terminal; the
 // returned Value must be non-nil or the caller reports an error.
 // Alias expansion applies to the first argument before dispatch.
-func makeExecSubstitution(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
+func makeExecSubstitution(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
 	return func(args []shell.Arg) (shell.Value, error) {
 		args = applyAlias(session, args)
 		if len(args) == 0 {
@@ -506,7 +507,7 @@ const replSourcingKey replContextKey = iota
 // current session. The sourced file shares all variable bindings with
 // the caller. Nested source commands are rejected to prevent
 // unbounded recursion.
-func replSource(ctx context.Context, cli *CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
+func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
 	if ctx.Value(replSourcingKey) != nil {
 		return fmt.Errorf("source cannot be used inside a sourced file")
 	}
@@ -590,7 +591,7 @@ var domainNouns = map[string]bool{
 // Parsing and execution are fully decoupled: parseCommand routes
 // arguments to the per-command parser and returns a typed Command
 // node, then execCommand dispatches execution via a type-switch.
-func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
+func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 {
 		return shell.Value{}, nil
 	}
@@ -611,7 +612,7 @@ func replDispatch(ctx context.Context, cli *CLI, mgr *manager.Manager, args []sh
 	return execCommand(ctx, cli, mgr, cmd)
 }
 
-func replHelp(cli *CLI) error {
+func replHelp(cli *bpfmancli.CLI) error {
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
 	b.WriteString("\n")
@@ -698,6 +699,6 @@ func replHistoryPath() (string, error) {
 }
 
 // replVersion prints version information.
-func replVersion(cli *CLI) error {
+func replVersion(cli *bpfmancli.CLI) error {
 	return cli.PrintOut(version.Get().Long())
 }

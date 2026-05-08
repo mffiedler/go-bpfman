@@ -37,7 +37,7 @@ type loadFileResult struct {
 }
 
 // Run executes the load file command.
-func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -50,14 +50,14 @@ func (c *LoadFileCmd) Run(cli *CLI, ctx context.Context) error {
 // executeLoadFileResult is the shared implementation for loading a
 // BPF program from a local object file, returning the result without
 // formatting. Both the CLI command and the REPL call this function.
-func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
+func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
 	// Validate object file exists (before acquiring lock)
 	objPath, err := bpfmancli.ParseObjectPath(c.Path)
 	if err != nil {
 		return loadFileResult{}, err
 	}
 
-	return RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+	return bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {
@@ -101,7 +101,7 @@ func executeLoadFileResult(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 // executeLoadFile is the shared implementation for loading a BPF
 // program from a local object file. The CLI command calls this
 // function; the REPL uses executeLoadFileResult directly.
-func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *LoadFileCmd) error {
+func executeLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) error {
 	result, err := executeLoadFileResult(ctx, cli, mgr, c)
 	if err != nil {
 		return err

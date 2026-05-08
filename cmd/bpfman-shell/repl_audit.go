@@ -11,13 +11,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
-func replAuditCheckup(ctx context.Context, cli *CLI, mgr *manager.Manager) error {
-	plan, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCPlan, error) {
+func replAuditCheckup(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager) error {
+	plan, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCPlan, error) {
 		p, pErr := mgr.ComputeGC(ctx, writeLock, manager.GCOptions{})
 		if pErr != nil {
 			return p, fmt.Errorf("audit failed: %w", pErr)
@@ -30,7 +31,7 @@ func replAuditCheckup(ctx context.Context, cli *CLI, mgr *manager.Manager) error
 	return cli.PrintOut(renderAuditPlan(plan, repairFooterREPL))
 }
 
-func replAuditExplain(cli *CLI, args []string) error {
+func replAuditExplain(cli *bpfmancli.CLI, args []string) error {
 	if len(args) == 0 {
 		var out strings.Builder
 		out.WriteString("Available coherency rules:\n\n")

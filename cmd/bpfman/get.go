@@ -16,7 +16,7 @@ type GetProgramCmd struct {
 }
 
 // Run executes the get program command.
-func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *GetProgramCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -42,7 +42,7 @@ type GetLinkCmd struct {
 }
 
 // Run executes the get link command.
-func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *GetLinkCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/shell"
 )
@@ -225,7 +226,7 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	}, "\n")
 
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -348,7 +349,7 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 
 	input := "vars\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -366,7 +367,7 @@ func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
 	// literal under the widened "[EXPR]" grammar.
 	input := "let x = [alias a = b]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -379,7 +380,7 @@ func TestReplLoop_UndefinedVariable(t *testing.T) {
 
 	input := "bpfman show program $x.id\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -396,7 +397,7 @@ func TestReplLoop_QuotedHashNotComment(t *testing.T) {
 	// appear in stdout to prove it survived tokenisation.
 	input := "\"bogus#notcomment\"\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -422,7 +423,7 @@ func TestReplLoop_Unset(t *testing.T) {
 
 	input := "unset foo\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -442,7 +443,7 @@ func TestReplLoop_UnsetMultiple(t *testing.T) {
 	session.Set("c", shell.StringValue("3"))
 
 	input := "unset a b\n"
-	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -460,7 +461,7 @@ func TestReplLoop_UnsetUndefined(t *testing.T) {
 
 	input := "unset nosuch\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -473,7 +474,7 @@ func TestReplLoop_UnsetNoArgs(t *testing.T) {
 
 	input := "unset\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -548,7 +549,7 @@ func TestReplLoop_Source(t *testing.T) {
 
 	input := "source " + tmp + "\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -566,7 +567,7 @@ func TestReplLoop_SourceSharesSession(t *testing.T) {
 
 	input := "source " + tmp + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -579,7 +580,7 @@ func TestReplLoop_SourceMissingFile(t *testing.T) {
 
 	input := "source /nonexistent/path/script.bpfman\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -600,7 +601,7 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 
 	input := "source " + outer + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -613,7 +614,7 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 
 	input := "source\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1149,7 +1150,7 @@ func TestReplLoop_Version(t *testing.T) {
 
 	input := "version\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1240,7 +1241,7 @@ func TestReplLoop_AuditExplain(t *testing.T) {
 	// "bpfman audit explain" without a rule should list all rules.
 	input := "bpfman audit explain\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1253,7 +1254,7 @@ func TestReplLoop_AuditExplainUnknown(t *testing.T) {
 
 	input := "bpfman audit explain nosuch-rule\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1266,7 +1267,7 @@ func TestReplLoop_AuditUnknownSubcommand(t *testing.T) {
 
 	input := "bpfman audit bogus\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1279,7 +1280,7 @@ func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
 
 	input := "bpfman program get\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1292,7 +1293,7 @@ func TestReplLoop_ProgramUnloadNoArgs(t *testing.T) {
 
 	input := "bpfman program unload\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1305,7 +1306,7 @@ func TestReplLoop_LinkAttachNoType(t *testing.T) {
 
 	input := "bpfman link attach\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1318,7 +1319,7 @@ func TestReplLoop_LinkAttachUnknownType(t *testing.T) {
 
 	input := "bpfman link attach bogus\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1331,7 +1332,7 @@ func TestReplLoop_LinkDetachNoArgs(t *testing.T) {
 
 	input := "bpfman link detach\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1344,7 +1345,7 @@ func TestReplLoop_LinkGetNoArgs(t *testing.T) {
 
 	input := "bpfman link get\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1357,7 +1358,7 @@ func TestReplLoop_LinkDeleteNoArgs(t *testing.T) {
 
 	input := "bpfman link delete\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1372,7 +1373,7 @@ func TestReplLoop_AliasBasic(t *testing.T) {
 	// "bpfman audit explain" lists rules; the alias should work the same.
 	input := "alias b = bpfman\nb audit explain\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1398,7 +1399,7 @@ func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var errBuf bytes.Buffer
-			cli := &CLI{Out: io.Discard, Err: &errBuf}
+			cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 			lr := NewScannerReader(strings.NewReader(tt.input), nil)
 
 			err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1413,7 +1414,7 @@ func TestReplLoop_AliasBadSyntax(t *testing.T) {
 
 	input := "alias b\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1426,7 +1427,7 @@ func TestReplLoop_UnaliasBasic(t *testing.T) {
 
 	input := "alias b = bpfman\nunalias b\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1439,7 +1440,7 @@ func TestReplLoop_UnaliasUndefined(t *testing.T) {
 
 	input := "unalias nosuch\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1452,7 +1453,7 @@ func TestReplLoop_AliasesList(t *testing.T) {
 
 	input := "alias b = bpfman\nalias bp = bpfman\naliases\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1466,7 +1467,7 @@ func TestReplLoop_AliasesEmpty(t *testing.T) {
 
 	input := "aliases\n"
 	var outBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1482,7 +1483,7 @@ func TestReplLoop_AliasInLetBinding(t *testing.T) {
 	// dispatcher, proving alias expansion works in let context.
 	input := "alias b = bpfman\nlet x = [b audit explain]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1634,7 +1635,7 @@ func wordArgs(ss ...string) []shell.Arg {
 func TestAssertOk_UnknownCommand(t *testing.T) {
 	t.Parallel()
 
-	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "bogus" is not a valid command, so it should fail.
 	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("bogus"))
@@ -1646,7 +1647,7 @@ func TestAssertOk_UnknownCommand(t *testing.T) {
 func TestAssertFail_UnknownCommand(t *testing.T) {
 	t.Parallel()
 
-	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("bogus"))
 	require.NoError(t, err)
@@ -1656,7 +1657,7 @@ func TestAssertFail_UnknownCommand(t *testing.T) {
 func TestAssertOk_SuccessfulCommand(t *testing.T) {
 	t.Parallel()
 
-	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "help" always succeeds.
 	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("help"))
@@ -1667,7 +1668,7 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 func TestAssertFail_SuccessfulCommand(t *testing.T) {
 	t.Parallel()
 
-	cli := &CLI{Out: io.Discard, Err: io.Discard}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("help"))
 	require.NoError(t, err)
@@ -1698,7 +1699,7 @@ func TestReplLoop_AssertEqPass(t *testing.T) {
 
 	input := "assert hello eq hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1713,7 +1714,7 @@ func TestReplLoop_AssertEqFail(t *testing.T) {
 
 	input := "assert hello eq world\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1728,7 +1729,7 @@ func TestReplLoop_AssertNeFail(t *testing.T) {
 
 	input := "assert hello ne hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1744,7 +1745,7 @@ func TestReplLoop_AssertNotWithInfixErrors(t *testing.T) {
 
 	input := "assert not hello eq world\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1762,7 +1763,7 @@ func TestReplLoop_RequireHaltsExecution(t *testing.T) {
 		"assert a eq a",
 	}, "\n")
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1782,7 +1783,7 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 		"assert e eq e",
 	}, "\n")
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1796,7 +1797,7 @@ func TestReplLoop_IfThenBranch(t *testing.T) {
 
 	input := "let x = 5\nif $x > 3 {\n  let out = took-then\n}"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1815,7 +1816,7 @@ func TestReplLoop_IfElseBranch(t *testing.T) {
 
 	input := "let x = 1\nif $x > 3 {\n  let out = took-then\n} else {\n  let out = took-else\n}"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1833,7 +1834,7 @@ func TestReplLoop_IfElifChain(t *testing.T) {
 
 	input := "let x = 2\nif $x == 1 { let out = one } elif $x == 2 { let out = two } elif $x == 3 { let out = three } else { let out = other }"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1851,7 +1852,7 @@ func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
 
 	input := "let x = 5\nif $x { let out = wrong }"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1867,7 +1868,7 @@ func TestReplLoop_IfNested(t *testing.T) {
 
 	input := "let a = 1\nlet b = 2\nif $a == 1 {\n  if $b == 2 {\n    let out = both\n  } else {\n    let out = only-a\n  }\n}"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1886,7 +1887,7 @@ func TestReplLoop_IfWithCmdSubCondition(t *testing.T) {
 	// Unary predicates inside if work.
 	input := "let x = hello\nif not-empty $x {\n  let out = ok\n}"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1907,7 +1908,7 @@ func TestReplLoop_LetScalarAndAssert(t *testing.T) {
 		"assert $x eq 42",
 	}, "\n")
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -1927,7 +1928,7 @@ func TestReplLoop_LetMissingEquals(t *testing.T) {
 
 	input := "let x 42 val\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1940,7 +1941,7 @@ func TestReplLoop_LetTooFewArgs(t *testing.T) {
 
 	input := "let x\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1953,7 +1954,7 @@ func TestReplLoop_LetInvalidName(t *testing.T) {
 
 	input := "let 0bad = val\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -1969,7 +1970,7 @@ func TestReplLoop_AssertNil(t *testing.T) {
 
 	input := "assert nil n\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -1986,7 +1987,7 @@ func TestReplLoop_AssertNotNil(t *testing.T) {
 
 	input := "assert not nil s\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -2000,7 +2001,7 @@ func TestReplLoop_AssertContains(t *testing.T) {
 
 	input := "assert contains \"hello world\" world\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2013,7 +2014,7 @@ func TestReplLoop_AssertTrue(t *testing.T) {
 
 	input := "assert true true\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2026,7 +2027,7 @@ func TestReplLoop_AssertFalse(t *testing.T) {
 
 	input := "assert false false\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2039,7 +2040,7 @@ func TestReplLoop_AssertOkHelp(t *testing.T) {
 
 	input := "assert ok help\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2052,7 +2053,7 @@ func TestReplLoop_AssertFailBogus(t *testing.T) {
 
 	input := "assert fail bogus_command\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2069,7 +2070,7 @@ func TestReplLoop_AssertPathExists(t *testing.T) {
 
 	input := "assert path exists " + f + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2082,7 +2083,7 @@ func TestReplLoop_AssertPathNotExists(t *testing.T) {
 
 	input := "assert not path exists /nonexistent/path/xyz\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2095,7 +2096,7 @@ func TestReplLoop_AssertNumericLt(t *testing.T) {
 
 	input := "assert 1 < 2\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2108,7 +2109,7 @@ func TestReplLoop_AssertNumericGeFail(t *testing.T) {
 
 	input := "assert 1 >= 2\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
@@ -2123,7 +2124,7 @@ func TestReplLoop_AssertUnknownVerb(t *testing.T) {
 
 	input := "assert bogusverb x y\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2137,7 +2138,7 @@ func TestReplLoop_AssertPrefixBinaryVerbErrors(t *testing.T) {
 	// Phase 2: prefix binary verbs are removed; infix form required.
 	input := "assert eq hello world\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2151,7 +2152,7 @@ func TestReplLoop_AssertNoVerb(t *testing.T) {
 
 	input := "assert\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2164,7 +2165,7 @@ func TestReplLoop_AssertNotNoVerb(t *testing.T) {
 
 	input := "assert not\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2184,7 +2185,7 @@ func TestReplLoop_SetWithExpandedVar(t *testing.T) {
 
 	input := "let pid = $prog.record.program_id\nassert $pid eq 199421\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -2198,7 +2199,7 @@ func TestReplLoop_RequireNePass(t *testing.T) {
 
 	input := "require a ne b\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2211,7 +2212,7 @@ func TestReplLoop_AssertNe(t *testing.T) {
 
 	input := "assert foo ne bar\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2224,7 +2225,7 @@ func TestReplLoop_AssertNotEmpty(t *testing.T) {
 
 	input := "assert not-empty hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2317,7 +2318,7 @@ func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
 	// prefixed with file:line: for compilation-mode integration.
 	input := "# line 1\n$undefined\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
@@ -2332,7 +2333,7 @@ func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
 	// and execution continues to subsequent lines.
 	input := "$undefined\nversion\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2347,7 +2348,7 @@ func TestReplLoop_RequireFailWithFileIncludesLocation(t *testing.T) {
 	// require failures should also carry the file:line: prefix.
 	input := "require a eq b\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "script.bpfman")
@@ -2360,7 +2361,7 @@ func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
 
 	input := "assert a eq b\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "script.bpfman")
@@ -2375,7 +2376,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 	// carry a <stdin>:line: prefix and halt execution.
 	input := "version\nx\nversion\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>")
@@ -2392,7 +2393,7 @@ func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
 	// should prevent subsequent lines from executing.
 	input := "x\nversion\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
@@ -2407,7 +2408,7 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 	// Blank lines and comments still count towards the line number.
 	input := "# comment\n\n# another\n$undefined\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman")
@@ -2418,7 +2419,7 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
 	t.Parallel()
 
-	original := &CLI{
+	original := &bpfmancli.CLI{
 		RuntimeDir:    "/run/bpfman",
 		ImageCacheDir: "/var/cache/bpfman",
 		Config:        "/etc/bpfman/bpfman.toml",
@@ -2449,7 +2450,7 @@ func TestReplLoop_ExecSuccess(t *testing.T) {
 
 	input := "exec echo hello world\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2463,7 +2464,7 @@ func TestReplLoop_ExecFailure(t *testing.T) {
 
 	input := "exec false\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2476,7 +2477,7 @@ func TestReplLoop_ExecNoArgs(t *testing.T) {
 
 	input := "exec\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2489,7 +2490,7 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 
 	input := "exec __nonexistent_command_12345__\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2502,7 +2503,7 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 
 	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2531,7 +2532,7 @@ func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
 
 	input := "let out = [exec echo testing123]\nprint $out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2547,7 +2548,7 @@ func TestReplLoop_ExecLetFailure(t *testing.T) {
 	// Let binding with a failing command should produce an error.
 	input := "let out = [exec false]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2565,7 +2566,7 @@ func TestReplLoop_ExecAssertOk(t *testing.T) {
 
 	input := "assert ok exec echo hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2580,7 +2581,7 @@ func TestReplLoop_ExecAssertFail(t *testing.T) {
 
 	input := "assert fail exec false\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2595,7 +2596,7 @@ func TestReplLoop_ExecAssertOkFails(t *testing.T) {
 
 	input := "assert ok exec false\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2610,7 +2611,7 @@ func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
 
 	input := "assert fail exec echo hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2625,7 +2626,7 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 
 	input := "let out = [exec echo \"hello world\"]\nassert contains $out.stdout hello\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2640,7 +2641,7 @@ func TestReplLoop_ExecArgvField(t *testing.T) {
 
 	input := "let out = [exec echo a b c]\nprint $out.argv\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2660,7 +2661,7 @@ func TestReplLoop_ExecStderrCaptured(t *testing.T) {
 	// argv[0] directly, so we invoke sh as the command.
 	input := "let out = [exec sh -c \"echo errout >&2\"]\nassert contains $out.stderr errout\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2678,7 +2679,7 @@ func TestReplLoop_ExecVariableExpansion(t *testing.T) {
 
 	input := "let out = [exec echo $msg]\nassert contains $out.stdout expanded\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
@@ -2695,7 +2696,7 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 
 	input := "exec sleep 60\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(ctx, cli, nil, lr, shell.NewSession(), "")
@@ -2712,7 +2713,7 @@ func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
 	// expression literal.
 	input := "let x = [alias a = b]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2728,7 +2729,7 @@ func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
 	// exec status captures non-zero exit as data, not error.
 	input := "let r = [exec status false]\nassert $r.exit_code eq 1\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2747,7 +2748,7 @@ func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
 	// exec status also works for exit 0.
 	input := "let r = [exec status true]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2761,7 +2762,7 @@ func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
 
 	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2776,7 +2777,7 @@ func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
 	// Launch failures are still errors even in status mode.
 	input := "let r = [exec status __nonexistent_command_12345__]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2789,7 +2790,7 @@ func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 
 	input := "exec status\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2803,7 +2804,7 @@ func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
 	// exec status works with file adapters.
 	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 1\nassert not-empty $r.stdout\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2818,7 +2819,7 @@ func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
 	// diff exits 0 when files are identical.
 	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code eq 0\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2833,7 +2834,7 @@ func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
 	// Plain exec still errors on non-zero exit.
 	input := "exec false\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2862,7 +2863,7 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 
 	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name eq test\nassert $data.id eq 42\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2881,7 +2882,7 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 
 	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] eq 1\nassert $arr[2] eq 3\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2895,7 +2896,7 @@ func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 
 	input := `let v = [jq "." 123]` + "\nassert $v eq 123\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2909,7 +2910,7 @@ func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
 
 	input := `let data = [jq "." not-json]` + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2922,7 +2923,7 @@ func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
 
 	input := "jq\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -2935,7 +2936,7 @@ func TestReplLoop_JQ_FromJsonAssertOk(t *testing.T) {
 
 	input := `assert ok jq "." '{"a":1}'` + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2950,7 +2951,7 @@ func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
 
 	input := `assert fail jq "." not-json` + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2967,7 +2968,7 @@ func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
 	// should receive that string as a literal argv word.
 	input := `let out = [exec echo [jq "." '"world"']]` + "\nassert contains $out.stdout world\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2981,7 +2982,7 @@ func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
 
 	input := `let out = [exec echo [jq "." [jq "." '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -2997,7 +2998,7 @@ func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
 	// never run, and the let must not bind.
 	input := `let out = [exec echo [jq "." not-json]]` + "\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3017,7 +3018,7 @@ func TestReplLoop_NestedCmdSub_StructuredRejectedByExec(t *testing.T) {
 	// leak "$" or panic.
 	input := "let out = [exec echo [exec echo hello]]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3041,7 +3042,7 @@ func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
 	// user must bind the inner to a variable; this test records
 	// the current state so the limitation is visible.
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3059,7 +3060,7 @@ func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 
 	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c eq deep\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3075,7 +3076,7 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 	// structured.
 	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status eq ok\nassert $data.count eq 3\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3093,7 +3094,7 @@ func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
 	// value, so the assignment is rejected.
 	input := "let y = 1\nlet x = [print y]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3108,7 +3109,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 
 	input := "let data = hello\nlet f = [file temp $data]\nassert not-empty $f\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3132,7 +3133,7 @@ func TestReplLoop_FileTempStructured(t *testing.T) {
 
 	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp $data]\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3160,7 +3161,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 
 	input := "let raw = [exec echo hello]\nlet f = [file temp $raw.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3184,7 +3185,7 @@ func TestReplLoop_FileTempPathStructured(t *testing.T) {
 
 	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp $data.items]\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3209,7 +3210,7 @@ func TestReplLoop_FileTempNoArgs(t *testing.T) {
 
 	input := "file temp\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3222,7 +3223,7 @@ func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
 
 	input := "let f = [file temp $undefined_var]\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3235,7 +3236,7 @@ func TestReplLoop_FileTempPlainFormPrintsPath(t *testing.T) {
 
 	input := "let data = hello\nfile temp $data\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3251,7 +3252,7 @@ func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
 
 	input := "file\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3266,7 +3267,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 
 	input := "let raw = [exec echo hello]\nlet out = [exec wc -c file:$raw.stdout]\nassert contains $out.stdout 6\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3280,7 +3281,7 @@ func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 
 	input := `let data = [jq "." '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3294,7 +3295,7 @@ func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 
 	input := "let a = [exec echo aaa]\nlet b = [exec echo bbb]\nlet out = [exec diff file:$a.stdout file:$b.stdout]\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3310,7 +3311,7 @@ func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
 
 	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code eq 0\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3325,7 +3326,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 	// Verify that adapter temp files are cleaned up after exec.
 	input := "let data = hello\nlet out = [exec cat file:$data]\nassert contains $out.stdout hello\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3351,7 +3352,7 @@ func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
 
 	input := `let data = [jq "." '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
@@ -3458,7 +3459,7 @@ func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
 	// expression position) and its value is auto-printed.
 	input := "let x = 5\n$x + 1\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3477,7 +3478,7 @@ func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
 	// [[...]] contexts.
 	input := "let count = 21\nprint [[$count * 2]]\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3491,7 +3492,7 @@ func TestReplLoop_InterpString_SimpleVar(t *testing.T) {
 
 	input := "let n = 60\nlet wait = \"${n}s\"\nprint $wait\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3505,7 +3506,7 @@ func TestReplLoop_InterpString_PathConstruction(t *testing.T) {
 
 	input := "let id = 42\nlet path = \"/sys/fs/bpf/prog-${id}/map\"\nprint $path\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3519,7 +3520,7 @@ func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
 
 	input := "let n = 30\nlet wait = \"${[[$n * 2]]}s\"\nprint $wait\n"
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3544,7 +3545,7 @@ func TestReplLoop_PrintMultipleArgs(t *testing.T) {
 		``,
 	}, "\n")
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3562,7 +3563,7 @@ func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
 
 	input := "print\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3585,7 +3586,7 @@ func TestReplLoop_JQNullBinding(t *testing.T) {
 		``,
 	}, "\n")
 	var outBuf, errBuf bytes.Buffer
-	cli := &CLI{Out: &outBuf, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
@@ -3601,7 +3602,7 @@ func TestReplLoop_InterpString_BareDollarRejected(t *testing.T) {
 
 	input := "let x = \"$foo\"\n"
 	var errBuf bytes.Buffer
-	cli := &CLI{Out: io.Discard, Err: &errBuf}
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")

@@ -108,7 +108,7 @@ func parseCommand(args []shell.Arg) (Command, error) {
 // execCommand executes a typed Command node, returning an optional
 // result value for variable binding. Commands that do not produce
 // assignable results return an empty value.
-func execCommand(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd Command) (shell.Value, error) {
+func execCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd Command) (shell.Value, error) {
 	switch c := cmd.(type) {
 	case *ShowProgramCommand:
 		return shell.Value{}, execShowProgram(ctx, cli, mgr, c)
@@ -340,7 +340,7 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 // execShowProgram executes a parsed ShowProgramCommand, fetching the
 // program from the store and rendering output according to the
 // requested view and format.
-func execShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ShowProgramCommand) error {
+func execShowProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ShowProgramCommand) error {
 	prog, err := mgr.Get(ctx, cmd.ID)
 	if err != nil {
 		return err
@@ -487,13 +487,13 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 // execLoadFile executes a parsed LoadFileCommand, loading the BPF
 // program from a local object file, printing output, and returning a
 // structured Value for optional variable assignment.
-func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadFileCommand) (shell.Value, error) {
+func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LoadFileCommand) (shell.Value, error) {
 	objPath, err := bpfmancli.ParseObjectPath(cmd.Path)
 	if err != nil {
 		return shell.Value{}, err
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
 			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
@@ -1276,8 +1276,8 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 // execLinkAttach executes a parsed LinkAttachCommand, attaching the
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
-func execLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (shell.Value, error) {
-	link, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
+func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (shell.Value, error) {
+	link, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})
 	if err != nil {
@@ -1329,8 +1329,8 @@ func parseLinkDetach(args []shell.Arg) (*LinkDetachCommand, error) {
 
 // execLinkDetach executes a parsed LinkDetachCommand, detaching each
 // link under lock.
-func execLinkDetach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LinkDetachCommand) error {
-	return runBatchMutation(ctx, cli, cmd.LinkIDs, "link", "detach",
+func execLinkDetach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkDetachCommand) error {
+	return bpfmancli.RunBatchMutation(ctx, cli, cmd.LinkIDs, "link", "detach",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
 			return mgr.Detach(ctx, writeLock, id)
 		})
@@ -1470,7 +1470,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 // execLoadImage executes a parsed LoadImageCommand, loading BPF
 // programs from an OCI image, printing output, and returning a
 // structured Value for optional variable assignment.
-func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *LoadImageCommand) (shell.Value, error) {
+func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LoadImageCommand) (shell.Value, error) {
 	pullPolicy, err := bpfman.ParseImagePullPolicy(cmd.PullPolicy)
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("load image: invalid pull policy %q: %w", cmd.PullPolicy, err)
@@ -1480,7 +1480,7 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 		Programs []bpfman.Program
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
 			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
@@ -1616,7 +1616,7 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 // execGetProgram executes a parsed GetProgramCommand, fetching the
 // program from the store, rendering output, and returning a
 // structured Value for variable assignment.
-func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetProgramCommand) (shell.Value, error) {
+func execGetProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *GetProgramCommand) (shell.Value, error) {
 	prog, err := mgr.Get(ctx, cmd.ID)
 	if err != nil {
 		return shell.Value{}, err
@@ -1695,7 +1695,7 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 // execGetLink executes a parsed GetLinkCommand, fetching the link
 // from the store, rendering output, and returning a structured Value
 // for variable assignment.
-func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLinkCommand) (shell.Value, error) {
+func execGetLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *GetLinkCommand) (shell.Value, error) {
 	info, err := mgr.GetLinkInfo(ctx, cmd.ID)
 	if err != nil {
 		return shell.Value{}, err
@@ -1754,8 +1754,8 @@ func parseUnloadProgram(args []shell.Arg) (*UnloadProgramCommand, error) {
 
 // execUnloadProgram executes a parsed UnloadProgramCommand, unloading
 // each program under lock.
-func execUnloadProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *UnloadProgramCommand) error {
-	return runBatchMutation(ctx, cli, cmd.ProgramIDs, "program", "unload",
+func execUnloadProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *UnloadProgramCommand) error {
+	return bpfmancli.RunBatchMutation(ctx, cli, cmd.ProgramIDs, "program", "unload",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			return mgr.Unload(ctx, writeLock, id)
 		})
@@ -1815,7 +1815,7 @@ func parseDeleteProgram(args []shell.Arg) (*DeleteProgramCommand, error) {
 // execDeleteProgram executes a parsed DeleteProgramCommand. When All
 // is set, every managed program is collected first. Each program is
 // deleted with cascading cleanup under lock.
-func execDeleteProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DeleteProgramCommand) error {
+func execDeleteProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DeleteProgramCommand) error {
 	ids, err := collectDeleteIDs(ctx, mgr, cmd.All, programIDsToProgramIDs(cmd.ProgramIDs))
 	if err != nil {
 		return err
@@ -1880,14 +1880,14 @@ func parseDeleteLink(args []shell.Arg) (*DeleteLinkCommand, error) {
 
 // execDeleteLink executes a parsed DeleteLinkCommand, deleting each
 // link with cascading cleanup under lock.
-func execDeleteLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DeleteLinkCommand) error {
+func execDeleteLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DeleteLinkCommand) error {
 	type result struct {
 		id  kernel.LinkID
 		err error
 	}
 	results := make([]result, 0, len(cmd.LinkIDs))
 
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range cmd.LinkIDs {
 			err := deleteLink(ctx, writeLock, mgr, id, cmd.Recursive)
 			results = append(results, result{id: id, err: err})
@@ -1983,7 +1983,7 @@ func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 // programs from the store, rendering output, and returning the
 // result as a bindable value so REPL scripts can inspect the list
 // structurally.
-func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListProgramsCommand) (shell.Value, error) {
+func execListPrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ListProgramsCommand) (shell.Value, error) {
 	var opts []bpfman.ListOption
 
 	if cmd.Attached {
@@ -2103,7 +2103,7 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 
 // execListLinks executes a parsed ListLinksCommand, listing links
 // from the store and rendering output.
-func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *ListLinksCommand) (shell.Value, error) {
+func execListLinks(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *ListLinksCommand) (shell.Value, error) {
 	var opts []bpfman.LinkListOption
 
 	if cmd.ProgramID != nil {
@@ -2199,7 +2199,7 @@ func parseDispatcherList(args []shell.Arg) (*DispatcherListCommand, error) {
 
 // execDispatcherList executes a parsed DispatcherListCommand, listing
 // dispatchers from the store and rendering output.
-func execDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherListCommand) error {
+func execDispatcherList(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherListCommand) error {
 	summaries, err := mgr.ListDispatcherSummaries(ctx)
 	if err != nil {
 		return err
@@ -2296,7 +2296,7 @@ func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 
 // execDispatcherGet executes a parsed DispatcherGetCommand, fetching
 // the dispatcher snapshot and rendering output.
-func execDispatcherGet(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) error {
+func execDispatcherGet(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) error {
 	snap, err := mgr.GetDispatcherSnapshot(ctx, cmd.Key)
 	if err != nil {
 		return err
@@ -2356,8 +2356,8 @@ func parseDispatcherDelete(args []shell.Arg) (*DispatcherDeleteCommand, error) {
 
 // execDispatcherDelete executes a parsed DispatcherDeleteCommand,
 // deleting the dispatcher under lock.
-func execDispatcherDelete(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *DispatcherDeleteCommand) error {
-	return RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+func execDispatcherDelete(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherDeleteCommand) error {
+	return bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, cmd.Key)
 	})
 }
@@ -2402,7 +2402,7 @@ func parseAudit(args []shell.Arg) (*AuditCommand, error) {
 }
 
 // execAudit executes a parsed AuditCommand.
-func execAudit(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *AuditCommand) error {
+func execAudit(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *AuditCommand) error {
 	switch cmd.Subcommand {
 	case "checkup":
 		return replAuditCheckup(ctx, cli, mgr)

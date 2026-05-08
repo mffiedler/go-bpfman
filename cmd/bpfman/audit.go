@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/manager/action"
@@ -55,7 +56,7 @@ type AuditCheckupCmd struct {
 // Run dispatches to the read-only or --repair path. Rule-name
 // validation runs first regardless of mode so typos surface before
 // any state-gathering work.
-func (c *AuditCheckupCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AuditCheckupCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if len(c.Rules) > 0 {
 		known := make(map[string]bool)
 		for _, r := range coherency.Rules() {
@@ -83,8 +84,8 @@ func (c *AuditCheckupCmd) Run(cli *CLI, ctx context.Context) error {
 
 // runReadOnly produces the audit report plus the cleanup plan that
 // would be executed under --repair, without taking any action.
-func (c *AuditCheckupCmd) runReadOnly(cli *CLI, ctx context.Context, mgr *manager.Manager) error {
-	plan, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCPlan, error) {
+func (c *AuditCheckupCmd) runReadOnly(cli *bpfmancli.CLI, ctx context.Context, mgr *manager.Manager) error {
+	plan, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCPlan, error) {
 		p, pErr := mgr.ComputeGC(ctx, writeLock, manager.GCOptions{Rules: c.Rules, Prune: c.Prune})
 		if pErr != nil {
 			return p, fmt.Errorf("audit compute failed: %w", pErr)
@@ -99,8 +100,8 @@ func (c *AuditCheckupCmd) runReadOnly(cli *CLI, ctx context.Context, mgr *manage
 
 // runRepair acquires the writer lock and executes the planned
 // cleanup, reporting the result counts.
-func (c *AuditCheckupCmd) runRepair(cli *CLI, ctx context.Context, mgr *manager.Manager) error {
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCResult, error) {
+func (c *AuditCheckupCmd) runRepair(cli *bpfmancli.CLI, ctx context.Context, mgr *manager.Manager) error {
+	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (manager.GCResult, error) {
 		gcResult, gcErr := mgr.GCWithOptions(ctx, writeLock, manager.GCOptions{Rules: c.Rules, Prune: c.Prune})
 		if gcErr != nil {
 			return gcResult, fmt.Errorf("audit --repair failed: %w", gcErr)
@@ -247,14 +248,14 @@ type AuditExplainCmd struct {
 }
 
 // Run executes the audit explain command.
-func (c *AuditExplainCmd) Run(cli *CLI) error {
+func (c *AuditExplainCmd) Run(cli *bpfmancli.CLI) error {
 	if c.Rule == "" {
 		return c.listRules(cli)
 	}
 	return c.explainRule(cli, c.Rule)
 }
 
-func (c *AuditExplainCmd) listRules(cli *CLI) error {
+func (c *AuditExplainCmd) listRules(cli *bpfmancli.CLI) error {
 	var out strings.Builder
 	out.WriteString("Available coherency rules:\n\n")
 
@@ -271,7 +272,7 @@ func (c *AuditExplainCmd) listRules(cli *CLI) error {
 	return cli.PrintOut(out.String())
 }
 
-func (c *AuditExplainCmd) explainRule(cli *CLI, name string) error {
+func (c *AuditExplainCmd) explainRule(cli *bpfmancli.CLI, name string) error {
 	rule := coherency.FindRule(name)
 	if rule == nil {
 		return fmt.Errorf("unknown rule: %s\n\nUse 'bpfman audit explain' to list all rules", name)

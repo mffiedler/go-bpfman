@@ -30,14 +30,14 @@ type attachResult struct {
 }
 
 // runAttach is the common attach pattern: create manager, run under lock, format output.
-func runAttach(cli *CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
+func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
 	defer cleanup()
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
+	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
 		return fn(ctx, mgr, writeLock)
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ type AttachXDPCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachXDPCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		iface, err := net.InterfaceByName(c.Iface)
 		if err != nil {
@@ -105,7 +105,7 @@ type AttachTCCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 || c.Priority > 1000 {
 			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
@@ -155,7 +155,7 @@ type AttachTCXCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		if c.Priority < 0 || c.Priority > 1000 {
 			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
@@ -197,7 +197,7 @@ type AttachTracepointCmd struct {
 	Tracepoint bpfmancli.TracepointName `arg:"" name:"tracepoint" help:"Tracepoint in group/name form (e.g. sched/sched_switch)."`
 }
 
-func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachTracepointCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewTracepointAttachSpec(c.ProgramID.Value, c.Tracepoint.Group, c.Tracepoint.Name)
 		if err != nil {
@@ -222,7 +222,7 @@ type AttachKprobeCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachKprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewKprobeAttachSpec(c.ProgramID.Value, c.FnName)
 		if err != nil {
@@ -252,7 +252,7 @@ type AttachUprobeCmd struct {
 	ProgramID    bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachUprobeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewUprobeAttachSpec(c.ProgramID.Value, c.Target)
 		if err != nil {
@@ -284,7 +284,7 @@ type AttachFentryCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachFentryCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachFentryCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFentryAttachSpec(c.ProgramID.Value)
 		if err != nil {
@@ -307,7 +307,7 @@ type AttachFexitCmd struct {
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
 }
 
-func (c *AttachFexitCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *AttachFexitCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
 		spec, err := bpfman.NewFexitAttachSpec(c.ProgramID.Value)
 		if err != nil {

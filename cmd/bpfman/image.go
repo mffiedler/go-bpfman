@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/config"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/platform/image/verify"
 )
 
@@ -22,7 +23,7 @@ type ImageVerifyCmd struct {
 }
 
 // Run executes the image verify command.
-func (c *ImageVerifyCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ImageVerifyCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	logger := cli.Logger()
 	logger.Info("verifying image signature", "image", c.ImageURL)
 

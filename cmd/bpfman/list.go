@@ -62,7 +62,7 @@ func (c *ListProgramsCmd) buildListOptions() ([]bpfman.ListOption, error) {
 }
 
 // Run executes the list programs command.
-func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ListProgramsCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (c *ListLinksCmd) buildLinkListOptions() ([]bpfman.LinkListOption, error) {
 }
 
 // Run executes the list links command.
-func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ListLinksCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)

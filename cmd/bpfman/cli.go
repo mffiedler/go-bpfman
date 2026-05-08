@@ -5,50 +5,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sync"
-	"time"
 
 	"github.com/alecthomas/kong"
 
-	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
-	"github.com/frobware/go-bpfman/lock"
-	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
-// CLI is the root command structure for bpfman.
+// CLI is the root command structure for bpfman. It embeds the
+// shared bpfmancli.CLI for global flags, output writers, and
+// runtime services; the Kong-tagged subcommand fields here are
+// the production verb set.
 type CLI struct {
-	RuntimeDir    string        `name:"runtime-dir" group:"global" help:"Root directory for runtime files." default:"${default_runtime_dir}"`
-	ImageCacheDir string        `name:"image-cache-dir" group:"global" help:"Root directory for OCI image cache." default:"${default_image_cache_dir}"`
-	Config        string        `name:"config" group:"global" help:"Config file path." default:"${default_config_path}"`
-	Log           string        `name:"log" group:"global" help:"Log spec (e.g., 'info,manager=debug')." env:"BPFMAN_LOG"`
-	LockTimeout   time.Duration `name:"lock-timeout" group:"global" help:"Timeout for acquiring the global writer lock (0 for indefinite)." default:"30s"`
+	bpfmancli.CLI
 
-	// Out is the writer for command output. Defaults to os.Stdout.
-	// Injected for testability.
-	Out io.Writer `kong:"-"`
-	// Err is the writer for error output. Defaults to os.Stderr.
-	// Injected for testability.
-	Err io.Writer `kong:"-"`
-
-	// Cached config to avoid repeated file parsing per invocation.
-	configOnce   sync.Once     `kong:"-"`
-	cachedConfig config.Config `kong:"-"`
-	configErr    error         `kong:"-"`
-
-	// Logger is initialised eagerly by initLogger and never changes.
-	logger *slog.Logger `kong:"-"`
-
-	// kctx is the parsed Kong context, stored for Execute to dispatch.
 	kctx *kong.Context `kong:"-"`
 
 	Program    ProgramCmd    `cmd:"" group:"resources" help:"Manage BPF programs."`
@@ -58,96 +34,6 @@ type CLI struct {
 	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
 	Audit      AuditCmd      `cmd:"" group:"diag" help:"Audit database, kernel, and filesystem coherency; --repair to execute the cleanup plan."`
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
-}
-
-// WithDiscardOutput returns a new CLI with the same
-// execution-relevant settings (RuntimeDir, ImageCacheDir, Config,
-// Log, LockTimeout, logger) but with output discarded. Used by
-// assertion verbs to suppress command output while preserving the
-// fields that RunWithLock and Layout depend on.
-func (c *CLI) WithDiscardOutput() *CLI {
-	return &CLI{
-		RuntimeDir:    c.RuntimeDir,
-		ImageCacheDir: c.ImageCacheDir,
-		Config:        c.Config,
-		Log:           c.Log,
-		LockTimeout:   c.LockTimeout,
-		Out:           io.Discard,
-		Err:           io.Discard,
-		logger:        c.logger,
-	}
-}
-
-// Layout returns the filesystem layout for the configured runtime directory.
-// Returns an error if RuntimeDir is empty or not an absolute path.
-func (c *CLI) Layout() (fs.Layout, error) {
-	return fs.New(c.RuntimeDir)
-}
-
-// ImageCache returns the image cache for the configured cache directory.
-// Returns an error if ImageCacheDir is empty or not an absolute path.
-func (c *CLI) ImageCache() (fs.ImageCache, error) {
-	return fs.NewImageCache(c.ImageCacheDir)
-}
-
-// EnsuredImageCache returns an EnsuredImageCache capability token, creating
-// the cache directory if needed. Use this when you need to pass the cache
-// to functions that require proof the directory exists.
-func (c *CLI) EnsuredImageCache() (fs.EnsuredImageCache, error) {
-	cache, err := c.ImageCache()
-	if err != nil {
-		return fs.EnsuredImageCache{}, err
-	}
-	return fs.EnsureCache(cache)
-}
-
-// WriteOut writes bytes to Out, returning an error if the write fails or
-// is short. Use this for all command output to ensure I/O errors are
-// propagated.
-func (c *CLI) WriteOut(p []byte) error {
-	n, err := c.Out.Write(p)
-	if err != nil {
-		return err
-	}
-	if n != len(p) {
-		return io.ErrShortWrite
-	}
-	return nil
-}
-
-// PrintOut writes a string to Out, returning an error on failure.
-func (c *CLI) PrintOut(s string) error {
-	return c.WriteOut([]byte(s))
-}
-
-// PrintOutf formats and writes to Out, returning an error on failure.
-// Formats in memory first to avoid partial writes on error.
-func (c *CLI) PrintOutf(format string, args ...any) error {
-	return c.PrintOut(fmt.Sprintf(format, args...))
-}
-
-// WriteErr writes bytes to Err, returning an error if the write fails or
-// is short. Use this for error output to ensure I/O errors are propagated.
-func (c *CLI) WriteErr(p []byte) error {
-	n, err := c.Err.Write(p)
-	if err != nil {
-		return err
-	}
-	if n != len(p) {
-		return io.ErrShortWrite
-	}
-	return nil
-}
-
-// PrintErr writes a string to Err, returning an error on failure.
-func (c *CLI) PrintErr(s string) error {
-	return c.WriteErr([]byte(s))
-}
-
-// PrintErrf formats and writes to Err, returning an error on failure.
-// Formats in memory first to avoid partial writes on error.
-func (c *CLI) PrintErrf(format string, args ...any) error {
-	return c.PrintErr(fmt.Sprintf(format, args...))
 }
 
 // NewCLI creates and initialises a CLI instance by parsing command-line arguments.
@@ -173,17 +59,9 @@ func NewCLI() (*CLI, error) {
 
 	var c CLI
 	c.kctx = kong.Parse(&c, KongOptions()...)
+	c.DefaultWriters()
 
-	// Default writers if not injected (e.g., by tests)
-	if c.Out == nil {
-		c.Out = os.Stdout
-	}
-	if c.Err == nil {
-		c.Err = os.Stderr
-	}
-
-	// Initialise logger eagerly so errors surface immediately.
-	if err := c.initLogger(); err != nil {
+	if err := c.InitLogger(); err != nil {
 		return nil, fmt.Errorf("create logger: %w", err)
 	}
 
@@ -197,6 +75,7 @@ func NewCLI() (*CLI, error) {
 // would call it recursively instead of dispatching to the matched subcommand.
 func (c *CLI) Execute(ctx context.Context) error {
 	c.kctx.BindTo(ctx, (*context.Context)(nil))
+	c.kctx.Bind(&c.CLI)
 
 	if err := c.kctx.Run(c); err != nil {
 		// ErrSilent means the error was already communicated (e.g., via JSON)
@@ -297,164 +176,4 @@ func compactHelpPrinter(options kong.HelpOptions, ctx *kong.Context) error {
 	}
 
 	return kong.DefaultHelpPrinter(options, ctx)
-}
-
-// LoadConfig loads the configuration from the config file path.
-// Results are cached for the lifetime of the CLI instance.
-func (c *CLI) LoadConfig() (config.Config, error) {
-	c.configOnce.Do(func() {
-		c.cachedConfig, c.configErr = config.Load(c.Config)
-	})
-	return c.cachedConfig, c.configErr
-}
-
-// initLogger initialises the CLI logger. Call this once during CLI setup,
-// before any commands run. Returns an error if logger creation fails.
-func (c *CLI) initLogger() error {
-	cfg, err := c.LoadConfig()
-	if err != nil {
-		return err
-	}
-
-	format, err := logging.ParseFormat(cfg.Logging.Format)
-	if err != nil {
-		return err
-	}
-
-	// CLI commands default to warn unless --log is specified
-	spec := c.Log
-	if spec == "" {
-		spec = "warn"
-	}
-
-	opts := logging.Options{
-		CLISpec:    spec,
-		ConfigSpec: cfg.Logging.ToSpec(),
-		Format:     format,
-		Output:     os.Stderr,
-	}
-
-	c.logger, err = logging.New(opts)
-	return err
-}
-
-// Logger returns the CLI logger. The logger is initialised during CLI setup
-// and never changes. CLI commands default to WARN level for quieter output.
-// Use LoggerFromConfig for long-running services like serve.
-func (c *CLI) Logger() *slog.Logger {
-	return c.logger
-}
-
-// LoggerFromConfig creates a logger using config file settings.
-// Used by long-running services (serve) where INFO level is appropriate.
-// Output goes to stdout for daemon/container log collection.
-func (c *CLI) LoggerFromConfig() (*slog.Logger, error) {
-	cfg, err := c.LoadConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	format, err := logging.ParseFormat(cfg.Logging.Format)
-	if err != nil {
-		return nil, err
-	}
-
-	opts := logging.Options{
-		CLISpec:    c.Log,
-		ConfigSpec: cfg.Logging.ToSpec(),
-		Format:     format,
-		Output:     os.Stdout,
-	}
-
-	return logging.New(opts)
-}
-
-// RunWithLock wraps mutating CLI operations with the global writer lock.
-// The lock ensures serialised access to BPF state across concurrent CLI
-// invocations.
-func (c *CLI) RunWithLock(ctx context.Context, fn func(context.Context, lock.WriterScope) error) error {
-	return RunWithLock(ctx, c, fn)
-}
-
-// runBatchMutation executes mutate for each ID under the global
-// writer lock, collects errors, and prints failures after releasing
-// the lock. Returns a summary error if any mutations failed.
-func runBatchMutation[ID ~uint32](
-	ctx context.Context,
-	cli *CLI,
-	ids []ID,
-	noun string,
-	verb string,
-	mutate func(context.Context, lock.WriterScope, ID) error,
-) error {
-	type result struct {
-		id  ID
-		err error
-	}
-	results := make([]result, 0, len(ids))
-
-	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
-		for _, id := range ids {
-			err := mutate(ctx, writeLock, id)
-			results = append(results, result{id: id, err: err})
-		}
-		return nil
-	})
-	if lockErr != nil {
-		return lockErr
-	}
-
-	var failCount int
-	for _, r := range results {
-		if r.err != nil {
-			_ = cli.PrintErrf("%s %d: %v\n", noun, r.id, r.err)
-			failCount++
-		}
-	}
-	if failCount > 0 {
-		return fmt.Errorf("%d of %d %s(s) failed to %s", failCount, len(results), noun, verb)
-	}
-	return nil
-}
-
-// RunWithLock executes fn under the global writer lock. Use this pattern
-// to perform mutations that don't return a value.
-func RunWithLock(ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) error) error {
-	_, err := RunWithLockValue(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) (struct{}, error) {
-		return struct{}{}, fn(ctx, writeLock)
-	})
-	return err
-}
-
-// RunWithLockValue is like RunWithLock but returns a value from the locked
-// section. Use this pattern to perform mutations under lock, then format and
-// emit output outside the lock to minimise critical section duration.
-func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
-	var result T
-
-	// Apply lock timeout if set (0 means indefinite)
-	if c.LockTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.LockTimeout)
-		defer cancel()
-	}
-
-	layout, err := c.Layout()
-	if err != nil {
-		return result, fmt.Errorf("invalid runtime directory: %w", err)
-	}
-
-	err = lock.RunWithTiming(ctx, layout.LockPath(), c.Logger(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		var fnErr error
-		result, fnErr = fn(ctx, writeLock)
-		return fnErr
-	})
-
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return result, fmt.Errorf("timed out waiting for lock %s (--lock-timeout=%v)", layout.LockPath(), c.LockTimeout)
-		}
-		return result, err
-	}
-	return result, nil
 }

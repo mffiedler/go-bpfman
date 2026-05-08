@@ -1,4 +1,4 @@
-package main
+package bpfmancli
 
 import (
 	"context"
@@ -12,6 +12,47 @@ import (
 	"github.com/frobware/go-bpfman/platform/image/verify"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
+
+// NewManager creates a manager for CLI commands.
+// Returns the manager and a cleanup function that releases resources.
+// The cleanup function should be called when the manager is no longer needed.
+func (c *CLI) NewManager(ctx context.Context) (*manager.Manager, func() error, error) {
+	layout, err := c.Layout()
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid runtime directory: %w", err)
+	}
+
+	logger := c.Logger()
+
+	// Create store
+	store, err := sqlite.New(ctx, layout.DBPath(), logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open database: %w", err)
+	}
+
+	// Create kernel adapter
+	kernel := ebpf.New(ebpf.WithLogger(logger))
+
+	// Ensure runtime directories and bpffs mount
+	ensuredRuntime, err := runtime.New(layout, runtime.RealMounter{}, logger)
+	if err != nil {
+		store.Close()
+		return nil, nil, fmt.Errorf("ensure runtime: %w", err)
+	}
+
+	// Create manager (no image puller for file-based CLI operations)
+	mgr, err := manager.New(ensuredRuntime, nil, store, kernel, ebpf.NewProgramDiscoverer(), logger)
+	if err != nil {
+		store.Close()
+		return nil, nil, fmt.Errorf("create manager: %w", err)
+	}
+
+	cleanup := func() error {
+		return store.Close()
+	}
+
+	return mgr, cleanup, nil
+}
 
 // NewManagerWithPuller creates a manager with an image puller for CLI
 // commands that need to load from OCI images. Returns the manager and

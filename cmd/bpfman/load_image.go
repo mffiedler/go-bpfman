@@ -31,7 +31,7 @@ type LoadImageCmd struct {
 }
 
 // Run executes the load image command.
-func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	// Parse pull policy (before acquiring lock)
 	pullPolicy, err := bpfman.ParseImagePullPolicy(c.PullPolicy.Value)
 	if err != nil {
@@ -58,7 +58,7 @@ func (c *LoadImageCmd) Run(cli *CLI, ctx context.Context) error {
 		Programs []bpfman.Program
 	}
 
-	result, err := RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var res loadImageResult
 
 		// Parse auth config from base64-encoded registry-auth

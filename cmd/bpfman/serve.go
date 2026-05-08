@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/server"
 	"github.com/frobware/go-bpfman/version"
 )
@@ -19,7 +20,7 @@ type ServeCmd struct {
 }
 
 // Run executes the serve command.
-func (c *ServeCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ServeCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	logger, err := cli.LoggerFromConfig()
 	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)

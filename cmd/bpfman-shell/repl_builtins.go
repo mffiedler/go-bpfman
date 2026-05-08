@@ -18,6 +18,7 @@ import (
 
 	"github.com/itchyny/gojq"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
 
@@ -190,7 +191,7 @@ func wrapJQResult(x any) shell.Value {
 // a command substitution ([...]), or a quoted literal. A bare word
 // is treated as a literal string -- to write the contents of a
 // variable, pass $name, not the bare name.
-func replFile(cli *CLI, args []shell.Arg) (shell.Value, error) {
+func replFile(cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 || argText(args[0]) != "temp" {
 		return shell.Value{}, fmt.Errorf("usage: file temp $var[.path] | [expr] | \"literal\"")
 	}
@@ -257,7 +258,7 @@ type execResult struct {
 // Inline adapter arguments (e.g. file:$var.path) are resolved to
 // temporary files before the command runs. All adapter-created temp
 // files are removed unconditionally after the command completes.
-func replExec(ctx context.Context, cli *CLI, args []shell.Arg) (shell.Value, error) {
+func replExec(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("exec requires at least one argument")
 	}

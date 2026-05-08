@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/lock"
 )
@@ -23,7 +24,7 @@ type ListDispatchersCmd struct {
 }
 
 // Run executes the list dispatchers command.
-func (c *ListDispatchersCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *ListDispatchersCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -70,7 +71,7 @@ type GetDispatcherCmd struct {
 }
 
 // Run executes the get dispatcher command.
-func (c *GetDispatcherCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *GetDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	dispType, err := dispatcher.ParseDispatcherType(c.Type)
 	if err != nil {
 		return err
@@ -108,7 +109,7 @@ type DeleteDispatcherCmd struct {
 }
 
 // Run executes the delete dispatcher command.
-func (c *DeleteDispatcherCmd) Run(cli *CLI, ctx context.Context) error {
+func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	dispType, err := dispatcher.ParseDispatcherType(c.Type)
 	if err != nil {
 		return err
