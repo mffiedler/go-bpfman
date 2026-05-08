@@ -20,6 +20,7 @@ import (
 	"github.com/frobware/go-bpfman/fs/runtime"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
+	"github.com/frobware/go-bpfman/ns/netns"
 	"github.com/frobware/go-bpfman/platform"
 	"github.com/frobware/go-bpfman/platform/ebpf"
 	"github.com/frobware/go-bpfman/platform/image/oci"
@@ -66,6 +67,26 @@ type RunConfig struct {
 // The context is used for cancellation - when cancelled, the server shuts down gracefully.
 func Run(ctx context.Context, cfg RunConfig) error {
 	layout := cfg.Layout
+
+	// Capture the process's startup netns inode now, before any
+	// goroutine that might call setns has been spawned. The
+	// ns/netns package caches this under a sync.Once and every
+	// later call to GetCurrentNsid / GetNsid("") returns the
+	// captured value. Priming on the calling goroutine -- which
+	// is whatever drove main() to here, still on a thread that
+	// has not switched namespaces -- locks in a known-good
+	// value. Subsequent manager attaches that resolve an empty
+	// netns path to "root" via the GetNsid("") -> processNsid
+	// fallback then see the right inode regardless of which
+	// thread the request landed on. Failure here means
+	// /proc/self/ns/net is unreadable, which makes the rest of
+	// the daemon meaningless -- panic so a stack trace makes the
+	// startup failure obvious rather than a generic error from
+	// every later attach. Symmetric with the equivalent prime in
+	// the e2e TestMain.
+	if _, err := netns.GetCurrentNsid(); err != nil {
+		panic(fmt.Errorf("server: prime ns/netns capture: %v", err))
+	}
 
 	logger := cfg.Logger
 	// Wrap with context-aware handler to extract op_id from context.
