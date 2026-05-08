@@ -231,6 +231,21 @@ GO_LDFLAGS := $(strip \
 # ---------------------------------------------------------------------------
 STATIC_TAGS := osusergo,netgo
 EXTRA_TAGS ?=
+# When the caller selects the mattn/go-sqlite3 driver via cgo_sqlite,
+# also force sqlite_omit_load_extension. This compiles the embedded
+# SQLite amalgamation with -DSQLITE_OMIT_LOAD_EXTENSION, dropping the
+# sqlite3_load_extension() API and its unixDlOpen() wrapper -- the
+# sole reason the static linker emits "Using 'dlopen' in statically
+# linked applications requires at runtime the shared libraries from
+# the glibc version used for linking" against the cgo_sqlite path. We
+# never load runtime SQL extensions, so omitting them is pure
+# subtraction. Apply only when cgo_sqlite is already in EXTRA_TAGS so
+# default builds (modernc, no cgo) are unaffected.
+ifneq (,$(filter cgo_sqlite,$(subst $(comma), ,$(EXTRA_TAGS))))
+ifeq (,$(filter sqlite_omit_load_extension,$(subst $(comma), ,$(EXTRA_TAGS))))
+override EXTRA_TAGS := $(EXTRA_TAGS),sqlite_omit_load_extension
+endif
+endif
 # Tag sets consumed by each go build/test recipe. EXTRA_TAGS is
 # appended to every set so callers can add a tag once (e.g.
 # EXTRA_TAGS=cgo_sqlite) and have every build path pick it up.
