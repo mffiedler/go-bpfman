@@ -21,6 +21,14 @@ jobs:
       # certificate in the Rekor transparency log.
       id-token: write
       contents: read
+    env:
+      # Override the Makefile's default of quay.io/bpfman/bpfman:latest:
+      # while this fork's CI runs in the frobware GitHub org, we push
+      # to a personal ttl.sh repo rather than to the canonical quay.io
+      # location. Set once at job scope so every `make` invocation in
+      # the build, sign, and verify steps inherits the same value via
+      # `BPFMAN_IMG ?=` in the Makefile.
+      BPFMAN_IMG: ttl.sh/frobware/bpfman:latest
     steps:
       - uses: actions/checkout@v6
 
@@ -65,12 +73,11 @@ jobs:
           # this same workflow signs in the next step.
           make build-image \
             EXTRA_GO_LDFLAGS="-s -w" \
-            IMAGE_REF=ttl.sh/frobware/go-bpfman \
+            IMAGE_REF=ttl.sh/frobware/bpfman \
             SIGNER_IDENTITY=https://github.com/${{ github.repository }}/.github/workflows/image.yaml@${{ github.ref }} \
             OIDC_ISSUER=https://token.actions.githubusercontent.com \
             PLATFORMS=linux/amd64,linux/arm64,linux/ppc64le,linux/s390x \
             PUSH=1 \
-            BPFMAN_IMG=ttl.sh/frobware/go-bpfman:latest \
             BUILDX_EXTRA_ARGS="--cache-from type=gha --cache-to type=gha,mode=max --metadata-file=${RUNNER_TEMP}/buildx-meta.json"
 
       - name: Sign published image with cosign
@@ -91,14 +98,13 @@ jobs:
         # Verifiers can later confirm the image was published by
         # this exact workflow in this exact repository:
         #
-        #   cosign verify ttl.sh/frobware/go-bpfman:latest \
+        #   cosign verify ttl.sh/frobware/bpfman:latest \
         #     --certificate-identity-regexp \
         #       'https://github.com/frobware/go-bpfman/.github/workflows/image\.yaml@.*' \
         #     --certificate-oidc-issuer \
         #       https://token.actions.githubusercontent.com
         run: |
           make cosign-sign \
-            BPFMAN_IMG=ttl.sh/frobware/go-bpfman:latest \
             BUILDX_METADATA_FILE="${RUNNER_TEMP}/buildx-meta.json"
 
   verify-image:
@@ -115,10 +121,14 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
             platform: linux/arm64
+    env:
+      # Must match the BPFMAN_IMG used in build-and-push above; this
+      # job pulls the image that job pushed.
+      BPFMAN_IMG: ttl.sh/frobware/bpfman:latest
     steps:
       - name: Verify image metadata
         run: |
-          output=$(docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest version)
+          output=$(docker run --rm -e BPFMAN_MODE= "$BPFMAN_IMG" version)
           echo "$output"
           echo "$output" | grep -q "${{ github.sha }}" || { echo "FAIL: expected git commit ${{ github.sha }}"; exit 1; }
           echo "$output" | grep -q "${{ github.event.head_commit.timestamp }}" || { echo "FAIL: expected build date ${{ github.event.head_commit.timestamp }}"; exit 1; }
@@ -141,7 +151,7 @@ jobs:
         # on the floating :latest tag).
         run: |
           set -euo pipefail
-          cosign verify ttl.sh/frobware/go-bpfman:latest \
+          cosign verify "$BPFMAN_IMG" \
             --certificate-identity-regexp 'https://github\.com/frobware/go-bpfman/\.github/workflows/image\.yaml@.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > "${RUNNER_TEMP}/cosign-verify.json"
@@ -182,7 +192,7 @@ jobs:
         # current run's commit.
         run: |
           set -euo pipefail
-          docker run --rm -e BPFMAN_MODE= ttl.sh/frobware/go-bpfman:latest version \
+          docker run --rm -e BPFMAN_MODE= "$BPFMAN_IMG" version \
             | grep ^Attestation: \
             | sed 's/^Attestation: *//' \
             | sh \
@@ -200,5 +210,5 @@ jobs:
           # Provenance and SBOM are attached as separate manifests in
           # the OCI image index. Informational; does not gate.
           docker buildx imagetools inspect \
-            ttl.sh/frobware/go-bpfman:latest \
+            "$BPFMAN_IMG" \
             --format '{{ json .Provenance }}' || true
