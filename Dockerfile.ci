@@ -83,9 +83,13 @@ WORKDIR /src
 # ---------------------------------------------------------------------------
 FROM base AS e2e-builder
 
-# RACE is forwarded from the buildx --build-arg by the ci-test-e2e
-# and ci-test-e2e-scripts make recipes; empty by default.
+# RACE and EXTRA_TAGS are forwarded from the buildx --build-arg by
+# the ci-test-e2e and ci-test-e2e-scripts make recipes; empty by
+# default. EXTRA_TAGS lets a CI lane swap in alternate build tags
+# (e.g. cgo_sqlite to exercise the mattn driver in place of the
+# default modernc one).
 ARG RACE=
+ARG EXTRA_TAGS=
 
 COPY . .
 
@@ -98,8 +102,8 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
-    make bin/e2e.test STATIC=1 RACE=${RACE}; \
-    make bpfman-compile STATIC=1 RACE=${RACE}; \
+    make bin/e2e.test STATIC=1 RACE=${RACE} EXTRA_TAGS=${EXTRA_TAGS}; \
+    make bpfman-compile STATIC=1 RACE=${RACE} EXTRA_TAGS=${EXTRA_TAGS}; \
     mkdir -p /ci-e2e-bundle/bin /ci-e2e-bundle/e2e/testdata/bpf; \
     cp bin/e2e.test /ci-e2e-bundle/bin/; \
     cp bin/bpfman /ci-e2e-bundle/bin/; \

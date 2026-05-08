@@ -1077,7 +1077,7 @@ ci-test: ci-image
 # privileges the e2e suite needs.
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
-	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
+	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
@@ -1100,7 +1100,7 @@ ci-test-e2e:
 ci-test-e2e-scripts:
 	$(RM) bin/bpfman bin/e2e.test
 	$(MAKE) clean-bpf
-	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) $(CI_BUILDX_CACHE) .
+	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 
 # Umbrella: run every CI pipeline locally. Cheap checks first
