@@ -1044,7 +1044,7 @@ ci-image:
 # incremental story. ci-test and ci-lint apply the same prefix
 # for the same reason.
 ci-build: ci-image
-	$(CI_RUN) make clean-bpf bpfman-build
+	$(CI_RUN) make clean-bpf bpfman-build bpfman-shell-build
 
 # Reproduce the workflow's check-vendor job locally. Verifies
 # go.mod / go.sum / vendor are tidy. Runs on the host (no
@@ -1101,19 +1101,19 @@ ci-test-e2e:
 # directly into the source tree (the layout matches), and the
 # scripts run via `make run-e2e-scripts` which assumes the
 # artefacts are already in place. No outer sudo: the inner
-# hack/test-e2e-scripts.sh shells out to `sudo bpfman` per
+# hack/test-e2e-scripts.sh shells out to `sudo bpfman-shell` per
 # script invocation, which gets the kernel privileges it needs
 # while leaving the rest of the make recipe unprivileged.
 #
 # Pre-clean the exact set of paths the bundle is about to write
-# (bin/bpfman, bin/e2e.test, and the BPF object tree). buildx
-# --output overwrites individual files but does not prune
-# anything stale, so leftover artefacts from a previous run
-# could otherwise mask "didn't rebuild" bugs. golangci-lint
-# under bin/ is preserved -- it has its own rule and re-fetching
-# over the network is slow.
+# (bin/bpfman, bin/bpfman-shell, bin/e2e.test, and the BPF object
+# tree). buildx --output overwrites individual files but does not
+# prune anything stale, so leftover artefacts from a previous run
+# could otherwise mask "didn't rebuild" bugs. golangci-lint under
+# bin/ is preserved -- it has its own rule and re-fetching over
+# the network is slow.
 ci-test-e2e-scripts:
-	$(RM) bin/bpfman bin/e2e.test
+	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test
 	$(MAKE) clean-bpf
 	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts

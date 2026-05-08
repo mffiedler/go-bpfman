@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/alecthomas/kong"
+
 	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 

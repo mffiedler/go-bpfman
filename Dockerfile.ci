@@ -69,17 +69,19 @@ RUN git config --system --add safe.directory '*'
 WORKDIR /src
 
 # ---------------------------------------------------------------------------
-# Stage 2: e2e-builder. Builds the static e2e test binary and the
-# static bpfman binary. e2e.test embeds every BPF object it loads
-# (testdata/bpf/*.bpf.o via go:embed) and is its own uprobe attach
-# target (cgo'd e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch),
-# so the Go e2e suite is self-contained in a single artefact. The
-# REPL scripts under e2e/scripts/ still load BPF via the bpfman
-# CLI's file-path interface, so the .bpf.o tree is also exported
-# for that pipeline. Source is COPYed in (no host mount); the
-# dockerignore excludes every host-built artefact so the build is
-# genuinely hermetic. All deliverables are gathered into /out so
-# the export stage can grab them in one shot.
+# Stage 2: e2e-builder. Builds the static e2e test binary, the
+# static bpfman binary, and the static bpfman-shell binary.
+# e2e.test embeds every BPF object it loads (testdata/bpf/*.bpf.o
+# via go:embed) and is its own uprobe attach target (cgo'd
+# e2e_uprobe_call_malloc plus a TestMain helper-mode dispatch), so
+# the Go e2e suite is self-contained in a single artefact. The
+# REPL scripts under e2e/scripts/ load BPF via bpfman-shell, which
+# in turn drives the bpfman manager and reads the .bpf.o tree, so
+# both binaries plus the BPF objects are exported for that pipeline.
+# Source is COPYed in (no host mount); the dockerignore excludes
+# every host-built artefact so the build is genuinely hermetic. All
+# deliverables are gathered into /ci-e2e-bundle so the export stage
+# can grab them in one shot.
 # ---------------------------------------------------------------------------
 FROM base AS e2e-builder
 
@@ -94,19 +96,21 @@ ARG EXTRA_TAGS=
 COPY . .
 
 # Build artefacts via Make's dep graph: `e2e.test` pulls in
-# dispatcher BPF + e2e BPF transitively, then `bpfman-compile`
-# reuses the cached dispatcher BPF and produces bin/bpfman.
-# test-e2e (the run target) is intentionally skipped here -- we
-# want only the build halves; the runner executes the binary on
-# the host with sudo.
+# dispatcher BPF + e2e BPF transitively, then `bpfman-compile` and
+# `bpfman-shell-compile` reuse the cached dispatcher BPF and
+# produce bin/bpfman and bin/bpfman-shell. test-e2e (the run
+# target) is intentionally skipped here -- we want only the build
+# halves; the runner executes the binaries on the host with sudo.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     set -eux; \
     make bin/e2e.test STATIC=1 RACE=${RACE} EXTRA_TAGS=${EXTRA_TAGS}; \
     make bpfman-compile STATIC=1 RACE=${RACE} EXTRA_TAGS=${EXTRA_TAGS}; \
+    make bpfman-shell-compile STATIC=1 RACE=${RACE} EXTRA_TAGS=${EXTRA_TAGS}; \
     mkdir -p /ci-e2e-bundle/bin /ci-e2e-bundle/e2e/testdata/bpf; \
     cp bin/e2e.test /ci-e2e-bundle/bin/; \
     cp bin/bpfman /ci-e2e-bundle/bin/; \
+    cp bin/bpfman-shell /ci-e2e-bundle/bin/; \
     cp e2e/testdata/bpf/*.bpf.o /ci-e2e-bundle/e2e/testdata/bpf/
 
 # ---------------------------------------------------------------------------
@@ -116,6 +120,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # the bundle contains:
 #   ./ci-e2e-bundle/bin/e2e.test                 (self-contained Go e2e test binary)
 #   ./ci-e2e-bundle/bin/bpfman                   (static bpfman binary)
+#   ./ci-e2e-bundle/bin/bpfman-shell             (static bpfman-shell binary)
 #   ./ci-e2e-bundle/e2e/testdata/bpf/*.bpf.o     (BPF programs for REPL scripts)
 # The bundle layout matches the in-tree layout, so REPL scripts
 # under e2e/scripts/ that reference ../bin/e2e.test resolve the
