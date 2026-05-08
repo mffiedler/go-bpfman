@@ -217,7 +217,14 @@ func (k *kernelAdapter) DetachLink(ctx context.Context, linkPinPath bpfman.LinkP
 	} else if lnk, err := link.LoadPinnedLink(pin, nil); err == nil {
 		detachLnk = lnk
 		detachLnkOpened = true
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
+		// cilium/ebpf wraps the underlying ENOENT in a string-formatted
+		// error ("load pinned link: no such file or directory"), so the
+		// older os.IsNotExist (which doesn't unwrap) misses it and the
+		// expected race -- pin already removed by an earlier teardown
+		// step -- gets logged as a WARN. errors.Is unwraps through fmt's
+		// %w chain and treats both raw PathError and the cilium wrapper
+		// as ENOENT.
 		k.logger.Warn("LoadPinnedLink failed", "link_pin_path", pin, "err", err)
 	}
 	if detachLnk != nil {
