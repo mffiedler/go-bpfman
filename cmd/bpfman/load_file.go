@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
@@ -18,7 +19,7 @@ type LoadCmd struct {
 
 // LoadFileCmd loads a BPF program from a local object file.
 type LoadFileCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	MetadataFlags
 	GlobalDataFlags
 
@@ -106,7 +107,7 @@ func executeLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, c *Loa
 	}
 
 	// Format and emit output outside the lock
-	output, err := FormatLoadedPrograms(result.Programs, &c.OutputFlags)
+	output, err := cliformat.FormatLoadedPrograms(result.Programs, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

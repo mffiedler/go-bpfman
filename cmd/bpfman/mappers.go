@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	"github.com/alecthomas/kong"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
 // programIDMapper creates a Kong mapper for ProgramID.
@@ -135,18 +136,18 @@ func imagePullPolicyMapper() kong.MapperFunc {
 	}
 }
 
-// outputValueMapper creates a Kong mapper for OutputValue that rejects multiple -o flags.
+// outputValueMapper creates a Kong mapper for cliformat.OutputValue that rejects multiple -o flags.
 func outputValueMapper() kong.MapperFunc {
 	return func(ctx *kong.DecodeContext, target reflect.Value) error {
 		var s string
 		if err := ctx.Scan.PopValueInto("format", &s); err != nil {
 			return err
 		}
-		current := target.Interface().(OutputValue)
+		current := target.Interface().(cliformat.OutputValue)
 		if current.IsSet {
 			return fmt.Errorf("only one output format may be specified")
 		}
-		target.Set(reflect.ValueOf(OutputValue{Value: s, IsSet: true}))
+		target.Set(reflect.ValueOf(cliformat.OutputValue{Value: s, IsSet: true}))
 		return nil
 	}
 }

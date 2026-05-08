@@ -18,6 +18,7 @@ import (
 
 	"github.com/frobware/go-bpfman/config"
 	"github.com/frobware/go-bpfman/fs"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/ns/nsenter"
@@ -247,7 +248,7 @@ func KongOptions() []kong.Option {
 		kong.TypeMapper(reflect.TypeOf(ProgramSpec{}), programSpecMapper()),
 		kong.TypeMapper(reflect.TypeOf(TracepointName{}), tracepointNameMapper()),
 		kong.TypeMapper(reflect.TypeOf(ImagePullPolicy{}), imagePullPolicyMapper()),
-		kong.TypeMapper(reflect.TypeOf(OutputValue{}), outputValueMapper()),
+		kong.TypeMapper(reflect.TypeOf(cliformat.OutputValue{}), outputValueMapper()),
 		kong.Vars{
 			"default_runtime_dir":     fs.DefaultRoot,
 			"default_image_cache_dir": "/var/cache/bpfman",

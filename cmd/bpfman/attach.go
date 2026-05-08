@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -28,7 +29,7 @@ type attachResult struct {
 }
 
 // runAttach is the common attach pattern: create manager, run under lock, format output.
-func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
+func runAttach(cli *CLI, ctx context.Context, flags *cliformat.OutputFlags, fn func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error)) error {
 	mgr, cleanup, err := cli.NewManager(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
@@ -42,7 +43,7 @@ func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx co
 		return err
 	}
 
-	output, err := FormatLinkResult(result.Link, flags)
+	output, err := cliformat.FormatLinkResult(result.Link, flags)
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func runAttach(cli *CLI, ctx context.Context, flags *OutputFlags, fn func(ctx co
 
 // AttachXDPCmd attaches an XDP program to a network interface.
 type AttachXDPCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Priority  int         `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
@@ -92,7 +93,7 @@ func (c *AttachXDPCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachTCCmd attaches a TC program to a network interface.
 type AttachTCCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
@@ -143,7 +144,7 @@ func (c *AttachTCCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachTCXCmd attaches a TCX program to a network interface.
 type AttachTCXCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Iface     string      `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string      `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
@@ -188,7 +189,7 @@ func (c *AttachTCXCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachTracepointCmd attaches a program to a tracepoint.
 type AttachTracepointCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example    ExampleFlag    `name:"example" help:"Show working examples and exit."`
 	Metadata   []KeyValue     `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID  ProgramID      `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -212,7 +213,7 @@ func (c *AttachTracepointCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachKprobeCmd attaches a program to a kernel probe.
 type AttachKprobeCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	FnName    string      `short:"f" name:"fn-name" required:"" help:"Kernel function name to attach to."`
 	Offset    uint64      `name:"offset" help:"Offset within the function." default:"0"`
@@ -240,7 +241,7 @@ func (c *AttachKprobeCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachUprobeCmd attaches a program to a user-space probe.
 type AttachUprobeCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example      ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Target       string      `name:"target" required:"" help:"Path to target binary or library."`
 	FnName       string      `short:"f" name:"fn-name" help:"Function name to attach to."`
@@ -276,7 +277,7 @@ func (c *AttachUprobeCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachFentryCmd attaches a program to a function entry tracing point.
 type AttachFentryCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`
@@ -299,7 +300,7 @@ func (c *AttachFentryCmd) Run(cli *CLI, ctx context.Context) error {
 
 // AttachFexitCmd attaches a program to a function exit tracing point.
 type AttachFexitCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Example   ExampleFlag `name:"example" help:"Show working examples and exit."`
 	Metadata  []KeyValue  `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID ProgramID   `arg:"" name:"program-id" help:"Program ID to attach."`

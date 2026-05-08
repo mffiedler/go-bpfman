@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/lock"
 )
 
@@ -17,7 +18,7 @@ type DispatcherCmd struct {
 
 // ListDispatchersCmd lists all dispatchers.
 type ListDispatchersCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Type string `name:"type" help:"Filter by dispatcher type (xdp, tc-ingress, tc-egress)."`
 }
 
@@ -53,7 +54,7 @@ func (c *ListDispatchersCmd) Run(cli *CLI, ctx context.Context) error {
 		return nil
 	}
 
-	output, err := FormatDispatcherList(summaries, &c.OutputFlags)
+	output, err := cliformat.FormatDispatcherList(summaries, &c.OutputFlags)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,7 @@ func (c *ListDispatchersCmd) Run(cli *CLI, ctx context.Context) error {
 
 // GetDispatcherCmd gets details of a dispatcher by its key.
 type GetDispatcherCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Type    string `arg:"" help:"Dispatcher type (xdp, tc-ingress, tc-egress)."`
 	Nsid    uint64 `arg:"" help:"Network namespace ID."`
 	Ifindex uint32 `arg:"" help:"Interface index."`
@@ -92,7 +93,7 @@ func (c *GetDispatcherCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	output, err := FormatDispatcherSnapshot(snap, &c.OutputFlags)
+	output, err := cliformat.FormatDispatcherSnapshot(snap, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package main
+package cliformat
 
 import (
 	"encoding/json"
@@ -10,8 +10,8 @@ import (
 	"github.com/frobware/go-bpfman"
 )
 
-// formatShowLinks renders a tabwriter table of link details.
-func formatShowLinks(prog bpfman.Program) string {
+// FormatShowLinks renders a tabwriter table of link details.
+func FormatShowLinks(prog bpfman.Program) string {
 	if len(prog.Status.Links) == 0 {
 		return "No links.\n"
 	}
@@ -40,8 +40,8 @@ func formatShowLinks(prog bpfman.Program) string {
 	return b.String()
 }
 
-// formatShowMaps renders a tabwriter table of map details.
-func formatShowMaps(prog bpfman.Program) string {
+// FormatShowMaps renders a tabwriter table of map details.
+func FormatShowMaps(prog bpfman.Program) string {
 	if len(prog.Status.Maps) == 0 {
 		return "No maps.\n"
 	}
@@ -62,8 +62,8 @@ func formatShowMaps(prog bpfman.Program) string {
 	return b.String()
 }
 
-// formatShowPaths renders a two-column path inventory.
-func formatShowPaths(prog bpfman.Program) string {
+// FormatShowPaths renders a two-column path inventory.
+func FormatShowPaths(prog bpfman.Program) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
@@ -106,8 +106,8 @@ func formatShowPaths(prog bpfman.Program) string {
 	return b.String()
 }
 
-// formatShowJSON serialises the full Program as indented JSON.
-func formatShowJSON(prog bpfman.Program) (string, error) {
+// FormatShowJSON serialises the full Program as indented JSON.
+func FormatShowJSON(prog bpfman.Program) (string, error) {
 	output, err := json.MarshalIndent(prog, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal program: %w", err)

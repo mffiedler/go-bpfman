@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
@@ -15,7 +16,7 @@ import (
 // through map ownership (map_owner_id). With --all, every managed
 // program is deleted.
 type ProgramDeleteCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Recursive  bool        `short:"r" name:"recursive" help:"Also delete programs that share maps with the target (map_owner_id dependents)."`
 	All        bool        `name:"all" help:"Delete all managed programs."`
 	ProgramIDs []ProgramID `arg:"" name:"program-id" optional:"" help:"Program IDs to delete."`
@@ -111,7 +112,7 @@ func executeDeletePrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, 
 // has no remaining links. With --recursive, also removes programs
 // that depend on the orphaned program through map ownership.
 type LinkDeleteCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Recursive bool     `short:"r" name:"recursive" help:"Also delete programs that share maps with orphaned programs (map_owner_id dependents)."`
 	LinkIDs   []LinkID `arg:"" name:"link-id" help:"Link IDs to delete." required:""`
 }

@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
 // GetProgramCmd gets details of a managed program by program ID.
 type GetProgramCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	ProgramID ProgramID `arg:"" name:"program-id" help:"Program ID (supports hex with 0x prefix)."`
 }
 
@@ -26,7 +27,7 @@ func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
 		return err
 	}
 
-	output, err := FormatProgram(prog, &c.OutputFlags)
+	output, err := cliformat.FormatProgram(prog, &c.OutputFlags)
 	if err != nil {
 		return err
 	}
@@ -35,7 +36,7 @@ func (c *GetProgramCmd) Run(cli *CLI, ctx context.Context) error {
 
 // GetLinkCmd gets details of a link by link ID.
 type GetLinkCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	LinkID LinkID `arg:"" name:"link-id" help:"Link ID."`
 }
 
@@ -62,7 +63,7 @@ func (c *GetLinkCmd) Run(cli *CLI, ctx context.Context) error {
 		},
 	}
 
-	output, err := FormatLinkResult(link, &c.OutputFlags)
+	output, err := cliformat.FormatLinkResult(link, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

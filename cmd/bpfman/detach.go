@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
 
 // DetachCmd detaches links.
 type DetachCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	LinkIDs []LinkID `arg:"" name:"link-id" help:"Link IDs to detach." required:""`
 }
 

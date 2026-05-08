@@ -8,11 +8,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 )
 
 // ListProgramsCmd lists managed BPF programs.
 type ListProgramsCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Quiet      bool     `short:"q" help:"Output only program IDs, one per line."`
 	Attached   bool     `name:"attached" help:"Show only programs with active links."`
 	Unattached bool     `name:"unattached" help:"Show only programs without active links."`
@@ -93,7 +94,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	output, err := FormatProgramsComposite(result, &c.OutputFlags)
+	output, err := cliformat.FormatProgramsComposite(result, &c.OutputFlags)
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func (c *ListProgramsCmd) Run(cli *CLI, ctx context.Context) error {
 
 // ListLinksCmd lists managed links.
 type ListLinksCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	Quiet     bool       `short:"q" help:"Output only link IDs, one per line."`
 	ProgramID *ProgramID `name:"program-id" help:"Filter by program ID (supports hex with 0x prefix)."`
 	Kind      []string   `name:"kind" sep:"," help:"Filter by link kind (e.g., --kind=xdp,kprobe)."`
@@ -156,7 +157,7 @@ func (c *ListLinksCmd) Run(cli *CLI, ctx context.Context) error {
 		return cli.PrintOut(b.String())
 	}
 
-	output, err := FormatLinkList(links, &c.OutputFlags)
+	output, err := cliformat.FormatLinkList(links, &c.OutputFlags)
 	if err != nil {
 		return err
 	}

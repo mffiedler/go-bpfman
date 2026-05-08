@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 )
 
 // UnloadCmd unloads managed BPF programs by program ID.
 type UnloadCmd struct {
-	OutputFlags
+	cliformat.OutputFlags
 	ProgramIDs []ProgramID `arg:"" name:"program-id" help:"Program IDs to unload (supports hex with 0x prefix)." required:""`
 }
 

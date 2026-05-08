@@ -12,6 +12,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
@@ -260,7 +261,7 @@ func parseLinkIDText(s string) (kernel.LinkID, error) {
 type ShowProgramCommand struct {
 	ID     kernel.ProgramID
 	View   string
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*ShowProgramCommand) isCommand() {}
@@ -294,8 +295,8 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 	cmd := &ShowProgramCommand{
 		ID:   id,
 		View: "summary",
-		Output: OutputFlags{
-			Output: OutputValue{Value: "table"},
+		Output: cliformat.OutputFlags{
+			Output: cliformat.OutputValue{Value: "table"},
 		},
 	}
 
@@ -312,7 +313,7 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 			if i >= len(rest) {
 				return nil, fmt.Errorf("show program: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{
+			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(rest[i]),
 				IsSet: true,
 			}
@@ -351,8 +352,8 @@ func execShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *S
 
 	// JSON output always emits the full Program regardless of
 	// sub-view; consumers can select fields with jq.
-	if format == OutputFormatJSON {
-		output, err := formatShowJSON(prog)
+	if format == cliformat.OutputFormatJSON {
+		output, err := cliformat.FormatShowJSON(prog)
 		if err != nil {
 			return err
 		}
@@ -363,16 +364,16 @@ func execShowProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *S
 	switch cmd.View {
 	case "summary":
 		var fmtErr error
-		output, fmtErr = FormatProgram(prog, &cmd.Output)
+		output, fmtErr = cliformat.FormatProgram(prog, &cmd.Output)
 		if fmtErr != nil {
 			return fmtErr
 		}
 	case "links":
-		output = formatShowLinks(prog)
+		output = cliformat.FormatShowLinks(prog)
 	case "maps":
-		output = formatShowMaps(prog)
+		output = cliformat.FormatShowMaps(prog)
 	case "paths":
-		output = formatShowPaths(prog)
+		output = cliformat.FormatShowPaths(prog)
 	default:
 		return fmt.Errorf("unknown view %q (valid: summary, links, maps, paths)", cmd.View)
 	}
@@ -388,7 +389,7 @@ type LoadFileCommand struct {
 	GlobalData  []GlobalData
 	Application string
 	MapOwnerID  kernel.ProgramID
-	Output      OutputFlags
+	Output      cliformat.OutputFlags
 }
 
 func (*LoadFileCommand) isCommand() {}
@@ -400,7 +401,7 @@ func (*LoadFileCommand) isCommand() {}
 //	[-a <app>] [--map-owner-id <id>] [-o <format>]
 func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 	cmd := &LoadFileCommand{
-		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -466,7 +467,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load file: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("load file: unknown flag %q", text)
@@ -530,7 +531,7 @@ func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Load
 		return shell.Value{}, err
 	}
 
-	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
+	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -554,7 +555,7 @@ func execLoadFile(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Load
 // flags; execution simply runs it under lock.
 type LinkAttachCommand struct {
 	Spec   bpfman.AttachSpec
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*LinkAttachCommand) isCommand() {}
@@ -604,7 +605,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 		proceedOn []string
 		netns     string
 		progArg   shell.Arg
-		output    = OutputFlags{Output: OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	defaults := true
@@ -650,7 +651,7 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach xdp: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach xdp: unknown flag %q", text)
@@ -711,7 +712,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 		proceedOn []string
 		netns     string
 		progArg   shell.Arg
-		output    = OutputFlags{Output: OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	defaults := true
@@ -763,7 +764,7 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach tc: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach tc: unknown flag %q", text)
@@ -834,7 +835,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 		priority  int
 		netns     string
 		progArg   shell.Arg
-		output    = OutputFlags{Output: OutputValue{Value: "table"}}
+		output    = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -878,7 +879,7 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach tcx: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach tcx: unknown flag %q", text)
@@ -937,7 +938,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg    shell.Arg
 		tracepoint string
-		output     = OutputFlags{Output: OutputValue{Value: "table"}}
+		output     = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -953,7 +954,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach tracepoint: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach tracepoint: unknown flag %q", text)
@@ -1002,7 +1003,7 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		fnName  string
 		offset  uint64
 		progArg shell.Arg
-		output  = OutputFlags{Output: OutputValue{Value: "table"}}
+		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1034,7 +1035,7 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach kprobe: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach kprobe: unknown flag %q", text)
@@ -1080,7 +1081,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		offset       uint64
 		containerPid int32
 		progArg      shell.Arg
-		output       = OutputFlags{Output: OutputValue{Value: "table"}}
+		output       = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1128,7 +1129,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach uprobe: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach uprobe: unknown flag %q", text)
@@ -1175,7 +1176,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg shell.Arg
-		output  = OutputFlags{Output: OutputValue{Value: "table"}}
+		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1191,7 +1192,7 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach fentry: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach fentry: unknown flag %q", text)
@@ -1226,7 +1227,7 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 	var (
 		progArg shell.Arg
-		output  = OutputFlags{Output: OutputValue{Value: "table"}}
+		output  = cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}}
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -1242,7 +1243,7 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link attach fexit: -o requires a value")
 			}
-			output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link attach fexit: unknown flag %q", text)
@@ -1282,7 +1283,7 @@ func execLinkAttach(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Li
 		return shell.Value{}, err
 	}
 
-	output, err := FormatLinkResult(link, &cmd.Output)
+	output, err := cliformat.FormatLinkResult(link, &cmd.Output)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -1357,7 +1358,7 @@ type LoadImageCommand struct {
 	Metadata     []KeyValue
 	GlobalData   []GlobalData
 	MapOwnerID   kernel.ProgramID
-	Output       OutputFlags
+	Output       cliformat.OutputFlags
 }
 
 func (*LoadImageCommand) isCommand() {}
@@ -1371,7 +1372,7 @@ func (*LoadImageCommand) isCommand() {}
 func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 	cmd := &LoadImageCommand{
 		PullPolicy: "IfNotPresent",
-		Output:     OutputFlags{Output: OutputValue{Value: "table"}},
+		Output:     cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -1449,7 +1450,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("load image: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("load image: unknown flag %q", text)
@@ -1537,7 +1538,7 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 		return shell.Value{}, err
 	}
 
-	output, err := FormatLoadedPrograms(result.Programs, &cmd.Output)
+	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -1560,7 +1561,7 @@ func execLoadImage(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Loa
 // with a resolved program ID and output format.
 type GetProgramCommand struct {
 	ID     kernel.ProgramID
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*GetProgramCommand) isCommand() {}
@@ -1581,8 +1582,8 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 
 	cmd := &GetProgramCommand{
 		ID: id,
-		Output: OutputFlags{
-			Output: OutputValue{Value: "table"},
+		Output: cliformat.OutputFlags{
+			Output: cliformat.OutputValue{Value: "table"},
 		},
 	}
 
@@ -1596,7 +1597,7 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("program get: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{
+			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(args[i]),
 				IsSet: true,
 			}
@@ -1620,7 +1621,7 @@ func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Ge
 		return shell.Value{}, err
 	}
 
-	output, err := FormatProgram(prog, &cmd.Output)
+	output, err := cliformat.FormatProgram(prog, &cmd.Output)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -1639,7 +1640,7 @@ func execGetProgram(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Ge
 // resolved link ID and output format.
 type GetLinkCommand struct {
 	ID     kernel.LinkID
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*GetLinkCommand) isCommand() {}
@@ -1660,8 +1661,8 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 
 	cmd := &GetLinkCommand{
 		ID: id,
-		Output: OutputFlags{
-			Output: OutputValue{Value: "table"},
+		Output: cliformat.OutputFlags{
+			Output: cliformat.OutputValue{Value: "table"},
 		},
 	}
 
@@ -1675,7 +1676,7 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link get: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{
+			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(args[i]),
 				IsSet: true,
 			}
@@ -1708,7 +1709,7 @@ func execGetLink(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *GetLi
 		},
 	}
 
-	output, fmtErr := FormatLinkResult(link, &cmd.Output)
+	output, fmtErr := cliformat.FormatLinkResult(link, &cmd.Output)
 	if fmtErr != nil {
 		return shell.Value{}, fmtErr
 	}
@@ -1917,7 +1918,7 @@ type ListProgramsCommand struct {
 	Unattached bool
 	Types      []string
 	Selector   string
-	Output     OutputFlags
+	Output     cliformat.OutputFlags
 }
 
 func (*ListProgramsCommand) isCommand() {}
@@ -1929,7 +1930,7 @@ func (*ListProgramsCommand) isCommand() {}
 //	[-l <selector>] [-o <format>]
 func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 	cmd := &ListProgramsCommand{
-		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -1961,7 +1962,7 @@ func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("program list: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("program list: unknown flag %q", text)
@@ -2021,7 +2022,7 @@ func execListPrograms(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *
 				return shell.Value{}, err
 			}
 		} else {
-			output, err := FormatProgramsComposite(result, &cmd.Output)
+			output, err := cliformat.FormatProgramsComposite(result, &cmd.Output)
 			if err != nil {
 				return shell.Value{}, err
 			}
@@ -2044,7 +2045,7 @@ type ListLinksCommand struct {
 	Quiet     bool
 	ProgramID *kernel.ProgramID
 	Kinds     []string
-	Output    OutputFlags
+	Output    cliformat.OutputFlags
 }
 
 func (*ListLinksCommand) isCommand() {}
@@ -2055,7 +2056,7 @@ func (*ListLinksCommand) isCommand() {}
 //	[-q] [--program-id <id>] [--kind <kinds>]... [-o <format>]
 func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 	cmd := &ListLinksCommand{
-		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -2087,7 +2088,7 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("link list: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("link list: unknown flag %q", text)
@@ -2131,7 +2132,7 @@ func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Lis
 				return shell.Value{}, err
 			}
 		} else {
-			output, err := FormatLinkList(links, &cmd.Output)
+			output, err := cliformat.FormatLinkList(links, &cmd.Output)
 			if err != nil {
 				return shell.Value{}, err
 			}
@@ -2152,7 +2153,7 @@ func execListLinks(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd *Lis
 // command with optional type filter and output format.
 type DispatcherListCommand struct {
 	Type   string
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*DispatcherListCommand) isCommand() {}
@@ -2163,7 +2164,7 @@ func (*DispatcherListCommand) isCommand() {}
 //	[--type <type>] [-o <format>]
 func parseDispatcherList(args []shell.Arg) (*DispatcherListCommand, error) {
 	cmd := &DispatcherListCommand{
-		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -2183,7 +2184,7 @@ func parseDispatcherList(args []shell.Arg) (*DispatcherListCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("dispatcher list: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("dispatcher list: unknown flag %q", text)
@@ -2221,7 +2222,7 @@ func execDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd
 		return nil
 	}
 
-	output, err := FormatDispatcherList(summaries, &cmd.Output)
+	output, err := cliformat.FormatDispatcherList(summaries, &cmd.Output)
 	if err != nil {
 		return err
 	}
@@ -2232,7 +2233,7 @@ func execDispatcherList(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd
 // command with resolved dispatcher key and output format.
 type DispatcherGetCommand struct {
 	Key    dispatcher.Key
-	Output OutputFlags
+	Output cliformat.OutputFlags
 }
 
 func (*DispatcherGetCommand) isCommand() {}
@@ -2267,7 +2268,7 @@ func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 			Nsid:    nsid,
 			Ifindex: uint32(ifindex),
 		},
-		Output: OutputFlags{Output: OutputValue{Value: "table"}},
+		Output: cliformat.OutputFlags{Output: cliformat.OutputValue{Value: "table"}},
 	}
 
 	for i := 3; i < len(args); i++ {
@@ -2280,7 +2281,7 @@ func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 			if i >= len(args) {
 				return nil, fmt.Errorf("dispatcher get: -o requires a value")
 			}
-			cmd.Output.Output = OutputValue{Value: argText(args[i]), IsSet: true}
+			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 			continue
 		}
 		if strings.HasPrefix(text, "-") {
@@ -2300,7 +2301,7 @@ func execDispatcherGet(ctx context.Context, cli *CLI, mgr *manager.Manager, cmd 
 		return err
 	}
 
-	output, err := FormatDispatcherSnapshot(snap, &cmd.Output)
+	output, err := cliformat.FormatDispatcherSnapshot(snap, &cmd.Output)
 	if err != nil {
 		return err
 	}
