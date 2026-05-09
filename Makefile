@@ -476,6 +476,11 @@ LINT_DOCKERFILES := \
 # ---------------------------------------------------------------------------
 all: bpfman-build bpfman-shell-build
 
+# Alias so 'make build-all' works as advertised in 'make help'.
+# 'all' stays the canonical default-target name; 'build-all' is
+# the spelling the help text and tab-completion expose.
+build-all: all
+
 help:
 	@echo "Build:"
 	@echo "  build-all                   Build all binaries"
