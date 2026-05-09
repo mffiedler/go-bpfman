@@ -26,7 +26,7 @@ func runMatchesScript(t *testing.T, record map[string]any, script string) (out, 
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(script), nil)
-	err := replLoop(context.Background(), cli, nil, lr, session, "", true)
+	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
 
@@ -138,7 +138,7 @@ func TestAssertMatches_VarPattern(t *testing.T) {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(script), nil)
-	err := replLoop(context.Background(), cli, nil, lr, session, "", true)
+	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 }
@@ -223,7 +223,7 @@ assert $prog matches {
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(script), nil)
-	require.NoError(t, replLoop(context.Background(), cli, nil, lr, session, "fake.bpfman", false))
+	require.NoError(t, replLoop(context.Background(), cli, nil, lr, session, "fake.bpfman", false, true))
 
 	errOut := errBuf.String()
 	require.Contains(t, errOut, "FAIL")

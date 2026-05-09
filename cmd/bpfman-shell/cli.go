@@ -25,6 +25,7 @@ type CLI struct {
 
 	Script  string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
 	Check   bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	NoCheck bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
 	AST     bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
 	Version bool   `name:"version" short:"V" help:"Print version information and exit."`
 }

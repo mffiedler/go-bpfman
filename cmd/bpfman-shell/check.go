@@ -16,8 +16,76 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
+
+// slurpReader reads every line from r, joins them with
+// newlines, and returns the resulting string. Used by the
+// script-mode pre-flight (where we need the whole input
+// before parsing) and by --check when invoked on stdin.
+func slurpReader(r LineReader) (string, error) {
+	var b strings.Builder
+	for {
+		line, err := r.Readline()
+		if err != nil {
+			if err == io.EOF || err == ErrInterrupt {
+				return b.String(), nil
+			}
+			return "", err
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+	}
+}
+
+// preflightCheck tokenises and parses src, runs the static
+// checker, and writes any issues to cli.Err with file:line:
+// prefixes. Returns true when at least one issue was emitted
+// so the caller can refuse to evaluate. Tokenise / Parse
+// errors are reported as a single file:line: line with the
+// embedded LINE:COL prefix stripped, matching how --check
+// renders the same errors.
+func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
+	if strings.TrimSpace(src) == "" {
+		return false
+	}
+	hadIssues := false
+	report := func(line int, msg string) {
+		hadIssues = true
+		loc := sourceLoc{file: file, line: line}
+		_ = cli.PrintErrf("%serror: %s\n", loc, msg)
+	}
+	stagedReport := func(err error) {
+		msg := err.Error()
+		line := 1
+		if l, rest, ok := splitLineColPrefix(msg); ok {
+			line = l
+			msg = rest
+		}
+		report(line, msg)
+	}
+
+	tokens, tokErr := shell.Tokenise(src)
+	if tokErr != nil {
+		stagedReport(tokErr)
+		return hadIssues
+	}
+	if len(tokens) == 0 {
+		return false
+	}
+	prog, parseErr := shell.Parse(tokens)
+	if parseErr != nil {
+		stagedReport(parseErr)
+		return hadIssues
+	}
+	for _, issue := range shell.Check(prog) {
+		report(issue.Loc.Line, issue.Msg)
+	}
+	return hadIssues
+}
 
 // runCheck drives the --check pipeline: read chunks of input, feed
 // each completed chunk through Tokenise and Parse, and report the

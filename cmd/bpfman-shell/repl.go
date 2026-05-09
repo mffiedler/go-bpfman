@@ -77,7 +77,7 @@ func (c *CLI) Run(ctx context.Context) error {
 	case file == "":
 		interactive = true
 	}
-	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive)
+	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive, c.NoCheck)
 
 	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
 		return ErrSilent
@@ -144,11 +144,11 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 //
 // Variable assignment and expansion use the shell.Session,
 // which is shared across modes.
-func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, interactive bool) error {
+func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
 	if interactive {
 		return replInteractive(ctx, cli, mgr, lr, session)
 	}
-	return replScript(ctx, cli, mgr, lr, session, file)
+	return replScript(ctx, cli, mgr, lr, session, file, noCheck)
 }
 
 // replScript drives chunk-by-chunk evaluation in script mode
@@ -170,9 +170,32 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 // shut down with the script; children spawned via the
 // foreground inherit path receive the signal directly through
 // the TTY's foreground process group.
-func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
+func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, noCheck bool) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Slurp the whole input up-front so we can run the
+	// static checker as a pre-flight before any side
+	// effects fire. The buffered content is then re-read
+	// through a fresh scanner-backed LineReader for the
+	// existing chunk-by-chunk evaluator, preserving the
+	// per-chunk loc machinery the runtime error path relies
+	// on. Static issues from Check are reported with
+	// 'file:line: error: ...' and returned as errScriptError
+	// so the caller exits non-zero without evaluating any
+	// statement.
+	src, slurpErr := slurpReader(lr)
+	if slurpErr != nil {
+		_ = cli.PrintErrf("%s: %v\n", file, slurpErr)
+		return errScriptError
+	}
+	if !noCheck {
+		if hadIssues := preflightCheck(cli, file, src); hadIssues {
+			return errScriptError
+		}
+	}
+	lr = NewScannerReader(strings.NewReader(src), nil)
+
 	env := &shell.Env{
 		Session: session,
 		PrintResult: func(v shell.Value) error {
