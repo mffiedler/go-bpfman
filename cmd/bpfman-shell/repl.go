@@ -162,7 +162,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: makeStrictHandleJobLeak(cli, session),
+		HandleJobLeak: strictJobLeakHandler(cli, session),
 	}
 	return shell.WithJobScope(env, func() error {
 		return shell.WithDeferScope(env, func() error {
@@ -291,7 +291,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: silentHandleJobLeak,
+		HandleJobLeak: silentJobLeakHandler(),
 	}
 
 	return shell.WithJobScope(env, func() error {
@@ -872,7 +872,12 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: makeStrictHandleJobLeak(cli, session),
+		// Source from a prompt is exploration: the user may
+		// be iterating on a broken file. Match the REPL's
+		// silent policy so warnings do not pile up across
+		// edit-source-edit cycles. A user who wants strict
+		// feedback runs 'bpfman-shell FILE' instead.
+		HandleJobLeak: silentJobLeakHandler(),
 	}
 
 	return shell.WithJobScope(env, func() error {
@@ -1014,8 +1019,8 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("  jobs                        List jobs registered in the current scope\n")
 	b.WriteString("\n")
 	b.WriteString("  Idiom: guard p <- start CMD; defer kill $p\n")
-	b.WriteString("  In script mode, an unwaited or unkilled job is a leak (FAIL, exit 1).\n")
-	b.WriteString("  In interactive mode, leaked jobs are SIGKILLed silently at end of session.\n")
+	b.WriteString("  Script mode (bpfman-shell FILE, stdin script): unwaited jobs are a leak (FAIL, exit 1).\n")
+	b.WriteString("  Interactive prompt and 'source FILE' from a prompt: leaked jobs are SIGKILLed silently.\n")
 	b.WriteString("\n")
 	b.WriteString("Deferred cleanup:\n")
 	b.WriteString("  defer <command> [args]      Run COMMAND when the enclosing scope exits:\n")

@@ -295,21 +295,39 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 	return shell.Envelope{OK: true, Code: 0}, nil
 }
 
-// makeStrictHandleJobLeak returns the script-mode scope-exit
-// handler. It treats an unmanaged job as a contract violation:
-// renders '[job] FAIL <origin>: never waited or killed: argv'
-// to stderr, SIGKILLs the process group so 'bpfman-shell
-// script.bpfman' never leaves stray processes, and bumps the
-// session leak counter so c.Run surfaces a non-zero exit.
-// Scripts are a reproducible test contract; leaking a job is a
-// bug worth failing the run for.
+// Two leak-handling policies, chosen at the call site:
+//
+//   strictJobLeakHandler   FAIL render, kill, bump counter, exit non-zero
+//   silentJobLeakHandler   kill, nothing else
+//
+// Each is a factory returning a func(*shell.Job) so call sites
+// uniformly assign 'env.HandleJobLeak = <name>(args...)'. A
+// nil handler is also valid -- the shell layer treats it as
+// silent-no-kill -- but driver call sites always pick one of
+// the two explicitly so the policy choice is visible.
+//
+// Strict is for contracts: 'bpfman-shell FILE' and stdin
+// scripts. Silent is for exploration: the interactive prompt
+// itself, and 'source FILE' invoked from a prompt. A user
+// who wants the strict policy on a particular file runs
+// 'bpfman-shell file.bpfman'; we deliberately do not offer a
+// middle 'warn' policy because in practice the user iterating
+// on a broken script wants noise to drop, not accumulate.
+
+// strictJobLeakHandler is the script-mode policy: an unmanaged
+// job is a contract violation. Renders '[job] FAIL <origin>:
+// never waited or killed: argv', SIGKILLs the process group so
+// 'bpfman-shell script.bpfman' never leaves stray processes,
+// and bumps the session leak counter so c.Run surfaces a
+// non-zero exit. Scripts are a reproducible test contract;
+// leaking a job is a bug worth failing the run for.
 //
 // ESRCH (the process exited on its own between leak detection
 // and signal delivery) is silently fine; permission errors
 // fall through and would print, but in practice we sent the
 // job's own SIGTERM-able signal earlier or could not have
 // spawned it in the first place.
-func makeStrictHandleJobLeak(cli *bpfmancli.CLI, session *shell.Session) func(*shell.Job) {
+func strictJobLeakHandler(cli *bpfmancli.CLI, session *shell.Session) func(*shell.Job) {
 	return func(j *shell.Job) {
 		origin := j.Origin
 		if origin == "" {
@@ -324,16 +342,22 @@ func makeStrictHandleJobLeak(cli *bpfmancli.CLI, session *shell.Session) func(*s
 	}
 }
 
-// silentHandleJobLeak is the interactive-mode scope-exit
-// handler. It SIGKILLs the leaked process group so nothing
-// outlives the shell, then returns: no diagnostic, no leak
-// counter increment, no exit-code effect. The REPL is
-// exploratory scratch space; starting something and walking
-// away is normal use, and the shell quietly cleans up after
-// the user.
-func silentHandleJobLeak(j *shell.Job) {
-	if j.PID > 0 {
-		_ = syscall.Kill(-j.PID, syscall.SIGKILL)
+// silentJobLeakHandler is the policy for the interactive
+// prompt and for 'source' invoked from a prompt. It SIGKILLs
+// the leaked process group so nothing outlives the shell, then
+// returns: no diagnostic, no counter bump, no exit-code
+// effect. The REPL is exploratory scratch space; starting
+// something and walking away is normal use, and a 'source'
+// from a prompt is part of that exploration -- the user is
+// often iterating on a broken file, and warnings would only
+// become noise. The shell quietly cleans up; if a user wants
+// strict feedback on a specific file, 'bpfman-shell FILE' is
+// the explicit gate.
+func silentJobLeakHandler() func(*shell.Job) {
+	return func(j *shell.Job) {
+		if j.PID > 0 {
+			_ = syscall.Kill(-j.PID, syscall.SIGKILL)
+		}
 	}
 }
 
