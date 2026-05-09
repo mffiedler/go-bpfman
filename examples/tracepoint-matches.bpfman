@@ -14,7 +14,6 @@
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder
-require not nil prog
 let pid = $prog.record.program_id
 
 # One block replaces eight separate `assert path == value` /
@@ -34,7 +33,6 @@ assert $prog matches {
 # what load returned. Anything outside this block can vary without
 # breaking the script.
 guard got <- bpfman program get $pid
-require not nil got
 assert $got matches {
     status.kernel.id:            $prog.status.kernel.id
     status.kernel.program_type:  $prog.status.kernel.program_type
@@ -45,7 +43,6 @@ assert $got matches {
 }
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
-require not nil link
 let linkID = $link.record.id
 
 assert $link matches {
@@ -57,7 +54,6 @@ assert $link matches {
 }
 
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink matches {
     record.id:                   $linkID
     record.kind:                 $link.record.kind

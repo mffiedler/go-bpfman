@@ -22,7 +22,6 @@
 source lib.bpfman
 
 guard prog <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
@@ -31,7 +30,6 @@ expect_program_load $prog kretprobe kprobe kprobe_counter
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
-require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
@@ -47,7 +45,6 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # kprobe — retprobe semantics come from the program type declared
 # at load, so the server returns kind=kretprobe and retprobe=true.
 guard link <- bpfman link attach kprobe --fn-name try_to_wake_up $prog
-require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -60,7 +57,6 @@ assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.fn_name == $link.record.details.fn_name

@@ -22,12 +22,10 @@
 # ---- Happy path ----------------------------------------------------
 
 guard prog <- bpfman program load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
-require not nil prog
 let pid = $prog.record.program_id
 
 # New positional form: program-id first, tracepoint second. No flag.
 guard link <- bpfman link attach tracepoint $pid syscalls/sys_enter_kill
-require not nil link
 
 assert $link.record.kind == tracepoint
 assert $link.record.details.group == syscalls

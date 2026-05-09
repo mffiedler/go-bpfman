@@ -33,7 +33,6 @@ require ok exec ip netns exec bpfman-tc ip link set veth-tc-ns up
 
 # Load the TC counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. TC programs are
@@ -43,7 +42,6 @@ expect_program_load $prog tc extension stats
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
-require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
@@ -60,7 +58,6 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # program_id rather than the user extension's, so we verify
 # details against the dispatcher-facing fields.
 guard link <- bpfman link attach tc --iface veth-tc-host --direction ingress --priority 50 $prog
-require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -77,7 +74,6 @@ require ok exec tc filter show dev veth-tc-host ingress
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.interface == $link.record.details.interface

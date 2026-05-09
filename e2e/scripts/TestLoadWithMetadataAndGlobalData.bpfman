@@ -27,7 +27,6 @@ guard prog <- bpfman program load file \
     -m environment=e2e-testing \
     -g config_u8=0x42 \
     -g config_u32=0xdeadbeef
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The program type is
@@ -51,7 +50,6 @@ assert $prog.record.load.global_data.config_u32 == "3q2+7w=="
 # Round-trip: Get returns the same values from the store, not
 # just from the in-process load response.
 guard got <- bpfman program get $pid
-require not nil got
 assert $got.status.kernel.id == $prog.status.kernel.id
 assert $got.status.kernel.program_type == $prog.status.kernel.program_type
 assert $got.status.kernel.name == $prog.status.kernel.name

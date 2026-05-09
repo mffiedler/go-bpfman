@@ -24,7 +24,6 @@ require path exists /sys/kernel/btf/vmlinux
 # fentry test; only the section (test_fexit) and declared type
 # differ.
 guard prog <- bpfman program load file --path testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response.
@@ -32,12 +31,10 @@ expect_program_load $prog fexit tracing test_fexit
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
-require not nil got
 expect_program_round_trip $got $prog
 
 # Attach the fexit program. The target is already baked in.
 guard link <- bpfman link attach fexit $prog
-require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -48,7 +45,6 @@ assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.fn_name == $link.record.details.fn_name

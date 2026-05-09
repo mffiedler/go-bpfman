@@ -34,7 +34,6 @@ require ok exec ip netns exec bpfman-tcx ip link set veth-tcx-ns up
 
 # Load the TCX counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
@@ -43,7 +42,6 @@ expect_program_load $prog tcx schedcls tcx_stats
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
-require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
@@ -58,7 +56,6 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # Attach to veth-tcx-host ingress, priority 50. TCX uses native
 # kernel multi-prog support — no dispatcher.
 guard link <- bpfman link attach tcx --iface veth-tcx-host --direction ingress --priority 50 $prog
-require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -71,7 +68,6 @@ assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.interface == $link.record.details.interface

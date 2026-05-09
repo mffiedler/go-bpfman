@@ -23,7 +23,6 @@ source lib.bpfman
 
 # Load the uprobe counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter
-require not nil prog
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
@@ -32,7 +31,6 @@ expect_program_load $prog uprobe kprobe uprobe_counter
 
 # Round-trip: Get returns the same program record.
 guard got <- bpfman program get $pid
-require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
@@ -51,7 +49,6 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # disk for symmetry. The binary lives at $(BIN_DIR)/e2e.test;
 # from cwd=e2e/ that resolves to ../bin/e2e.test.
 guard link <- bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_uprobe_call_malloc $prog
-require not nil link
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -65,7 +62,6 @@ assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
-require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.target == $link.record.details.target
