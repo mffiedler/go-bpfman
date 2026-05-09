@@ -103,7 +103,7 @@ foreach _ in [jq "[range(5)]" '0'] {
 
 let dumpAfter = [exec bpftool map dump id $mapID -j]
 let after     = $dumpAfter.stdout |> jq $sumFilter
-let delta     = [[$after - $before]]
+let delta     = $after - $before
 print $delta
 assert $delta == 5
 

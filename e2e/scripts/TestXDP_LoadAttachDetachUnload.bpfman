@@ -96,7 +96,7 @@ require ok exec ip netns exec bpfman-xdp ping -c 5 -i 0.05 198.51.100.1
 
 let dumpAfter = [exec bpftool map dump id $mapID -j]
 let after     = $dumpAfter.stdout |> jq $sumFilter
-let delta     = [[$after - $before]]
+let delta     = $after - $before
 print $delta
 assert $delta >= 5
 
