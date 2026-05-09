@@ -1941,7 +1941,7 @@ func TestReplLoop_LetMissingEquals(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "missing '='")
+	assert.Contains(t, errBuf.String(), "let requires '=' or '<-'")
 }
 
 func TestReplLoop_LetTooFewArgs(t *testing.T) {

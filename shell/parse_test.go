@@ -168,7 +168,7 @@ func TestParse_LetErrors(t *testing.T) {
 	}{
 		{"no command after equals", "let x =", "let requires"},
 		{"too few tokens", "let x", "let requires"},
-		{"missing equals", "let x load file", "missing '='"},
+		{"missing equals or bind", "let x load file", "let requires '=' or '<-'"},
 		{"non-identifier LHS", "let $x = foo", "let requires an identifier"},
 		{"invalid identifier", "let 0bad = foo", "invalid variable name"},
 		{"second assign in RHS", "let x = a = b", "unexpected '='"},
@@ -181,6 +181,71 @@ func TestParse_LetErrors(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestParse_LetBind(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let r <- bpfman version")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "r", bind.Name)
+	assert.False(t, bind.Guard, "let bind must not set Guard")
+	require.NotNil(t, bind.Cmd)
+	require.Len(t, bind.Cmd.Args, 2)
+	head, ok := bind.Cmd.Args[0].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "bpfman", head.Text)
+}
+
+func TestParse_GuardBind(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "guard prog <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "prog", bind.Name)
+	assert.True(t, bind.Guard, "guard bind must set Guard")
+	require.NotNil(t, bind.Cmd)
+	require.Len(t, bind.Cmd.Args, 4)
+	ref, ok := bind.Cmd.Args[3].(*VarRefExpr)
+	require.True(t, ok, "last arg should be VarRef, got %T", bind.Cmd.Args[3])
+	assert.Equal(t, "pid", ref.Name)
+}
+
+func TestParse_BindErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"empty let bind RHS", "let x <-", "bind requires a command after '<-'"},
+		{"empty guard bind RHS", "guard x <-", "bind requires a command after '<-'"},
+		{"guard without bind sigil", "guard x = foo", "missing '<-'"},
+		{"guard without name", "guard <- foo", "guard requires"},
+		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
+		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParse_GuardIsReservedDefName(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseSource(t, "def guard() { print hi }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reserved word \"guard\"")
 }
 
 func TestParse_BareAssignIsError(t *testing.T) {

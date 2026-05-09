@@ -44,6 +44,22 @@ type LetStmt struct {
 	Loc
 }
 
+// BindStmt binds the captured-result envelope of running Cmd to
+// Name. The shell parser produces a BindStmt for both spellings:
+// "let NAME <- CMD" sets Guard false (the bind always succeeds and
+// the consumer inspects $name.ok / $name.code itself), and "guard
+// NAME <- CMD" sets Guard true (the runtime halts when the captured
+// envelope is not ok, rendering the failure through the shared
+// formatter). The keyword distinction is collapsed into one AST
+// node because the only behavioural difference is the halt-on-fail
+// bit; they share the same lookup, capture, and binding path.
+type BindStmt struct {
+	Name  string
+	Cmd   *CommandStmt
+	Guard bool
+	Loc
+}
+
 // IfBranch pairs a condition expression with a block body. Used
 // for the primary branch and each elif.
 type IfBranch struct {
@@ -156,6 +172,7 @@ type DefStmt struct {
 }
 
 func (*LetStmt) stmtNode()      {}
+func (*BindStmt) stmtNode()     {}
 func (*IfStmt) stmtNode()       {}
 func (*CommandStmt) stmtNode()  {}
 func (*ExprStmt) stmtNode()     {}
@@ -263,6 +280,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseBreakStmt()
 		case "continue":
 			return p.parseContinueStmt()
+		case "guard":
+			return p.parseGuardStmt()
 		case "def":
 			return p.parseDefStmt()
 		case "assert", "require":
@@ -436,22 +455,103 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 	if !IsIdent(name) {
 		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
 	}
-	if p.atEOF() || p.peek().Kind != TokenAssign {
-		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...> (missing '=')")
+	if p.atEOF() {
+		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...> or let <name> <- <command...>")
 	}
-	p.advance() // "="
-	rhsTokens, err := p.takeStmtTokens(true)
+	switch p.peek().Kind {
+	case TokenAssign:
+		p.advance() // "="
+		rhsTokens, err := p.takeStmtTokens(true)
+		if err != nil {
+			return nil, err
+		}
+		if len(rhsTokens) == 0 {
+			return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...>")
+		}
+		rhs, err := parseExpression(rhsTokens)
+		if err != nil {
+			return nil, err
+		}
+		return &LetStmt{Name: name, RHS: rhs, Loc: letTok.Loc}, nil
+	case TokenBind:
+		return p.parseBindRHS(letTok.Loc, name, false)
+	default:
+		return nil, locErrorf(letTok.Loc, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
+	}
+}
+
+// parseGuardStmt parses "guard NAME <- COMMAND". The captured-result
+// envelope of running COMMAND is bound to NAME just as it is for "let
+// NAME <- COMMAND"; the difference is the runtime halts the script
+// when the envelope is not ok, with the failure rendered through the
+// shared captured-result formatter. The structural form is fixed:
+// the keyword, an identifier, the bind sigil '<-', then a non-empty
+// command form. There is no "guard NAME = EXPR" spelling because
+// guard's purpose is to gate command execution.
+func (p *parser) parseGuardStmt() (Stmt, error) {
+	guardTok := p.advance() // "guard"
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> (got %q)", p.peek().Text)
+	}
+	nameTok := p.advance()
+	name := nameTok.Text
+	if !IsIdent(name) {
+		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
+	}
+	if p.atEOF() || p.peek().Kind != TokenBind {
+		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> (missing '<-')")
+	}
+	return p.parseBindRHS(guardTok.Loc, name, true)
+}
+
+// parseBindRHS consumes the '<-' sigil and the command form that
+// follows it, returning a BindStmt. The RHS extends to the next
+// statement separator or block marker; a stray '=' or '<-' inside
+// the RHS is rejected to keep error messages crisp. The command
+// form itself reuses parseCommandArgs so every primary expression
+// the command-statement grammar understands works unchanged on the
+// right of a bind.
+func (p *parser) parseBindRHS(stmtLoc Loc, name string, guard bool) (Stmt, error) {
+	bindTok := p.advance() // "<-"
+	cmdTokens, err := p.takeBindRHSTokens(bindTok)
 	if err != nil {
 		return nil, err
 	}
-	if len(rhsTokens) == 0 {
-		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...>")
-	}
-	rhs, err := parseExpression(rhsTokens)
+	args, err := parseCommandArgs(cmdTokens, false)
 	if err != nil {
 		return nil, err
 	}
-	return &LetStmt{Name: name, RHS: rhs, Loc: letTok.Loc}, nil
+	cmd := &CommandStmt{Args: args, Loc: cmdTokens[0].Loc}
+	return &BindStmt{Name: name, Cmd: cmd, Guard: guard, Loc: stmtLoc}, nil
+}
+
+// takeBindRHSTokens collects the tokens that form the command on the
+// right of a '<-' bind. The run terminates at the next separator or
+// block marker; nested '=' and '<-' on the RHS are reported at the
+// offending token rather than silently included as command args.
+func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
+	var buf []Token
+	for !p.atEOF() {
+		t := p.peek()
+		if t.Kind == TokenSep {
+			break
+		}
+		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+			break
+		}
+		if t.Kind == TokenAssign {
+			return nil, locErrorf(t.Loc, "unexpected '=' on bind RHS; the right of '<-' must be a command form")
+		}
+		if t.Kind == TokenBind {
+			return nil, locErrorf(t.Loc, "unexpected '<-' on bind RHS; chain via separate let/guard statements")
+		}
+		buf = append(buf, t)
+		p.pos++
+	}
+	if len(buf) == 0 {
+		return nil, locErrorf(bindTok.Loc, "bind requires a command after '<-'")
+	}
+	return buf, nil
 }
 
 // takeStmtTokens collects tokens belonging to the current statement
@@ -547,6 +647,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 var reservedDefNames = map[string]bool{
 	"def":       true,
 	"let":       true,
+	"guard":     true,
 	"if":        true,
 	"elif":      true,
 	"else":      true,
