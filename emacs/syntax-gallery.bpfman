@@ -443,8 +443,7 @@ retry {
 
 retry {
     guard status <- bpfman program get 42 -o json
-    if $status.ready { break }
-} until iteration 10
+} until $status.ready or iteration 10
 
 retry {
     guard link <- bpfman link get 8801 -o json

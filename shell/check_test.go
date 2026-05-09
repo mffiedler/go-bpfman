@@ -292,3 +292,171 @@ func TestCheck_ArithmeticHexLiteralAccepted(t *testing.T) {
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
 }
+
+func TestCheck_BreakInsideForeachIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let xs = \"a\"\nforeach x in $xs { break }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_BreakOutsideForeachReported(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "break")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "'break' outside any foreach loop")
+}
+
+func TestCheck_ContinueOutsideForeachReported(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "continue")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "'continue' outside any foreach loop")
+}
+
+func TestCheck_BreakInsideRetryReported(t *testing.T) {
+	t.Parallel()
+
+	// Retry is not a foreach loop for break/continue
+	// purposes: the runtime errBreak only escapes through
+	// ForEachStmt's evaluator. The gallery's old example of
+	// 'if x { break }' inside retry was rewritten to use the
+	// 'until' clause; the static check enforces that
+	// distinction here.
+	src := "retry { break } until iteration 1"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "'break'")
+}
+
+func TestCheck_BreakInsideDefBodyResetsDepth(t *testing.T) {
+	t.Parallel()
+
+	// A def body resets the loop depth: a 'break' inside
+	// the body but not inside a foreach within the body is
+	// flagged even if the def is later called from inside a
+	// foreach in the caller.
+	src := "def f() { break }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "'break'")
+}
+
+func TestCheck_StartWithoutCommandReported(t *testing.T) {
+	t.Parallel()
+
+	// 'let p <- start' triggers both the arity check and
+	// the job-leak check (the bound 'p' has no matching
+	// wait or kill); assert the arity message is present
+	// without constraining the total count, since both are
+	// legitimate findings.
+	issues := checkSource(t, "let p <- start")
+	var msgs []string
+	for _, i := range issues {
+		msgs = append(msgs, i.Msg)
+	}
+	assert.Contains(t, strings.Join(msgs, " | "), "start: expected at least 1")
+}
+
+func TestCheck_WaitWithoutJobReported(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "wait")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "wait: expected at least 1")
+}
+
+func TestCheck_KillWithoutJobReported(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "kill")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "kill: expected at least 1")
+}
+
+func TestCheck_KillFlagsAreNotCountedAsArgs(t *testing.T) {
+	t.Parallel()
+
+	// 'kill --signal=USR1' has one arg textually but zero
+	// non-flag args; the arity check must report it as
+	// missing the $job target.
+	issues := checkSource(t, "kill --signal=USR1")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "kill: expected at least 1")
+}
+
+func TestCheck_JobsTakesNoArgs(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "jobs extra")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "jobs: expected at most 0")
+}
+
+func TestCheck_ReapTakesNoArgs(t *testing.T) {
+	t.Parallel()
+
+	issues := checkSource(t, "reap extra")
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "reap: expected at most 0")
+}
+
+func TestCheck_KillSignalKnownNamesClean(t *testing.T) {
+	t.Parallel()
+
+	// Each accepted spelling: bare, SIG-prefixed, and
+	// lowercase. The static check mirrors the runtime's
+	// acceptance.
+	cases := []string{
+		"let p <- start sleep 60\nkill --signal=USR1 $p\nwait $p",
+		"let p <- start sleep 60\nkill --signal=SIGUSR1 $p\nwait $p",
+		"let p <- start sleep 60\nkill --signal=usr1 $p\nwait $p",
+		"let p <- start sleep 60\nkill --signal=TERM $p\nwait $p",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			t.Parallel()
+			issues := checkSource(t, src)
+			assert.Empty(t, issues, "src=%q", src)
+		})
+	}
+}
+
+func TestCheck_KillSignalUnknownReported(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60\nkill --signal=BLAH $p\nwait $p"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `unknown signal "BLAH"`)
+}
+
+func TestCheck_KillGraceValidDurationsClean(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		"let p <- start sleep 60\nkill --grace=2s $p\nwait $p",
+		"let p <- start sleep 60\nkill --grace=500ms $p\nwait $p",
+		"let p <- start sleep 60\nkill --grace=0 $p\nwait $p",
+		"let p <- start sleep 60\nkill --grace=1m30s $p\nwait $p",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			t.Parallel()
+			issues := checkSource(t, src)
+			assert.Empty(t, issues, "src=%q", src)
+		})
+	}
+}
+
+func TestCheck_KillGraceMalformedReported(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60\nkill --grace=banana $p\nwait $p"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "kill --grace:")
+}

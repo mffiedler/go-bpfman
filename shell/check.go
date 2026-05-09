@@ -21,6 +21,8 @@ package shell
 import (
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // Issue is one finding from a Check pass: a source location
@@ -52,6 +54,9 @@ func Check(prog *Program) []Issue {
 	c.walkStmts(prog.Stmts)
 	c.checkJobLeaks(prog)
 	c.checkArithmeticOperands(prog)
+	c.checkLoopExits(prog.Stmts, 0)
+	c.checkBuiltinArity(prog)
+	c.checkKillFlags(prog)
 	return c.issues
 }
 
@@ -309,6 +314,162 @@ func isNumericLiteral(text string) bool {
 		return true
 	}
 	if _, err := strconv.ParseInt(text, 0, 64); err == nil {
+		return true
+	}
+	return false
+}
+
+// checkLoopExits walks stmts with a foreach-depth counter,
+// flagging 'break' or 'continue' that appear at depth 0
+// (outside any enclosing foreach). Retry blocks do not count
+// as foreach for this purpose -- the runtime errBreak /
+// errContinue are caught only by ForEachStmt's evaluator -- so
+// retry bodies inherit the caller's depth. Def bodies reset
+// the depth: a def is a callable unit, and break/continue
+// inside the body but not inside a foreach within the def
+// body is wrong even if the def itself is later called from
+// inside a foreach.
+func (c *checker) checkLoopExits(stmts []Stmt, depth int) {
+	for _, s := range stmts {
+		switch n := s.(type) {
+		case *ForEachStmt:
+			c.checkLoopExits(n.Body, depth+1)
+		case *RetryStmt:
+			c.checkLoopExits(n.Body, depth)
+		case *IfStmt:
+			c.checkLoopExits(n.Then, depth)
+			for _, b := range n.Elifs {
+				c.checkLoopExits(b.Body, depth)
+			}
+			c.checkLoopExits(n.Else, depth)
+		case *DefStmt:
+			c.checkLoopExits(n.Body, 0)
+		case *BreakStmt:
+			if depth == 0 {
+				c.addIssue(n.Loc, "'break' outside any foreach loop")
+			}
+		case *ContinueStmt:
+			if depth == 0 {
+				c.addIssue(n.Loc, "'continue' outside any foreach loop")
+			}
+		}
+	}
+}
+
+// checkBuiltinArity flags shape errors on the async-job
+// builtins the runtime documents as taking specific argument
+// counts. Static catches typos like 'kill --signa=USR1 $p'
+// (--signa is not a flag, so the kill ends up with two
+// non-flag args) one pass before the runtime does. Flag args
+// (anything starting with '--') are skipped so the count
+// reflects only the positional args the runtime cares about.
+//
+// Coupling: the builtin names and their arities are
+// duplicated here from cmd/bpfman-shell. The set is small and
+// stable; if a new lifecycle verb lands, the entry adds in
+// one place. Driver-side dispatch and static check stay in
+// step via convention rather than a shared registry.
+func (c *checker) checkBuiltinArity(prog *Program) {
+	type aritySpec struct {
+		min, max int // -1 max means unbounded
+	}
+	specs := map[string]aritySpec{
+		"start": {min: 1, max: -1}, // command and optional args
+		"wait":  {min: 1, max: 1},  // exactly one $job
+		"kill":  {min: 1, max: 1},  // exactly one $job (after flags)
+		"jobs":  {min: 0, max: 0},
+		"reap":  {min: 0, max: 0},
+	}
+	Inspect(prog, func(n Node) bool {
+		cmd, ok := n.(*CommandStmt)
+		if !ok || len(cmd.Args) == 0 {
+			return true
+		}
+		head, ok := cmd.Args[0].(*LiteralExpr)
+		if !ok {
+			return true
+		}
+		spec, known := specs[head.Text]
+		if !known {
+			return true
+		}
+		got := nonFlagArgCount(cmd.Args[1:])
+		switch {
+		case got < spec.min:
+			c.addIssue(cmd.Loc, "%s: expected at least %d argument(s), got %d", head.Text, spec.min, got)
+		case spec.max >= 0 && got > spec.max:
+			c.addIssue(cmd.Loc, "%s: expected at most %d argument(s), got %d", head.Text, spec.max, got)
+		}
+		return true
+	})
+}
+
+// checkKillFlags validates --signal=NAME and --grace=DUR
+// values on kill invocations. The runtime catches the same
+// errors when the kill builtin actually runs; static checking
+// surfaces the typo before any side effect. NAME is matched
+// against the same fixed signal set the runtime accepts
+// (TERM, KILL, INT, QUIT, HUP, USR1, USR2, STOP, CONT) with
+// optional 'SIG' prefix and case-insensitive lookup. DUR is
+// fed to time.ParseDuration which matches the runtime's
+// acceptance.
+func (c *checker) checkKillFlags(prog *Program) {
+	Inspect(prog, func(n Node) bool {
+		cmd, ok := n.(*CommandStmt)
+		if !ok || len(cmd.Args) == 0 {
+			return true
+		}
+		head, ok := cmd.Args[0].(*LiteralExpr)
+		if !ok || head.Text != "kill" {
+			return true
+		}
+		for _, arg := range cmd.Args[1:] {
+			lit, ok := arg.(*LiteralExpr)
+			if !ok {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(lit.Text, "--signal="):
+				name := strings.TrimPrefix(lit.Text, "--signal=")
+				if !isKnownSignalName(name) {
+					c.addIssue(lit.Loc, "kill --signal: unknown signal %q", name)
+				}
+			case strings.HasPrefix(lit.Text, "--grace="):
+				dur := strings.TrimPrefix(lit.Text, "--grace=")
+				if _, err := time.ParseDuration(dur); err != nil {
+					c.addIssue(lit.Loc, "kill --grace: %v", err)
+				}
+			}
+		}
+		return true
+	})
+}
+
+// nonFlagArgCount returns the number of args that are not
+// '--'-prefixed flag literals. Flag args (--signal=NAME,
+// --grace=DUR, ...) are skipped so an arity check counts
+// only the positional args the runtime cares about.
+func nonFlagArgCount(args []Expr) int {
+	n := 0
+	for _, a := range args {
+		if lit, ok := a.(*LiteralExpr); ok && len(lit.Text) >= 2 && lit.Text[:2] == "--" {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// isKnownSignalName reports whether name matches one of the
+// signals the runtime kill builtin accepts. Case-insensitive,
+// optional 'SIG' prefix. Mirrors signalFromName in
+// cmd/bpfman-shell/job.go; if that list grows, this list
+// grows the same way.
+func isKnownSignalName(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	upper = strings.TrimPrefix(upper, "SIG")
+	switch upper {
+	case "TERM", "KILL", "INT", "QUIT", "HUP", "USR1", "USR2", "STOP", "CONT":
 		return true
 	}
 	return false
