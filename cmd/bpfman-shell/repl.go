@@ -176,7 +176,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 					if err == io.EOF || err == ErrInterrupt {
 						if buf.Len() > 0 {
 							loc := sourceLoc{file: file, line: startLine}
-							_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
+							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
 							return errScriptError
 						}
 						return nil
@@ -231,7 +231,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sour
 			errLoc.line = loc.line + line - 1
 			msg = rest
 		}
-		_ = cli.PrintErrf("%s[repl] error: %s\n", errLoc, msg)
+		_ = cli.PrintErrf("%serror: %s\n", errLoc, msg)
 		return errScriptError
 	}
 	tokens, err := shell.Tokenise(input)
@@ -304,7 +304,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			if err != nil {
 				if err == ErrInterrupt || err == io.EOF {
 					if buf.Len() > 0 {
-						_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
+						_ = cli.PrintErrf("error: unterminated block at end of input\n")
 					}
 					return nil
 				}

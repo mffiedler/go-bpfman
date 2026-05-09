@@ -237,7 +237,7 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	// "also-bogus".
 	lines := strings.Split(strings.TrimSpace(errBuf.String()), "\n")
 	require.Len(t, lines, 2)
-	assert.True(t, strings.HasPrefix(lines[0], "[repl] "), "expected [repl] prefix: %s", lines[0])
+	assert.True(t, strings.HasPrefix(lines[0], "error:"), "expected 'error:' prefix: %s", lines[0])
 	assert.Contains(t, lines[0], "bogus")
 	assert.Contains(t, lines[1], "also-bogus")
 }
@@ -2385,7 +2385,7 @@ func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true)
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(errBuf.String(), "[repl]"), "expected error to start with [repl], got: %s", errBuf.String())
+	assert.True(t, strings.HasPrefix(errBuf.String(), "error:"), "expected error to start with 'error:', got: %s", errBuf.String())
 	assert.Contains(t, outBuf.String(), "Version:", "expected version output after error in interactive mode")
 }
 
@@ -2428,7 +2428,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>", false)
 	require.ErrorIs(t, err, errScriptError)
-	assert.Contains(t, errBuf.String(), "<stdin>:2: [repl] error:")
+	assert.Contains(t, errBuf.String(), "<stdin>:2: error:")
 	// The third line should not have run.
 	assert.Equal(t, 1, strings.Count(outBuf.String(), "Version:"), "expected only one version output before halt")
 }

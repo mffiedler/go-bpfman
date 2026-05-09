@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
@@ -20,7 +21,25 @@ import (
 // replCommandNames lists the top-level command tokens for completion.
 // Domain commands live behind the "bpfman" prefix; shell-language
 // commands are bare.
-var replCommandNames = []string{"alias", "aliases", "assert", "bpfman", "exec", "file", "help", "jq", "let", "print", "require", "source", "unalias", "unset", "vars", "version"}
+// replCommandNames is the alphabetised list of first-token
+// candidates the completer offers when the cursor is at the
+// start of a chunk. It is derived from shellCommands (the
+// dispatch gate, single source of truth for builtins) plus the
+// fixed set of grammar-level keywords that begin a statement
+// or namespace a domain command. Adding a new builtin to
+// shellCommands is enough; the completer picks it up
+// automatically. Keywords are listed explicitly because they
+// are recognised by the parser, not the dispatch table.
+var replCommandNames = func() []string {
+	keywords := []string{"bpfman", "def", "defer", "guard", "let"}
+	out := make([]string, 0, len(shellCommands)+len(keywords))
+	out = append(out, keywords...)
+	for name := range shellCommands {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}()
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
