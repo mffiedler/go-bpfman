@@ -1,0 +1,225 @@
+# -*- mode: bpfman -*-
+# job-control.bpfman
+#
+# A tour of the async job primitives: 'start COMMAND ARGS'
+# returns a $job handle, 'wait $job' blocks for the captured
+# envelope, 'kill $job' signals the process group, and 'defer
+# kill $job' is the canonical async-cleanup idiom. Every
+# permutation of let/guard, single-name/tuple, and discard is
+# exercised below.
+#
+# The script does not require root or bpfman; every job is a
+# plain sh -c spawn so the example runs anywhere.
+#
+#   bpfman-shell job-control.bpfman
+#
+# Sections:
+#   1) Single-name guard:        guard p <- start CMD; wait
+#   2) Single-name let:          let p <- start CMD (no halt)
+#   3) Tuple binding:            let (rc, p) <- start CMD
+#   4) Future semantics:         start a fast job, wait reads
+#                                the cached result
+#   5) Non-zero exit:            let p <- ...; let r <- wait
+#   6) Default kill:             SIGTERM, wait reports ok
+#   7) Custom signal:            --signal=USR1, trap maps to 42
+#   8) Process-group reach:      child fork-execs a grandchild;
+#                                one kill terminates both
+#   9) defer kill in a def:      async cleanup at def-scope exit
+#   10) PID mid-flight:          string interpolation, /proc lookup
+#   11) Many concurrent jobs:    foreach launches a fleet, wait
+#                                collects each result
+#   12) Producer + observer:     one job feeds, one job samples,
+#                                retry/until polls the observable
+#   13) Discard the rc:          let (_, p) <- start CMD
+#   14) jq across stdout:        shape a job's output into data
+
+# ---- 1) Single-name guard binding ----
+
+# 'guard p <- start CMD' binds p to the typed Job handle. The
+# script halts only if start failed structurally (command not
+# found, permission denied); a non-zero exit by the running
+# job is observed later through 'wait'.
+guard p1 <- start sh -c "sleep 0.05; echo done"
+assert $p1.pid > 0
+guard r1 <- wait $p1
+assert $r1.ok
+assert $r1.code == 0
+assert contains $r1.stdout done
+
+# ---- 2) Single-name let binding ----
+
+# 'let p <- start CMD' has the same primary (the Job handle)
+# but never halts; structural launch failure would land in
+# rc.ok, but rc on let-of-start is the start operation's
+# success, not the running job's exit. To inspect the running
+# job's outcome use 'wait'.
+let p2 <- start sh -c "sleep 0.05"
+let r2 <- wait $p2
+assert $r2.ok
+
+# ---- 3) Tuple binding for start ----
+
+# 'let (rc, p) <- start CMD' captures both the start
+# operation's rc envelope and the typed Job handle. Useful when
+# the script wants both: rc.ok confirms the spawn went through,
+# $p is then waited or killed.
+let (rc3, p3) <- start sh -c "sleep 0.05; echo three"
+assert $rc3.ok
+guard r3 <- wait $p3
+assert contains $r3.stdout three
+
+# ---- 4) Future-shaped semantics ----
+
+# 'start sh -c true' may exit before the next script line runs.
+# wait must still return the cached envelope: a job that
+# completed instantly does not lose its result.
+guard p4 <- start sh -c "true"
+# (intentionally omit a sleep here; the racier the better.)
+guard r4 <- wait $p4
+assert $r4.ok
+
+# ---- 5) Non-zero exit lands in the envelope ----
+
+# Use 'let' on the wait so the non-zero rc does not halt the
+# script; the body inspects $r5.code and $r5.stderr.
+let p5 <- start sh -c "echo nope 1>&2; exit 7"
+let r5 <- wait $p5
+assert not $r5.ok
+assert $r5.code == 7
+assert contains $r5.stderr nope
+
+# ---- 6) Default kill: SIGTERM to the process group ----
+
+# 'kill' returns ok when the signal was delivered. wait reports
+# the lifecycle facts: ok stays tied to "exit code 0", so a
+# signalled process is not ok; the killed and signal fields
+# carry the "I asked for this" intent. SIGTERM yields code 143
+# by shell convention (128 + signal number).
+guard p6 <- start sh -c "sleep 60"
+guard k6 <- kill $p6
+assert $k6.ok
+let r6 <- wait $p6
+assert not $r6.ok
+assert $r6.killed
+assert $r6.signal == TERM
+assert $r6.code == 143
+
+# ---- 7) Custom signal via --signal=NAME ----
+
+# The trap installs an exit-42 handler before sleep blocks. A
+# brief sleep gives the trap time to install before the kill
+# arrives. Both 'SIGUSR1' and 'USR1' spellings are accepted by
+# --signal=. The trap exits 42, so $r7.code is 42 (not the
+# 128+10 convention) and $r7.ok is false; the lifecycle facts
+# ($r7.killed, $r7.signal) carry the rest.
+guard p7 <- start sh -c "trap 'exit 42' USR1; sleep 60"
+sleep 0.05                                  # let the trap install
+guard k7 <- kill --signal=USR1 $p7
+assert $k7.ok
+let r7 <- wait $p7
+assert not $r7.ok
+assert $r7.killed
+assert $r7.signal == USR1
+assert $r7.code == 42
+
+# ---- 8) Process-group reach ----
+
+# The wrapper forks a child, then waits for it. Without
+# process-group kill, SIGTERM to the wrapper would leave the
+# inner sleep orphaned. With Setpgid: true the child is in the
+# same group, so 'kill -<pgid>' reaches both.
+guard p8 <- start sh -c "(sleep 60) & wait"
+guard k8 <- kill $p8
+let r8 <- wait $p8
+assert $r8.killed
+assert $r8.signal == TERM
+
+# ---- 9) defer kill inside a def ----
+
+# 'def' opens a defer scope. 'defer kill $obs' fires when the
+# def returns, so the observer is killed at the function
+# boundary, not at end-of-script. The print after the def call
+# confirms execution returned cleanly.
+def run_observer(label) {
+    guard obs <- start sh -c "sleep 60"
+    defer kill $obs
+    print "observer-running"
+    print $label
+}
+run_observer first-call
+run_observer second-call
+print after-def-calls
+
+# ---- 10) PID mid-flight: interpolation and /proc lookup ----
+
+# The PID is set at start. Use it in string interpolation or
+# pass it to any tool that takes a PID. Here we just confirm
+# the synthesised path is well-formed; a tool like 'bpftool
+# prog show pinned ...' or 'perf record -p $p10.pid' would
+# slot in identically.
+guard p10 <- start sh -c "sleep 0.05"
+let proc_path = "/proc/${p10.pid}/comm"
+print $proc_path
+guard r10 <- wait $p10
+assert $r10.ok
+
+# ---- 11) Many concurrent jobs ----
+
+# foreach launches a bounded sequence of jobs and reaps each in
+# turn. Each iteration's wait observes the rc; the loop body
+# never lets a job leak.
+foreach idx in '0' |> jq "[range(3)]" {
+    guard pi <- start sh -c "echo job-${idx}; sleep 0.02"
+    guard ri <- wait $pi
+    assert $ri.ok
+    assert contains $ri.stdout "job-"
+}
+
+# ---- 12) Producer + observer with retry-driven sampling ----
+
+# A long-running producer streams lines into a log file. The
+# observer polls 'test -f' until the producer has written at
+# least one line, then snapshots the file once. defer kill
+# guarantees the producer is reaped if any later assertion
+# halts the script; the explicit wait at the bottom reaps it
+# on the happy path so the wait acknowledges the lifecycle.
+let logfile = "/tmp/job-control-producer.log"
+let _ <- rm -f $logfile                     # clean slate
+
+guard producer <- start sh -c 'for i in 1 2 3 4 5; do echo line-$i >> /tmp/job-control-producer.log; sleep 0.05; done'
+defer kill --signal=TERM $producer
+
+retry {
+    let probe <- test -f /tmp/job-control-producer.log
+} until $probe.ok or timeout 3s
+assert $probe.ok                            # file appeared in time
+
+let snapshot <- cat /tmp/job-control-producer.log
+assert contains $snapshot.stdout line-1
+
+let r12 <- wait $producer                   # reap on the happy path
+let _ <- rm -f $logfile
+
+# ---- 13) Discard the rc; just the handle ----
+
+# 'let (_, p) <- start CMD' drops the start rc and keeps the
+# job handle. Useful when launching is known to succeed and the
+# script only cares about the running job. The companion wait
+# still observes the running job's outcome.
+let (_, p13) <- start sh -c "sleep 0.05"
+guard r13 <- wait $p13
+assert $r13.ok
+
+# ---- 14) jq over captured stdout ----
+
+# A job that emits JSON can be threaded through jq just like
+# any captured-result envelope. Useful when the producer is a
+# tool like 'bpftool prog show -j' and the script wants to
+# extract a single field.
+guard p14 <- start sh -c "echo '{\"name\":\"showcase\",\"count\":3}'"
+guard r14 <- wait $p14
+let parsed = $r14.stdout |> jq "."
+assert $parsed.name == showcase
+assert $parsed.count == 3
+
+print all-permutations-passed
