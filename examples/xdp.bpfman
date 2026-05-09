@@ -11,11 +11,11 @@
 require ok exec ip link add bpfman-xdp type dummy
 require ok exec ip link set bpfman-xdp up
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass]
+    --programs xdp:pass
 
-let link = [bpfman link attach xdp --iface bpfman-xdp $prog]
+guard link <- bpfman link attach xdp --iface bpfman-xdp $prog
 
 bpfman link detach $link
 bpfman program unload $prog

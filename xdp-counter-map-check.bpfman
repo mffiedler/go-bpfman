@@ -27,18 +27,18 @@ exec ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
 exec ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
-let prog = [bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats]
+guard prog <- bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
 
 # Attach to the veth endpoint in the root namespace.
-let link = [bpfman link attach xdp -i veth-host $prog]
+guard link <- bpfman link attach xdp -i veth-host $prog
 
 # First burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
 exec sleep 1
 
 # Snapshot the counters after the first burst.
-let raw1  = [exec bpftool map dump id $prog.status.maps[0].id]
-let snap1 = [jq "." $raw1.stdout]
+guard raw1 <- exec bpftool map dump id $prog.status.maps[0].id
+guard snap1 <- jq "." $raw1.stdout
 
 # Second burst of traffic.
 require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -47,14 +47,14 @@ exec sleep 1
 # Snapshot again. Because this is a per-CPU map, traffic may be counted
 # on different CPUs across bursts, so compare the full dump rather than
 # a single CPU slot.
-let raw2  = [exec bpftool map dump id $prog.status.maps[0].id]
-let snap2 = [jq "." $raw2.stdout]
+guard raw2 <- exec bpftool map dump id $prog.status.maps[0].id
+guard snap2 <- jq "." $raw2.stdout
 assert $raw1.stdout != $raw2.stdout
 
 # Show the actual differences between the two snapshots. Use exec
 # status because diff exits 1 when files differ, which is a domain
 # result rather than an execution failure.
-let d = [exec status diff -u file:$raw1.stdout file:$raw2.stdout]
+let d <- exec diff -u file:$raw1.stdout file:$raw2.stdout
 assert $d.exit_code <= 1
 print $d.stdout
 

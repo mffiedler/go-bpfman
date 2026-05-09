@@ -11,11 +11,11 @@
 require ok exec ip link add bpfman-tc type dummy
 require ok exec ip link set bpfman-tc up
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats]
+    --programs tc:stats
 
-let link = [bpfman link attach tc --iface bpfman-tc --direction ingress $prog]
+guard link <- bpfman link attach tc --iface bpfman-tc --direction ingress $prog
 
 bpfman link detach $link
 bpfman program unload $prog

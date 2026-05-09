@@ -8,11 +8,11 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell repl -f examples/kprobe.bpfman
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/kprobe_counter.bpf.o \
-    --programs kprobe:kprobe_counter]
+    --programs kprobe:kprobe_counter
 
-let link = [bpfman link attach kprobe --fn-name try_to_wake_up $prog]
+guard link <- bpfman link attach kprobe --fn-name try_to_wake_up $prog
 
 bpfman link detach $link
 bpfman program unload $prog

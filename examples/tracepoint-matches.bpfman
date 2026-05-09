@@ -11,9 +11,9 @@
 # Run from the repo root with:
 #   sudo bpfman-shell repl -f examples/tracepoint-matches.bpfman
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
-    --programs tracepoint:tracepoint_kill_recorder]
+    --programs tracepoint:tracepoint_kill_recorder
 require not nil prog
 let pid = $prog.record.program_id
 
@@ -33,7 +33,7 @@ assert $prog matches {
 # Round-trip: Get returns a record whose tracked fields agree with
 # what load returned. Anything outside this block can vary without
 # breaking the script.
-let got = [bpfman program get $pid]
+guard got <- bpfman program get $pid
 require not nil got
 assert $got matches {
     status.kernel.id:            $prog.status.kernel.id
@@ -44,7 +44,7 @@ assert $got matches {
     record.handles.pin_path:     $prog.record.handles.pin_path
 }
 
-let link = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]
+guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
 require not nil link
 let linkID = $link.record.id
 
@@ -56,7 +56,7 @@ assert $link matches {
     status.kernel_seen:          true
 }
 
-let gotLink = [bpfman link get $linkID]
+guard gotLink <- bpfman link get $linkID
 require not nil gotLink
 assert $gotLink matches {
     record.id:                   $linkID

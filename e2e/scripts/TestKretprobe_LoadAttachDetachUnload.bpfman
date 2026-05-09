@@ -21,7 +21,7 @@
 # Pull in the shared lifecycle assertion helpers.
 source lib.bpfman
 
-let prog = [bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter]
+guard prog <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
 require not nil prog
 let pid = $prog.record.program_id
 
@@ -30,13 +30,13 @@ let pid = $prog.record.program_id
 expect_program_load $prog kretprobe kprobe kprobe_counter
 
 # Round-trip: Get returns the same program record.
-let got = [bpfman program get $pid]
+guard got <- bpfman program get $pid
 require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.
-let listed = [bpfman program list -o json]
+guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
@@ -46,7 +46,7 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # Attach to try_to_wake_up. The attach command is the same as for
 # kprobe — retprobe semantics come from the program type declared
 # at load, so the server returns kind=kretprobe and retprobe=true.
-let link = [bpfman link attach kprobe --fn-name try_to_wake_up $prog]
+guard link <- bpfman link attach kprobe --fn-name try_to_wake_up $prog
 require not nil link
 let linkID = $link.record.id
 
@@ -59,7 +59,7 @@ assert $link.record.details.retprobe
 assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
-let gotLink = [bpfman link get $linkID]
+guard gotLink <- bpfman link get $linkID
 require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
@@ -69,7 +69,7 @@ assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
-let listedLinks = [bpfman link list -o json]
+guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -82,12 +82,12 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-let dumpBefore = [exec bpftool map dump id $mapID -j]
+guard dumpBefore <- exec bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 require ok exec sleep 0.1
 
-let dumpAfter = [exec bpftool map dump id $mapID -j]
+guard dumpAfter <- exec bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta

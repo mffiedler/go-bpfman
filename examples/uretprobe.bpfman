@@ -11,14 +11,14 @@
 # Run from the repo root with:
 #   sudo bpfman-shell repl -f examples/uretprobe.bpfman
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/uprobe_counter.bpf.o \
-    --programs uretprobe:uprobe_counter]
+    --programs uretprobe:uprobe_counter
 
-let link = [bpfman link attach uprobe \
+guard link <- bpfman link attach uprobe \
     --target bin/e2e.test \
     --fn-name e2e_uprobe_call_malloc \
-    $prog]
+    $prog
 
 bpfman link detach $link
 bpfman program unload $prog

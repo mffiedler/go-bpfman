@@ -32,7 +32,7 @@ require ok exec ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-
 require ok exec ip netns exec bpfman-tc ip link set veth-tc-ns up
 
 # Load the TC counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
-let prog = [bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats]
+guard prog <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
 require not nil prog
 let pid = $prog.record.program_id
 
@@ -42,13 +42,13 @@ let pid = $prog.record.program_id
 expect_program_load $prog tc extension stats
 
 # Round-trip: Get returns the same program record.
-let got = [bpfman program get $pid]
+guard got <- bpfman program get $pid
 require not nil got
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.
-let listed = [bpfman program list -o json]
+guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
@@ -59,7 +59,7 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # dispatcher program; the link records the dispatcher's
 # program_id rather than the user extension's, so we verify
 # details against the dispatcher-facing fields.
-let link = [bpfman link attach tc --iface veth-tc-host --direction ingress --priority 50 $prog]
+guard link <- bpfman link attach tc --iface veth-tc-host --direction ingress --priority 50 $prog
 require not nil link
 let linkID = $link.record.id
 
@@ -76,7 +76,7 @@ assert $link.status.kernel_seen
 require ok exec tc filter show dev veth-tc-host ingress
 
 # Round-trip: GetLink returns the same link record.
-let gotLink = [bpfman link get $linkID]
+guard gotLink <- bpfman link get $linkID
 require not nil gotLink
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
@@ -88,7 +88,7 @@ assert $gotLink.record.details.dispatcher_id == $link.record.details.dispatcher_
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
-let listedLinks = [bpfman link list -o json]
+guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -101,12 +101,12 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
 
-let dumpBefore = [exec bpftool map dump id $mapID -j]
+guard dumpBefore <- exec bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 require ok exec ip netns exec bpfman-tc ping -c 5 -i 0.05 198.51.100.1
 
-let dumpAfter = [exec bpftool map dump id $mapID -j]
+guard dumpAfter <- exec bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta

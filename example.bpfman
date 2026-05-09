@@ -25,7 +25,7 @@
 
 # Feature-detect bpftool; it is optional for load/attach but we use
 # it for the cross-validation section below.
-let bpftool = [exec status which bpftool]
+let bpftool <- exec which bpftool
 if $bpftool.exit_code == 0 {
     let have_bpftool = yes
 } else {
@@ -34,7 +34,7 @@ if $bpftool.exit_code == 0 {
 print $have_bpftool
 
 # Report the kernel version for the record.
-let uname = [exec uname -r]
+guard uname <- exec uname -r
 print $uname.stdout
 
 # ---- Alias ----------------------------------------------------------
@@ -86,9 +86,9 @@ if $have_bpftool == yes {
     # plus the dispatcher.  We parse its JSON output and assert
     # the stdout isn't empty; deeper structural checks would need a
     # loop (not in the language today).
-    let raw = [exec bpftool prog show -j]
+    guard raw <- exec bpftool prog show -j
     assert not-empty $raw.stdout
-    let progs = [jq "." $raw.stdout]
+    guard progs <- jq "." $raw.stdout
     # progs is a list; demonstrate index access.
     assert not-empty $progs[0].type
 }
