@@ -29,6 +29,16 @@ const (
 	OriginDispatcher
 	OriginMap
 	OriginExecResult
+	// OriginEnvelope is the captured-result envelope returned by
+	// every command form under the redesign: a structured shape
+	// carrying the success bit ("ok"), exit code, captured stdout
+	// and stderr, the typed payload from registered providers
+	// ("value"), and an optional pid for asynchronous jobs. Field
+	// access on an OriginEnvelope value walks the standard path
+	// machinery; the original Go envelope struct is recoverable
+	// via Origin() so consumers can pull out the typed payload
+	// without a JSON round-trip.
+	OriginEnvelope
 	// OriginNull is a Value that represents JSON null — a value
 	// that is present but whose content is null.  Distinct from
 	// an absent (zero) Value: an absent Value is a lookup miss or
@@ -61,6 +71,8 @@ func (k OriginKind) String() string {
 		return "map"
 	case OriginExecResult:
 		return "exec.result"
+	case OriginEnvelope:
+		return "envelope"
 	case OriginNull:
 		return "null"
 	default:
