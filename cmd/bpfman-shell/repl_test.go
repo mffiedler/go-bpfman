@@ -2948,20 +2948,29 @@ func TestReplLoop_ExecVariableExpansion(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
-func TestReplLoop_ExecContextCancellation(t *testing.T) {
+func TestReplLoop_InteractiveSurvivesParentCancellation(t *testing.T) {
 	t.Parallel()
 
+	// Interactive mode does not observe parent-ctx
+	// cancellation for foreground externals. The shell stays
+	// alive at the prompt; subsequent commands run under a
+	// fresh per-chunk ctx. This test feeds a 'true' (instant
+	// success) under a cancelled parent, follows it with a
+	// recognisable observable command, and asserts the second
+	// command ran -- proving the loop did not exit on the
+	// cancelled parent.
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately.
+	cancel()
 
-	input := "exec sleep 60\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	input := "exec true\nprint after-cancel\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(ctx, cli, nil, lr, shell.NewSession(), "", true)
 	require.NoError(t, err)
-	assert.NotEmpty(t, errBuf.String())
+	assert.Contains(t, outBuf.String(), "after-cancel",
+		"interactive loop must keep running after parent ctx cancellation")
 }
 
 func TestReplLoop_ExecTopLevelErrorsOnNonZero(t *testing.T) {

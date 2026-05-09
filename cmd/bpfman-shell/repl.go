@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 
 	"golang.org/x/term"
@@ -155,7 +157,16 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 // once over the whole script. Defers nest inside jobs so
 // 'defer kill $job' marks a job Managed before the leak walk
 // sees it.
+//
+// SIGINT and SIGTERM cancel the script-wide context, matching
+// the way a bash script aborts on ^C. Children spawned via
+// the bind path (capture exec) observe the same context and
+// shut down with the script; children spawned via the
+// foreground inherit path receive the signal directly through
+// the TTY's foreground process group.
 func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 	env := &shell.Env{
 		Session: session,
 		PrintResult: func(v shell.Value) error {
@@ -345,13 +356,32 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			// makes the prefix render as nothing.
 			_ = startLine
 			loc := sourceLoc{}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+
+			// Per-chunk SIGINT: a ^C at the prompt or
+			// during a long-running builtin cancels just
+			// this chunk's context, never the loop's.
+			// signal.NotifyContext installs a watcher
+			// scoped to chunkCtx; cancel() removes it
+			// before the next prompt so SIGINT delivered
+			// between prompts is observed by main.go's
+			// hard-exit watcher (a second ^C still kills
+			// the process). Foreground externals do not
+			// observe chunkCtx for cancellation (the
+			// inherit path uses exec.Command, not
+			// CommandContext) because ^C reaches the
+			// child directly through the TTY foreground
+			// group and the child handles it.
+			chunkCtx, cancelChunk := signal.NotifyContext(ctx, syscall.SIGINT)
+
+			env.ExecCommand = makeExecCommand(chunkCtx, cli, mgr, session, env, loc)
+			env.ExecBind = makeExecBind(chunkCtx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
 
 			chunkErr := shell.WithDeferScope(env, func() error {
 				return evalChunkInScope(cli, env, accumulated, loc)
 			})
+			cancelChunk()
+
 			if chunkErr == nil {
 				continue
 			}
@@ -362,7 +392,10 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			// already rendered by evalChunkInScope; swallow
 			// the errScriptError sentinel so the next
 			// prompt is reached rather than tearing the
-			// session down.
+			// session down. Context-cancellation errors
+			// from a ^C-interrupted builtin are similarly
+			// swallowed -- the user asked for the chunk
+			// to stop, and the next prompt is the answer.
 		}
 	})
 }
