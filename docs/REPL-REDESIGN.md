@@ -438,6 +438,67 @@ immutable once bound. The line is: **names may be rebound,
 values are immutable.** No explicit mutation verbs (`set`,
 `var`, `+=`).
 
+### 6.4 Scope
+
+The DSL has two kinds of scope: variable scopes and defer
+scopes. They share the same rule for what counts as a scope,
+which keeps the model small.
+
+**Scopes are created by**:
+
+- the top-level script
+- a `def NAME(...)` body
+
+**Blocks are not scopes**:
+
+- `if` / `elif` / `else` bodies
+- `foreach` bodies
+- `retry` bodies
+
+A block runs statements in a control structure; it does not
+introduce a new variable scope. A `let` inside a branch leaks
+into the enclosing scope, which is shell-like and matches the
+"straight-line test setup" idiom:
+
+```
+if $kernel_supports_kprobes {
+    let attach_kind = kprobe
+} else {
+    let attach_kind = tracepoint
+}
+print $attach_kind     # bound by whichever branch ran
+```
+
+The same rule applies to defer: a `defer` inside a block
+attaches to the enclosing scope, not to the block itself, so
+cleanup runs at the script's (or `def`'s) exit:
+
+```
+if $need_ns {
+    guard ns <- netns create test
+    defer netns delete $ns
+}
+# 'netns delete $ns' fires at script exit, not at block exit
+```
+
+A `def` body opens a fresh defer scope, so defers registered
+inside the body run at the def's return rather than at the
+caller's exit:
+
+```
+def setup_ns(name) {
+    guard ns <- netns create $name
+    defer netns delete $ns         # fires when setup_ns returns
+}
+
+setup_ns test                     # ns created, used, and deleted
+print "after"                     # nothing else to clean up here
+```
+
+This matches the "blocks control execution; only `def` and the
+top-level script create lexical scopes" rule. Variable shadowing
+(section 6.3) operates within whichever scope is active.
+
 ## 7. Lifecycle primitives
 
 ### 7.1 `guard`
@@ -466,10 +527,10 @@ statement and gives the renderer everything it needs.
 ### 7.2 `defer`
 
 `defer COMMAND` registers a cleanup command in the current
-defer scope. The top-level script is a defer scope; a `def`
-body is a defer scope; plain blocks (`if`, `foreach`, `retry`)
-are not -- defers inside those blocks register in the
-enclosing scope.
+defer scope. The scope rule is identical to the variable
+scope rule in section 6.4: the top-level script and `def`
+bodies are scopes; `if`, `foreach`, and `retry` blocks are
+not. A defer inside a block attaches to the enclosing scope.
 
 Argument capture timing is eager: the deferred command's
 arguments are evaluated when the `defer` statement runs and
