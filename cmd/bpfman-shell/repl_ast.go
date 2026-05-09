@@ -19,11 +19,14 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// runAST drives the --ast pipeline: read chunks of input,
-// parse each completed chunk, dump the resulting Program to
-// stdout. Errors are reported with a file:line: prefix and
-// the process exits non-zero (via ErrSilent) when any chunk
-// failed to parse, matching --check's diagnostic shape.
+// runAST drives the --ast pipeline: slurp the whole input,
+// tokenise and parse it as a single program, and dump the
+// resulting tree to stdout. Slurping (rather than the chunk-
+// at-a-time shape used by --check and the evaluator) is
+// deliberate: AST inspection wants one tree for the whole
+// file, not one tree per balanced statement. Errors are
+// reported with a file:line: prefix and the process exits
+// non-zero (via ErrSilent) when parsing fails.
 func (c *CLI) runAST() error {
 	reader, err := c.checkReader()
 	if err != nil {
@@ -41,70 +44,52 @@ func (c *CLI) runAST() error {
 	return nil
 }
 
-// replASTInput reads from r, accumulates lines until brace and
-// bracket depth balances (mirroring replLoop), tokenises and
-// parses each accumulated chunk, and writes the dumped AST to
-// out. Parse errors are written to errOut with a file:line:
-// prefix; returns true when any error was emitted.
+// replASTInput reads every line from r, joins them with
+// newlines, tokenises the whole input as one piece, parses
+// it as one Program, and dumps the resulting tree to out.
+// Parse errors are written to errOut with a file:line:
+// prefix; returns true when any error was emitted. Empty
+// input produces empty output and no error.
 func replASTInput(r LineReader, out io.Writer, errOut io.Writer, file string) bool {
-	var lineNo int
-	var buf strings.Builder
-	var startLine int
-	var cs contState
-	hadErrors := false
-
-	reportErr := func(line int, err error) {
-		hadErrors = true
-		loc := sourceLoc{file: file, line: line}
-		fmt.Fprintf(errOut, "%serror: %v\n", loc, err)
-	}
-
+	var b strings.Builder
 	for {
-		input, err := r.Readline()
+		line, err := r.Readline()
 		if err != nil {
-			if err == ErrInterrupt || err == io.EOF {
-				if buf.Len() > 0 {
-					reportErr(startLine, fmt.Errorf("unterminated block at end of input"))
-				}
+			if err == io.EOF || err == ErrInterrupt {
 				break
 			}
-			reportErr(lineNo, err)
-			break
+			fmt.Fprintf(errOut, "%s: %v\n", file, err)
+			return true
 		}
-		lineNo++
-
-		if buf.Len() == 0 {
-			startLine = lineNo
+		if b.Len() > 0 {
+			b.WriteByte('\n')
 		}
-		if buf.Len() > 0 {
-			buf.WriteByte('\n')
-		}
-		buf.WriteString(input)
-		cs.advance(input)
-		if cs.open() {
-			continue
-		}
-
-		accumulated := buf.String()
-		buf.Reset()
-		cs = contState{}
-
-		tokens, tokErr := shell.Tokenise(accumulated)
-		if tokErr != nil {
-			reportErr(startLine, tokErr)
-			continue
-		}
-		if len(tokens) == 0 {
-			continue
-		}
-		prog, parseErr := shell.Parse(tokens)
-		if parseErr != nil {
-			reportErr(startLine, parseErr)
-			continue
-		}
-		if dumpErr := shell.DumpAST(out, prog); dumpErr != nil {
-			reportErr(startLine, dumpErr)
-		}
+		b.WriteString(line)
 	}
-	return hadErrors
+	src := b.String()
+	if strings.TrimSpace(src) == "" {
+		return false
+	}
+
+	reportErr := func(err error) bool {
+		loc := sourceLoc{file: file, line: 1}
+		fmt.Fprintf(errOut, "%serror: %v\n", loc, err)
+		return true
+	}
+
+	tokens, tokErr := shell.Tokenise(src)
+	if tokErr != nil {
+		return reportErr(tokErr)
+	}
+	if len(tokens) == 0 {
+		return false
+	}
+	prog, parseErr := shell.Parse(tokens)
+	if parseErr != nil {
+		return reportErr(parseErr)
+	}
+	if dumpErr := shell.DumpAST(out, prog); dumpErr != nil {
+		return reportErr(dumpErr)
+	}
+	return false
 }
