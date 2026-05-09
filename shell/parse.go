@@ -45,14 +45,11 @@ type LetStmt struct {
 }
 
 // BindStmt binds the captured-result envelope of running Cmd to
-// Name. The shell parser produces a BindStmt for both spellings:
-// "let NAME <- CMD" sets Guard false (the bind always succeeds and
-// the consumer inspects $name.ok / $name.code itself), and "guard
-// NAME <- CMD" sets Guard true (the runtime halts when the captured
-// envelope is not ok, rendering the failure through the shared
-// formatter). The keyword distinction is collapsed into one AST
-// node because the only behavioural difference is the halt-on-fail
-// bit; they share the same lookup, capture, and binding path.
+// Name. "let NAME <- CMD" parses to BindStmt with Guard false: the
+// bind always succeeds and the consumer inspects $name.ok /
+// $name.code. "guard NAME <- CMD" parses to BindStmt with Guard
+// true: the runtime halts when the captured envelope is not ok,
+// rendering the failure through the shared formatter.
 type BindStmt struct {
 	Name  string
 	Cmd   *CommandStmt
@@ -480,14 +477,9 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 	}
 }
 
-// parseGuardStmt parses "guard NAME <- COMMAND". The captured-result
-// envelope of running COMMAND is bound to NAME just as it is for "let
-// NAME <- COMMAND"; the difference is the runtime halts the script
-// when the envelope is not ok, with the failure rendered through the
-// shared captured-result formatter. The structural form is fixed:
+// parseGuardStmt parses "guard NAME <- COMMAND". The form is fixed:
 // the keyword, an identifier, the bind sigil '<-', then a non-empty
-// command form. There is no "guard NAME = EXPR" spelling because
-// guard's purpose is to gate command execution.
+// command form. There is no "guard NAME = EXPR" spelling.
 func (p *parser) parseGuardStmt() (Stmt, error) {
 	guardTok := p.advance() // "guard"
 	if p.atEOF() || p.peek().Kind != TokenWord {
@@ -505,12 +497,11 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 }
 
 // parseBindRHS consumes the '<-' sigil and the command form that
-// follows it, returning a BindStmt. The RHS extends to the next
+// follows, returning a BindStmt. The RHS extends to the next
 // statement separator or block marker; a stray '=' or '<-' inside
-// the RHS is rejected to keep error messages crisp. The command
-// form itself reuses parseCommandArgs so every primary expression
-// the command-statement grammar understands works unchanged on the
-// right of a bind.
+// the RHS is rejected. parseCommandArgs handles the command-form
+// tokens so every primary expression the command-statement grammar
+// accepts works on the right of a bind.
 func (p *parser) parseBindRHS(stmtLoc Loc, name string, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
 	cmdTokens, err := p.takeBindRHSTokens(bindTok)
@@ -527,8 +518,8 @@ func (p *parser) parseBindRHS(stmtLoc Loc, name string, guard bool) (Stmt, error
 
 // takeBindRHSTokens collects the tokens that form the command on the
 // right of a '<-' bind. The run terminates at the next separator or
-// block marker; nested '=' and '<-' on the RHS are reported at the
-// offending token rather than silently included as command args.
+// block marker; nested '=' or '<-' on the RHS are rejected at the
+// offending token.
 func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 	var buf []Token
 	for !p.atEOF() {

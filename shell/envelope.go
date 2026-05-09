@@ -6,24 +6,24 @@ import (
 )
 
 // Envelope is the captured-result shape returned by every command
-// form under the redesign. The fields mirror the design's table:
+// form. The fields are:
 //
 //	ok      whether the command completed successfully
 //	code    exit code (subprocess) or 0/1 (in-process)
 //	stdout  captured stdout, or in-process renderable
 //	stderr  captured stderr, or in-process error message
 //	value   typed payload from registered providers; zero Value
-//	        when the command produced none (external commands and
-//	        the explicit `exec` escape hatch leave Value zero)
-//	pid     process id, present only when HasPID is true; sync
-//	        commands set HasPID false and the pid field is omitted
-//	        from the wrapped Value's path-walkable shape
+//	        when the command produced none (external commands
+//	        and the explicit exec escape hatch leave Value zero)
+//	pid     process id, present only when HasPID is true; the
+//	        pid field is omitted from the wrapped Value's
+//	        path-walkable shape when HasPID is false
 //
 // The struct is the boundary representation between commands and
 // the language. Producers populate it directly; consumers either
 // recover it via Value.Origin() to keep typed access to Value, or
-// use $name.ok / $name.code / $name.value... in the DSL where the
-// path-walker resolves through the JSON-tree mirror.
+// use $name.ok / $name.code / $name.value... where the path
+// walker resolves through the JSON-tree mirror.
 type Envelope struct {
 	OK     bool
 	Code   int
@@ -38,10 +38,9 @@ type Envelope struct {
 // origin slot (recoverable via Origin()) and a JSON-tree mirror in
 // the standard v slot so the path machinery resolves $r.ok,
 // $r.code, $r.stdout, $r.stderr, $r.value..., and $r.pid (when
-// HasPID) the same way it walks any other structured value. The
-// inner e.Value's JSON-tree shape is exposed under "value"; its
-// own typed origin is preserved by walking through Origin() rather
-// than the path lookup.
+// HasPID). The inner e.Value's JSON tree is exposed under "value";
+// its own typed origin is preserved through Origin(), not through
+// the path lookup.
 func ValueFromEnvelope(e Envelope) Value {
 	mirror := map[string]any{
 		"ok":     e.OK,

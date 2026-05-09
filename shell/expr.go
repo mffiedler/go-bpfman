@@ -354,7 +354,7 @@ func evalStmt(stmt Stmt, env *Env) error {
 		env.Session.Set(s.Name, val)
 		return nil
 	case *BindStmt:
-		return locErrorf(s.Loc, "'<-' bind: runtime support is not yet wired up; stage 2 of the REPL redesign delivers the captured-result envelope")
+		return locErrorf(s.Loc, "'<-' bind: runtime support is not yet wired up")
 	case *IfStmt:
 		return evalIfStmt(s, env)
 	case *CommandStmt:
