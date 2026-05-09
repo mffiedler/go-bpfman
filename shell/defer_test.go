@@ -164,6 +164,46 @@ func TestEvalProgram_Defer_ArgsCapturedAtRegisterTime(t *testing.T) {
 	assert.Equal(t, "cleanup original", joinArgTexts(r.calls[0]))
 }
 
+func TestEvalProgram_Defer_ShadowRebindingDoesNotLeak(t *testing.T) {
+	t.Parallel()
+
+	// The language permits shadowing: 'let' may rebind a name
+	// that already exists. The defer at the rebind boundary must
+	// see the original binding, regardless of which form did the
+	// rebind ('=' assignment or '<-' command capture). Three
+	// defers attached at distinct points in the rebind chain
+	// each capture a different snapshot, and the deferred calls
+	// fire in LIFO order over those frozen values.
+	r := &recorder{
+		rc: func(args []Arg) Envelope {
+			head := argText0(recordedCall{args: args})
+			if head == "fetch-third" {
+				return Envelope{OK: true}
+			}
+			return Envelope{OK: true}
+		},
+	}
+	env := &Env{Session: NewSession(), ExecBind: r.execBind}
+	src := "let r = first\n" +
+		"defer cleanup $r\n" +
+		"let r = second\n" +
+		"defer cleanup $r\n" +
+		"let r <- fetch-third\n" +
+		"defer cleanup $r\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	// Recorded ExecBind calls: one for the bind 'fetch-third',
+	// then three cleanups in LIFO order. The third cleanup runs
+	// first and saw the rc envelope from fetch-third (a
+	// StructuredValueArg). The second cleanup saw 'second' (a
+	// scalar). The first cleanup saw 'first'.
+	require.Len(t, r.calls, 4)
+	assert.Equal(t, "fetch-third", joinArgTexts(r.calls[0]))
+	assert.Equal(t, "cleanup $r", joinArgTexts(r.calls[1]))
+	assert.Equal(t, "cleanup second", joinArgTexts(r.calls[2]))
+	assert.Equal(t, "cleanup first", joinArgTexts(r.calls[3]))
+}
+
 func TestEvalProgram_Defer_FailureRendersAndCounts(t *testing.T) {
 	t.Parallel()
 
