@@ -337,6 +337,68 @@ func silentHandleJobLeak(j *shell.Job) {
 	}
 }
 
+// replJobs lists the jobs registered in the active job scope.
+// Read-only: peeking at status does not mark any job Managed
+// and does not move it out of the registry, so a 'jobs' call
+// after a kill still shows the killed entry until the prompt
+// chunk's WithDeferScope (or the session's WithJobScope) clears
+// it. Output is column-aligned text so a long argv does not
+// shift the earlier columns; each row is one job in
+// registration order.
+func replJobs(cli *bpfmancli.CLI, env *shell.Env) error {
+	jobs := env.ActiveJobs()
+	if len(jobs) == 0 {
+		return cli.PrintOut("(no jobs)\n")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-7s %-12s %-22s %s\n", "PID", "STATUS", "ORIGIN", "ARGV")
+	for _, j := range jobs {
+		origin := j.Origin
+		if origin == "" {
+			origin = "<interactive>"
+		}
+		argv := strings.Join(j.Args, " ")
+		fmt.Fprintf(&b, "%-7d %-12s %-22s %s\n", j.PID, jobStatus(j), origin, argv)
+	}
+	return cli.PrintOut(b.String())
+}
+
+// jobStatus reports the lifecycle stage of a Job for the 'jobs'
+// listing. Four buckets:
+//
+//	running   - process still alive, no kill issued.
+//	killing   - kill builtin has signalled but the reaper has
+//	            not yet observed exit (Done open, Killed true).
+//	exited N  - process exited with the given status code.
+//	killed S  - process ended on signal S (whether from our
+//	            kill builtin or an external sender).
+//
+// jobStatus does not block: it peeks Done with a non-blocking
+// select so listing is O(jobs) and never waits for an
+// in-flight process to die.
+func jobStatus(j *shell.Job) string {
+	select {
+	case <-j.Done:
+		// Process has been reaped; fields below are stable.
+	default:
+		j.Mu.Lock()
+		killed := j.Killed
+		j.Mu.Unlock()
+		if killed {
+			return "killing"
+		}
+		return "running"
+	}
+	j.Mu.Lock()
+	signal := j.Signal
+	exitCode := j.ExitCode
+	j.Mu.Unlock()
+	if signal != "" {
+		return fmt.Sprintf("killed %s", signal)
+	}
+	return fmt.Sprintf("exited %d", exitCode)
+}
+
 // signalShortName is the inverse of signalFromName: it maps a
 // syscall.Signal to the bare 'TERM' / 'USR1' / ... spelling so
 // the envelope's Signal field reads naturally regardless of

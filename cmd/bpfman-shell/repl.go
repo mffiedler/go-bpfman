@@ -495,6 +495,7 @@ var shellCommands = map[string]bool{
 	"defs":    true,
 	"exec":    true,
 	"file":    true,
+	"jobs":    true,
 	"jq":      true,
 	"kill":    true,
 	"require": true,
@@ -544,6 +545,11 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	case "jq":
 		val, err := replJQ(args[1:])
 		return true, val, err
+	case "jobs":
+		if len(args) > 1 {
+			return true, shell.Value{}, fmt.Errorf("jobs takes no arguments")
+		}
+		return true, shell.Value{}, replJobs(cli, env)
 	case "kill":
 		env, err := replKill(args[1:])
 		if err != nil {
@@ -1005,6 +1011,7 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("  start <command> [args]      Spawn a background process; primary is a $job handle (assignable)\n")
 	b.WriteString("  wait $job                   Block until the job exits; primary is the captured envelope (assignable)\n")
 	b.WriteString("  kill [--signal=NAME] $job   Signal the job's process group (default SIGTERM)\n")
+	b.WriteString("  jobs                        List jobs registered in the current scope\n")
 	b.WriteString("\n")
 	b.WriteString("  Idiom: guard p <- start CMD; defer kill $p\n")
 	b.WriteString("  In script mode, an unwaited or unkilled job is a leak (FAIL, exit 1).\n")

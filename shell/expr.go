@@ -784,6 +784,21 @@ func (e *Env) RegisterJob(j *Job) {
 	*e.jobs = append(*e.jobs, j)
 }
 
+// ActiveJobs returns a snapshot of the jobs registered in the
+// innermost active job scope, in registration order. The slice
+// is a fresh copy so callers may sort or filter without
+// disturbing the registry. Outside any job scope the result is
+// nil. Used by the 'jobs' builtin to list everything alive in
+// the current session.
+func (e *Env) ActiveJobs() []*Job {
+	if e.jobs == nil {
+		return nil
+	}
+	out := make([]*Job, len(*e.jobs))
+	copy(out, *e.jobs)
+	return out
+}
+
 // runWithDeferScope establishes a defer scope around fn. The
 // previous scope is saved and restored on exit so nested scopes
 // (program, def body) compose. fn's error is returned verbatim;

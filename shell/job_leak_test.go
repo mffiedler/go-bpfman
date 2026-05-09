@@ -29,7 +29,8 @@ func (r *jobLeakRecorder) handle(j *Job) {
 func TestRunWithDeferScope_UnmanagedJobReported(t *testing.T) {
 	t.Parallel()
 
-	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
+	sess := NewSession()
+	rec := &jobLeakRecorder{session: sess}
 	env := &Env{
 		Session:       sess,
 		HandleJobLeak: rec.handle,
@@ -50,7 +51,8 @@ func TestRunWithDeferScope_UnmanagedJobReported(t *testing.T) {
 func TestRunWithDeferScope_ManagedJobNotReported(t *testing.T) {
 	t.Parallel()
 
-	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
+	sess := NewSession()
+	rec := &jobLeakRecorder{session: sess}
 	env := &Env{
 		Session:       sess,
 		HandleJobLeak: rec.handle,
@@ -75,7 +77,8 @@ func TestRunWithDeferScope_DeferKillRunsBeforeLeakCheck(t *testing.T) {
 	// Models 'defer kill $job': the deferred command marks the
 	// job Managed, so the post-defers leak walk must see the
 	// updated state and skip the job.
-	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
+	sess := NewSession()
+	rec := &jobLeakRecorder{session: sess}
 	job := &Job{PID: 4242, Args: []string{"sleep", "60"}}
 
 	env := &Env{
@@ -119,7 +122,8 @@ func TestWithJobScope_NestedJobScopesAreIndependent(t *testing.T) {
 	// open one outer job scope per session unit) but the
 	// mechanism must compose for any embedder that wants
 	// finer-grained tracking.
-	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
+	sess := NewSession()
+	rec := &jobLeakRecorder{session: sess}
 	inner := &Job{PID: 1, Args: []string{"inner"}}
 	outer := &Job{PID: 2, Args: []string{"outer"}}
 
@@ -152,7 +156,8 @@ func TestWithJobScope_DefBodyDoesNotOpenNewJobScope(t *testing.T) {
 	// caller to wait does not leak. Models the
 	// 'WithJobScope { ... WithDeferScope { def body } ... }'
 	// driver shape.
-	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
+	sess := NewSession()
+	rec := &jobLeakRecorder{session: sess}
 	job := &Job{PID: 1, Args: []string{"sleep"}}
 
 	env := &Env{
@@ -193,6 +198,67 @@ func TestWithJobScope_NilHandleJobLeakIsSilent(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 0, env.Session.JobLeaks(), "nil handler must not bump the counter")
+}
+
+func TestEnv_ActiveJobsReturnsRegisteredOrder(t *testing.T) {
+	t.Parallel()
+
+	env := &Env{Session: NewSession()}
+
+	first := &Job{PID: 1, Args: []string{"a"}}
+	second := &Job{PID: 2, Args: []string{"b"}}
+	third := &Job{PID: 3, Args: []string{"c"}}
+
+	var snap []*Job
+	err := WithJobScope(env, func() error {
+		env.RegisterJob(first)
+		env.RegisterJob(second)
+		env.RegisterJob(third)
+		snap = env.ActiveJobs()
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Len(t, snap, 3, "ActiveJobs returns every registered job")
+	assert.Same(t, first, snap[0])
+	assert.Same(t, second, snap[1])
+	assert.Same(t, third, snap[2])
+}
+
+func TestEnv_ActiveJobsOutsideScopeIsNil(t *testing.T) {
+	t.Parallel()
+
+	env := &Env{Session: NewSession()}
+	assert.Nil(t, env.ActiveJobs(), "no scope means no jobs")
+}
+
+func TestEnv_ActiveJobsIsCopy(t *testing.T) {
+	t.Parallel()
+
+	// The slice is a snapshot: callers must not see future
+	// registrations and must not be able to corrupt the
+	// registry by mutating the returned slice.
+	env := &Env{Session: NewSession()}
+	first := &Job{PID: 1, Args: []string{"a"}}
+	second := &Job{PID: 2, Args: []string{"b"}}
+
+	err := WithJobScope(env, func() error {
+		env.RegisterJob(first)
+		snap := env.ActiveJobs()
+		require.Len(t, snap, 1)
+
+		// Mutate the snapshot; the next ActiveJobs call must
+		// not reflect the change.
+		snap[0] = nil
+
+		env.RegisterJob(second)
+		fresh := env.ActiveJobs()
+		require.Len(t, fresh, 2, "the second registration must be visible")
+		assert.Same(t, first, fresh[0], "snapshot mutation must not corrupt the registry")
+		assert.Same(t, second, fresh[1])
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func TestEnv_RegisterJobOutsideScopeIsNoop(t *testing.T) {
