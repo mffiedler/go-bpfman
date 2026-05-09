@@ -18,19 +18,23 @@
 # not trigger XDP because the kernel routes through loopback.
 
 # Create a namespace and veth pair for traffic generation.
-ip netns add bpfman-test
-ip link add veth-host type veth peer name veth-ns
-ip link set veth-ns netns bpfman-test
-ip addr add 198.51.100.1/24 dev veth-host
-ip link set veth-host up
-ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
-ip netns exec bpfman-test ip link set veth-ns up
+guard _ <- ip netns add bpfman-test
+defer ip netns del bpfman-test
+guard _ <- ip link add veth-host type veth peer name veth-ns
+defer ip link del veth-host
+guard _ <- ip link set veth-ns netns bpfman-test
+guard _ <- ip addr add 198.51.100.1/24 dev veth-host
+guard _ <- ip link set veth-host up
+guard _ <- ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
+guard _ <- ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
 guard prog <- bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
+defer bpfman program unload $prog
 
 # Attach to the veth endpoint in the root namespace.
 guard link <- bpfman link attach xdp -i veth-host $prog
+defer bpfman link detach $link
 
 # First burst of traffic.
 guard _ <- ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -51,18 +55,9 @@ guard raw2 <- bpftool map dump id $prog.status.maps[0].id
 guard snap2 <- jq "." $raw2.stdout
 assert $raw1.stdout != $raw2.stdout
 
-# Show the actual differences between the two snapshots. Use exec
-# status because diff exits 1 when files differ, which is a domain
-# result rather than an execution failure.
+# Show the actual differences between the two snapshots. diff
+# exits 1 when files differ, which is a domain result; under '<-'
+# the rc envelope captures the exit code without halting.
 let d <- diff -u file:$raw1.stdout file:$raw2.stdout
-assert $d.exit_code <= 1
+assert $d.code <= 1
 print $d.stdout
-
-# Clean up: detach, unload, remove network resources.
-bpfman link detach $link
-assert fail bpfman link get $link
-
-bpfman program unload $prog
-
-ip link del veth-host
-ip netns del bpfman-test

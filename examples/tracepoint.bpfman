@@ -11,8 +11,7 @@
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder
+defer bpfman program unload $prog
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
-
-bpfman link detach $link
-bpfman program unload $prog
+defer bpfman link detach $link

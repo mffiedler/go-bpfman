@@ -14,6 +14,7 @@
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder
+defer bpfman program unload $prog
 let pid = $prog.record.program_id
 
 # One block replaces eight separate `assert path == value` /
@@ -43,6 +44,7 @@ assert $got matches {
 }
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
+defer bpfman link detach $link
 let linkID = $link.record.id
 
 assert $link matches {
@@ -61,8 +63,6 @@ assert $gotLink matches {
     record.details.name:         $link.record.details.name
 }
 
-bpfman link detach $link
 assert fail bpfman link get $linkID
 
-bpfman program unload $pid
 assert fail bpfman program get $prog

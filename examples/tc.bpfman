@@ -9,15 +9,13 @@
 #   sudo bpfman-shell examples/tc.bpfman
 
 guard _ <- ip link add bpfman-tc type dummy
+defer ip link del bpfman-tc
 guard _ <- ip link set bpfman-tc up
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
+defer bpfman program unload $prog
 
 guard link <- bpfman link attach tc --iface bpfman-tc --direction ingress $prog
-
-bpfman link detach $link
-bpfman program unload $prog
-
-ip link del bpfman-tc
+defer bpfman link detach $link

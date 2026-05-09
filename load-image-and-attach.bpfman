@@ -6,15 +6,18 @@
 
 # Create a dummy interface for the test.
 guard _ <- ip link add bpfman-demo type dummy
+defer ip link del bpfman-demo
 guard _ <- ip link set bpfman-demo up
 
 # Load the XDP pass program from the bpfman bytecode registry.
 guard prog <- bpfman program load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
+defer bpfman program unload $prog
 let pid = $prog.record.program_id
 assert not-empty $pid
 
 # Attach to the dummy interface.
 guard link <- bpfman link attach xdp -i bpfman-demo $prog
+defer bpfman link detach $link
 
 # Verify the program and link are visible.
 assert ok bpfman show program $pid
@@ -23,14 +26,3 @@ require ok bpfman link get $link
 # List all managed programs and links.
 bpfman program list
 bpfman link list
-
-# Clean up: detach the link, then unload the program.
-bpfman link detach $link
-assert fail bpfman link get $link
-
-bpfman program unload $pid
-
-# Remove the dummy interface.
-ip link del bpfman-demo
-
-unset link prog pid

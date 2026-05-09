@@ -44,7 +44,9 @@
 ;;                 starting with '$'); single quotes keep '$'
 ;;                 literal.
 ;;   Flags:        --path, -m, --dry-run
-;;   Commands:     bpfman (domain gateway), assert, jq, file, exec, ...
+;;   Commands:     registered providers such as bpfman, jq, file, exec
+;;                 plus user-defined commands; unknown names fall
+;;                 through to subprocess execution
 ;;
 ;; Highlighting uses a custom font-lock matcher that parses each line
 ;; structurally, so tokens are fontified according to their position
@@ -141,8 +143,8 @@
 (defconst bpfman--tok-string 4)
 (defconst bpfman--tok-select 5)
 (defconst bpfman--tok-adapter-ref 6)
-(defconst bpfman--tok-delim 7)   ; [ ] { } ; — resets state to command
-(defconst bpfman--tok-block 8)   ; {  } — same role but block-scoped
+(defconst bpfman--tok-delim 7)   ; { } ; |> <- -- resets state to command
+(defconst bpfman--tok-block 8)   ; { } -- same role but block-scoped
 
 (defconst bpfman--adapter-prefixes '("file")
   "Known adapter prefixes for inline file:$var syntax.")
@@ -215,16 +217,23 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
             (push (list bpfman--tok-delim pos (+ pos 2)) tokens)
             (setq pos (+ pos 2)))
 
-           ;; Statement separator, command-substitution, block, or
-           ;; expression-group delimiter.  Most of these reset the
-           ;; structural state so the next word is treated as a
-           ;; command; ( ) are expression grouping and leave state
-           ;; alone (handled in the fontifier).
-           ((or (= ch ?\[) (= ch ?\])
-                (= ch ?{)  (= ch ?})
+           ;; Statement separator, block, or expression-group
+           ;; delimiter. '{' and ';' reset the structural state so
+           ;; the next word is treated as a command; '(' and ')'
+           ;; are expression grouping (or tuple-target delimiters
+           ;; after let/guard) and the fontifier inspects state to
+           ;; decide. Brackets ('[' ']') are not DSL delimiters --
+           ;; the only legal place for them is inside a varref's
+           ;; '[N]' index, which the varref tokeniser consumes
+           ;| internally; an unquoted bracket here is a runtime
+           ;; tokenisation error but is silently passed through by
+           ;; the editor so a mid-edit buffer does not blow up.
+           ((or (= ch ?{) (= ch ?})
                 (= ch ?\() (= ch ?\))
                 (= ch ?\;))
             (push (list bpfman--tok-delim pos (1+ pos)) tokens)
+            (setq pos (1+ pos)))
+           ((or (= ch ?\[) (= ch ?\]))
             (setq pos (1+ pos)))
 
            ;; Variable reference: $name.path or ${name.path}.
@@ -368,15 +377,13 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
 (defun bpfman--fontify-interp-string (beg end)
   "Fontify a string token in [BEG, END) with interpolation awareness.
 Literal runs (including the enclosing quote marks) get
-`font-lock-string-face'.  The \"${\" and \"}\" delimiters of an
-interpolation get `font-lock-keyword-face' so they read as
+`font-lock-string-face'. The \"${\" and \"}\" delimiters of
+an interpolation get `font-lock-keyword-face' so they read as
 operators against the surrounding string; the body in between
-gets `font-lock-variable-name-face' — typical bodies are
-variable references, and the three-shape rule keeps expression
-forms under their own sigils (\"[[...]]\", \"[...]\") which the
-normal structural fontifier handles.  Only touches double-quoted
-strings; single-quoted strings are fully literal and stay pure
-`font-lock-string-face'."
+gets `font-lock-variable-name-face' -- typical bodies are
+either a bare variable reference or an expression starting
+with '$'. Only touches double-quoted strings; single-quoted
+strings are fully literal and stay pure `font-lock-string-face'."
   (if (and (> end beg) (/= (char-after beg) ?\"))
       ;; Single-quoted (or the degenerate empty range): keep the
       ;; simple behaviour.
@@ -482,17 +489,15 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
           (put-text-property beg end 'face 'font-lock-keyword-face)
           (setq state 'args))
 
-         ;; Delimiter: [ ] { } ; ( ) |>.  Most open delimiters ([ { ;)
-         ;; and block close } reset to command position so the next
-         ;; word inside a command substitution or block body -- or
-         ;; the first word after a statement separator, elif/else, or
-         ;; a thread operator -- is treated as a command.  The close
-         ;; bracket `]' returns to argument position so words trailing
-         ;; a nested cmdsub are not mistaken for commands.  Parens
-         ;; ( ) are expression grouping and leave the surrounding
-         ;; state untouched.  `|>' is the thread operator: highlight
-         ;; as a keyword and reset to command position (the RHS of
-         ;; a thread is a command).
+         ;; Delimiter: { } ; ( ) |> <-. Block openers '{' and
+         ;; statement separator ';' reset to command position; the
+         ;; block closer '}' does the same so the first word of the
+         ;; following statement is treated as a command. Parens '('
+         ;; and ')' are expression grouping (or, after let/guard,
+         ;; tuple-target delimiters), and the fontifier consults
+         ;; state to decide. '|>' is the thread operator and '<-'
+         ;; is the bind sigil: both fontify as keywords and reset
+         ;; to command position because the RHS is a command form.
          ((= kind bpfman--tok-delim)
           (let ((dch (char-after beg)))
             (cond
@@ -502,8 +507,6 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
              ((= dch ?<)
               (put-text-property beg end 'face 'font-lock-keyword-face)
               (setq state 'start))
-             ((= dch ?\])
-              (setq state 'args))
              ;; `(` after `def NAME` opens the parameter list; switch
              ;; to a sub-state that fontifies words inside as
              ;; parameter names.

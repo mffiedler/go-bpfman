@@ -14,11 +14,10 @@
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/uprobe_counter.bpf.o \
     --programs uretprobe:uprobe_counter
+defer bpfman program unload $prog
 
 guard link <- bpfman link attach uprobe \
     --target bin/e2e.test \
     --fn-name e2e_uprobe_call_malloc \
     $prog
-
-bpfman link detach $link
-bpfman program unload $prog
+defer bpfman link detach $link

@@ -9,15 +9,13 @@
 #   sudo bpfman-shell examples/xdp.bpfman
 
 guard _ <- ip link add bpfman-xdp type dummy
+defer ip link del bpfman-xdp
 guard _ <- ip link set bpfman-xdp up
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/xdp_pass.bpf.o \
     --programs xdp:pass
+defer bpfman program unload $prog
 
 guard link <- bpfman link attach xdp --iface bpfman-xdp $prog
-
-bpfman link detach $link
-bpfman program unload $prog
-
-ip link del bpfman-xdp
+defer bpfman link detach $link
