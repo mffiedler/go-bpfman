@@ -563,7 +563,10 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	case "help":
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
-		return true, shell.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+		if env == nil {
+			return true, shell.Value{}, fmt.Errorf("source requires an active shell environment")
+		}
+		return true, shell.Value{}, replSource(ctx, cli, mgr, env, argTexts(args[1:]))
 	case "start":
 		val, err := replStart(ctx, env, loc.cite(), args[1:])
 		return true, val, err
@@ -837,17 +840,31 @@ type replContextKey int
 const replSourcingKey replContextKey = iota
 
 // replSource reads commands from a file and executes each line in
-// the current session. The sourced file shares all variable bindings
-// with the caller and is treated as one defer scope and one job
-// scope: 'defer cleanup' near the top of a sourced file fires when
-// the source command returns, not at the end of the chunk that
-// registered it, and the unmanaged-job walk runs once over the
-// whole file when the source command returns. This matches
-// 'bpfman-shell FILE' semantics so 'source FILE' from an
-// interactive prompt and direct invocation behave identically.
+// the caller's session. Source is shaped like a def body, not a
+// fresh script: it inherits the caller's session (vars, defs,
+// aliases, jobs) and opens its own defer scope so 'defer
+// cleanup' near the top of a sourced file fires when source
+// returns, but it does not open a new job scope. Jobs started
+// in the sourced file therefore live in the caller's job
+// scope: 'jobs' at the prompt sees them, 'wait $p' / 'kill $p'
+// work on $p that the file bound, and the caller's leak policy
+// applies on the caller's scope-exit. That matches the bash
+// mental model the user reaches for when they type 'source'
+// and the principle of least astonishment that anything bound
+// in the file is observable in the caller after the call
+// returns.
+//
+// Defers stay file-scoped because they are statement-level
+// cleanup ('when this completes'), and the natural completion
+// boundary for a sourced file is 'when source returns'. If
+// defers also inherited the caller's scope, a library file's
+// 'defer cleanup' would silently accumulate in the caller and
+// fire at some unknowable later moment; treating the file as
+// the cleanup boundary is the predictable answer.
+//
 // Nested source commands are rejected to prevent unbounded
 // recursion.
-func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
+func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *shell.Env, args []string) error {
 	if ctx.Value(replSourcingKey) != nil {
 		return fmt.Errorf("source cannot be used inside a sourced file")
 	}
@@ -863,76 +880,78 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 
 	ctx = context.WithValue(ctx, replSourcingKey, true)
 	file := args[0]
+	session := env.Session
 
-	env := &shell.Env{
-		Session: session,
-		PrintResult: func(v shell.Value) error {
-			return writeValue(cli, v)
-		},
-		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
-			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
-		},
-		// Source from a prompt is exploration: the user may
-		// be iterating on a broken file. Match the REPL's
-		// silent policy so warnings do not pile up across
-		// edit-source-edit cycles. A user who wants strict
-		// feedback runs 'bpfman-shell FILE' instead.
-		HandleJobLeak: silentJobLeakHandler(),
+	// Borrow the caller's env. Save the per-chunk dispatch
+	// fields and the defer-failure renderer so we can restore
+	// them when source returns; everything else (Session,
+	// PrintResult, HandleJobLeak, jobs registry) flows through
+	// unchanged so the caller's policy applies.
+	savedExecCommand := env.ExecCommand
+	savedExecBind := env.ExecBind
+	savedExecAssert := env.ExecAssertStmt
+	savedRenderDefer := env.RenderDeferFailure
+	defer func() {
+		env.ExecCommand = savedExecCommand
+		env.ExecBind = savedExecBind
+		env.ExecAssertStmt = savedExecAssert
+		env.RenderDeferFailure = savedRenderDefer
+	}()
+	env.RenderDeferFailure = func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+		renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 	}
 
-	return shell.WithJobScope(env, func() error {
-		return shell.WithDeferScope(env, func() error {
-			// Accumulate physical lines into logical statements,
-			// mirroring the continuation logic that replLoop uses
-			// for the interactive REPL and for 'bpfman-shell
-			// FILE'. Without this, multi-line forms in a sourced
-			// file (def / if / foreach / retry blocks, command
-			// substitutions that span lines) would each fail to
-			// parse on their first line because the open brace
-			// or bracket has not yet been closed.
-			var lineNo int
-			var buf strings.Builder
-			var startLine int
-			var cs contState
-			for {
-				input, err := lr.Readline()
-				if err != nil {
-					if err == io.EOF {
-						if buf.Len() > 0 {
-							return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
-						}
-						return nil
+	return shell.WithDeferScope(env, func() error {
+		// Accumulate physical lines into logical statements,
+		// mirroring the continuation logic that replLoop uses
+		// for the interactive REPL and for 'bpfman-shell
+		// FILE'. Without this, multi-line forms in a sourced
+		// file (def / if / foreach / retry blocks, command
+		// substitutions that span lines) would each fail to
+		// parse on their first line because the open brace
+		// or bracket has not yet been closed.
+		var lineNo int
+		var buf strings.Builder
+		var startLine int
+		var cs contState
+		for {
+			input, err := lr.Readline()
+			if err != nil {
+				if err == io.EOF {
+					if buf.Len() > 0 {
+						return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
 					}
-					return err
+					return nil
 				}
-				lineNo++
-
-				if buf.Len() == 0 {
-					startLine = lineNo
-				}
-				if buf.Len() > 0 {
-					buf.WriteByte('\n')
-				}
-				buf.WriteString(input)
-				cs.advance(input)
-
-				if cs.open() {
-					continue
-				}
-
-				accumulated := buf.String()
-				buf.Reset()
-				cs = contState{}
-
-				loc := sourceLoc{file: file, line: startLine}
-				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
-					return err
-				}
+				return err
 			}
-		})
+			lineNo++
+
+			if buf.Len() == 0 {
+				startLine = lineNo
+			}
+			if buf.Len() > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString(input)
+			cs.advance(input)
+
+			if cs.open() {
+				continue
+			}
+
+			accumulated := buf.String()
+			buf.Reset()
+			cs = contState{}
+
+			loc := sourceLoc{file: file, line: startLine}
+			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+				return err
+			}
+		}
 	})
 }
 
