@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -914,93 +915,154 @@ func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	return execCommand(ctx, cli, mgr, cmd)
 }
 
-func replHelp(cli *bpfmancli.CLI) error {
+// replHelp renders the overview (no args) or the detail for
+// one named builtin or keyword (one arg). The overview composes
+// a hand-curated 'Domain commands' section with auto-rendered
+// sections derived from builtinRegistry (grouped by Category,
+// alphabetised within group) and from keywordRegistry. Adding
+// a builtin or keyword updates the help automatically.
+func replHelp(cli *bpfmancli.CLI, args []string) error {
+	switch len(args) {
+	case 0:
+		return cli.PrintOut(renderHelpOverview())
+	case 1:
+		out, ok := renderHelpDetail(args[0])
+		if !ok {
+			return fmt.Errorf("no help for %q (try 'help' for the overview)", args[0])
+		}
+		return cli.PrintOut(out)
+	default:
+		return fmt.Errorf("help takes at most one argument")
+	}
+}
+
+// renderHelpOverview composes the no-arg help. The 'Domain
+// commands' block stays hand-curated because the bpfman
+// subcommand grammar is multi-level and does not fit a flat
+// registry; everything else is registry-derived.
+func renderHelpOverview() string {
 	var b strings.Builder
-	b.WriteString("Available commands:\n")
+	b.WriteString("Available commands:\n\n")
+	b.WriteString(domainCommandsBlock)
+	for _, cat := range categoryOrder {
+		writeBuiltinCategory(&b, cat)
+	}
+	writeKeywordSection(&b)
+	b.WriteString("'help <name>' shows the long-form help for a builtin or keyword.\n")
+	return b.String()
+}
+
+// domainCommandsBlock is the hand-curated top section of the
+// help overview. Phrased so multi-id arguments use plural
+// forms (<ids>) instead of trailing ellipsis to keep the
+// column-aligned table readable as a single scan.
+const domainCommandsBlock = `Domain commands (require "bpfman" prefix):
+
+  Program management:
+    bpfman program list [flags]                     List managed BPF programs
+    bpfman program get <id>                         Get program details (assignable)
+    bpfman program load file [flags]                Load from a local object file (assignable)
+    bpfman program load image [flags]               Load from an OCI image (assignable)
+    bpfman program unload <ids>                     Unload programs
+    bpfman program delete (<ids> | --all) [-r]      Delete with cascading cleanup
+    bpfman show program <id> [view] [-o]            Inspect (views: links, maps, paths)
+
+  Link management:
+    bpfman link attach <type> [flags] <id>          Attach a program (assignable)
+    bpfman link detach <link-ids>                   Detach links
+    bpfman link get <link-id>                       Get link details (assignable)
+    bpfman link list [flags]                        List managed links
+    bpfman link delete <link-ids> [-r]              Delete with cascading cleanup
+
+  Dispatcher management:
+    bpfman dispatcher list [--type <type>]           List dispatchers
+    bpfman dispatcher get <type> <nsid> <ifindex>    Get dispatcher details
+    bpfman dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher
+
+  Diagnostics:
+    bpfman audit [rules]                            Audit coherency (read-only)
+    bpfman audit explain [rule]                     Explain a coherency rule
+
+`
+
+// writeBuiltinCategory emits one section of the overview. The
+// section header comes from categoryLabels; the body lists
+// every builtin with that Category, alphabetised by name. A
+// category with no entries is skipped silently so an unused
+// constant does not produce an empty header.
+func writeBuiltinCategory(b *strings.Builder, cat string) {
+	var entries []builtin
+	for _, bi := range builtinRegistry {
+		if bi.Category == cat {
+			entries = append(entries, bi)
+		}
+	}
+	if len(entries) == 0 {
+		return
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	fmt.Fprintf(b, "%s:\n", categoryLabels[cat])
+	for _, bi := range entries {
+		fmt.Fprintf(b, "  %-44s %s\n", bi.Usage, bi.Summary)
+	}
 	b.WriteString("\n")
-	b.WriteString("Domain commands (require \"bpfman\" prefix):\n")
+}
+
+// writeKeywordSection emits the parser-level keyword section.
+// Keywords are listed in alphabetical order; their Usage often
+// shows multiple variants separated by '|' so the column width
+// is wider than the builtin sections.
+func writeKeywordSection(b *strings.Builder) {
+	if len(keywordRegistry) == 0 {
+		return
+	}
+	names := make([]string, 0, len(keywordRegistry))
+	for n := range keywordRegistry {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	b.WriteString("Keywords:\n")
+	for _, n := range names {
+		k := keywordRegistry[n]
+		fmt.Fprintf(b, "  %-56s %s\n", k.Usage, k.Summary)
+	}
 	b.WriteString("\n")
-	b.WriteString("  Program management:\n")
-	b.WriteString("    bpfman program list [flags]                     List managed BPF programs\n")
-	b.WriteString("    bpfman program get <id>                         Get program details (assignable)\n")
-	b.WriteString("    bpfman program load file [flags]                Load from a local object file (assignable)\n")
-	b.WriteString("    bpfman program load image [flags]               Load from an OCI image (assignable)\n")
-	b.WriteString("    bpfman program unload <id>...                   Unload programs\n")
-	b.WriteString("    bpfman program delete (<id>... | --all) [-r]    Delete with cascading cleanup\n")
-	b.WriteString("    bpfman show program <id> [view] [-o]            Inspect (views: links, maps, paths)\n")
-	b.WriteString("\n")
-	b.WriteString("  Link management:\n")
-	b.WriteString("    bpfman link attach <type> [flags] <id>          Attach a program (assignable)\n")
-	b.WriteString("    bpfman link detach <link-id>...                 Detach links\n")
-	b.WriteString("    bpfman link get <link-id>                       Get link details (assignable)\n")
-	b.WriteString("    bpfman link list [flags]                        List managed links\n")
-	b.WriteString("    bpfman link delete <link-id>... [-r]            Delete with cascading cleanup\n")
-	b.WriteString("\n")
-	b.WriteString("  Dispatcher management:\n")
-	b.WriteString("    bpfman dispatcher list [--type <type>]           List dispatchers\n")
-	b.WriteString("    bpfman dispatcher get <type> <nsid> <ifindex>    Get dispatcher details\n")
-	b.WriteString("    bpfman dispatcher delete <type> <nsid> <ifindex> Delete a dispatcher\n")
-	b.WriteString("\n")
-	b.WriteString("  Diagnostics:\n")
-	b.WriteString("    bpfman audit [rule...]                          Audit coherency (read-only; use CLI for --repair)\n")
-	b.WriteString("    bpfman audit explain [rule]                     Explain a coherency rule\n")
-	b.WriteString("\n")
-	b.WriteString("Shell commands:\n")
-	b.WriteString("\n")
-	b.WriteString("  exec <command> [args|file:$var...]        Run a host command\n")
-	b.WriteString("  file temp $var[.path]                     Write value to temp file (assignable)\n")
-	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
-	b.WriteString("  print <value>...                          Print one or more values (one pretty, many compact space-joined)\n")
-	b.WriteString("  source <file>                            Execute commands from a file\n")
-	b.WriteString("  unset <var>...                           Remove variable bindings\n")
-	b.WriteString("  vars                                     List session variables\n")
-	b.WriteString("  version                                  Print version information\n")
-	b.WriteString("  help                                     Show this help\n")
-	b.WriteString("\n")
-	b.WriteString("Async jobs:\n")
-	b.WriteString("  start <command> [args]      Spawn a background process; primary is a $job handle (assignable)\n")
-	b.WriteString("  wait $job                   Block until the job exits; primary is the captured envelope (assignable)\n")
-	b.WriteString("  kill $job                   SIGTERM, 2s grace, SIGKILL if still alive; blocks until reaped\n")
-	b.WriteString("  kill --grace=DUR $job       Same, with a custom grace window (e.g. --grace=500ms, --grace=0)\n")
-	b.WriteString("  kill --signal=NAME $job     Deliver a custom signal (USR1, HUP, ...); no escalation\n")
-	b.WriteString("  jobs                        List jobs registered in the current scope\n")
-	b.WriteString("\n")
-	b.WriteString("  Idiom: guard p <- start CMD; defer kill $p\n")
-	b.WriteString("  Script mode (bpfman-shell FILE, stdin script): unwaited jobs are a leak (FAIL, exit 1).\n")
-	b.WriteString("  Interactive prompt and 'source FILE' from a prompt: leaked jobs are SIGKILLed silently.\n")
-	b.WriteString("\n")
-	b.WriteString("Deferred cleanup:\n")
-	b.WriteString("  defer <command> [args]      Run COMMAND when the enclosing scope exits:\n")
-	b.WriteString("                                script  -> at script end\n")
-	b.WriteString("                                source  -> at end of sourced file\n")
-	b.WriteString("                                REPL    -> at end of prompt chunk\n")
-	b.WriteString("                                def     -> at def return\n")
-	b.WriteString("\n")
-	b.WriteString("Aliases:\n")
-	b.WriteString("  alias <name> = <expansion>               Define a first-token alias\n")
-	b.WriteString("  unalias <name>...                        Remove alias bindings\n")
-	b.WriteString("  aliases                                  List defined aliases\n")
-	b.WriteString("\n")
-	b.WriteString("Variables:\n")
-	b.WriteString("  let X = EXPR                      Bind an expression result\n")
-	b.WriteString("  let X <- COMMAND                  Bind a command's primary result\n")
-	b.WriteString("  guard X <- COMMAND                Bind primary; halt on failure\n")
-	b.WriteString("  let (rc, X) <- COMMAND            Bind result envelope and primary\n")
-	b.WriteString("  guard (rc, X) <- COMMAND          Same; halt on failure\n")
-	b.WriteString("  bpfman show program $prog         Variable reference (auto-extracts program ID)\n")
-	b.WriteString("\n")
-	b.WriteString("Assertions:\n")
-	b.WriteString("  assert <verb> [args...]       Check condition, continue on failure\n")
-	b.WriteString("  require <verb> [args...]      Check condition, stop on failure\n")
-	b.WriteString("  assert not <verb> [args...]   Negate condition\n")
-	b.WriteString("\n")
-	b.WriteString("  Operators (infix): == != < <= > >=  (semantics chosen by operand type)\n")
-	b.WriteString("  Verbs: nil, not-empty, ok, fail, path exists, contains\n")
-	b.WriteString("\n")
-	b.WriteString("Single-arg form: assert <bool-expr>      e.g. assert $flag, assert true\n")
-	b.WriteString("\n")
-	b.WriteString("Coerce stringy numeric input via [$x |> jq tonumber] before comparing.\n")
-	return cli.PrintOut(b.String())
+}
+
+// renderHelpDetail looks name up in the builtin registry, then
+// the keyword registry, and renders Usage / Summary / Detail.
+// Returns ok=false when the name is in neither registry so the
+// caller can produce a useful error.
+func renderHelpDetail(name string) (string, bool) {
+	if bi, ok := builtinRegistry[name]; ok {
+		return formatDetail(bi.Name, bi.Usage, bi.Summary, bi.Detail), true
+	}
+	if kw, ok := keywordRegistry[name]; ok {
+		return formatDetail(kw.Name, kw.Usage, kw.Summary, kw.Detail), true
+	}
+	return "", false
+}
+
+// formatDetail renders the detail block for one entry. Empty
+// fields drop their lines so a builtin without Detail just
+// shows Usage and Summary; a keyword without Summary shows
+// only Usage and Detail.
+func formatDetail(name, usage, summary, detail string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", name)
+	if usage != "" {
+		fmt.Fprintf(&b, "  usage: %s\n", usage)
+	}
+	if summary != "" {
+		fmt.Fprintf(&b, "  %s\n", summary)
+	}
+	if detail != "" {
+		b.WriteString("\n")
+		for _, line := range strings.Split(strings.TrimRight(detail, "\n"), "\n") {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+	}
+	return b.String()
 }
 
 // replHistoryPath returns the path to the REPL history file,

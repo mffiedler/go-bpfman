@@ -19,6 +19,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
@@ -90,14 +92,120 @@ type builtinCtx struct {
 // chosen candidate".
 type argCompleter func(session *shell.Session, baseDir string, tokens []string, trailingSpace bool) (candidates []string, replace int)
 
-// builtin describes one entry in the registry: how to run it
-// and how to complete its arguments. Pointer-free because the
-// registry is read-only at runtime; new builtins are added at
-// init time and the map is never mutated thereafter.
+// Category constants group builtins in the help overview.
+// Constants rather than strings so a typo in one entry shows
+// up at compile time rather than scattering an entry into a
+// new section.
+const (
+	categorySession = "session" // bindings, defs, aliases
+	categoryIO      = "io"      // external commands, file, jq, print, source
+	categoryAssert  = "assert"  // assert / require
+	categoryJobs    = "jobs"    // start / wait / kill / jobs
+	categoryMeta    = "meta"    // help / version
+)
+
+// categoryLabels maps a category constant to the display label
+// used in the help overview. categoryOrder fixes the rendering
+// sequence so the overview reads the same on every run; map
+// iteration order would otherwise produce arbitrary output.
+var categoryLabels = map[string]string{
+	categorySession: "Session and bindings",
+	categoryIO:      "I/O and external commands",
+	categoryJobs:    "Async jobs",
+	categoryAssert:  "Assertions",
+	categoryMeta:    "Meta",
+}
+
+var categoryOrder = []string{
+	categorySession,
+	categoryIO,
+	categoryJobs,
+	categoryAssert,
+	categoryMeta,
+}
+
+// builtin describes one entry in the registry: how to run it,
+// how to complete its arguments, and how to document itself.
+// The doc fields drive 'help' (overview) and 'help <name>'
+// (detail). Empty fields degrade gracefully -- a builtin with
+// no Detail just shows Usage+Summary on detail lookup.
+// Pointer-free because the registry is read-only at runtime.
 type builtin struct {
 	Name     string
 	Handler  func(builtinCtx) (shell.Value, error)
 	Complete argCompleter // nil = generic fallthrough
+
+	Category string // categoryXxx constant; ungrouped if empty
+	Usage    string // one-line syntax (e.g. "kill [--signal=NAME] [--grace=DUR] $job")
+	Summary  string // one-line description shown next to Usage
+	Detail   string // multi-paragraph long help; optional
+}
+
+// keyword describes a parser-level form (let, guard, defer,
+// def, bpfman) that participates in 'help' but is not part of
+// the dispatch table. Keywords have no handler and no per-call
+// completer because they are recognised by the parser before
+// dispatch ever runs.
+type keyword struct {
+	Name    string
+	Usage   string
+	Summary string
+	Detail  string
+}
+
+// keywordRegistry is the documentation source of truth for
+// parser-level forms. 'help' renders these in their own
+// section and 'help <name>' looks them up the same way it
+// looks up builtins. Adding a keyword: one entry here; the
+// help and completion paths pick it up automatically.
+var keywordRegistry = map[string]keyword{
+	"let": {
+		Name:    "let",
+		Usage:   "let X = EXPR  |  let X <- COMMAND  |  let (rc, X) <- COMMAND",
+		Summary: "Bind an expression result, a command's primary, or a (rc, primary) pair.",
+		Detail: "let evaluates the right-hand side and binds the named variable(s) " +
+			"in the current session. The '<-' form runs a command and binds its " +
+			"primary result; failure flows into the variable as an envelope with " +
+			"ok=false rather than halting the script. Use 'guard' for the " +
+			"halt-on-failure variant.",
+	},
+	"guard": {
+		Name:    "guard",
+		Usage:   "guard X <- COMMAND  |  guard (rc, X) <- COMMAND",
+		Summary: "Bind primary (and optionally rc); halt the script on a non-ok rc.",
+		Detail: "guard is the let-with-halt-on-failure form. If the captured rc is " +
+			"not ok, the script aborts and the driver renders the failed command's " +
+			"location, argv, and stderr. Use this when the next statement only " +
+			"makes sense if the command succeeded.",
+	},
+	"defer": {
+		Name:    "defer",
+		Usage:   "defer COMMAND ARGS",
+		Summary: "Run COMMAND when the enclosing defer scope exits.",
+		Detail: "Arguments are evaluated at register time so the captured values " +
+			"do not change if the variables they reference are later reassigned. " +
+			"Defers fire in LIFO order at scope exit. The enclosing scope is the " +
+			"script in script mode, the sourced file inside source, the prompt " +
+			"chunk in interactive mode, and the def body inside a def. " +
+			"'defer kill $p' is the canonical async-job cleanup idiom.",
+	},
+	"def": {
+		Name:    "def",
+		Usage:   "def NAME(P1, P2, ...) { BODY }",
+		Summary: "Define a user command callable as 'NAME ARG1 ARG2 ...'.",
+		Detail: "The body opens its own defer scope so a 'defer cleanup' inside the " +
+			"def fires when the def returns. Jobs started inside a def join the " +
+			"caller's job scope (so returning a $job handle for the caller to wait " +
+			"on does not register as a leak).",
+	},
+	"bpfman": {
+		Name:    "bpfman",
+		Usage:   "bpfman <subcommand> ...",
+		Summary: "Domain-command namespace prefix for program / link / dispatcher / audit verbs.",
+		Detail: "All bpfman domain operations live behind this prefix to keep them " +
+			"distinct from shell builtins and aliases. See the 'Domain commands' " +
+			"section of the overview for the available subcommands.",
+	},
 }
 
 // builtinRegistry is the single source of truth for the shell
@@ -118,26 +226,159 @@ var builtinRegistry map[string]builtin
 
 func init() {
 	builtinRegistry = map[string]builtin{
-		"alias":   {Name: "alias", Handler: handleAlias},
-		"aliases": {Name: "aliases", Handler: handleAliases},
-		"assert":  {Name: "assert", Handler: handleAssert},
-		"defs":    {Name: "defs", Handler: handleDefs},
-		"exec":    {Name: "exec", Handler: handleExec},
-		"file":    {Name: "file", Handler: handleFile},
-		"help":    {Name: "help", Handler: handleHelp},
-		"jobs":    {Name: "jobs", Handler: handleJobs},
-		"jq":      {Name: "jq", Handler: handleJQ},
-		"kill":    {Name: "kill", Handler: handleKill},
-		"print":   {Name: "print", Handler: handlePrint, Complete: completePrintArg},
-		"require": {Name: "require", Handler: handleRequire},
-		"source":  {Name: "source", Handler: handleSource, Complete: completeSourceArg},
-		"start":   {Name: "start", Handler: handleStart},
-		"unalias": {Name: "unalias", Handler: handleUnalias},
-		"undef":   {Name: "undef", Handler: handleUndef},
-		"unset":   {Name: "unset", Handler: handleUnset, Complete: completeUnsetArg},
-		"vars":    {Name: "vars", Handler: handleVars},
-		"version": {Name: "version", Handler: handleVersion},
-		"wait":    {Name: "wait", Handler: handleWait},
+		"alias": {
+			Name: "alias", Handler: handleAlias,
+			Category: categorySession,
+			Usage:    "alias <name> = <expansion>",
+			Summary:  "Define a first-token alias.",
+		},
+		"aliases": {
+			Name: "aliases", Handler: handleAliases,
+			Category: categorySession,
+			Usage:    "aliases",
+			Summary:  "List defined aliases.",
+		},
+		"assert": {
+			Name: "assert", Handler: handleAssert,
+			Category: categoryAssert,
+			Usage:    "assert <verb> [args...]  |  assert <bool-expr>  |  assert not <verb> [args...]",
+			Summary:  "Check a condition; continue on failure but record an assertion-failure for the exit code.",
+			Detail: "Verbs: nil, not-empty, ok, fail, path exists, contains, matches. " +
+				"Infix operators: == != < <= > >= (semantics chosen by operand type). " +
+				"The single-arg form takes any boolean expression: 'assert $flag', " +
+				"'assert true'. Use 'require' for halt-on-failure semantics. Coerce " +
+				"stringy numeric input via [$x |> jq tonumber] before comparing.",
+		},
+		"defs": {
+			Name: "defs", Handler: handleDefs,
+			Category: categorySession,
+			Usage:    "defs",
+			Summary:  "List user-defined commands.",
+		},
+		"exec": {
+			Name: "exec", Handler: handleExec,
+			Category: categoryIO,
+			Usage:    "exec <command> [args | file:$var]...",
+			Summary:  "Run a host command. Use 'file:$var' to materialise a structured value as a temp file.",
+		},
+		"file": {
+			Name: "file", Handler: handleFile,
+			Category: categoryIO,
+			Usage:    "file temp $var[.path]",
+			Summary:  "Write a value to a temp file; primary is the path (assignable).",
+		},
+		"help": {
+			Name: "help", Handler: handleHelp, Complete: completeHelpArg,
+			Category: categoryMeta,
+			Usage:    "help [<name>]",
+			Summary:  "Show the overview, or detailed help for a specific builtin or keyword.",
+			Detail: "With no arguments, render the overview grouped by category. " +
+				"With one argument, look the name up in the builtin and keyword " +
+				"registries and print Usage, Summary, and the long-form Detail " +
+				"if any.",
+		},
+		"jobs": {
+			Name: "jobs", Handler: handleJobs,
+			Category: categoryJobs,
+			Usage:    "jobs",
+			Summary:  "List jobs registered in the current scope.",
+			Detail: "Read-only: peeking at status does not mark any job Managed. Status " +
+				"buckets are running, killing (kill issued, reaper has not yet " +
+				"observed exit), exited N, killed SIG.",
+		},
+		"jq": {
+			Name: "jq", Handler: handleJQ,
+			Category: categoryIO,
+			Usage:    "jq <filter> <value>",
+			Summary:  "Apply a jq filter to a value (assignable).",
+		},
+		"kill": {
+			Name: "kill", Handler: handleKill,
+			Category: categoryJobs,
+			Usage:    "kill [--signal=NAME] [--grace=DUR] $job",
+			Summary:  "Terminate a job. Default: SIGTERM, 2s grace, SIGKILL if still alive; blocks until reaped.",
+			Detail: "The default path sends SIGTERM, waits up to --grace (default 2s), " +
+				"escalates to SIGKILL if the process is still alive, and blocks " +
+				"until the reaper has settled. --grace=0 sends SIGTERM and SIGKILL " +
+				"back-to-back. --signal=NAME (e.g. USR1, HUP) delivers a custom " +
+				"signal and returns immediately without escalation; use this for " +
+				"control-flow signals, not for termination. " +
+				"'defer kill $p' is the canonical async cleanup idiom.",
+		},
+		"print": {
+			Name: "print", Handler: handlePrint, Complete: completePrintArg,
+			Category: categoryIO,
+			Usage:    "print <value>...",
+			Summary:  "Print one or more values (one pretty, many compact space-joined).",
+		},
+		"require": {
+			Name: "require", Handler: handleRequire,
+			Category: categoryAssert,
+			Usage:    "require <verb> [args...]  |  require <bool-expr>  |  require not <verb> [args...]",
+			Summary:  "Check a condition; halt the script on failure.",
+			Detail: "Verbs and operators are the same as assert. Use require where the " +
+				"following statements only make sense if the condition holds.",
+		},
+		"source": {
+			Name: "source", Handler: handleSource, Complete: completeSourceArg,
+			Category: categoryIO,
+			Usage:    "source <file>",
+			Summary:  "Execute commands from a file in the caller's session.",
+			Detail: "Variables, defs, aliases, and jobs started in the file inherit the " +
+				"caller's scope. Defers in the file fire when source returns " +
+				"(file-as-cleanup-unit). Nested source is rejected.",
+		},
+		"start": {
+			Name: "start", Handler: handleStart,
+			Category: categoryJobs,
+			Usage:    "start <command> [args]",
+			Summary:  "Spawn a background process; primary is a $job handle (assignable).",
+			Detail: "The job runs as a process-group leader so 'kill' reaches every " +
+				"descendant. Output is captured into the handle's Stdout/Stderr; " +
+				"the script reads them after 'wait' returns. Script mode treats an " +
+				"unwaited/unkilled job as a leak (FAIL, exit 1); interactive mode " +
+				"silently SIGKILLs on session exit.",
+		},
+		"unalias": {
+			Name: "unalias", Handler: handleUnalias,
+			Category: categorySession,
+			Usage:    "unalias <name>...",
+			Summary:  "Remove alias bindings.",
+		},
+		"undef": {
+			Name: "undef", Handler: handleUndef,
+			Category: categorySession,
+			Usage:    "undef <name>...",
+			Summary:  "Remove user-defined commands.",
+		},
+		"unset": {
+			Name: "unset", Handler: handleUnset, Complete: completeUnsetArg,
+			Category: categorySession,
+			Usage:    "unset <name>...",
+			Summary:  "Remove variable bindings.",
+		},
+		"vars": {
+			Name: "vars", Handler: handleVars,
+			Category: categorySession,
+			Usage:    "vars",
+			Summary:  "List session variables and their kinds.",
+		},
+		"version": {
+			Name: "version", Handler: handleVersion,
+			Category: categoryMeta,
+			Usage:    "version",
+			Summary:  "Print version information.",
+		},
+		"wait": {
+			Name: "wait", Handler: handleWait,
+			Category: categoryJobs,
+			Usage:    "wait $job",
+			Summary:  "Block until the job exits; primary is the captured envelope (assignable).",
+			Detail: "The envelope carries ok, code, stdout, stderr, killed, signal. " +
+				"A killed job that the script asked to terminate reports killed=true " +
+				"with signal set; the script distinguishes 'I asked for this' from " +
+				"'real failure' via $r.killed rather than $r.ok.",
+		},
 	}
 }
 
@@ -179,9 +420,11 @@ func handleFile(c builtinCtx) (shell.Value, error) {
 	return replFile(c.CLI, c.Args)
 }
 
-// handleHelp adapts replHelp to the builtin shape.
+// handleHelp adapts replHelp to the builtin shape, plumbing
+// the user's argument (if any) through so 'help <name>' looks
+// up the named builtin or keyword.
 func handleHelp(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replHelp(c.CLI)
+	return shell.Value{}, replHelp(c.CLI, argTexts(c.Args))
 }
 
 // handleJobs lists jobs registered in the active job scope.
@@ -299,6 +542,31 @@ func completePrintArg(session *shell.Session, baseDir string, tokens []string, t
 		return replCompleteVarPath(session, prefix, true)
 	}
 	return nil, 0
+}
+
+// completeHelpArg offers builtin and keyword names for 'help
+// <name>'. Walks both registries so a 'help def<TAB>' pulls in
+// def, defs, defer at once.
+func completeHelpArg(session *shell.Session, baseDir string, tokens []string, trailingSpace bool) (candidates []string, replace int) {
+	_ = session
+	_ = baseDir
+	prefix := ""
+	if len(tokens) >= 2 && !trailingSpace {
+		prefix = tokens[len(tokens)-1]
+	}
+	var names []string
+	for n := range builtinRegistry {
+		if strings.HasPrefix(n, prefix) {
+			names = append(names, n+" ")
+		}
+	}
+	for n := range keywordRegistry {
+		if strings.HasPrefix(n, prefix) {
+			names = append(names, n+" ")
+		}
+	}
+	sort.Strings(names)
+	return names, len(prefix)
 }
 
 // completeUnsetArg offers bare variable-name completion for
