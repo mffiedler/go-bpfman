@@ -75,7 +75,7 @@ let esc_dollar = "price=\$5"                       # literal $ without ${...}
 # ---- 4. Command capture with the bind sigil ----
 
 guard one <- bpfman program list
-guard arg_after <- exec diff file:$a file:$b
+guard arg_after <- diff file:$a file:$b
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
 
@@ -173,17 +173,17 @@ unalias b
 
 # ---- 12. Shell builtins ----
 
-exec ip link add dummy0 type dummy
-exec ip link set dummy0 up
-let _ <- exec diff -u file:$raw1.stdout file:$raw2.stdout
+ip link add dummy0 type dummy
+ip link set dummy0 up
+let _ <- diff -u file:$raw1.stdout file:$raw2.stdout
 
 guard parsed <- jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
 let tmp_path <- file temp $data
-exec cat file:$data
-exec cat file:$parsed.name
+cat file:$data
+cat file:$parsed.name
 
 print $parsed
 vars
@@ -268,9 +268,9 @@ bpfman gc --dry-run
 
 let lhs = "aaa"
 let rhs = "bbb"
-exec diff file:$lhs file:$rhs
-exec wc -c file:$parsed.name
-exec sha256sum file:${parsed.name}
+diff file:$lhs file:$rhs
+wc -c file:$parsed.name
+sha256sum file:${parsed.name}
 
 # ---- 17. Assignment vs comparison on adjacent lines ----
 

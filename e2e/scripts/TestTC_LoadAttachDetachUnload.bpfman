@@ -19,17 +19,17 @@
 source lib.bpfman
 
 # Best-effort cleanup of leftover netns/veth from a prior run.
-let _ <- exec ip link del veth-tc-host
-let _ <- exec ip netns del bpfman-tc
+let _ <- ip link del veth-tc-host
+let _ <- ip netns del bpfman-tc
 
 # Set up a veth pair.
-guard _ <- exec ip netns add bpfman-tc
-guard _ <- exec ip link add veth-tc-host type veth peer name veth-tc-ns
-guard _ <- exec ip link set veth-tc-ns netns bpfman-tc
-guard _ <- exec ip addr add 198.51.100.1/24 dev veth-tc-host
-guard _ <- exec ip link set veth-tc-host up
-guard _ <- exec ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-ns
-guard _ <- exec ip netns exec bpfman-tc ip link set veth-tc-ns up
+guard _ <- ip netns add bpfman-tc
+guard _ <- ip link add veth-tc-host type veth peer name veth-tc-ns
+guard _ <- ip link set veth-tc-ns netns bpfman-tc
+guard _ <- ip addr add 198.51.100.1/24 dev veth-tc-host
+guard _ <- ip link set veth-tc-host up
+guard _ <- ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-ns
+guard _ <- ip netns exec bpfman-tc ip link set veth-tc-ns up
 
 # Load the TC counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
@@ -70,7 +70,7 @@ assert $link.record.details.revision > 0
 assert $link.status.kernel_seen
 
 # Verify the dispatcher is visible to tc(8).
-guard _ <- exec tc filter show dev veth-tc-host ingress
+guard _ <- tc filter show dev veth-tc-host ingress
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
@@ -97,12 +97,12 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
 
-guard dumpBefore <- exec bpftool map dump id $mapID -j
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-guard _ <- exec ip netns exec bpfman-tc ping -c 5 -i 0.05 198.51.100.1
+guard _ <- ip netns exec bpfman-tc ping -c 5 -i 0.05 198.51.100.1
 
-guard dumpAfter <- exec bpftool map dump id $mapID -j
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta
@@ -115,5 +115,5 @@ assert fail bpfman link get $linkID
 bpfman program unload $pid
 assert fail bpfman program get $prog
 
-exec ip link del veth-tc-host
-exec ip netns del bpfman-tc
+ip link del veth-tc-host
+ip netns del bpfman-tc

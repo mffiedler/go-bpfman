@@ -20,17 +20,17 @@
 source lib.bpfman
 
 # Best-effort cleanup of leftover netns/veth from a prior run.
-let _ <- exec ip link del veth-tcx-host
-let _ <- exec ip netns del bpfman-tcx
+let _ <- ip link del veth-tcx-host
+let _ <- ip netns del bpfman-tcx
 
 # Set up a veth pair.
-guard _ <- exec ip netns add bpfman-tcx
-guard _ <- exec ip link add veth-tcx-host type veth peer name veth-tcx-ns
-guard _ <- exec ip link set veth-tcx-ns netns bpfman-tcx
-guard _ <- exec ip addr add 198.51.100.1/24 dev veth-tcx-host
-guard _ <- exec ip link set veth-tcx-host up
-guard _ <- exec ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tcx-ns
-guard _ <- exec ip netns exec bpfman-tcx ip link set veth-tcx-ns up
+guard _ <- ip netns add bpfman-tcx
+guard _ <- ip link add veth-tcx-host type veth peer name veth-tcx-ns
+guard _ <- ip link set veth-tcx-ns netns bpfman-tcx
+guard _ <- ip addr add 198.51.100.1/24 dev veth-tcx-host
+guard _ <- ip link set veth-tcx-host up
+guard _ <- ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tcx-ns
+guard _ <- ip netns exec bpfman-tcx ip link set veth-tcx-ns up
 
 # Load the TCX counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
@@ -88,15 +88,15 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-guard dumpBefore <- exec bpftool map dump id $mapID -j
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Send 5 ICMP echo requests from the test netns. ARP and other
 # control traffic may add a small amount on the first run, so the
 # assertion is a lower bound rather than an equality.
-guard _ <- exec ip netns exec bpfman-tcx ping -c 5 -i 0.05 198.51.100.1
+guard _ <- ip netns exec bpfman-tcx ping -c 5 -i 0.05 198.51.100.1
 
-guard dumpAfter <- exec bpftool map dump id $mapID -j
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta
@@ -109,5 +109,5 @@ assert fail bpfman link get $linkID
 bpfman program unload $pid
 assert fail bpfman program get $prog
 
-exec ip link del veth-tcx-host
-exec ip netns del bpfman-tcx
+ip link del veth-tcx-host
+ip netns del bpfman-tcx

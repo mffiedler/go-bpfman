@@ -77,12 +77,12 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-guard dumpBefore <- exec bpftool map dump id $mapID -j
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-guard _ <- exec sleep 0.1
+guard _ <- sleep 0.1
 
-guard dumpAfter <- exec bpftool map dump id $mapID -j
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta

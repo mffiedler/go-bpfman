@@ -80,7 +80,7 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-guard dumpBefore <- exec bpftool map dump id $mapID -j
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Each invocation of e2e.test in helper mode runs e2e_uprobe_call_malloc
@@ -89,10 +89,10 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
 foreach _ in '0' |> jq "[range(5)]" {
-    guard _ <- exec env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
+    guard _ <- env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
 }
 
-guard dumpAfter <- exec bpftool map dump id $mapID -j
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
 let delta     = $after - $before
 print $delta

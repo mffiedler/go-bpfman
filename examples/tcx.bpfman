@@ -8,8 +8,8 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/tcx.bpfman
 
-guard _ <- exec ip link add bpfman-tcx type dummy
-guard _ <- exec ip link set bpfman-tcx up
+guard _ <- ip link add bpfman-tcx type dummy
+guard _ <- ip link set bpfman-tcx up
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tcx_counter.bpf.o \
@@ -20,4 +20,4 @@ guard link <- bpfman link attach tcx --iface bpfman-tcx --direction ingress $pro
 bpfman link detach $link
 bpfman program unload $prog
 
-exec ip link del bpfman-tcx
+ip link del bpfman-tcx

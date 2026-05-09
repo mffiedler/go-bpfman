@@ -449,6 +449,12 @@ func writeIndented(b *strings.Builder, s string) {
 // The returned Value is ignored by the evaluator for top-level
 // commands; it is still produced so shell builtins can compute
 // values that callers happen to observe in tests.
+//
+// Dispatch order: aliases expand first; registered shell builtins
+// (replShellCmd) handle their own names; the bpfman domain
+// dispatcher handles "bpfman ..."; an unrecognised first word
+// falls through to runExternal so 'ip link add ...' spawns the
+// system 'ip' without an explicit 'exec' prefix.
 func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
 	return func(args []shell.Arg) (shell.Value, error) {
 		if len(args) == 0 {
@@ -462,7 +468,15 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		if handled {
 			return val, nil
 		}
-		return replDispatch(ctx, cli, mgr, args)
+		first := argText(args[0])
+		if first == "bpfman" {
+			return replDispatch(ctx, cli, mgr, args)
+		}
+		if domainNouns[first] {
+			return shell.Value{}, fmt.Errorf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
+		}
+		// Fallthrough: unknown first word runs as a subprocess.
+		return replExec(ctx, cli, args)
 	}
 }
 
@@ -472,16 +486,20 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 // and runtime errors map to Rc.OK: false; the script decides
 // whether to halt (guard) or inspect (let). Output is suppressed.
 //
-// Provider primaries:
+// Dispatch order on the right of '<-':
 //
-//   - exec / unknown external: primary is ValueFromEnvelope(Rc),
-//     so a single-name bind hands the script the rc to inspect
-//     ($r.code, $r.stdout).
-//   - shell builtins (jq, file): primary is the typed Value the
-//     builtin returned; for builtins with no return (alias,
-//     print, ...) the primary falls back to the rc.
-//   - bpfman commands: primary is the typed payload from
-//     replDispatch on success, or the zero Value on failure.
+//   - 'exec NAME ARGS' is the explicit force-external escape
+//     hatch: NAME runs as a subprocess, primary is the rc
+//     envelope.
+//   - registered shell builtins (jq, file, ...) handle their own
+//     names; primary is the builtin's typed Value, or the rc
+//     envelope when the builtin produces no value.
+//   - 'bpfman ...' dispatches in-process; primary is the typed
+//     payload on success, zero Value on failure.
+//   - any other first word is treated as an unknown name and
+//     runs as a subprocess (the registry's implicit fallthrough).
+//     'ip link del foo', 'bpftool map dump id 5', etc. work
+//     without an explicit 'exec' prefix.
 func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.BindResult, error) {
 	return func(args []shell.Arg) (shell.BindResult, error) {
 		args = applyAlias(session, args)
@@ -490,17 +508,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		}
 
 		if argText(args[0]) == "exec" {
-			cap, err := runExternal(ctx, args[1:])
-			if err != nil {
-				return shell.BindResult{}, err
-			}
-			rc := shell.Envelope{
-				OK:     cap.ExitCode == 0,
-				Code:   cap.ExitCode,
-				Stdout: cap.Stdout,
-				Stderr: cap.Stderr,
-			}
-			return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
+			return runExternalAsBind(ctx, args[1:])
 		}
 
 		quiet := cli.WithDiscardOutput()
@@ -518,14 +526,45 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			return shell.BindResult{Rc: rc, Primary: primary}, nil
 		}
 
-		val, err = replDispatch(ctx, quiet, mgr, args)
-		if err != nil {
-			rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
-			return shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
+		first := argText(args[0])
+		if first == "bpfman" {
+			val, err := replDispatch(ctx, quiet, mgr, args)
+			if err != nil {
+				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+				return shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
+			}
+			rc := shell.Envelope{OK: true, Code: 0}
+			return shell.BindResult{Rc: rc, Primary: val}, nil
 		}
-		rc := shell.Envelope{OK: true, Code: 0}
-		return shell.BindResult{Rc: rc, Primary: val}, nil
+		if domainNouns[first] {
+			rc := shell.Envelope{
+				OK:     false,
+				Code:   1,
+				Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " ")),
+			}
+			return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
+		}
+		// Fallthrough: unknown first word runs as a subprocess.
+		return runExternalAsBind(ctx, args)
 	}
+}
+
+// runExternalAsBind runs args as a subprocess and packages the
+// outcome as a BindResult. A launch failure (command not found,
+// permission denied) returns a Go error; a non-zero exit is
+// captured into the rc envelope so '<-' callers can inspect it.
+func runExternalAsBind(ctx context.Context, args []shell.Arg) (shell.BindResult, error) {
+	cap, err := runExternal(ctx, args)
+	if err != nil {
+		return shell.BindResult{}, err
+	}
+	rc := shell.Envelope{
+		OK:     cap.ExitCode == 0,
+		Code:   cap.ExitCode,
+		Stdout: cap.Stdout,
+		Stderr: cap.Stderr,
+	}
+	return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 }
 
 // argText extracts the text from a single Arg. For text-bearing
@@ -650,24 +689,16 @@ var domainNouns = map[string]bool{
 	"audit":      true,
 }
 
-// replDispatch routes expanded domain command arguments to the
-// appropriate bpfman command handler. Shell-language commands (assert,
-// require, print, help, source, unset, vars, version) are handled by
-// replShellCmd before reaching this function.
-//
-// Parsing and execution are fully decoupled: parseCommand routes
-// arguments to the per-command parser and returns a typed Command
-// node, then execCommand dispatches execution via a type-switch.
+// replDispatch dispatches a "bpfman ..." command into the in-process
+// domain pipeline. The caller has already verified that the first
+// argument is "bpfman" (registered-name routing happens at the
+// makeExecCommand / makeExecBind level, before this function is
+// reached). parseCommand routes arguments to the per-command parser
+// and returns a typed Command node; execCommand dispatches via a
+// type-switch.
 func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
-	if len(args) == 0 {
-		return shell.Value{}, nil
-	}
-	first := argText(args[0])
-	if first != "bpfman" {
-		if domainNouns[first] {
-			return shell.Value{}, fmt.Errorf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
-		}
-		return shell.Value{}, fmt.Errorf("unknown command: %s", first)
+	if len(args) == 0 || argText(args[0]) != "bpfman" {
+		return shell.Value{}, fmt.Errorf("replDispatch: expected leading \"bpfman\", got %v", argTexts(args))
 	}
 	cmd, err := parseCommand(args[1:])
 	if err != nil {

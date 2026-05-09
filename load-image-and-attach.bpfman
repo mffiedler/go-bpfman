@@ -5,8 +5,8 @@
 #   sudo bpfman-shell load-image-and-attach.bpfman
 
 # Create a dummy interface for the test.
-guard _ <- exec ip link add bpfman-demo type dummy
-guard _ <- exec ip link set bpfman-demo up
+guard _ <- ip link add bpfman-demo type dummy
+guard _ <- ip link set bpfman-demo up
 
 # Load the XDP pass program from the bpfman bytecode registry.
 guard prog <- bpfman program load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
@@ -31,6 +31,6 @@ assert fail bpfman link get $link
 bpfman program unload $pid
 
 # Remove the dummy interface.
-exec ip link del bpfman-demo
+ip link del bpfman-demo
 
 unset link prog pid
