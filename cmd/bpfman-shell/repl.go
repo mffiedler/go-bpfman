@@ -827,7 +827,13 @@ const replSourcingKey replContextKey = iota
 
 // replSource reads commands from a file and executes each line in the
 // current session. The sourced file shares all variable bindings with
-// the caller. Nested source commands are rejected to prevent
+// the caller and is treated as one defer scope: 'defer cleanup' near
+// the top of a sourced file fires when the source command returns,
+// not at the end of the chunk that registered it, and the scope-exit
+// job-leak walk runs once over the whole file rather than firing
+// chunk-by-chunk. This matches 'bpfman-shell FILE' semantics so
+// 'source FILE' from an interactive prompt and direct invocation
+// behave identically. Nested source commands are rejected to prevent
 // unbounded recursion.
 func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
 	if ctx.Value(replSourcingKey) != nil {
@@ -844,53 +850,71 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 	defer lr.Close()
 
 	ctx = context.WithValue(ctx, replSourcingKey, true)
+	file := args[0]
 
-	// Accumulate physical lines into logical statements, mirroring the
-	// continuation logic that replLoop uses for the interactive REPL
-	// and for `bpfman-shell -f`. Without this, multi-line forms in a
-	// sourced file (def / if / foreach / retry blocks, command
-	// substitutions that span lines) would each fail to parse on
-	// their first line because the open brace or bracket has not yet
-	// been closed.
-	var lineNo int
-	var buf strings.Builder
-	var startLine int
-	var cs contState
-	for {
-		input, err := lr.Readline()
-		if err != nil {
-			if err == io.EOF {
-				if buf.Len() > 0 {
-					return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", args[0], startLine)
-				}
-				return nil
-			}
-			return err
-		}
-		lineNo++
-
-		if buf.Len() == 0 {
-			startLine = lineNo
-		}
-		if buf.Len() > 0 {
-			buf.WriteByte('\n')
-		}
-		buf.WriteString(input)
-		cs.advance(input)
-
-		if cs.open() {
-			continue
-		}
-
-		accumulated := buf.String()
-		buf.Reset()
-		cs = contState{}
-
-		loc := sourceLoc{file: args[0], line: startLine}
-		if err := replEval(ctx, cli, mgr, session, accumulated, loc); err != nil {
-			return err
-		}
+	env := &shell.Env{
+		Session: session,
+		PrintResult: func(v shell.Value) error {
+			return writeValue(cli, v)
+		},
+		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
+		},
+		HandleJobLeak: makeHandleJobLeak(cli),
 	}
+
+	return shell.WithDeferScope(env, func() error {
+		// Accumulate physical lines into logical statements,
+		// mirroring the continuation logic that replLoop uses
+		// for the interactive REPL and for 'bpfman-shell
+		// FILE'. Without this, multi-line forms in a sourced
+		// file (def / if / foreach / retry blocks, command
+		// substitutions that span lines) would each fail to
+		// parse on their first line because the open brace
+		// or bracket has not yet been closed.
+		var lineNo int
+		var buf strings.Builder
+		var startLine int
+		var cs contState
+		for {
+			input, err := lr.Readline()
+			if err != nil {
+				if err == io.EOF {
+					if buf.Len() > 0 {
+						return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
+					}
+					return nil
+				}
+				return err
+			}
+			lineNo++
+
+			if buf.Len() == 0 {
+				startLine = lineNo
+			}
+			if buf.Len() > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString(input)
+			cs.advance(input)
+
+			if cs.open() {
+				continue
+			}
+
+			accumulated := buf.String()
+			buf.Reset()
+			cs = contState{}
+
+			loc := sourceLoc{file: file, line: startLine}
+			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+				return err
+			}
+		}
+	})
 }
 
 // domainNouns is the set of top-level words that parseCommand
