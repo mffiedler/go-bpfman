@@ -221,12 +221,14 @@ retry { STMTS } until EXPR
 ```
 
 Runs the body repeatedly with a small backoff between iterations
-until `EXPR` evaluates to true.  Body errors do **not** halt the
-retry — they are expected during polling.  The body's most recent
-error is carried across iterations and returned as the statement's
-error if and when `EXPR` finally becomes true; a timeout-style exit
-therefore surfaces the reason the body was failing at the moment
-the budget ran out.
+until `EXPR` evaluates to true. Body errors do **not** halt the
+retry: they are expected during polling. When the retry exits
+because `EXPR` legitimately became true, the statement returns
+nil and any prior body error is discarded. When the retry exits
+because a `timeout` or `iteration` cap inside `EXPR` forced it
+true, the body's most recent error is returned as the
+statement's error so the diagnostic surfaces the reason the body
+was failing at the moment the budget ran out.
 
 Two retry-scoped primary expressions keep `EXPR` purely
 expression-based:
@@ -540,8 +542,28 @@ expected produces:
 [repl] error: variable "$link" is a link; expected program
 ```
 
-`unknown` acts as a wildcard; it matches any typed position and
-falls through to structural extraction (path lookup).
+`unknown` acts as a wildcard so values produced by `jq`,
+`ValueFromJSON`, or `ValueFromMap` (which leave the kind untagged)
+can flow into typed command positions without an explicit cast.
+The fallback follows a single rule: each typed-origin parser
+declares the dotted path it would have used to extract the scalar
+out of its native value (for example `record.program_id` for the
+program-ID position, `record.id` for the link-ID position), and an
+`unknown` value is walked using that path. If the path resolves to
+a scalar of the expected shape, the call proceeds. If the path is
+missing or the leaf is not a scalar, the parser errors with a
+message naming both the variable and the path it tried, so a user
+who passed the wrong shape sees exactly what was expected:
+
+```
+[repl] error: variable "$x" is unknown; expected a path lookup at
+    "record.program_id" to a numeric ID, but the field is missing
+```
+
+There is no list of fallback paths or ambiguity resolution: one
+typed position, one path, and a clear error if it does not match.
+This keeps the wildcard a convenience for jq output, not a
+type-erasure escape hatch.
 
 ## Namespaces
 
@@ -625,8 +647,47 @@ assert not ok exec bogus   # negated command assertion
 
 ### require vs assert
 
-`assert` records failures and continues; `require` halts execution
-on failure. Both share the same surface grammar.
+The distinction is **fatal vs non-fatal**, not precondition vs
+assertion in the abstract.
+
+- `require EXPR` -- this must be true for the script to continue.
+  On failure, render the failure context and halt immediately.
+  Use for setup conditions whose violation makes the rest of the
+  script meaningless: a load that produced no program, a path
+  that does not exist, a variable that came back nil.
+
+- `assert EXPR` -- record the failure on a per-session counter,
+  render the failure context, but continue. At end of script-mode
+  execution the counter is checked, and a non-zero count produces
+  a non-zero exit status. Use for test expectations that should
+  collect failures so a single run reports all of them, not just
+  the first.
+
+The distinction matters most inside loops:
+
+```
+foreach prog in $programs {
+    assert $prog.status.kernel_seen
+    assert $prog.record.meta.name != ""
+}
+```
+
+A failed `assert` records the diagnostic and the loop keeps
+running; the script reports every program that violated the
+expectation. With `require` in the same place, the first failure
+would halt and the rest of the programs go unchecked.
+
+Setup, by contrast, wants the opposite: stop early, before the
+test runs against an inconsistent state.
+
+```
+let prog = [bpfman program load file --path ./prog.o ...]
+require not nil $prog
+```
+
+Both verbs share the same surface grammar. Parse errors, type
+errors, and unhandled runtime errors halt the script in script
+mode the same way `require` failures do.
 
 ## Variables and the session
 
