@@ -2750,6 +2750,82 @@ func TestReplLoop_GuardBindHaltsScript(t *testing.T) {
 	assert.False(t, ok, "guard halt must abort the rest of the script")
 }
 
+func TestReplLoop_LetBindTupleExec(t *testing.T) {
+	t.Parallel()
+
+	// Tuple form binds rc and primary separately. For exec the
+	// primary is also rc-shaped, so both bound values expose the
+	// envelope fields.
+	input := "let (rc, p) <- exec true\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	rcVal, ok := session.Get("rc")
+	require.True(t, ok, "tuple bind must set rc")
+	rcOK, _ := rcVal.Lookup("$rc", "ok")
+	s, _ := rcOK.Scalar()
+	assert.Equal(t, "true", s)
+
+	primary, ok := session.Get("p")
+	require.True(t, ok, "tuple bind must set primary")
+	primOK, _ := primary.Lookup("$p", "ok")
+	s, _ = primOK.Scalar()
+	assert.Equal(t, "true", s)
+}
+
+func TestReplLoop_LetBindTupleDiscardRc(t *testing.T) {
+	t.Parallel()
+
+	// Discarding rc keeps only primary. Equivalent to single-name
+	// form for rc-primary commands.
+	input := "let (_, p) <- exec true\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	_, ok := session.Get("rc")
+	assert.False(t, ok, "underscore must discard the rc slot")
+	_, ok = session.Get("_")
+	assert.False(t, ok, "underscore must not be a valid binding name")
+
+	_, ok = session.Get("p")
+	assert.True(t, ok)
+}
+
+func TestReplLoop_GuardBindTupleNonZeroNoBindings(t *testing.T) {
+	t.Parallel()
+
+	// On guard failure, neither tuple slot is bound. The renderer
+	// fires; statements after the guard never run.
+	input := "guard (rc, p) <- exec false; let after = ran\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "[guard] FAIL")
+
+	_, ok := session.Get("rc")
+	assert.False(t, ok, "guard failure must not bind rc")
+	_, ok = session.Get("p")
+	assert.False(t, ok, "guard failure must not bind primary")
+	_, ok = session.Get("after")
+	assert.False(t, ok, "guard failure must skip subsequent statements")
+}
+
 func TestReplLoop_GuardBindRendersStderr(t *testing.T) {
 	t.Parallel()
 

@@ -44,16 +44,22 @@ type LetStmt struct {
 	Loc
 }
 
-// BindStmt binds the captured-result envelope of running Cmd to
-// Name. "let NAME <- CMD" parses to BindStmt with Guard false: the
-// bind always succeeds and the consumer inspects $name.ok /
-// $name.code. "guard NAME <- CMD" parses to BindStmt with Guard
-// true: the runtime halts when the captured envelope is not ok,
-// rendering the failure through the shared formatter.
+// BindStmt runs Cmd and binds its primary result, and optionally
+// its result envelope. Two surface forms parse here:
+//
+//	let NAME <- CMD              => Primary=NAME, Rc=""
+//	let (RC, NAME) <- CMD        => Primary=NAME, Rc=RC
+//	guard NAME <- CMD            => same shape, Guard=true
+//	guard (RC, NAME) <- CMD      => same shape, Guard=true
+//
+// "_" as a target name discards that slot. Single-name binding
+// always names the primary; tuple binding names rc then primary,
+// matching section 6.2 of the design.
 type BindStmt struct {
-	Name  string
-	Cmd   *CommandStmt
-	Guard bool
+	Primary string
+	Rc      string
+	Cmd     *CommandStmt
+	Guard   bool
 	Loc
 }
 
@@ -444,7 +450,22 @@ func (p *parser) rejectTrailingArgs(name string) error {
 
 func (p *parser) parseLetStmt() (Stmt, error) {
 	letTok := p.advance() // "let"
-	if p.atEOF() || p.peek().Kind != TokenWord {
+	if p.atEOF() {
+		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <expr> or let <name> <- <command...> or let (<rc>, <prim>) <- <command...>")
+	}
+	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
+		// Tuple form: let (RC, PRIM) <- COMMAND. Tuple is only
+		// legal on '<-'; the assign form '=' stays single-name.
+		rc, prim, err := p.parseBindTuple(letTok)
+		if err != nil {
+			return nil, err
+		}
+		if p.atEOF() || p.peek().Kind != TokenBind {
+			return nil, locErrorf(letTok.Loc, "tuple bind requires '<-' after target list")
+		}
+		return p.parseBindRHS(letTok.Loc, rc, prim, false)
+	}
+	if p.peek().Kind != TokenWord {
 		return nil, locErrorf(letTok.Loc, "let requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
@@ -453,7 +474,7 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
 	}
 	if p.atEOF() {
-		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...> or let <name> <- <command...>")
+		return nil, locErrorf(letTok.Loc, "let requires '=' or '<-' after the name")
 	}
 	switch p.peek().Kind {
 	case TokenAssign:
@@ -471,19 +492,34 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 		}
 		return &LetStmt{Name: name, RHS: rhs, Loc: letTok.Loc}, nil
 	case TokenBind:
-		return p.parseBindRHS(letTok.Loc, name, false)
+		return p.parseBindRHS(letTok.Loc, "", name, false)
 	default:
 		return nil, locErrorf(letTok.Loc, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
 	}
 }
 
-// parseGuardStmt parses "guard NAME <- COMMAND". The form is fixed:
-// the keyword, an identifier, the bind sigil '<-', then a non-empty
-// command form. There is no "guard NAME = EXPR" spelling.
+// parseGuardStmt parses "guard NAME <- COMMAND" or
+// "guard (RC, PRIM) <- COMMAND". The form is fixed: the keyword,
+// a single identifier or a parenthesised pair, the bind sigil
+// '<-', then a non-empty command form. There is no "guard NAME =
+// EXPR" spelling.
 func (p *parser) parseGuardStmt() (Stmt, error) {
 	guardTok := p.advance() // "guard"
-	if p.atEOF() || p.peek().Kind != TokenWord {
-		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> (got %q)", p.peek().Text)
+	if p.atEOF() {
+		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> or guard (<rc>, <prim>) <- <command...>")
+	}
+	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
+		rc, prim, err := p.parseBindTuple(guardTok)
+		if err != nil {
+			return nil, err
+		}
+		if p.atEOF() || p.peek().Kind != TokenBind {
+			return nil, locErrorf(guardTok.Loc, "tuple bind requires '<-' after target list")
+		}
+		return p.parseBindRHS(guardTok.Loc, rc, prim, true)
+	}
+	if p.peek().Kind != TokenWord {
+		return nil, locErrorf(guardTok.Loc, "guard requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
 	name := nameTok.Text
@@ -493,7 +529,75 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 	if p.atEOF() || p.peek().Kind != TokenBind {
 		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> (missing '<-')")
 	}
-	return p.parseBindRHS(guardTok.Loc, name, true)
+	return p.parseBindRHS(guardTok.Loc, "", name, true)
+}
+
+// parseBindTuple consumes a parenthesised tuple target list:
+// '(' RC ',' PRIM ')'. RC and PRIM are identifiers or '_'. The
+// opening '(' is at the cursor on entry. The tokeniser does not
+// split on ',', so a comma may arrive glued to an identifier ("rc,"
+// is one TokenWord); the parser strips the trailing comma in that
+// case the same way parseDefParams does.
+func (p *parser) parseBindTuple(keywordTok Token) (rc, prim string, err error) {
+	openTok := p.advance() // "("
+	for !p.atEOF() && p.peek().Kind == TokenSep {
+		p.pos++
+	}
+	rc, sawComma, err := p.parseBindTargetName(keywordTok)
+	if err != nil {
+		return "", "", err
+	}
+	if !sawComma {
+		for !p.atEOF() && p.peek().Kind == TokenSep {
+			p.pos++
+		}
+		if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "," {
+			return "", "", locErrorf(openTok.Loc, "tuple bind: expected ',' between targets")
+		}
+		p.advance() // ","
+	}
+	for !p.atEOF() && p.peek().Kind == TokenSep {
+		p.pos++
+	}
+	prim, _, err = p.parseBindTargetName(keywordTok)
+	if err != nil {
+		return "", "", err
+	}
+	for !p.atEOF() && p.peek().Kind == TokenSep {
+		p.pos++
+	}
+	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != ")" {
+		return "", "", locErrorf(openTok.Loc, "tuple bind: expected ')' after targets")
+	}
+	p.advance() // ")"
+	if rc == "_" && prim == "_" {
+		return "", "", locErrorf(openTok.Loc, "tuple bind cannot discard both slots")
+	}
+	return rc, prim, nil
+}
+
+// parseBindTargetName reads a single tuple-target name. A name is
+// either an identifier or "_". A trailing ',' glued to the
+// identifier is honoured (so "rc," advances past the comma);
+// sawComma reports that case so the caller can skip the explicit
+// comma consumption.
+func (p *parser) parseBindTargetName(keywordTok Token) (name string, sawComma bool, err error) {
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return "", false, locErrorf(keywordTok.Loc, "tuple bind: expected identifier or '_', got %q", p.peek().Text)
+	}
+	t := p.advance()
+	text := t.Text
+	if strings.HasSuffix(text, ",") && len(text) > 1 {
+		text = text[:len(text)-1]
+		sawComma = true
+	}
+	if text == "_" {
+		return "_", sawComma, nil
+	}
+	if !IsIdent(text) {
+		return "", false, locErrorf(t.Loc, "tuple bind: invalid name %q", text)
+	}
+	return text, sawComma, nil
 }
 
 // parseBindRHS consumes the '<-' sigil and the command form that
@@ -501,8 +605,9 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 // statement separator or block marker; a stray '=' or '<-' inside
 // the RHS is rejected. parseCommandArgs handles the command-form
 // tokens so every primary expression the command-statement grammar
-// accepts works on the right of a bind.
-func (p *parser) parseBindRHS(stmtLoc Loc, name string, guard bool) (Stmt, error) {
+// accepts works on the right of a bind. rc is "" for single-name
+// bindings, an identifier (or "_") for tuple bindings.
+func (p *parser) parseBindRHS(stmtLoc Loc, rc, primary string, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
 	cmdTokens, err := p.takeBindRHSTokens(bindTok)
 	if err != nil {
@@ -513,7 +618,7 @@ func (p *parser) parseBindRHS(stmtLoc Loc, name string, guard bool) (Stmt, error
 		return nil, err
 	}
 	cmd := &CommandStmt{Args: args, Loc: cmdTokens[0].Loc}
-	return &BindStmt{Name: name, Cmd: cmd, Guard: guard, Loc: stmtLoc}, nil
+	return &BindStmt{Primary: primary, Rc: rc, Cmd: cmd, Guard: guard, Loc: stmtLoc}, nil
 }
 
 // takeBindRHSTokens collects the tokens that form the command on the

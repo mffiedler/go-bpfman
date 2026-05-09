@@ -228,14 +228,15 @@ type Env struct {
 	ExecSubstitution func(args []Arg) (Value, error)
 
 	// ExecBind runs a command form on the right of a '<-' bind.
-	// The returned Envelope is always populated: command failure
-	// (non-zero exit, in-process error) is encoded as OK: false
-	// with code, stdout, and stderr set, not as a Go error. A Go
-	// error is reserved for structural failures (empty argv,
-	// malformed adapter, no provider for this hook) that the
-	// language cannot recover from. Set by the REPL driver; nil
-	// makes any BindStmt a runtime error.
-	ExecBind func(args []Arg) (Envelope, error)
+	// The returned BindResult carries the result envelope (Rc)
+	// and the provider's primary result (Primary). Command
+	// failure (non-zero exit, in-process error) is encoded on
+	// Rc as OK: false with code, stdout, and stderr set, not
+	// as a Go error. A Go error is reserved for structural
+	// failures (empty argv, malformed adapter, no provider for
+	// this hook). Set by the REPL driver; nil makes any
+	// BindStmt a runtime error.
+	ExecBind func(args []Arg) (BindResult, error)
 
 	// ExecAssertStmt runs an AssertStmt: evaluate its expression,
 	// AsBool the result, apply the optional Negate, and dispatch
@@ -674,12 +675,15 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 	return nil
 }
 
-// evalBindStmt runs the command form on the right of a '<-' bind,
-// captures the result as an Envelope, and binds it to s.Name. When
-// s.Guard is true a not-ok envelope halts the script via
-// HaltOnGuardFailure; when s.Guard is false the bind always
-// succeeds at the language level and the consumer inspects
-// $name.ok / $name.code itself.
+// evalBindStmt runs the command form on the right of a '<-' bind
+// and assigns its result. For guard, a non-ok rc halts via
+// GuardFailure with no bindings happening. For let, bindings
+// happen regardless of rc.ok, with the rc carrying ok: false on
+// failure so the consumer can inspect it.
+//
+// Single-name binding (Rc == "") binds Primary only. Tuple
+// binding (Rc set) binds both names. "_" as a name discards that
+// slot.
 func evalBindStmt(s *BindStmt, env *Env) error {
 	if env.ExecBind == nil {
 		return locErrorf(s.Loc, "'<-' bind: command execution is not configured")
@@ -688,37 +692,47 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	if err != nil {
 		return err
 	}
-	envelope, err := env.ExecBind(args)
+	result, err := env.ExecBind(args)
 	if err != nil {
 		return err
 	}
-	env.Session.Set(s.Name, ValueFromEnvelope(envelope))
-	if s.Guard && !envelope.OK {
-		return &GuardFailure{Loc: s.Loc, Name: s.Name, Args: args, Envelope: envelope}
+	if s.Guard && !result.Rc.OK {
+		return &GuardFailure{Loc: s.Loc, Primary: s.Primary, Args: args, Envelope: result.Rc}
+	}
+	if s.Rc != "" && s.Rc != "_" {
+		env.Session.Set(s.Rc, ValueFromEnvelope(result.Rc))
+	}
+	if s.Primary != "" && s.Primary != "_" {
+		env.Session.Set(s.Primary, result.Primary)
 	}
 	return nil
 }
 
-// GuardFailure is the error type a 'guard NAME <- CMD' statement
-// returns when the captured envelope is not ok. The driver formats
-// the failure through its renderer; the language layer carries the
+// GuardFailure is the error type a 'guard ... <- CMD' statement
+// returns when the captured rc is not ok. The driver formats the
+// failure through its renderer; the language layer carries the
 // envelope so the renderer has the captured stdout, stderr, exit
 // code, and the offending bind's source location, plus the
 // resolved Args so the renderer can show the command line that
-// failed.
+// failed and the Primary name (the bind target the user wrote)
+// for the diagnostic.
 type GuardFailure struct {
 	Loc      Loc
-	Name     string
+	Primary  string
 	Args     []Arg
 	Envelope Envelope
 }
 
 func (e *GuardFailure) Error() string {
+	target := e.Primary
+	if target == "" || target == "_" {
+		target = "_"
+	}
 	if e.Envelope.Stderr != "" {
 		return fmt.Sprintf("guard %s: command failed (exit %d): %s",
-			e.Name, e.Envelope.Code, e.Envelope.Stderr)
+			target, e.Envelope.Code, e.Envelope.Stderr)
 	}
-	return fmt.Sprintf("guard %s: command failed (exit %d)", e.Name, e.Envelope.Code)
+	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.Code)
 }
 
 func evalCommandStmt(s *CommandStmt, env *Env) error {

@@ -514,51 +514,64 @@ func makeExecSubstitution(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.
 }
 
 // makeExecBind bridges the evaluator's BindStmt dispatch into the
-// REPL pipeline. The hook returns a captured-result Envelope; non-zero
-// exit and runtime errors map to OK: false. Output is suppressed; the
-// consumer reads $r.stdout via the bound envelope.
+// REPL pipeline. The hook returns a BindResult carrying the result
+// envelope (Rc) and the provider's primary result. Non-zero exit
+// and runtime errors map to Rc.OK: false; the script decides
+// whether to halt (guard) or inspect (let). Output is suppressed.
 //
-// The 'exec' first word skips the [cmd]-callsite replExec helper
-// (which auto-fails on non-zero) and runs the subprocess via
-// runExternal directly so the envelope carries the actual exit code.
-// Other shell builtins flow through replShellCmd; bpfman commands
-// flow through replDispatch; in both cases a Go error from the
-// underlying call becomes a not-ok envelope with the error text in
-// stderr.
-func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Envelope, error) {
-	return func(args []shell.Arg) (shell.Envelope, error) {
+// Provider primaries:
+//
+//   - exec / unknown external: primary is ValueFromEnvelope(Rc),
+//     so a single-name bind hands the script the rc to inspect
+//     ($r.code, $r.stdout).
+//   - shell builtins (jq, file): primary is the typed Value the
+//     builtin returned; for builtins with no return (alias,
+//     print, ...) the primary falls back to the rc.
+//   - bpfman commands: primary is the typed payload from
+//     replDispatch on success, or the zero Value on failure.
+func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.BindResult, error) {
+	return func(args []shell.Arg) (shell.BindResult, error) {
 		args = applyAlias(session, args)
 		if len(args) == 0 {
-			return shell.Envelope{}, fmt.Errorf("empty command form on '<-' RHS")
+			return shell.BindResult{}, fmt.Errorf("empty command form on '<-' RHS")
 		}
 
 		if argText(args[0]) == "exec" {
 			cap, err := runExternal(ctx, args[1:])
 			if err != nil {
-				return shell.Envelope{}, err
+				return shell.BindResult{}, err
 			}
-			return shell.Envelope{
+			rc := shell.Envelope{
 				OK:     cap.ExitCode == 0,
 				Code:   cap.ExitCode,
 				Stdout: cap.Stdout,
 				Stderr: cap.Stderr,
-			}, nil
+			}
+			return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 		}
 
 		quiet := cli.WithDiscardOutput()
 		handled, val, err := replShellCmd(ctx, quiet, mgr, session, args, loc)
 		if handled {
 			if err != nil {
-				return shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}, nil
+				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+				return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 			}
-			return shell.Envelope{OK: true, Code: 0, Value: val}, nil
+			rc := shell.Envelope{OK: true, Code: 0}
+			primary := val
+			if primary.IsNil() {
+				primary = shell.ValueFromEnvelope(rc)
+			}
+			return shell.BindResult{Rc: rc, Primary: primary}, nil
 		}
 
 		val, err = replDispatch(ctx, quiet, mgr, args)
 		if err != nil {
-			return shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}, nil
+			rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			return shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
 		}
-		return shell.Envelope{OK: true, Code: 0, Value: val}, nil
+		rc := shell.Envelope{OK: true, Code: 0}
+		return shell.BindResult{Rc: rc, Primary: val}, nil
 	}
 }
 

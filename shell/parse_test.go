@@ -183,14 +183,15 @@ func TestParse_LetErrors(t *testing.T) {
 	}
 }
 
-func TestParse_LetBind(t *testing.T) {
+func TestParse_LetBindSingle(t *testing.T) {
 	t.Parallel()
 
 	prog, err := parseSource(t, "let r <- bpfman version")
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "r", bind.Name)
+	assert.Equal(t, "r", bind.Primary)
+	assert.Equal(t, "", bind.Rc, "single-name bind must leave Rc empty")
 	assert.False(t, bind.Guard, "let bind must not set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 2)
@@ -199,20 +200,56 @@ func TestParse_LetBind(t *testing.T) {
 	assert.Equal(t, "bpfman", head.Text)
 }
 
-func TestParse_GuardBind(t *testing.T) {
+func TestParse_GuardBindSingle(t *testing.T) {
 	t.Parallel()
 
 	prog, err := parseSource(t, "guard prog <- bpfman program get $pid")
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
-	assert.Equal(t, "prog", bind.Name)
+	assert.Equal(t, "prog", bind.Primary)
+	assert.Equal(t, "", bind.Rc)
 	assert.True(t, bind.Guard, "guard bind must set Guard")
 	require.NotNil(t, bind.Cmd)
 	require.Len(t, bind.Cmd.Args, 4)
 	ref, ok := bind.Cmd.Args[3].(*VarRefExpr)
 	require.True(t, ok, "last arg should be VarRef, got %T", bind.Cmd.Args[3])
 	assert.Equal(t, "pid", ref.Name)
+}
+
+func TestParse_LetBindTuple(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let (rc, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "rc", bind.Rc)
+	assert.Equal(t, "prog", bind.Primary)
+	assert.False(t, bind.Guard)
+}
+
+func TestParse_GuardBindTuple(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "guard (rc, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok)
+	assert.Equal(t, "rc", bind.Rc)
+	assert.Equal(t, "prog", bind.Primary)
+	assert.True(t, bind.Guard)
+}
+
+func TestParse_BindTupleDiscard(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let (_, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok)
+	assert.Equal(t, "_", bind.Rc, "underscore must round-trip in the AST")
+	assert.Equal(t, "prog", bind.Primary)
 }
 
 func TestParse_BindErrors(t *testing.T) {
@@ -229,6 +266,10 @@ func TestParse_BindErrors(t *testing.T) {
 		{"guard without name", "guard <- foo", "guard requires"},
 		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
 		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
+		{"tuple with assign rejected", "let (rc, prog) = foo", "tuple bind requires '<-'"},
+		{"tuple discard both rejected", "let (_, _) <- foo", "cannot discard both slots"},
+		{"tuple missing comma", "let (rc prog) <- foo", "expected ',' between targets"},
+		{"tuple missing close paren", "let (rc, prog <- foo", "expected ')'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
