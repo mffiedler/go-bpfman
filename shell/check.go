@@ -47,6 +47,7 @@ func (i Issue) Error() string {
 func Check(prog *Program) []Issue {
 	c := &checker{defined: map[string]bool{}}
 	c.walkStmts(prog.Stmts)
+	c.checkJobLeaks(prog)
 	return c.issues
 }
 
@@ -185,4 +186,91 @@ func (c *checker) checkExpr(e Expr) {
 		}
 		return true
 	})
+}
+
+// checkJobLeaks reports started-but-never-managed jobs. A
+// 'let X <- start ...' or 'guard X <- start ...' creates a
+// job named X; a later 'kill $X', 'wait $X', or 'defer kill
+// $X' marks it managed. An unmanaged job at script end is
+// the static analogue of the runtime leak walk: same rule,
+// caught one pass earlier so the user sees it before any
+// side effects fire.
+//
+// The check is intentionally conservative: a 'kill $X' or
+// 'wait $X' anywhere in the program counts, even inside a
+// conditional branch the runtime might never enter. We
+// prefer false-negatives (missed leaks the user sees at run
+// time anyway) to false-positives (warning about scripts
+// that work fine in practice). Sourced files are not
+// analysed cross-file; each script is checked in isolation.
+func (c *checker) checkJobLeaks(prog *Program) {
+	type jobBinding struct {
+		Name string
+		Loc  Loc
+	}
+
+	var started []jobBinding
+	managed := map[string]bool{}
+
+	Inspect(prog, func(n Node) bool {
+		switch s := n.(type) {
+		case *BindStmt:
+			if isStartCommand(s.Cmd) && s.Primary != "" && s.Primary != "_" {
+				started = append(started, jobBinding{Name: s.Primary, Loc: s.Loc})
+			}
+		case *CommandStmt:
+			if name := jobReferenceTarget(s); name != "" {
+				managed[name] = true
+			}
+		case *DeferStmt:
+			if s.Cmd != nil {
+				if name := jobReferenceTarget(s.Cmd); name != "" {
+					managed[name] = true
+				}
+			}
+		}
+		return true
+	})
+
+	for _, j := range started {
+		if !managed[j.Name] {
+			c.addIssue(j.Loc, "started job %q has no matching wait or kill", j.Name)
+		}
+	}
+}
+
+// isStartCommand reports whether cmd is a 'start ...' invocation.
+// Used to recognise job-creating BindStmts; any other Cmd binds
+// a non-job value and is not subject to leak analysis.
+func isStartCommand(cmd *CommandStmt) bool {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return false
+	}
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	return ok && lit.Text == "start"
+}
+
+// jobReferenceTarget returns the variable name of a 'kill $X'
+// or 'wait $X' command (the X), or "" if the command is not a
+// kill or wait, or its target is not a simple VarRefExpr.
+// Flag args (--signal=NAME, --grace=DUR) are skipped so 'kill
+// --signal=USR1 $job' still picks up $job as the target.
+func jobReferenceTarget(cmd *CommandStmt) string {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return ""
+	}
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || (lit.Text != "kill" && lit.Text != "wait") {
+		return ""
+	}
+	for _, arg := range cmd.Args[1:] {
+		// Skip flag args; the target is the first non-flag.
+		if l, ok := arg.(*LiteralExpr); ok && len(l.Text) >= 2 && l.Text[:2] == "--" {
+			continue
+		}
+		if v, ok := arg.(*VarRefExpr); ok {
+			return v.Name
+		}
+	}
+	return ""
 }

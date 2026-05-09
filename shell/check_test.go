@@ -138,3 +138,87 @@ func TestCheck_InsideInterpolation(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "undefined variable: missing")
 }
+
+func TestCheck_LeakedJobIsReported(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `started job "p" has no matching wait or kill`)
+}
+
+func TestCheck_GuardLeakedJobIsReported(t *testing.T) {
+	t.Parallel()
+
+	src := "guard p <- start sleep 60"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `started job "p" has no matching wait or kill`)
+}
+
+func TestCheck_WaitedJobIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 1\nwait $p"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_KilledJobIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60\nkill $p"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DeferKilledJobIsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60\ndefer kill $p"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_KillWithSignalFlagIsClean(t *testing.T) {
+	t.Parallel()
+
+	// 'kill --signal=USR1 $p' should still match $p as the
+	// target. Flag args (starting with '--') are skipped.
+	src := "let p <- start sleep 60\nkill --signal=USR1 $p"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_DiscardedJobIsNotChecked(t *testing.T) {
+	t.Parallel()
+
+	// 'let _ <- start ...' discards the handle; the start
+	// itself is fire-and-forget, no managed lifecycle to
+	// expect. We treat that as user-acknowledged and do not
+	// report a leak.
+	src := "let _ <- start sleep 60"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_LeakReportedAtStartSite(t *testing.T) {
+	t.Parallel()
+
+	src := "let x = 1\n\nlet p <- start sleep 60"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Equal(t, 3, issues[0].Loc.Line, "leak should be cited at the start site, not elsewhere")
+}
+
+func TestCheck_TupleBindOnStartReportsPrimary(t *testing.T) {
+	t.Parallel()
+
+	// 'let (rc, p) <- start ...' creates a job named p; rc
+	// is the result envelope, not the job handle.
+	src := "let (rc, p) <- start sleep 60"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `started job "p"`)
+}
