@@ -293,6 +293,7 @@ var shellCommands = map[string]bool{
 	"unset":   true,
 	"vars":    true,
 	"version": true,
+	"wait":    true,
 }
 
 // replShellCmd handles shell-language and session commands. It returns
@@ -348,6 +349,12 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return true, shell.Value{}, replVars(cli, session)
 	case "version":
 		return true, shell.Value{}, replVersion(cli)
+	case "wait":
+		env, err := replWait(ctx, args[1:])
+		if err != nil {
+			return true, shell.Value{}, err
+		}
+		return true, shell.ValueFromEnvelope(env), nil
 	default:
 		return false, shell.Value{}, nil
 	}
@@ -521,6 +528,20 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 
 		if argText(args[0]) == "exec" {
 			return runExternalAsBind(ctx, args[1:])
+		}
+
+		// 'wait $job' is special-cased so the bind's Rc
+		// reflects the JOB's outcome, not merely "wait
+		// succeeded". 'guard r <- wait $job' must halt when
+		// the background process exited non-zero (or fail
+		// to launch); a not-ok job is the kind of failure
+		// the script wanted to gate on.
+		if argText(args[0]) == "wait" {
+			env, err := replWait(ctx, args[1:])
+			if err != nil {
+				return shell.BindResult{}, err
+			}
+			return shell.BindResult{Rc: env, Primary: shell.ValueFromEnvelope(env)}, nil
 		}
 
 		quiet := cli.WithDiscardOutput()

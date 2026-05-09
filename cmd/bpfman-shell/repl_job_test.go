@@ -105,6 +105,140 @@ func TestReplStart_LaunchFailureIsStructuralError(t *testing.T) {
 	assert.Contains(t, err.Error(), "start __definitely_not_a_real_command_2026__")
 }
 
+func TestReplWait_BlocksAndCapturesEnvelope(t *testing.T) {
+	t.Parallel()
+
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "echo hello; sleep 0.05; echo bye"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	env, err := replWait(context.Background(), []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK, "successful exit -> ok envelope")
+	assert.Equal(t, 0, env.Code)
+	assert.Equal(t, "hello\nbye\n", env.Stdout)
+	assert.Empty(t, env.Stderr)
+	assert.True(t, job.IsManaged(), "wait must mark the job managed")
+}
+
+func TestReplWait_AfterAlreadyCompleted(t *testing.T) {
+	t.Parallel()
+
+	// 'start ls /run' may exit before this goroutine reaches
+	// replWait. The cached envelope must still be returned;
+	// the future-shaped semantics are the whole point.
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "echo done"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	// Drain the reaper before replWait sees it. After this
+	// point the job is in the 'completed' state from your
+	// state machine: result cached, Done closed, Managed
+	// still false.
+	waitForJob(t, job)
+	require.False(t, job.IsManaged())
+
+	env, err := replWait(context.Background(), []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK)
+	assert.Equal(t, "done\n", env.Stdout)
+	assert.True(t, job.IsManaged(), "wait on a completed job still marks it managed")
+}
+
+func TestReplWait_NonZeroExitProducesNotOk(t *testing.T) {
+	t.Parallel()
+
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "exit 7"},
+	})
+	require.NoError(t, err)
+
+	env, err := replWait(context.Background(), []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.False(t, env.OK, "non-zero exit -> not ok")
+	assert.Equal(t, 7, env.Code)
+}
+
+func TestReplWait_ContextCancelReturnsNotOk(t *testing.T) {
+	t.Parallel()
+
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "sleep 60"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	// Cancel the wait's context before the long sleep
+	// finishes. wait should return promptly with a not-ok
+	// envelope citing the cancellation reason. The
+	// underlying process keeps running until syscall.Kill or
+	// the start ctx ends; tests clean up by killing
+	// directly.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	env, err := replWait(ctx, []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.False(t, env.OK)
+	assert.Equal(t, -1, env.Code)
+	assert.Contains(t, env.Stderr, "context canceled")
+
+	// Tear down the still-running process so the test does
+	// not leak a sleep into the suite.
+	_ = syscall.Kill(-job.PID, syscall.SIGKILL)
+	waitForJob(t, job)
+}
+
+func TestReplWait_RejectsNonJobArg(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		arg  shell.Arg
+	}{
+		{"plain word", shell.WordArg{Text: "hello"}},
+		{"non-job structured", shell.StructuredValueArg{
+			Name:  "prog",
+			Value: shell.ValueFromMap(nil).WithKind(shell.OriginProgram),
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := replWait(context.Background(), []shell.Arg{tc.arg})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "$job")
+		})
+	}
+}
+
+func TestReplWait_NoArgsIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := replWait(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one argument")
+}
+
 func TestReplStart_ProcessGroupIsSet(t *testing.T) {
 	t.Parallel()
 

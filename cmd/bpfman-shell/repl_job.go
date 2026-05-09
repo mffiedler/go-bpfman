@@ -139,3 +139,76 @@ func removeTempFiles(paths []string) {
 		os.Remove(p)
 	}
 }
+
+// replWait blocks until the given job's reaper goroutine has
+// settled the captured streams and exit code, then builds the
+// captured-result Envelope from those fields. If the job had
+// already completed before wait was called the select returns
+// immediately with the cached values; this is the
+// future-shaped semantics the design calls out, so a job that
+// exited between 'start' and 'wait' does not lose its result.
+//
+// The job is marked Managed regardless of outcome: the script
+// has acknowledged the lifecycle, even if the result is a
+// non-ok envelope. Scope-exit (commit 5) will use Managed to
+// distinguish observed jobs from leaked ones.
+//
+// Killed jobs (commit 4) report ok: true in the envelope: a
+// script that explicitly kills its own background work is
+// performing a clean cleanup, not signalling failure. A
+// non-zero exit on a job the script did not kill is a failure
+// the consumer can act on through guard or by inspecting
+// $rc.code.
+func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
+	if len(args) != 1 {
+		return shell.Envelope{}, fmt.Errorf("wait requires exactly one argument: a $job")
+	}
+	job, err := jobFromArg(args[0])
+	if err != nil {
+		return shell.Envelope{}, err
+	}
+	select {
+	case <-job.Done:
+	case <-ctx.Done():
+		return shell.Envelope{
+			OK:     false,
+			Code:   -1,
+			Stderr: ctx.Err().Error(),
+		}, nil
+	}
+	job.MarkManaged()
+
+	job.Mu.Lock()
+	stdout := job.Stdout
+	stderr := job.Stderr
+	exitCode := job.ExitCode
+	killed := job.Killed
+	job.Mu.Unlock()
+
+	return shell.Envelope{
+		OK:     killed || exitCode == 0,
+		Code:   exitCode,
+		Stdout: stdout,
+		Stderr: stderr,
+	}, nil
+}
+
+// jobFromArg unwraps the StructuredValueArg representing a
+// $job reference and returns the underlying *shell.Job. Any
+// other Arg shape, or a structured value whose origin is not a
+// Job, fails with a message that names the offending kind so
+// the user can correct the call site.
+func jobFromArg(a shell.Arg) (*shell.Job, error) {
+	sva, ok := a.(shell.StructuredValueArg)
+	if !ok {
+		return nil, fmt.Errorf("expected a $job argument, got %T", a)
+	}
+	if sva.Value.Kind() != shell.OriginJob {
+		return nil, fmt.Errorf("expected a $job argument, got a %s value", sva.Value.Kind())
+	}
+	job, ok := sva.Value.Origin().(*shell.Job)
+	if !ok {
+		return nil, fmt.Errorf("$job has no underlying job handle (got %T)", sva.Value.Origin())
+	}
+	return job, nil
+}
