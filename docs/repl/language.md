@@ -192,10 +192,12 @@ foreach item in [jq "." '{"items":[{"v":1},{"v":2},{"v":3}]}'] |> jq ".items" {
 }
 ```
 
-The loop variable persists after the loop ends, holding the last
-element's value, matching shell-style for-each semantics.  An
-empty list runs the body zero times and leaves the loop variable
-untouched.  Nested `foreach` is legal and iterates naturally.
+The loop variable is body-scoped: it is defined only inside the
+block and disappears when the loop ends. If the same name was
+already bound in the enclosing scope, that prior binding is
+restored on exit. An empty list runs the body zero times; the
+prior binding (or absence) is preserved unchanged. Nested
+`foreach` is legal and iterates naturally.
 
 `break` terminates the nearest enclosing `foreach`; `continue`
 skips the remainder of the current iteration and advances to the

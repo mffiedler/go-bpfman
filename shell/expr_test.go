@@ -691,7 +691,7 @@ func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, captured)
 }
 
-func TestEvalProgram_ForEach_LoopVarPersistsAfterLoop(t *testing.T) {
+func TestEvalProgram_ForEach_LoopVarBodyScoped(t *testing.T) {
 	t.Parallel()
 
 	s := NewSession()
@@ -710,12 +710,37 @@ func TestEvalProgram_ForEach_LoopVarPersistsAfterLoop(t *testing.T) {
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
-	// After the loop, $i should hold the last element.
+	// The loop variable is body-scoped; it must not leak.
+	_, ok := s.Get("i")
+	assert.False(t, ok, "loop variable $i should not be defined after the loop")
+}
+
+func TestEvalProgram_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`[1,2,3]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	s.Set("i", StringValue("outer"))
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Name: "i",
+			List: &VarRefExpr{Name: "xs"},
+			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	// A prior binding of $i in the enclosing scope is restored.
 	v, ok := s.Get("i")
 	require.True(t, ok)
 	str, err := v.Scalar()
 	require.NoError(t, err)
-	assert.Equal(t, "3", str)
+	assert.Equal(t, "outer", str)
 }
 
 func TestEvalProgram_ForEach_EmptyList(t *testing.T) {

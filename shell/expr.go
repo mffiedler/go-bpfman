@@ -588,6 +588,20 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	if !ok {
 		return locErrorf(s.Loc, "foreach: expected a list, got %s", v.Kind())
 	}
+	// The loop variable is body-scoped: any prior binding of the
+	// same name is restored after the loop ends, and a name that
+	// did not exist before the loop disappears again. This drops
+	// shell-style "loop variable persists" semantics, which is the
+	// only place the language was copying bash without a reason --
+	// the rest of the DSL deliberately avoids shell foot-guns.
+	prior, hadPrior := env.Session.Get(s.Name)
+	defer func() {
+		if hadPrior {
+			env.Session.Set(s.Name, prior)
+		} else {
+			env.Session.Delete(s.Name)
+		}
+	}()
 iter:
 	for _, elem := range list {
 		env.Session.Set(s.Name, ValueFromAny(elem))
