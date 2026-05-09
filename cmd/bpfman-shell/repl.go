@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"golang.org/x/term"
 
@@ -985,6 +986,53 @@ const domainCommandsBlock = `Domain commands (require "bpfman" prefix):
 
 `
 
+// helpUsageWrapWidth is the soft cap on Usage length before we
+// stop trying to share a column with the Summary and wrap the
+// Summary onto its own indented line. Multi-form Usages like
+// 'let X = EXPR  |  let X <- COMMAND  |  let (rc, X) <- COMMAND'
+// would otherwise force a column that wastes space on every
+// short row in the section.
+const helpUsageWrapWidth = 48
+
+// helpRowIndent is the left margin for every help row, applied
+// uniformly so the section bodies share a vertical alignment
+// regardless of how wide their Usage column ends up being.
+const helpRowIndent = "  "
+
+// writeAlignedRows emits Usage / Summary rows with column-
+// aligned spacing computed dynamically by text/tabwriter so
+// adding a new entry never requires re-tuning a hand-picked
+// column width. Rows whose Usage exceeds helpUsageWrapWidth
+// wrap the Summary onto an indented continuation line so they
+// do not stretch the column for the rest of the section. The
+// tabwriter is flushed and re-created around each wrapped row
+// so subsequent narrow rows realign to their own widest
+// neighbour rather than the wide outlier.
+func writeAlignedRows(b *strings.Builder, rows [][2]string) {
+	tw := newHelpTabwriter(b)
+	for _, row := range rows {
+		usage, summary := row[0], row[1]
+		if len(usage) > helpUsageWrapWidth {
+			_ = tw.Flush()
+			fmt.Fprintf(b, "%s%s\n%s    %s\n", helpRowIndent, usage, helpRowIndent, summary)
+			tw = newHelpTabwriter(b)
+			continue
+		}
+		fmt.Fprintf(tw, "%s%s\t%s\n", helpRowIndent, usage, summary)
+	}
+	_ = tw.Flush()
+}
+
+// newHelpTabwriter constructs the tabwriter used by every help
+// section: zero minwidth (the column floats to the longest
+// Usage), two-space padding between Usage and Summary, no
+// special flags. Keeping this in one place means the help
+// sections render consistently and a future tweak (e.g. a
+// minimum gap) lands in one spot.
+func newHelpTabwriter(b *strings.Builder) *tabwriter.Writer {
+	return tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+}
+
 // writeBuiltinCategory emits one section of the overview. The
 // section header comes from categoryLabels; the body lists
 // every builtin with that Category, alphabetised by name. A
@@ -1002,16 +1050,18 @@ func writeBuiltinCategory(b *strings.Builder, cat string) {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 	fmt.Fprintf(b, "%s:\n", categoryLabels[cat])
+	rows := make([][2]string, 0, len(entries))
 	for _, bi := range entries {
-		fmt.Fprintf(b, "  %-44s %s\n", bi.Usage, bi.Summary)
+		rows = append(rows, [2]string{bi.Usage, bi.Summary})
 	}
+	writeAlignedRows(b, rows)
 	b.WriteString("\n")
 }
 
 // writeKeywordSection emits the parser-level keyword section.
 // Keywords are listed in alphabetical order; their Usage often
-// shows multiple variants separated by '|' so the column width
-// is wider than the builtin sections.
+// shows multiple variants separated by '|' so the wrap path
+// fires regularly here.
 func writeKeywordSection(b *strings.Builder) {
 	if len(keywordRegistry) == 0 {
 		return
@@ -1022,10 +1072,12 @@ func writeKeywordSection(b *strings.Builder) {
 	}
 	sort.Strings(names)
 	b.WriteString("Keywords:\n")
+	rows := make([][2]string, 0, len(names))
 	for _, n := range names {
 		k := keywordRegistry[n]
-		fmt.Fprintf(b, "  %-56s %s\n", k.Usage, k.Summary)
+		rows = append(rows, [2]string{k.Usage, k.Summary})
 	}
+	writeAlignedRows(b, rows)
 	b.WriteString("\n")
 }
 
