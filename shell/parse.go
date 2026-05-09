@@ -665,7 +665,7 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 			break
 		}
 		if rejectAssign && t.Kind == TokenAssign {
-			return nil, locErrorf(t.Loc, "unexpected '=' in let RHS; use 'let X <- COMMAND' to capture a command result")
+			return nil, locErrorf(t.Loc, "unexpected '=' in let RHS")
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -1078,7 +1078,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 		if hint, ok := smushedArithmeticHint(t); ok {
 			return nil, locErrorf(t.Loc, "unexpected token %q after expression; %s", t.Text, hint)
 		}
-		return nil, locErrorf(t.Loc, "unexpected token %q after expression; commands belong on the right of '<-' (let X <- COMMAND)", t.Text)
+		return nil, locErrorf(t.Loc, "unexpected token %q after expression", t.Text)
 	}
 	return e, nil
 }
@@ -1090,8 +1090,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 // literals, flags, and paths, so the common "$x -1" / "$x /2"
 // shapes tokenise as two adjacent primaries rather than as
 // binary arithmetic.  When that shape is the reason parsing
-// failed, point at whitespace rather than the generic
-// "commands belong on '<-'" suggestion, which does not apply here.
+// failed, point at whitespace explicitly.
 func smushedArithmeticHint(t Token) (string, bool) {
 	if t.Kind != TokenWord || len(t.Text) < 2 {
 		return "", false

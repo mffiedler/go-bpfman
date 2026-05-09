@@ -25,7 +25,7 @@ for f in e2e/scripts/*.bpfman; do
         continue
     fi
     printf "=== %s ===\n" "$name"
-    if (cd e2e && sudo "../$bin_dir/bpfman-shell" repl -f "scripts/$name"); then
+    if (cd e2e && sudo "../$bin_dir/bpfman-shell" "scripts/$name"); then
         echo "    pass: $name"
     else
         echo "    FAIL: $name"

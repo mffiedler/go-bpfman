@@ -114,11 +114,10 @@ func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 
 	// "load file" is two tokens, not a primary/unary/binary; the
 	// recursive-descent parser surfaces this as "unexpected
-	// token" with a hint pointing at the bind sigil.
+	// token" against the trailing word.
 	_, err := parseSource(t, "let prog = load file")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected token")
-	assert.Contains(t, err.Error(), "<-")
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
