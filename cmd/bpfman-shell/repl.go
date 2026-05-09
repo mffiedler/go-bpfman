@@ -392,6 +392,7 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 		Session:          session,
 		ExecCommand:      makeExecCommand(ctx, cli, mgr, session, loc),
 		ExecSubstitution: makeExecSubstitution(ctx, cli, mgr, session, loc),
+		ExecBind:         makeExecBind(ctx, cli, mgr, session, loc),
 		ExecAssertStmt:   makeExecAssertStmt(cli, session, loc),
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
@@ -459,6 +460,55 @@ func makeExecSubstitution(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.
 			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(args[0]))
 		}
 		return val, nil
+	}
+}
+
+// makeExecBind bridges the evaluator's BindStmt dispatch into the
+// REPL pipeline. The hook returns a captured-result Envelope; non-zero
+// exit and runtime errors map to OK: false. Output is suppressed; the
+// consumer reads $r.stdout via the bound envelope.
+//
+// The 'exec' first word skips the [cmd]-callsite replExec helper
+// (which auto-fails on non-zero) and runs the subprocess via
+// runExternal directly so the envelope carries the actual exit code.
+// Other shell builtins flow through replShellCmd; bpfman commands
+// flow through replDispatch; in both cases a Go error from the
+// underlying call becomes a not-ok envelope with the error text in
+// stderr.
+func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Envelope, error) {
+	return func(args []shell.Arg) (shell.Envelope, error) {
+		args = applyAlias(session, args)
+		if len(args) == 0 {
+			return shell.Envelope{}, fmt.Errorf("empty command form on '<-' RHS")
+		}
+
+		if argText(args[0]) == "exec" {
+			cap, err := runExternal(ctx, args[1:])
+			if err != nil {
+				return shell.Envelope{}, err
+			}
+			return shell.Envelope{
+				OK:     cap.ExitCode == 0,
+				Code:   cap.ExitCode,
+				Stdout: cap.Stdout,
+				Stderr: cap.Stderr,
+			}, nil
+		}
+
+		quiet := cli.WithDiscardOutput()
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, args, loc)
+		if handled {
+			if err != nil {
+				return shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}, nil
+			}
+			return shell.Envelope{OK: true, Code: 0, Value: val}, nil
+		}
+
+		val, err = replDispatch(ctx, quiet, mgr, args)
+		if err != nil {
+			return shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}, nil
+		}
+		return shell.Envelope{OK: true, Code: 0, Value: val}, nil
 	}
 }
 

@@ -242,38 +242,30 @@ type execResult struct {
 	ExitCode int      `json:"exit_code"`
 }
 
-// replExec runs an external command and returns a structured result.
-//
-// In strict mode (the default), exit 0 returns a structured result
-// and non-zero exit returns an error. This keeps the common case
-// clean for require ok exec and assert ok exec.
-//
-// In status mode (exec status ...), non-zero exit is not an error.
-// The structured result is returned for all exit codes, with
-// exit_code reflecting the actual status. Only genuine launch
-// failures (command not found, permission denied) produce errors.
-// This mode is for commands like diff, grep -q, and cmp where
-// non-zero exit is a domain result rather than an execution failure.
-//
+// execCapture is the result of running an external command without
+// any policy applied: argv as constructed, captured stdout and
+// stderr, and the actual exit code. Launch failure (command not
+// found, permission denied) is reported as a Go error from
+// runExternal and never appears as an execCapture.
+type execCapture struct {
+	Argv     []string
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
+// runExternal runs an external command and captures its output.
 // Inline adapter arguments (e.g. file:$var.path) are resolved to
-// temporary files before the command runs. All adapter-created temp
-// files are removed unconditionally after the command completes.
-func replExec(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
+// temporary files before the command runs and removed
+// unconditionally after. Structured-value arguments are rejected
+// because they cannot be flattened into argv text. Non-zero exit
+// is reported via execCapture.ExitCode, not as an error: callers
+// decide whether non-zero is fatal.
+func runExternal(ctx context.Context, args []shell.Arg) (execCapture, error) {
 	if len(args) == 0 {
-		return shell.Value{}, fmt.Errorf("exec requires at least one argument")
+		return execCapture{}, fmt.Errorf("exec requires at least one argument")
 	}
 
-	// Detect status mode.
-	statusMode := false
-	if argText(args[0]) == "status" {
-		statusMode = true
-		args = args[1:]
-		if len(args) == 0 {
-			return shell.Value{}, fmt.Errorf("exec status requires at least one argument")
-		}
-	}
-
-	// Resolve adapter args to temp files.
 	var tempFiles []string
 	defer func() {
 		for _, f := range tempFiles {
@@ -286,22 +278,20 @@ func replExec(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.
 		switch aa := a.(type) {
 		case shell.AdapterArg:
 			if aa.Adapter != "file" {
-				return shell.Value{}, fmt.Errorf("unknown adapter %q", aa.Adapter)
+				return execCapture{}, fmt.Errorf("unknown adapter %q", aa.Adapter)
 			}
 			path, err := writeValueToTemp(aa.Value)
 			if err != nil {
-				return shell.Value{}, fmt.Errorf("adapter file: %w", err)
+				return execCapture{}, fmt.Errorf("adapter file: %w", err)
 			}
 			tempFiles = append(tempFiles, path)
 			resolved[i] = shell.ScalarValueArg{Text: path}
 		case shell.StructuredValueArg:
-			// A structured value (program, link, exec.result, ...)
-			// cannot be flattened into argv text. This most often
-			// arises when a nested command substitution returned a
-			// structured result; the fix is to access a scalar
-			// field (e.g. $result.stdout) or use the file adapter
-			// (file:$result).
-			return shell.Value{}, fmt.Errorf(
+			// A structured value (program, link, exec.result,
+			// envelope, ...) cannot be flattened into argv text.
+			// Access a scalar field (e.g. $result.stdout) or use
+			// the file adapter (file:$result).
+			return execCapture{}, fmt.Errorf(
 				"exec: argument %d is a %s value; use a scalar path (e.g. $name.field) or the file adapter (file:$name)",
 				i+1, aa.Value.Kind())
 		default:
@@ -316,37 +306,70 @@ func replExec(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	exitCode := 0
-	err := cmd.Run()
-	if err != nil {
+	cap := execCapture{Argv: argv}
+	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
-			// Not an exit error — command not found or similar.
-			return shell.Value{}, fmt.Errorf("exec %s: %w", argv[0], err)
+			return execCapture{}, fmt.Errorf("exec %s: %w", argv[0], err)
 		}
-		if !statusMode {
-			msg := fmt.Sprintf("exec %s: exit status %d", strings.Join(argv, " "), exitErr.ExitCode())
-			if stderr.Len() > 0 {
-				msg += ": " + strings.TrimRight(stderr.String(), "\n")
-			}
-			return shell.Value{}, errors.New(msg)
+		cap.ExitCode = exitErr.ExitCode()
+	}
+	cap.Stdout = stdout.String()
+	cap.Stderr = stderr.String()
+	return cap, nil
+}
+
+// replExec runs an external command for the [cmd] callsite.
+//
+// In strict mode (the default), exit 0 returns a structured result
+// and non-zero exit returns an error. This keeps the common case
+// clean for require ok exec and assert ok exec.
+//
+// In status mode (exec status ...), non-zero exit is not an error.
+// The structured result is returned for all exit codes, with
+// exit_code reflecting the actual status. Only genuine launch
+// failures (command not found, permission denied) produce errors.
+// Status mode is for commands like diff, grep -q, and cmp where
+// non-zero exit is a domain result rather than an execution failure.
+func replExec(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
+	if len(args) == 0 {
+		return shell.Value{}, fmt.Errorf("exec requires at least one argument")
+	}
+
+	statusMode := false
+	if argText(args[0]) == "status" {
+		statusMode = true
+		args = args[1:]
+		if len(args) == 0 {
+			return shell.Value{}, fmt.Errorf("exec status requires at least one argument")
 		}
-		exitCode = exitErr.ExitCode()
+	}
+
+	cap, err := runExternal(ctx, args)
+	if err != nil {
+		return shell.Value{}, err
+	}
+	if cap.ExitCode != 0 && !statusMode {
+		msg := fmt.Sprintf("exec %s: exit status %d", strings.Join(cap.Argv, " "), cap.ExitCode)
+		if cap.Stderr != "" {
+			msg += ": " + strings.TrimRight(cap.Stderr, "\n")
+		}
+		return shell.Value{}, errors.New(msg)
 	}
 
 	result := execResult{
-		Argv:     argv,
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		ExitCode: exitCode,
+		Argv:     cap.Argv,
+		Stdout:   cap.Stdout,
+		Stderr:   cap.Stderr,
+		ExitCode: cap.ExitCode,
 	}
 	val, err := shell.ValueFromStruct(result)
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("exec: build result: %w", err)
 	}
 
-	if stdout.Len() > 0 {
-		if err := cli.PrintOut(stdout.String()); err != nil {
+	if cap.Stdout != "" {
+		if err := cli.PrintOut(cap.Stdout); err != nil {
 			return shell.Value{}, err
 		}
 	}

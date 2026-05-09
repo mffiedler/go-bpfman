@@ -2601,6 +2601,150 @@ func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "testing123")
 }
 
+func TestReplLoop_LetBindExecZero(t *testing.T) {
+	t.Parallel()
+
+	input := "let r <- exec true\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("r")
+	require.True(t, ok, "let bind should set the variable")
+	assert.Equal(t, shell.OriginEnvelope, v.Kind())
+
+	got, err := v.Lookup("$r", "ok")
+	require.NoError(t, err)
+	s, _ := got.Scalar()
+	assert.Equal(t, "true", s)
+
+	got, err = v.Lookup("$r", "code")
+	require.NoError(t, err)
+	s, _ = got.Scalar()
+	assert.Equal(t, "0", s)
+}
+
+func TestReplLoop_LetBindExecNonZero(t *testing.T) {
+	t.Parallel()
+
+	input := "let r <- exec false\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	// Non-zero exit must NOT halt the script under '<-'; the
+	// envelope carries the failure for the consumer to inspect.
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("r")
+	require.True(t, ok, "let bind must set the variable even on non-zero exit")
+
+	got, err := v.Lookup("$r", "ok")
+	require.NoError(t, err)
+	s, _ := got.Scalar()
+	assert.Equal(t, "false", s)
+
+	got, err = v.Lookup("$r", "code")
+	require.NoError(t, err)
+	s, _ = got.Scalar()
+	assert.Equal(t, "1", s)
+}
+
+func TestReplLoop_LetBindExecStdout(t *testing.T) {
+	t.Parallel()
+
+	input := "let r <- exec echo hello\n"
+	var errBuf bytes.Buffer
+	var outBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+	// The bind path captures stdout into the envelope rather than
+	// writing it to the cli.
+	assert.Empty(t, outBuf.String(), "<- bind must not echo stdout to the cli")
+
+	v, ok := session.Get("r")
+	require.True(t, ok)
+	got, err := v.Lookup("$r", "stdout")
+	require.NoError(t, err)
+	s, _ := got.Scalar()
+	assert.Equal(t, "hello\n", s)
+}
+
+func TestReplLoop_GuardBindExecZero(t *testing.T) {
+	t.Parallel()
+
+	input := "guard r <- exec true\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("r")
+	require.True(t, ok, "guard must bind on success")
+	got, err := v.Lookup("$r", "ok")
+	require.NoError(t, err)
+	s, _ := got.Scalar()
+	assert.Equal(t, "true", s)
+}
+
+func TestReplLoop_GuardBindExecNonZero(t *testing.T) {
+	t.Parallel()
+
+	// Single accumulated block: the guard halts EvalProgram and
+	// the trailing "let after" never runs even though both
+	// statements are part of the same block.
+	input := "guard r <- exec false; let after = ran\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "guard r")
+	assert.Contains(t, errBuf.String(), "exit 1")
+
+	_, ok := session.Get("after")
+	assert.False(t, ok, "guard halt must skip subsequent statements in the same block")
+}
+
+func TestReplLoop_GuardBindHaltsScript(t *testing.T) {
+	t.Parallel()
+
+	// Script mode (file != ""): a guard halt makes the whole
+	// script return an error, so subsequent lines do not run
+	// either.
+	input := "guard r <- exec false\nlet after = ran\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "test.bpfman")
+	require.Error(t, err, "script mode must surface guard failure as an error")
+	assert.Contains(t, errBuf.String(), "guard r")
+
+	_, ok := session.Get("after")
+	assert.False(t, ok, "guard halt must abort the rest of the script")
+}
+
 func TestReplLoop_ExecLetFailure(t *testing.T) {
 	t.Parallel()
 

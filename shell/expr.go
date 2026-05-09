@@ -227,6 +227,16 @@ type Env struct {
 	// be non-nil or the evaluator reports an error.
 	ExecSubstitution func(args []Arg) (Value, error)
 
+	// ExecBind runs a command form on the right of a '<-' bind.
+	// The returned Envelope is always populated: command failure
+	// (non-zero exit, in-process error) is encoded as OK: false
+	// with code, stdout, and stderr set, not as a Go error. A Go
+	// error is reserved for structural failures (empty argv,
+	// malformed adapter, no provider for this hook) that the
+	// language cannot recover from. Set by the REPL driver; nil
+	// makes any BindStmt a runtime error.
+	ExecBind func(args []Arg) (Envelope, error)
+
 	// ExecAssertStmt runs an AssertStmt: evaluate its expression,
 	// AsBool the result, apply the optional Negate, and dispatch
 	// failure-handling (printing, the session's assertion-failure
@@ -354,7 +364,7 @@ func evalStmt(stmt Stmt, env *Env) error {
 		env.Session.Set(s.Name, val)
 		return nil
 	case *BindStmt:
-		return locErrorf(s.Loc, "'<-' bind: runtime support is not yet wired up")
+		return evalBindStmt(s, env)
 	case *IfStmt:
 		return evalIfStmt(s, env)
 	case *CommandStmt:
@@ -662,6 +672,50 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		return runBody(s.Else)
 	}
 	return nil
+}
+
+// evalBindStmt runs the command form on the right of a '<-' bind,
+// captures the result as an Envelope, and binds it to s.Name. When
+// s.Guard is true a not-ok envelope halts the script via
+// HaltOnGuardFailure; when s.Guard is false the bind always
+// succeeds at the language level and the consumer inspects
+// $name.ok / $name.code itself.
+func evalBindStmt(s *BindStmt, env *Env) error {
+	if env.ExecBind == nil {
+		return locErrorf(s.Loc, "'<-' bind: command execution is not configured")
+	}
+	args, err := EvalArgs(s.Cmd.Args, env)
+	if err != nil {
+		return err
+	}
+	envelope, err := env.ExecBind(args)
+	if err != nil {
+		return err
+	}
+	env.Session.Set(s.Name, ValueFromEnvelope(envelope))
+	if s.Guard && !envelope.OK {
+		return &GuardFailure{Loc: s.Loc, Name: s.Name, Envelope: envelope}
+	}
+	return nil
+}
+
+// GuardFailure is the error type a 'guard NAME <- CMD' statement
+// returns when the captured envelope is not ok. The driver formats
+// the failure through its renderer; the language layer carries the
+// envelope so the renderer has the captured stdout, stderr, exit
+// code, and the offending bind's source location.
+type GuardFailure struct {
+	Loc      Loc
+	Name     string
+	Envelope Envelope
+}
+
+func (e *GuardFailure) Error() string {
+	if e.Envelope.Stderr != "" {
+		return fmt.Sprintf("guard %s: command failed (exit %d): %s",
+			e.Name, e.Envelope.Code, e.Envelope.Stderr)
+	}
+	return fmt.Sprintf("guard %s: command failed (exit %d)", e.Name, e.Envelope.Code)
 }
 
 func evalCommandStmt(s *CommandStmt, env *Env) error {
