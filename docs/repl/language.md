@@ -412,6 +412,71 @@ bare RHS are not allowed). It is also the canonical way to embed
 an expression where the surrounding grammar expects a value:
 `print [[1 == 1]]`, `foreach x in [jq ".[]" $data] { ... }`.
 
+### Expression islands `[[...]]`
+
+`[[expr]]` is an *expression island*: a parser-mode delimiter
+that switches the inner content from command-and-argument
+grammar to expression grammar, regardless of the surrounding
+context. It is the language's equivalent of bash's `(( ... ))`
+for arithmetic; the role is the same, switch-into-expression-
+mode, and the framing is worth keeping in mind:
+
+> `[[...]]` is not a subshell, not a command, and not jq. It is
+> an expression island.
+
+The DSL has two competing syntactic worlds. Command position
+treats bare words as command names, flags, paths, and IDs:
+`bpfman program get 42`, `exec ip link show dummy0`, `--path
+./prog.o`. Expression position treats them as operators,
+literals, and operands: `$after - $before`, `$count > 0`. Most
+constructs commit to one world or the other from context (`let
+NAME = EXPR` is expression-mode; the args after a command name
+are command-mode). `[[...]]` opts into expression-mode inside a
+command-mode region:
+
+```
+print [[$after - $before]]
+bpfman show program [[$base + 1]]
+let delta = [[$after - $before]]
+let r = "${[[$n * 2]]}s"
+```
+
+The single-bracket `[expr]` form is auto-detecting: it tries
+expression first and falls back to command. Use `[[expr]]` when
+the content might otherwise be misread as command syntax, or
+when you want the strict expression tokeniser, which keeps `-`
+and `/` as operator tokens rather than letting them attach to
+adjacent words as flags or path separators. Use `[cmd args]`
+for explicit command substitution including threading
+(`[$x |> jq -c "."]`), because the strict tokeniser inside
+`[[...]]` would split `-c` into `-` and `c` and break the flag.
+
+### Bracket meanings, in one place
+
+The DSL's three bracket forms each have one job, and the
+boundary is worth pinning so the meanings stay crisp:
+
+| Form          | Meaning                                            |
+|---------------|----------------------------------------------------|
+| `[cmd args]`  | Command capture: run a command, take its value     |
+| `[[expr]]`    | Expression island: parser-mode switch, no commands |
+| `jq "[...]"`  | Array/object construction (inside the jq filter)   |
+
+`[cmd args]` and `[[expr]]` are DSL surface; `[...]` inside a
+jq filter is jq's own array literal and lives inside the quoted
+filter string. The DSL has no array-literal syntax of its own:
+data construction is jq's job.
+
+```
+let xs = $listed |> jq "[.items[] | select(.v > 0)]"
+let delta = [[$after - $before]]
+let prog = [bpfman program get $pid]
+```
+
+That split reinforces the orchestration / domain / projection
+rails: the DSL composes commands and expressions, jq composes
+data.
+
 ### Comparisons
 
 The DSL provides one comparison family: `==`, `!=`, `<`, `<=`, `>`,
