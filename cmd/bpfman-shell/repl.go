@@ -287,6 +287,7 @@ var shellCommands = map[string]bool{
 	"print":   true,
 	"help":    true,
 	"source":  true,
+	"start":   true,
 	"unalias": true,
 	"undef":   true,
 	"unset":   true,
@@ -336,6 +337,9 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return true, shell.Value{}, replHelp(cli)
 	case "source":
 		return true, shell.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
+	case "start":
+		val, err := replStart(ctx, args[1:])
+		return true, val, err
 	case "unalias":
 		return true, shell.Value{}, replUnalias(cli, session, argTexts(args[1:]))
 	case "unset":
