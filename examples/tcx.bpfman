@@ -6,7 +6,7 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/tcx.bpfman
+#   sudo bpfman-shell examples/tcx.bpfman
 
 require ok exec ip link add bpfman-tcx type dummy
 require ok exec ip link set bpfman-tcx up

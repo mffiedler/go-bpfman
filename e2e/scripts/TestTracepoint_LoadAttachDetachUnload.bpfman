@@ -10,7 +10,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestTracepoint_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestTracepoint_LoadAttachDetachUnload.bpfman
 #
 # Requires root and bpftool.
 

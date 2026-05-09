@@ -13,7 +13,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestUretprobe_LoadAttachDetachUnload.bpfman
 #
 # Requires root and bpftool. The e2e.test binary must be built
 # first (`make bin/e2e.test`).

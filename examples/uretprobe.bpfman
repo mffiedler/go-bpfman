@@ -9,7 +9,7 @@
 #
 # Requires root and a built e2e.test binary (`make bin/e2e.test`).
 # Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/uretprobe.bpfman
+#   sudo bpfman-shell examples/uretprobe.bpfman
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/uprobe_counter.bpf.o \

@@ -16,7 +16,6 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
 
@@ -26,29 +25,30 @@ import (
 // Manager, or evaluator is involved. Returns ErrSilent when any
 // error was reported so the process exits non-zero without an extra
 // message from Kong.
-func (c *ReplCmd) runCheck(cli *bpfmancli.CLI) error {
+func (c *CLI) runCheck() error {
 	reader, err := c.checkReader()
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
 
-	file := c.File
+	file := c.Script
 	if file == "-" || (file == "" && !term.IsTerminal(int(os.Stdin.Fd()))) {
 		file = "<stdin>"
 	}
-	if replCheckInput(reader, cli.Err, file) {
+	if replCheckInput(reader, c.Err, file) {
 		return ErrSilent
 	}
 	return nil
 }
 
-// checkReader chooses the input source for --check: the named file,
-// or stdin. Unlike Run's newReader it never falls back to an
-// interactive line editor because --check is a batch operation.
-func (c *ReplCmd) checkReader() (LineReader, error) {
-	if c.File != "" {
-		return openScriptReader(c.File)
+// checkReader chooses the input source for --check: the positional
+// script file, or stdin. Unlike Run's newReader it never falls back
+// to an interactive line editor because --check is a batch
+// operation.
+func (c *CLI) checkReader() (LineReader, error) {
+	if c.Script != "" {
+		return openScriptReader(c.Script)
 	}
 	return NewScannerReader(os.Stdin, nil), nil
 }

@@ -665,7 +665,7 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 			break
 		}
 		if rejectAssign && t.Kind == TokenAssign {
-			return nil, locErrorf(t.Loc, "unexpected '=' in let RHS; use [cmd ...] for command substitution")
+			return nil, locErrorf(t.Loc, "unexpected '=' in let RHS; use 'let X <- COMMAND' to capture a command result")
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -1078,7 +1078,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 		if hint, ok := smushedArithmeticHint(t); ok {
 			return nil, locErrorf(t.Loc, "unexpected token %q after expression; %s", t.Text, hint)
 		}
-		return nil, locErrorf(t.Loc, "unexpected token %q after expression; wrap commands in [...] for substitution", t.Text)
+		return nil, locErrorf(t.Loc, "unexpected token %q after expression; commands belong on the right of '<-' (let X <- COMMAND)", t.Text)
 	}
 	return e, nil
 }
@@ -1091,7 +1091,7 @@ func parseExpression(tokens []Token) (Expr, error) {
 // shapes tokenise as two adjacent primaries rather than as
 // binary arithmetic.  When that shape is the reason parsing
 // failed, point at whitespace rather than the generic
-// "wrap in [...]" suggestion, which does not apply here.
+// "commands belong on '<-'" suggestion, which does not apply here.
 func smushedArithmeticHint(t Token) (string, bool) {
 	if t.Kind != TokenWord || len(t.Text) < 2 {
 		return "", false
@@ -1111,16 +1111,11 @@ func smushedArithmeticHint(t Token) (string, bool) {
 
 // parseInterpBody turns the raw contents of a "${...}"
 // interpolation into the Expr that will be evaluated at run time.
-// The rule is intentionally narrow so the common case stays
-// short: a bare identifier with an optional dotted or indexed
-// path ("name", "name.path", "name[0]") is treated as a
-// variable reference — callers do not write "$name" inside the
-// braces.  Anything more involved must start with "[": "[[expr]]"
-// for a general expression, "[cmd args]" for command
-// substitution.  This matches the ${name} / ${...} shape used by
-// bash, zsh, Perl, Tcl, Ruby, and Python f-strings rather than
-// requiring the double sigil "${$name}" that falls out of a naive
-// "body is a general expression" rule.
+// A bare identifier with an optional dotted or indexed path
+// ("name", "name.path", "name[0]") is treated as a variable
+// reference; callers do not write "$name" inside the braces. A
+// body that already starts with '$' is parsed as a general
+// expression: "${$n * 2}", "${$count + 1}", "${$x |> jq .y}".
 func parseInterpBody(inner string, loc Loc) (Expr, error) {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {

@@ -11,7 +11,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestTC_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestTC_LoadAttachDetachUnload.bpfman
 #
 # Requires root, bpftool, iproute2.
 

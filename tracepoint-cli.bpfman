@@ -17,7 +17,7 @@
 #     time, before any kernel I/O runs.
 #
 # Requires root. Run with:
-#   sudo bpfman-shell repl -f tracepoint-cli.bpfman
+#   sudo bpfman-shell tracepoint-cli.bpfman
 
 # ---- Happy path ----------------------------------------------------
 

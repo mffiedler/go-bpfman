@@ -143,26 +143,24 @@ func replUnset(cli *bpfmancli.CLI, session *shell.Session, args []string) error 
 	return nil
 }
 
-// replPrint prints one or more values to stdout.  Each argument
-// is any expression that evaluates to a value: a variable
-// reference ($var, $var.path), a command substitution ([cmd]),
-// an expression substitution ([[expr]]), a quoted string, or a
-// bare word (which is a literal string — "print foo" prints the
-// word "foo", not the variable foo).  To print a variable, write
-// "print $foo".
+// replPrint prints one or more values to stdout. Each argument is
+// any expression that evaluates to a value: a variable reference
+// ($var, $var.path), a quoted string, a bare word (literal string
+// -- "print foo" prints the word "foo", not the variable foo), an
+// arithmetic or comparison expression, or a threading expression
+// ($x |> jq filter). To print a variable, write "print $foo".
 //
-// With a single argument the output matches the REPL's
-// auto-print rendering — scalars as plain text, structured
-// values as indented JSON, absent values as "null", each
-// followed by a newline — so "print $r" and "$r" produce the
-// same output.  With multiple arguments each value renders
-// compactly (scalar text, compact JSON, "null") and the pieces
-// are joined by a single space and terminated by one newline,
-// matching how Python and JavaScript spread multiple arguments
-// across a print call.
+// With a single argument the output matches the REPL's auto-print
+// rendering -- scalars as plain text, structured values as
+// indented JSON, absent values as "null", each followed by a
+// newline -- so "print $r" and "$r" produce the same output. With
+// multiple arguments each value renders compactly (scalar text,
+// compact JSON, "null") and the pieces are joined by a single
+// space and terminated by one newline, matching how Python and
+// JavaScript spread multiple arguments across a print call.
 func replPrint(cli *bpfmancli.CLI, args []shell.Arg) error {
 	if len(args) == 0 {
-		return fmt.Errorf("print requires at least one argument: print $var[.path] | [cmd] | [[expr]] | \"literal\" ...")
+		return fmt.Errorf(`print requires at least one argument: print $var[.path] | "literal" | EXPR ...`)
 	}
 	if len(args) == 1 {
 		v, err := printValue(args[0])

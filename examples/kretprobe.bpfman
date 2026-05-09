@@ -8,7 +8,7 @@
 # of the commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/kretprobe.bpfman
+#   sudo bpfman-shell examples/kretprobe.bpfman
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/kprobe_counter.bpf.o \

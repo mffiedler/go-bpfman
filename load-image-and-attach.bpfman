@@ -2,7 +2,7 @@
 # Load an XDP program from an OCI image, attach it, verify state, and clean up.
 #
 # Requires root. Run with:
-#   sudo bpfman-shell repl -f load-image-and-attach.bpfman
+#   sudo bpfman-shell load-image-and-attach.bpfman
 
 # Create a dummy interface for the test.
 require ok exec ip link add bpfman-demo type dummy

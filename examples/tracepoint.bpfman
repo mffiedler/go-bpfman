@@ -6,7 +6,7 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/tracepoint.bpfman
+#   sudo bpfman-shell examples/tracepoint.bpfman
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \

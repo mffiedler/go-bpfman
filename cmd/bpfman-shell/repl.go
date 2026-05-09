@@ -17,15 +17,6 @@ import (
 	"github.com/frobware/go-bpfman/version"
 )
 
-// ReplCmd starts an interactive shell for inspecting BPF state.
-// When --file is given, commands are read from the named file. When
-// stdin is not a terminal, commands are read from stdin. Otherwise an
-// interactive readline prompt is started.
-type ReplCmd struct {
-	File  string `name:"file" short:"f" help:"Read commands from a file (use '-' for stdin)."`
-	Check bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
-}
-
 // errRequireFailed is the sentinel error used to halt script execution
 // when a require assertion fails.
 var errRequireFailed = errors.New("require failed")
@@ -35,16 +26,16 @@ var errRequireFailed = errors.New("require failed")
 // already been printed with a source location prefix.
 var errScriptError = errors.New("script error")
 
-// Run starts the read-eval-print loop. A single manager is held open
-// for the session lifetime to avoid repeated store open/close. When
-// --check is set, Run short-circuits to a parse-only mode that reads
-// the same input, reports syntax errors, and exits without touching
-// the manager, session, or evaluator.
-func (c *ReplCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
+// Run starts the read-eval-print loop. A single manager is held
+// open for the session lifetime to avoid repeated store open/close.
+// When --check is set, Run short-circuits to a parse-only mode
+// that reads the same input, reports syntax errors, and exits
+// without touching the manager, session, or evaluator.
+func (c *CLI) Run(ctx context.Context) error {
 	if c.Check {
-		return c.runCheck(cli)
+		return c.runCheck()
 	}
-	mgr, cleanup, err := cli.NewManagerWithPuller(ctx)
+	mgr, cleanup, err := c.NewManagerWithPuller(ctx)
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
@@ -58,11 +49,11 @@ func (c *ReplCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 	defer lr.Close()
 
-	file := c.File
+	file := c.Script
 	if file == "-" || (file == "" && !term.IsTerminal(int(os.Stdin.Fd()))) {
 		file = "<stdin>"
 	}
-	loopErr := replLoop(ctx, cli, mgr, lr, session, file)
+	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file)
 
 	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
 		return ErrSilent
@@ -72,18 +63,18 @@ func (c *ReplCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	}
 
 	if n := session.AssertFailures(); n > 0 {
-		_ = cli.PrintErrf("%d assertion(s) failed\n", n)
+		_ = c.PrintErrf("%d assertion(s) failed\n", n)
 		return fmt.Errorf("%d assertion(s) failed", n)
 	}
 
 	return nil
 }
 
-// newReader selects the appropriate LineReader: file, pipe, or
-// interactive readline.
-func (c *ReplCmd) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (LineReader, error) {
-	if c.File != "" {
-		return openScriptReader(c.File)
+// newReader selects the appropriate LineReader: positional script
+// file, piped stdin, or interactive readline.
+func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (LineReader, error) {
+	if c.Script != "" {
+		return openScriptReader(c.Script)
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return NewScannerReader(os.Stdin, nil), nil
@@ -606,7 +597,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 
 	// Accumulate physical lines into logical statements, mirroring the
 	// continuation logic that replLoop uses for the interactive REPL
-	// and for `bpfman-shell repl -f`. Without this, multi-line forms in a
+	// and for `bpfman-shell -f`. Without this, multi-line forms in a
 	// sourced file (def / if / foreach / retry blocks, command
 	// substitutions that span lines) would each fail to parse on
 	// their first line because the open brace or bracket has not yet

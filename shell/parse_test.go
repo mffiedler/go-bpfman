@@ -114,11 +114,11 @@ func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 
 	// "load file" is two tokens, not a primary/unary/binary; the
 	// recursive-descent parser surfaces this as "unexpected
-	// token" with a hint to wrap commands in [...].
+	// token" with a hint pointing at the bind sigil.
 	_, err := parseSource(t, "let prog = load file")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected token")
-	assert.Contains(t, err.Error(), "[...]")
+	assert.Contains(t, err.Error(), "<-")
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
@@ -1112,8 +1112,9 @@ func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
 
 	// '-' and '/' stay word-interior (negative literals, flags,
 	// paths), so "$x -1" still tokenises as "$x" + "-1" and
-	// fails to parse.  The error should point at whitespace
-	// rather than the generic "wrap in [...]" suggestion.
+	// fails to parse. The error should point at whitespace
+	// rather than the generic "commands belong on '<-'"
+	// suggestion.
 	_, err := parseSource(t, "let r = $x -1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "whitespace")

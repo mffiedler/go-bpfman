@@ -5,45 +5,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/alecthomas/kong"
 
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/version"
 )
 
-// CLI is the root command structure for bpfman-shell. It embeds the
-// shared bpfmancli.CLI for global flags, output writers, and runtime
-// services; the Kong-tagged subcommand fields here are the
-// dev/test/ops verb set.
+// CLI is the root command structure for bpfman-shell. The binary is
+// a single-purpose REPL/script runner: with no positional argument
+// it starts an interactive prompt; with a positional Script it runs
+// the named file (or stdin when Script is "-"); with --check it
+// parses without evaluating.
 type CLI struct {
 	bpfmancli.CLI
 
 	kctx *kong.Context `kong:"-"`
 
-	Repl    ReplCmd    `cmd:"" group:"diag" help:"Start an interactive inspection shell."`
-	Version VersionCmd `cmd:"" group:"infra" help:"Print version information."`
+	Script  string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
+	Check   bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	Version bool   `name:"version" short:"V" help:"Print version information and exit."`
 }
 
-// NewCLI creates and initialises a CLI instance by parsing command-line arguments.
+// NewCLI creates and initialises a CLI instance by parsing
+// command-line arguments.
 func NewCLI() (*CLI, error) {
-	if len(os.Args) == 1 {
-		os.Args = append(os.Args, "repl")
-	}
-
-	if len(os.Args) >= 2 && os.Args[1] == "help" {
-		rest := os.Args[2:]
-		os.Args = append(append([]string{os.Args[0]}, rest...), "--help")
-	}
-
 	var c CLI
 	c.kctx = kong.Parse(&c, KongOptions()...)
 	c.DefaultWriters()
 
-	// Initialise logger eagerly. Skip for repl --check, which does no I/O
-	// and must be runnable without access to the system config file.
-	if !c.Repl.Check {
+	// Initialise logger eagerly. Skip for --check and --version,
+	// which do no I/O against the manager and must be runnable
+	// without access to the system config file.
+	if !c.Check && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}
@@ -54,10 +49,10 @@ func NewCLI() (*CLI, error) {
 
 // Execute runs the parsed command.
 func (c *CLI) Execute(ctx context.Context) error {
-	c.kctx.BindTo(ctx, (*context.Context)(nil))
-	c.kctx.Bind(&c.CLI)
-
-	if err := c.kctx.Run(c); err != nil {
+	if c.Version {
+		return c.PrintOut(version.Get().Long())
+	}
+	if err := c.Run(ctx); err != nil {
 		if !errors.Is(err, ErrSilent) {
 			_ = c.PrintErrf("bpfman-shell: error: %v\n", err)
 		}
@@ -74,11 +69,6 @@ func KongOptions() []kong.Option {
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 		}),
-		kong.Groups{
-			"global": "Global Flags:",
-			"infra":  "Infrastructure:",
-			"diag":   "Diagnostics:",
-		},
 		kong.ShortUsageOnError(),
 		kong.Vars{
 			"default_runtime_dir":     fs.DefaultRoot,
