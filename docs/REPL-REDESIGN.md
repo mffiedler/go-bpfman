@@ -18,15 +18,15 @@ tool. Each of those neighbouring concerns has an owner in the
 ecosystem (bash, Go, jq) that this DSL deliberately does not
 compete with.
 
-The redesign collapses the current language's three command
-delimiters (`[exec ...]`, `[bpfman ...]`, `[builtin ...]`) and
-its expression-island form (`[[expr]]`) into a single
-binding-with-execution sigil (`<-`) backed by a command
-registry. It introduces a small set of lifecycle primitives
-(`guard`, `defer`, `start`/`wait`/`kill`) that match the e2e
-test shape directly. It pins jq as the sole rich-data engine
-and treats every value the DSL receives from jq as a sequence,
-not an array.
+Command capture goes through the bind sigil `<-`, backed by a
+command registry: registered names dispatch to in-process
+providers (`bpfman`, jq, file, ...), unregistered names fall
+through to subprocess execution, and `exec NAME` is the explicit
+force-external escape hatch. Lifecycle primitives `guard` and
+`defer` match the setup/teardown shape of e2e scripts;
+`start`/`wait`/`kill` extend the model to async jobs. jq is
+the sole rich-data engine, and every value the DSL receives
+from jq is treated as a sequence, not an array.
 
 ## 2. The language, in five lines
 
@@ -127,28 +127,23 @@ domain. `bpfman program get $pid` is one registered name
 resolving to one provider, the same shape as `veth create v0 v1`
 or any future addition.
 
-### 4.2 Library / CLI parity test mode
+### 4.2 Library / CLI parity test mode (not yet implemented)
 
-The fact that `bpfman` has two legitimate implementations
-(linked library vs system CLI) makes it a good candidate for a
-parity test mode. A narrowly-scoped env var (or CLI flag)
-selects which backend the registered `bpfman` name resolves to:
+`bpfman` has two legitimate implementations (linked library vs
+system CLI), which makes it a good candidate for a parity test
+mode. A narrowly-scoped env var (or CLI flag) would select
+which backend the registered `bpfman` name resolves to:
 
 ```
 BPFMAN_SHELL_BPFMAN_PROVIDER=library   # default; linked provider
 BPFMAN_SHELL_BPFMAN_PROVIDER=exec      # external bpfman CLI
 ```
 
-The same DSL script, the same assertions, run against either
-backend. The test value is that the suite stresses both
-backends and catches divergence.
+Two constraints when the feature lands:
 
-Two important constraints:
-
-1. **Narrow scope.** Only `bpfman` gets this knob. Other
-   registered providers (`veth`, `netns`, ...) have no external
-   CLI to fall back to; generalising would invite "rewrite jq
-   to exec jq" surprises.
+1. **Narrow scope.** Only `bpfman` gets the knob. Other
+   registered providers have no external CLI to fall back to;
+   generalising would invite "rewrite jq to exec jq" surprises.
 2. **The forced escape hatch stays absolute.** `exec bpfman ...`
    always spawns the external CLI, regardless of the env var.
    The env var picks the resolver for the registered name; the
@@ -232,23 +227,25 @@ let NAME <- COMMAND               # bind primary
 let (RC, PRIM) <- COMMAND         # bind result and primary
 guard NAME <- COMMAND             # bind primary, halt on failure
 guard (RC, PRIM) <- COMMAND       # bind both, halt on failure
-require EXPR                      # halt if EXPR is false
-assert EXPR                       # record failure, continue
+require EXPR | VERB ARGS          # halt if false; or assertion verb
+assert EXPR | VERB ARGS           # record failure; or assertion verb
 defer COMMAND                     # register cleanup
 if EXPR { STMTS } [elif ...] [else ...]
 foreach NAME in EXPR { STMTS }
 retry { STMTS } until EXPR
 def NAME(PARAMS) { STMTS }        # user-defined provider
+source FILE                       # evaluate a script file inline
 break ; continue                  # within foreach
 ```
 
 Tuple targets `(RC, PRIM)` are only legal on `<-`. Expression
 binding (`=`) stays single-name. `_` discards a slot in tuple
-form.
+form. `assert` and `require` accept either an expression
+(boolean) or a verb form (`ok CMD`, `fail CMD`, `nil $x`,
+`not-empty $x`, `path exists PATH`, `contains $hay needle`)
+optionally negated with `not`.
 
 Bare-keyword forms (`break`, `continue`) take no arguments.
-`source FILE` reads and evaluates a script file in the current
-session.
 
 ### 5.2 Expression grammar
 
@@ -301,16 +298,14 @@ it has no array literal: rich data lives in jq.
 
 ### 5.4 String interpolation
 
-`"${EXPR}"` splices a value into a double-quoted string. Three
+`"${EXPR}"` splices a value into a double-quoted string. Two
 shapes inside the braces:
 
 1. A bare variable reference: `${name}`, `${name.path}`,
    `${name[0]}`. No `$` prefix.
-2. An expression: `${$n * 2}`, `${$count + 1}`. Anywhere a
-   value is expected.
-3. A command substitution: `${jq ".total" $data}`. The
-   threading and capture forms compose inside `${...}` because
-   it is an expression-mode context.
+2. An expression that begins with `$`: `${$n * 2}`,
+   `${$count + 1}`, `${$x |> jq ".y"}`. The full expression
+   grammar is available, so threading composes naturally.
 
 Single-quoted strings never interpolate. Double-quoted strings
 support `\n`, `\t`, `\r`, `\\`, `\"`, `\$` escapes.
@@ -354,7 +349,7 @@ result envelope:
 
 ```
 let r <- bpftool map dump id $mid -j
-let r <- exec ping 8.8.8.8
+let r <- ping 8.8.8.8
 require $r.code == 0
 ```
 
@@ -473,15 +468,28 @@ statement and gives the renderer everything it needs.
 `defer COMMAND` registers a cleanup command in the current
 defer scope. The top-level script is a defer scope; a `def`
 body is a defer scope; plain blocks (`if`, `foreach`, `retry`)
-are not.
+are not -- defers inside those blocks register in the
+enclosing scope.
+
+Argument capture timing is eager: the deferred command's
+arguments are evaluated when the `defer` statement runs and
+frozen onto the defer record. A `let` that rebinds a captured
+variable later does not change the deferred call:
+
+```
+guard prog <- bpfman program load file ...
+defer bpfman program unload $prog
+let prog <- bpfman program get $other     # rebinds $prog
+# scope exit: unload still runs against the original $prog
+```
 
 Deferred commands run LIFO when the scope exits, on both
 normal completion and `guard`-induced halt. A failing defer is
-visible via the shared renderer (`[defer] cleanup failed at
-...`), cleanup continues across the failure, and the body
-failure (if any) remains the primary diagnostic. But any
-defer failure does push the script's exit code non-zero, so
-tear-down bugs cannot hide behind a successful body.
+visible via the shared renderer (`[defer] FAIL at ...`),
+cleanup continues across the failure, and the body failure (if
+any) remains the primary diagnostic. Any defer failure pushes
+the script's exit code non-zero, so tear-down bugs cannot hide
+behind a successful body.
 
 Exit-code precedence:
 
@@ -544,7 +552,12 @@ against an inconsistent state -- and uses `guard`/`require`.
 Parse, type, and unhandled runtime errors halt the script in
 script mode the same way `require` failures do.
 
-## 8. Async job control
+## 8. Async job control (not yet implemented)
+
+The shapes in this section are designed but not yet wired up;
+`start`, `wait`, and `kill` are unimplemented. The bounded-job
+and signal-driven primitives stay design notes until a concrete
+test demands them.
 
 ### 8.1 `start` / `wait` / `kill`
 
@@ -724,9 +737,9 @@ $dump.stdout |> jq "[.[].formatted.values[].value | tonumber] | add"
 reads as "take x, then jq .a on it, then jq .b on the result".
 The thread RHS extends to the end of the current expression
 (stops at the next `|>`, a binary operator, an arithmetic
-operator, a logical `and`/`or`, a closing bracket
-`)`/`]`/`}`, or end of input). Threads can sit inside
-parens, command substitutions, and string interpolation.
+operator, a logical `and`/`or`, a closing `)` or `}`, or end
+of input). Threads can sit inside parens and string
+interpolation.
 
 ### 9.2 jq returns sequences, not arrays
 
@@ -921,103 +934,36 @@ kernel-adjacent DSL might plausibly want later for mask
 manipulation (`$flags & MASK`). `start` is a registered command
 provider with zero grammar cost.
 
-### 13.4 The current `[cmd]` form (TCL lineage)
+### 13.4 TCL-style `[cmd args]` for command capture
 
-The current language uses `[cmd args]` for command capture, a
-choice with TCL ancestry: TCL uses square brackets for command
-substitution (`set files [glob *.go]`). The visual precedent is
-strong and the late-bound dispatch (any first token in the
-brackets is parsed as a command name and resolved at eval time)
-is exactly what the redesign preserves under `<-`. The
-redesign retires `[cmd]` in favour of `<-` because the
+A previous iteration of the language used `[cmd args]` (TCL
+ancestry: `set files [glob *.go]`). The visual precedent is
+strong and the late-bound dispatch is what the redesign keeps
+under `<-`. Rejected for the redesign because the
 registry-plus-binder shape is more uniform across synchronous
 and asynchronous capture, and frees brackets to never be used
 at the DSL level.
 
-## 14. Migration from current to v2
+## 14. Open questions
 
-The current language ships with `[cmd]`, `[[expr]]`, the
-`bpfman` namespace prefix, the `[builtin ...]` discriminator,
-auto-fail on non-zero exec exit, and the existing
-`Test*.bpfman` script corpus. The migration is mechanical:
+These are unresolved and need a concrete code push to settle:
 
-1. **Replace `let X = [bpfman ...]` with `guard X <- bpfman ...`**
-   for the must-succeed case. Single-name bind captures the
-   primary; for bpfman commands the primary is the typed
-   payload, so `$X.record.program_id` continues to work
-   without change. Use `let X <- ...` (no halt) only when the
-   script wants to inspect the failure itself; in that case
-   take the rc via tuple form: `let (rc, X) <- bpfman ...`.
-2. **Add `defer` lines for every resource the script later
-   relies on.** Most current scripts have implicit cleanup via
-   per-test cleanup hooks; under the redesign, lifecycle
-   management is explicit.
-3. **Replace `let Y = [exec ...]` with `let Y <- ...` or
-   `guard Y <- ...`.** `exec` is no longer required as a
-   discriminator inside `<-` when the command is already an
-   external binary; `bpftool`, `ip`, etc. fall through
-   automatically. For external commands the primary is the
-   result envelope, so `$Y.stdout`, `$Y.code`, `$Y.stderr`
-   read directly off the bind.
-4. **Remove the `[builtin ...]` discriminator** from veth /
-   netns / leases / lifecycle helpers. They are now plain
-   registered names.
-5. **Drop the auto-fail on non-zero exec exit.** Scripts that
-   relied on it must use `guard` for the strict path, or add
-   `require $r.ok` (when the primary is the rc envelope) /
-   `require $rc.ok` from a tuple bind (when the primary is a
-   typed payload).
-6. **Migrate `$r.exit_code` accesses to `$r.code`.**
-7. **Wrap any threaded expression that crosses an arithmetic
-   or comparison boundary in parens** so the thread RHS
-   terminates cleanly. The closing-bracket-aware thread parser
-   already supports this; the conversion is mechanical.
-
-The migration is staged across multiple commits:
-
-1. Land the parser changes (new `<-` token, registry-aware
-   command-form parser, retire `[cmd]`/`[[expr]]` recognition).
-2. Land the runtime changes (registry, captured-result
-   envelope unification, shared renderer).
-3. Migrate the `Test*.bpfman` corpus mechanically. Each script
-   stands alone; migrate one test at a time and run it under
-   the new parser to catch regressions.
-4. Delete the old `[cmd]`/`[[expr]]` paths and tests.
-
-The Go test suite is unaffected; it uses the bpfman library
-directly and has no dependence on the DSL surface.
-
-## 15. Open questions
-
-The following are deliberately unresolved at the design-doc
-stage; decisions will be made during implementation when there
-is concrete code to push back against.
-
-- **Does `[[expr]]` survive in any form?** The redesign
-  largely retires it because expression-mode is the default at
-  every RHS. The narrow case of expression-mode in command-arg
-  position (`print [[$n + 1]]`) might justify keeping it as a
-  rare escape hatch, or scripts could be required to bind via
-  `let` first. Decide when implementing.
-- **What does `start` do with in-process providers?** v1 says
-  external processes only. Async invocation of `bpfman` or
-  other registered providers would require designing
-  cancellation, structured-value capture from a goroutine, and
-  termination semantics. Defer until a real test demands it.
-- **Does `wait $job` block forever, or have a default
-  timeout?** The `--timeout=DURATION` flag is opt-in. Whether
-  bare `wait $job` should default to a script-wide cap (e.g.
-  the harness's overall test timeout) is a workflow question.
-- **Library/CLI parity mode: env var or CLI flag or both?**
-  Both are workable; `BPFMAN_SHELL_BPFMAN_PROVIDER` is the
-  natural shape but a `--bpfman-provider=` flag on the shell
-  binary may be more discoverable. Pick during implementation.
-- **Does the parser need a strict mode that rejects bare
-  expressions in command-arg position?** Today `print 1 + 1`
-  parses as three command args; the redesign could reject
-  unambiguous expression-shaped args in command position with
-  a "did you mean `print [[1 + 1]]`?" error. Or leave the
-  current behaviour. Decide based on script-corpus impact.
+- **`start` with in-process providers.** v1 scope is external
+  processes only. Async invocation of `bpfman` or other
+  registered providers needs cancellation, structured-value
+  capture from a goroutine, and termination semantics designed.
+  Defer until a real test demands it.
+- **`wait $job` timeout default.** `--timeout=DURATION` is
+  opt-in. Whether bare `wait $job` should default to a
+  script-wide cap is a workflow question.
+- **Library/CLI parity mode shape.** Env var, CLI flag, or
+  both. `BPFMAN_SHELL_BPFMAN_PROVIDER` is the natural env-var
+  spelling; a `--bpfman-provider=` flag may be more
+  discoverable. Pick when the feature lands.
+- **Strict mode for command-arg position.** Today `print 1 + 1`
+  parses as three command args; the parser could reject an
+  unambiguous expression-shaped arg in command position with a
+  hint to wrap it. Decide based on script-corpus impact.
 
 ## Appendix A: Canonical bounded-job example
 
@@ -1035,10 +981,10 @@ defer netns delete --ignore-missing $ns
 guard pair <- veth create test-host test-peer --netns $ns
 defer veth delete --ignore-missing $pair
 
-guard up   <- exec ip -n bpfman-tc link set test-peer up
-guard addr <- exec ip -n bpfman-tc addr add 198.51.100.2/24 dev test-peer
-guard host <- exec ip link set test-host up
-guard hadr <- exec ip addr add 198.51.100.1/24 dev test-host
+guard up   <- ip -n bpfman-tc link set test-peer up
+guard addr <- ip -n bpfman-tc addr add 198.51.100.2/24 dev test-peer
+guard host <- ip link set test-host up
+guard hadr <- ip addr add 198.51.100.1/24 dev test-host
 
 # ---- Program load + attach ----------------------------------------
 
