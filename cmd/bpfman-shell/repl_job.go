@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
@@ -229,31 +230,61 @@ func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	}, nil
 }
 
-// replKill signals the process group of the given job. The
-// default signal is SIGTERM; a '--signal=NAME' flag overrides
-// (NAME accepts both 'SIGTERM' and 'TERM' spellings). The
-// kill targets '-pgid' so descendants the child fork-execs
-// (an 'ip netns exec ...' wrapper, a sh -c spawn) receive the
-// signal too.
+// defaultKillGrace is the window kill waits between SIGTERM
+// and SIGKILL on the default-termination path. Long enough for
+// a cooperative SIGTERM handler to flush state; short enough
+// that a hung process does not stall a script's teardown for
+// an irritating amount of time. systemd defaults to 90s,
+// container runtimes to 10s, but in this shell most jobs are
+// ephemeral test fixtures and 2s is the right ergonomic
+// default. Adjust per call with --grace=DURATION.
+const defaultKillGrace = 2 * time.Second
+
+// replKill signals the process group of the given job and, on
+// the default-termination path, escalates to SIGKILL if the
+// process does not exit within the grace period. Three
+// behaviours, chosen by flags:
 //
-// 'kill' is best-effort: ESRCH (the process already exited) is
-// treated as success because the desired state (job not
-// running) is true. Marking Killed before signalling avoids a
-// race with the reaper goroutine; a concurrent 'wait' that
-// observes the kill while the process is still draining sees
-// Killed: true and reports ok: true, since the script asked
-// for the termination.
+//	kill $job                  default termination: SIGTERM,
+//	                           wait up to --grace (default 2s),
+//	                           SIGKILL if still alive, block
+//	                           until reaped. Returns only when
+//	                           the job is no longer alive.
+//	kill --grace=DUR $job      same, with a custom grace
+//	                           window. --grace=0 sends SIGTERM
+//	                           immediately followed by SIGKILL
+//	                           with no wait.
+//	kill --signal=NAME $job    custom signal: deliver and return.
+//	                           No escalation. NAME accepts both
+//	                           the 'SIGTERM' and 'TERM'
+//	                           spellings. Used for control-flow
+//	                           signals (USR1, HUP) where the
+//	                           script wants to nudge a daemon,
+//	                           not terminate it.
 //
-// v0 sends a single signal. The SIGTERM-then-grace-period-then-
-// SIGKILL escalation described in design section 8.2 lands in
-// a follow-up commit.
-func replKill(args []shell.Arg) (shell.Envelope, error) {
+// The kill targets the process group (-pgid) so descendants
+// the child fork-execs (an 'ip netns exec ...' wrapper, a
+// sh -c spawn) receive the signal too. ESRCH (the process
+// already exited) is treated as success because the desired
+// state (job not running) is true.
+//
+// Concurrency: Killed and Signal are written before the
+// initial signal goes out, so a concurrent 'wait' that races
+// the kill sees the requested termination. On escalation,
+// Signal is rewritten to "KILL" before SIGKILL is sent so the
+// final wait envelope reflects what actually ended the
+// process; the reaper's "don't overwrite a non-empty Signal"
+// rule preserves whichever value the kill builtin set last.
+func replKill(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	sig := syscall.SIGTERM
 	sigName := "TERM"
+	grace := defaultKillGrace
+	explicitSignal := false
 	var jobArg shell.Arg
 	for _, a := range args {
 		text := argText(a)
-		if strings.HasPrefix(text, "--signal=") {
+		switch {
+		case strings.HasPrefix(text, "--signal="):
 			name := strings.TrimPrefix(text, "--signal=")
 			s, err := signalFromName(name)
 			if err != nil {
@@ -261,12 +292,22 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 			}
 			sig = s
 			sigName = signalShortName(s)
-			continue
+			explicitSignal = true
+		case strings.HasPrefix(text, "--grace="):
+			d, err := time.ParseDuration(strings.TrimPrefix(text, "--grace="))
+			if err != nil {
+				return shell.Envelope{}, fmt.Errorf("--grace: %w", err)
+			}
+			if d < 0 {
+				return shell.Envelope{}, fmt.Errorf("--grace must not be negative (got %s)", d)
+			}
+			grace = d
+		default:
+			if jobArg != nil {
+				return shell.Envelope{}, fmt.Errorf("kill takes one $job argument; got more than one")
+			}
+			jobArg = a
 		}
-		if jobArg != nil {
-			return shell.Envelope{}, fmt.Errorf("kill takes one $job argument; got more than one")
-		}
-		jobArg = a
 	}
 	if jobArg == nil {
 		return shell.Envelope{}, fmt.Errorf("kill requires a $job argument")
@@ -276,15 +317,14 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 		return shell.Envelope{}, err
 	}
 
+	// Mark up-front so a concurrent wait reads "killed"
+	// regardless of whether the signal has been delivered yet.
 	job.Mu.Lock()
 	job.Killed = true
 	job.Signal = sigName
 	job.Mu.Unlock()
 
 	if err := syscall.Kill(-job.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
-		// Permission errors and other unexpected failures
-		// surface as not-ok envelopes; the script can guard
-		// on $r.ok if the kill is on a critical path.
 		return shell.Envelope{
 			OK:     false,
 			Code:   1,
@@ -292,7 +332,78 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 		}, nil
 	}
 	job.MarkManaged()
+
+	// Custom signals are not termination paths: deliver and
+	// return. Escalation applies only when the user accepted
+	// the default (no --signal flag).
+	if explicitSignal {
+		return shell.Envelope{OK: true, Code: 0}, nil
+	}
+
+	// Default path: wait up to grace for the process to exit,
+	// escalate to SIGKILL if needed, block until the reaper
+	// closes Done. 'kill' returns only after the job is
+	// genuinely gone, so 'defer kill $p' is a real cleanup
+	// primitive rather than a hopeful suggestion.
+	if waitForDone(ctx, job, grace) {
+		return shell.Envelope{OK: true, Code: 0}, nil
+	}
+	// Race: the process might have exited at the boundary
+	// of the grace window. Re-check before escalating.
+	select {
+	case <-job.Done:
+		return shell.Envelope{OK: true, Code: 0}, nil
+	default:
+	}
+	job.Mu.Lock()
+	job.Signal = "KILL"
+	job.Mu.Unlock()
+	if err := syscall.Kill(-job.PID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return shell.Envelope{
+			OK:     false,
+			Code:   1,
+			Stderr: fmt.Sprintf("kill -KILL -%d: %v", job.PID, err),
+		}, nil
+	}
+	// SIGKILL is uncatchable; the reaper will close Done
+	// almost immediately. Block on it (respecting ctx) so we
+	// return only after the kernel has reaped the process.
+	waitForDoneIndefinitely(ctx, job)
 	return shell.Envelope{OK: true, Code: 0}, nil
+}
+
+// waitForDone blocks until job.Done closes, ctx is cancelled,
+// or timeout elapses. timeout == 0 means "do not wait" --
+// returns true only if Done is already closed. Returns true
+// when Done observed, false on timeout or ctx cancellation.
+func waitForDone(ctx context.Context, job *shell.Job, timeout time.Duration) bool {
+	if timeout == 0 {
+		select {
+		case <-job.Done:
+			return true
+		default:
+			return false
+		}
+	}
+	select {
+	case <-job.Done:
+		return true
+	case <-time.After(timeout):
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// waitForDoneIndefinitely blocks until job.Done closes or ctx
+// is cancelled. Used after sending SIGKILL where the kernel
+// will reap the process imminently and we just need to wait
+// for the reaper goroutine to settle the captured fields.
+func waitForDoneIndefinitely(ctx context.Context, job *shell.Job) {
+	select {
+	case <-job.Done:
+	case <-ctx.Done():
+	}
 }
 
 // Two leak-handling policies, chosen at the call site:

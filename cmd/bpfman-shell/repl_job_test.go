@@ -250,7 +250,7 @@ func TestReplKill_TerminatesAndMarksManaged(t *testing.T) {
 	require.NoError(t, err)
 	job := val.Origin().(*shell.Job)
 
-	env, err := replKill([]shell.Arg{
+	env, err := replKill(context.Background(), []shell.Arg{
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -277,7 +277,7 @@ func TestReplKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = replKill([]shell.Arg{
+	_, err = replKill(context.Background(), []shell.Arg{
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -306,7 +306,7 @@ func TestReplKill_AlreadyExitedIsOk(t *testing.T) {
 	job := val.Origin().(*shell.Job)
 	waitForJob(t, job)
 
-	env, err := replKill([]shell.Arg{
+	env, err := replKill(context.Background(), []shell.Arg{
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestReplKill_SignalFlag(t *testing.T) {
 	// initialising and the trap has no effect.
 	time.Sleep(50 * time.Millisecond)
 
-	env, err := replKill([]shell.Arg{
+	env, err := replKill(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "--signal=USR1"},
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
@@ -351,10 +351,124 @@ func TestReplKill_SignalFlag(t *testing.T) {
 	assert.Equal(t, "USR1", job.Signal)
 }
 
+func TestReplKill_DefaultPathBlocksUntilReaped(t *testing.T) {
+	t.Parallel()
+
+	// The contract: 'kill $job' returns only after the
+	// reaper has closed Done. Even on a process that exits
+	// immediately on SIGTERM (no escalation needed), the call
+	// must not return earlier than the Done close.
+	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "sleep 30"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	env, err := replKill(context.Background(), []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK)
+
+	// Done must already be closed: the kill builtin returned,
+	// so the reaper has settled the job.
+	select {
+	case <-job.Done:
+	default:
+		t.Fatalf("kill returned but job.Done is still open; sync contract broken")
+	}
+	assert.True(t, job.IsManaged())
+}
+
+func TestReplKill_GraceZeroSendsKillImmediately(t *testing.T) {
+	t.Parallel()
+
+	// --grace=0 skips the wait between SIGTERM and SIGKILL.
+	// The job's Signal field, set by the escalation path,
+	// reflects KILL once kill returns.
+	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "sleep 30"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	env, err := replKill(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "--grace=0"},
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK)
+
+	select {
+	case <-job.Done:
+	default:
+		t.Fatalf("kill --grace=0 returned but job.Done is still open")
+	}
+	job.Mu.Lock()
+	defer job.Mu.Unlock()
+	assert.Equal(t, "KILL", job.Signal,
+		"--grace=0 takes the escalation path and ends on SIGKILL")
+}
+
+func TestReplKill_CustomSignalSkipsEscalation(t *testing.T) {
+	t.Parallel()
+
+	// A custom --signal=NAME is a control-flow signal, not a
+	// termination request. kill must deliver and return; it
+	// must not wait for grace and must not escalate to SIGKILL.
+	// The Signal field reflects the requested signal, not KILL.
+	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "trap 'exit 17' USR1; sleep 30"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	env, err := replKill(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "--signal=USR1"},
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK)
+
+	// Reap separately, then assert Signal stayed as USR1
+	// (escalation would have rewritten to KILL).
+	waitForJob(t, job)
+	job.Mu.Lock()
+	defer job.Mu.Unlock()
+	assert.Equal(t, "USR1", job.Signal,
+		"custom signal must not be overwritten by escalation")
+}
+
+func TestReplKill_NegativeGraceIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := replKill(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "--grace=-1s"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--grace")
+}
+
+func TestReplKill_MalformedGraceIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := replKill(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "--grace=banana"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--grace")
+}
+
 func TestReplKill_UnknownSignalIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := replKill([]shell.Arg{
+	_, err := replKill(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "--signal=NOSUCHSIG"},
 	})
 	require.Error(t, err)
@@ -364,7 +478,7 @@ func TestReplKill_UnknownSignalIsError(t *testing.T) {
 func TestReplKill_RejectsNonJobArg(t *testing.T) {
 	t.Parallel()
 
-	_, err := replKill([]shell.Arg{
+	_, err := replKill(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "not-a-job"},
 	})
 	require.Error(t, err)
@@ -374,7 +488,7 @@ func TestReplKill_RejectsNonJobArg(t *testing.T) {
 func TestReplKill_NoArgsIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := replKill(nil)
+	_, err := replKill(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "kill requires a $job argument")
 }

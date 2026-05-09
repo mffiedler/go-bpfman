@@ -551,7 +551,7 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		}
 		return true, shell.Value{}, replJobs(cli, env)
 	case "kill":
-		env, err := replKill(args[1:])
+		env, err := replKill(ctx, args[1:])
 		if err != nil {
 			return true, shell.Value{}, err
 		}
@@ -1034,7 +1034,9 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("Async jobs:\n")
 	b.WriteString("  start <command> [args]      Spawn a background process; primary is a $job handle (assignable)\n")
 	b.WriteString("  wait $job                   Block until the job exits; primary is the captured envelope (assignable)\n")
-	b.WriteString("  kill [--signal=NAME] $job   Signal the job's process group (default SIGTERM)\n")
+	b.WriteString("  kill $job                   SIGTERM, 2s grace, SIGKILL if still alive; blocks until reaped\n")
+	b.WriteString("  kill --grace=DUR $job       Same, with a custom grace window (e.g. --grace=500ms, --grace=0)\n")
+	b.WriteString("  kill --signal=NAME $job     Deliver a custom signal (USR1, HUP, ...); no escalation\n")
 	b.WriteString("  jobs                        List jobs registered in the current scope\n")
 	b.WriteString("\n")
 	b.WriteString("  Idiom: guard p <- start CMD; defer kill $p\n")
