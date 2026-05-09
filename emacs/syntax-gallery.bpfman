@@ -19,7 +19,9 @@
 #   flags              font-lock-constant-face    (--flag, -x)
 #
 # Plain arg-position words (file paths, numeric IDs, attach points)
-# stay unfontified. Delimiters ([ ] { } ;) are not highlighted.
+# stay unfontified. Delimiters ({ } ; ( ) ,) are not highlighted.
+# Brackets [ ] are not DSL syntax; they appear only inside a varref
+# index ($x[0]) or a quoted jq filter string.
 
 # ---- 1. Comments and quoting ----
 
@@ -74,8 +76,33 @@ let esc_dollar = "price=\$5"                       # literal $ without ${...}
 
 # ---- 4. Command capture with the bind sigil ----
 
+# Single-name binding captures the provider's primary result.
+# 'let' continues regardless of failure; 'guard' halts on '!ok'
+# and renders the captured envelope through a labelled formatter.
+let r <- ip link show
 guard one <- bpfman program list
 guard arg_after <- diff file:$a file:$b
+
+# Tuple binding captures the result envelope and the primary
+# separately. Only legal on '<-'; '=' stays single-name.
+guard (rc, prog) <- bpfman program load file --path ./foo.o --programs xdp:pass
+let (rc2, _) <- ip link del veth-host
+
+# '_' discards a slot. The single-name discard form is the
+# "run, ignore result, continue regardless" idiom for cleanup.
+let _ <- ip link del bpfman-demo
+guard _ <- ip netns add bpfman-test
+
+# ---- 4a. Lifecycle with defer ----
+
+# 'defer COMMAND' registers a cleanup that runs LIFO at scope
+# exit, on both normal completion and guard halt. Argument
+# values are captured at defer-statement time, so a later
+# rebinding of the variable does not change the deferred call.
+guard prog2 <- bpfman program load file --path ./bar.o --programs xdp:bar
+defer bpfman program unload $prog2
+guard link2 <- bpfman link attach xdp -i bpfman-demo $prog2
+defer bpfman link detach $link2
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
 
@@ -171,11 +198,22 @@ alias bp = bpfman program
 aliases                # list
 unalias b
 
-# ---- 12. Shell builtins ----
+# ---- 12. Top-level commands and registered providers ----
 
+# 'bpfman' and the shell builtins (jq, file, print, alias,
+# source, vars, help, version, ...) are registered providers.
+# Any other first word falls through to subprocess execution,
+# so 'ip', 'cat', 'diff' run as host commands without needing
+# an explicit 'exec' prefix.
 ip link add dummy0 type dummy
 ip link set dummy0 up
 let _ <- diff -u file:$raw1.stdout file:$raw2.stdout
+
+# 'exec NAME' is the explicit force-external escape hatch for
+# the rare case where NAME collides with a registered provider
+# and the script wants the host binary. Otherwise it is
+# redundant.
+let r2 <- exec bpfman version
 
 guard parsed <- jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value
@@ -220,8 +258,8 @@ bpfman gc --dry-run
 
 # ---- 14. Load and attach: every attach kind ----
 
-guard p_file <- bpfman load file --path ./foo.o --programs xdp:xdp_pass
-guard p_image <- bpfman load image -i quay.io/example/xdp:latest --programs xdp:pass
+guard p_file <- bpfman program load file --path ./foo.o --programs xdp:xdp_pass
+guard p_image <- bpfman program load image -i quay.io/example/xdp:latest --programs xdp:pass
 
 guard l_xdp <- bpfman link attach xdp        -i eth0 $p_file
 guard l_tc <- bpfman link attach tc         -i eth0 $p_file
@@ -234,12 +272,14 @@ guard l_fexit <- bpfman link attach fexit      --function vfs_read $p_file
 
 # ---- 15. Every flag shape ----
 
-# Backslash at end of line folds the newline into whitespace; the
-# continuation works at statement level and also inside `[...]'
-# substitutions.  Use it wherever a call has enough flags to make
-# one line unreadable.
+# Backslash at end of line folds the newline into whitespace.
+# The continuation works at statement level and on the right of
+# '<-'; the editor mode treats a backslash-continued sequence as
+# one logical line, so flag and argument context is carried
+# across the boundary. Use it wherever a call has enough flags
+# to make one line unreadable.
 
-bpfman load file                     \
+bpfman program load file             \
     --path ./prog.o                  \
     --programs xdp:xdp_stats         \
     -m      app=stats                \
@@ -250,10 +290,9 @@ bpfman load file                     \
     --map-owner-id 42                \
     -o      json
 
-# Continuation inside a command substitution also works; the inner
-# text is retokenised at parse time, so the same rule applies.
+# Continuation works on the right of a bind too.
 
-guard p_multi <- bpfman load file                  \
+guard p_multi <- bpfman program load file        \
     --path ./prog.o                              \
     --programs xdp:xdp_stats                     \
     -m owner=test-team                           \
