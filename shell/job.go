@@ -2,6 +2,7 @@ package shell
 
 import (
 	"sync"
+	"time"
 )
 
 // Job is the user-visible handle for a background process started
@@ -83,6 +84,15 @@ type Job struct {
 	// the leak is detected in a different chunk of the script
 	// from where the job was launched.
 	Origin string
+
+	// Started is the wall-clock instant at which the spawn
+	// returned successfully. Set once at construction; never
+	// mutated. Renderers (the 'jobs' listing) format this for
+	// display and consumers that care about correlation with
+	// other logs read it directly. Wall clock rather than
+	// monotonic because the primary use is "what time did
+	// this start?", not "how long has this been running?".
+	Started time.Time
 }
 
 // MarkManaged records that the script has acknowledged this

@@ -64,10 +64,11 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 	}
 
 	job := &shell.Job{
-		PID:    cmd.Process.Pid,
-		Done:   make(chan struct{}),
-		Args:   argv,
-		Origin: origin,
+		PID:     cmd.Process.Pid,
+		Done:    make(chan struct{}),
+		Args:    argv,
+		Origin:  origin,
+		Started: time.Now(),
 	}
 	if env != nil {
 		env.RegisterJob(job)
@@ -486,16 +487,41 @@ func replJobs(cli *bpfmancli.CLI, env *shell.Env) error {
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-7s %-12s %-22s %s\n", "PID", "STATUS", "ORIGIN", "ARGV")
+	fmt.Fprintf(&b, "%-7s %-8s %-12s %-22s %s\n", "PID", "START", "STATUS", "ORIGIN", "ARGV")
 	for _, j := range jobs {
 		origin := j.Origin
 		if origin == "" {
 			origin = "<interactive>"
 		}
 		argv := strings.Join(j.Args, " ")
-		fmt.Fprintf(&b, "%-7d %-12s %-22s %s\n", j.PID, jobStatus(j), origin, argv)
+		fmt.Fprintf(&b, "%-7d %-8s %-12s %-22s %s\n",
+			j.PID, j.Started.Format("15:04:05"), jobStatus(j), origin, argv)
 	}
 	return cli.PrintOut(b.String())
+}
+
+// replReap drops every job from the active job scope's
+// registry whose Done channel has closed. Always explicit:
+// the user invokes 'reap' when they want the listing
+// trimmed; nothing happens automatically when a wait or kill
+// returns, because the script may still want to inspect
+// $job after observing its outcome. Running jobs are left
+// alone. Returns no output: success is silent (Unix
+// contract) and 'jobs' afterwards reflects the trimmed
+// registry.
+func replReap(env *shell.Env) error {
+	if env == nil {
+		return fmt.Errorf("reap requires an active shell environment")
+	}
+	env.ReapJobs(func(j *shell.Job) bool {
+		select {
+		case <-j.Done:
+			return true
+		default:
+			return false
+		}
+	})
+	return nil
 }
 
 // jobStatus reports the lifecycle stage of a Job for the 'jobs'

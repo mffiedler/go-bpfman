@@ -261,6 +261,56 @@ func TestEnv_ActiveJobsIsCopy(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestEnv_ReapJobsKeepsRunningDropsCompleted(t *testing.T) {
+	t.Parallel()
+
+	env := &Env{Session: NewSession()}
+
+	// Two jobs: one with Done already closed (completed),
+	// one with Done open (still running). The predicate is
+	// "Done is closed".
+	completed := &Job{PID: 1, Args: []string{"done"}, Done: closedDone()}
+	running := &Job{PID: 2, Args: []string{"running"}, Done: make(chan struct{})}
+
+	err := WithJobScope(env, func() error {
+		env.RegisterJob(completed)
+		env.RegisterJob(running)
+
+		env.ReapJobs(func(j *Job) bool {
+			select {
+			case <-j.Done:
+				return true
+			default:
+				return false
+			}
+		})
+
+		survivors := env.ActiveJobs()
+		require.Len(t, survivors, 1, "completed job is reaped, running job stays")
+		assert.Same(t, running, survivors[0])
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestEnv_ReapJobsOutsideScopeIsNoop(t *testing.T) {
+	t.Parallel()
+
+	env := &Env{Session: NewSession()}
+	require.NotPanics(t, func() {
+		env.ReapJobs(func(*Job) bool { return true })
+	})
+}
+
+// closedDone returns a chan that is already closed, so reap
+// predicates that select on Done observe completion
+// immediately without spawning real processes.
+func closedDone() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
 func TestEnv_RegisterJobOutsideScopeIsNoop(t *testing.T) {
 	t.Parallel()
 

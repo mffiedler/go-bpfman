@@ -799,6 +799,32 @@ func (e *Env) ActiveJobs() []*Job {
 	return out
 }
 
+// ReapJobs removes every job from the active job scope's
+// registry for which shouldReap returns true. Registration
+// order is preserved for survivors. Outside any job scope
+// the call is a no-op. Used by the 'reap' builtin to drop
+// completed entries while leaving running jobs alone; the
+// predicate shape lets callers choose their own definition
+// of 'done' (closed Done channel, Managed flag, both, ...).
+func (e *Env) ReapJobs(shouldReap func(*Job) bool) {
+	if e.jobs == nil {
+		return
+	}
+	src := *e.jobs
+	dst := src[:0]
+	for _, j := range src {
+		if !shouldReap(j) {
+			dst = append(dst, j)
+		}
+	}
+	// Clear any tail references so reaped jobs are not held
+	// alive by the underlying array.
+	for i := len(dst); i < len(src); i++ {
+		src[i] = nil
+	}
+	*e.jobs = dst
+}
+
 // runWithDeferScope establishes a defer scope around fn. The
 // previous scope is saved and restored on exit so nested scopes
 // (program, def body) compose. fn's error is returned verbatim;

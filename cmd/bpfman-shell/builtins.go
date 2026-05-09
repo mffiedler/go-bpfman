@@ -311,6 +311,16 @@ func init() {
 			Usage:    "print <value>...",
 			Summary:  "Print one or more values (one pretty, many compact space-joined).",
 		},
+		"reap": {
+			Name: "reap", Handler: handleReap,
+			Category: categoryJobs,
+			Usage:    "reap",
+			Summary:  "Drop completed jobs from the registry; running jobs are left alone.",
+			Detail: "Always explicit: nothing reaps automatically when wait or kill " +
+				"returns, because the script may still want to inspect $job after " +
+				"the call. After 'reap', the 'jobs' listing reflects only entries " +
+				"whose process is still running.",
+		},
 		"require": {
 			Name: "require", Handler: handleRequire,
 			Category: categoryAssert,
@@ -435,6 +445,17 @@ func handleJobs(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, fmt.Errorf("jobs takes no arguments")
 	}
 	return shell.Value{}, replJobs(c.CLI, c.Env)
+}
+
+// handleReap drops completed jobs from the active scope's
+// registry. Pure mutation; the caller has already typed
+// 'jobs' to see what is there and now wants the listing
+// trimmed.
+func handleReap(c builtinCtx) (shell.Value, error) {
+	if len(c.Args) > 0 {
+		return shell.Value{}, fmt.Errorf("reap takes no arguments")
+	}
+	return shell.Value{}, replReap(c.Env)
 }
 
 // handleJQ adapts replJQ to the builtin shape.
