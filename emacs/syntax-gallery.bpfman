@@ -42,6 +42,36 @@ let sq_string  = 'single quoted'
 let empty_str  = ""
 let path_lit   = /sys/fs/bpf/bpfman
 
+# ---- 2a. Placeholder bindings for demonstrations below ----
+#
+# The sections that follow use these names as stand-ins so the
+# syntax forms parse cleanly under '--check'. Each is a scalar
+# default; in a real script the binding would come from a
+# bpfman command, an external capture, or a prior 'let'. Adding
+# them here keeps the gallery a single self-contained file
+# that '--check' accepts without external context.
+let prog       = "demo-prog"
+let progs      = "demo-progs"
+let items      = "demo-items"
+let data       = "demo-data"
+let count      = 5
+let raw_count  = "5"
+let name       = "demo-name"
+let other      = "demo-other"
+let kind       = "demo-kind"
+let flag       = true
+let dry_run    = false
+let haystack   = "needle in this"
+let x          = 1
+let inner      = "demo-inner"
+let outer      = "demo-outer"
+let maybe      = "demo-maybe"
+let ready      = true
+let healthy    = true
+let booting    = false
+let failing    = false
+let unbounded  = false
+
 # ---- 3. Variable references (every form) ----
 
 let by_name    = $bare_word

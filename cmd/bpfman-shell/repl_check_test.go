@@ -23,10 +23,14 @@ func runCheckInput(t *testing.T, src string) (bool, string) {
 func TestReplCheck_CleanInput(t *testing.T) {
 	t.Parallel()
 
+	// --check now runs static analysis after parsing; every
+	// $-reference must resolve to a previously-defined name,
+	// matching how go vet and pylint catch undefined-name
+	// typos. The 'if $x > 0' case defines $x first.
 	clean := []string{
 		"help",
 		"let x = 1\nshow program",
-		"if $x > 0 {\n  bpfman program list\n}",
+		"let x = 1\nif $x > 0 {\n  bpfman program list\n}",
 		"let y <- bpfman program list",
 		"# a comment only",
 		"",
@@ -99,27 +103,31 @@ func TestReplCheck_UnterminatedBlockAtEOF(t *testing.T) {
 	assert.Contains(t, errOut, "unterminated block")
 }
 
-func TestReplCheck_ReportsMultipleErrors(t *testing.T) {
+func TestReplCheck_ReportsMultipleStaticIssues(t *testing.T) {
 	t.Parallel()
 
-	// Each balanced chunk is checked independently, so both errors
-	// on separate statements should surface.
-	src := "let x = 1 = 2\nprog = load\n"
+	// Static analysis (Check) accumulates issues and reports
+	// every undefined reference, not just the first. Parse
+	// errors still bail on the first because the parser
+	// cannot meaningfully continue past a syntax error.
+	src := "print $a\nprint $b\n"
 	hadErrors, errOut := runCheckInput(t, src)
 	assert.True(t, hadErrors)
-	// First error from line 1.
-	assert.Contains(t, errOut, "test.bpfman:1:")
-	// Second error from line 2.
-	assert.Contains(t, errOut, "test.bpfman:2:")
+	assert.Contains(t, errOut, "undefined variable: a")
+	assert.Contains(t, errOut, "undefined variable: b")
 }
 
-func TestReplCheck_LinePrefixTracksChunkStart(t *testing.T) {
+func TestReplCheck_LinePrefixTracksParserPosition(t *testing.T) {
 	t.Parallel()
 
+	// The parser emits errors with embedded LINE:COL prefixes;
+	// replCheckInput strips them and uses the parser's line
+	// for the file:line: rendering. A 'help' on line 1, a
+	// blank line 2, then the offending 'let x = 1 = 2' on
+	// line 3 should report at line 3, not line 1.
 	src := "help\n\nlet x = 1 = 2\n"
 	hadErrors, errOut := runCheckInput(t, src)
 	assert.True(t, hadErrors)
-	// The offending chunk starts on line 3 after the blank separator.
 	assert.Contains(t, errOut, "test.bpfman:3:")
 }
 

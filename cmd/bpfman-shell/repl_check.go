@@ -53,65 +53,72 @@ func (c *CLI) checkReader() (LineReader, error) {
 	return NewScannerReader(os.Stdin, nil), nil
 }
 
-// replCheckInput reads from r, accumulates lines until brace and
-// bracket depth balances (mirroring replLoop), and checks each
-// accumulated chunk via shell.Tokenise and shell.Parse. Errors are
-// written to errOut with a file:line: prefix. Returns true when any
-// error was emitted so the caller can signal a non-zero exit.
+// replCheckInput slurps the whole input from r, tokenises and
+// parses it as one Program, runs the static checker, and
+// reports every issue with a file:line: prefix. Slurping
+// (rather than chunk-at-a-time) gives the checker the full
+// program scope: a let in the first chunk defines a name the
+// last chunk can use, and that visibility is what
+// undefined-variable detection needs. Returns true when any
+// error was emitted so the caller signals a non-zero exit.
 func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
-	var lineNo int
-	var buf strings.Builder
-	var startLine int
-	var cs contState
-	hadErrors := false
-
-	reportErr := func(line int, err error) {
-		hadErrors = true
-		loc := sourceLoc{file: file, line: line}
-		fmt.Fprintf(errOut, "%s[check] error: %v\n", loc, err)
-	}
-
+	var b strings.Builder
 	for {
-		input, err := r.Readline()
+		line, err := r.Readline()
 		if err != nil {
-			if err == ErrInterrupt || err == io.EOF {
-				if buf.Len() > 0 {
-					reportErr(startLine, fmt.Errorf("unterminated block at end of input"))
-				}
+			if err == io.EOF || err == ErrInterrupt {
 				break
 			}
-			reportErr(lineNo, err)
-			break
+			fmt.Fprintf(errOut, "%s: %v\n", file, err)
+			return true
 		}
-		lineNo++
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(line)
+	}
+	src := b.String()
+	if strings.TrimSpace(src) == "" {
+		return false
+	}
 
-		if buf.Len() == 0 {
-			startLine = lineNo
-		}
-		if buf.Len() > 0 {
-			buf.WriteByte('\n')
-		}
-		buf.WriteString(input)
-		cs.advance(input)
-		if cs.open() {
-			continue
-		}
+	hadErrors := false
+	report := func(line int, msg string) {
+		hadErrors = true
+		loc := sourceLoc{file: file, line: line}
+		fmt.Fprintf(errOut, "%serror: %s\n", loc, msg)
+	}
 
-		accumulated := buf.String()
-		buf.Reset()
-		cs = contState{}
+	// stagedReport pulls a leading 'LINE:COL: ' prefix off
+	// tokeniser and parser error messages so the file:line
+	// rendering in report stays consistent. Without the
+	// strip the user would see 'test.bpfman:1: error: 1:11:
+	// unexpected ...' with the position rendered twice.
+	stagedReport := func(err error) {
+		msg := err.Error()
+		line := 1
+		if l, rest, ok := splitLineColPrefix(msg); ok {
+			line = l
+			msg = rest
+		}
+		report(line, msg)
+	}
 
-		tokens, tokErr := shell.Tokenise(accumulated)
-		if tokErr != nil {
-			reportErr(startLine, tokErr)
-			continue
-		}
-		if len(tokens) == 0 {
-			continue
-		}
-		if _, parseErr := shell.Parse(tokens); parseErr != nil {
-			reportErr(startLine, parseErr)
-		}
+	tokens, tokErr := shell.Tokenise(src)
+	if tokErr != nil {
+		stagedReport(tokErr)
+		return hadErrors
+	}
+	if len(tokens) == 0 {
+		return false
+	}
+	prog, parseErr := shell.Parse(tokens)
+	if parseErr != nil {
+		stagedReport(parseErr)
+		return hadErrors
+	}
+	for _, issue := range shell.Check(prog) {
+		report(issue.Loc.Line, issue.Msg)
 	}
 	return hadErrors
 }
