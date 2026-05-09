@@ -239,6 +239,137 @@ func TestReplWait_NoArgsIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "exactly one argument")
 }
 
+func TestReplKill_TerminatesAndMarksManaged(t *testing.T) {
+	t.Parallel()
+
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "sleep 60"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	env, err := replKill([]shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK, "kill that delivered a signal is ok")
+	assert.True(t, job.IsManaged(), "kill marks the job managed")
+
+	waitForJob(t, job)
+	job.Mu.Lock()
+	defer job.Mu.Unlock()
+	assert.True(t, job.Killed, "Killed flag persists for wait to read")
+}
+
+func TestReplKill_KilledThenWaitReportsOk(t *testing.T) {
+	t.Parallel()
+
+	// Per design: a killed job is a clean cleanup outcome.
+	// 'kill $job; wait $job' should yield ok: true even
+	// though the underlying process exited via signal.
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "sleep 60"},
+	})
+	require.NoError(t, err)
+
+	_, err = replKill([]shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+
+	env, err := replWait(context.Background(), []shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK, "wait on a killed job reports ok")
+}
+
+func TestReplKill_AlreadyExitedIsOk(t *testing.T) {
+	t.Parallel()
+
+	// 'kill' is best-effort: if the process exited on its
+	// own before kill landed, ESRCH is treated as success.
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "exit 0"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+	waitForJob(t, job)
+
+	env, err := replKill([]shell.Arg{
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK, "kill against already-exited job is ok (ESRCH swallowed)")
+}
+
+func TestReplKill_SignalFlag(t *testing.T) {
+	t.Parallel()
+
+	// '--signal=USR1' overrides the SIGTERM default. The
+	// shell traps USR1 and exits with code 42 so the test
+	// can confirm the signal was delivered without relying
+	// on signal-status reporting.
+	val, err := replStart(context.Background(), []shell.Arg{
+		shell.WordArg{Text: "sh"},
+		shell.WordArg{Text: "-c"},
+		shell.WordArg{Text: "trap 'exit 42' USR1; sleep 60"},
+	})
+	require.NoError(t, err)
+	job := val.Origin().(*shell.Job)
+
+	// Give the trap a moment to install before signalling;
+	// otherwise the USR1 may arrive while sh is still
+	// initialising and the trap has no effect.
+	time.Sleep(50 * time.Millisecond)
+
+	env, err := replKill([]shell.Arg{
+		shell.WordArg{Text: "--signal=USR1"},
+		shell.StructuredValueArg{Name: "job", Value: val},
+	})
+	require.NoError(t, err)
+	assert.True(t, env.OK)
+
+	waitForJob(t, job)
+	job.Mu.Lock()
+	defer job.Mu.Unlock()
+	assert.Equal(t, 42, job.ExitCode, "trap fired -> the chosen signal was delivered")
+}
+
+func TestReplKill_UnknownSignalIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := replKill([]shell.Arg{
+		shell.WordArg{Text: "--signal=NOSUCHSIG"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown signal")
+}
+
+func TestReplKill_RejectsNonJobArg(t *testing.T) {
+	t.Parallel()
+
+	_, err := replKill([]shell.Arg{
+		shell.WordArg{Text: "not-a-job"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "$job")
+}
+
+func TestReplKill_NoArgsIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := replKill(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "kill requires a $job argument")
+}
+
 func TestReplStart_ProcessGroupIsSet(t *testing.T) {
 	t.Parallel()
 

@@ -283,6 +283,7 @@ var shellCommands = map[string]bool{
 	"exec":    true,
 	"file":    true,
 	"jq":      true,
+	"kill":    true,
 	"require": true,
 	"print":   true,
 	"help":    true,
@@ -330,6 +331,12 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	case "jq":
 		val, err := replJQ(args[1:])
 		return true, val, err
+	case "kill":
+		env, err := replKill(args[1:])
+		if err != nil {
+			return true, shell.Value{}, err
+		}
+		return true, shell.ValueFromEnvelope(env), nil
 	case "require":
 		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
 	case "print":

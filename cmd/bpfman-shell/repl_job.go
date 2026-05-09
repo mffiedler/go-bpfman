@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/frobware/go-bpfman/shell"
@@ -191,6 +192,98 @@ func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 		Stdout: stdout,
 		Stderr: stderr,
 	}, nil
+}
+
+// replKill signals the process group of the given job. The
+// default signal is SIGTERM; a '--signal=NAME' flag overrides
+// (NAME accepts both 'SIGTERM' and 'TERM' spellings). The
+// kill targets '-pgid' so descendants the child fork-execs
+// (an 'ip netns exec ...' wrapper, a sh -c spawn) receive the
+// signal too.
+//
+// 'kill' is best-effort: ESRCH (the process already exited) is
+// treated as success because the desired state (job not
+// running) is true. Marking Killed before signalling avoids a
+// race with the reaper goroutine; a concurrent 'wait' that
+// observes the kill while the process is still draining sees
+// Killed: true and reports ok: true, since the script asked
+// for the termination.
+//
+// v0 sends a single signal. The SIGTERM-then-grace-period-then-
+// SIGKILL escalation described in design section 8.2 lands in
+// a follow-up commit.
+func replKill(args []shell.Arg) (shell.Envelope, error) {
+	sig := syscall.SIGTERM
+	var jobArg shell.Arg
+	for _, a := range args {
+		text := argText(a)
+		if strings.HasPrefix(text, "--signal=") {
+			s, err := signalFromName(strings.TrimPrefix(text, "--signal="))
+			if err != nil {
+				return shell.Envelope{}, err
+			}
+			sig = s
+			continue
+		}
+		if jobArg != nil {
+			return shell.Envelope{}, fmt.Errorf("kill takes one $job argument; got more than one")
+		}
+		jobArg = a
+	}
+	if jobArg == nil {
+		return shell.Envelope{}, fmt.Errorf("kill requires a $job argument")
+	}
+	job, err := jobFromArg(jobArg)
+	if err != nil {
+		return shell.Envelope{}, err
+	}
+
+	job.Mu.Lock()
+	job.Killed = true
+	job.Mu.Unlock()
+
+	if err := syscall.Kill(-job.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+		// Permission errors and other unexpected failures
+		// surface as not-ok envelopes; the script can guard
+		// on $r.ok if the kill is on a critical path.
+		return shell.Envelope{
+			OK:     false,
+			Code:   1,
+			Stderr: fmt.Sprintf("kill -%d -%d: %v", int(sig), job.PID, err),
+		}, nil
+	}
+	job.MarkManaged()
+	return shell.Envelope{OK: true, Code: 0}, nil
+}
+
+// signalFromName maps a signal name to a syscall.Signal. Both
+// the 'SIGNAME' and 'NAME' spellings are accepted; an unknown
+// name produces an error with the offending input quoted so
+// the user can correct it.
+func signalFromName(name string) (syscall.Signal, error) {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	upper = strings.TrimPrefix(upper, "SIG")
+	switch upper {
+	case "TERM":
+		return syscall.SIGTERM, nil
+	case "KILL":
+		return syscall.SIGKILL, nil
+	case "INT":
+		return syscall.SIGINT, nil
+	case "QUIT":
+		return syscall.SIGQUIT, nil
+	case "HUP":
+		return syscall.SIGHUP, nil
+	case "USR1":
+		return syscall.SIGUSR1, nil
+	case "USR2":
+		return syscall.SIGUSR2, nil
+	case "STOP":
+		return syscall.SIGSTOP, nil
+	case "CONT":
+		return syscall.SIGCONT, nil
+	}
+	return 0, fmt.Errorf("unknown signal %q (try SIGTERM, SIGKILL, SIGINT, SIGUSR1, ...)", name)
 }
 
 // jobFromArg unwraps the StructuredValueArg representing a
