@@ -23,23 +23,32 @@ import (
 // commands are bare.
 // replCommandNames is the alphabetised list of first-token
 // candidates the completer offers when the cursor is at the
-// start of a chunk. It is derived from shellCommands (the
-// dispatch gate, single source of truth for builtins) plus the
-// fixed set of grammar-level keywords that begin a statement
-// or namespace a domain command. Adding a new builtin to
-// shellCommands is enough; the completer picks it up
-// automatically. Keywords are listed explicitly because they
-// are recognised by the parser, not the dispatch table.
-var replCommandNames = func() []string {
+// start of a chunk. It is derived from builtinRegistry (the
+// single source of truth for shell builtins) plus the fixed
+// set of grammar-level keywords that begin a statement or
+// namespace a domain command. Adding a new builtin to the
+// registry is enough; the completer picks it up automatically.
+// Keywords are listed explicitly because they are recognised
+// by the parser, not by the dispatch table.
+//
+// Populated in init() so the registry, which is itself
+// populated in its own init(), is guaranteed to be ready;
+// Go's initialisation rules call all init() functions after
+// every package-level var, but our reliance on
+// builtinRegistry means we cannot use a top-level closure
+// expression here.
+var replCommandNames []string
+
+func init() {
 	keywords := []string{"bpfman", "def", "defer", "guard", "let"}
-	out := make([]string, 0, len(shellCommands)+len(keywords))
+	out := make([]string, 0, len(builtinRegistry)+len(keywords))
 	out = append(out, keywords...)
-	for name := range shellCommands {
+	for name := range builtinRegistry {
 		out = append(out, name)
 	}
 	sort.Strings(out)
-	return out
-}()
+	replCommandNames = out
+}
 
 // replAssertVerbs lists the valid assertion verbs for completion.
 var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
@@ -144,44 +153,12 @@ func replCompleteIn(ctx context.Context, mgr *manager.Manager, session *shell.Se
 		}
 		replace = len(prefix)
 	case (len(tokens) == 1 && trailingSpace) || (len(tokens) == 2 && !trailingSpace):
-		// "source" takes a file path as its argument.
-		if tokens[0] == "source" {
-			if len(tokens) == 2 {
-				candidates = replFileCompletions(baseDir, tokens[1])
-				replace = len(tokens[1])
-			} else {
-				candidates = replFileCompletions(baseDir, "")
-			}
-			return
-		}
-		// "print" takes any expression — including a variable
-		// reference — as its argument.  Bare-word arguments
-		// are literal strings at runtime ("print foo" prints
-		// "foo", not the variable foo), so completion only
-		// offers variable paths when the prefix is
-		// sigil-led.  An empty or "$"-only prefix lists every
-		// variable; a partial sigil-led prefix narrows by
-		// name; a bare partial token defers to the
-		// command-path fallback (no variable completions, and
-		// no shadowing of the literal-string semantics).
-		if tokens[0] == "print" {
-			prefix := ""
-			if len(tokens) == 2 {
-				prefix = tokens[1]
-			}
-			if prefix == "" || strings.HasPrefix(prefix, "$") {
-				candidates, replace = replCompleteVarPath(session, prefix, true)
-				return
-			}
-			return
-		}
-		// "unset" takes bare variable names.
-		if tokens[0] == "unset" {
-			prefix := ""
-			if len(tokens) == 2 {
-				prefix = tokens[1]
-			}
-			candidates, replace = replCompleteVarNames(session, prefix)
+		// Per-builtin arg completion lives on the registry
+		// entry. A non-nil Complete callback for the first
+		// token wins; otherwise we fall through to the
+		// generic subcommand path below.
+		if b, ok := builtinRegistry[tokens[0]]; ok && b.Complete != nil {
+			candidates, replace = b.Complete(session, baseDir, tokens, trailingSpace)
 			return
 		}
 		// Completing the second token (subcommand).

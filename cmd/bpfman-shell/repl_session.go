@@ -60,7 +60,7 @@ func replAlias(cli *bpfmancli.CLI, session *shell.Session, args []string) error 
 		return fmt.Errorf("usage: alias <name> = <expansion>")
 	}
 	name, expansion := args[0], args[2]
-	if shellCommands[name] {
+	if _, ok := builtinRegistry[name]; ok {
 		return fmt.Errorf("cannot alias %q: it is a shell command", name)
 	}
 	if name == "bpfman" {

@@ -484,109 +484,35 @@ func (c *contState) open() bool {
 	return c.braces > 0 || c.parens > 0 || c.lineCont
 }
 
-// shellCommands is the set of commands that are shell-language or
-// session concerns rather than bpfman domain commands. These are
-// handled directly by replEval and never reach the domain command
-// dispatcher.
-var shellCommands = map[string]bool{
-	"alias":   true,
-	"aliases": true,
-	"assert":  true,
-	"defs":    true,
-	"exec":    true,
-	"file":    true,
-	"jobs":    true,
-	"jq":      true,
-	"kill":    true,
-	"require": true,
-	"print":   true,
-	"help":    true,
-	"source":  true,
-	"start":   true,
-	"unalias": true,
-	"undef":   true,
-	"unset":   true,
-	"vars":    true,
-	"version": true,
-	"wait":    true,
-}
-
-// replShellCmd handles shell-language and session commands. It returns
-// (true, value, err) if the command was handled, where value is
-// non-nil for commands that produce an assignable result (e.g. exec).
-// Returns (false, Value{}, nil) if the command is not a shell command
-// and should be dispatched to the domain layer.
+// replShellCmd handles shell-language and session commands by
+// looking up the first token in builtinRegistry and invoking
+// the matching handler. Returns (true, value, err) when the
+// registry has an entry for the command; (false, Value{}, nil)
+// means "not a shell builtin -- try the domain layer". The
+// value is the assignable primary for builtins that produce
+// one (exec, file, jq, kill, start, wait); it is the zero
+// Value for builtins that do not bind anything (alias, vars,
+// help, ...).
 func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
 	if len(args) == 0 {
 		return false, shell.Value{}, nil
 	}
 	cmd := argText(args[0])
-	if !shellCommands[cmd] {
+	b, ok := builtinRegistry[cmd]
+	if !ok {
 		return false, shell.Value{}, nil
 	}
-
-	switch cmd {
-	case "alias":
-		return true, shell.Value{}, replAlias(cli, session, argTexts(args[1:]))
-	case "aliases":
-		return true, shell.Value{}, replAliases(cli, session)
-	case "defs":
-		return true, shell.Value{}, replDefs(cli, session)
-	case "undef":
-		return true, shell.Value{}, replUndef(session, argTexts(args[1:]))
-	case "assert":
-		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], false, loc)
-	case "exec":
-		val, err := replExec(ctx, cli, args[1:])
-		return true, val, err
-	case "file":
-		val, err := replFile(cli, args[1:])
-		return true, val, err
-	case "jq":
-		val, err := replJQ(args[1:])
-		return true, val, err
-	case "jobs":
-		if len(args) > 1 {
-			return true, shell.Value{}, fmt.Errorf("jobs takes no arguments")
-		}
-		return true, shell.Value{}, replJobs(cli, env)
-	case "kill":
-		env, err := replKill(ctx, args[1:])
-		if err != nil {
-			return true, shell.Value{}, err
-		}
-		return true, shell.ValueFromEnvelope(env), nil
-	case "require":
-		return true, shell.Value{}, replAssertRequire(ctx, cli, mgr, session, args[1:], true, loc)
-	case "print":
-		return true, shell.Value{}, replPrint(cli, args[1:])
-	case "help":
-		return true, shell.Value{}, replHelp(cli)
-	case "source":
-		if env == nil {
-			return true, shell.Value{}, fmt.Errorf("source requires an active shell environment")
-		}
-		return true, shell.Value{}, replSource(ctx, cli, mgr, env, argTexts(args[1:]))
-	case "start":
-		val, err := replStart(ctx, env, loc.cite(), args[1:])
-		return true, val, err
-	case "unalias":
-		return true, shell.Value{}, replUnalias(cli, session, argTexts(args[1:]))
-	case "unset":
-		return true, shell.Value{}, replUnset(cli, session, argTexts(args[1:]))
-	case "vars":
-		return true, shell.Value{}, replVars(cli, session)
-	case "version":
-		return true, shell.Value{}, replVersion(cli)
-	case "wait":
-		env, err := replWait(ctx, args[1:])
-		if err != nil {
-			return true, shell.Value{}, err
-		}
-		return true, shell.ValueFromEnvelope(env), nil
-	default:
-		return false, shell.Value{}, nil
+	c := builtinCtx{
+		Ctx:  ctx,
+		CLI:  cli,
+		Mgr:  mgr,
+		Env:  env,
+		Cmd:  cmd,
+		Args: args[1:],
+		Loc:  loc,
 	}
+	val, err := b.Handler(c)
+	return true, val, err
 }
 
 // splitLineColPrefix recognises the "LINE:COL: REST" diagnostic
