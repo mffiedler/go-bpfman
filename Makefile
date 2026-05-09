@@ -199,6 +199,14 @@ EXTRA_GOFLAGS ?=
 # to drop the symbol table and DWARF sections from shipped images.
 EXTRA_GO_LDFLAGS ?=
 
+# STAMP turns on version stamping (-X flags carrying git commit,
+# branch, state, build date) on the bpfman and bpfman-shell
+# binaries. Default off because the stamps invalidate Go's link
+# cache on every invocation (timestamps and dirty-state change),
+# which is wasted work for local development. CI sets STAMP=1 so
+# released binaries report their provenance via `bpfman version`.
+STAMP ?=
+
 # ---------------------------------------------------------------------------
 # Image attestation metadata, baked into the binary via -ldflags so
 # `bpfman version` can print a ready-to-pipe `cosign verify` command
@@ -217,9 +225,19 @@ OIDC_ISSUER     ?=
 # Derived: GO_LDFLAGS composes STATIC, version stamping, image
 # attestation, and EXTRA_GO_LDFLAGS. Must be defined after all of
 # those so `:=` captures their final values.
+#
+# TEST_LDFLAGS is the subset relevant to test linking: only the
+# static-link mode. Version stamps change on every invocation
+# (timestamps, git state) and would force Go's test cache to
+# relink every binary. Tests do not read the stamped values, so
+# dropping them keeps `make test` fast.
 # ---------------------------------------------------------------------------
-GO_LDFLAGS := $(strip \
+TEST_LDFLAGS := $(strip \
     $(if $(STATIC),-linkmode=external -extldflags '-static') \
+    $(EXTRA_GO_LDFLAGS))
+
+GO_LDFLAGS := $(strip \
+    $(TEST_LDFLAGS) \
     -X $(VERSION_PKG).gitCommit=$(GIT_COMMIT) \
     -X $(VERSION_PKG).gitBranch=$(GIT_BRANCH) \
     -X $(VERSION_PKG).gitState=$(GIT_STATE) \
@@ -227,8 +245,15 @@ GO_LDFLAGS := $(strip \
     -X $(VERSION_PKG).version=$(GIT_VERSION) \
     $(if $(IMAGE_REF),-X $(VERSION_PKG).imageRef=$(IMAGE_REF)) \
     $(if $(SIGNER_IDENTITY),-X $(VERSION_PKG).signerIdentity=$(SIGNER_IDENTITY)) \
-    $(if $(OIDC_ISSUER),-X $(VERSION_PKG).oidcIssuer=$(OIDC_ISSUER)) \
-    $(EXTRA_GO_LDFLAGS))
+    $(if $(OIDC_ISSUER),-X $(VERSION_PKG).oidcIssuer=$(OIDC_ISSUER)))
+
+# BIN_LDFLAGS is what the bpfman and bpfman-shell build recipes
+# pass to `go build`. STAMP=1 selects the full GO_LDFLAGS (with
+# version stamps); otherwise it falls back to the unstamped
+# TEST_LDFLAGS. CI invokes ci-build with STAMP=1 so shipped
+# binaries carry their provenance; local `make` defaults to
+# unstamped binaries that hit the link cache on every rebuild.
+BIN_LDFLAGS := $(if $(STAMP),$(GO_LDFLAGS),$(TEST_LDFLAGS))
 
 # ---------------------------------------------------------------------------
 # Build tags.
@@ -590,7 +615,7 @@ lint-dockerfile:
 # their .bpf.o files. Unit tests no longer reach into
 # e2e/testdata/bpf/ at runtime.
 test: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS)
-	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
+	$(strip go test $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(TEST_TAGS),-tags '$(TEST_TAGS)') $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -v $(if $(PARALLEL),-parallel $(PARALLEL)) ./...)
 
 # nsenter cross-architecture tests
 #
@@ -624,7 +649,7 @@ test-nsenter-cross: $(addprefix test-nsenter-,$(NSENTER_ARCHES))
 # pattern -- Make's mtime tracking would otherwise lie when the
 # inputs are .go files we haven't enumerated as prereqs.
 $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
-	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(GO_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
+	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e.test ./e2e)
 
 # STRESS_COUNT is honoured here too: `-test.count=$(STRESS_COUNT)`
 # is harmless at the default 1 and turns the same recipe into a
@@ -747,7 +772,7 @@ bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJEC
 # compile time. Make's pattern rules build them on demand if
 # missing or out of date.
 bpfman-compile: $(DISPATCHER_BPF_EMBEDS) | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
+	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman ./cmd/bpfman)
 
 clean-bpfman:
 	$(RM) $(BIN_DIR)/bpfman
@@ -759,7 +784,7 @@ clean-bpfman:
 bpfman-shell-build: bpfman-fmt bpfman-shell-compile
 
 bpfman-shell-compile: | $(BIN_DIR)
-	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(GO_LDFLAGS)" -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
+	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman-shell ./cmd/bpfman-shell)
 
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
@@ -1055,7 +1080,7 @@ ci-image:
 # incremental story. ci-test and ci-lint apply the same prefix
 # for the same reason.
 ci-build: ci-image
-	$(CI_RUN) make clean-bpf bpfman-build bpfman-shell-build
+	$(CI_RUN) make STAMP=1 clean-bpf bpfman-build bpfman-shell-build
 
 # Reproduce the workflow's check-vendor job locally. Verifies
 # go.mod / go.sum / vendor are tidy. Runs on the host (no
