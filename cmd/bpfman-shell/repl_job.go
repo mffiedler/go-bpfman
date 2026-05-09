@@ -68,17 +68,31 @@ func replStart(ctx context.Context, args []shell.Arg) (shell.Value, error) {
 	}
 
 	// Reap the process in a goroutine. The goroutine is the sole
-	// writer of Stdout/Stderr/ExitCode; close(Done) is the
-	// happens-before barrier for any reader (typically wait).
+	// writer of Stdout/Stderr/ExitCode/Signal; close(Done) is
+	// the happens-before barrier for any reader (typically
+	// wait). Signal is set when the process ended via a signal
+	// (whether from our kill builtin, an external sender, or
+	// a parent shutdown); the kill builtin also records its
+	// requested signal up-front, but the reaper's value is
+	// what actually ended the process.
 	go func() {
 		defer close(job.Done)
 		defer removeTempFiles(tempFiles)
 		err := cmd.Wait()
 		exitCode := 0
+		var sigName string
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
-				exitCode = exitErr.ExitCode()
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+					sig := ws.Signal()
+					sigName = signalShortName(sig)
+					// Shell convention: signal-killed
+					// processes report code 128+signum.
+					exitCode = 128 + int(sig)
+				} else {
+					exitCode = exitErr.ExitCode()
+				}
 			} else {
 				// Launch failure was caught at Start();
 				// anything else here is unexpected. Use -1
@@ -90,6 +104,13 @@ func replStart(ctx context.Context, args []shell.Arg) (shell.Value, error) {
 		job.Stdout = stdout.String()
 		job.Stderr = stderr.String()
 		job.ExitCode = exitCode
+		if sigName != "" && job.Signal == "" {
+			// Don't overwrite the signal recorded by the
+			// kill builtin -- it is more authoritative
+			// (kill's intent vs. whatever signal the
+			// kernel ultimately delivered).
+			job.Signal = sigName
+		}
 		job.Mu.Unlock()
 	}()
 
@@ -184,13 +205,22 @@ func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	stderr := job.Stderr
 	exitCode := job.ExitCode
 	killed := job.Killed
+	signal := job.Signal
 	job.Mu.Unlock()
 
+	// ok stays tied to "exit code 0" so the field reads
+	// consistently across synchronous and asynchronous
+	// commands. A killed job is typically !ok with code=143
+	// (SIGTERM convention) plus killed=true and signal="TERM";
+	// the script distinguishes "expected termination" from
+	// "real failure" via $r.killed, not by overloading $r.ok.
 	return shell.Envelope{
-		OK:     killed || exitCode == 0,
+		OK:     exitCode == 0,
 		Code:   exitCode,
 		Stdout: stdout,
 		Stderr: stderr,
+		Killed: killed,
+		Signal: signal,
 	}, nil
 }
 
@@ -214,15 +244,18 @@ func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 // a follow-up commit.
 func replKill(args []shell.Arg) (shell.Envelope, error) {
 	sig := syscall.SIGTERM
+	sigName := "TERM"
 	var jobArg shell.Arg
 	for _, a := range args {
 		text := argText(a)
 		if strings.HasPrefix(text, "--signal=") {
-			s, err := signalFromName(strings.TrimPrefix(text, "--signal="))
+			name := strings.TrimPrefix(text, "--signal=")
+			s, err := signalFromName(name)
 			if err != nil {
 				return shell.Envelope{}, err
 			}
 			sig = s
+			sigName = signalShortName(s)
 			continue
 		}
 		if jobArg != nil {
@@ -240,6 +273,7 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 
 	job.Mu.Lock()
 	job.Killed = true
+	job.Signal = sigName
 	job.Mu.Unlock()
 
 	if err := syscall.Kill(-job.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
@@ -254,6 +288,36 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 	}
 	job.MarkManaged()
 	return shell.Envelope{OK: true, Code: 0}, nil
+}
+
+// signalShortName is the inverse of signalFromName: it maps a
+// syscall.Signal to the bare 'TERM' / 'USR1' / ... spelling so
+// the envelope's Signal field reads naturally regardless of
+// which signal the process actually ended on. An unrecognised
+// signal falls back to the numeric form so tests can still
+// assert on it.
+func signalShortName(sig syscall.Signal) string {
+	switch sig {
+	case syscall.SIGTERM:
+		return "TERM"
+	case syscall.SIGKILL:
+		return "KILL"
+	case syscall.SIGINT:
+		return "INT"
+	case syscall.SIGQUIT:
+		return "QUIT"
+	case syscall.SIGHUP:
+		return "HUP"
+	case syscall.SIGUSR1:
+		return "USR1"
+	case syscall.SIGUSR2:
+		return "USR2"
+	case syscall.SIGSTOP:
+		return "STOP"
+	case syscall.SIGCONT:
+		return "CONT"
+	}
+	return fmt.Sprintf("%d", int(sig))
 }
 
 // signalFromName maps a signal name to a syscall.Signal. Both

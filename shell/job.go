@@ -57,6 +57,14 @@ type Job struct {
 	// on its own".
 	Killed bool
 
+	// Signal is the short name of the signal that ended the
+	// process (e.g. "TERM", "USR1", "KILL"), or empty when the
+	// process exited normally. The kill builtin sets it from
+	// its own --signal flag; the reaper goroutine sets it for
+	// processes signalled by anything else (an external kill,
+	// a parent SIGTERM during shutdown).
+	Signal string
+
 	// Managed is true once wait or kill has run against the job.
 	// An unmanaged job at scope exit is a script failure: the
 	// lifecycle leaked.

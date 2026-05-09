@@ -263,12 +263,13 @@ func TestReplKill_TerminatesAndMarksManaged(t *testing.T) {
 	assert.True(t, job.Killed, "Killed flag persists for wait to read")
 }
 
-func TestReplKill_KilledThenWaitReportsOk(t *testing.T) {
+func TestReplKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 	t.Parallel()
 
-	// Per design: a killed job is a clean cleanup outcome.
-	// 'kill $job; wait $job' should yield ok: true even
-	// though the underlying process exited via signal.
+	// 'ok' is tied to "exit code 0", so a killed job that did
+	// not return zero reports !ok. The lifecycle facts are
+	// carried by 'killed' and 'signal', and 'code' uses the
+	// shell convention 128+signum for a SIGTERM kill.
 	val, err := replStart(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
@@ -285,7 +286,10 @@ func TestReplKill_KilledThenWaitReportsOk(t *testing.T) {
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK, "wait on a killed job reports ok")
+	assert.False(t, env.OK, "killed != ok; ok stays tied to exit-code-0")
+	assert.True(t, env.Killed, "killed flag carries the lifecycle fact")
+	assert.Equal(t, "TERM", env.Signal)
+	assert.Equal(t, 128+15, env.Code, "shell convention: SIGTERM -> 143")
 }
 
 func TestReplKill_AlreadyExitedIsOk(t *testing.T) {
@@ -313,9 +317,12 @@ func TestReplKill_SignalFlag(t *testing.T) {
 	t.Parallel()
 
 	// '--signal=USR1' overrides the SIGTERM default. The
-	// shell traps USR1 and exits with code 42 so the test
-	// can confirm the signal was delivered without relying
-	// on signal-status reporting.
+	// shell traps USR1 and exits with code 42 so the test can
+	// confirm the signal was delivered without relying on
+	// signal-status reporting. The kill envelope reports ok
+	// because the signal was successfully delivered (kill
+	// itself is "did the signal go through?", not "did the
+	// target terminate cleanly?").
 	val, err := replStart(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
@@ -334,12 +341,14 @@ func TestReplKill_SignalFlag(t *testing.T) {
 		shell.StructuredValueArg{Name: "job", Value: val},
 	})
 	require.NoError(t, err)
-	assert.True(t, env.OK)
+	assert.True(t, env.OK, "kill itself succeeded (signal delivered)")
 
 	waitForJob(t, job)
 	job.Mu.Lock()
 	defer job.Mu.Unlock()
 	assert.Equal(t, 42, job.ExitCode, "trap fired -> the chosen signal was delivered")
+	assert.True(t, job.Killed)
+	assert.Equal(t, "USR1", job.Signal)
 }
 
 func TestReplKill_UnknownSignalIsError(t *testing.T) {
