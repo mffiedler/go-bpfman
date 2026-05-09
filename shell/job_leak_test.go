@@ -28,7 +28,7 @@ func TestRunWithDeferScope_UnmanagedJobReported(t *testing.T) {
 	}
 
 	job := &Job{PID: 4242, Args: []string{"sleep", "60"}, Origin: "test.bpfman:7"}
-	err := WithDeferScope(env, func() error {
+	err := WithJobScope(env, func() error {
 		env.RegisterJob(job)
 		return nil
 	})
@@ -49,7 +49,7 @@ func TestRunWithDeferScope_ManagedJobNotReported(t *testing.T) {
 	}
 
 	job := &Job{PID: 4242, Args: []string{"sleep", "60"}}
-	err := WithDeferScope(env, func() error {
+	err := WithJobScope(env, func() error {
 		env.RegisterJob(job)
 		// Simulate the script having waited or killed the job.
 		job.MarkManaged()
@@ -79,15 +79,22 @@ func TestRunWithDeferScope_DeferKillRunsBeforeLeakCheck(t *testing.T) {
 		},
 	}
 
-	err := WithDeferScope(env, func() error {
-		env.RegisterJob(job)
-		// Stand-in for 'defer kill $job': any deferred entry
-		// suffices because the test ExecBind unconditionally
-		// marks the job Managed when the defer fires.
-		*env.defers = append(*env.defers, deferEntry{
-			Args: []Arg{WordArg{Text: "kill"}},
+	// Compose 'WithJobScope { WithDeferScope { body } }' the
+	// same way the drivers do. Inner defer scope unwinds first
+	// (so 'defer kill' marks the job), outer job scope unwinds
+	// after (so the leak walk sees the updated state).
+	err := WithJobScope(env, func() error {
+		return WithDeferScope(env, func() error {
+			env.RegisterJob(job)
+			// Stand-in for 'defer kill $job': any deferred
+			// entry suffices because the test ExecBind
+			// unconditionally marks the job Managed when
+			// the defer fires.
+			*env.defers = append(*env.defers, deferEntry{
+				Args: []Arg{WordArg{Text: "kill"}},
+			})
+			return nil
 		})
-		return nil
 	})
 	require.NoError(t, err)
 
@@ -96,9 +103,14 @@ func TestRunWithDeferScope_DeferKillRunsBeforeLeakCheck(t *testing.T) {
 	assert.Equal(t, 0, env.Session.JobLeaks())
 }
 
-func TestRunWithDeferScope_NestedScopesAreIndependent(t *testing.T) {
+func TestWithJobScope_NestedJobScopesAreIndependent(t *testing.T) {
 	t.Parallel()
 
+	// Two explicit job scopes: each fires its own leak walk
+	// when it unwinds. Nesting is rare in practice (drivers
+	// open one outer job scope per session unit) but the
+	// mechanism must compose for any embedder that wants
+	// finer-grained tracking.
 	rec := &jobLeakRecorder{}
 	inner := &Job{PID: 1, Args: []string{"inner"}}
 	outer := &Job{PID: 2, Args: []string{"outer"}}
@@ -108,11 +120,9 @@ func TestRunWithDeferScope_NestedScopesAreIndependent(t *testing.T) {
 		HandleJobLeak: rec.handle,
 	}
 
-	err := WithDeferScope(env, func() error {
+	err := WithJobScope(env, func() error {
 		env.RegisterJob(outer)
-		// Inner scope leaks its own job; the outer scope's
-		// job is invisible to the inner leak walk.
-		return WithDeferScope(env, func() error {
+		return WithJobScope(env, func() error {
 			env.RegisterJob(inner)
 			return nil
 		})
@@ -125,6 +135,40 @@ func TestRunWithDeferScope_NestedScopesAreIndependent(t *testing.T) {
 	assert.Equal(t, 2, env.Session.JobLeaks())
 }
 
+func TestWithJobScope_DefBodyDoesNotOpenNewJobScope(t *testing.T) {
+	t.Parallel()
+
+	// A def body opens its own defer scope but inherits the
+	// caller's job scope: a job started inside a def joins the
+	// caller's registry, and returning the handle for the
+	// caller to wait does not leak. Models the
+	// 'WithJobScope { ... WithDeferScope { def body } ... }'
+	// driver shape.
+	rec := &jobLeakRecorder{}
+	job := &Job{PID: 1, Args: []string{"sleep"}}
+
+	env := &Env{
+		Session:       NewSession(),
+		HandleJobLeak: rec.handle,
+	}
+
+	err := WithJobScope(env, func() error {
+		// def body: only a defer scope, no nested job scope.
+		err := WithDeferScope(env, func() error {
+			env.RegisterJob(job)
+			return nil
+		})
+		// No leak fired yet: outer job scope still active.
+		assert.Empty(t, rec.leaks)
+		// Caller marks the job (stands in for a wait
+		// outside the def).
+		job.MarkManaged()
+		return err
+	})
+	require.NoError(t, err)
+	assert.Empty(t, rec.leaks, "managed job in caller's scope must not leak")
+}
+
 func TestRunWithDeferScope_NilHandleJobLeakStillCounts(t *testing.T) {
 	t.Parallel()
 
@@ -133,7 +177,7 @@ func TestRunWithDeferScope_NilHandleJobLeakStillCounts(t *testing.T) {
 		// HandleJobLeak deliberately nil: embedders without a
 		// renderer must still see a non-zero JobLeaks at end.
 	}
-	err := WithDeferScope(env, func() error {
+	err := WithJobScope(env, func() error {
 		env.RegisterJob(&Job{PID: 1, Args: []string{"x"}})
 		return nil
 	})

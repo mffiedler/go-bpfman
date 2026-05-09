@@ -771,12 +771,12 @@ func runDefers(env *Env, stack []deferEntry) {
 	}
 }
 
-// RegisterJob appends a started Job to the active scope's job
+// RegisterJob appends a started Job to the active job scope's
 // registry so the scope-exit leak check can detect an unmanaged
-// lifecycle. Outside any scope (no driver-established defer
-// scope) the call is a no-op: there is nothing to leak from. j
-// must be non-nil; the redesign reserves nil for "no job"
-// rather than as a sentinel here.
+// lifecycle. Outside any job scope (no driver-established
+// WithJobScope) the call is a no-op: there is nothing to leak
+// from. j must be non-nil; the redesign reserves nil for "no
+// job" rather than as a sentinel here.
 func (e *Env) RegisterJob(j *Job) {
 	if e.jobs == nil {
 		return
@@ -786,23 +786,49 @@ func (e *Env) RegisterJob(j *Job) {
 
 // runWithDeferScope establishes a defer scope around fn. The
 // previous scope is saved and restored on exit so nested scopes
-// (program, def body) compose. Defers run first, then the
-// scope-exit leak check walks any started jobs and reports
-// unmanaged ones; this ordering lets 'defer kill $job' mark a
-// job Managed before the leak check sees it. fn's error is
-// returned verbatim; defer execution and leak reporting happen
-// regardless of fn's outcome.
+// (program, def body) compose. fn's error is returned verbatim;
+// defer execution happens regardless of fn's outcome.
+//
+// Defer scopes are independent of job scopes (see WithJobScope)
+// because they nest differently: a def body opens its own defer
+// scope (defers fire at def return) but inherits the caller's
+// job scope (a job started in a def joins the caller's
+// registry, so returning the handle for the caller to wait is
+// not flagged as a leak).
 func runWithDeferScope(env *Env, fn func() error) error {
-	savedDefers := env.defers
-	savedJobs := env.jobs
+	saved := env.defers
 	var stack []deferEntry
-	var jobs []*Job
 	env.defers = &stack
+	bodyErr := fn()
+	env.defers = saved
+	runDefers(env, stack)
+	return bodyErr
+}
+
+// WithJobScope establishes a job scope around fn: any Job that
+// fn registers via Env.RegisterJob is tracked in this scope's
+// registry, and on exit each unmanaged entry is reported through
+// HandleJobLeak and counted on the session.
+//
+// Drivers open exactly one job scope per session unit: the whole
+// script in script mode, the whole sourced file in source mode,
+// the whole interactive session in interactive mode. Inner
+// blocks (def bodies, foreach, retry) deliberately do not open
+// new job scopes, so a job started inside a def joins the
+// caller's registry and survives the def's return without
+// being flagged.
+//
+// Job leak reporting runs after fn returns. When the driver
+// composes WithJobScope around an outer WithDeferScope (the
+// usual shape: defers nest inside jobs), the outer defers run
+// before the leak walk, so 'defer kill $job' marks a job
+// Managed before the leak walk sees it.
+func WithJobScope(env *Env, fn func() error) error {
+	saved := env.jobs
+	var jobs []*Job
 	env.jobs = &jobs
 	bodyErr := fn()
-	env.defers = savedDefers
-	env.jobs = savedJobs
-	runDefers(env, stack)
+	env.jobs = saved
 	reportJobLeaks(env, jobs)
 	return bodyErr
 }

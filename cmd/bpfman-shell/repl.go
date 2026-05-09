@@ -98,24 +98,21 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 }
 
 // replLoop reads from lr and dispatches input until EOF or
-// interrupt. Two modes:
+// interrupt. Two modes that differ only in I/O shape: both
+// wrap the chunk loop in one outer WithJobScope and one outer
+// WithDeferScope so 'start' / 'wait' / 'kill' and 'defer
+// cleanup' span across chunks.
 //
-// In script mode (file != ""), the whole input is slurped, then
-// evaluated as one program. This makes the script a single
-// defer scope, matching design section 7.2: 'defer cleanup'
-// near the top of a script fires at script exit, not at the
-// end of its own physical line.
-//
-// In interactive mode (file == ""), input is dispatched
-// chunk-by-chunk: each balanced statement (or block) is its
-// own EvalProgram call, so defers register and fire at the
-// prompt boundary. That is the right interactive behaviour --
-// a defer at the prompt should not pile up across the
-// session.
+// In script mode (file != ""), input comes from a file or
+// piped stdin and the loop returns when EOF is reached. In
+// interactive mode (file == "") the loop reads from a
+// readline prompt and returns on Ctrl+D. The 'session unit'
+// for defer and job scope is the whole run in both cases:
+// a defer registered at any prompt fires at session end, and
+// a job started at any prompt is leak-checked at session end.
 //
 // Variable assignment and expansion use the shell.Session,
-// which is shared across modes; only the defer-scope
-// granularity differs.
+// which is shared across modes.
 func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
 	if file != "" {
 		return replScript(ctx, cli, mgr, lr, session, file)
@@ -123,14 +120,18 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 	return replInteractive(ctx, cli, mgr, lr, session)
 }
 
-// replScript drives chunk-by-chunk evaluation in script mode but
-// wraps the entire chunk loop in a single shell.WithDeferScope
-// call. Each balanced statement is parsed and evaluated as its
-// own program, so existing line-tracking (loc.line tied to each
-// chunk's startLine) keeps error diagnostics pointed at the
-// right source line, but every defer registered along the way
-// fires when the wrapping scope unwinds at script exit -- not
-// at the end of the chunk that registered it.
+// replScript drives chunk-by-chunk evaluation in script mode
+// but wraps the entire chunk loop in a single shell.WithJobScope
+// outside a single shell.WithDeferScope. Each balanced statement
+// is parsed and evaluated as its own program, so existing
+// line-tracking (loc.line tied to each chunk's startLine) keeps
+// error diagnostics pointed at the right source line, but every
+// defer registered along the way fires when the script-wide
+// defer scope unwinds at script exit -- not at the end of the
+// chunk that registered it -- and the unmanaged-job walk runs
+// once over the whole script. Defers nest inside jobs so
+// 'defer kill $job' marks a job Managed before the leak walk
+// sees it.
 func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
 	env := &shell.Env{
 		Session: session,
@@ -142,51 +143,53 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		},
 		HandleJobLeak: makeHandleJobLeak(cli),
 	}
-	return shell.WithDeferScope(env, func() error {
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs contState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == io.EOF || err == ErrInterrupt {
-					if buf.Len() > 0 {
-						loc := sourceLoc{file: file, line: startLine}
-						_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
-						return errScriptError
+	return shell.WithJobScope(env, func() error {
+		return shell.WithDeferScope(env, func() error {
+			var lineNo int
+			var buf strings.Builder
+			var startLine int
+			var cs contState
+			for {
+				input, err := lr.Readline()
+				if err != nil {
+					if err == io.EOF || err == ErrInterrupt {
+						if buf.Len() > 0 {
+							loc := sourceLoc{file: file, line: startLine}
+							_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
+							return errScriptError
+						}
+						return nil
 					}
-					return nil
+					return err
 				}
-				return err
-			}
-			lineNo++
+				lineNo++
 
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.advance(input)
+				if buf.Len() == 0 {
+					startLine = lineNo
+				}
+				if buf.Len() > 0 {
+					buf.WriteByte('\n')
+				}
+				buf.WriteString(input)
+				cs.advance(input)
 
-			if cs.open() {
-				continue
-			}
+				if cs.open() {
+					continue
+				}
 
-			accumulated := buf.String()
-			buf.Reset()
-			cs = contState{}
+				accumulated := buf.String()
+				buf.Reset()
+				cs = contState{}
 
-			loc := sourceLoc{file: file, line: startLine}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
-				return err
+				loc := sourceLoc{file: file, line: startLine}
+				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+					return err
+				}
 			}
-		}
+		})
 	})
 }
 
@@ -236,59 +239,96 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sour
 }
 
 // replInteractive runs the chunk-by-chunk loop suited to a
-// readline prompt: each balanced statement is dispatched as
-// its own EvalProgram call so the user sees their input
-// take effect immediately and defers fire at the prompt
-// boundary.
+// readline prompt. The whole session runs inside one outer
+// shell.WithJobScope and one outer shell.WithDeferScope, so
+// 'start' / 'wait' / 'kill' work across prompts and 'defer
+// cleanup' typed at any prompt fires when the session ends
+// (Ctrl+D, EOF). Each chunk is dispatched through
+// evalChunkInScope, sharing the outer scopes; def bodies
+// continue to open inner defer scopes via callDef so a def's
+// own defers fire at def return.
 func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session) error {
-	var lineNo int
-	var buf strings.Builder
-	var startLine int
-	var cs contState
-	for {
-		input, err := lr.Readline()
-		if err != nil {
-			if err == ErrInterrupt || err == io.EOF {
-				if buf.Len() > 0 {
-					_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
-				}
-				return nil
-			}
-			return err
-		}
-		lineNo++
-
-		if buf.Len() == 0 {
-			startLine = lineNo
-		}
-		if buf.Len() > 0 {
-			buf.WriteByte('\n')
-		}
-		buf.WriteString(input)
-		cs.advance(input)
-
-		if cs.open() {
-			continue
-		}
-
-		accumulated := buf.String()
-		buf.Reset()
-		cs = contState{}
-
-		if hw, ok := lr.(HistoryWriter); ok {
-			if entry := canonicaliseHistory(accumulated); entry != "" {
-				_ = hw.SaveHistory(entry)
-			}
-		}
-
-		// Interactive mode has no source file; loc stays
-		// zero-valued. startLine is still tracked above for
-		// possible future use.
-		_ = startLine
-		if err := replEval(ctx, cli, mgr, session, accumulated, sourceLoc{}); err != nil {
-			return err
-		}
+	env := &shell.Env{
+		Session: session,
+		PrintResult: func(v shell.Value) error {
+			return writeValue(cli, v)
+		},
+		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
+		},
+		HandleJobLeak: makeHandleJobLeak(cli),
 	}
+
+	return shell.WithJobScope(env, func() error {
+		return shell.WithDeferScope(env, func() error {
+			var lineNo int
+			var buf strings.Builder
+			var startLine int
+			var cs contState
+			for {
+				input, err := lr.Readline()
+				if err != nil {
+					if err == ErrInterrupt || err == io.EOF {
+						if buf.Len() > 0 {
+							_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
+						}
+						return nil
+					}
+					return err
+				}
+				lineNo++
+
+				if buf.Len() == 0 {
+					startLine = lineNo
+				}
+				if buf.Len() > 0 {
+					buf.WriteByte('\n')
+				}
+				buf.WriteString(input)
+				cs.advance(input)
+
+				if cs.open() {
+					continue
+				}
+
+				accumulated := buf.String()
+				buf.Reset()
+				cs = contState{}
+
+				if hw, ok := lr.(HistoryWriter); ok {
+					if entry := canonicaliseHistory(accumulated); entry != "" {
+						_ = hw.SaveHistory(entry)
+					}
+				}
+
+				// Interactive mode has no source file; loc
+				// stays zero-valued. startLine is tracked
+				// above for the chunk-line composition that
+				// evalChunkInScope's report helper does on
+				// parser errors, even though the empty file
+				// makes the prefix render as nothing.
+				_ = startLine
+				loc := sourceLoc{}
+				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+					if errors.Is(err, errRequireFailed) {
+						return err
+					}
+					if errors.Is(err, errScriptError) {
+						// In interactive mode an evaluator
+						// error is already rendered;
+						// suppress it so the prompt
+						// returns rather than tearing the
+						// session down.
+						continue
+					}
+					return err
+				}
+			}
+		})
+	})
 }
 
 // canonicaliseHistory collapses a multi-line REPL submission into a
@@ -504,75 +544,6 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	default:
 		return false, shell.Value{}, nil
 	}
-}
-
-// replEval processes a single input line or block: tokenise, parse
-// to an AST, and evaluate against the session. Shell-language
-// commands (assert, require, print, help, source, unset, vars,
-// version) flow through ExecCommand on the evaluator's Env; domain
-// commands are dispatched via replDispatch from the same hook. In
-// interactive mode (loc has no file), non-fatal errors are printed
-// and replEval returns nil so the session continues. In script mode
-// (loc has a file), errors return errScriptError to halt execution.
-func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
-	reportErr := func(err error) error {
-		errLoc := loc
-		msg := err.Error()
-		if loc.file != "" {
-			if line, rest, ok := splitLineColPrefix(msg); ok {
-				errLoc.line = loc.line + line - 1
-				msg = rest
-			}
-		}
-		_ = cli.PrintErrf("%s[repl] error: %s\n", errLoc, msg)
-		if loc.file != "" {
-			return errScriptError
-		}
-		return nil
-	}
-
-	tokens, err := shell.Tokenise(input)
-	if err != nil {
-		return reportErr(err)
-	}
-	if len(tokens) == 0 {
-		return nil
-	}
-
-	prog, err := shell.Parse(tokens)
-	if err != nil {
-		return reportErr(err)
-	}
-
-	env := &shell.Env{
-		Session:        session,
-		ExecAssertStmt: makeExecAssertStmt(cli, session, loc),
-		PrintResult: func(v shell.Value) error {
-			return writeValue(cli, v)
-		},
-		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
-			renderEnvelopeFailure(cli, "defer", loc, stmtLoc, args, rc)
-		},
-		HandleJobLeak: makeHandleJobLeak(cli),
-	}
-	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-
-	if err := shell.EvalProgram(prog, env); err != nil {
-		if errors.Is(err, errRequireFailed) {
-			return err
-		}
-		var gf *shell.GuardFailure
-		if errors.As(err, &gf) {
-			renderEnvelopeFailure(cli, "guard", loc, gf.Loc, gf.Args, gf.Envelope)
-			if loc.file != "" {
-				return errScriptError
-			}
-			return nil
-		}
-		return reportErr(err)
-	}
-	return nil
 }
 
 // splitLineColPrefix recognises the "LINE:COL: REST" diagnostic
@@ -825,16 +796,17 @@ type replContextKey int
 
 const replSourcingKey replContextKey = iota
 
-// replSource reads commands from a file and executes each line in the
-// current session. The sourced file shares all variable bindings with
-// the caller and is treated as one defer scope: 'defer cleanup' near
-// the top of a sourced file fires when the source command returns,
-// not at the end of the chunk that registered it, and the scope-exit
-// job-leak walk runs once over the whole file rather than firing
-// chunk-by-chunk. This matches 'bpfman-shell FILE' semantics so
-// 'source FILE' from an interactive prompt and direct invocation
-// behave identically. Nested source commands are rejected to prevent
-// unbounded recursion.
+// replSource reads commands from a file and executes each line in
+// the current session. The sourced file shares all variable bindings
+// with the caller and is treated as one defer scope and one job
+// scope: 'defer cleanup' near the top of a sourced file fires when
+// the source command returns, not at the end of the chunk that
+// registered it, and the unmanaged-job walk runs once over the
+// whole file when the source command returns. This matches
+// 'bpfman-shell FILE' semantics so 'source FILE' from an
+// interactive prompt and direct invocation behave identically.
+// Nested source commands are rejected to prevent unbounded
+// recursion.
 func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []string) error {
 	if ctx.Value(replSourcingKey) != nil {
 		return fmt.Errorf("source cannot be used inside a sourced file")
@@ -863,57 +835,59 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 		HandleJobLeak: makeHandleJobLeak(cli),
 	}
 
-	return shell.WithDeferScope(env, func() error {
-		// Accumulate physical lines into logical statements,
-		// mirroring the continuation logic that replLoop uses
-		// for the interactive REPL and for 'bpfman-shell
-		// FILE'. Without this, multi-line forms in a sourced
-		// file (def / if / foreach / retry blocks, command
-		// substitutions that span lines) would each fail to
-		// parse on their first line because the open brace
-		// or bracket has not yet been closed.
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs contState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == io.EOF {
-					if buf.Len() > 0 {
-						return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
+	return shell.WithJobScope(env, func() error {
+		return shell.WithDeferScope(env, func() error {
+			// Accumulate physical lines into logical statements,
+			// mirroring the continuation logic that replLoop uses
+			// for the interactive REPL and for 'bpfman-shell
+			// FILE'. Without this, multi-line forms in a sourced
+			// file (def / if / foreach / retry blocks, command
+			// substitutions that span lines) would each fail to
+			// parse on their first line because the open brace
+			// or bracket has not yet been closed.
+			var lineNo int
+			var buf strings.Builder
+			var startLine int
+			var cs contState
+			for {
+				input, err := lr.Readline()
+				if err != nil {
+					if err == io.EOF {
+						if buf.Len() > 0 {
+							return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
+						}
+						return nil
 					}
-					return nil
+					return err
 				}
-				return err
-			}
-			lineNo++
+				lineNo++
 
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.advance(input)
+				if buf.Len() == 0 {
+					startLine = lineNo
+				}
+				if buf.Len() > 0 {
+					buf.WriteByte('\n')
+				}
+				buf.WriteString(input)
+				cs.advance(input)
 
-			if cs.open() {
-				continue
-			}
+				if cs.open() {
+					continue
+				}
 
-			accumulated := buf.String()
-			buf.Reset()
-			cs = contState{}
+				accumulated := buf.String()
+				buf.Reset()
+				cs = contState{}
 
-			loc := sourceLoc{file: file, line: startLine}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
-				return err
+				loc := sourceLoc{file: file, line: startLine}
+				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+					return err
+				}
 			}
-		}
+		})
 	})
 }
 
