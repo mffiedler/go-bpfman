@@ -187,7 +187,8 @@ var keywordRegistry = map[string]keyword{
 			"Defers fire in LIFO order at scope exit. The enclosing scope is the " +
 			"script in script mode, the sourced file inside source, the prompt " +
 			"chunk in interactive mode, and the def body inside a def. " +
-			"'defer kill $p' is the canonical async-job cleanup idiom.",
+			"'defer kill $p' is the canonical async-job cleanup idiom. The killed " +
+			"job stays in the 'jobs' ledger until an explicit 'reap'.",
 	},
 	"def": {
 		Name:    "def",
@@ -303,6 +304,8 @@ func init() {
 				"back-to-back. --signal=NAME (e.g. USR1, HUP) delivers a custom " +
 				"signal and returns immediately without escalation; use this for " +
 				"control-flow signals, not for termination. " +
+				"kill marks the job as managed but leaves the entry in the ledger; " +
+				"the killed status is observable in 'jobs' until 'reap' drops it. " +
 				"'defer kill $p' is the canonical async cleanup idiom.",
 		},
 		"print": {
@@ -345,7 +348,10 @@ func init() {
 			Summary:  "Spawn a background process; primary is a $job handle (assignable).",
 			Detail: "The job runs as a process-group leader so 'kill' reaches every " +
 				"descendant. Output is captured into the handle's Stdout/Stderr; " +
-				"the script reads them after 'wait' returns. Script mode treats an " +
+				"the script reads them after 'wait' returns. " +
+				"start registers the job in the active scope's ledger; the entry " +
+				"persists through wait, kill, and beyond until an explicit 'reap' " +
+				"or the scope's leak handler at unwind. Script mode treats an " +
 				"unwaited/unkilled job as a leak (FAIL, exit 1); interactive mode " +
 				"silently SIGKILLs on session exit.",
 		},
@@ -387,7 +393,9 @@ func init() {
 			Detail: "The envelope carries ok, code, stdout, stderr, killed, signal. " +
 				"A killed job that the script asked to terminate reports killed=true " +
 				"with signal set; the script distinguishes 'I asked for this' from " +
-				"'real failure' via $r.killed rather than $r.ok.",
+				"'real failure' via $r.killed rather than $r.ok. " +
+				"wait marks the job as managed but leaves the entry in the ledger so " +
+				"$job stays inspectable; use 'reap' to drop completed entries.",
 		},
 	}
 }
