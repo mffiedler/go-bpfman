@@ -158,13 +158,30 @@ Return a list of (KIND BEG END) triples.  Stops at an unquoted #."
         tokens)
     (catch 'done
       (while (< pos eol)
-        ;; Skip whitespace.
+        ;; Skip whitespace, including the newline at a backslash-
+        ;; continuation boundary. The fontifier passes a logical-
+        ;; line range that may span several physical lines glued
+        ;; by '\\\n'; treating the embedded newlines as whitespace
+        ;; lets the state machine carry flag and argument context
+        ;; across the continuation.
         (goto-char pos)
-        (skip-chars-forward " \t" eol)
+        (skip-chars-forward " \t\r\n" eol)
         (setq pos (point))
         (when (>= pos eol) (throw 'done nil))
         (let ((ch (char-after pos)))
           (cond
+           ;; Backslash before a newline: line continuation. Skip
+           ;; the backslash and the newline so the next physical
+           ;; line's content reads as a continuation of this one.
+           ((and (= ch ?\\)
+                 (< (1+ pos) eol)
+                 (or (= (char-after (1+ pos)) ?\n)
+                     (and (= (char-after (1+ pos)) ?\r)
+                          (< (+ pos 2) eol)
+                          (= (char-after (+ pos 2)) ?\n))))
+            (setq pos (+ pos
+                         (if (= (char-after (1+ pos)) ?\n) 2 3))))
+
            ;; Comment: stop tokenising.
            ((= ch ?#)
             (throw 'done nil))
@@ -659,16 +676,78 @@ TOKENS is a list of (KIND BEG END) as returned by `bpfman--tokenise-line'."
   (and (> (length str) 0)
        (string-match-p "\\`[a-zA-Z_][a-zA-Z0-9_]*\\'" str)))
 
+(defun bpfman--logical-line-end (bol)
+  "Return the buffer position of the end of the logical line starting at BOL.
+A logical line is a physical line plus any following physical
+lines joined by an unescaped trailing backslash, with quote
+state tracked across the boundary so a backslash inside a
+single-quoted string does not look like a continuation. Comments
+truncate the line for the continuation check; a '#' inside
+quotes is literal text and does not end the line."
+  (save-excursion
+    (goto-char bol)
+    (let ((in-single nil)
+          (in-double nil))
+      (catch 'done
+        (while t
+          (let ((eol (line-end-position))
+                (last-non-space nil))
+            (while (< (point) eol)
+              (let ((ch (char-after)))
+                (cond
+                 ;; In a double-quoted string, '\\X' is an escape
+                 ;; pair: the runtime decodes \n, \t, \", \$, etc.
+                 ;; Outside strings or in a single-quoted span, a
+                 ;; bare '\\' is just one character (handled by the
+                 ;; default branch below).
+                 ((and (= ch ?\\) in-double (< (1+ (point)) eol))
+                  (forward-char 2)
+                  (setq last-non-space (1- (point))))
+                 ((and (= ch ?\') (not in-double))
+                  (setq in-single (not in-single))
+                  (forward-char 1)
+                  (setq last-non-space (1- (point))))
+                 ((and (= ch ?\") (not in-single))
+                  (setq in-double (not in-double))
+                  (forward-char 1)
+                  (setq last-non-space (1- (point))))
+                 ((and (= ch ?#) (not in-single) (not in-double))
+                  ;; A trailing comment cannot host a continuation:
+                  ;; a backslash in the comment body is literal.
+                  ;; Skip to EOL without recording it as
+                  ;; non-whitespace.
+                  (goto-char eol))
+                 ((or (= ch ?\s) (= ch ?\t) (= ch ?\r))
+                  (forward-char 1))
+                 (t
+                  (forward-char 1)
+                  (setq last-non-space (1- (point)))))))
+            (if (and last-non-space
+                     (= (char-after last-non-space) ?\\)
+                     (not in-single)
+                     (not in-double)
+                     (< eol (point-max)))
+                (progn
+                  (forward-char 1)
+                  ;; Loop re-assesses next physical line.
+                  )
+              (throw 'done eol))))))))
+
 (defun bpfman--fontify-region (beg end)
-  "Fontify the buffer region from BEG to END line by line."
+  "Fontify the buffer region from BEG to END one logical line at a time.
+Backslash-continued lines fontify as one logical line so the
+state machine carries flag/argument context across the
+continuation; multi-line guard or load statements highlight
+the same way they read."
   (save-excursion
     (goto-char beg)
     (beginning-of-line)
     (while (< (point) end)
-      (let ((bol (line-beginning-position))
-            (eol (line-end-position)))
+      (let* ((bol (line-beginning-position))
+             (lol (bpfman--logical-line-end bol)))
         (bpfman--fontify-line-tokens
-         (bpfman--tokenise-line bol eol))
+         (bpfman--tokenise-line bol lol))
+        (goto-char lol)
         (forward-line 1)))))
 
 ;; ---- Syntax table ----
