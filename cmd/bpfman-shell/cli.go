@@ -25,6 +25,7 @@ type CLI struct {
 
 	Script  string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
 	Check   bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	AST     bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
 	Version bool   `name:"version" short:"V" help:"Print version information and exit."`
 }
 
@@ -35,10 +36,10 @@ func NewCLI() (*CLI, error) {
 	c.kctx = kong.Parse(&c, KongOptions()...)
 	c.DefaultWriters()
 
-	// Initialise logger eagerly. Skip for --check and --version,
-	// which do no I/O against the manager and must be runnable
-	// without access to the system config file.
-	if !c.Check && !c.Version {
+	// Initialise logger eagerly. Skip for --check, --ast, and
+	// --version, which do no I/O against the manager and must
+	// be runnable without access to the system config file.
+	if !c.Check && !c.AST && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}

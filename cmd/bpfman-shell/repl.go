@@ -35,10 +35,16 @@ var errScriptError = errors.New("script error")
 // open for the session lifetime to avoid repeated store open/close.
 // When --check is set, Run short-circuits to a parse-only mode
 // that reads the same input, reports syntax errors, and exits
-// without touching the manager, session, or evaluator.
+// without touching the manager, session, or evaluator. When
+// --ast is set, Run short-circuits to a dump-only mode that
+// reads the same input, parses each chunk, and prints the AST
+// tree to stdout; nothing is evaluated.
 func (c *CLI) Run(ctx context.Context) error {
 	if c.Check {
 		return c.runCheck()
+	}
+	if c.AST {
+		return c.runAST()
 	}
 	mgr, cleanup, err := c.NewManagerWithPuller(ctx)
 	if err != nil {
