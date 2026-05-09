@@ -161,10 +161,13 @@ Two important constraints:
    The env var picks the resolver for the registered name; the
    explicit `exec NAME` form bypasses the registry entirely.
 
-### 4.3 The captured-result envelope
+### 4.3 Result and primary
 
-Every command form -- registered or external -- returns the
-same structured envelope:
+Every command form yields two pieces of data: a result envelope
+and a primary result. The result envelope is execution
+metadata; the primary is the provider's domain output.
+
+The result envelope:
 
 ```
 {
@@ -172,27 +175,29 @@ same structured envelope:
     code:   int        # exit code (subprocess) or 0/1 (in-process)
     stdout: string     # captured stdout, or in-process renderable
     stderr: string     # captured stderr, or in-process error message
-    value:  any        # registered providers' typed payload
     pid:    int        # set on async start; absent on synchronous capture
 }
 ```
 
-Synchronous commands populate `ok`/`code`/`stdout`/`stderr` on
-return; async jobs (see section 8) populate the same shape on
-`wait`.
+The primary varies by provider. Each provider declares which
+shape it produces:
 
-`value` is the structured payload that registered in-process
-providers return: `bpfman program get` populates `$r.value` with
-the program record (`record.program_id`, `record.meta.name`,
-etc.); `veth create` populates `$r.value` with `{left, right,
-kind}`. External commands (and the `exec` escape hatch) leave
-`value` unset; their structured data, if any, is in `stdout` and
-must be parsed via jq.
+| Provider                                  | Primary          |
+|-------------------------------------------|------------------|
+| `bpfman load` / `get` / `list` / `attach` | typed payload    |
+| `veth create`, `netns create`             | typed handle     |
+| `start <cmd>`                             | job handle       |
+| `wait $job`                               | result envelope  |
+| `bpftool`, unknown external, `exec NAME`  | result envelope  |
+| commands with no domain output            | result envelope  |
 
-The envelope is the boundary between commands and the language.
-Every captured command yields the same shape; every failure
-boundary renders the same shape; every async job round-trips
-through the same shape on `wait`.
+The result envelope is **not** a container for the primary.
+It is execution metadata only. The primary lives in its own
+slot, bound to its own name. There is no `$r.value`
+indirection, no flattening, no reserved-key collisions.
+
+Single-name binding captures the primary; tuple binding
+captures both. See section 6.2.
 
 ### 4.4 The shared failure renderer
 
@@ -219,7 +224,7 @@ they all delegate to the same formatter.
 The rule, in three lines:
 
 ```
-[cmd] captures.
+<- captures.
 guard / require / assert decide.
 The shared renderer explains.
 ```
@@ -230,8 +235,10 @@ The shared renderer explains.
 
 ```
 let NAME = EXPR                   # expression binding
-let NAME <- COMMAND               # command-result binding
-guard NAME <- COMMAND             # bind, halt on failure
+let NAME <- COMMAND               # bind primary
+let (RC, PRIM) <- COMMAND         # bind result and primary
+guard NAME <- COMMAND             # bind primary, halt on failure
+guard (RC, PRIM) <- COMMAND       # bind both, halt on failure
 require EXPR                      # halt if EXPR is false
 assert EXPR                       # record failure, continue
 defer COMMAND                     # register cleanup
@@ -241,6 +248,10 @@ retry { STMTS } until EXPR
 def NAME(PARAMS) { STMTS }        # user-defined provider
 break ; continue                  # within foreach
 ```
+
+Tuple targets `(RC, PRIM)` are only legal on `<-`. Expression
+binding (`=`) stays single-name. `_` discards a slot in tuple
+form.
 
 Bare-keyword forms (`break`, `continue`) take no arguments.
 `source FILE` reads and evaluates a script file in the current
@@ -328,18 +339,76 @@ let ok = $count > 0
 
 ### 6.2 `<-` for command results
 
-`let NAME <- COMMAND` binds the result of running a command.
-The RHS is a command form, resolved via the registry. The
-captured envelope is bound to NAME. Execution boundary
-crossed: anything could happen on the RHS (process spawn,
-in-process call, kernel side effects).
+The RHS of `<-` is a command form. Every command yields a
+result envelope (execution metadata) and a primary
+(provider-defined). Single-name binding captures the primary;
+tuple binding captures both.
+
+#### Single-name binding
+
+`let NAME <- COMMAND` binds NAME to the command's primary
+result. For providers that produce a typed payload, NAME is
+the payload directly:
 
 ```
 let prog <- bpfman program get $pid
 let pair <- veth create v0 v1
-let dump <- bpftool map dump id $mid -j
-let r <- exec bpfman version          # forced external
+let mapID = $prog.record.maps[0].id
 ```
+
+For providers that produce no typed payload, NAME is the
+result envelope:
+
+```
+let r <- bpftool map dump id $mid -j
+let r <- exec ping 8.8.8.8
+require $r.code == 0
+```
+
+The provider declares which side it falls on (see section
+4.3). There is no runtime check or magic; the script author
+writes against the provider's declared shape.
+
+#### Tuple binding
+
+`let (RC, PRIM) <- COMMAND` binds RC to the result envelope
+and PRIM to the primary. Use this when both pieces matter:
+
+```
+guard (rc, prog) <- bpfman program load file --path foo.o
+assert $rc.code == 0
+assert $rc.stderr == ""
+assert $prog.record.kind == kprobe
+```
+
+`_` discards a slot:
+
+```
+let (rc, _) <- bpfman program get $pid    # rc only
+let (_, prog) <- bpfman program get $pid  # primary only
+```
+
+Tuple binding is only legal on `<-`. There is no `let (a, b)
+= expr`; expression binding stays single-name. This keeps
+tuple syntax narrowly scoped to command capture and avoids
+drifting into general destructuring.
+
+#### Failure semantics
+
+For `guard`, a non-ok result halts the script: the renderer
+fires with the result envelope, no bindings happen, no
+statements after the guard run.
+
+For `let`, bindings happen regardless of ok. On failure the
+result envelope carries `ok: false` and any captured
+diagnostics; the primary is null when the provider produces
+a typed payload and the command failed (no payload was
+produced), or carries the result envelope when the provider's
+primary is the envelope itself.
+
+Anything could happen on the RHS of `<-` (process spawn,
+in-process call, kernel side effects); that is what makes
+`<-` distinct from `=`.
 
 ### 6.3 Names may be rebound; values are immutable
 
@@ -348,10 +417,10 @@ already exists in the current scope; this is shadowing, not
 mutation:
 
 ```
-let r <- bpfman program get $pid
-require ok $r
-let r <- bpfman program list -o json
-require ok $r
+let r <- bpftool map dump id $mid -j
+require $r.code == 0
+let r <- bpftool prog show -j
+require $r.code == 0
 ```
 
 Field mutation on values is rejected (`$r.stdout = "..."`,
@@ -364,9 +433,14 @@ values are immutable.** No explicit mutation verbs (`set`,
 
 ### 7.1 `guard`
 
-`guard NAME <- COMMAND` runs the command, captures the result,
-binds NAME, and halts the script if `!ok` -- with the captured
-envelope rendered through the shared formatter.
+`guard NAME <- COMMAND` and `guard (RC, NAME) <- COMMAND` run
+the command and decide:
+
+- if the result envelope is ok: bind the target(s) per the
+  binding rules in section 6.2, and continue
+- if the result envelope is not ok: render the failure
+  through the shared formatter and halt; no bindings happen,
+  no statements after the guard run
 
 ```
 guard prog <- bpfman program load file --path testdata/foo.o
@@ -375,9 +449,9 @@ guard link <- bpfman link attach kprobe --fn-name do_unlinkat $prog
 defer bpfman link detach $link
 ```
 
-`guard` is the workhorse for setup steps that must succeed for
-the rest of the script to be meaningful. It collapses the
-two-line `let r <- ...; require ok $r` idiom into one
+`guard` is the workhorse for setup steps that must succeed
+for the rest of the script to be meaningful. It collapses
+the two-line `let r <- ...; require ok $r` idiom into one
 statement and gives the renderer everything it needs.
 
 ### 7.2 `defer`
@@ -726,15 +800,15 @@ Adding a new harness primitive does not touch the parser. It
 adds an entry to the registry and an implementation behind it,
 both in Go. The script-side surface is one new name.
 
-Registered providers return the same envelope as everything
-else (`ok`, `code`, `value`, `stdout`, `stderr`), with `value`
-carrying the structured payload that test scripts read:
+Registered providers return the same result envelope as
+everything else (`ok`, `code`, `stdout`, `stderr`, `pid`).
+Their primary is the typed handle the test scripts read:
 
 ```
 guard pair <- veth create test-a test-b
-assert $pair.value.left == "test-a"
-assert $pair.value.right == "test-b"
-assert $pair.value.kind == "veth"
+assert $pair.left == test-a
+assert $pair.right == test-b
+assert $pair.kind == veth
 ```
 
 ## 11. Conventions
@@ -772,7 +846,12 @@ explicitly (`--ignore-missing` at each defer site).
 
 Refuse on sight unless the user reverses the rule explicitly:
 
-- Pattern matching, destructuring, `match` blocks.
+- Pattern matching, general destructuring, `match` blocks.
+  The `<-` binder accepts a two-slot tuple target `(RC, PRIM)`
+  for the narrow case of binding result and primary
+  separately, with `_` to discard a slot; that is the only
+  tuple form in the language. No nested patterns, no
+  list/array destructuring, no destructuring on `=`.
 - Monads, `Result`, `Option`, `Maybe` types in user-facing form.
 - Anonymous functions, currying, partial application, operator
   overloading.
@@ -849,21 +928,31 @@ auto-fail on non-zero exec exit, and the existing
 `Test*.bpfman` script corpus. The migration is mechanical:
 
 1. **Replace `let X = [bpfman ...]` with `guard X <- bpfman ...`**
-   (or `let X <- ...` for the rare non-must-succeed case).
+   for the must-succeed case. Single-name bind captures the
+   primary; for bpfman commands the primary is the typed
+   payload, so `$X.record.program_id` continues to work
+   without change. Use `let X <- ...` (no halt) only when the
+   script wants to inspect the failure itself; in that case
+   take the rc via tuple form: `let (rc, X) <- bpfman ...`.
 2. **Add `defer` lines for every resource the script later
    relies on.** Most current scripts have implicit cleanup via
    per-test cleanup hooks; under the redesign, lifecycle
    management is explicit.
-3. **Replace `let Y = [exec ...]` with `let Y <- ...`.**
-   `exec` is no longer required as a discriminator inside `<-`
-   when the command is already an external binary; `bpftool`,
-   `ip`, etc. fall through automatically.
+3. **Replace `let Y = [exec ...]` with `let Y <- ...` or
+   `guard Y <- ...`.** `exec` is no longer required as a
+   discriminator inside `<-` when the command is already an
+   external binary; `bpftool`, `ip`, etc. fall through
+   automatically. For external commands the primary is the
+   result envelope, so `$Y.stdout`, `$Y.code`, `$Y.stderr`
+   read directly off the bind.
 4. **Remove the `[builtin ...]` discriminator** from veth /
    netns / leases / lifecycle helpers. They are now plain
    registered names.
 5. **Drop the auto-fail on non-zero exec exit.** Scripts that
-   relied on it must add `require ok $r` or use `guard` for
-   the strict path.
+   relied on it must use `guard` for the strict path, or add
+   `require $r.ok` (when the primary is the rc envelope) /
+   `require $rc.ok` from a tuple bind (when the primary is a
+   typed payload).
 6. **Migrate `$r.exit_code` accesses to `$r.code`.**
 7. **Wrap any threaded expression that crosses an arithmetic
    or comparison boundary in parens** so the thread RHS
