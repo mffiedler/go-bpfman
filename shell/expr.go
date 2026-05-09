@@ -833,21 +833,23 @@ func WithJobScope(env *Env, fn func() error) error {
 	return bodyErr
 }
 
-// reportJobLeaks walks the scope's registered jobs and, for any
-// that the script never marked Managed (via wait or kill),
-// invokes HandleJobLeak (driver-side render plus SIGKILL) and
-// increments the session's leak counter. The counter is bumped
-// even when HandleJobLeak is nil so embedders without a renderer
-// still get a non-zero JobLeaks at script end.
+// reportJobLeaks walks the scope's registered jobs and invokes
+// HandleJobLeak on any the script never marked Managed (via
+// wait or kill). The handler owns the policy: a strict driver
+// renders a diagnostic, kills the process, and records the
+// leak on the session so the run exits non-zero; a friendly
+// driver kills silently and leaves the session counter
+// untouched. The shell layer takes no opinion -- a nil handler
+// means "nothing to do; the leak passes silently".
 func reportJobLeaks(env *Env, jobs []*Job) {
+	if env.HandleJobLeak == nil {
+		return
+	}
 	for _, j := range jobs {
 		if j.IsManaged() {
 			continue
 		}
-		if env.HandleJobLeak != nil {
-			env.HandleJobLeak(j)
-		}
-		env.Session.RecordJobLeak()
+		env.HandleJobLeak(j)
 	}
 }
 

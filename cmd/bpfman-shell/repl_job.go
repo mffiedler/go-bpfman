@@ -295,34 +295,45 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 	return shell.Envelope{OK: true, Code: 0}, nil
 }
 
-// makeHandleJobLeak returns the driver-side scope-exit handler
-// for an unmanaged job. Two responsibilities, in order:
+// makeStrictHandleJobLeak returns the script-mode scope-exit
+// handler. It treats an unmanaged job as a contract violation:
+// renders '[job] FAIL <origin>: never waited or killed: argv'
+// to stderr, SIGKILLs the process group so 'bpfman-shell
+// script.bpfman' never leaves stray processes, and bumps the
+// session leak counter so c.Run surfaces a non-zero exit.
+// Scripts are a reproducible test contract; leaking a job is a
+// bug worth failing the run for.
 //
-//  1. Render '[job] FAIL <origin>: never waited or killed: argv'
-//     to stderr so the user sees which start leaked. The session
-//     leak counter is bumped by the shell layer; the renderer
-//     only emits the diagnostic.
-//  2. SIGKILL the leaked process group so the bpfman-shell
-//     process does not orphan a background process to init. The
-//     redesign treats this as cleanup-of-last-resort: the user
-//     was supposed to wait or kill explicitly; we force-kill so
-//     'bpfman-shell script.bpfman' never leaves stray processes.
-//     ESRCH (the process exited on its own between leak detection
-//     and signal delivery) is silently fine; permission errors
-//     fall through and would print, but in practice we sent the
-//     job's own SIGTERM-able signal earlier or could not have
-//     spawned it in the first place.
-func makeHandleJobLeak(cli *bpfmancli.CLI) func(*shell.Job) {
+// ESRCH (the process exited on its own between leak detection
+// and signal delivery) is silently fine; permission errors
+// fall through and would print, but in practice we sent the
+// job's own SIGTERM-able signal earlier or could not have
+// spawned it in the first place.
+func makeStrictHandleJobLeak(cli *bpfmancli.CLI, session *shell.Session) func(*shell.Job) {
 	return func(j *shell.Job) {
 		origin := j.Origin
 		if origin == "" {
-			origin = "<interactive>"
+			origin = "<stdin>"
 		}
 		argv := strings.Join(j.Args, " ")
 		_ = cli.PrintErrf("[job] FAIL %s: never waited or killed: %s\n", origin, argv)
 		if j.PID > 0 {
 			_ = syscall.Kill(-j.PID, syscall.SIGKILL)
 		}
+		session.RecordJobLeak()
+	}
+}
+
+// silentHandleJobLeak is the interactive-mode scope-exit
+// handler. It SIGKILLs the leaked process group so nothing
+// outlives the shell, then returns: no diagnostic, no leak
+// counter increment, no exit-code effect. The REPL is
+// exploratory scratch space; starting something and walking
+// away is normal use, and the shell quietly cleans up after
+// the user.
+func silentHandleJobLeak(j *shell.Job) {
+	if j.PID > 0 {
+		_ = syscall.Kill(-j.PID, syscall.SIGKILL)
 	}
 }
 

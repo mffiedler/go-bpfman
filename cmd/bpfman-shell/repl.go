@@ -50,11 +50,24 @@ func (c *CLI) Run(ctx context.Context) error {
 	}
 	defer lr.Close()
 
+	// Three input shapes:
+	//   --script <FILE>      file != "" (the named script).
+	//   stdin pipe / -       file = "<stdin>" (still a script
+	//                        contract, just from stdin).
+	//   bare TTY invocation  file = "" and interactive = true.
+	// The string is for diagnostics; the boolean is the
+	// authoritative mode flag downstream code consults.
 	file := c.Script
-	if file == "-" || (file == "" && !term.IsTerminal(int(os.Stdin.Fd()))) {
+	interactive := false
+	switch {
+	case file == "-":
 		file = "<stdin>"
+	case file == "" && !term.IsTerminal(int(os.Stdin.Fd())):
+		file = "<stdin>"
+	case file == "":
+		interactive = true
 	}
-	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file)
+	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive)
 
 	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
 		return ErrSilent
@@ -98,26 +111,34 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 }
 
 // replLoop reads from lr and dispatches input until EOF or
-// interrupt. Two modes that differ only in I/O shape: both
-// wrap the chunk loop in one outer WithJobScope and one outer
-// WithDeferScope so 'start' / 'wait' / 'kill' and 'defer
-// cleanup' span across chunks.
+// interrupt. Two modes with deliberately different policies:
 //
-// In script mode (file != ""), input comes from a file or
-// piped stdin and the loop returns when EOF is reached. In
-// interactive mode (file == "") the loop reads from a
-// readline prompt and returns on Ctrl+D. The 'session unit'
-// for defer and job scope is the whole run in both cases:
-// a defer registered at any prompt fires at session end, and
-// a job started at any prompt is leak-checked at session end.
+// In script mode (file != "") the chunk loop runs inside one
+// outer WithJobScope and one outer WithDeferScope. 'defer
+// cleanup' fires at script end and the script-wide leak walk
+// reports any unmanaged job as '[job] FAIL ...', kills it,
+// and pushes the exit code non-zero. Scripts are a
+// reproducible test contract; leaking a job is a bug.
+//
+// In interactive mode (file == "") the loop opens one outer
+// WithJobScope around the whole readline session but a fresh
+// WithDeferScope per chunk. Defers fire at end of prompt
+// (typing 'defer kill $p' as part of the same chunk that
+// started the job is the canonical self-contained idiom);
+// jobs that no chunk waited or killed are cleaned up silently
+// at session end (Ctrl+D) by a leak handler that just
+// SIGKILLs the process group, prints nothing, and does not
+// affect the exit code. The REPL is exploratory scratch
+// space; starting something and then exiting is normal use,
+// not a failure to punish.
 //
 // Variable assignment and expansion use the shell.Session,
 // which is shared across modes.
-func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
-	if file != "" {
-		return replScript(ctx, cli, mgr, lr, session, file)
+func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, interactive bool) error {
+	if interactive {
+		return replInteractive(ctx, cli, mgr, lr, session)
 	}
-	return replInteractive(ctx, cli, mgr, lr, session)
+	return replScript(ctx, cli, mgr, lr, session, file)
 }
 
 // replScript drives chunk-by-chunk evaluation in script mode
@@ -141,7 +162,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: makeHandleJobLeak(cli),
+		HandleJobLeak: makeStrictHandleJobLeak(cli, session),
 	}
 	return shell.WithJobScope(env, func() error {
 		return shell.WithDeferScope(env, func() error {
@@ -240,13 +261,27 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sour
 
 // replInteractive runs the chunk-by-chunk loop suited to a
 // readline prompt. The whole session runs inside one outer
-// shell.WithJobScope and one outer shell.WithDeferScope, so
-// 'start' / 'wait' / 'kill' work across prompts and 'defer
-// cleanup' typed at any prompt fires when the session ends
-// (Ctrl+D, EOF). Each chunk is dispatched through
-// evalChunkInScope, sharing the outer scopes; def bodies
-// continue to open inner defer scopes via callDef so a def's
-// own defers fire at def return.
+// WithJobScope so 'start' / 'wait' / 'kill' work across prompts
+// and unmanaged jobs surface only at session end. Each chunk
+// opens its own WithDeferScope so 'defer cleanup' fires at end
+// of prompt; the single-prompt idiom
+//
+//	bpfman> guard p <- start sleep 60; defer kill $p
+//
+// works because the chunk's defer runs before any leak check
+// would: kill marks the job Managed and the session-end walk
+// sees nothing to clean up.
+//
+// The job-leak handler is silent in interactive: jobs the user
+// never waited on are SIGKILLed at Ctrl+D with no diagnostic
+// and no exit-code effect. The REPL is exploratory scratch
+// space; starting something and exiting is normal use, not a
+// failure to punish. A future --strict-jobs flag (or a
+// 'session' opt-in for explicit lifetime) can give power
+// users the script-mode policy at the prompt.
+//
+// def bodies continue to open inner defer scopes via callDef so
+// a def's own defers fire at def return.
 func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session) error {
 	env := &shell.Env{
 		Session: session,
@@ -256,78 +291,77 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: makeHandleJobLeak(cli),
+		HandleJobLeak: silentHandleJobLeak,
 	}
 
 	return shell.WithJobScope(env, func() error {
-		return shell.WithDeferScope(env, func() error {
-			var lineNo int
-			var buf strings.Builder
-			var startLine int
-			var cs contState
-			for {
-				input, err := lr.Readline()
-				if err != nil {
-					if err == ErrInterrupt || err == io.EOF {
-						if buf.Len() > 0 {
-							_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
-						}
-						return nil
+		var lineNo int
+		var buf strings.Builder
+		var startLine int
+		var cs contState
+		for {
+			input, err := lr.Readline()
+			if err != nil {
+				if err == ErrInterrupt || err == io.EOF {
+					if buf.Len() > 0 {
+						_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
 					}
-					return err
+					return nil
 				}
-				lineNo++
+				return err
+			}
+			lineNo++
 
-				if buf.Len() == 0 {
-					startLine = lineNo
-				}
-				if buf.Len() > 0 {
-					buf.WriteByte('\n')
-				}
-				buf.WriteString(input)
-				cs.advance(input)
+			if buf.Len() == 0 {
+				startLine = lineNo
+			}
+			if buf.Len() > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString(input)
+			cs.advance(input)
 
-				if cs.open() {
-					continue
-				}
+			if cs.open() {
+				continue
+			}
 
-				accumulated := buf.String()
-				buf.Reset()
-				cs = contState{}
+			accumulated := buf.String()
+			buf.Reset()
+			cs = contState{}
 
-				if hw, ok := lr.(HistoryWriter); ok {
-					if entry := canonicaliseHistory(accumulated); entry != "" {
-						_ = hw.SaveHistory(entry)
-					}
-				}
-
-				// Interactive mode has no source file; loc
-				// stays zero-valued. startLine is tracked
-				// above for the chunk-line composition that
-				// evalChunkInScope's report helper does on
-				// parser errors, even though the empty file
-				// makes the prefix render as nothing.
-				_ = startLine
-				loc := sourceLoc{}
-				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
-					if errors.Is(err, errRequireFailed) {
-						return err
-					}
-					if errors.Is(err, errScriptError) {
-						// In interactive mode an evaluator
-						// error is already rendered;
-						// suppress it so the prompt
-						// returns rather than tearing the
-						// session down.
-						continue
-					}
-					return err
+			if hw, ok := lr.(HistoryWriter); ok {
+				if entry := canonicaliseHistory(accumulated); entry != "" {
+					_ = hw.SaveHistory(entry)
 				}
 			}
-		})
+
+			// Interactive mode has no source file; loc stays
+			// zero-valued. startLine is tracked above for
+			// the chunk-line composition that
+			// evalChunkInScope's report helper does on
+			// parser errors, even though the empty file
+			// makes the prefix render as nothing.
+			_ = startLine
+			loc := sourceLoc{}
+			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
+			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+
+			chunkErr := shell.WithDeferScope(env, func() error {
+				return evalChunkInScope(cli, env, accumulated, loc)
+			})
+			if chunkErr == nil {
+				continue
+			}
+			if errors.Is(chunkErr, errRequireFailed) {
+				return chunkErr
+			}
+			// Chunk errors (parse, runtime, guard halt) are
+			// already rendered by evalChunkInScope; swallow
+			// the errScriptError sentinel so the next
+			// prompt is reached rather than tearing the
+			// session down.
+		}
 	})
 }
 
@@ -832,7 +866,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: makeHandleJobLeak(cli),
+		HandleJobLeak: makeStrictHandleJobLeak(cli, session),
 	}
 
 	return shell.WithJobScope(env, func() error {

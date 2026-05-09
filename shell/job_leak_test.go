@@ -7,23 +7,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// jobLeakRecorder captures the Jobs that HandleJobLeak fires on.
-// The slice doubles as the assertion target: empty means "no
-// leaks reported"; populated means "these jobs were flagged".
+// jobLeakRecorder captures the Jobs that HandleJobLeak fires
+// on and bumps the session leak counter, mirroring the
+// strict-mode driver contract: the shell layer does not record
+// a leak itself; the handler decides whether the leak counts.
+// Tests use this stand-in to assert both the per-leak callback
+// and the session counter without rebuilding the whole
+// driver-side renderer.
 type jobLeakRecorder struct {
-	leaks []*Job
+	session *Session
+	leaks   []*Job
 }
 
 func (r *jobLeakRecorder) handle(j *Job) {
 	r.leaks = append(r.leaks, j)
+	if r.session != nil {
+		r.session.RecordJobLeak()
+	}
 }
 
 func TestRunWithDeferScope_UnmanagedJobReported(t *testing.T) {
 	t.Parallel()
 
-	rec := &jobLeakRecorder{}
+	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
 	env := &Env{
-		Session:       NewSession(),
+		Session:       sess,
 		HandleJobLeak: rec.handle,
 	}
 
@@ -42,9 +50,9 @@ func TestRunWithDeferScope_UnmanagedJobReported(t *testing.T) {
 func TestRunWithDeferScope_ManagedJobNotReported(t *testing.T) {
 	t.Parallel()
 
-	rec := &jobLeakRecorder{}
+	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
 	env := &Env{
-		Session:       NewSession(),
+		Session:       sess,
 		HandleJobLeak: rec.handle,
 	}
 
@@ -67,11 +75,11 @@ func TestRunWithDeferScope_DeferKillRunsBeforeLeakCheck(t *testing.T) {
 	// Models 'defer kill $job': the deferred command marks the
 	// job Managed, so the post-defers leak walk must see the
 	// updated state and skip the job.
-	rec := &jobLeakRecorder{}
+	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
 	job := &Job{PID: 4242, Args: []string{"sleep", "60"}}
 
 	env := &Env{
-		Session:       NewSession(),
+		Session:       sess,
 		HandleJobLeak: rec.handle,
 		ExecBind: func(args []Arg) (BindResult, error) {
 			job.MarkManaged()
@@ -111,12 +119,12 @@ func TestWithJobScope_NestedJobScopesAreIndependent(t *testing.T) {
 	// open one outer job scope per session unit) but the
 	// mechanism must compose for any embedder that wants
 	// finer-grained tracking.
-	rec := &jobLeakRecorder{}
+	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
 	inner := &Job{PID: 1, Args: []string{"inner"}}
 	outer := &Job{PID: 2, Args: []string{"outer"}}
 
 	env := &Env{
-		Session:       NewSession(),
+		Session:       sess,
 		HandleJobLeak: rec.handle,
 	}
 
@@ -144,11 +152,11 @@ func TestWithJobScope_DefBodyDoesNotOpenNewJobScope(t *testing.T) {
 	// caller to wait does not leak. Models the
 	// 'WithJobScope { ... WithDeferScope { def body } ... }'
 	// driver shape.
-	rec := &jobLeakRecorder{}
+	sess := NewSession(); rec := &jobLeakRecorder{session: sess}
 	job := &Job{PID: 1, Args: []string{"sleep"}}
 
 	env := &Env{
-		Session:       NewSession(),
+		Session:       sess,
 		HandleJobLeak: rec.handle,
 	}
 
@@ -169,20 +177,22 @@ func TestWithJobScope_DefBodyDoesNotOpenNewJobScope(t *testing.T) {
 	assert.Empty(t, rec.leaks, "managed job in caller's scope must not leak")
 }
 
-func TestRunWithDeferScope_NilHandleJobLeakStillCounts(t *testing.T) {
+func TestWithJobScope_NilHandleJobLeakIsSilent(t *testing.T) {
 	t.Parallel()
 
+	// The shell layer takes no opinion when HandleJobLeak is
+	// nil: no panic, no counter bump, the leak passes silently.
+	// This is the contract embedders without a renderer rely
+	// on.
 	env := &Env{
 		Session: NewSession(),
-		// HandleJobLeak deliberately nil: embedders without a
-		// renderer must still see a non-zero JobLeaks at end.
 	}
 	err := WithJobScope(env, func() error {
 		env.RegisterJob(&Job{PID: 1, Args: []string{"x"}})
 		return nil
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, env.Session.JobLeaks())
+	assert.Equal(t, 0, env.Session.JobLeaks(), "nil handler must not bump the counter")
 }
 
 func TestEnv_RegisterJobOutsideScopeIsNoop(t *testing.T) {
