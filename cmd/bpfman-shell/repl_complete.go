@@ -29,7 +29,6 @@ var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-e
 var replSubcommands = map[string][]string{
 	"assert":  replAssertVerbs,
 	"bpfman":  {"dispatcher", "audit", "link", "program", "show"},
-	"exec":    {"status"},
 	"file":    {"temp"},
 	"require": replAssertVerbs,
 }

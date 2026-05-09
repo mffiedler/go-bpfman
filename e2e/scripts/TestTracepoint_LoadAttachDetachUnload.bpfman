@@ -81,7 +81,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # without delivering anything, so the sh invocation exits cleanly
 # and require-ok is a real check.
 foreach _ in '0' |> jq "[range(5)]" {
-    require ok exec sh -c 'kill -0 $$'
+    guard _ <- exec sh -c 'kill -0 $$'
 }
 
 guard dumpAfter <- exec bpftool map dump id $mapID -j

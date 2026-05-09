@@ -69,7 +69,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Trigger do_unlinkat by creating and removing temp files.
 foreach _ in '0' |> jq "[range(5)]" {
-    require ok exec sh -c 'f=$(mktemp); rm "$f"'
+    guard _ <- exec sh -c 'f=$(mktemp); rm "$f"'
 }
 
 guard dumpAfter <- exec bpftool map dump id $mapID -j

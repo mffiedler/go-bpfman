@@ -19,17 +19,17 @@
 source lib.bpfman
 
 # Best-effort cleanup of leftover netns/veth from a prior run.
-exec status ip link del veth-xdp-host
-exec status ip netns del bpfman-xdp
+let _ <- exec ip link del veth-xdp-host
+let _ <- exec ip netns del bpfman-xdp
 
 # Set up a veth pair.
-require ok exec ip netns add bpfman-xdp
-require ok exec ip link add veth-xdp-host type veth peer name veth-xdp-ns
-require ok exec ip link set veth-xdp-ns netns bpfman-xdp
-require ok exec ip addr add 198.51.100.1/24 dev veth-xdp-host
-require ok exec ip link set veth-xdp-host up
-require ok exec ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xdp-ns
-require ok exec ip netns exec bpfman-xdp ip link set veth-xdp-ns up
+guard _ <- exec ip netns add bpfman-xdp
+guard _ <- exec ip link add veth-xdp-host type veth peer name veth-xdp-ns
+guard _ <- exec ip link set veth-xdp-ns netns bpfman-xdp
+guard _ <- exec ip addr add 198.51.100.1/24 dev veth-xdp-host
+guard _ <- exec ip link set veth-xdp-host up
+guard _ <- exec ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xdp-ns
+guard _ <- exec ip netns exec bpfman-xdp ip link set veth-xdp-ns up
 
 # Load the XDP pass program. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard prog <- bpfman program load file --path testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
@@ -88,7 +88,7 @@ let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 guard dumpBefore <- exec bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-require ok exec ip netns exec bpfman-xdp ping -c 5 -i 0.05 198.51.100.1
+guard _ <- exec ip netns exec bpfman-xdp ping -c 5 -i 0.05 198.51.100.1
 
 guard dumpAfter <- exec bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter

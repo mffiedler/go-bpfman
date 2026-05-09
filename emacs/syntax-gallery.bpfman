@@ -175,7 +175,7 @@ unalias b
 
 exec ip link add dummy0 type dummy
 exec ip link set dummy0 up
-exec status diff -u file:$raw1.stdout file:$raw2.stdout
+let _ <- exec diff -u file:$raw1.stdout file:$raw2.stdout
 
 guard parsed <- jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value

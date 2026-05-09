@@ -2958,25 +2958,11 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 	assert.NotEmpty(t, errBuf.String())
 }
 
-// --- exec status tests (top-level only; `<-' has no status mode) ---
-
-func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
+func TestReplLoop_ExecTopLevelErrorsOnNonZero(t *testing.T) {
 	t.Parallel()
 
-	input := "exec status\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exec status requires at least one argument")
-}
-
-func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
-	t.Parallel()
-
-	// Plain exec still errors on non-zero exit.
+	// Top-level exec runs the command for its side effects and
+	// reports non-zero exit as an error.
 	input := "exec false\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -2985,13 +2971,6 @@ func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "exit status 1")
-}
-
-func TestReplComplete_ExecStatusSubcommand(t *testing.T) {
-	t.Parallel()
-
-	_, candidates := replComplete(context.Background(), nil, nil, "exec ", len("exec "))
-	assert.Contains(t, candidates, "status ")
 }
 
 func TestReplComplete_ExecInCommandNames(t *testing.T) {

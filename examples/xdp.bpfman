@@ -8,8 +8,8 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/xdp.bpfman
 
-require ok exec ip link add bpfman-xdp type dummy
-require ok exec ip link set bpfman-xdp up
+guard _ <- exec ip link add bpfman-xdp type dummy
+guard _ <- exec ip link set bpfman-xdp up
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/xdp_pass.bpf.o \

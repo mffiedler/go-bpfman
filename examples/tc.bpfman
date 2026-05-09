@@ -8,8 +8,8 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/tc.bpfman
 
-require ok exec ip link add bpfman-tc type dummy
-require ok exec ip link set bpfman-tc up
+guard _ <- exec ip link add bpfman-tc type dummy
+guard _ <- exec ip link set bpfman-tc up
 
 guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tc_counter.bpf.o \

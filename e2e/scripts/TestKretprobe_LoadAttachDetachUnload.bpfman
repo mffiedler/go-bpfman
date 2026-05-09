@@ -81,7 +81,7 @@ let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 guard dumpBefore <- exec bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-require ok exec sleep 0.1
+guard _ <- exec sleep 0.1
 
 guard dumpAfter <- exec bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter

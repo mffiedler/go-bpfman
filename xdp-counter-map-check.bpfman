@@ -33,7 +33,7 @@ guard prog <- bpfman program load file --path testdata/xdp_counter.o --programs 
 guard link <- bpfman link attach xdp -i veth-host $prog
 
 # First burst of traffic.
-require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
+guard _ <- exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
 exec sleep 1
 
 # Snapshot the counters after the first burst.
@@ -41,7 +41,7 @@ guard raw1 <- exec bpftool map dump id $prog.status.maps[0].id
 guard snap1 <- jq "." $raw1.stdout
 
 # Second burst of traffic.
-require ok exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
+guard _ <- exec ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
 exec sleep 1
 
 # Snapshot again. Because this is a per-CPU map, traffic may be counted

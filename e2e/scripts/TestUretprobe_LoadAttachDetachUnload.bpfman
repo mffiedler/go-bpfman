@@ -89,7 +89,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
 foreach _ in '0' |> jq "[range(5)]" {
-    require ok exec env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
+    guard _ <- exec env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
 }
 
 guard dumpAfter <- exec bpftool map dump id $mapID -j

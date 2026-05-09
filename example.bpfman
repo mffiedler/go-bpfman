@@ -43,8 +43,8 @@ alias b = bpfman
 
 # ---- Interface set-up ----------------------------------------------
 
-require ok exec ip link add bpfman-example type dummy
-require ok exec ip link set bpfman-example up
+guard _ <- exec ip link add bpfman-example type dummy
+guard _ <- exec ip link set bpfman-example up
 
 # ---- Load and attach two XDP programs via a dispatcher --------------
 

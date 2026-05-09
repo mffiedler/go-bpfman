@@ -28,7 +28,6 @@ const (
 	OriginLink
 	OriginDispatcher
 	OriginMap
-	OriginExecResult
 	// OriginEnvelope tags a Value that wraps a captured-result
 	// Envelope: the structured shape every command form returns,
 	// carrying ok, code, stdout, stderr, the typed payload value,
@@ -67,8 +66,6 @@ func (k OriginKind) String() string {
 		return "dispatcher"
 	case OriginMap:
 		return "map"
-	case OriginExecResult:
-		return "exec.result"
 	case OriginEnvelope:
 		return "envelope"
 	case OriginNull:

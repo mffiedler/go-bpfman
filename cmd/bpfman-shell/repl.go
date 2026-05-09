@@ -202,23 +202,24 @@ func canonicaliseHistory(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// contState tracks brace and bracket depth across accumulated input
-// lines so the REPL knows when a multi-line if-block or command
-// substitution is complete. Quote state persists across lines so
-// multi-line quoted strings are treated as a single literal span;
-// unterminated strings themselves are surfaced by the tokeniser
-// when the accumulated chunk is eventually parsed. lineCont records
-// whether the line just consumed ended with an unescaped backslash
-// outside quotes, which the tokeniser treats as a line continuation.
+// contState tracks brace and parenthesis depth across accumulated
+// input lines so the REPL knows when a multi-line if-block or
+// parenthesised expression is complete. Quote state persists
+// across lines so multi-line quoted strings are treated as a
+// single literal span; unterminated strings themselves are
+// surfaced by the tokeniser when the accumulated chunk is
+// eventually parsed. lineCont records whether the line just
+// consumed ended with an unescaped backslash outside quotes,
+// which the tokeniser treats as a line continuation.
 type contState struct {
-	braces, brackets, parens int
-	inSingle, inDouble       bool
-	lineCont                 bool
+	braces, parens     int
+	inSingle, inDouble bool
+	lineCont           bool
 }
 
-// advance walks one line of input, updating the brace and bracket
+// advance walks one line of input, updating the brace and paren
 // counters. Comments (`#` to end of line) outside a quoted string
-// are ignored; quoted content is skipped so braces and brackets
+// are ignored; quoted content is skipped so braces and parens
 // inside strings do not count. The in-string flags are fields on
 // the struct so they survive across line boundaries, matching how
 // the tokeniser actually treats multi-line quoted literals.
@@ -242,12 +243,6 @@ func (c *contState) advance(line string) {
 			if c.braces > 0 {
 				c.braces--
 			}
-		case ch == '[':
-			c.brackets++
-		case ch == ']':
-			if c.brackets > 0 {
-				c.brackets--
-			}
 		case ch == '(':
 			c.parens++
 		case ch == ')':
@@ -265,10 +260,10 @@ func (c *contState) advance(line string) {
 }
 
 // open reports whether the accumulated input is still inside an
-// open brace, bracket, or parenthesised group, or the line just
-// consumed ended with a backslash continuation.
+// open brace or parenthesised group, or the line just consumed
+// ended with a backslash continuation.
 func (c *contState) open() bool {
-	return c.braces > 0 || c.brackets > 0 || c.parens > 0 || c.lineCont
+	return c.braces > 0 || c.parens > 0 || c.lineCont
 }
 
 // shellCommands is the set of commands that are shell-language or
@@ -717,9 +712,8 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("\n")
 	b.WriteString("Shell commands:\n")
 	b.WriteString("\n")
-	b.WriteString("  exec <command> [args|file:$var...]        Run a host command (assignable)\n")
-	b.WriteString("  exec status <command> [args...]           Run, capture all exit codes (assignable)\n")
-	b.WriteString("  file temp $var[.path] | [expr]            Write value to temp file (assignable)\n")
+	b.WriteString("  exec <command> [args|file:$var...]        Run a host command\n")
+	b.WriteString("  file temp $var[.path]                     Write value to temp file (assignable)\n")
 	b.WriteString("  jq <filter> <value>                       Apply a jq filter to a value (assignable)\n")
 	b.WriteString("  print <value>...                          Print one or more values (one pretty, many compact space-joined)\n")
 	b.WriteString("  source <file>                            Execute commands from a file\n")
@@ -734,10 +728,12 @@ func replHelp(cli *bpfmancli.CLI) error {
 	b.WriteString("  aliases                                  List defined aliases\n")
 	b.WriteString("\n")
 	b.WriteString("Variables:\n")
-	b.WriteString("  let prog = bpfman load file ...   Assign command result to a variable\n")
-	b.WriteString("  set <name> = <value>              Bind scalar value to variable\n")
+	b.WriteString("  let X = EXPR                      Bind an expression result\n")
+	b.WriteString("  let X <- COMMAND                  Bind a command's primary result\n")
+	b.WriteString("  guard X <- COMMAND                Bind primary; halt on failure\n")
+	b.WriteString("  let (rc, X) <- COMMAND            Bind result envelope and primary\n")
+	b.WriteString("  guard (rc, X) <- COMMAND          Same; halt on failure\n")
 	b.WriteString("  bpfman show program $prog         Variable reference (auto-extracts program ID)\n")
-	b.WriteString("  bpfman link attach xdp -i eth0 $prog  Use $variable as program ID argument\n")
 	b.WriteString("\n")
 	b.WriteString("Assertions:\n")
 	b.WriteString("  assert <verb> [args...]       Check condition, continue on failure\n")
