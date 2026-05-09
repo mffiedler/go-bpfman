@@ -222,3 +222,73 @@ func TestCheck_TupleBindOnStartReportsPrimary(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `started job "p"`)
 }
+
+func TestCheck_ArithmeticOnNumericLiteralsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let r = 4 * 2 + 1"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_ArithmeticOnFloatLiteralsClean(t *testing.T) {
+	t.Parallel()
+
+	src := "let r = 1.5 * 2"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_ArithmeticOnNonNumericLiteralFlagged(t *testing.T) {
+	t.Parallel()
+
+	src := "let r = 4 * bogus"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `arithmetic *: operand "bogus" is not numeric`)
+}
+
+func TestCheck_ArithmeticBothNonNumericReported(t *testing.T) {
+	t.Parallel()
+
+	src := "let r = A / B"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 2)
+	assert.Contains(t, issues[0].Msg, `operand "A"`)
+	assert.Contains(t, issues[1].Msg, `operand "B"`)
+}
+
+func TestCheck_ArithmeticVarRefIsTrusted(t *testing.T) {
+	t.Parallel()
+
+	// Variable-reference operands are not flagged; we cannot
+	// know their value at static time. The undefined-variable
+	// check still catches the case where the name is unbound
+	// (covered by TestCheck_UseBeforeDefIsReported).
+	src := "let n = 4\nlet r = $n * 2"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_ArithmeticInsideInterpolationFlagged(t *testing.T) {
+	t.Parallel()
+
+	// The interpolation case the user surfaced: '${4 * Z}'
+	// reaches the arithmetic check via Inspect descending
+	// through the InterpStringExpr's segments.
+	src := `print "${4 * Z}"`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `operand "Z"`)
+}
+
+func TestCheck_ArithmeticHexLiteralAccepted(t *testing.T) {
+	t.Parallel()
+
+	// '0x1a + 1' should not flag: ParseInt with base 0
+	// accepts hex prefixes, matching the runtime's de facto
+	// acceptance of hex numeric literals.
+	src := "let r = 0x1a + 1"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}

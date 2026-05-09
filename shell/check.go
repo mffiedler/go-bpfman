@@ -18,7 +18,10 @@
 
 package shell
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Issue is one finding from a Check pass: a source location
 // and a human-readable message. Multiple issues can be
@@ -48,6 +51,7 @@ func Check(prog *Program) []Issue {
 	c := &checker{defined: map[string]bool{}}
 	c.walkStmts(prog.Stmts)
 	c.checkJobLeaks(prog)
+	c.checkArithmeticOperands(prog)
 	return c.issues
 }
 
@@ -248,6 +252,66 @@ func isStartCommand(cmd *CommandStmt) bool {
 	}
 	lit, ok := cmd.Args[0].(*LiteralExpr)
 	return ok && lit.Text == "start"
+}
+
+// checkArithmeticOperands flags literal operands of arithmetic
+// operators (+, -, *, /, %) that cannot parse as numeric. The
+// runtime evaluator already produces 'left operand "Z" is not
+// numeric' for these; the static check pulls the diagnostic
+// one pass earlier so an arithmetic typo in '${4 * Z}' or
+// 'let r = A / B' surfaces before any side effect runs.
+//
+// Variable-reference operands are trusted (we cannot know
+// their value at static time); only LiteralExpr operands are
+// inspected. The numeric-vs-not test is strconv.ParseFloat
+// which accepts the same lexical shapes the runtime
+// arithmetic does (decimal integer, decimal float, scientific
+// notation; hex via 0x prefix is rejected by ParseFloat but
+// accepted by the runtime, so '0x1a + 1' would false-flag --
+// match ParseFloat's behaviour by also trying ParseInt as a
+// fallback so the static and runtime acceptances agree).
+func (c *checker) checkArithmeticOperands(prog *Program) {
+	Inspect(prog, func(n Node) bool {
+		be, ok := n.(*BinaryExpr)
+		if !ok || !isArithmeticOpText(be.Op) {
+			return true
+		}
+		c.flagNonNumericLiteral(be.Left, be.Op)
+		c.flagNonNumericLiteral(be.Right, be.Op)
+		return true
+	})
+}
+
+// flagNonNumericLiteral emits an issue when e is a literal
+// whose text does not parse as a number. Other expression
+// kinds (variable references, nested expressions, arithmetic
+// sub-expressions) are trusted at static time.
+func (c *checker) flagNonNumericLiteral(e Expr, op string) {
+	lit, ok := e.(*LiteralExpr)
+	if !ok {
+		return
+	}
+	if isNumericLiteral(lit.Text) {
+		return
+	}
+	c.addIssue(lit.Loc, "arithmetic %s: operand %q is not numeric", op, lit.Text)
+}
+
+// isNumericLiteral reports whether text is a literal the
+// arithmetic evaluator will accept. Tries ParseFloat first
+// (handles decimal integers, floats, scientific notation),
+// then ParseInt with base 0 as a fallback (handles 0x... and
+// 0... that ParseFloat rejects). Matches the runtime's de
+// facto accepted shapes; if the runtime ever tightens this,
+// the check tightens with it via the same helper.
+func isNumericLiteral(text string) bool {
+	if _, err := strconv.ParseFloat(text, 64); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseInt(text, 0, 64); err == nil {
+		return true
+	}
+	return false
 }
 
 // jobReferenceTarget returns the variable name of a 'kill $X'
