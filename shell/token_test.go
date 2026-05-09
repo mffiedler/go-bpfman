@@ -502,6 +502,58 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenWord, Text: "b"},
 			},
 		},
+
+		// Bind sigil. A `<-` at a token boundary is a standalone
+		// TokenBind; inside a bare word the characters stay part
+		// of the surrounding literal.
+
+		{
+			name:  "bind between tokens",
+			input: "let r <- bpfman version",
+			want: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenWord, Text: "r"},
+				{Kind: TokenBind, Text: "<-"},
+				{Kind: TokenWord, Text: "bpfman"},
+				{Kind: TokenWord, Text: "version"},
+			},
+		},
+		{
+			name:  "guard with bind",
+			input: "guard r <- bpfman program get $pid",
+			want: []Token{
+				{Kind: TokenWord, Text: "guard"},
+				{Kind: TokenWord, Text: "r"},
+				{Kind: TokenBind, Text: "<-"},
+				{Kind: TokenWord, Text: "bpfman"},
+				{Kind: TokenWord, Text: "program"},
+				{Kind: TokenWord, Text: "get"},
+				{Kind: TokenVarRef, Text: "$pid", VarName: "pid"},
+			},
+		},
+		{
+			name:  "bind inside bare word stays part of word",
+			input: "a<-b",
+			want: []Token{
+				{Kind: TokenWord, Text: "a<-b"},
+			},
+		},
+		{
+			name:  "bind inside quoted string is literal",
+			input: `"a <- b"`,
+			want: []Token{
+				{Kind: TokenQuoted, Text: "a <- b"},
+			},
+		},
+		{
+			name:  "bare less-than without dash is word content",
+			input: "$a < $b",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "<"},
+				{Kind: TokenVarRef, Text: "$b", VarName: "b"},
+			},
+		},
 	}
 
 	for _, tt := range tests {

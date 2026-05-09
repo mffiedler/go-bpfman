@@ -60,6 +60,14 @@ const (
 	// macro.  Inside a bare word or quoted string, '|>' stays
 	// part of the surrounding literal.
 	TokenThread
+	// TokenBind is the '<-' sigil at a token boundary. It binds
+	// the result of running a command form on its right to the
+	// name on its left: "let r <- bpfman program get $pid" or
+	// "guard r <- bpfman program load file --path foo.o". Inside
+	// a bare word the bytes '<-' stay part of the surrounding
+	// literal; '<-' only emits as TokenBind when it sits at a
+	// token boundary (whitespace or start of input on the left).
+	TokenBind
 	// TokenInterpString is a double-quoted string containing one
 	// or more ${...} interpolation points.  Segments carries the
 	// alternation of literal text and raw expression text; the
@@ -241,6 +249,14 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			// boundary.  The lexWord path keeps '|' as an
 			// interior word character, so 'a|>b' stays a word.
 			tokens = emit(tokens, start, Token{Kind: TokenThread, Text: "|>"})
+			i += 2
+
+		case ch == '<' && i+1 < len(input) && input[i+1] == '-':
+			// Reaching this case means the previous byte was
+			// whitespace or absent, so '<-' sits at a token
+			// boundary. The lexWord path keeps '<' and '-' as
+			// interior word characters, so 'x<-y' stays a word.
+			tokens = emit(tokens, start, Token{Kind: TokenBind, Text: "<-"})
 			i += 2
 
 		default:
