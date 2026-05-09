@@ -20,6 +20,7 @@ import (
 //	unary   := UnaryExpr (pred operand)
 //	binary  := BinaryExpr (left op right)
 type Expr interface {
+	Node
 	exprNode()
 }
 

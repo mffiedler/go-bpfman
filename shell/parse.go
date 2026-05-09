@@ -31,8 +31,11 @@ type Program struct {
 	Loc
 }
 
-// Stmt is the sealed sum type for statements.
+// Stmt is the sealed sum type for statements. Embedding Node
+// lets every Stmt be passed to Inspect without an explicit
+// type assertion at the call site.
 type Stmt interface {
+	Node
 	stmtNode()
 }
 
