@@ -36,6 +36,15 @@ const (
 	// Origin() so consumers reach the typed payload Value without
 	// a JSON round-trip.
 	OriginEnvelope
+	// OriginJob tags a Value that wraps a Job: the user-visible
+	// handle for a background process started by 'start COMMAND
+	// ARGS'. The handle exposes 'pid' through the standard
+	// path-walker; the remaining state (captured stdout, stderr,
+	// exit code) flows through 'wait' and 'kill', which the
+	// driver provides. A job handle is an execution capability,
+	// not ordinary immutable data: its internal state evolves as
+	// the underlying process runs and exits.
+	OriginJob
 	// OriginNull is a Value that represents JSON null — a value
 	// that is present but whose content is null.  Distinct from
 	// an absent (zero) Value: an absent Value is a lookup miss or
@@ -68,6 +77,8 @@ func (k OriginKind) String() string {
 		return "map"
 	case OriginEnvelope:
 		return "envelope"
+	case OriginJob:
+		return "job"
 	case OriginNull:
 		return "null"
 	default:
