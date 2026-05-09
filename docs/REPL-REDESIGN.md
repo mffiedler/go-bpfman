@@ -403,6 +403,27 @@ Anything could happen on the RHS of `<-` (process spawn,
 in-process call, kernel side effects); that is what makes
 `<-` distinct from `=`.
 
+#### Three idioms
+
+The combination of `let` vs `guard`, single-name vs tuple, and
+the `_` discard collapses to three idioms that cover almost
+every real script:
+
+```
+let _ <- ip link del veth-host        # run, ignore result, continue regardless
+guard _ <- ip netns add bpfman-test   # run, halt on failure, no binding
+guard prog <- bpfman program load ... # run, halt on failure, bind typed primary
+```
+
+Reading rules: `let` always proceeds, `guard` halts on `!ok`;
+`_` discards a slot, a name binds it; single-name names the
+primary, tuple binds `(result, primary)`. The cleanup form
+extends to a tuple when you want the rc for diagnostics:
+
+```
+let (rc, _) <- ip link del veth-host  # cleanup, keep rc for inspection
+```
+
 ### 6.3 Names may be rebound; values are immutable
 
 `let NAME = ...` and `let NAME <- ...` may rebind a name that
