@@ -168,7 +168,16 @@ assert $r10.ok
 # foreach launches a bounded sequence of jobs and reaps each in
 # turn. Each iteration's wait observes the rc; the loop body
 # never lets a job leak.
-foreach idx in '0' |> jq "[range(3)]" {
+#
+# 'null' is a placeholder input: the |> shape requires something
+# upstream of jq, but the filter [range(3)] ignores the input
+# and produces [0,1,2] from the range itself. Reading 'null'
+# rather than a stray '0' makes the "the input is meaningless"
+# intent visible. The long-term shape is `foreach idx in (range
+# 3)`, once a range/seq builtin lands; until then this is the
+# clearest workaround that still satisfies jq's "input must be
+# valid JSON" rule.
+foreach idx in 'null' |> jq "[range(3)]" {
     guard pi <- start sh -c "echo job-${idx}; sleep 0.02"
     guard ri <- wait $pi
     assert $ri.ok
