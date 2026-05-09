@@ -1,18 +1,11 @@
-# REPL DSL: target design
+# REPL DSL: language reference
 
-This document describes the target shape of the bpfman REPL/DSL.
-It is forward-looking: the current language (described in
-`docs/repl/language.md`) uses an earlier syntactic surface, and
-the work to land this design is queued as a focused branch off
-`main`. Examples below use the target syntax throughout. Where
-behaviour or rules apply equally to the current language they
-are flagged in the prose.
-
-The document is the authoritative reference for the target
-design. When the implementation lands, `docs/repl/language.md`
-will be regenerated from this doc, and the migration steps in
-section 15 will guide each `*.bpfman` script through the
-transition.
+This document is the canonical reference for the bpfman REPL/DSL.
+It describes the language as implemented: tokens, statements,
+expressions, lifecycle primitives, command capture, and the
+result envelope. Earlier planning documents and the previous
+language reference have been retired; this is the single
+source of truth.
 
 ## 1. What this document is
 
@@ -968,8 +961,7 @@ The migration is staged across multiple commits:
 3. Migrate the `Test*.bpfman` corpus mechanically. Each script
    stands alone; migrate one test at a time and run it under
    the new parser to catch regressions.
-4. Update `docs/repl/language.md` from this design doc.
-5. Delete the old `[cmd]`/`[[expr]]` paths and tests.
+4. Delete the old `[cmd]`/`[[expr]]` paths and tests.
 
 The Go test suite is unaffected; it uses the bpfman library
 directly and has no dependence on the DSL surface.
