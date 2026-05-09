@@ -1271,13 +1271,18 @@ func (p *exprParser) parseThread() (Expr, error) {
 }
 
 // parseThreadRHS consumes the command-call tokens that follow a
-// '|>'. It stops at the next '|>', at a binary-op word, at an
-// arithmetic operator (so the comparison or additive level can
-// pick it up), at a closing bracket ')', ']', or '}' (so a thread
-// nested inside a parenthesised expression, command substitution,
-// or interpolation lets the enclosing form close cleanly), or at
-// end of input. A literal binary-op, arithmetic, or bracket word
-// used as a command argument must be quoted.
+// '|>'. The general rule is that the RHS extends to the end of
+// the current expression, not blindly to end-of-input, so any
+// token that begins a higher-precedence construct or closes the
+// surrounding form terminates the command. Concretely it stops
+// at: the next '|>' (so a chain of threads composes); a
+// binary-comparison word; an arithmetic operator; a logical
+// operator 'and' or 'or' (so a thread can sit inside a
+// LogicalExpr); a closing bracket ')', ']', or '}' (so a thread
+// nested inside a parenthesised expression, command
+// substitution, or interpolation lets the enclosing form close);
+// or end of input. A literal binary-op, arithmetic, logical, or
+// bracket word used as a command argument must be quoted.
 func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 	var args []Expr
 	for !p.eof() {
@@ -1289,6 +1294,9 @@ func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 			break
 		}
 		if isArithmeticOp(t) {
+			break
+		}
+		if t.Kind == TokenWord && (t.Text == "and" || t.Text == "or") {
 			break
 		}
 		if t.Kind == TokenWord && (t.Text == ")" || t.Text == "]" || t.Text == "}") {

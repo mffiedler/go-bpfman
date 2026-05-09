@@ -3,6 +3,7 @@ package shell
 // Note: additional if-statement parse tests live in parse_if_test.go.
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -423,6 +424,32 @@ func TestParse_ForEach_ParenthesisedThreadSource(t *testing.T) {
 	fe := firstStmt(t, prog).(*ForEachStmt)
 	_, ok := fe.List.(*ThreadExpr)
 	assert.True(t, ok, "foreach List should be a ThreadExpr (the parens are unwrapped), got %T", fe.List)
+}
+
+func TestParse_Thread_StopsAtLogicalOperator(t *testing.T) {
+	t.Parallel()
+
+	// "$x |> jq foo OP $y" should parse as the logical OP between
+	// (thread $x |> jq foo) and ($y), not as a thread whose RHS
+	// is "jq foo OP $y" (four args). Both 'and' and 'or' flow
+	// through the same stop check; cover both so a regression on
+	// either spelling fails loudly.
+	cases := []string{"and", "or"}
+	for _, op := range cases {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+			src := fmt.Sprintf(`if $x |> jq "len" %s $y { help }`, op)
+			prog, err := parseSource(t, src)
+			require.NoError(t, err)
+			ifStmt := firstStmt(t, prog).(*IfStmt)
+			logical, ok := ifStmt.Cond.(*LogicalExpr)
+			require.True(t, ok, "expected LogicalExpr at top, got %T", ifStmt.Cond)
+			assert.Equal(t, op, logical.Op)
+			thread, ok := logical.Left.(*ThreadExpr)
+			require.True(t, ok, "expected ThreadExpr on the left, got %T", logical.Left)
+			assert.Len(t, thread.Args, 2, "thread RHS should be jq + filter, not jq + filter + %q + ...", op)
+		})
+	}
 }
 
 func TestParse_Thread_RejectsTrailingThread(t *testing.T) {
