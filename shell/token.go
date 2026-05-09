@@ -37,18 +37,6 @@ const (
 	// file:$var.path. It carries the adapter name, the variable
 	// name, and the optional field path.
 	TokenAdapterRef
-	// TokenCmdSub is a command substitution [cmd args...]. The
-	// Inner field carries the raw inner text (without the outer
-	// brackets); Expand recursively tokenises and expands it.
-	TokenCmdSub
-	// TokenExprSub is an expression substitution [[expr]]. The
-	// Inner field carries the raw inner text (without the outer
-	// double brackets); the parser retokenises it in strict mode
-	// via TokeniseStrict and parses as a single expression.  The
-	// strict mode treats '-' and '/' as operator tokens regardless
-	// of whitespace, so [[4/2]] and [[$x - 1]] split the way
-	// arithmetic expects rather than the way paths and flags do.
-	TokenExprSub
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
@@ -100,7 +88,6 @@ type Token struct {
 	VarName  string          // variable name for TokenVarRef and TokenAdapterRef
 	VarPath  string          // field path for TokenVarRef and TokenAdapterRef (empty if bare)
 	Adapter  string          // adapter name for TokenAdapterRef (e.g. "file")
-	Inner    string          // raw inner text for TokenCmdSub (between brackets)
 	Segments []InterpSegment // literal/interp pieces for TokenInterpString
 	Loc      Loc             // source location of the token's first byte
 }
@@ -223,25 +210,8 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			tokens = emit(tokens, start, tok)
 			i += n
 
-		case ch == '[':
-			if i+1 < len(input) && input[i+1] == '[' {
-				tok, n, err := lexExprSub(input, i)
-				if err != nil {
-					return nil, err
-				}
-				tokens = emit(tokens, start, tok)
-				i += n
-			} else {
-				tok, n, err := lexCmdSub(input, i)
-				if err != nil {
-					return nil, err
-				}
-				tokens = emit(tokens, start, tok)
-				i += n
-			}
-
-		case ch == ']':
-			return nil, fmt.Errorf("unmatched ']'")
+		case ch == '[' || ch == ']':
+			return nil, fmt.Errorf("unexpected %q: brackets are not a DSL form (jq filters carry their own brackets inside quoted strings)", ch)
 
 		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was
@@ -491,104 +461,6 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 		Text:    input[pos:i],
 		VarName: name,
 		VarPath: path,
-	}
-	return tok, i - pos, nil
-}
-
-// lexExprSub lexes an expression substitution [[expr]].  The
-// caller guarantees input[pos:pos+2] == "[[".  Nested "[[...]]"
-// and "[...]" are both recognised so the inner span may contain
-// further substitutions; quoted strings are skipped so a ']' or
-// ']]' inside a string does not close the substitution.  The
-// returned token's Inner field carries the raw content between
-// the outer double brackets, which the parser retokenises via
-// TokeniseStrict at parse time.
-func lexExprSub(input string, pos int) (Token, int, error) {
-	depth := 1
-	i := pos + 2
-	for i < len(input) {
-		// Prefer the two-character sigils over single brackets
-		// so "[[" and "]]" are recognised before a lone '[' /
-		// ']' handler has a chance to fire.
-		if i+1 < len(input) && input[i] == '[' && input[i+1] == '[' {
-			depth++
-			i += 2
-			continue
-		}
-		if i+1 < len(input) && input[i] == ']' && input[i+1] == ']' {
-			depth--
-			if depth == 0 {
-				inner := input[pos+2 : i]
-				tok := Token{
-					Kind:  TokenExprSub,
-					Text:  input[pos : i+2],
-					Inner: inner,
-				}
-				return tok, i + 2 - pos, nil
-			}
-			i += 2
-			continue
-		}
-		switch input[i] {
-		case '[':
-			// A lone '[' opens a nested command substitution.
-			// Delegate to lexCmdSub so its own depth counter
-			// matches the nested brackets correctly.
-			_, n, err := lexCmdSub(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		case ']':
-			return Token{}, 0, fmt.Errorf("unmatched ']' inside [[...]]; closing brackets must come in pairs")
-		case '"', '\'':
-			_, n, err := lexQuoted(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		default:
-			i++
-		}
-	}
-	return Token{}, 0, fmt.Errorf("unterminated expression substitution: missing ']]'")
-}
-
-// lexCmdSub lexes a command substitution [cmd args...]. The brackets
-// nest; quoted strings inside are skipped so a `]` inside a string
-// does not close the substitution. The returned token's Inner field
-// carries the raw content between the outer brackets; Expand
-// recursively tokenises and expands it at evaluation time.
-func lexCmdSub(input string, pos int) (Token, int, error) {
-	depth := 1
-	i := pos + 1
-	for i < len(input) && depth > 0 {
-		ch := input[i]
-		switch ch {
-		case '[':
-			depth++
-			i++
-		case ']':
-			depth--
-			i++
-		case '"', '\'':
-			_, n, err := lexQuoted(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		default:
-			i++
-		}
-	}
-	if depth > 0 {
-		return Token{}, 0, fmt.Errorf("unterminated command substitution: missing ']'")
-	}
-	inner := input[pos+1 : i-1]
-	tok := Token{
-		Kind:  TokenCmdSub,
-		Text:  input[pos:i],
-		Inner: inner,
 	}
 	return tok, i - pos, nil
 }

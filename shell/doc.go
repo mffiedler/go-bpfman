@@ -37,8 +37,7 @@
 //
 // Expression nodes are reachable via the sealed [Expr] interface:
 //
-//   - [LiteralExpr], [VarRefExpr], [AdapterExpr], [CmdSubExpr] —
-//     primary forms.
+//   - [LiteralExpr], [VarRefExpr], [AdapterExpr] -- primary forms.
 //   - [UnaryExpr] — a single-operand predicate (true, false,
 //     not-empty).
 //   - [BinaryExpr] -- a two-operand comparison (==, !=, <, <=, >, >=).
@@ -67,7 +66,7 @@
 // # Args as the dispatch boundary
 //
 // When the evaluator hands a command to [Env.ExecCommand] or
-// [Env.ExecSubstitution], it supplies a []Arg — a typed
+// [Env.ExecBind], it supplies a []Arg -- a typed
 // post-evaluation representation whose variants preserve useful
 // distinctions that a plain []string would lose:
 //

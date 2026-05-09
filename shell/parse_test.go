@@ -73,34 +73,26 @@ func TestParse_LineContinuation(t *testing.T) {
 		}
 	})
 
-	t.Run("continuation inside command substitution", func(t *testing.T) {
+	t.Run("continuation inside bind RHS", func(t *testing.T) {
 		t.Parallel()
-		prog, err := parseSource(t, "let p = [show program \\\n123]")
+		prog, err := parseSource(t, "let p <- show program \\\n123")
 		require.NoError(t, err)
-		let, ok := firstStmt(t, prog).(*LetStmt)
+		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		assert.Equal(t, "p", let.Name)
-		sub, ok := let.RHS.(*CmdSubExpr)
-		require.True(t, ok)
-		require.Len(t, sub.Inner.Stmts, 1)
-		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-		require.True(t, ok)
-		require.Len(t, inner.Args, 3)
+		assert.Equal(t, "p", bind.Primary)
+		require.NotNil(t, bind.Cmd)
+		require.Len(t, bind.Cmd.Args, 3)
 	})
 
-	t.Run("multiple continuations inside command substitution", func(t *testing.T) {
+	t.Run("multiple continuations inside bind RHS", func(t *testing.T) {
 		t.Parallel()
-		src := "let p = [show \\\nprogram \\\n123]"
+		src := "let p <- show \\\nprogram \\\n123"
 		prog, err := parseSource(t, src)
 		require.NoError(t, err)
-		let, ok := firstStmt(t, prog).(*LetStmt)
+		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		sub, ok := let.RHS.(*CmdSubExpr)
-		require.True(t, ok)
-		require.Len(t, sub.Inner.Stmts, 1)
-		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-		require.True(t, ok)
-		require.Len(t, inner.Args, 3)
+		require.NotNil(t, bind.Cmd)
+		require.Len(t, bind.Cmd.Args, 3)
 	})
 }
 
@@ -140,22 +132,6 @@ func TestParse_LetWithVarRef(t *testing.T) {
 	ref, ok := let.RHS.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "prog", ref.Name)
-}
-
-func TestParse_LetWithCmdSub(t *testing.T) {
-	t.Parallel()
-
-	prog, err := parseSource(t, "let x = [load file --path p]")
-	require.NoError(t, err)
-	let, ok := firstStmt(t, prog).(*LetStmt)
-	require.True(t, ok)
-	sub, ok := let.RHS.(*CmdSubExpr)
-	require.True(t, ok)
-	require.NotNil(t, sub.Inner)
-	require.Len(t, sub.Inner.Stmts, 1)
-	inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-	require.True(t, ok)
-	require.Len(t, inner.Args, 4)
 }
 
 func TestParse_LetErrors(t *testing.T) {
@@ -343,7 +319,6 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 		{"varref with path", "$x.a.b", "expr"},
 		{"varref with comparison", "$x == 5", "expr"},
 		{"varref with thread", "$x |> jq \".\"", "expr"},
-		{"exprsub", "[[1 == 1]]", "expr"},
 		{"quoted", "\"hello\"", "expr"},
 		{"single-quoted", "'hello'", "expr"},
 		{"paren expression", "(1 == 1)", "expr"},
@@ -460,19 +435,6 @@ func TestParse_Thread_TighterThanComparison(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestParse_Thread_CmdSubLHS(t *testing.T) {
-	t.Parallel()
-
-	// [cmd] |> jq "FILTER" is valid: LHS is a CmdSubExpr, RHS is a thread.
-	prog, err := parseSource(t, "let r = [bpfman program list] |> jq \"length\"")
-	require.NoError(t, err)
-	let := firstStmt(t, prog).(*LetStmt)
-	thread, ok := let.RHS.(*ThreadExpr)
-	require.True(t, ok)
-	_, ok = thread.LHS.(*CmdSubExpr)
-	assert.True(t, ok, "thread LHS should be CmdSubExpr, got %T", thread.LHS)
-}
-
 func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	t.Parallel()
 
@@ -502,21 +464,6 @@ func TestParse_Thread_StopsAtClosingParen(t *testing.T) {
 	thread, ok := ifStmt.Cond.(*ThreadExpr)
 	require.True(t, ok, "expected ThreadExpr inside the parens, got %T", ifStmt.Cond)
 	require.Len(t, thread.Args, 2, "thread RHS should be jq + filter, not jq + filter + ')'")
-}
-
-func TestParse_Thread_StopsAtClosingBracket(t *testing.T) {
-	t.Parallel()
-
-	// A thread inside a [cmdsub] or [[exprsub]] must let the ']'
-	// close the substitution rather than swallow it.
-	prog, err := parseSource(t, "let r = [[$xs |> jq \"length\"]]")
-	require.NoError(t, err)
-	let := firstStmt(t, prog).(*LetStmt)
-	exprSub, ok := let.RHS.(*ExprSubExpr)
-	require.True(t, ok, "expected ExprSubExpr, got %T", let.RHS)
-	thread, ok := exprSub.Inner.(*ThreadExpr)
-	require.True(t, ok, "expected ThreadExpr inside [[...]], got %T", exprSub.Inner)
-	require.Len(t, thread.Args, 2)
 }
 
 func TestParse_ForEach_ParenthesisedThreadSource(t *testing.T) {
@@ -1003,17 +950,6 @@ func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
 	rs := firstStmt(t, prog).(*RetryStmt)
 	_, ok := rs.Until.(*IterationExpr)
 	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
-}
-
-func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
-	t.Parallel()
-
-	// A syntax error inside [ ... ] surfaces at the outer Parse
-	// call: eager inner parsing is a deliberate behavioural change
-	// documented in the refactor plan.
-	_, err := parseSource(t, "let x = [let y = ]")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "command substitution")
 }
 
 // --- arithmetic ----------------------------------------------------

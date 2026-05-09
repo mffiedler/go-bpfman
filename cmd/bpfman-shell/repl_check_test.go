@@ -27,7 +27,7 @@ func TestReplCheck_CleanInput(t *testing.T) {
 		"help",
 		"let x = 1\nshow program",
 		"if $x > 0 {\n  bpfman program list\n}",
-		"let y = [bpfman program list]",
+		"let y <- bpfman program list",
 		"# a comment only",
 		"",
 	}
@@ -75,9 +75,9 @@ func TestReplCheck_BrokenSnippets(t *testing.T) {
 			wantContain: "expected identifier",
 		},
 		{
-			name:        "syntax error inside cmdsub",
-			input:       "let x = [let y = ]",
-			wantContain: "command substitution",
+			name:        "bracket form rejected",
+			input:       "let x = [foo]",
+			wantContain: "brackets are not a DSL form",
 		},
 	}
 	for _, tc := range cases {

@@ -16,7 +16,7 @@ import (
 // The grammar:
 //
 //	expr    := primary | unary | binary
-//	primary := LiteralExpr | VarRefExpr | AdapterExpr | CmdSubExpr
+//	primary := LiteralExpr | VarRefExpr | AdapterExpr | InterpStringExpr
 //	unary   := UnaryExpr (pred operand)
 //	binary  := BinaryExpr (left op right)
 type Expr interface {
@@ -49,27 +49,6 @@ type AdapterExpr struct {
 	Adapter string
 	Name    string
 	Path    string
-	Loc
-}
-
-// CmdSubExpr is a command substitution [cmd args...]. Inner is the
-// parsed inner program; at evaluation time the evaluator dispatches
-// its single CommandStmt via Env.ExecSubstitution and returns the
-// resulting Value.
-type CmdSubExpr struct {
-	Inner *Program
-	Loc
-}
-
-// ExprSubExpr is an expression substitution [[expr]].  The grammar
-// inside double brackets is the same expression grammar used
-// everywhere else, but the tokeniser runs in strict mode so '-'
-// and '/' split as operators.  At evaluation time the node
-// delegates to its Inner expression; the wrapper exists so source
-// locations point at the '[[' rather than at whatever primary
-// happens to sit at the head of the inner expression.
-type ExprSubExpr struct {
-	Inner Expr
 	Loc
 }
 
@@ -193,8 +172,6 @@ type IterationExpr struct {
 func (*LiteralExpr) exprNode()      {}
 func (*VarRefExpr) exprNode()       {}
 func (*AdapterExpr) exprNode()      {}
-func (*CmdSubExpr) exprNode()       {}
-func (*ExprSubExpr) exprNode()      {}
 func (*InterpStringExpr) exprNode() {}
 func (*BinaryExpr) exprNode()       {}
 func (*UnaryExpr) exprNode()        {}
@@ -206,26 +183,20 @@ func (*TimeoutExpr) exprNode()      {}
 func (*IterationExpr) exprNode()    {}
 
 // Env is the execution environment for the evaluator. Session is
-// the variable and alias store; ExecCommand and ExecSubstitution
-// dispatch commands to the REPL's shell and domain pipelines,
-// differing only in output visibility and return-value
-// requirements.
+// the variable and alias store; ExecCommand dispatches top-level
+// commands to the REPL's shell and domain pipelines; ExecBind
+// dispatches command forms on the right of a '<-' bind.
 //
 // A nil ExecCommand makes any top-level CommandStmt a runtime
-// error; a nil ExecSubstitution makes any CmdSubExpr a runtime
-// error. Tests that only exercise expression evaluation can leave
-// both unset.
+// error; a nil ExecBind makes any BindStmt a runtime error.
+// Tests that only exercise expression evaluation can leave both
+// unset.
 type Env struct {
 	Session *Session
 
 	// ExecCommand runs a top-level CommandStmt. The returned
 	// Value may be nil; any output is visible on the CLI.
 	ExecCommand func(args []Arg) (Value, error)
-
-	// ExecSubstitution runs a command inside a cmd-sub
-	// expression. Output is suppressed; the returned Value must
-	// be non-nil or the evaluator reports an error.
-	ExecSubstitution func(args []Arg) (Value, error)
 
 	// ExecBind runs a command form on the right of a '<-' bind.
 	// The returned BindResult carries the result envelope (Rc)
@@ -800,10 +771,6 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return resolveVarRefValue(e, env)
 	case *AdapterExpr:
 		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
-	case *CmdSubExpr:
-		return dispatchCmdSub(e, env)
-	case *ExprSubExpr:
-		return EvalExpr(e.Inner, env)
 	case *InterpStringExpr:
 		return evalInterpString(e, env)
 	case *ThreadExpr:
@@ -958,10 +925,7 @@ func RenderCompact(v Value) (string, error) {
 }
 
 // EvalArgs evaluates each Expr in exprs as a command argument and
-// returns the resulting []Arg, suitable for dispatch. Command
-// substitutions nested inside the list are evaluated via
-// Env.ExecSubstitution, with their results wrapped as
-// ScalarValueArg/StructuredValueArg according to their shape.
+// returns the resulting []Arg, suitable for dispatch.
 func EvalArgs(exprs []Expr, env *Env) ([]Arg, error) {
 	out := make([]Arg, 0, len(exprs))
 	for _, e := range exprs {
@@ -985,38 +949,6 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		return resolveVarRefArg(e, env)
 	case *AdapterExpr:
 		return resolveAdapterArg(e, env)
-	case *CmdSubExpr:
-		val, err := dispatchCmdSub(e, env)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "nested command substitution produced no value")
-		}
-		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, locErrorf(e.Loc, "nested command substitution: %v", err)
-		}
-		return ScalarValueArg{Text: s}, nil
-	case *ExprSubExpr:
-		val, err := EvalExpr(e.Inner, env)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "expression substitution produced no value")
-		}
-		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, locErrorf(e.Loc, "expression substitution: %v", err)
-		}
-		return ScalarValueArg{Text: s}, nil
 	case *InterpStringExpr:
 		val, err := evalInterpString(e, env)
 		if err != nil {
@@ -1122,14 +1054,17 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 	}, nil
 }
 
-// dispatchThread evaluates a threading expression by threading the LHS's
-// Value into the command described by Args.  The LHS Value
+// dispatchThread evaluates a threading expression by threading the
+// LHS's Value into the command described by Args. The LHS Value
 // becomes the last element of the evaluated argument list so it
 // matches the convention used by jq, file temp, and most
-// shell-style "CMD ARGS VALUE" invocations.
+// shell-style "CMD ARGS VALUE" invocations. The thread errors
+// loudly when the underlying command's result is not ok; in
+// expression position there is no envelope slot to inspect, so
+// failure must propagate.
 func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
-	if env.ExecSubstitution == nil {
-		return Value{}, locErrorf(e.Loc, "thread requires a substitution runner; none configured")
+	if env.ExecBind == nil {
+		return Value{}, locErrorf(e.Loc, "thread requires a command runner; none configured")
 	}
 	lhsVal, err := EvalExpr(e.LHS, env)
 	if err != nil {
@@ -1146,7 +1081,17 @@ func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if err != nil {
 		return Value{}, locErrorf(e.Loc, "thread: %v", err)
 	}
-	return env.ExecSubstitution(append(args, lhsArg))
+	result, err := env.ExecBind(append(args, lhsArg))
+	if err != nil {
+		return Value{}, err
+	}
+	if !result.Rc.OK {
+		if result.Rc.Stderr != "" {
+			return Value{}, locErrorf(e.Loc, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
+		}
+		return Value{}, locErrorf(e.Loc, "thread: command failed (exit %d)", result.Rc.Code)
+	}
+	return result.Primary, nil
 }
 
 // valueToArg wraps a Value in the most specific Arg variant for
@@ -1164,37 +1109,6 @@ func valueToArg(v Value) (Arg, error) {
 		return nil, err
 	}
 	return ScalarValueArg{Text: s}, nil
-}
-
-// dispatchCmdSub evaluates a command-substitution expression and
-// returns its value.  The inner program must contain exactly one
-// statement.  An ExprStmt is a bracketed expression ("[1 == 1]",
-// "[$x == $y]") and is evaluated directly.  A CommandStmt is a
-// command invocation ("[bpfman ...]", "[jq ...]") and is dispatched
-// via env.ExecSubstitution.  Any other statement form — let, if,
-// foreach, retry, break, continue — is rejected.
-func dispatchCmdSub(e *CmdSubExpr, env *Env) (Value, error) {
-	if e.Inner == nil || len(e.Inner.Stmts) == 0 {
-		return Value{}, locErrorf(e.Loc, "empty command substitution")
-	}
-	if len(e.Inner.Stmts) != 1 {
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a single command or expression")
-	}
-	switch stmt := e.Inner.Stmts[0].(type) {
-	case *ExprStmt:
-		return EvalExpr(stmt.Expr, env)
-	case *CommandStmt:
-		if env.ExecSubstitution == nil {
-			return Value{}, locErrorf(e.Loc, "command substitution is not permitted in this context")
-		}
-		args, err := EvalArgs(stmt.Args, env)
-		if err != nil {
-			return Value{}, err
-		}
-		return env.ExecSubstitution(args)
-	default:
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a command or expression, got %T", stmt)
-	}
 }
 
 func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
@@ -1577,10 +1491,6 @@ func exprLoc(e Expr) Loc {
 	case *VarRefExpr:
 		return v.Loc
 	case *AdapterExpr:
-		return v.Loc
-	case *CmdSubExpr:
-		return v.Loc
-	case *ExprSubExpr:
 		return v.Loc
 	case *InterpStringExpr:
 		return v.Loc

@@ -38,8 +38,8 @@ func TestCanonicaliseHistory(t *testing.T) {
 		},
 		{
 			name: "let with bracket continuation",
-			in:   "let prog = [bpfman program load file \\\n    --path foo.o \\\n    --programs tracepoint:kr]",
-			want: "let prog = [bpfman program load file --path foo.o --programs tracepoint:kr]",
+			in:   "let prog <- bpfman program load file \\\n    --path foo.o \\\n    --programs tracepoint:kr",
+			want: "let prog <- bpfman program load file --path foo.o --programs tracepoint:kr",
 		},
 		{
 			name: "if block",
@@ -356,24 +356,6 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "No variables defined")
-}
-
-func TestReplLoop_AssignmentToNonAssignable(t *testing.T) {
-	t.Parallel()
-
-	// "alias" is a shell command that produces no value, so
-	// assigning its result should produce an error.  The multi-token
-	// form forces the cmdsub parser down the command-invocation
-	// path; a bare "[alias]" would now parse as an expression
-	// literal under the widened "[EXPR]" grammar.
-	input := "let x = [alias a = b]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), `command "alias" produces no assignable value`)
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
@@ -1476,20 +1458,26 @@ func TestReplLoop_AliasesEmpty(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "No aliases defined")
 }
 
-func TestReplLoop_AliasInLetBinding(t *testing.T) {
+func TestReplLoop_AliasInBindBinding(t *testing.T) {
 	t.Parallel()
 
-	// "let x = b audit explain" should fail to bind (audit
-	// produces no assignable value) but should reach the domain
-	// dispatcher, proving alias expansion works in let context.
-	input := "alias b = bpfman\nlet x = [b audit explain]\n"
+	// Alias expansion applies on the right of '<-' too: "b" is
+	// declared as an alias for "bpfman" and the bind dispatches
+	// through the domain pipeline. The script does not halt -- a
+	// let bind never auto-fails -- so the alias's reach is
+	// confirmed by the absence of an "unknown command" error.
+	input := "alias b = bpfman\nlet x <- b audit explain\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "produces no assignable value")
+	assert.NotContains(t, errBuf.String(), "unknown command")
+
+	_, ok := session.Get("x")
+	assert.True(t, ok, "let bind must set the variable even when the command produces no payload")
 }
 
 func TestReplComplete_SourceFileCompletion(t *testing.T) {
@@ -2560,7 +2548,7 @@ func TestReplLoop_ExecCommandNotFound(t *testing.T) {
 func TestReplLoop_ExecLetBinding(t *testing.T) {
 	t.Parallel()
 
-	input := "let out = [exec echo hello]\nassert contains $out.stdout hello\nassert $out.exit_code == 0\n"
+	input := "let out <- exec echo hello\nassert contains $out.stdout hello\nassert $out.code == 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2589,7 +2577,7 @@ func TestReplLoop_ExecLetBinding(t *testing.T) {
 func TestReplLoop_ExecLetBindingFieldAccess(t *testing.T) {
 	t.Parallel()
 
-	input := "let out = [exec echo testing123]\nprint $out.stdout\n"
+	input := "let out <- exec echo testing123\nprint $out.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -2845,25 +2833,6 @@ func TestReplLoop_GuardBindRendersStderr(t *testing.T) {
 	assert.Contains(t, out, "stderr:\n  oops")
 }
 
-func TestReplLoop_ExecLetFailure(t *testing.T) {
-	t.Parallel()
-
-	// Let binding with a failing command should produce an error.
-	input := "let out = [exec false]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exit status 1")
-
-	// Variable should not be set.
-	_, ok := session.Get("out")
-	assert.False(t, ok)
-}
-
 func TestReplLoop_ExecAssertOk(t *testing.T) {
 	t.Parallel()
 
@@ -2927,7 +2896,7 @@ func TestReplLoop_ExecAssertFailSucceeds(t *testing.T) {
 func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 	t.Parallel()
 
-	input := "let out = [exec echo \"hello world\"]\nassert contains $out.stdout hello\n"
+	input := "let out <- exec echo \"hello world\"\nassert contains $out.stdout hello\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2939,30 +2908,12 @@ func TestReplLoop_ExecAssertContainsStdout(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
-func TestReplLoop_ExecArgvField(t *testing.T) {
-	t.Parallel()
-
-	input := "let out = [exec echo a b c]\nprint $out.argv\n"
-	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-	assert.Contains(t, outBuf.String(), "echo")
-	assert.Contains(t, outBuf.String(), "a")
-	assert.Contains(t, outBuf.String(), "b")
-	assert.Contains(t, outBuf.String(), "c")
-}
-
 func TestReplLoop_ExecStderrCaptured(t *testing.T) {
 	t.Parallel()
 
 	// Use sh -c to produce stderr output. The exec command runs
 	// argv[0] directly, so we invoke sh as the command.
-	input := "let out = [exec sh -c \"echo errout >&2\"]\nassert contains $out.stderr errout\n"
+	input := "let out <- exec sh -c \"echo errout >&2\"\nassert contains $out.stderr errout\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2980,7 +2931,7 @@ func TestReplLoop_ExecVariableExpansion(t *testing.T) {
 	session := shell.NewSession()
 	session.Set("msg", shell.StringValue("expanded"))
 
-	input := "let out = [exec echo $msg]\nassert contains $out.stdout expanded\n"
+	input := "let out <- exec echo $msg\nassert contains $out.stdout expanded\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -3007,86 +2958,7 @@ func TestReplLoop_ExecContextCancellation(t *testing.T) {
 	assert.NotEmpty(t, errBuf.String())
 }
 
-func TestReplLoop_ExecCannotBindNonValueShellCmd(t *testing.T) {
-	t.Parallel()
-
-	// Shell commands that do not produce values should still be
-	// rejected in let bindings.  Using a multi-token form so the
-	// cmdsub parses as a command invocation rather than a bare
-	// expression literal.
-	input := "let x = [alias a = b]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "produces no assignable value")
-}
-
-// --- exec status tests ---
-
-func TestReplLoop_ExecStatusNonZeroExit(t *testing.T) {
-	t.Parallel()
-
-	// exec status captures non-zero exit as data, not error.
-	input := "let r = [exec status false]\nassert $r.exit_code == 1\n"
-	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-
-	val, ok := session.Get("r")
-	require.True(t, ok)
-	assert.True(t, val.IsStructured())
-}
-
-func TestReplLoop_ExecStatusZeroExit(t *testing.T) {
-	t.Parallel()
-
-	// exec status also works for exit 0.
-	input := "let r = [exec status true]\nassert $r.exit_code == 0\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_ExecStatusCapturesStdout(t *testing.T) {
-	t.Parallel()
-
-	input := "let r = [exec status echo hello]\nassert contains $r.stdout hello\nassert $r.exit_code == 0\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_ExecStatusCommandNotFound(t *testing.T) {
-	t.Parallel()
-
-	// Launch failures are still errors even in status mode.
-	input := "let r = [exec status __nonexistent_command_12345__]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exec __nonexistent_command_12345__")
-}
+// --- exec status tests (top-level only; `<-' has no status mode) ---
 
 func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 	t.Parallel()
@@ -3099,36 +2971,6 @@ func TestReplLoop_ExecStatusNoArgs(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "exec status requires at least one argument")
-}
-
-func TestReplLoop_ExecStatusWithFileAdapter(t *testing.T) {
-	t.Parallel()
-
-	// exec status works with file adapters.
-	input := "let a = hello\nlet b = world\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code == 1\nassert not-empty $r.stdout\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_ExecStatusDiffIdentical(t *testing.T) {
-	t.Parallel()
-
-	// diff exits 0 when files are identical.
-	input := "let a = same\nlet b = same\nlet r = [exec status diff file:$a file:$b]\nassert $r.exit_code == 0\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
 }
 
 func TestReplLoop_ExecStatusPreservesStrictExec(t *testing.T) {
@@ -3164,7 +3006,7 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"name":"test","id":42}']` + "\nassert $data.name == test\nassert $data.id == 42\n"
+	input := `let data <- jq "." '{"name":"test","id":42}'` + "\nassert $data.name == test\nassert $data.id == 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3183,7 +3025,7 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 	t.Parallel()
 
-	input := `let arr = [jq "." '[1,2,3]']` + "\nassert $arr[0] == 1\nassert $arr[2] == 3\n"
+	input := `let arr <- jq "." '[1,2,3]'` + "\nassert $arr[0] == 1\nassert $arr[2] == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3197,7 +3039,7 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 	t.Parallel()
 
-	input := `let v = [jq "." 123]` + "\nassert $v == 123\n"
+	input := `let v <- jq "." 123` + "\nassert $v == 123\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3211,14 +3053,25 @@ func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." not-json]` + "\n"
+	// Under '<-' jq failure does not auto-fail the script: the
+	// envelope reports !ok and the consumer inspects $data.ok or
+	// $data.stderr. guard would halt; let does not.
+	input := `let data <- jq "." not-json` + "\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "jq")
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("data")
+	require.True(t, ok)
+	got, err := v.Lookup("$data", "ok")
+	require.NoError(t, err)
+	s, _ := got.Scalar()
+	assert.Equal(t, "false", s)
 }
 
 func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
@@ -3264,104 +3117,10 @@ func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
 	assert.Equal(t, 0, session.AssertFailures())
 }
 
-func TestReplLoop_NestedCmdSub_ScalarFlattens(t *testing.T) {
-	t.Parallel()
-
-	// Inner jq on JSON text returns a scalar string; the outer echo
-	// should receive that string as a literal argv word.
-	input := `let out = [exec echo [jq "." '"world"']]` + "\nassert contains $out.stdout world\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_NestedCmdSub_ThreeDeep(t *testing.T) {
-	t.Parallel()
-
-	input := `let out = [exec echo [jq "." [jq "." '"\"depth-three\""']]]` + "\nassert contains $out.stdout depth-three\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-}
-
-func TestReplLoop_NestedCmdSub_InnerError(t *testing.T) {
-	t.Parallel()
-
-	// Inner jq fails on malformed input.  The outer exec must
-	// never run, and the let must not bind.
-	input := `let out = [exec echo [jq "." not-json]]` + "\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "jq")
-	_, bound := session.Get("out")
-	assert.False(t, bound, "let must not bind when the nested cmdsub fails")
-}
-
-func TestReplLoop_NestedCmdSub_StructuredRejectedByExec(t *testing.T) {
-	t.Parallel()
-
-	// Inner exec returns an exec.result (structured). The outer
-	// exec cannot flatten that into argv; the error should name
-	// the kind and suggest a scalar path or the file adapter, not
-	// leak "$" or panic.
-	input := "let out = [exec echo [exec echo hello]]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	msg := errBuf.String()
-	assert.Contains(t, msg, "is a exec.result value")
-	assert.Contains(t, msg, "scalar path")
-	assert.Contains(t, msg, "file adapter")
-	_, bound := session.Get("out")
-	assert.False(t, bound, "let must not bind on structured-argv rejection")
-}
-
-func TestReplLoop_NestedCmdSub_StructuredFromPath(t *testing.T) {
-	t.Parallel()
-
-	// Workaround demonstrated in the error above: use a scalar path.
-	input := "let out = [exec echo [exec echo hello].stdout]\n"
-	// Note: this form depends on path access on a cmdsub result,
-	// which is deferred (see implementation-notes.md). For now the
-	// user must bind the inner to a variable; this test records
-	// the current state so the limitation is visible.
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	session := shell.NewSession()
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	require.NoError(t, err)
-	// Today: the `.stdout' suffix makes lexWord stop -- `]` ends
-	// the cmdsub, and `.stdout' trails as a separate word.
-	// Document the current failure mode so a future relaxation of
-	// cmdsub-path access has a test to flip.
-	assert.NotEmpty(t, errBuf.String())
-}
-
 func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"a":{"b":{"c":"deep"}}}']` + "\nassert $data.a.b.c == deep\n"
+	input := `let data <- jq "." '{"a":{"b":{"c":"deep"}}}'` + "\nassert $data.a.b.c == deep\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3377,7 +3136,7 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 
 	// End-to-end: exec produces JSON text, jq on JSON text makes it
 	// structured.
-	input := `let raw = [exec echo '{"status":"ok","count":3}']` + "\nlet data = [jq \".\" $raw.stdout]\nassert $data.status == ok\nassert $data.count == 3\n"
+	input := `let raw <- exec echo '{"status":"ok","count":3}'` + "\nlet data <- jq \".\" $raw.stdout\nassert $data.status == ok\nassert $data.count == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3388,29 +3147,12 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 	assert.Empty(t, errBuf.String())
 }
 
-func TestReplLoop_NonValueShellCmdCannotBind(t *testing.T) {
-	t.Parallel()
-
-	// Other non-value shell commands should still be rejected.  We
-	// bind a variable first and then try to bind the result of
-	// "print" on it; "print" prints its argument but produces no
-	// value, so the assignment is rejected.
-	input := "let y = 1\nlet x = [print y]\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "produces no assignable value")
-}
-
 // file temp tests
 
 func TestReplLoop_FileTempScalar(t *testing.T) {
 	t.Parallel()
 
-	input := "let data = hello\nlet f = [file temp $data]\nassert not-empty $f\n"
+	input := "let data = hello\nlet f <- file temp $data\nassert not-empty $f\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3434,7 +3176,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 func TestReplLoop_FileTempStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"b":2,"a":1}']` + "\nlet f = [file temp $data]\n"
+	input := `let data <- jq "." '{"b":2,"a":1}'` + "\nlet f <- file temp $data\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3462,7 +3204,7 @@ func TestReplLoop_FileTempStructured(t *testing.T) {
 func TestReplLoop_FileTempPathScalar(t *testing.T) {
 	t.Parallel()
 
-	input := "let raw = [exec echo hello]\nlet f = [file temp $raw.stdout]\n"
+	input := "let raw <- exec echo hello\nlet f <- file temp $raw.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3486,7 +3228,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"items":[{"id":1},{"id":2}]}']` + "\nlet f = [file temp $data.items]\n"
+	input := `let data <- jq "." '{"items":[{"id":1},{"id":2}]}'` + "\nlet f <- file temp $data.items\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3524,7 +3266,7 @@ func TestReplLoop_FileTempNoArgs(t *testing.T) {
 func TestReplLoop_FileTempUndefinedVar(t *testing.T) {
 	t.Parallel()
 
-	input := "let f = [file temp $undefined_var]\n"
+	input := "let f <- file temp $undefined_var\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -3568,7 +3310,7 @@ func TestReplLoop_FileTempNoSubcommand(t *testing.T) {
 func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 	t.Parallel()
 
-	input := "let raw = [exec echo hello]\nlet out = [exec wc -c file:$raw.stdout]\nassert contains $out.stdout 6\n"
+	input := "let raw <- exec echo hello\nlet out <- exec wc -c file:$raw.stdout\nassert contains $out.stdout 6\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3582,7 +3324,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"name":"test"}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout name\n"
+	input := `let data <- jq "." '{"name":"test"}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3596,23 +3338,29 @@ func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 func TestReplLoop_ExecFileAdapterMultiple(t *testing.T) {
 	t.Parallel()
 
-	input := "let a = [exec echo aaa]\nlet b = [exec echo bbb]\nlet out = [exec diff file:$a.stdout file:$b.stdout]\n"
+	input := "let a <- exec echo aaa\nlet b <- exec echo bbb\nlet out <- exec diff file:$a.stdout file:$b.stdout\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
-	// diff returns non-zero exit for different files, which is an error.
+	// diff returns non-zero exit for different files; under '<-'
+	// that lands in the envelope rather than as an error.
 	require.NoError(t, err)
-	// The error from exec diff is reported but not fatal in interactive mode.
-	assert.Contains(t, errBuf.String(), "exit status 1")
+	assert.Empty(t, errBuf.String())
+
+	v, ok := session.Get("out")
+	require.True(t, ok)
+	got, _ := v.Lookup("$out", "code")
+	s, _ := got.Scalar()
+	assert.Equal(t, "1", s)
 }
 
 func TestReplLoop_ExecFileAdapterMixed(t *testing.T) {
 	t.Parallel()
 
-	input := "let raw = [exec echo hello]\nlet out = [exec wc -l file:$raw.stdout]\nassert $out.exit_code == 0\n"
+	input := "let raw <- exec echo hello\nlet out <- exec wc -l file:$raw.stdout\nassert $out.code == 0\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3627,7 +3375,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 	t.Parallel()
 
 	// Verify that adapter temp files are cleaned up after exec.
-	input := "let data = hello\nlet out = [exec cat file:$data]\nassert contains $out.stdout hello\n"
+	input := "let data = hello\nlet out <- exec cat file:$data\nassert contains $out.stdout hello\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3653,7 +3401,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
 	t.Parallel()
 
-	input := `let data = [jq "." '{"a":1}']` + "\nlet out = [exec cat file:$data]\nassert contains $out.stdout '\"a\": 1'\n"
+	input := `let data <- jq "." '{"a":1}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3771,25 +3519,6 @@ func TestReplLoop_Arithmetic_AutoPrintsAdditive(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "6")
 }
 
-func TestReplLoop_Arithmetic_PrintBracketedExpr(t *testing.T) {
-	t.Parallel()
-
-	// print [[EXPR]] evaluates the double-bracketed expression and
-	// prints the resulting scalar.  Exercises an arithmetic
-	// expression inside an expression-substitution bracket,
-	// confirming the same precedence chain feeds through
-	// [[...]] contexts.
-	input := "let count = 21\nprint [[$count * 2]]\n"
-	var outBuf, errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "")
-	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
-	assert.Contains(t, outBuf.String(), "42")
-}
-
 func TestReplLoop_InterpString_SimpleVar(t *testing.T) {
 	t.Parallel()
 
@@ -3821,7 +3550,7 @@ func TestReplLoop_InterpString_PathConstruction(t *testing.T) {
 func TestReplLoop_InterpString_ArithmeticInside(t *testing.T) {
 	t.Parallel()
 
-	input := "let n = 30\nlet wait = \"${[[$n * 2]]}s\"\nprint $wait\n"
+	input := "let n = 30\nlet wait = \"${$n * 2}s\"\nprint $wait\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
@@ -3841,7 +3570,7 @@ func TestReplLoop_PrintMultipleArgs(t *testing.T) {
 	// mix of scalars and records fits on one line.
 	input := strings.Join([]string{
 		`let n = 42`,
-		`let r = [jq "." '{"a":1,"b":2}']`,
+		`let r <- jq "." '{"a":1,"b":2}'`,
 		`print 1 2 3`,
 		`print "count=" $n`,
 		`print "r=" $r`,
@@ -3882,8 +3611,8 @@ func TestReplLoop_JQNullBinding(t *testing.T) {
 	// interpolate it without tripping "produced no assignable
 	// value" — the whole point of OriginNull.
 	input := strings.Join([]string{
-		`let r = [jq "." '{"a":1}']`,
-		`let x = [jq ".missing" $r]`,
+		`let r <- jq "." '{"a":1}'`,
+		`let x <- jq ".missing" $r`,
 		`print $x`,
 		`print "missing=${x}"`,
 		``,

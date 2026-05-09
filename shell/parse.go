@@ -379,7 +379,7 @@ func (p *parser) parseAssertStmt(isRequire bool) (Stmt, error) {
 // listed explicitly.
 func leadsExpression(t Token) bool {
 	switch t.Kind {
-	case TokenVarRef, TokenCmdSub, TokenExprSub, TokenQuoted, TokenInterpString, TokenAdapterRef:
+	case TokenVarRef, TokenQuoted, TokenInterpString, TokenAdapterRef:
 		return true
 	case TokenWord:
 		switch t.Text {
@@ -1126,36 +1126,31 @@ func parseInterpBody(inner string, loc Loc) (Expr, error) {
 	if trimmed == "" {
 		return nil, locErrorf(loc, "empty interpolation")
 	}
-	if trimmed[0] == '[' {
-		// "[[expr]]" and "[cmd args]" are the escape hatches for
-		// everything beyond a simple variable reference.  Run
-		// the whole body through the normal tokeniser and
-		// expression parser.
-		tokens, err := Tokenise(inner)
+	// Bodies that already begin with '$' are expressions. Anything
+	// else is a bare-name reference: synthesise a leading '$' and
+	// tokenise so "${name}" and "${name.path}" round-trip through
+	// the standard variable-reference grammar.
+	if trimmed[0] != '$' {
+		tokens, err := Tokenise("$" + trimmed)
 		if err != nil {
-			return nil, locErrorf(loc, "string interpolation: %v", err)
+			return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
 		}
-		expr, ok := tryParseExpression(tokens)
-		if !ok {
-			return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference, [[expr]], or [cmd args]", inner)
+		if len(tokens) != 1 || tokens[0].Kind != TokenVarRef {
+			return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference or an expression", inner)
 		}
-		return expr, nil
+		t := tokens[0]
+		return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
 	}
-	// Bare variable reference.  Synthesise a "$" prefix and run
-	// it through the main tokeniser so the identifier + path
-	// grammar stays in one place; anything that is not exactly a
-	// VarRef token (e.g. two tokens because of whitespace, or a
-	// malformed identifier) surfaces as a user-facing error
-	// rather than a silent misparse.
-	tokens, err := Tokenise("$" + trimmed)
+	// Expression form: "$n * 2", "$count + 1", "$x |> jq .y", etc.
+	tokens, err := Tokenise(inner)
 	if err != nil {
 		return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
 	}
-	if len(tokens) != 1 || tokens[0].Kind != TokenVarRef {
-		return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference, [[expr]], or [cmd args]", inner)
+	expr, ok := tryParseExpression(tokens)
+	if !ok {
+		return nil, locErrorf(loc, "string interpolation ${%s}: not a valid expression", inner)
 	}
-	t := tokens[0]
-	return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
+	return expr, nil
 }
 
 // tryParseExpression attempts to interpret tokens as a single
@@ -1170,29 +1165,6 @@ func tryParseExpression(tokens []Token) (Expr, bool) {
 		return nil, false
 	}
 	return e, true
-}
-
-// isCompoundExpr reports whether e is anything other than a bare
-// primary or a command-shaped composite.  Compound forms —
-// binary, unary, logical, not, negation, or the retry-scoped
-// timeout/iteration predicates — are the shapes the user can
-// only have meant as an expression rather than as a command
-// invocation, so the command substitution primary rejects them
-// at parse time with a "use [[...]]" hint.
-//
-// ThreadExpr is deliberately NOT compound by this definition: a
-// "$x |> cmd args" form is syntactically an expression but its
-// RHS is a command call whose arguments (paths, flags, negative
-// literals) need shell tokenisation to tokenise correctly.
-// Accepting it in "[...]" lets users write "[$prog |> jq -c '.']"
-// without being forced into "[[...]]" where strict tokenisation
-// would split "-c" into "-" and "c" and break the flag.
-func isCompoundExpr(e Expr) bool {
-	switch e.(type) {
-	case *LiteralExpr, *VarRefExpr, *AdapterExpr, *CmdSubExpr, *ExprSubExpr, *ThreadExpr:
-		return false
-	}
-	return true
 }
 
 // exprParser is a cursor over a pre-collected token slice used by
@@ -1616,70 +1588,6 @@ func parsePrimary(t Token) (Expr, error) {
 		return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: t.Loc}, nil
 	case TokenAdapterRef:
 		return &AdapterExpr{Adapter: t.Adapter, Name: t.VarName, Path: t.VarPath, Loc: t.Loc}, nil
-	case TokenCmdSub:
-		innerTokens, err := Tokenise(t.Inner)
-		if err != nil {
-			return nil, locErrorf(t.Loc, "command substitution: %v", err)
-		}
-		// "[cmd args...]" is the command-substitution form.  If
-		// the inner parses as a compound expression under strict
-		// tokenisation — arithmetic, comparison, boolean, or
-		// threading — then [[...]] is what the user meant.  A
-		// single primary (literal or $var) falls through and is
-		// treated as a no-argument command name; the runtime will
-		// error cleanly if no such command exists.
-		if strictTokens, terr := TokeniseStrict(t.Inner); terr == nil {
-			if expr, ok := tryParseExpression(strictTokens); ok && isCompoundExpr(expr) {
-				return nil, locErrorf(t.Loc, "command substitution [%s]: inner is an expression, not a command; use [[%s]] for expression substitution", t.Inner, t.Inner)
-			}
-		}
-		inner, err := Parse(innerTokens)
-		if err != nil {
-			return nil, locErrorf(t.Loc, "command substitution: %v", err)
-		}
-		if len(inner.Stmts) != 1 {
-			return nil, locErrorf(t.Loc, "command substitution must contain exactly one command; got %d statements", len(inner.Stmts))
-		}
-		if _, isCmd := inner.Stmts[0].(*CommandStmt); !isCmd {
-			// An ExprStmt whose expression is a ThreadExpr is
-			// command-shaped — "$x |> cmd args" runs the RHS
-			// command with the LHS threaded as its last
-			// argument — so accept it here.  Strict
-			// tokenisation inside "[[...]]" would split "-c"
-			// flags in the RHS, so "[...]" is the correct
-			// form for this pattern.
-			if es, ok := inner.Stmts[0].(*ExprStmt); ok {
-				if _, isThread := es.Expr.(*ThreadExpr); isThread {
-					return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
-				}
-			}
-			return nil, locErrorf(t.Loc, "command substitution must contain a command invocation")
-		}
-		return &CmdSubExpr{Inner: inner, Loc: t.Loc}, nil
-	case TokenExprSub:
-		innerTokens, err := TokeniseStrict(t.Inner)
-		if err != nil {
-			return nil, locErrorf(t.Loc, "expression substitution: %v", err)
-		}
-		expr, ok := tryParseExpression(innerTokens)
-		if !ok {
-			// The strict tokeniser splits "-" and "/" as
-			// operators, which breaks flags and paths on the
-			// RHS of a thread.  If the same body parses as a
-			// ThreadExpr under shell tokenisation, the user
-			// meant "[...]" — point them there rather than
-			// leaving them with a bare "not a valid expression"
-			// message.
-			if shellTokens, terr := Tokenise(t.Inner); terr == nil {
-				if alt, altOK := tryParseExpression(shellTokens); altOK {
-					if _, isThread := alt.(*ThreadExpr); isThread {
-						return nil, locErrorf(t.Loc, "expression substitution [[%s]]: threading with flags does not fit strict tokenisation; use [%s] instead", t.Inner, t.Inner)
-					}
-				}
-			}
-			return nil, locErrorf(t.Loc, "expression substitution [[%s]]: inner is not a valid expression", t.Inner)
-		}
-		return &ExprSubExpr{Inner: expr, Loc: t.Loc}, nil
 	case TokenInterpString:
 		segs := make([]InterpStringSegment, 0, len(t.Segments))
 		for _, s := range t.Segments {

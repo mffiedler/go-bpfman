@@ -291,12 +291,7 @@ func evalArgsForTest(s *Session, tokens []Token) ([]Arg, error) {
 		}
 		exprs = append(exprs, e)
 	}
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func([]Arg) (Value, error) {
-			return Value{}, nil
-		},
-	}
+	env := &Env{Session: s}
 	return EvalArgs(exprs, env)
 }
 

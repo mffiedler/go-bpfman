@@ -389,11 +389,10 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 	}
 
 	env := &shell.Env{
-		Session:          session,
-		ExecCommand:      makeExecCommand(ctx, cli, mgr, session, loc),
-		ExecSubstitution: makeExecSubstitution(ctx, cli, mgr, session, loc),
-		ExecBind:         makeExecBind(ctx, cli, mgr, session, loc),
-		ExecAssertStmt:   makeExecAssertStmt(cli, session, loc),
+		Session:        session,
+		ExecCommand:    makeExecCommand(ctx, cli, mgr, session, loc),
+		ExecBind:       makeExecBind(ctx, cli, mgr, session, loc),
+		ExecAssertStmt: makeExecAssertStmt(cli, session, loc),
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
 		},
@@ -478,38 +477,6 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return val, nil
 		}
 		return replDispatch(ctx, cli, mgr, args)
-	}
-}
-
-// makeExecSubstitution bridges the evaluator's CmdSubExpr dispatch.
-// Output is suppressed so bindings do not clutter the terminal; the
-// returned Value must be non-nil or the caller reports an error.
-// Alias expansion applies to the first argument before dispatch.
-func makeExecSubstitution(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
-	return func(args []shell.Arg) (shell.Value, error) {
-		args = applyAlias(session, args)
-		if len(args) == 0 {
-			return shell.Value{}, fmt.Errorf("empty command substitution")
-		}
-		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, args, loc)
-		if err != nil {
-			return shell.Value{}, err
-		}
-		if handled {
-			if val.IsNil() {
-				return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(args[0]))
-			}
-			return val, nil
-		}
-		val, err = replDispatch(ctx, quiet, mgr, args)
-		if err != nil {
-			return shell.Value{}, err
-		}
-		if val.IsNil() {
-			return shell.Value{}, fmt.Errorf("command %q produces no assignable value", argText(args[0]))
-		}
-		return val, nil
 	}
 }
 

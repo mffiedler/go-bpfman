@@ -60,7 +60,7 @@ let n          = 60
 let interp_v   = "${n}s"                          # variable slot
 let interp_p   = "/sys/fs/bpf/prog-${int_lit}"    # path construction
 let interp_m   = "pre-${int_lit}-mid-${n}-suf"   # multiple slots
-let interp_a   = "${[[$n * 2]]}s"                  # arithmetic via [[...]]
+let interp_a   = "${$n * 2}s"                      # arithmetic in interpolation
 
 # Double-quoted strings support C-style escapes: \n, \t, \r,
 # \\, \", and \$ (for a literal dollar sign).  Single-quoted
@@ -72,13 +72,10 @@ let esc_quote  = "he said \"hi\""                  # embedded double-quote
 let esc_bs     = "path\\sub"                       # literal backslash
 let esc_dollar = "price=\$5"                       # literal $ without ${...}
 
-# ---- 4. Command substitution (single and nested) ----
+# ---- 4. Command capture with the bind sigil ----
 
-let one       = [bpfman program list]
-let nested    = [exec echo [jq "." '"world"']]
-let deeper    = [exec echo [jq "." [jq "." '"three"']]]
-let adjacent  = [exec echo [jq "." '"a"'] [jq "." '"b"']]
-let arg_after = [exec diff file:$a file:$b]
+guard one <- bpfman program list
+guard arg_after <- exec diff file:$a file:$b
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
 
@@ -180,11 +177,11 @@ exec ip link add dummy0 type dummy
 exec ip link set dummy0 up
 exec status diff -u file:$raw1.stdout file:$raw2.stdout
 
-let parsed = [jq "." '{"name":"xdp_pass","id":42}']
+guard parsed <- jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
-let tmp_path = [file temp $data]
+let tmp_path <- file temp $data
 exec cat file:$data
 exec cat file:$parsed.name
 
@@ -223,17 +220,17 @@ bpfman gc --dry-run
 
 # ---- 14. Load and attach: every attach kind ----
 
-let p_file  = [bpfman load file --path ./foo.o --programs xdp:xdp_pass]
-let p_image = [bpfman load image -i quay.io/example/xdp:latest --programs xdp:pass]
+guard p_file <- bpfman load file --path ./foo.o --programs xdp:xdp_pass
+guard p_image <- bpfman load image -i quay.io/example/xdp:latest --programs xdp:pass
 
-let l_xdp        = [bpfman link attach xdp        -i eth0 $p_file]
-let l_tc         = [bpfman link attach tc         -i eth0 $p_file]
-let l_tcx        = [bpfman link attach tcx        -i eth0 $p_file]
-let l_tracepoint = [bpfman link attach tracepoint $p_file syscalls/sys_enter_kill]
-let l_kprobe     = [bpfman link attach kprobe     --function vfs_read $p_file]
-let l_uprobe     = [bpfman link attach uprobe     --function __libc_start_main $p_file]
-let l_fentry     = [bpfman link attach fentry     --function vfs_read $p_file]
-let l_fexit      = [bpfman link attach fexit      --function vfs_read $p_file]
+guard l_xdp <- bpfman link attach xdp        -i eth0 $p_file
+guard l_tc <- bpfman link attach tc         -i eth0 $p_file
+guard l_tcx <- bpfman link attach tcx        -i eth0 $p_file
+guard l_tracepoint <- bpfman link attach tracepoint $p_file syscalls/sys_enter_kill
+guard l_kprobe <- bpfman link attach kprobe     --function vfs_read $p_file
+guard l_uprobe <- bpfman link attach uprobe     --function __libc_start_main $p_file
+guard l_fentry <- bpfman link attach fentry     --function vfs_read $p_file
+guard l_fexit <- bpfman link attach fexit      --function vfs_read $p_file
 
 # ---- 15. Every flag shape ----
 
@@ -256,11 +253,11 @@ bpfman load file                     \
 # Continuation inside a command substitution also works; the inner
 # text is retokenised at parse time, so the same rule applies.
 
-let p_multi = [bpfman load file                  \
+guard p_multi <- bpfman load file                  \
     --path ./prog.o                              \
     --programs xdp:xdp_stats                     \
     -m owner=test-team                           \
-    -g SAMPLING_RATE=0x0a000000]
+    -g SAMPLING_RATE=0x0a000000
 
 bpfman program list -o wide
 bpfman program list -o jsonpath='{.items[*].name}'
@@ -298,14 +295,12 @@ if (not-empty $progs) and ($count > 0) { print progs }
 
 # ---- 19a. Arithmetic operators ----
 
-# Binary arithmetic: '+', '-', '*', '/', '%'.  In shell-mode
-# (everywhere outside `[[...]]') '+', '*', '%' split without
-# surrounding whitespace because they cannot appear in paths,
-# flags, or negative literals; '-' and '/' stay word-interior
-# there so `/sys/fs/bpf' and `-x' tokenise whole, which means
-# arithmetic using '-' or '/' at shell-mode level requires
-# whitespace or the `[[...]]' expression-sub form.  Unary '-'
-# negates any expression.
+# Binary arithmetic: '+', '-', '*', '/', '%'. '+', '*', '%'
+# split without surrounding whitespace because they cannot appear
+# in paths, flags, or negative literals; '-' and '/' stay
+# word-interior so `/sys/fs/bpf' and `-x' tokenise whole, which
+# means arithmetic using '-' or '/' requires whitespace.
+# Unary '-' negates any expression.
 
 let count    = 10
 let doubled  = $count * 2
@@ -324,45 +319,36 @@ if $count + 1 > $halved * 3 { print $count }
 $count + 1
 -$count
 
-# ---- 19b. Expression substitution `[[...]]' ----
+# ---- 19b. Expressions ----
 
-# `[[expr]]' evaluates an expression with strict tokenisation:
-# '-' and '/' split without whitespace so arithmetic reads the
-# way a calculator expects.  Use it wherever you want a value
-# from a computation — as a `let' RHS, a command argument, or
-# typed bare at the prompt (auto-printed).
+# Every RHS after `=' is an expression. There is no separate
+# expression-substitution form; the expression grammar handles
+# arithmetic, comparison, logical combinators, and threading
+# inline.
 
-let half     = [[1 / 2]]           # 0.5
-let quarter  = [[1/4]]             # 0.25 — no whitespace needed
-let diff     = [[10-3]]            # 7
-let scaled   = [[$count * 2 + 1]]  # mixed precedence
-
-# Expression in command-argument position.
-print [[$count * 2]]
+let half     = 1 / 2               # 0.5
+let quarter  = 1 / 4               # 0.25
+let diff     = 10 - 3              # 7
+let scaled   = $count * 2 + 1      # mixed precedence
 
 # Expression in a condition, auto-entering expression grammar.
-if [[$count - 1]] > 0 { print $count }
-
-# `[cmd args]' stays command substitution; the parser rejects
-# misuse at parse time and points at `[[...]]'.  `[1/2]' and
-# `[1 + 1]' are errors now — see `print [[1/2]]' above.  A
-# command substitution may still be used as an operand inside
-# `[[...]]' provided the command produces a scalar; structured
-# results (e.g. `[exec echo 5]', which binds a record with
-# stdout/stderr/exit_code) need a field accessor first.
+if $count - 1 > 0 { print $count }
 
 # ---- 20. Value-threading with `|>' ----
 
 # LHS becomes the last arg of the RHS command. Chains are common.
 let n = $raw_count |> jq tonumber
 let f = $progs |> jq ".[] | select(.kind == \"xdp\")"
-let g = [bpfman program list -o json] |> jq ".[].name" |> assert not-empty
+guard list <- bpfman program list -o json
+let names = $list |> jq ".[].name"
+assert not-empty $names
 
 # ---- 21. foreach iteration ----
 
 # Iterate a materialised list; the iteration variable is in scope
 # only inside the block.  `break' stops early; `continue' skips.
-let ids = [bpfman program list -o json] |> jq ".[].program_id"
+guard listed <- bpfman program list -o json
+let ids = $listed |> jq ".[].program_id"
 foreach id in $ids {
     bpfman show program $id summary
 }
@@ -383,25 +369,25 @@ foreach item in $progs {
 # DURATION' and `iteration N' are retry-scoped primaries that let
 # polling terminate on wall-clock or attempt count.
 retry {
-    let status = [bpfman program get 42 -o json]
+    guard status <- bpfman program get 42 -o json
 } until $status.ready or timeout 60s
 
 retry {
-    let status = [bpfman program get 42 -o json]
+    guard status <- bpfman program get 42 -o json
     if $status.ready { break }
 } until iteration 10
 
 retry {
-    let link = [bpfman link get 8801 -o json]
+    guard link <- bpfman link get 8801 -o json
 } until ($link.state == active) or timeout 2m or iteration 20
 
 # ---- 23. jq as a higher-order operator over structured data ----
 
-let raw     = [bpfman program list -o json]
-let xdp     = [jq ".[] | select(.kind == \"xdp\")" $raw]
-let names   = [jq "[ .[].name ]" $raw]
-let first   = [jq ".[0]" $raw]
-let scalar  = [jq "." '{"answer": 42}']
+guard raw <- bpfman program list -o json
+guard xdp <- jq ".[] | select(.kind == \"xdp\")" $raw
+guard names <- jq "[ .[].name ]" $raw
+guard first <- jq ".[0]" $raw
+guard scalar <- jq "." '{"answer": 42}'
 
 # ---- 24. assert <expr> matches { ... } ----
 

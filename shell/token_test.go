@@ -600,10 +600,6 @@ func TestTokeniseLineContinuation(t *testing.T) {
 				{Kind: TokenWord, Text: "xdp:pass"},
 			},
 		},
-		// Continuation inside [...] is tested via TestParseCmdSubContinuation
-		// below, because the inner text is not re-tokenised at the outer
-		// tokenise step — it is captured literally into TokenCmdSub.Inner
-		// and re-tokenised at parse time.
 		{
 			name:  "CRLF continuation",
 			input: "foo \\\r\nbar",
@@ -643,65 +639,21 @@ func TestTokeniseLineContinuation(t *testing.T) {
 	}
 }
 
-func TestTokeniseExprSub(t *testing.T) {
+func TestTokeniseRejectsBrackets(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		input   string
-		want    []Token
-		wantErr string
-	}{
-		{
-			name:  "bare double brackets around arithmetic",
-			input: "[[1 + 2]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[1 + 2]]", Inner: "1 + 2"},
-			},
-		},
-		{
-			name:  "no whitespace around slash",
-			input: "[[4/2]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[4/2]]", Inner: "4/2"},
-			},
-		},
-		{
-			name:  "nested command substitution is consumed",
-			input: "[[1 + [count]]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[1 + [count]]]", Inner: "1 + [count]"},
-			},
-		},
-		{
-			name:  "quoted right bracket does not close sigil",
-			input: `[[$x eq "]]"]]`,
-			want: []Token{
-				{Kind: TokenExprSub, Text: `[[$x eq "]]"]]`, Inner: `$x eq "]]"`},
-			},
-		},
-		{
-			name:    "unterminated",
-			input:   "[[1 + 2",
-			wantErr: "unterminated expression substitution",
-		},
-		{
-			name:    "unmatched single close inside",
-			input:   "[[a ] b]]",
-			wantErr: "unmatched ']'",
-		},
+	cases := []string{
+		"[",
+		"]",
+		"[foo]",
+		"[[1 + 2]]",
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
 			t.Parallel()
-			got, err := Tokenise(tt.input)
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, stripLocs(got))
+			_, err := Tokenise(in)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "brackets are not a DSL form")
 		})
 	}
 }
@@ -1072,12 +1024,14 @@ func TestTokeniseLoc(t *testing.T) {
 			},
 		},
 		{
-			name:  "varref and cmdsub carry start column",
-			input: "show $prog [inner cmd]",
+			name:  "varref and bind sigil carry start column",
+			input: "let r <- show $prog",
 			wantLocs: map[int]Loc{
-				0: {Line: 1, Col: 1},  // show
-				1: {Line: 1, Col: 6},  // $prog
-				2: {Line: 1, Col: 12}, // [inner cmd]
+				0: {Line: 1, Col: 1},  // let
+				1: {Line: 1, Col: 5},  // r
+				2: {Line: 1, Col: 7},  // <-
+				3: {Line: 1, Col: 10}, // show
+				4: {Line: 1, Col: 15}, // $prog
 			},
 		},
 		{
