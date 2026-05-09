@@ -483,7 +483,7 @@ func silentJobLeakHandler() func(*shell.Job) {
 func replJobs(cli *bpfmancli.CLI, env *shell.Env) error {
 	jobs := env.ActiveJobs()
 	if len(jobs) == 0 {
-		return cli.PrintOut("(no jobs)\n")
+		return nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%-7s %-12s %-22s %s\n", "PID", "STATUS", "ORIGIN", "ARGV")

@@ -21,9 +21,6 @@ import (
 // is without forcing them to 'print $name' to find out.
 func replVars(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.Names()
-	if len(names) == 0 {
-		return cli.PrintOut("No variables defined.\n")
-	}
 	var b strings.Builder
 	for _, name := range names {
 		v, _ := session.Get(name)
@@ -90,9 +87,6 @@ func replUnalias(cli *bpfmancli.CLI, session *shell.Session, args []string) erro
 // replDefs lists all user-defined commands and their parameter lists.
 func replDefs(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.DefNames()
-	if len(names) == 0 {
-		return cli.PrintOut("No defs defined\n")
-	}
 	var b strings.Builder
 	for _, name := range names {
 		d, _ := session.GetDef(name)
@@ -118,9 +112,6 @@ func replUndef(session *shell.Session, args []string) error {
 // replAliases lists all defined aliases.
 func replAliases(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.AliasNames()
-	if len(names) == 0 {
-		return cli.PrintOut("No aliases defined\n")
-	}
 	var b strings.Builder
 	for _, name := range names {
 		expansion, _ := session.GetAlias(name)

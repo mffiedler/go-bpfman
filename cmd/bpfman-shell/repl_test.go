@@ -348,6 +348,10 @@ func TestArgTexts_QuotedArg(t *testing.T) {
 func TestReplLoop_VarsEmpty(t *testing.T) {
 	t.Parallel()
 
+	// Unix contract: empty result is empty output. 'vars' on
+	// a session with no bindings prints nothing -- no header,
+	// no placeholder, no "No variables defined" filler. Tests
+	// for emptiness check the literal output is empty.
 	input := "vars\n"
 	var outBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
@@ -355,7 +359,7 @@ func TestReplLoop_VarsEmpty(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true)
 	require.NoError(t, err)
-	assert.Contains(t, outBuf.String(), "No variables defined")
+	assert.Empty(t, outBuf.String(), "vars on empty session must produce no output")
 }
 
 func TestReplLoop_UndefinedVariable(t *testing.T) {
@@ -1448,6 +1452,8 @@ func TestReplLoop_AliasesList(t *testing.T) {
 func TestReplLoop_AliasesEmpty(t *testing.T) {
 	t.Parallel()
 
+	// Same contract as vars: empty list is empty output. No
+	// "No aliases defined" filler.
 	input := "aliases\n"
 	var outBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
@@ -1455,7 +1461,7 @@ func TestReplLoop_AliasesEmpty(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true)
 	require.NoError(t, err)
-	assert.Contains(t, outBuf.String(), "No aliases defined")
+	assert.Empty(t, outBuf.String(), "aliases on empty session must produce no output")
 }
 
 func TestReplLoop_AliasInBindBinding(t *testing.T) {
