@@ -384,6 +384,47 @@ func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	assert.Equal(t, 12, thread.Loc.Col)
 }
 
+func TestParse_Thread_StopsAtClosingParen(t *testing.T) {
+	t.Parallel()
+
+	// A thread inside a parenthesised expression must let the ')'
+	// close the enclosing parens, not consume it as a literal arg.
+	prog, err := parseSource(t, "if ($xs |> jq \".items\") { help }")
+	require.NoError(t, err)
+	ifStmt := firstStmt(t, prog).(*IfStmt)
+	thread, ok := ifStmt.Cond.(*ThreadExpr)
+	require.True(t, ok, "expected ThreadExpr inside the parens, got %T", ifStmt.Cond)
+	require.Len(t, thread.Args, 2, "thread RHS should be jq + filter, not jq + filter + ')'")
+}
+
+func TestParse_Thread_StopsAtClosingBracket(t *testing.T) {
+	t.Parallel()
+
+	// A thread inside a [cmdsub] or [[exprsub]] must let the ']'
+	// close the substitution rather than swallow it.
+	prog, err := parseSource(t, "let r = [[$xs |> jq \"length\"]]")
+	require.NoError(t, err)
+	let := firstStmt(t, prog).(*LetStmt)
+	exprSub, ok := let.RHS.(*ExprSubExpr)
+	require.True(t, ok, "expected ExprSubExpr, got %T", let.RHS)
+	thread, ok := exprSub.Inner.(*ThreadExpr)
+	require.True(t, ok, "expected ThreadExpr inside [[...]], got %T", exprSub.Inner)
+	require.Len(t, thread.Args, 2)
+}
+
+func TestParse_ForEach_ParenthesisedThreadSource(t *testing.T) {
+	t.Parallel()
+
+	// foreach EXPR accepts a parenthesised thread expression so
+	// the array-shaping pipeline can sit at the call site without
+	// requiring an intermediate let binding.
+	prog, err := parseSource(t, "foreach x in ($xs |> jq \".items\") { print $x }")
+	require.NoError(t, err)
+	fe := firstStmt(t, prog).(*ForEachStmt)
+	_, ok := fe.List.(*ThreadExpr)
+	assert.True(t, ok, "foreach List should be a ThreadExpr (the parens are unwrapped), got %T", fe.List)
+}
+
 func TestParse_Thread_RejectsTrailingThread(t *testing.T) {
 	t.Parallel()
 

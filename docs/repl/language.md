@@ -175,35 +175,38 @@ if $prog.record.status.kernel_seen {
 foreach NAME in EXPR { STMTS }
 ```
 
-Iterates a block over the elements of an array. `EXPR` is
-evaluated once, and the resulting value must be a concrete array;
-anything else (a scalar, a map, a nil value) is a runtime error.
-For each element, `NAME` is bound to that element and the body
-runs; an error from any iteration halts the loop and propagates.
+Iterates a block over the elements of an array. `EXPR` must
+evaluate to a concrete array; anything else (a scalar, a map, a
+nil value, a stream) is a runtime error. For each element, `NAME`
+is bound to that element and the body runs; an error from any
+iteration halts the loop and propagates.
 
-The "concrete array" requirement is deliberate. `jq` may do rich
-selection and produce streams of values internally, but value
-generation is not foreach's job. Keep array-shaping in `jq` (or
-in `let`) and let foreach iterate the result:
+`EXPR` is the full expression grammar, including parenthesised
+threading and command substitution. The two canonical shapes:
 
 ```
+# Two-step form: shape the array in a let, iterate the binding.
 let listed = [bpfman program list -o json]
 let programs = $listed |> jq ".programs"
 foreach prog in $programs {
     assert ok bpfman program get $prog.record.program_id
 }
 
-# Inline form, with parens around the threaded expression:
+# Inline form: parenthesise the threading pipeline at the call
+# site when the intermediate binding has no other use.
 foreach prog in ($listed |> jq ".programs") {
     assert $prog.record.kind == kprobe
 }
 ```
 
-Avoid `jq ".programs[]"` as the foreach source: `[]` is jq's
-stream form, and conflating jq's stream model with foreach's
-iteration model makes the boundary fuzzy. Wrap the stream into
-an array explicitly when needed (`jq "[.programs[]]"`), or use
-`jq ".programs"` on data that already exposes the array.
+The "concrete array" requirement is deliberate. `jq` may do rich
+selection and produce streams of values internally, but value
+generation is not foreach's job. Avoid `jq ".programs[]"` as the
+upstream of a foreach binding: `[]` is jq's stream form, and
+conflating jq's stream model with foreach's iteration model
+fuzzes the boundary. Wrap the stream into an array explicitly
+when needed (`jq "[.programs[]]"`), or use `jq ".programs"` on
+data that already exposes the array.
 
 The loop variable is body-scoped: it is defined only inside the
 block and disappears when the loop ends. If the same name was

@@ -1271,10 +1271,13 @@ func (p *exprParser) parseThread() (Expr, error) {
 }
 
 // parseThreadRHS consumes the command-call tokens that follow a
-// '|>'.  It stops at the next '|>', at a binary-op word, at an
+// '|>'. It stops at the next '|>', at a binary-op word, at an
 // arithmetic operator (so the comparison or additive level can
-// pick it up), or at end of input.  A literal binary-op or
-// arithmetic word used as a command argument must be quoted.
+// pick it up), at a closing bracket ')', ']', or '}' (so a thread
+// nested inside a parenthesised expression, command substitution,
+// or interpolation lets the enclosing form close cleanly), or at
+// end of input. A literal binary-op, arithmetic, or bracket word
+// used as a command argument must be quoted.
 func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 	var args []Expr
 	for !p.eof() {
@@ -1286,6 +1289,9 @@ func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
 			break
 		}
 		if isArithmeticOp(t) {
+			break
+		}
+		if t.Kind == TokenWord && (t.Text == ")" || t.Text == "]" || t.Text == "}") {
 			break
 		}
 		p.advance()
