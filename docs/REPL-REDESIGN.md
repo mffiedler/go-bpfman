@@ -660,32 +660,78 @@ Provisional rules:
   still running at scope exit) is a script failure. The harness
   must make explicit lifecycle management the only way for a
   script to terminate cleanly with async work outstanding.
-- v1 scope: `start` only launches external processes. Async
-  invocation of in-process providers is out of scope until
-  there is a concrete need.
+- **v1 implements `ProcessJob` only.** The public job verbs are
+  intentionally variant-neutral: `start` / `wait` / `kill`
+  describe lifecycle operations on jobs, not specifically on
+  processes. `TaskJob` (a goroutine + context cancel) and any
+  other variant are future Job *variants*, not future syntax
+  features -- adding one is a runtime change, not a language
+  change.
 
-### 8.2 Refinements that earn their place
+### 8.2 One language surface, multiple runtime variants
+
+The boundary that keeps the design honest:
+
+```
+language surface (fixed):  start, wait, kill
+runtime variants (grow):   ProcessJob now, TaskJob later, ...
+```
+
+A script reader learns one async lifecycle story (start
+something, wait for it, kill it if you need to stop early) and
+that story carries through every variant. `defer kill $job`
+means the same thing regardless of what kind of work the job
+represents.
+
+Variant-specific facts live in **fields and flags, not in
+verbs**:
+
+- `$job.pid` exists only for `ProcessJob`. Path access on a
+  non-process job errors with a clear message; PID is a
+  kernel-tracked process fact, not a generic job fact.
+- `--signal=NAME` applies only to `ProcessJob`. On a non-process
+  job it is a registration-time error ("--signal applies only
+  to process-backed jobs").
+- The `signal` field on a `wait` envelope is empty for
+  non-process jobs even when cancelled; it specifically
+  records "a kernel signal was involved", not "the work was
+  terminated".
+- `killed=true` is the variant-neutral flag: "the shell
+  requested termination", regardless of how that termination
+  was effected.
+
+Implementation discipline: do not introduce the `JobHandle`
+interface speculatively. v1 ships `ProcessJob` as a single
+concrete type; the interface earns its place when a second
+kind is actually being added. The point is to keep the door
+open in the *language*, not to pre-build the *runtime*
+abstraction.
+
+### 8.3 Refinements that earn their place
 
 Four additions to the bare three-verb vocabulary, scoped
-narrowly so the surface stays small:
+narrowly so the surface stays small. The first three are
+`ProcessJob`-specific by the rule above; the fourth is an
+implementation detail of the v1 `ProcessJob` runtime:
 
-1. **`kill --signal=NAME $job`** -- default `kill` is
-   SIGTERM-then-SIGKILL escalation suitable for cleanup. The
-   flag form lets scripts test signal handlers.
+1. **`kill --signal=NAME $job`** (`ProcessJob` only) -- default
+   `kill` is SIGTERM-then-SIGKILL escalation suitable for
+   cleanup. The flag form lets scripts test signal handlers.
 2. **`wait --timeout=DURATION $job`** -- prevents
    `guard result <- wait $job` from hanging when a job never
    exits. Returns either the captured envelope (job finished)
-   or a clear timeout failure.
-3. **`$job.pid`** -- the handle exposes the process ID so
-   scripts can correlate with `/proc/<pid>/...` lookups,
+   or a clear timeout failure. Variant-neutral: every job
+   kind has a notion of "still running".
+3. **`$job.pid`** (`ProcessJob` only) -- exposes the process ID
+   so scripts can correlate with `/proc/<pid>/...` lookups,
    `bpftool` PID filters, and any other tool that takes a PID.
-4. **Process-group kill as the default for `start`** -- not a
+4. **Process-group kill as the default for `ProcessJob`** -- not a
    new primitive, an implementation rule. `start` puts the
    child in its own process group, and `kill $job` signals the
    whole group. Without this, jobs that `exec` a wrapper
    script leave orphans when killed.
 
-### 8.3 Coordination is observation-driven
+### 8.4 Coordination is observation-driven
 
 The general principle:
 
@@ -719,7 +765,7 @@ Inter-job channels, barriers, latches, job-to-script callbacks
 are all rejected: each one is a runtime-model expansion
 (futures, an event loop, message passing) that we do not need.
 
-### 8.4 Exactness via bounded jobs
+### 8.5 Exactness via bounded jobs
 
 For exactness ("exactly N events caused exactly N counter
 increments"), polling has timing variance. The DSL relies on a
@@ -742,7 +788,7 @@ assert $count == 100   # exact, ping has fully terminated
 The script never polls for "around 100"; it knows the producer
 has finished and reads the counter once.
 
-### 8.5 Signal-driven primitives (add on demand)
+### 8.6 Signal-driven primitives (add on demand)
 
 Three categories where polling is fundamentally inadequate:
 
