@@ -14,7 +14,11 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replVars lists all session variables and their types.
+// replVars lists all session variables and their kinds. The
+// kind is the OriginKind's string form (scalar, boolean,
+// program, link, job, envelope, map, dispatcher, null,
+// unknown), so a quick 'vars' tells the user what each binding
+// is without forcing them to 'print $name' to find out.
 func replVars(cli *bpfmancli.CLI, session *shell.Session) error {
 	names := session.Names()
 	if len(names) == 0 {
@@ -23,11 +27,7 @@ func replVars(cli *bpfmancli.CLI, session *shell.Session) error {
 	var b strings.Builder
 	for _, name := range names {
 		v, _ := session.Get(name)
-		kind := "scalar"
-		if v.IsStructured() {
-			kind = "structured"
-		}
-		fmt.Fprintf(&b, "  %s (%s)\n", name, kind)
+		fmt.Fprintf(&b, "  %s (%s)\n", name, v.Kind())
 	}
 	return cli.PrintOut(b.String())
 }
