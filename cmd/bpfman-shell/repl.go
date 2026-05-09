@@ -403,9 +403,59 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 		if errors.Is(err, errRequireFailed) {
 			return err
 		}
+		var gf *shell.GuardFailure
+		if errors.As(err, &gf) {
+			renderEnvelopeFailure(cli, "guard", loc, gf.Loc, gf.Args, gf.Envelope)
+			if loc.file != "" {
+				return errScriptError
+			}
+			return nil
+		}
 		return scriptErr("%s[repl] error: %v\n", loc, err)
 	}
 	return nil
+}
+
+// renderEnvelopeFailure prints a captured-result failure as a
+// labelled block: the verb header (guard, require, assert, defer),
+// the source position of the failing statement, the resolved
+// command line, the exit code, and any captured stdout and stderr.
+// Empty stdout/stderr emit just the label; multi-line text is
+// indented two spaces per line. The format matches the shape
+// described in the REPL design's section on the shared failure
+// renderer.
+func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc, stmtLoc shell.Loc, args []shell.Arg, env shell.Envelope) {
+	file := scriptLoc.file
+	if file == "" {
+		file = "<repl>"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[%s] FAIL at %s:%d\n", verb, file, stmtLoc.Line)
+	b.WriteString("command:\n")
+	if argv := argTexts(args); len(argv) > 0 {
+		fmt.Fprintf(&b, "  %s\n", strings.Join(argv, " "))
+	}
+	fmt.Fprintf(&b, "exit:\n  %d\n", env.Code)
+	b.WriteString("stdout:\n")
+	writeIndented(&b, env.Stdout)
+	b.WriteString("stderr:\n")
+	writeIndented(&b, env.Stderr)
+	_ = cli.PrintErrf("%s", b.String())
+}
+
+// writeIndented appends s to b with each line prefixed by two
+// spaces. A trailing newline on s is dropped before splitting so a
+// captured stdout that already ended in '\n' does not produce a
+// blank indented line at the end.
+func writeIndented(b *strings.Builder, s string) {
+	if s == "" {
+		return
+	}
+	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
 }
 
 // makeExecCommand bridges the evaluator's top-level CommandStmt

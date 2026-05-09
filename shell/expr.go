@@ -694,7 +694,7 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	}
 	env.Session.Set(s.Name, ValueFromEnvelope(envelope))
 	if s.Guard && !envelope.OK {
-		return &GuardFailure{Loc: s.Loc, Name: s.Name, Envelope: envelope}
+		return &GuardFailure{Loc: s.Loc, Name: s.Name, Args: args, Envelope: envelope}
 	}
 	return nil
 }
@@ -703,10 +703,13 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 // returns when the captured envelope is not ok. The driver formats
 // the failure through its renderer; the language layer carries the
 // envelope so the renderer has the captured stdout, stderr, exit
-// code, and the offending bind's source location.
+// code, and the offending bind's source location, plus the
+// resolved Args so the renderer can show the command line that
+// failed.
 type GuardFailure struct {
 	Loc      Loc
 	Name     string
+	Args     []Arg
 	Envelope Envelope
 }
 

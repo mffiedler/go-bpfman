@@ -2718,8 +2718,10 @@ func TestReplLoop_GuardBindExecNonZero(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "")
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "guard r")
-	assert.Contains(t, errBuf.String(), "exit 1")
+	out := errBuf.String()
+	assert.Contains(t, out, "[guard] FAIL at <repl>:1")
+	assert.Contains(t, out, "command:\n  exec false")
+	assert.Contains(t, out, "exit:\n  1")
 
 	_, ok := session.Get("after")
 	assert.False(t, ok, "guard halt must skip subsequent statements in the same block")
@@ -2739,10 +2741,32 @@ func TestReplLoop_GuardBindHaltsScript(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "test.bpfman")
 	require.Error(t, err, "script mode must surface guard failure as an error")
-	assert.Contains(t, errBuf.String(), "guard r")
+	out := errBuf.String()
+	assert.Contains(t, out, "[guard] FAIL at test.bpfman:1")
+	assert.Contains(t, out, "command:\n  exec false")
+	assert.Contains(t, out, "exit:\n  1")
 
 	_, ok := session.Get("after")
 	assert.False(t, ok, "guard halt must abort the rest of the script")
+}
+
+func TestReplLoop_GuardBindRendersStderr(t *testing.T) {
+	t.Parallel()
+
+	// A failing subprocess writes to stderr. The renderer must
+	// include the captured stderr block so the user sees why the
+	// command failed.
+	input := "guard r <- exec sh -c \"echo oops 1>&2; exit 7\"\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	session := shell.NewSession()
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "")
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "exit:\n  7")
+	assert.Contains(t, out, "stderr:\n  oops")
 }
 
 func TestReplLoop_ExecLetFailure(t *testing.T) {
