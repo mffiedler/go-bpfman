@@ -307,6 +307,25 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		HandleJobLeak: silentJobLeakHandler(),
 	}
 
+	// Continuation-prompt support: when the accumulated chunk
+	// is mid-form (unclosed brace, paren, quote, or backslash
+	// line-continuation), swap the primary prompt for a
+	// continuation prompt so the user sees they are still
+	// inside an unfinished form. Without this the silent
+	// 'bpfman> ' looked identical to a fresh prompt and a
+	// stray '#' that swallowed a closing delimiter would
+	// silently buffer every subsequent line. Backends without
+	// a visible prompt (scanner-based readers used by tests
+	// and pipes) implement nothing and the prompt swap is a
+	// no-op.
+	const promptPrimary = "bpfman> "
+	const promptContinue = "... "
+	setPrompt := func(p string) {
+		if ps, ok := lr.(PromptSetter); ok {
+			ps.SetPrompt(p)
+		}
+	}
+
 	return shell.WithJobScope(env, func() error {
 		var lineNo int
 		var buf strings.Builder
@@ -335,12 +354,14 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			cs.advance(input)
 
 			if cs.open() {
+				setPrompt(promptContinue)
 				continue
 			}
 
 			accumulated := buf.String()
 			buf.Reset()
 			cs = contState{}
+			setPrompt(promptPrimary)
 
 			if hw, ok := lr.(HistoryWriter); ok {
 				if entry := canonicaliseHistory(accumulated); entry != "" {
