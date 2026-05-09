@@ -283,21 +283,44 @@ func IsUnaryPred(s string) bool {
 // as a runtime error rather than silently swallowed.
 func EvalProgram(prog *Program, env *Env) error {
 	return runWithDeferScope(env, func() error {
-		for _, stmt := range prog.Stmts {
-			err := evalStmt(stmt, env)
-			switch {
-			case err == nil:
-				continue
-			case errors.Is(err, errBreak):
-				return locErrorf(stmtLoc(stmt), "break outside a foreach loop")
-			case errors.Is(err, errContinue):
-				return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
-			default:
-				return err
-			}
-		}
-		return nil
+		return evalProgramBody(prog, env)
 	})
+}
+
+// EvalProgramInScope evaluates prog against env without opening a
+// new defer scope. The caller must already have established one
+// (typically via WithDeferScope). Used by script mode, where the
+// REPL drives one balanced chunk at a time but every chunk must
+// share the script-level defer scope so 'defer cleanup' near the
+// top of the file runs at script exit, not at end-of-chunk.
+func EvalProgramInScope(prog *Program, env *Env) error {
+	return evalProgramBody(prog, env)
+}
+
+// WithDeferScope runs fn inside a fresh defer scope, restoring
+// the outer scope on return and executing every registered
+// deferred statement in LIFO order regardless of fn's outcome.
+// Exposed so the REPL can wrap a sequence of EvalProgramInScope
+// calls in one shared scope.
+func WithDeferScope(env *Env, fn func() error) error {
+	return runWithDeferScope(env, fn)
+}
+
+func evalProgramBody(prog *Program, env *Env) error {
+	for _, stmt := range prog.Stmts {
+		err := evalStmt(stmt, env)
+		switch {
+		case err == nil:
+			continue
+		case errors.Is(err, errBreak):
+			return locErrorf(stmtLoc(stmt), "break outside a foreach loop")
+		case errors.Is(err, errContinue):
+			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
+		default:
+			return err
+		}
+	}
+	return nil
 }
 
 // stmtLoc returns the Loc on any Stmt variant.  Used by

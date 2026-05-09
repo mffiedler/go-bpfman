@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -91,12 +92,149 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
 }
 
-// replLoop reads lines from lr and dispatches them until EOF or
-// interrupt. Blank lines and comments are handled by
-// shell.Tokenise. Variable assignment and expansion use the
-// shell.Session. When file is non-empty, error messages include a
-// file:line: prefix for compiler-style diagnostics.
+// replLoop reads from lr and dispatches input until EOF or
+// interrupt. Two modes:
+//
+// In script mode (file != ""), the whole input is slurped, then
+// evaluated as one program. This makes the script a single
+// defer scope, matching design section 7.2: 'defer cleanup'
+// near the top of a script fires at script exit, not at the
+// end of its own physical line.
+//
+// In interactive mode (file == ""), input is dispatched
+// chunk-by-chunk: each balanced statement (or block) is its
+// own EvalProgram call, so defers register and fire at the
+// prompt boundary. That is the right interactive behaviour --
+// a defer at the prompt should not pile up across the
+// session.
+//
+// Variable assignment and expansion use the shell.Session,
+// which is shared across modes; only the defer-scope
+// granularity differs.
 func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
+	if file != "" {
+		return replScript(ctx, cli, mgr, lr, session, file)
+	}
+	return replInteractive(ctx, cli, mgr, lr, session)
+}
+
+// replScript drives chunk-by-chunk evaluation in script mode but
+// wraps the entire chunk loop in a single shell.WithDeferScope
+// call. Each balanced statement is parsed and evaluated as its
+// own program, so existing line-tracking (loc.line tied to each
+// chunk's startLine) keeps error diagnostics pointed at the
+// right source line, but every defer registered along the way
+// fires when the wrapping scope unwinds at script exit -- not
+// at the end of the chunk that registered it.
+func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string) error {
+	env := &shell.Env{
+		Session: session,
+		PrintResult: func(v shell.Value) error {
+			return writeValue(cli, v)
+		},
+		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
+		},
+	}
+	return shell.WithDeferScope(env, func() error {
+		var lineNo int
+		var buf strings.Builder
+		var startLine int
+		var cs contState
+		for {
+			input, err := lr.Readline()
+			if err != nil {
+				if err == io.EOF || err == ErrInterrupt {
+					if buf.Len() > 0 {
+						loc := sourceLoc{file: file, line: startLine}
+						_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
+						return errScriptError
+					}
+					return nil
+				}
+				return err
+			}
+			lineNo++
+
+			if buf.Len() == 0 {
+				startLine = lineNo
+			}
+			if buf.Len() > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString(input)
+			cs.advance(input)
+
+			if cs.open() {
+				continue
+			}
+
+			accumulated := buf.String()
+			buf.Reset()
+			cs = contState{}
+
+			loc := sourceLoc{file: file, line: startLine}
+			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, loc)
+			env.ExecBind = makeExecBind(ctx, cli, mgr, session, loc)
+			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+				return err
+			}
+		}
+	})
+}
+
+// evalChunkInScope tokenises, parses, and evaluates one chunk
+// against an env whose defer scope was already opened by the
+// caller. Errors are rendered in the same shape as replEval:
+// guard halts trigger renderEnvelopeFailure; everything else
+// is printed with the chunk's source-loc prefix.
+func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sourceLoc) error {
+	report := func(err error) error {
+		errLoc := loc
+		msg := err.Error()
+		if line, rest, ok := splitLineColPrefix(msg); ok && loc.file != "" {
+			// chunk-relative line from the parser/evaluator
+			// composes with the chunk's startLine to yield the
+			// absolute file line; matches the convention in
+			// repl_assert.go.
+			errLoc.line = loc.line + line - 1
+			msg = rest
+		}
+		_ = cli.PrintErrf("%s[repl] error: %s\n", errLoc, msg)
+		return errScriptError
+	}
+	tokens, err := shell.Tokenise(input)
+	if err != nil {
+		return report(err)
+	}
+	if len(tokens) == 0 {
+		return nil
+	}
+	prog, err := shell.Parse(tokens)
+	if err != nil {
+		return report(err)
+	}
+	if err := shell.EvalProgramInScope(prog, env); err != nil {
+		if errors.Is(err, errRequireFailed) {
+			return err
+		}
+		var gf *shell.GuardFailure
+		if errors.As(err, &gf) {
+			renderEnvelopeFailure(cli, "guard", loc, gf.Loc, gf.Args, gf.Envelope)
+			return errScriptError
+		}
+		return report(err)
+	}
+	return nil
+}
+
+// replInteractive runs the chunk-by-chunk loop suited to a
+// readline prompt: each balanced statement is dispatched as
+// its own EvalProgram call so the user sees their input
+// take effect immediately and defers fire at the prompt
+// boundary.
+func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session) error {
 	var lineNo int
 	var buf strings.Builder
 	var startLine int
@@ -106,11 +244,7 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 		if err != nil {
 			if err == ErrInterrupt || err == io.EOF {
 				if buf.Len() > 0 {
-					loc := sourceLoc{}
-					if file != "" {
-						loc = sourceLoc{file: file, line: startLine}
-					}
-					_ = cli.PrintErrf("%s[repl] error: unterminated block at end of input\n", loc)
+					_ = cli.PrintErrf("[repl] error: unterminated block at end of input\n")
 				}
 				return nil
 			}
@@ -141,12 +275,11 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 			}
 		}
 
-		var loc sourceLoc
-		if file != "" {
-			loc = sourceLoc{file: file, line: startLine}
-		}
-
-		if err := replEval(ctx, cli, mgr, session, accumulated, loc); err != nil {
+		// Interactive mode has no source file; loc stays
+		// zero-valued. startLine is still tracked above for
+		// possible future use.
+		_ = startLine
+		if err := replEval(ctx, cli, mgr, session, accumulated, sourceLoc{}); err != nil {
 			return err
 		}
 	}
@@ -376,8 +509,16 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // and replEval returns nil so the session continues. In script mode
 // (loc has a file), errors return errScriptError to halt execution.
 func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, input string, loc sourceLoc) error {
-	scriptErr := func(format string, args ...any) error {
-		_ = cli.PrintErrf(format, args...)
+	reportErr := func(err error) error {
+		errLoc := loc
+		msg := err.Error()
+		if loc.file != "" {
+			if line, rest, ok := splitLineColPrefix(msg); ok {
+				errLoc.line = loc.line + line - 1
+				msg = rest
+			}
+		}
+		_ = cli.PrintErrf("%s[repl] error: %s\n", errLoc, msg)
 		if loc.file != "" {
 			return errScriptError
 		}
@@ -386,7 +527,7 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 
 	tokens, err := shell.Tokenise(input)
 	if err != nil {
-		return scriptErr("%s[repl] error: %v\n", loc, err)
+		return reportErr(err)
 	}
 	if len(tokens) == 0 {
 		return nil
@@ -394,7 +535,7 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 
 	prog, err := shell.Parse(tokens)
 	if err != nil {
-		return scriptErr("%s[repl] error: %v\n", loc, err)
+		return reportErr(err)
 	}
 
 	env := &shell.Env{
@@ -422,9 +563,37 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 			}
 			return nil
 		}
-		return scriptErr("%s[repl] error: %v\n", loc, err)
+		return reportErr(err)
 	}
 	return nil
+}
+
+// splitLineColPrefix recognises the "LINE:COL: REST" diagnostic
+// prefix produced by shell.locErrorf. When present, it returns
+// the line number and the remainder of the message; the caller
+// uses the line to replace the script-level prefix's line
+// (which would otherwise always be 1 in script mode after the
+// whole-script slurp).
+func splitLineColPrefix(msg string) (int, string, bool) {
+	colon1 := strings.IndexByte(msg, ':')
+	if colon1 <= 0 {
+		return 0, "", false
+	}
+	line, err := strconv.Atoi(msg[:colon1])
+	if err != nil || line <= 0 {
+		return 0, "", false
+	}
+	rest := msg[colon1+1:]
+	colon2 := strings.IndexByte(rest, ':')
+	if colon2 <= 0 {
+		return 0, "", false
+	}
+	if _, err := strconv.Atoi(rest[:colon2]); err != nil {
+		return 0, "", false
+	}
+	rest = rest[colon2+1:]
+	rest = strings.TrimPrefix(rest, " ")
+	return line, rest, true
 }
 
 // renderEnvelopeFailure prints a captured-result failure as a
