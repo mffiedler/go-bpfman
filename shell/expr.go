@@ -232,12 +232,30 @@ type Env struct {
 	// counts toward the script's exit code via Session.
 	RenderDeferFailure func(stmtLoc Loc, args []Arg, rc Envelope)
 
+	// HandleJobLeak is called once per unmanaged job at scope
+	// exit. The driver renders the diagnostic ('[job] FAIL at
+	// file:line: argv') and is responsible for any cleanup
+	// signal (the redesign mandates SIGKILL so a leaked
+	// background process does not survive the script). The
+	// shell layer increments Session.RecordJobLeak regardless of
+	// whether HandleJobLeak is set, so the exit code reflects
+	// the leak even with a nil callback.
+	HandleJobLeak func(*Job)
+
 	// defers is the active defer scope's stack. evalDeferStmt
 	// appends; runDefers drains LIFO at scope exit. The
 	// top-level program and def bodies establish new scopes by
 	// saving and replacing the field; if/foreach/retry blocks
 	// share the enclosing scope.
 	defers *[]deferEntry
+
+	// jobs is the active scope's started-job registry. start
+	// appends via RegisterJob; the scope-exit leak check walks
+	// the slice after defers have run (so 'defer kill $job' has
+	// the chance to mark Managed first) and reports any
+	// unmanaged entries. Saved/restored alongside defers so
+	// nested scopes compose.
+	jobs *[]*Job
 
 	// retryStart is the time when the current retry loop began,
 	// or the zero value when no retry is active.  TimeoutExpr
@@ -753,18 +771,58 @@ func runDefers(env *Env, stack []deferEntry) {
 	}
 }
 
+// RegisterJob appends a started Job to the active scope's job
+// registry so the scope-exit leak check can detect an unmanaged
+// lifecycle. Outside any scope (no driver-established defer
+// scope) the call is a no-op: there is nothing to leak from. j
+// must be non-nil; the redesign reserves nil for "no job"
+// rather than as a sentinel here.
+func (e *Env) RegisterJob(j *Job) {
+	if e.jobs == nil {
+		return
+	}
+	*e.jobs = append(*e.jobs, j)
+}
+
 // runWithDeferScope establishes a defer scope around fn. The
 // previous scope is saved and restored on exit so nested scopes
-// (program, def body) compose. fn's error is returned verbatim;
-// defer execution happens regardless of fn's outcome.
+// (program, def body) compose. Defers run first, then the
+// scope-exit leak check walks any started jobs and reports
+// unmanaged ones; this ordering lets 'defer kill $job' mark a
+// job Managed before the leak check sees it. fn's error is
+// returned verbatim; defer execution and leak reporting happen
+// regardless of fn's outcome.
 func runWithDeferScope(env *Env, fn func() error) error {
-	saved := env.defers
+	savedDefers := env.defers
+	savedJobs := env.jobs
 	var stack []deferEntry
+	var jobs []*Job
 	env.defers = &stack
+	env.jobs = &jobs
 	bodyErr := fn()
-	env.defers = saved
+	env.defers = savedDefers
+	env.jobs = savedJobs
 	runDefers(env, stack)
+	reportJobLeaks(env, jobs)
 	return bodyErr
+}
+
+// reportJobLeaks walks the scope's registered jobs and, for any
+// that the script never marked Managed (via wait or kill),
+// invokes HandleJobLeak (driver-side render plus SIGKILL) and
+// increments the session's leak counter. The counter is bumped
+// even when HandleJobLeak is nil so embedders without a renderer
+// still get a non-zero JobLeaks at script end.
+func reportJobLeaks(env *Env, jobs []*Job) {
+	for _, j := range jobs {
+		if j.IsManaged() {
+			continue
+		}
+		if env.HandleJobLeak != nil {
+			env.HandleJobLeak(j)
+		}
+		env.Session.RecordJobLeak()
+	}
 }
 
 // evalBindStmt runs the command form on the right of a '<-' bind

@@ -11,6 +11,7 @@ type Session struct {
 	defs           map[string]*DefValue
 	assertFailures int
 	deferFailures  int
+	jobLeaks       int
 }
 
 // DefValue is a user-defined command registered via the `def NAME(P1,
@@ -44,6 +45,22 @@ func (s *Session) RecordDeferFailure() {
 // defer reported a non-ok rc.
 func (s *Session) DeferFailures() int {
 	return s.deferFailures
+}
+
+// RecordJobLeak increments the unmanaged-job counter. The
+// scope-exit leak check calls it for each started job that the
+// script never waited or killed; drivers consult JobLeaks after
+// script completion to fail the exit code.
+func (s *Session) RecordJobLeak() {
+	s.jobLeaks++
+}
+
+// JobLeaks returns the number of unmanaged jobs reported at
+// scope exit. A non-zero count means at least one 'start' had
+// no matching wait or kill before its enclosing defer scope
+// unwound, and the script should fail.
+func (s *Session) JobLeaks() int {
+	return s.jobLeaks
 }
 
 // NewSession returns an empty session.

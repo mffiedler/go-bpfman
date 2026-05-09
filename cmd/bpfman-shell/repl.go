@@ -73,6 +73,11 @@ func (c *CLI) Run(ctx context.Context) error {
 		return fmt.Errorf("%d defer(s) failed", n)
 	}
 
+	if n := session.JobLeaks(); n > 0 {
+		_ = c.PrintErrf("%d job(s) leaked\n", n)
+		return fmt.Errorf("%d job(s) leaked", n)
+	}
+
 	return nil
 }
 
@@ -135,6 +140,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
+		HandleJobLeak: makeHandleJobLeak(cli),
 	}
 	return shell.WithDeferScope(env, func() error {
 		var lineNo int
@@ -174,8 +180,8 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			cs = contState{}
 
 			loc := sourceLoc{file: file, line: startLine}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, loc)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, loc)
+			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
 			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
 				return err
@@ -435,7 +441,7 @@ var shellCommands = map[string]bool{
 // non-nil for commands that produce an assignable result (e.g. exec).
 // Returns (false, Value{}, nil) if the command is not a shell command
 // and should be dispatched to the domain layer.
-func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
+func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
 	if len(args) == 0 {
 		return false, shell.Value{}, nil
 	}
@@ -479,7 +485,7 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	case "source":
 		return true, shell.Value{}, replSource(ctx, cli, mgr, session, argTexts(args[1:]))
 	case "start":
-		val, err := replStart(ctx, args[1:])
+		val, err := replStart(ctx, env, loc.cite(), args[1:])
 		return true, val, err
 	case "unalias":
 		return true, shell.Value{}, replUnalias(cli, session, argTexts(args[1:]))
@@ -540,8 +546,6 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 
 	env := &shell.Env{
 		Session:        session,
-		ExecCommand:    makeExecCommand(ctx, cli, mgr, session, loc),
-		ExecBind:       makeExecBind(ctx, cli, mgr, session, loc),
 		ExecAssertStmt: makeExecAssertStmt(cli, session, loc),
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
@@ -549,7 +553,10 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", loc, stmtLoc, args, rc)
 		},
+		HandleJobLeak: makeHandleJobLeak(cli),
 	}
+	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
+	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 
 	if err := shell.EvalProgram(prog, env); err != nil {
 		if errors.Is(err, errRequireFailed) {
@@ -650,13 +657,13 @@ func writeIndented(b *strings.Builder, s string) {
 // dispatcher handles "bpfman ..."; an unrecognised first word
 // falls through to runExternal so 'ip link add ...' spawns the
 // system 'ip' without an explicit 'exec' prefix.
-func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
+func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
 	return func(args []shell.Arg) (shell.Value, error) {
 		if len(args) == 0 {
 			return shell.Value{}, nil
 		}
 		args = applyAlias(session, args)
-		handled, val, err := replShellCmd(ctx, cli, mgr, session, args, loc)
+		handled, val, err := replShellCmd(ctx, cli, mgr, session, env, args, loc)
 		if err != nil {
 			return shell.Value{}, err
 		}
@@ -695,7 +702,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 //     runs as a subprocess (the registry's implicit fallthrough).
 //     'ip link del foo', 'bpftool map dump id 5', etc. work
 //     without an explicit 'exec' prefix.
-func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, loc sourceLoc) func([]shell.Arg) (shell.BindResult, error) {
+func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg) (shell.BindResult, error) {
 	return func(args []shell.Arg) (shell.BindResult, error) {
 		args = applyAlias(session, args)
 		if len(args) == 0 {
@@ -721,7 +728,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		}
 
 		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, args, loc)
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, env, args, loc)
 		if handled {
 			if err != nil {
 				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}

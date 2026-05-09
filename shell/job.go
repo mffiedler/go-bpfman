@@ -75,6 +75,14 @@ type Job struct {
 	// or a non-ok wait result so the user can locate the
 	// offending start in the script.
 	Args []string
+
+	// Origin is a human-readable source citation captured at
+	// start time ('file:line' in script mode, empty in
+	// interactive mode). The scope-exit leak diagnostic prepends
+	// it so the user can locate the offending start, even when
+	// the leak is detected in a different chunk of the script
+	// from where the job was launched.
+	Origin string
 }
 
 // MarkManaged records that the script has acknowledged this

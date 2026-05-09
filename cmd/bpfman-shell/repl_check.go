@@ -143,3 +143,15 @@ func (l sourceLoc) String() string {
 	}
 	return fmt.Sprintf("%s:%d: ", l.file, l.line)
 }
+
+// cite returns the bare 'file:line' citation without the
+// trailing ': ' separator that String adds for inline error
+// prefixes. Used when the location is rendered as a value in
+// its own right (e.g. captured into Job.Origin so the
+// scope-exit leak diagnostic can show where the start lived).
+func (l sourceLoc) cite() string {
+	if l.file == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", l.file, l.line)
+}

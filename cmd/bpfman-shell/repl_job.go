@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/shell"
 )
 
@@ -33,7 +34,7 @@ import (
 // reported as a Go error and produces no Job; this is
 // 'structural failure' in the bind-result sense and propagates
 // through ExecBind to halt the script.
-func replStart(ctx context.Context, args []shell.Arg) (shell.Value, error) {
+func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("start requires at least one argument")
 	}
@@ -62,9 +63,13 @@ func replStart(ctx context.Context, args []shell.Arg) (shell.Value, error) {
 	}
 
 	job := &shell.Job{
-		PID:  cmd.Process.Pid,
-		Done: make(chan struct{}),
-		Args: argv,
+		PID:    cmd.Process.Pid,
+		Done:   make(chan struct{}),
+		Args:   argv,
+		Origin: origin,
+	}
+	if env != nil {
+		env.RegisterJob(job)
 	}
 
 	// Reap the process in a goroutine. The goroutine is the sole
@@ -288,6 +293,37 @@ func replKill(args []shell.Arg) (shell.Envelope, error) {
 	}
 	job.MarkManaged()
 	return shell.Envelope{OK: true, Code: 0}, nil
+}
+
+// makeHandleJobLeak returns the driver-side scope-exit handler
+// for an unmanaged job. Two responsibilities, in order:
+//
+//  1. Render '[job] FAIL <origin>: never waited or killed: argv'
+//     to stderr so the user sees which start leaked. The session
+//     leak counter is bumped by the shell layer; the renderer
+//     only emits the diagnostic.
+//  2. SIGKILL the leaked process group so the bpfman-shell
+//     process does not orphan a background process to init. The
+//     redesign treats this as cleanup-of-last-resort: the user
+//     was supposed to wait or kill explicitly; we force-kill so
+//     'bpfman-shell script.bpfman' never leaves stray processes.
+//     ESRCH (the process exited on its own between leak detection
+//     and signal delivery) is silently fine; permission errors
+//     fall through and would print, but in practice we sent the
+//     job's own SIGTERM-able signal earlier or could not have
+//     spawned it in the first place.
+func makeHandleJobLeak(cli *bpfmancli.CLI) func(*shell.Job) {
+	return func(j *shell.Job) {
+		origin := j.Origin
+		if origin == "" {
+			origin = "<interactive>"
+		}
+		argv := strings.Join(j.Args, " ")
+		_ = cli.PrintErrf("[job] FAIL %s: never waited or killed: %s\n", origin, argv)
+		if j.PID > 0 {
+			_ = syscall.Kill(-j.PID, syscall.SIGKILL)
+		}
+	}
 }
 
 // signalShortName is the inverse of signalFromName: it maps a
