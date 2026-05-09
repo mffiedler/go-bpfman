@@ -1150,33 +1150,45 @@ func smushedArithmeticHint(t Token) (string, bool) {
 
 // parseInterpBody turns the raw contents of a "${...}"
 // interpolation into the Expr that will be evaluated at run time.
-// A bare identifier with an optional dotted or indexed path
-// ("name", "name.path", "name[0]") is treated as a variable
-// reference; callers do not write "$name" inside the braces. A
-// body that already starts with '$' is parsed as a general
-// expression: "${$n * 2}", "${$count + 1}", "${$x |> jq .y}".
+// Three accepted shapes:
+//
+//   - bare name with optional path: "name", "name.path",
+//     "name[0]". Treated as a variable reference; the user
+//     does not write "$name" inside the braces.
+//   - sigil-led expression: "$n * 2", "$count + 1",
+//     "$x |> jq .y".
+//   - literal-led expression: "4 * 2", "1 + $count",
+//     "(3 + 4) * 2", "true and $flag".
+//
+// The literal-led form is the bash $((...))-equivalent for
+// inline arithmetic in command args: 'print "${4 * 2}"'
+// reaches it. Without this branch, command args could only
+// reach the expression evaluator via a named intermediate
+// ('let x = 4 * 2; print $x'), which is correct but verbose.
+// Inside braces is the right place for the relaxation because
+// the surrounding double-quoted string already disambiguates
+// the syntactic context.
 func parseInterpBody(inner string, loc Loc) (Expr, error) {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
 		return nil, locErrorf(loc, "empty interpolation")
 	}
-	// Bodies that already begin with '$' are expressions. Anything
-	// else is a bare-name reference: synthesise a leading '$' and
-	// tokenise so "${name}" and "${name.path}" round-trip through
-	// the standard variable-reference grammar.
+	// Bare-name shortcut: "${name}" / "${name.path}" /
+	// "${name[0]}" tokenise (after a synthesised "$") to a
+	// single TokenVarRef. Use that fast path so the common
+	// case stays a simple VarRefExpr.
 	if trimmed[0] != '$' {
-		tokens, err := Tokenise("$" + trimmed)
-		if err != nil {
-			return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
+		if tokens, err := Tokenise("$" + trimmed); err == nil &&
+			len(tokens) == 1 && tokens[0].Kind == TokenVarRef {
+			t := tokens[0]
+			return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
 		}
-		if len(tokens) != 1 || tokens[0].Kind != TokenVarRef {
-			return nil, locErrorf(loc, "string interpolation ${%s}: expected a variable reference or an expression", inner)
-		}
-		t := tokens[0]
-		return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
+		// Not a bare-name reference: fall through to the
+		// general expression path below, which parses the
+		// original (un-prefixed) body. This is what makes
+		// literal-led expressions like "${4 * 2}" work.
 	}
-	// Expression form: "$n * 2", "$count + 1", "$x |> jq .y", etc.
-	tokens, err := Tokenise(inner)
+	tokens, err := Tokenise(trimmed)
 	if err != nil {
 		return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
 	}

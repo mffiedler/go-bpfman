@@ -1128,3 +1128,80 @@ func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
 	assert.Contains(t, err.Error(), "whitespace")
 	assert.Contains(t, err.Error(), "'/'")
 }
+
+func TestParseInterpBody_BareNameShortcut(t *testing.T) {
+	t.Parallel()
+
+	// "${name}" is a variable reference shortcut: the user
+	// writes the bare identifier rather than $-prefixing.
+	expr, err := parseInterpBody("name", Loc{})
+	require.NoError(t, err)
+	v, ok := expr.(*VarRefExpr)
+	require.True(t, ok, "expected VarRefExpr, got %T", expr)
+	assert.Equal(t, "name", v.Name)
+	assert.Empty(t, v.Path)
+}
+
+func TestParseInterpBody_BareNameWithPath(t *testing.T) {
+	t.Parallel()
+
+	expr, err := parseInterpBody("rec.field", Loc{})
+	require.NoError(t, err)
+	v, ok := expr.(*VarRefExpr)
+	require.True(t, ok, "expected VarRefExpr, got %T", expr)
+	assert.Equal(t, "rec", v.Name)
+	assert.Equal(t, "field", v.Path)
+}
+
+func TestParseInterpBody_SigilLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${$n * 2}" is the sigil-led expression form: bash's
+	// $((...)) shape transposed to ${...}. The parser
+	// treats the whole body as an expression.
+	expr, err := parseInterpBody("$n * 2", Loc{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_LiteralLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${4 * 2}" is the literal-led expression form: useful
+	// for inline arithmetic in command args without a named
+	// intermediate. Previously rejected; now parses as an
+	// expression.
+	expr, err := parseInterpBody("4 * 2", Loc{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_ComplexLiteralLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${(1 + 2) * 3}" exercises the parser's grouping path
+	// from a literal-led starting position.
+	expr, err := parseInterpBody("(1 + 2) * 3", Loc{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_EmptyIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseInterpBody("", Loc{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+}
+
+func TestParseInterpBody_GarbageIsError(t *testing.T) {
+	t.Parallel()
+
+	// Tokens that do not form a valid expression must error
+	// rather than silently produce a malformed Expr.
+	_, err := parseInterpBody(") +", Loc{})
+	require.Error(t, err)
+}
