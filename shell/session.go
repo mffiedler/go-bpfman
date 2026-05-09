@@ -10,6 +10,7 @@ type Session struct {
 	aliases        map[string]string
 	defs           map[string]*DefValue
 	assertFailures int
+	deferFailures  int
 }
 
 // DefValue is a user-defined command registered via the `def NAME(P1,
@@ -30,6 +31,19 @@ func (s *Session) RecordAssertFailure() {
 // AssertFailures returns the number of recorded assertion failures.
 func (s *Session) AssertFailures() int {
 	return s.assertFailures
+}
+
+// RecordDeferFailure increments the defer-failure counter.
+func (s *Session) RecordDeferFailure() {
+	s.deferFailures++
+}
+
+// DeferFailures returns the number of recorded defer failures.
+// Drivers consult this after script completion to set the
+// process exit code: any non-zero count means at least one
+// defer reported a non-ok rc.
+func (s *Session) DeferFailures() int {
+	return s.deferFailures
 }
 
 // NewSession returns an empty session.

@@ -224,6 +224,21 @@ type Env struct {
 	// about side output.
 	PrintResult func(Value) error
 
+	// RenderDeferFailure formats a defer-failure for the user.
+	// The shell layer evaluates the deferred command via
+	// ExecBind and, when the rc is not ok, calls this callback
+	// so the driver can emit the labelled-block diagnostic. A
+	// nil callback discards the rendering; the failure still
+	// counts toward the script's exit code via Session.
+	RenderDeferFailure func(stmtLoc Loc, args []Arg, rc Envelope)
+
+	// defers is the active defer scope's stack. evalDeferStmt
+	// appends; runDefers drains LIFO at scope exit. The
+	// top-level program and def bodies establish new scopes by
+	// saving and replacing the field; if/foreach/retry blocks
+	// share the enclosing scope.
+	defers *[]deferEntry
+
 	// retryStart is the time when the current retry loop began,
 	// or the zero value when no retry is active.  TimeoutExpr
 	// reads it to decide whether a duration has elapsed.
@@ -267,20 +282,22 @@ func IsUnaryPred(s string) bool {
 // continue that escapes every enclosing ForEachStmt is reported
 // as a runtime error rather than silently swallowed.
 func EvalProgram(prog *Program, env *Env) error {
-	for _, stmt := range prog.Stmts {
-		err := evalStmt(stmt, env)
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, errBreak):
-			return locErrorf(stmtLoc(stmt), "break outside a foreach loop")
-		case errors.Is(err, errContinue):
-			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
-		default:
-			return err
+	return runWithDeferScope(env, func() error {
+		for _, stmt := range prog.Stmts {
+			err := evalStmt(stmt, env)
+			switch {
+			case err == nil:
+				continue
+			case errors.Is(err, errBreak):
+				return locErrorf(stmtLoc(stmt), "break outside a foreach loop")
+			case errors.Is(err, errContinue):
+				return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
+			default:
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // stmtLoc returns the Loc on any Stmt variant.  Used by
@@ -291,6 +308,8 @@ func stmtLoc(s Stmt) Loc {
 	case *LetStmt:
 		return v.Loc
 	case *BindStmt:
+		return v.Loc
+	case *DeferStmt:
 		return v.Loc
 	case *IfStmt:
 		return v.Loc
@@ -337,6 +356,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return nil
 	case *BindStmt:
 		return evalBindStmt(s, env)
+	case *DeferStmt:
+		return evalDeferStmt(s, env)
 	case *IfStmt:
 		return evalIfStmt(s, env)
 	case *CommandStmt:
@@ -410,12 +431,14 @@ func callDef(def *DefValue, args []Arg, callLoc Loc, env *Env) error {
 			}
 		}
 	}()
-	for _, stmt := range def.Body {
-		if err := evalStmt(stmt, env); err != nil {
-			return err
+	return runWithDeferScope(env, func() error {
+		for _, stmt := range def.Body {
+			if err := evalStmt(stmt, env); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // argToValue converts a post-expansion Arg into a Value suitable for
@@ -644,6 +667,81 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		return runBody(s.Else)
 	}
 	return nil
+}
+
+// deferEntry is one captured invocation in a defer scope. Args
+// are evaluated at register time and frozen onto the entry; Cmd
+// holds the original command form so the diagnostic renderer can
+// cite the source location of the defer statement.
+type deferEntry struct {
+	Loc  Loc
+	Args []Arg
+}
+
+// evalDeferStmt evaluates the deferred command's arguments now
+// (so values are captured at register time, not at scope exit)
+// and appends the entry to the active defer scope's stack. A
+// missing scope is a runtime error; the parser does not enforce
+// that defer is reachable, so a malformed driver could trip this
+// check.
+func evalDeferStmt(s *DeferStmt, env *Env) error {
+	if env.defers == nil {
+		return locErrorf(s.Loc, "defer outside any defer scope")
+	}
+	args, err := EvalArgs(s.Cmd.Args, env)
+	if err != nil {
+		return err
+	}
+	*env.defers = append(*env.defers, deferEntry{
+		Loc:  s.Loc,
+		Args: args,
+	})
+	return nil
+}
+
+// runDefers drains stack in LIFO order, dispatching each entry
+// via env.ExecBind. A non-ok rc is rendered through
+// RenderDeferFailure (when set) and counted via Session so the
+// script's exit code reflects the failure; cleanup continues
+// across failures. Structural errors from ExecBind are rare;
+// they are rendered with an empty-rc envelope so the user still
+// sees a labelled block.
+func runDefers(env *Env, stack []deferEntry) {
+	if env.ExecBind == nil {
+		return
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		entry := stack[i]
+		result, err := env.ExecBind(entry.Args)
+		if err != nil {
+			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			if env.RenderDeferFailure != nil {
+				env.RenderDeferFailure(entry.Loc, entry.Args, rc)
+			}
+			env.Session.RecordDeferFailure()
+			continue
+		}
+		if !result.Rc.OK {
+			if env.RenderDeferFailure != nil {
+				env.RenderDeferFailure(entry.Loc, entry.Args, result.Rc)
+			}
+			env.Session.RecordDeferFailure()
+		}
+	}
+}
+
+// runWithDeferScope establishes a defer scope around fn. The
+// previous scope is saved and restored on exit so nested scopes
+// (program, def body) compose. fn's error is returned verbatim;
+// defer execution happens regardless of fn's outcome.
+func runWithDeferScope(env *Env, fn func() error) error {
+	saved := env.defers
+	var stack []deferEntry
+	env.defers = &stack
+	bodyErr := fn()
+	env.defers = saved
+	runDefers(env, stack)
+	return bodyErr
 }
 
 // evalBindStmt runs the command form on the right of a '<-' bind

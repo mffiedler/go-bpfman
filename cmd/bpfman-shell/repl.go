@@ -67,6 +67,11 @@ func (c *CLI) Run(ctx context.Context) error {
 		return fmt.Errorf("%d assertion(s) failed", n)
 	}
 
+	if n := session.DeferFailures(); n > 0 {
+		_ = c.PrintErrf("%d defer(s) failed\n", n)
+		return fmt.Errorf("%d defer(s) failed", n)
+	}
+
 	return nil
 }
 
@@ -381,6 +386,9 @@ func replEval(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 		ExecAssertStmt: makeExecAssertStmt(cli, session, loc),
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
+		},
+		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+			renderEnvelopeFailure(cli, "defer", loc, stmtLoc, args, rc)
 		},
 	}
 

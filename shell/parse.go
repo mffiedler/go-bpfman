@@ -162,6 +162,20 @@ type AssertStmt struct {
 	Loc
 }
 
+// DeferStmt registers a cleanup command for the enclosing defer
+// scope. Argument values are evaluated when the defer statement
+// runs and frozen onto the defer record; the command itself
+// dispatches at scope exit, in LIFO order with any other deferred
+// commands. The top-level script and def bodies are defer scopes;
+// if/foreach/retry blocks are not. Defer failures are rendered
+// through the shared formatter and contribute to the script's
+// exit code, but they do not halt; cleanup continues across
+// failures.
+type DeferStmt struct {
+	Cmd *CommandStmt
+	Loc
+}
+
 // DefStmt declares a user-defined command. Name is the command name,
 // Params is the ordered parameter list (parameter names, no default
 // or type information), and Body is the parsed block executed at
@@ -176,6 +190,7 @@ type DefStmt struct {
 
 func (*LetStmt) stmtNode()      {}
 func (*BindStmt) stmtNode()     {}
+func (*DeferStmt) stmtNode()    {}
 func (*IfStmt) stmtNode()       {}
 func (*CommandStmt) stmtNode()  {}
 func (*ExprStmt) stmtNode()     {}
@@ -285,6 +300,8 @@ func (p *parser) parseStmt() (Stmt, error) {
 			return p.parseContinueStmt()
 		case "guard":
 			return p.parseGuardStmt()
+		case "defer":
+			return p.parseDeferStmt()
 		case "def":
 			return p.parseDefStmt()
 		case "assert", "require":
@@ -503,6 +520,28 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 // a single identifier or a parenthesised pair, the bind sigil
 // '<-', then a non-empty command form. There is no "guard NAME =
 // EXPR" spelling.
+// parseDeferStmt parses "defer COMMAND". The RHS is a command
+// form; argument evaluation happens at run time when the defer
+// statement executes (registering the captured invocation), and
+// the command itself dispatches at scope exit. There is no
+// 'defer { ... }' block form in v1.
+func (p *parser) parseDeferStmt() (Stmt, error) {
+	deferTok := p.advance() // "defer"
+	cmdTokens, err := p.takeStmtTokens(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(cmdTokens) == 0 {
+		return nil, locErrorf(deferTok.Loc, "defer requires a command form")
+	}
+	args, err := parseCommandArgs(cmdTokens, false)
+	if err != nil {
+		return nil, err
+	}
+	cmd := &CommandStmt{Args: args, Loc: cmdTokens[0].Loc}
+	return &DeferStmt{Cmd: cmd, Loc: deferTok.Loc}, nil
+}
+
 func (p *parser) parseGuardStmt() (Stmt, error) {
 	guardTok := p.advance() // "guard"
 	if p.atEOF() {
@@ -742,6 +781,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 // (the keyword wins at parseStmt) or break statement parsing.
 var reservedDefNames = map[string]bool{
 	"def":       true,
+	"defer":     true,
 	"let":       true,
 	"guard":     true,
 	"if":        true,
