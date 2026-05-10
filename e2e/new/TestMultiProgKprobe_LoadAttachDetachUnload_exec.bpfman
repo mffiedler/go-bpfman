@@ -11,7 +11,7 @@
 #
 # Run from e2e/:
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestMultiProgKprobe_LoadAttachDetachUnload_exec.bpfman
+#   sudo bpfman-shell new/TestMultiProgKprobe_LoadAttachDetachUnload_exec.bpfman
 
 source lib.bpfman
 
@@ -27,7 +27,7 @@ let ack      = "/tmp/bpfman-shell-mkp-exec.ack"
 # Cleanup any leftover sentinels from a prior run.
 let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
-guard work <- start python3 new/_worker_multi.py $sentinel $ack $n $waves
+guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n $waves
 defer kill --signal=KILL $work
 
 guard pid_le <- exec sh -c 'printf "%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff))' x ${work.pid}

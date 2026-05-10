@@ -29,7 +29,7 @@
 # Run from e2e/:
 #
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestMultiProgUprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell new/TestMultiProgUprobe_LoadAttachDetachUnload.bpfman
 #
 # Requires root, bpftool.
 
@@ -51,7 +51,7 @@ let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack
 # strips the trailing newline that readlink writes, which would
 # otherwise embed a literal newline in the captured stdout that
 # bpfman would then choke on.
-guard shell_bin <- exec sh -c 'printf %s "$(readlink -f -- "$1")"' x ../bin/bpfman-shell
+guard shell_bin <- exec sh -c 'printf %s "$(command -v bpfman-shell)"'
 
 # Start the worker. `start env BPFMAN_SHELL_MODE=...` uses the
 # busybox-style env(1) to set the mode env var without needing a

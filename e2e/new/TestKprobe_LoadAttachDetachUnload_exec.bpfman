@@ -35,7 +35,7 @@
 #
 # Run from e2e/:
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestKprobe_LoadAttachDetachUnload_exec.bpfman
+#   sudo bpfman-shell new/TestKprobe_LoadAttachDetachUnload_exec.bpfman
 
 source lib.bpfman
 
@@ -43,10 +43,11 @@ let n = 5
 let weight = 42
 let want = $n * $weight
 
-let sentinel = "/tmp/bpfman-shell-go.kprobe-exec"
-let _ <- rm -f $sentinel
+let sentinel = "/tmp/bpfman-shell-kprobe-exec.go"
+let ack      = "/tmp/bpfman-shell-kprobe-exec.ack"
+let _ <- rm -f "${sentinel}.1" "${ack}.1"
 
-guard work <- start python3 new/_worker.py $sentinel $n
+guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
 defer kill --signal=KILL $work
 
 guard pid_le <- exec sh -c 'printf "%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff))' x ${work.pid}
@@ -108,7 +109,7 @@ assert $ourLink.kind == $link.record.kind
 
 # Release the worker. wait $work blocks until exactly $n unlinks have
 # been issued.
-guard _ <- touch $sentinel
+guard _ <- touch "${sentinel}.1"
 
 guard work_r <- wait $work
 assert $work_r.ok
@@ -142,4 +143,4 @@ exec bpfman program unload $pid
 let get_after <- exec bpfman program get $pid -o json
 assert not $get_after.ok
 
-let _ <- rm -f $sentinel
+let _ <- rm -f "${sentinel}.1" "${ack}.1"

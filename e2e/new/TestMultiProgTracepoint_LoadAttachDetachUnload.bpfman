@@ -15,10 +15,10 @@
 #
 # Difference from the Go test:
 #   - One stable-PID worker drives all three waves over a numbered
-#     sentinel/ack protocol (see new/_worker_multi_kill.py). The
-#     worker masks SIGUSR1 with a no-op handler so each
-#     os.kill(self_pid, SIGUSR1) issues a kill(2) syscall without
-#     terminating the process.
+#     sentinel/ack protocol; the worker is bpfman-shell in
+#     BPFMAN_SHELL_MODE=kill-fire-worker mode (see
+#     cmd/bpfman-shell/kill_helper.go), which sends SIGUSR1
+#     to itself N times per wave.
 #   - Between detach and the next wave we sleep briefly to let the
 #     kernel's perf-link RCU deferral window close, instead of running
 #     waitDetachQuiescent. The sleep is much longer than the observed
@@ -29,9 +29,9 @@
 # Run from e2e/:
 #
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestMultiProgTracepoint_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell new/TestMultiProgTracepoint_LoadAttachDetachUnload.bpfman
 #
-# Requires root, bpftool, python3.
+# Requires root and bpftool.
 
 source lib.bpfman
 
@@ -50,7 +50,8 @@ let ack      = "/tmp/bpfman-shell-mtp.ack"
 let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 # Start the worker. Stable PID across all 3 waves.
-guard work <- start python3 new/_worker_multi_kill.py $sentinel $ack $n $waves
+
+guard work <- start env BPFMAN_SHELL_MODE=kill-fire-worker bpfman-shell $sentinel $ack $n $waves
 defer kill --signal=KILL $work
 
 # LE-hex helpers for the global-data injection (one u32 expected_pid,

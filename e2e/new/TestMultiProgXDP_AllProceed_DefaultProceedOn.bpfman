@@ -19,7 +19,7 @@
 #
 # Run from e2e/:
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestMultiProgXDP_AllProceed_DefaultProceedOn.bpfman
+#   sudo bpfman-shell new/TestMultiProgXDP_AllProceed_DefaultProceedOn.bpfman
 #
 # Requires root, bpftool, iproute2 (ip), iputils (ping).
 

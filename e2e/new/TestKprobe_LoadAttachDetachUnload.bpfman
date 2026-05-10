@@ -10,26 +10,26 @@
 # for the counter readout.
 #
 # Differences from the Go test (deliberate):
-#   - Worker is python3 _worker.py instead of the workload-driver
-#     subprocess so the unlink syscall is issued from a stable PID
-#     (a sh-loop fork-execs `rm`, which would not match expected_pid).
-#   - Synchronisation is a "go" sentinel file the script touches after
-#     load+attach, not an NDJSON ack. `wait $worker` is the
-#     completion barrier.
-#   - No t.Parallel(): the script runs serially. PID-isolation across
-#     concurrent tests is unnecessary so long as no other process on
-#     the host shares the worker's PID.
+#   - Worker is bpfman-shell launched in
+#     BPFMAN_SHELL_MODE=unlinkat-fire-worker mode (see
+#     cmd/bpfman-shell/unlink_helper.go). It blocks on a numbered
+#     sentinel, then issues exactly N unlinkat(2) syscalls in its
+#     own (stable) PID, then writes a numbered ack and exits.
+#   - Synchronisation is the sentinel file plus `wait $worker`;
+#     `wait $worker` is the completion barrier for K=1.
+#   - No t.Parallel(): the script runs serially. PID-isolation
+#     across concurrent tests is unnecessary so long as no other
+#     process on the host shares the worker's PID.
 #   - Post-detach quiescence is replaced by a brief settle sleep +
 #     counter delta check, rather than the polled stable-counter
-#     barrier. The kernel deferral window for kprobe is sub-millisecond
-#     and we sample after the firing worker has fully exited.
+#     barrier.
 #
 # Invoke from the e2e/ directory so testdata paths resolve:
 #
 #   cd e2e
-#   sudo direnv exec . ../bin/bpfman-shell new/TestKprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell new/TestKprobe_LoadAttachDetachUnload.bpfman
 #
-# Requires root, bpftool, and python3.
+# Requires root and bpftool.
 
 source lib.bpfman
 
@@ -41,13 +41,14 @@ let n = 5
 let weight = 42
 let want = $n * $weight
 
-# Clean slate for the sentinel.
-let sentinel = "/tmp/bpfman-shell-go.kprobe"
-let _ <- rm -f $sentinel
+let sentinel = "/tmp/bpfman-shell-kprobe.go"
+let ack      = "/tmp/bpfman-shell-kprobe.ack"
+let _ <- rm -f "${sentinel}.1" "${ack}.1"
 
-# Start the worker. It blocks on the sentinel; we have a known PID we
-# can pin into the BPF program before the worker fires anything.
-guard work <- start python3 new/_worker.py $sentinel $n
+# Start the worker. It blocks on ${sentinel}.1; we have a known
+# PID we can pin into the BPF program before the worker fires
+# anything.
+guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
 defer kill --signal=KILL $work
 
 # Convert the worker PID and weight to little-endian hex strings as
@@ -110,8 +111,8 @@ assert $ourLink.id == $link.record.id
 assert $ourLink.kind == $link.record.kind
 
 # Release the worker. From here `wait $work` blocks until the worker
-# has issued exactly $n unlinks and exited.
-guard _ <- touch $sentinel
+# has issued exactly $n unlinkats and exited.
+guard _ <- touch "${sentinel}.1"
 
 guard work_r <- wait $work
 assert $work_r.ok
@@ -152,4 +153,4 @@ assert $delta == 0
 bpfman program unload $pid
 assert fail bpfman program get $prog
 
-let _ <- rm -f $sentinel
+let _ <- rm -f "${sentinel}.1" "${ack}.1"
