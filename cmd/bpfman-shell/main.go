@@ -65,6 +65,10 @@ func runMode(mode string, args []string) error {
 	switch mode {
 	case "uprobe-fire-worker":
 		return runUprobeFireWorker(args)
+	case "unlinkat-fire-worker":
+		return runUnlinkatFireWorker(args)
+	case "kill-fire-worker":
+		return runKillFireWorker(args)
 	default:
 		return fmt.Errorf("unknown BPFMAN_SHELL_MODE %q", mode)
 	}
