@@ -2,6 +2,7 @@ package shell
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -216,7 +217,74 @@ func Parse(tokens []Token) (*Program, error) {
 	if len(tokens) > 0 {
 		start = tokens[0].Loc
 	}
-	return &Program{Stmts: stmts, Loc: start}, nil
+	prog := &Program{Stmts: stmts, Loc: start}
+	if err := validateLocs(prog); err != nil {
+		return nil, err
+	}
+	return prog, nil
+}
+
+// validateLocs walks every node of prog and asserts that each
+// has a non-zero Loc (both line and column populated). The
+// position infrastructure is end-to-end -- the tokeniser
+// builds Loc{Line, Col} from a lineStarts table, every AST
+// node copies its Loc from a token, and the renderers print
+// 'file:line:col:' for diagnostics. A regression that adds a
+// new AST variant without copying its source position would
+// silently land an empty Loc on user-facing error messages;
+// validateLocs catches that at parse time so the next
+// developer to introduce the gap sees a loud failure rather
+// than a quiet column drop.
+//
+// Program nodes are skipped when they have no Stmts: an empty
+// input is a valid parse with an empty Loc, and we do not
+// want to reject empty programs. Every other node, including
+// the Program of a non-empty input, must have Line > 0 and
+// Col > 0.
+func validateLocs(prog *Program) error {
+	var missing []string
+	Inspect(prog, func(n Node) bool {
+		if n == nil {
+			return true
+		}
+		if p, ok := n.(*Program); ok && len(p.Stmts) == 0 {
+			return true
+		}
+		loc := nodeLoc(n)
+		if loc.Line == 0 || loc.Col == 0 {
+			missing = append(missing, fmt.Sprintf("%T at line=%d col=%d", n, loc.Line, loc.Col))
+		}
+		return true
+	})
+	if len(missing) > 0 {
+		return fmt.Errorf("internal: AST node(s) missing source position: %s",
+			strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// nodeLoc returns the Loc value embedded in n. Every AST
+// type embeds shell.Loc as an anonymous struct field; reflect
+// over n to find that field. Used by validateLocs to enforce
+// the position-completeness invariant; the rest of the code
+// reaches Loc through concrete-type access.
+func nodeLoc(n Node) Loc {
+	v := reflect.ValueOf(n)
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return Loc{}
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return Loc{}
+	}
+	for i := 0; i < v.NumField(); i++ {
+		if loc, ok := v.Field(i).Interface().(Loc); ok {
+			return loc
+		}
+	}
+	return Loc{}
 }
 
 // parser is the recursive-descent state: a token stream and a

@@ -1121,6 +1121,84 @@ func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
 	assert.Contains(t, err.Error(), "'-'")
 }
 
+func TestParse_AllNodesHaveSourcePosition(t *testing.T) {
+	t.Parallel()
+
+	// Regression guard for the position-completeness
+	// invariant: every AST node Parse produces must have
+	// both line and column populated. A new AST variant
+	// added without copying its source position would
+	// silently surface as an empty Loc in user-facing
+	// diagnostics; this test catches that at parse time.
+	cases := []string{
+		"let x = 1",
+		"let r = 4 * 2 + 1",
+		`print "${$n * 2}"`,
+		"let p <- start sleep 60\nwait $p",
+		"foreach x in $xs { print $x }",
+		"if $x { let r = 1 } elif $y { let r = 2 } else { let r = 3 }",
+		"retry { let r <- foo } until iteration 5 or timeout 30s",
+		"def greet(name) { print $name }\ngreet alice",
+		"defer kill $p",
+		"assert $a == $b",
+		"let z = $x |> jq tonumber",
+		"assert matches {\n    .name: \"foo\"\n    .id: 5\n} $rec",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			t.Parallel()
+			tokens, err := Tokenise(src)
+			require.NoError(t, err)
+			prog, err := Parse(tokens)
+			require.NoError(t, err, "src=%q", src)
+			Inspect(prog, func(n Node) bool {
+				if n == nil {
+					return true
+				}
+				if p, ok := n.(*Program); ok && len(p.Stmts) == 0 {
+					return true
+				}
+				loc := nodeLoc(n)
+				assert.Greater(t, loc.Line, 0, "%T missing line", n)
+				assert.Greater(t, loc.Col, 0, "%T missing col", n)
+				return true
+			})
+		})
+	}
+}
+
+func TestParse_EmptyProgramAccepted(t *testing.T) {
+	t.Parallel()
+
+	// validateLocs skips the empty-program case; an empty
+	// input is a valid parse with an empty Loc and must not
+	// be rejected as 'missing source position'.
+	prog, err := parseSource(t, "")
+	require.NoError(t, err)
+	require.NotNil(t, prog)
+	assert.Empty(t, prog.Stmts)
+}
+
+func TestValidateLocs_FailsOnDeliberatelyBrokenNode(t *testing.T) {
+	t.Parallel()
+
+	// Confirm the invariant has teeth: a hand-built program
+	// whose statement carries a zero Loc is rejected with the
+	// internal-error message. If a future AST variant lands
+	// without copying its source position, this is the shape
+	// the failure takes.
+	prog := &Program{
+		Stmts: []Stmt{
+			&LetStmt{Name: "x", RHS: &LiteralExpr{Text: "1", Loc: Loc{Line: 1, Col: 9}}},
+		},
+		Loc: Loc{Line: 1, Col: 1},
+	}
+	err := validateLocs(prog)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing source position")
+	assert.Contains(t, err.Error(), "LetStmt")
+}
+
 func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
 	t.Parallel()
 
