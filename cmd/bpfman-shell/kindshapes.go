@@ -105,9 +105,13 @@ func buildShape(t reflect.Type, seen map[reflect.Type]bool, kind shell.OriginKin
 				continue
 			}
 			child := buildShape(f.Type, seen, shell.OriginUnknown)
-			if f.Anonymous && name == "" {
-				// Embedded field with no explicit json
-				// tag flattens its children up.
+			// encoding/json flattens any anonymous embedded
+			// struct that lacks an explicit json tag, regardless
+			// of the Go field name jsonFieldName falls back to.
+			// Test the raw tag, not the resolved name, so an
+			// embed like `kernel.Map` (no tag) flattens the same
+			// way the JSON encoder will at runtime.
+			if f.Anonymous && f.Tag.Get("json") == "" {
 				if child.Sealed {
 					for k, v := range child.Fields {
 						fields[k] = v
