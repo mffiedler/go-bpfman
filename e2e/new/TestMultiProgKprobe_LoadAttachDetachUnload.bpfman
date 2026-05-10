@@ -37,11 +37,13 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-# Cleanup from any previous run.
-let _ <- exec sh -c 'rm -f /tmp/bpfman-shell-mkp.go.* /tmp/bpfman-shell-mkp.ack.*'
-
 let sentinel = "/tmp/bpfman-shell-mkp.go"
 let ack      = "/tmp/bpfman-shell-mkp.ack"
+
+# Cleanup any leftover sentinels from a prior run. We know the
+# wave count statically, so listing the paths is enough -- no need
+# for a shell glob.
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 # Start the worker. Stable PID across all 3 waves.
 guard work <- start python3 new/_worker_multi.py $sentinel $ack $n $waves
@@ -94,7 +96,7 @@ guard link_c <- bpfman link attach kprobe --fn-name do_unlinkat $pid_c
 let counter_filter = ".[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
-guard _ <- exec touch "${sentinel}.1"
+guard _ <- touch "${sentinel}.1"
 retry {
     let probe <- test -f "${ack}.1"
 } until $probe.ok or timeout 5s
@@ -104,10 +106,10 @@ require $probe.ok
 # next wave fires, otherwise some of wave 2's events could still hit
 # c's program.
 bpfman link detach $link_c
-guard _ <- exec sleep 0.1
+guard _ <- sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
-guard _ <- exec touch "${sentinel}.2"
+guard _ <- touch "${sentinel}.2"
 retry {
     let probe <- test -f "${ack}.2"
 } until $probe.ok or timeout 5s
@@ -115,10 +117,10 @@ require $probe.ok
 
 # Detach b.
 bpfman link detach $link_b
-guard _ <- exec sleep 0.1
+guard _ <- sleep 0.1
 
 # --- Wave 3: only a attached ---
-guard _ <- exec touch "${sentinel}.3"
+guard _ <- touch "${sentinel}.3"
 retry {
     let probe <- test -f "${ack}.3"
 } until $probe.ok or timeout 5s
@@ -154,4 +156,4 @@ assert $count_c == $want_c
 # refuses to unload).
 bpfman link detach $link_a
 
-let _ <- exec sh -c 'rm -f /tmp/bpfman-shell-mkp.go.* /tmp/bpfman-shell-mkp.ack.*'
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"

@@ -108,7 +108,7 @@ assert $ourLink.kind == $link.record.kind
 
 # Release the worker. wait $work blocks until exactly $n unlinks have
 # been issued.
-guard _ <- exec touch $sentinel
+guard _ <- touch $sentinel
 
 guard work_r <- wait $work
 assert $work_r.ok
@@ -130,7 +130,7 @@ assert not $getlink_after.ok
 guard before_dump <- bpftool map dump id $mapID -j
 let before = $before_dump.stdout |> jq $sumFilter
 
-guard _ <- exec sleep 0.1
+guard _ <- sleep 0.1
 
 guard after_dump <- bpftool map dump id $mapID -j
 let after = $after_dump.stdout |> jq $sumFilter
