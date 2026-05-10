@@ -1,0 +1,146 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgTCX_AllProceed_DefaultProceedOn.
+#
+# Three TCX programs (mtcx_a/b/c) attach to one veth ingress at
+# distinct priorities. TCX uses native kernel multi-prog support
+# (kernel 6.6+) rather than a bpfman dispatcher, so there is no
+# --proceed-on flag; the chain-continue verdict is TC_ACT_UNSPEC,
+# hard-coded in the .bpf.o. Each program counts ICMP echo requests
+# arriving on ingress. Three waves of N pings, staggered detach
+# between waves so each program ends up with a distinct event count:
+#
+#     a counts waves 1+2+3   = 3 * N events
+#     b counts waves 1+2     = 2 * N events
+#     c counts wave 1        = 1 * N events
+#
+# The Go test uses NewTestVethPair, which goes to extraordinary
+# lengths to keep parallel subtests from interfering (deterministic
+# MACs, IPv6 disable, address-index pool). A serial DSL script can
+# use static names because nothing else competes for them; the
+# pre-script `ip link del / ip netns del` lines clean up any
+# leftovers from a previous broken run.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgTCX_AllProceed_DefaultProceedOn.bpfman
+#
+# Requires root, bpftool, iproute2 (ip), iputils (ping).
+
+source lib.bpfman
+
+let n = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+let ns      = "bpfsh-mtcx"
+let veth_a  = "vea-mtcx"
+let veth_b  = "veb-mtcx"
+let ip_a    = "198.51.100.1"
+let ip_b    = "198.51.100.2"
+
+# Best-effort cleanup of any leftover state from a prior failed run.
+# `let _ <-` discards the rc; absent interfaces / namespaces are
+# fine. We could also `defer` these for end-of-script cleanup, but
+# the `defer ip link del / netns del` blocks below cover that.
+let _ <- ip link del $veth_a
+let _ <- ip netns del $ns
+
+# Network setup. Each step `guard`s on success; the matching
+# `defer` undoes it at scope exit (LIFO). Cleanup runs even on a
+# mid-script failure so we never leak veths or namespaces.
+guard _ <- ip netns add $ns
+defer ip netns del $ns
+
+guard _ <- ip link add $veth_a type veth peer name $veth_b
+defer ip link del $veth_a
+
+guard _ <- ip link set $veth_b netns $ns
+
+guard _ <- ip link set $veth_a up
+guard _ <- ip addr add "${ip_a}/32" dev $veth_a
+guard _ <- ip route add "${ip_b}/32" dev $veth_a
+
+guard _ <- ip -n $ns link set $veth_b up
+guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
+guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+
+# LE-hex helpers for the global-data injection (three u64 weights).
+guard wa_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
+guard wb_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
+guard wc_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+
+# Load the three TCX programs.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_tcx_counter.bpf.o \
+    --programs tcx:mtcx_a,tcx:mtcx_b,tcx:mtcx_c \
+    -g "weight_a=0x${wa_le.stdout}" \
+    -g "weight_b=0x${wb_le.stdout}" \
+    -g "weight_c=0x${wc_le.stdout}"
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mtcx_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mtcx_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mtcx_c_count\") | .id][0]"
+
+# Attach each TCX program at a distinct priority on ingress. TCX
+# has no proceed-on flag -- the chain-continue verdict is
+# TC_ACT_UNSPEC, hard-coded in the .bpf.o.
+guard link_a <- bpfman link attach tcx -i $veth_a -d ingress -p 50 $pid_a
+guard link_b <- bpfman link attach tcx -i $veth_a -d ingress -p 60 $pid_b
+guard link_c <- bpfman link attach tcx -i $veth_a -d ingress -p 70 $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# --- Wave 1: a, b, c all attached ---
+guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+# Detach c. Sleep briefly so the kernel commit settles before the
+# next wave fires.
+bpfman link detach $link_c
+guard _ <- sleep 0.05
+
+# --- Wave 2: a, b attached; c detached ---
+guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+bpfman link detach $link_b
+guard _ <- sleep 0.05
+
+# --- Wave 3: only a attached ---
+guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+# Read counters and assert exactness.
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = 3 * $n * $weight_a
+let want_b = 2 * $n * $weight_b
+let want_c = 1 * $n * $weight_c
+
+print "a: got=${count_a} want=${want_a}"
+print "b: got=${count_b} want=${want_b}"
+print "c: got=${count_c} want=${want_c}"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+# link_a still attached; detach explicitly before deferred
+# program-unloads fire.
+bpfman link detach $link_a
