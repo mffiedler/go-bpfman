@@ -1,0 +1,127 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn.
+#
+# Three XDP programs at distinct dispatcher priorities:
+#
+#   mxdp_chain_a (prio 50)  XDP_PASS  -- runs, chain continues
+#   mxdp_chain_b (prio 60)  XDP_DROP  -- runs, chain STOPS here
+#   mxdp_chain_c (prio 70)  (XDP_PASS -- never reached)
+#
+# Default XDP proceed-on is [XDP_PASS], so XDP_DROP terminates
+# the chain. With one wave of N pings:
+#
+#   a counter = N * weight_a   (saw all N, returned PASS)
+#   b counter = N * weight_b   (saw all N, returned DROP)
+#   c counter = 0              (never ran)
+#
+# Side effect: the packet is dropped at A's ingress, so the
+# kernel ICMP responder never sees it and userspace ping reports
+# 100% loss. The script lets that pass: `let _ <- ping ...`
+# discards the rc. The BPF counters still advance for every
+# program that ran, regardless of whether the packet completed
+# its traversal.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn.bpfman
+
+source lib.bpfman
+
+let n        = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+let ns      = "bpfsh-mxdpcs"
+let veth_a  = "vea-mxdpcs"
+let veth_b  = "veb-mxdpcs"
+let ip_a    = "198.51.100.1"
+let ip_b    = "198.51.100.2"
+
+let _ <- ip link del $veth_a
+let _ <- ip netns del $ns
+
+guard _ <- ip netns add $ns
+defer ip netns del $ns
+
+guard _ <- ip link add $veth_a type veth peer name $veth_b
+defer ip link del $veth_a
+
+guard _ <- ip link set $veth_b netns $ns
+
+guard _ <- ip link set $veth_a up
+guard _ <- ip addr add "${ip_a}/32" dev $veth_a
+guard _ <- ip route add "${ip_b}/32" dev $veth_a
+
+guard _ <- ip -n $ns link set $veth_b up
+guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
+guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+
+# Warmup ping to populate the ARP caches both ways before any
+# BPF programs attach. The ChainStopsAtDrop variant drops ARP
+# along with everything else, so without prepopulation the
+# script's pings would never resolve A's MAC and the BPF
+# programs would never see the ICMP requests.
+guard _ <- ip netns exec $ns ping -c 1 -W 1 $ip_a
+
+guard wa_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
+guard wb_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
+guard wc_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_xdp_chain_stops_at_drop.bpf.o \
+    --programs xdp:mxdp_chain_a,xdp:mxdp_chain_b,xdp:mxdp_chain_c \
+    -g "weight_a=0x${wa_le.stdout}" \
+    -g "weight_b=0x${wb_le.stdout}" \
+    -g "weight_c=0x${wc_le.stdout}"
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxda_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxdb_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxdc_count\") | .id][0]"
+
+guard link_a <- bpfman link attach xdp -i $veth_a -p 50 $pid_a
+guard link_b <- bpfman link attach xdp -i $veth_a -p 60 $pid_b
+guard link_c <- bpfman link attach xdp -i $veth_a -p 70 $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# Send N pings and discard the rc; b returns XDP_DROP so the
+# kernel never replies and ping reports 100% loss. The XDP
+# counters still advance for every program that ran.
+let _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = 0
+
+print "a: got=${count_a} want=${want_a}  (ran, returned PASS)"
+print "b: got=${count_b} want=${want_b}  (ran, returned DROP)"
+print "c: got=${count_c} want=${want_c}    (never ran)"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+bpfman link detach $link_a
+bpfman link detach $link_b
+bpfman link detach $link_c
