@@ -29,6 +29,20 @@ import (
 // ^C twice. The first signal goes to the mode's NotifyContext;
 // the second is the escape hatch.
 func main() {
+	// Mode dispatch: when BPFMAN_SHELL_MODE is set, bpfman-shell
+	// acts as a test-fixture helper rather than a REPL/script
+	// runner. The dispatch runs before NewCLI so we don't open
+	// the manager / database / lock for a helper invocation that
+	// has no need for them. Mirrors the BPFMAN_MODE pattern used
+	// by the main bpfman binary for bpfman-rpc / bpfman-ns.
+	if mode := os.Getenv("BPFMAN_SHELL_MODE"); mode != "" {
+		if err := runMode(mode, os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "bpfman-shell: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	c, err := NewCLI()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bpfman-shell: error: %v\n", err)
@@ -39,6 +53,20 @@ func main() {
 
 	if err := c.Execute(context.Background()); err != nil {
 		os.Exit(1)
+	}
+}
+
+// runMode dispatches the BPFMAN_SHELL_MODE entry points. Each mode
+// is a test-fixture helper that runs in place of the REPL/script
+// runner; modes are intentionally narrow, single-purpose, and
+// self-contained so the helper code does not pull the rest of the
+// shell's machinery in.
+func runMode(mode string, args []string) error {
+	switch mode {
+	case "uprobe-fire-worker":
+		return runUprobeFireWorker(args)
+	default:
+		return fmt.Errorf("unknown BPFMAN_SHELL_MODE %q", mode)
 	}
 }
 
