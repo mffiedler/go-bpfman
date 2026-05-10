@@ -91,7 +91,7 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
-				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() { //nolint:misspell // syscall.WaitStatus.Signaled is a Go stdlib method name
 					sig := ws.Signal()
 					sigName = signalShortName(sig)
 					// Shell convention: signal-killed

@@ -69,6 +69,14 @@ linters:
           - staticcheck
           - unused
 
+      # Cgo'd uprobe target. The preamble carries the literal C
+      # attribute __attribute__((optimize("O0"))) -- not English
+      # text we control -- and per-line nolint directives do not
+      # round-trip through cgo comment lines reliably.
+      - path: 'cmd/bpfman-shell/uprobe_helper\.go$'
+        linters:
+          - misspell
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

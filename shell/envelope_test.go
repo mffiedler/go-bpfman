@@ -41,6 +41,7 @@ func TestValueFromEnvelope_FieldAccess(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
 			got, err := v.Lookup("$r", tc.path)
 			require.NoError(t, err, "lookup %q", tc.path)
 			s, err := got.Scalar()

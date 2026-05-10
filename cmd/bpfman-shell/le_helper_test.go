@@ -13,6 +13,7 @@ func litArg(s string) shell.Arg {
 }
 
 func TestU32LE_FormatsLittleEndian(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -28,6 +29,7 @@ func TestU32LE_FormatsLittleEndian(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
+			t.Parallel()
 			v, err := replU32LE([]shell.Arg{litArg(c.in)})
 			if err != nil {
 				t.Fatalf("u32le %s: %v", c.in, err)
@@ -41,6 +43,7 @@ func TestU32LE_FormatsLittleEndian(t *testing.T) {
 }
 
 func TestU64LE_FormatsLittleEndian(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -53,6 +56,7 @@ func TestU64LE_FormatsLittleEndian(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
+			t.Parallel()
 			v, err := replU64LE([]shell.Arg{litArg(c.in)})
 			if err != nil {
 				t.Fatalf("u64le %s: %v", c.in, err)
@@ -66,6 +70,7 @@ func TestU64LE_FormatsLittleEndian(t *testing.T) {
 }
 
 func TestU32LE_Rejects(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		args []shell.Arg
@@ -79,6 +84,7 @@ func TestU32LE_Rejects(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			if _, err := replU32LE(c.args); err == nil {
 				t.Fatalf("u32le %v: expected error, got nil", c.args)
 			}
@@ -87,6 +93,7 @@ func TestU32LE_Rejects(t *testing.T) {
 }
 
 func TestU64LE_Rejects(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		args []shell.Arg
@@ -98,6 +105,7 @@ func TestU64LE_Rejects(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			if _, err := replU64LE(c.args); err == nil {
 				t.Fatalf("u64le %v: expected error, got nil", c.args)
 			}
