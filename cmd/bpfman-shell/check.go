@@ -53,19 +53,19 @@ func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
 		return false
 	}
 	hadIssues := false
-	report := func(line int, msg string) {
+	report := func(line, col int, msg string) {
 		hadIssues = true
-		loc := sourceLoc{file: file, line: line}
+		loc := sourceLoc{file: file, line: line, col: col}
 		_ = cli.PrintErrf("%serror: %s\n", loc, msg)
 	}
 	stagedReport := func(err error) {
 		msg := err.Error()
-		line := 1
-		if l, rest, ok := splitLineColPrefix(msg); ok {
-			line = l
+		line, col := 1, 0
+		if l, c, rest, ok := splitLineColPrefix(msg); ok {
+			line, col = l, c
 			msg = rest
 		}
-		report(line, msg)
+		report(line, col, msg)
 	}
 
 	tokens, tokErr := shell.Tokenise(src)
@@ -82,7 +82,7 @@ func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
 		return hadIssues
 	}
 	for _, issue := range shell.Check(prog) {
-		report(issue.Loc.Line, issue.Msg)
+		report(issue.Loc.Line, issue.Loc.Col, issue.Msg)
 	}
 	return hadIssues
 }
@@ -151,25 +151,25 @@ func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
 	}
 
 	hadErrors := false
-	report := func(line int, msg string) {
+	report := func(line, col int, msg string) {
 		hadErrors = true
-		loc := sourceLoc{file: file, line: line}
+		loc := sourceLoc{file: file, line: line, col: col}
 		fmt.Fprintf(errOut, "%serror: %s\n", loc, msg)
 	}
 
 	// stagedReport pulls a leading 'LINE:COL: ' prefix off
-	// tokeniser and parser error messages so the file:line
+	// tokeniser and parser error messages so the file:line:col
 	// rendering in report stays consistent. Without the
 	// strip the user would see 'test.bpfman:1: error: 1:11:
 	// unexpected ...' with the position rendered twice.
 	stagedReport := func(err error) {
 		msg := err.Error()
-		line := 1
-		if l, rest, ok := splitLineColPrefix(msg); ok {
-			line = l
+		line, col := 1, 0
+		if l, c, rest, ok := splitLineColPrefix(msg); ok {
+			line, col = l, c
 			msg = rest
 		}
-		report(line, msg)
+		report(line, col, msg)
 	}
 
 	tokens, tokErr := shell.Tokenise(src)
@@ -186,7 +186,7 @@ func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
 		return hadErrors
 	}
 	for _, issue := range shell.Check(prog) {
-		report(issue.Loc.Line, issue.Msg)
+		report(issue.Loc.Line, issue.Loc.Col, issue.Msg)
 	}
 	return hadErrors
 }
@@ -210,23 +210,31 @@ func openScriptReader(path string) (LineReader, error) {
 type sourceLoc struct {
 	file string
 	line int
+	col  int
 }
 
 func (l sourceLoc) String() string {
 	if l.file == "" {
 		return ""
 	}
+	if l.col > 0 {
+		return fmt.Sprintf("%s:%d:%d: ", l.file, l.line, l.col)
+	}
 	return fmt.Sprintf("%s:%d: ", l.file, l.line)
 }
 
-// cite returns the bare 'file:line' citation without the
-// trailing ': ' separator that String adds for inline error
-// prefixes. Used when the location is rendered as a value in
-// its own right (e.g. captured into Job.Origin so the
-// scope-exit leak diagnostic can show where the start lived).
+// cite returns the bare 'file:line[:col]' citation without
+// the trailing ': ' separator that String adds for inline
+// error prefixes. Used when the location is rendered as a
+// value in its own right (e.g. captured into Job.Origin so
+// the scope-exit leak diagnostic can show where the start
+// lived).
 func (l sourceLoc) cite() string {
 	if l.file == "" {
 		return ""
+	}
+	if l.col > 0 {
+		return fmt.Sprintf("%s:%d:%d", l.file, l.line, l.col)
 	}
 	return fmt.Sprintf("%s:%d", l.file, l.line)
 }

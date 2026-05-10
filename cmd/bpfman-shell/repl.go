@@ -265,12 +265,15 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sour
 	report := func(err error) error {
 		errLoc := loc
 		msg := err.Error()
-		if line, rest, ok := splitLineColPrefix(msg); ok && loc.file != "" {
+		if line, col, rest, ok := splitLineColPrefix(msg); ok && loc.file != "" {
 			// chunk-relative line from the parser/evaluator
 			// composes with the chunk's startLine to yield the
 			// absolute file line; matches the convention in
-			// repl_assert.go.
+			// assert.go. Column is preserved as-is because
+			// the tokeniser's columns are line-relative and
+			// translate directly.
 			errLoc.line = loc.line + line - 1
+			errLoc.col = col
 			msg = rest
 		}
 		_ = cli.PrintErrf("%serror: %s\n", errLoc, msg)
@@ -606,26 +609,27 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // uses the line to replace the script-level prefix's line
 // (which would otherwise always be 1 in script mode after the
 // whole-script slurp).
-func splitLineColPrefix(msg string) (int, string, bool) {
+func splitLineColPrefix(msg string) (line, col int, rest string, ok bool) {
 	colon1 := strings.IndexByte(msg, ':')
 	if colon1 <= 0 {
-		return 0, "", false
+		return 0, 0, "", false
 	}
-	line, err := strconv.Atoi(msg[:colon1])
-	if err != nil || line <= 0 {
-		return 0, "", false
+	l, err := strconv.Atoi(msg[:colon1])
+	if err != nil || l <= 0 {
+		return 0, 0, "", false
 	}
-	rest := msg[colon1+1:]
-	colon2 := strings.IndexByte(rest, ':')
+	tail := msg[colon1+1:]
+	colon2 := strings.IndexByte(tail, ':')
 	if colon2 <= 0 {
-		return 0, "", false
+		return 0, 0, "", false
 	}
-	if _, err := strconv.Atoi(rest[:colon2]); err != nil {
-		return 0, "", false
+	c, err := strconv.Atoi(tail[:colon2])
+	if err != nil {
+		return 0, 0, "", false
 	}
-	rest = rest[colon2+1:]
+	rest = tail[colon2+1:]
 	rest = strings.TrimPrefix(rest, " ")
-	return line, rest, true
+	return l, c, rest, true
 }
 
 // renderEnvelopeFailure prints a captured-result failure as a

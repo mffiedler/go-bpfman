@@ -2353,8 +2353,9 @@ func TestSourceLoc_String(t *testing.T) {
 		want string
 	}{
 		{"zero value", sourceLoc{}, ""},
-		{"with file and line", sourceLoc{"test.bpfman", 5}, "test.bpfman:5: "},
-		{"line one", sourceLoc{"script.bpfman", 1}, "script.bpfman:1: "},
+		{"with file and line", sourceLoc{file: "test.bpfman", line: 5}, "test.bpfman:5: "},
+		{"line one", sourceLoc{file: "script.bpfman", line: 1}, "script.bpfman:1: "},
+		{"with column", sourceLoc{file: "test.bpfman", line: 5, col: 9}, "test.bpfman:5:9: "},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2376,7 +2377,7 @@ func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
 	require.ErrorIs(t, err, errScriptError)
-	assert.Contains(t, errBuf.String(), "test.bpfman:2: ")
+	assert.Contains(t, errBuf.String(), "test.bpfman:2:")
 }
 
 func TestReplLoop_InteractiveModeOmitsLocationAndContinues(t *testing.T) {
@@ -2466,7 +2467,7 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
 	require.ErrorIs(t, err, errScriptError)
-	assert.Contains(t, errBuf.String(), "test.bpfman:4: ")
+	assert.Contains(t, errBuf.String(), "test.bpfman:4:")
 }
 
 func TestWithDiscardOutput_PreservesRuntimeState(t *testing.T) {
