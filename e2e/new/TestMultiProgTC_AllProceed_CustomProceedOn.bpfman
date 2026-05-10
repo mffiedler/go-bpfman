@@ -1,0 +1,122 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgTC_AllProceed_CustomProceedOn.
+#
+# Three TC programs (mtcv_a/b/c) attach to one veth ingress at
+# distinct dispatcher priorities. Each returns TC_ACT_OK. TC's
+# default proceed-on is `[pipe, dispatcher_return]`, so OK would
+# stop the chain. Attaching with `--proceed-on ok,dispatcher_return`
+# overrides the default to include OK, so the chain proceeds and
+# every program counts every packet. With one wave of N pings:
+#
+#     a counts wave 1 = N events
+#     b counts wave 1 = N events
+#     c counts wave 1 = N events
+#
+# This proves the WithProceedOn knob plumbs through to the
+# dispatcher's bitmask: the same TC_ACT_OK return that would stop
+# the chain under default proceed-on lets it continue here.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgTC_AllProceed_CustomProceedOn.bpfman
+
+source lib.bpfman
+
+let n        = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+let ns      = "bpfsh-mtc"
+let veth_a  = "vea-mtc"
+let veth_b  = "veb-mtc"
+let ip_a    = "198.51.100.1"
+let ip_b    = "198.51.100.2"
+
+# Best-effort cleanup of any leftover state from a prior failed run.
+let _ <- ip link del $veth_a
+let _ <- ip netns del $ns
+
+guard _ <- ip netns add $ns
+defer ip netns del $ns
+
+guard _ <- ip link add $veth_a type veth peer name $veth_b
+defer ip link del $veth_a
+
+guard _ <- ip link set $veth_b netns $ns
+
+guard _ <- ip link set $veth_a up
+guard _ <- ip addr add "${ip_a}/32" dev $veth_a
+guard _ <- ip route add "${ip_b}/32" dev $veth_a
+
+guard _ <- ip -n $ns link set $veth_b up
+guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
+guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+
+# LE-hex helpers for the three weight u64 globals. The verdict
+# globals are u32 TC_ACT_OK (= 0) for all three; the literal
+# `0x00000000` does not need the printf dance.
+guard wa_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
+guard wb_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
+guard wc_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_tc_param_verdict.bpf.o \
+    --programs tc:mtcv_a,tc:mtcv_b,tc:mtcv_c \
+    -g "weight_a=0x${wa_le.stdout}" \
+    -g "weight_b=0x${wb_le.stdout}" \
+    -g "weight_c=0x${wc_le.stdout}" \
+    -g verdict_a=0x00000000 \
+    -g verdict_b=0x00000000 \
+    -g verdict_c=0x00000000
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mtcv_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mtcv_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mtcv_c_count\") | .id][0]"
+
+# Custom proceed-on includes OK so the chain doesn't stop on
+# TC_ACT_OK. dispatcher_return is the bpfman sentinel that always
+# needs to be in the bitmask.
+guard link_a <- bpfman link attach tc -i $veth_a -d ingress -p 50 --proceed-on ok,dispatcher_return $pid_a
+guard link_b <- bpfman link attach tc -i $veth_a -d ingress -p 60 --proceed-on ok,dispatcher_return $pid_b
+guard link_c <- bpfman link attach tc -i $veth_a -d ingress -p 70 --proceed-on ok,dispatcher_return $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = $n * $weight_c
+
+print "a: got=${count_a} want=${want_a}"
+print "b: got=${count_b} want=${want_b}"
+print "c: got=${count_c} want=${want_c}"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+bpfman link detach $link_a
+bpfman link detach $link_b
+bpfman link detach $link_c
