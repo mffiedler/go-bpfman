@@ -10,12 +10,10 @@
 // reflects over the actual Go types via JSON tags at process
 // init and pushes the resulting Shape trees into the registry.
 //
-// Reflection rather than a hand-rolled list because the JSON
-// shape IS the public surface: every field with a json tag goes
-// straight to the user's $prog.foo path-walks, so the registry
-// stays in lockstep with the type definitions automatically.
-// Hand-rolling would drift; deriving the registry from the same
-// tags the JSON encoder honours makes drift impossible.
+// The JSON shape is the public surface: every field with a json
+// tag goes straight to the user's $prog.foo path-walks, so
+// deriving the registry from the same tags the JSON encoder
+// honours keeps it in lockstep with the type definitions.
 
 package main
 

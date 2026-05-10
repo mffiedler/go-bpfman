@@ -371,7 +371,7 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenVarRef, Text: "$var", VarName: "var"},
 			},
 		},
-		// Comparison operator tokenisation (Phase 2 infix assertions).
+		// Comparison operator tokenisation.
 		{
 			name:  "== is a single word token, not two assigns",
 			input: "assert $a == 1",

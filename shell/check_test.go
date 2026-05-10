@@ -522,8 +522,8 @@ func TestCheck_KindFieldAccess_UnknownKindIsPermissive(t *testing.T) {
 	t.Parallel()
 
 	// 'jq' returns OriginUnknown so any field access is
-	// allowed. Same for 'bpfman' subcommands and 'file' until
-	// Phase 2 enumerates their shapes.
+	// allowed. Same for 'bpfman' subcommands and 'file'
+	// whose shapes are not yet enumerated.
 	src := `guard data <- jq "." '{"x":1}'
 print $data.anything.we.want`
 	issues := checkSource(t, src)
@@ -620,12 +620,12 @@ kill $p`
 func TestCheck_UnaliasReinstatesUnknownShape(t *testing.T) {
 	t.Parallel()
 
-	// 'unalias s' between the alias and the bind means the
-	// bind no longer benefits from the alias expansion: the
-	// inferred shape falls back to the external-command
-	// result default, and $p.pidd is not flagged as a Job
-	// field typo. This is the right behaviour: the runtime
-	// would also fail to expand 's' once unaliased.
+	// With 'unalias s' between the alias and the bind, the
+	// bind does not see the alias expansion: the inferred
+	// shape falls back to the external-command result
+	// default, and $p.pidd is not flagged as a Job field
+	// typo. This matches runtime behaviour: 's' is also not
+	// expanded once unaliased.
 	src := `alias s = start
 unalias s
 let p <- s sleep 5

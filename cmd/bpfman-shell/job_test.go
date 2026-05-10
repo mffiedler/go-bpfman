@@ -131,8 +131,7 @@ func TestReplWait_AfterAlreadyCompleted(t *testing.T) {
 	t.Parallel()
 
 	// 'start ls /run' may exit before this goroutine reaches
-	// replWait. The cached envelope must still be returned;
-	// the future-shaped semantics are the whole point.
+	// replWait. The cached envelope must still be returned.
 	val, err := replStart(context.Background(), nil, "", []shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},

@@ -408,14 +408,14 @@ func (p *parser) parseStmt() (Stmt, error) {
 }
 
 // assertTakesExprForm reports whether the assert/require statement
-// at the current cursor should be parsed as the new expression
-// form (AssertStmt) rather than the legacy command form
-// (CommandStmt). The peek must not consume any tokens. The rule:
-// after the keyword, optionally skip a leading "not", look at the
-// next meaningful token; if it names a verb-style assertion
-// (ok/fail/path/contains/nil), or if a "matches {" tail appears
-// anywhere in the buffered statement, fall through to the legacy
-// path. Otherwise the statement has expression-grade content.
+// at the current cursor should be parsed as the expression form
+// (AssertStmt) rather than the verb-form CommandStmt. The peek
+// must not consume any tokens. The rule: after the keyword,
+// optionally skip a leading "not", look at the next meaningful
+// token; if it names a verb-style assertion (ok/fail/path/
+// contains/nil), or if a "matches {" tail appears anywhere in
+// the buffered statement, fall through to the verb-form path.
+// Otherwise the statement has expression-grade content.
 func (p *parser) assertTakesExprForm() bool {
 	pos := p.pos + 1
 	if pos < len(p.tokens) && p.tokens[pos].Kind == TokenWord && p.tokens[pos].Text == "not" {
@@ -1351,11 +1351,9 @@ func advancePos(start Pos, s string) Pos {
 // replaces its embedded Span with translate(span). Used when a
 // sub-AST is parsed from a synthesised slice (interpolation
 // bodies) so the original source coordinates are preserved
-// across the boundary; the previous version overwrote every
-// inner span with a single outer span, which was correct but
-// blunted carets to the whole "${...}" run. Per-node translation
-// keeps caret precision: an error inside "${4 * bogus}" can
-// underline just "bogus" rather than the whole interpolation.
+// across the boundary. Per-node translation keeps caret
+// precision: an error inside "${4 * bogus}" can underline just
+// "bogus" rather than the whole interpolation.
 func rewriteSpansWith(root Node, translate func(Span) Span) {
 	Inspect(root, func(n Node) bool {
 		if n == nil {
@@ -1888,7 +1886,7 @@ func stripSeps(tokens []Token) []Token {
 // human-readable message; Cause optionally holds an underlying
 // error so errors.Is and errors.As traversals walk through to
 // any sentinel a command handler emitted. Error() renders the
-// legacy "line:col: message" form for string-only callers; the
+// plain "line:col: message" form for string-only callers; the
 // renderer-aware paths in cmd/bpfman-shell type-assert via
 // errors.As and pull the Span directly so the rust-frame caret
 // underlines the actual region.
@@ -1971,8 +1969,8 @@ func frameAtSpan(span Span, err error) error {
 // statement's Span.
 func FrameAt(span Span, err error) error { return frameAtSpan(span, err) }
 
-// locErrorf is the legacy point-location helper. The Span it
-// builds is collapsed at loc; renderers will draw a one-column
+// locErrorf builds a SyntaxError at a single Pos. The Span it
+// produces is collapsed at loc; renderers will draw a one-column
 // caret. Prefer spanErrorf where the full Span is reachable so
 // frames cover the offending run.
 func locErrorf(loc Pos, format string, args ...any) error {

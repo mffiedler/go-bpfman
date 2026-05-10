@@ -4,11 +4,8 @@
 // weight) need to convert decimal integers to LE-byte hex without
 // shelling out to printf for the bit-twiddling.
 //
-// Two named builtins, one per width, matching the C declarations
-// users see in their .bpf.c (volatile const __u32, __u64). A
-// width-polymorphic builtin (`le N value`) was considered and
-// rejected: the named form reads more clearly at the call site
-// and the only widths anyone needs are 32 and 64.
+// One named builtin per width, matching the C declarations users
+// see in their .bpf.c (volatile const __u32, __u64).
 
 package main
 

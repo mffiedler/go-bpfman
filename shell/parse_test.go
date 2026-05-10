@@ -1249,8 +1249,7 @@ func TestParseInterpBody_LiteralLedExpression(t *testing.T) {
 
 	// "${4 * 2}" is the literal-led expression form: useful
 	// for inline arithmetic in command args without a named
-	// intermediate. Previously rejected; now parses as an
-	// expression.
+	// intermediate.
 	expr, err := parseInterpBody("4 * 2", Span{})
 	require.NoError(t, err)
 	_, ok := expr.(*BinaryExpr)

@@ -1,24 +1,22 @@
 // Static checks that run between parse and evaluation. The
 // goal is to catch bugs that would otherwise surface at run
 // time (and thus only after some side effects have fired) one
-// pass earlier, when we still have the whole program in front
-// of us. The current set covers undefined variables,
-// uncaptured background jobs, arithmetic on non-numeric
-// literals or non-numeric variables, comparison-kind
-// mismatches, break/continue outside foreach, builtin arity,
-// kill-flag validation, and field-access typos against sealed
-// kinds (Job, the captured-command-result kind, Program,
-// Link). Each check is one pass; the file is structured so
-// adding the next one is a small append rather than a refactor.
+// pass earlier, when the whole program is still in front of
+// us. The current set covers undefined variables, uncaptured
+// background jobs, arithmetic on non-numeric literals or
+// non-numeric variables, comparison-kind mismatches,
+// break/continue outside foreach, builtin arity, kill-flag
+// validation, and field-access typos against sealed kinds
+// (Job, the captured-command-result kind, Program, Link).
 //
-// The design borrows from go/types in spirit -- a separate
-// pass over the AST that produces a list of issues -- but
-// stays much smaller because our DSL has a fixed kind enum
-// and no user-extensible types. Each check uses Inspect for
-// expression-level work; scope-bearing constructs (let, bind,
-// foreach, def) drive the structural part by hand because
-// pre-order traversal cannot express "define this name after
-// processing the RHS, before walking the next statement".
+// Like go/types, this is a separate pass over the AST that
+// produces a list of issues; it stays much smaller because the
+// DSL has a fixed kind enum and no user-extensible types. Each
+// check uses Inspect for expression-level work; scope-bearing
+// constructs (let, bind, foreach, def) drive the structural
+// part by hand because pre-order traversal cannot express
+// "define this name after processing the RHS, before walking
+// the next statement".
 
 package shell
 

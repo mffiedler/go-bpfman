@@ -827,11 +827,9 @@ func TestReplCompleteVarPath(t *testing.T) {
 			wantReplace: 12,
 		},
 		{
-			// Regression: "maps.<tab>" used to produce
-			// "maps.[0]" because the child-completion loop
-			// unconditionally prepended '.' to the key, even
-			// for bracketed array indices.  The correct form
-			// is "maps[0]" (no leading dot before '[').
+			// "maps.<tab>" must produce "maps[0]", not
+			// "maps.[0]": bracketed array indices have no
+			// leading dot.
 			name:        "trailing dot on array field produces bracketed index without dot",
 			token:       "prog.maps.",
 			sigil:       false,
@@ -1741,9 +1739,7 @@ func TestReplLoop_AssertNotWithInfix(t *testing.T) {
 	// "assert not hello == world" parses as a NotExpr wrapping a
 	// BinaryExpr (precedence: "not" looser than comparison). It
 	// evaluates true because hello != world, so the assertion
-	// passes silently. The legacy guardrail that rejected this
-	// shape was a workaround for the rebundle-args dispatch
-	// pipeline; the parser now handles the precedence directly.
+	// passes silently.
 	input := "assert not hello == world\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}

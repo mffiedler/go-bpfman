@@ -11,12 +11,10 @@
 // bpfman-shell binary at this symbol, then drives the wave
 // protocol via the sentinel/ack files.
 //
-// The pattern mirrors e2e/uprobe_target.go and the e2e.test
-// binary's `BPFMAN_E2E_MODE=workload-driver` mode -- one binary,
-// multiple modes, with the test fixture co-located with the test
-// runner so there is no separate helper binary on disk and no
-// dependency on locating libc paths (which break on NixOS, Guix,
-// musl, and other non-standard layouts).
+// One binary, multiple modes, with the fixture co-located with
+// the runner so there is no separate helper binary on disk and
+// no dependency on locating libc paths (which break on NixOS,
+// Guix, musl, and other non-standard layouts).
 
 package main
 

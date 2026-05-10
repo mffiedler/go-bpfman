@@ -262,7 +262,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 // by loc.line so frames cite the absolute file line. When
 // frameSrc is empty (interactive mode without a slurped buffer)
 // the chunk input itself is used as the frame source. Errors
-// without typed Span info fall back to the legacy single-line
+// without typed Span info fall back to the plain single-line
 // "file:line:col: error: msg" shape.
 func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string, loc sourceLoc) error {
 	emitFrame := func(span shell.Span, msg string) {

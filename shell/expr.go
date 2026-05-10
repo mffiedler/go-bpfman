@@ -240,11 +240,11 @@ type Env struct {
 	// HandleJobLeak is called once per unmanaged job at scope
 	// exit. The driver renders the diagnostic ('[job] FAIL at
 	// file:line: argv') and is responsible for any cleanup
-	// signal (the redesign mandates SIGKILL so a leaked
-	// background process does not survive the script). The
-	// shell layer increments Session.RecordJobLeak regardless of
-	// whether HandleJobLeak is set, so the exit code reflects
-	// the leak even with a nil callback.
+	// signal (typically SIGKILL so a leaked background process
+	// does not survive the script). The shell layer increments
+	// Session.RecordJobLeak regardless of whether HandleJobLeak
+	// is set, so the exit code reflects the leak even with a
+	// nil callback.
 	HandleJobLeak func(*Job)
 
 	// defers is the active defer scope's stack. evalDeferStmt
@@ -525,9 +525,7 @@ func argToValue(a Arg) Value {
 // back must save it explicitly.
 // retryBackoff is the fixed sleep between retry iterations.
 // Small enough to keep short condition windows responsive, large
-// enough to avoid pegging the CPU for long-running checks.  A
-// future enhancement could expose this via a CLI flag or
-// environment variable.
+// enough to avoid pegging the CPU for long-running checks.
 const retryBackoff = 100 * time.Millisecond
 
 // evalRetryStmt runs s.Body repeatedly until s.Until evaluates
@@ -791,8 +789,8 @@ func runDefers(env *Env, stack []deferEntry) {
 // registry so the scope-exit leak check can detect an unmanaged
 // lifecycle. Outside any job scope (no driver-established
 // WithJobScope) the call is a no-op: there is nothing to leak
-// from. j must be non-nil; the redesign reserves nil for "no
-// job" rather than as a sentinel here.
+// from. j must be non-nil; nil is reserved for "no job" rather
+// than used as a sentinel here.
 func (e *Env) RegisterJob(j *Job) {
 	if e.jobs == nil {
 		return

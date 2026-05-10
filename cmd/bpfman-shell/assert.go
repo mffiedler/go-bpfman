@@ -24,12 +24,12 @@ type assertResult struct {
 }
 
 // makeExecAssertStmt returns the Env.ExecAssertStmt callback used
-// by the new expression-form path. It evaluates the AssertStmt's
+// by the expression-form path. It evaluates the AssertStmt's
 // expression, applies AsBool and the optional negation, and routes
 // pass/fail through the same printing, counter, and halt-on-require
-// machinery the legacy verb-form path uses. The returned function
-// closes over the CLI, session, and source-location prefix so the
-// caller does not need to thread them through Env explicitly.
+// machinery the verb-form path uses. The returned function closes
+// over the CLI, session, and source-location prefix so the caller
+// does not need to thread them through Env explicitly.
 func makeExecAssertStmt(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) func(*shell.AssertStmt, *shell.Env) error {
 	return func(s *shell.AssertStmt, env *shell.Env) error {
 		v, err := shell.EvalExpr(s.Expr, env)

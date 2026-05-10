@@ -259,6 +259,6 @@ func TestAssertMatches_NotWithMatchesIsError(t *testing.T) {
 	assert.Contains(t, strings.ToLower(errOut), "not")
 }
 
-// Avoid "declared but not used" if io is not referenced by other
-// helpers added later in the file.
+// Keep io referenced so removing helpers does not leave it
+// declared-but-not-used.
 var _ = io.Discard

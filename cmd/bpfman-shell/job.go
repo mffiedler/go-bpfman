@@ -1,6 +1,5 @@
-// Async job control: start / wait / kill builtins backing the
-// 'let job <- start COMMAND ARGS' lifecycle described in
-// REPL-REDESIGN section 8.
+// Async job control: start / wait / kill builtins for the
+// 'let job <- start COMMAND ARGS' lifecycle.
 package main
 
 import (
@@ -173,21 +172,19 @@ func removeTempFiles(paths []string) {
 // settled the captured streams and exit code, then builds the
 // captured-result Envelope from those fields. If the job had
 // already completed before wait was called the select returns
-// immediately with the cached values; this is the
-// future-shaped semantics the design calls out, so a job that
-// exited between 'start' and 'wait' does not lose its result.
+// immediately with the cached values, so a job that exited
+// between 'start' and 'wait' does not lose its result.
 //
 // The job is marked Managed regardless of outcome: the script
 // has acknowledged the lifecycle, even if the result is a
-// non-ok envelope. Scope-exit (commit 5) will use Managed to
-// distinguish observed jobs from leaked ones.
+// non-ok envelope. Scope-exit uses Managed to distinguish
+// observed jobs from leaked ones.
 //
-// Killed jobs (commit 4) report ok: true in the envelope: a
-// script that explicitly kills its own background work is
-// performing a clean cleanup, not signalling failure. A
-// non-zero exit on a job the script did not kill is a failure
-// the consumer can act on through guard or by inspecting
-// $rc.code.
+// Killed jobs report ok: true in the envelope: a script that
+// explicitly kills its own background work is performing a
+// clean cleanup, not signalling failure. A non-zero exit on a
+// job the script did not kill is a failure the consumer can
+// act on through guard or by inspecting $rc.code.
 func replWait(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	if len(args) != 1 {
 		return shell.Envelope{}, fmt.Errorf("wait requires exactly one argument: a $job")
