@@ -368,6 +368,22 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 		if prog, ok := row.AsProgram(); ok {
 			p := prog // explicit copy for clarity
 			if filter.Matches(&p) {
+				// Enrich Status.Maps with kernel-side map metadata
+				// (id, name, type, sizes). Mirrors what Manager.Load
+				// does -- no filesystem pin correlation, that is
+				// Manager.Get's job. Skipped maps (kernel query
+				// failure) silently drop, same as Get.
+				if p.Status.Kernel != nil {
+					var kernelMaps []kernel.Map
+					for _, mapID := range p.Status.Kernel.MapIDs {
+						km, err := m.kernel.GetMapByID(ctx, mapID)
+						if err != nil {
+							continue
+						}
+						kernelMaps = append(kernelMaps, km)
+					}
+					p.Status.Maps = bpfman.ToMapStatus(kernelMaps)
+				}
 				programs = append(programs, p)
 			}
 		}
