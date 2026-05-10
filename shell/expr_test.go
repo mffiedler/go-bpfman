@@ -365,7 +365,7 @@ func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
 		WordArg{Text: "b"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "binary operator")
+	assert.Contains(t, err.Error(), "expected an operator")
 }
 
 func TestExprFromArgs_TooManyArgs(t *testing.T) {
@@ -518,7 +518,7 @@ func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	}
 	_, err := EvalExpr(e, env)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "thread")
+	assert.Contains(t, err.Error(), "'|>'")
 }
 
 func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {

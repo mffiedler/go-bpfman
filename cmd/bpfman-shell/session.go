@@ -151,7 +151,7 @@ func replUnset(cli *bpfmancli.CLI, session *shell.Session, args []string) error 
 // JavaScript spread multiple arguments across a print call.
 func replPrint(cli *bpfmancli.CLI, args []shell.Arg) error {
 	if len(args) == 0 {
-		return fmt.Errorf(`print requires at least one argument: print $var[.path] | "literal" | EXPR ...`)
+		return fmt.Errorf(`print needs something to print: a variable like $name, a quoted string, or an expression`)
 	}
 	if len(args) == 1 {
 		v, err := printValue(args[0])

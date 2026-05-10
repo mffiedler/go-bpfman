@@ -289,9 +289,9 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 	case "nil":
 		return assertNil(session, ss)
 	case "==", "!=", "<", "<=", ">", ">=":
-		return assertResult{}, fmt.Errorf("%q is not a prefix verb; use infix form: assert <left> %s <right>", verb, verb)
+		return assertResult{}, fmt.Errorf("%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
 	case "not-empty":
-		return assertResult{}, fmt.Errorf("%q requires exactly one operand: assert %s <operand>", verb, verb)
+		return assertResult{}, fmt.Errorf("%q takes one value: try 'assert %s $name'", verb, verb)
 	default:
 		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
 	}

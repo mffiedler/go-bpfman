@@ -1313,7 +1313,7 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 // failure must propagate.
 func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if env.ExecBind == nil {
-		return Value{}, locErrorf(e.Loc, "thread requires a command runner; none configured")
+		return Value{}, locErrorf(e.Loc, "'|>' is only valid where commands can run; not available in this context")
 	}
 	lhsVal, err := EvalExpr(e.LHS, env)
 	if err != nil {
@@ -1651,7 +1651,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 	case 3:
 		op, ok := argAsBinaryOp(args[1])
 		if !ok {
-			return nil, fmt.Errorf("expected binary operator as middle operand, got %q", argDisplay(args[1]))
+			return nil, fmt.Errorf("expected an operator (==, !=, <, <=, >, >=) between the two values, got %q", argDisplay(args[1]))
 		}
 		left, err := argToPrimary(args[0])
 		if err != nil {

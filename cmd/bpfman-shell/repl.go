@@ -987,7 +987,7 @@ var domainNouns = map[string]bool{
 // type-switch.
 func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 || argText(args[0]) != "bpfman" {
-		return shell.Value{}, fmt.Errorf("replDispatch: expected leading \"bpfman\", got %v", argTexts(args))
+		return shell.Value{}, fmt.Errorf("expected a command starting with \"bpfman\", got %v", argTexts(args))
 	}
 	cmd, err := parseCommand(args[1:])
 	if err != nil {
