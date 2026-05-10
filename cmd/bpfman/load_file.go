@@ -26,7 +26,7 @@ type LoadFileCmd struct {
 
 	Example     ExampleFlag             `name:"example" help:"Show working examples and exit."`
 	Path        string                  `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
-	Programs    []bpfmancli.ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	Programs    []bpfmancli.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
 	Application string                  `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
 	MapOwnerID  kernel.ProgramID        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }

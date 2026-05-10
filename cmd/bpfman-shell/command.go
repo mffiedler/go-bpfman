@@ -420,11 +420,13 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			if i >= len(args) {
 				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: --programs requires a value")
 			}
-			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
-			if err != nil {
-				return nil, fmt.Errorf("load file: %w", err)
+			for _, part := range splitComma(argText(args[i])) {
+				spec, err := bpfmancli.ParseProgramSpec(part)
+				if err != nil {
+					return nil, fmt.Errorf("load file: %w", err)
+				}
+				cmd.Programs = append(cmd.Programs, spec)
 			}
-			cmd.Programs = append(cmd.Programs, spec)
 		case "-m", "--metadata":
 			i++
 			if i >= len(args) {
@@ -1391,11 +1393,13 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			if i >= len(args) {
 				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: --programs requires a value")
 			}
-			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
-			if err != nil {
-				return nil, fmt.Errorf("load image: %w", err)
+			for _, part := range splitComma(argText(args[i])) {
+				spec, err := bpfmancli.ParseProgramSpec(part)
+				if err != nil {
+					return nil, fmt.Errorf("load image: %w", err)
+				}
+				cmd.Programs = append(cmd.Programs, spec)
 			}
-			cmd.Programs = append(cmd.Programs, spec)
 		case "-p", "--pull-policy":
 			i++
 			if i >= len(args) {

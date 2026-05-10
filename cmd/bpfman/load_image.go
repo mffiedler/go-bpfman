@@ -23,7 +23,7 @@ type LoadImageCmd struct {
 
 	Example      ExampleFlag               `name:"example" help:"Show working examples and exit."`
 	ImageURL     string                    `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
-	Programs     []bpfmancli.ProgramSpec   `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+	Programs     []bpfmancli.ProgramSpec   `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
 	PullPolicy   bpfmancli.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
 	RegistryAuth string                    `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
 	Application  string                    `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
