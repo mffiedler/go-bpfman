@@ -1,0 +1,149 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgMixed_LoadAttachDetachUnload.
+#
+# Three program types -- tracepoint, kprobe, kretprobe -- in one
+# .bpf.o, each attached to its natural hook for the unlinkat
+# syscall:
+#
+#   mixed_tp  (tracepoint)  -> syscalls/sys_enter_unlinkat
+#   mixed_kp  (kprobe)      -> do_unlinkat (entry)
+#   mixed_krp (kretprobe)   -> do_unlinkat (return)
+#
+# Each unlink syscall the worker fires hits the tracepoint, the
+# kprobe entry, and the kretprobe return, so wave 1 with N
+# unlinks counts N on every program. Three waves with staggered
+# detach (krp first, then kp) leave:
+#
+#   tp  counts waves 1+2+3   = 3 * N
+#   kp  counts waves 1+2     = 2 * N
+#   krp counts wave 1        = 1 * N
+#
+# Difference from the Go test:
+#   - The worker is bpfman-shell launched in
+#     BPFMAN_SHELL_MODE=unlinkat-fire-worker mode (see
+#     cmd/bpfman-shell/unlink_helper.go). Each fire is an
+#     unlinkat(2) syscall, which exercises both
+#     sys_enter_unlinkat (tracepoint) and do_unlinkat (kprobe
+#     family) at once.
+#   - No waitDetachQuiescent between waves, just a brief sleep for
+#     the perf-link RCU GP. Perf-link applies to the kp/krp pair;
+#     tracepoint detach is synchronous-ish.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgMixed_LoadAttachDetachUnload.bpfman
+
+source lib.bpfman
+
+let n      = 5
+let waves  = 3
+let weight_tp  = 41
+let weight_kp  = 42
+let weight_krp = 43
+
+let sentinel = "/tmp/bpfman-shell-mmix.go"
+let ack      = "/tmp/bpfman-shell-mmix.ack"
+
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+
+guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n $waves
+defer kill --signal=KILL $work
+
+guard pid_le <- exec sh -c 'printf "%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff))' x ${work.pid}
+guard wtp_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_tp}
+guard wkp_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_kp}
+guard wkrp_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_krp}
+
+# Load three programs of three different types from one object
+# file. The --programs spec carries the type per entry; bpfman
+# routes each through its own load path.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_mixed_counter.bpf.o \
+    --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp \
+    -g "expected_pid=0x${pid_le.stdout}" \
+    -g "weight_tp=0x${wtp_le.stdout}" \
+    -g "weight_kp=0x${wkp_le.stdout}" \
+    -g "weight_krp=0x${wkrp_le.stdout}"
+
+let prog_tp  = $loaded.programs[0]
+let prog_kp  = $loaded.programs[1]
+let prog_krp = $loaded.programs[2]
+let pid_tp  = $prog_tp.record.program_id
+let pid_kp  = $prog_kp.record.program_id
+let pid_krp = $prog_krp.record.program_id
+print "pids: tp=${pid_tp} kp=${pid_kp} krp=${pid_krp}"
+
+defer bpfman program unload $pid_tp
+defer bpfman program unload $pid_kp
+defer bpfman program unload $pid_krp
+
+let mapID_tp  = $prog_tp  |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
+let mapID_kp  = $prog_kp  |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
+let mapID_krp = $prog_krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
+print "maps: tp=${mapID_tp} kp=${mapID_kp} krp=${mapID_krp}"
+
+# Three different attach verbs, one per program type. Same
+# do_unlinkat target underneath kp and krp; the kernel resolves
+# the entry vs. return hook from the program type.
+guard link_tp  <- bpfman link attach tracepoint $pid_tp  syscalls/sys_enter_unlinkat
+guard link_kp  <- bpfman link attach kprobe --fn-name do_unlinkat $pid_kp
+guard link_krp <- bpfman link attach kprobe --fn-name do_unlinkat $pid_krp
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# --- Wave 1: tp, kp, krp all attached ---
+guard _ <- touch "${sentinel}.1"
+retry {
+    let probe <- test -f "${ack}.1"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+# Detach krp first.
+bpfman link detach $link_krp
+guard _ <- sleep 0.1
+
+# --- Wave 2: tp, kp attached; krp detached ---
+guard _ <- touch "${sentinel}.2"
+retry {
+    let probe <- test -f "${ack}.2"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+bpfman link detach $link_kp
+guard _ <- sleep 0.1
+
+# --- Wave 3: only tp attached ---
+guard _ <- touch "${sentinel}.3"
+retry {
+    let probe <- test -f "${ack}.3"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+guard work_r <- wait $work
+assert $work_r.ok
+
+guard dump_tp  <- bpftool map dump id $mapID_tp -j
+guard dump_kp  <- bpftool map dump id $mapID_kp -j
+guard dump_krp <- bpftool map dump id $mapID_krp -j
+
+let count_tp  = $dump_tp.stdout  |> jq $counter_filter
+let count_kp  = $dump_kp.stdout  |> jq $counter_filter
+let count_krp = $dump_krp.stdout |> jq $counter_filter
+
+let want_tp  = 3 * $n * $weight_tp
+let want_kp  = 2 * $n * $weight_kp
+let want_krp = 1 * $n * $weight_krp
+
+print "tp:  got=${count_tp}  want=${want_tp}"
+print "kp:  got=${count_kp}  want=${want_kp}"
+print "krp: got=${count_krp} want=${want_krp}"
+
+assert $count_tp  == $want_tp
+assert $count_kp  == $want_kp
+assert $count_krp == $want_krp
+
+# tp is still attached on the happy path; detach explicitly
+# before the deferred program-unloads fire.
+bpfman link detach $link_tp
+
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
