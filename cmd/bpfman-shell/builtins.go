@@ -374,6 +374,26 @@ func init() {
 			Usage:    "undef <name>...",
 			Summary:  "Remove user-defined commands.",
 		},
+		"u32le": {
+			Name: "u32le", Handler: handleU32LE,
+			Category: categoryIO,
+			Usage:    "u32le <integer>",
+			Summary:  "Encode an integer as a 4-byte little-endian hex string.",
+			Detail: "Returns 8 lowercase hex characters with no 0x prefix. " +
+				"Useful for `bpfman -g NAME=HEX` global-data injection " +
+				"where the .bpf.c declares `volatile const __u32`. " +
+				"Rejects negative inputs and values that exceed UINT32_MAX.",
+		},
+		"u64le": {
+			Name: "u64le", Handler: handleU64LE,
+			Category: categoryIO,
+			Usage:    "u64le <integer>",
+			Summary:  "Encode an integer as an 8-byte little-endian hex string.",
+			Detail: "Returns 16 lowercase hex characters with no 0x prefix. " +
+				"Useful for `bpfman -g NAME=HEX` global-data injection " +
+				"where the .bpf.c declares `volatile const __u64`. " +
+				"Rejects negative inputs (Go uint64 max is the upper bound).",
+		},
 		"unset": {
 			Name: "unset", Handler: handleUnset, Complete: completeUnsetArg,
 			Category: categorySession,

@@ -1,0 +1,108 @@
+// Little-endian hex builtins for the bpfman global-data injection
+// flow. `bpfman -g NAME=HEX` takes a hex byte string; tests that
+// inject runtime-computed values (a worker PID, a per-program
+// weight) need to convert decimal integers to LE-byte hex without
+// shelling out to printf for the bit-twiddling.
+//
+// Two named builtins, one per width, matching the C declarations
+// users see in their .bpf.c (volatile const __u32, __u64). A
+// width-polymorphic builtin (`le N value`) was considered and
+// rejected: the named form reads more clearly at the call site
+// and the only widths anyone needs are 32 and 64.
+
+package main
+
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+
+	"github.com/frobware/go-bpfman/shell"
+)
+
+// replU32LE parses args[0] as a non-negative integer that fits in
+// a uint32 and returns its little-endian 4-byte hex string (8 hex
+// characters, lowercase, no 0x prefix).
+//
+// Examples:
+//
+//	u32le 0          -> "00000000"
+//	u32le 1          -> "01000000"
+//	u32le 12345      -> "39300000"
+//	u32le 4294967295 -> "ffffffff"
+func replU32LE(args []shell.Arg) (shell.Value, error) {
+	n, err := singleUintArg("u32le", args, math.MaxUint32)
+	if err != nil {
+		return shell.Value{}, err
+	}
+	return shell.ValueFromAny(formatLE(n, 4)).WithKind(shell.OriginScalar), nil
+}
+
+// replU64LE parses args[0] as a non-negative integer that fits in
+// a uint64 and returns its little-endian 8-byte hex string (16
+// hex characters, lowercase, no 0x prefix).
+//
+// Examples:
+//
+//	u64le 0    -> "0000000000000000"
+//	u64le 1    -> "0100000000000000"
+//	u64le 42   -> "2a00000000000000"
+func replU64LE(args []shell.Arg) (shell.Value, error) {
+	n, err := singleUintArg("u64le", args, math.MaxUint64)
+	if err != nil {
+		return shell.Value{}, err
+	}
+	return shell.ValueFromAny(formatLE(n, 8)).WithKind(shell.OriginScalar), nil
+}
+
+// singleUintArg parses exactly one positional argument as a
+// non-negative integer no larger than max. The verb name is used
+// only for error-message context.
+func singleUintArg(verb string, args []shell.Arg, max uint64) (uint64, error) {
+	if len(args) != 1 {
+		return 0, fmt.Errorf("%s: expected exactly 1 argument, got %d", verb, len(args))
+	}
+	text := strings.TrimSpace(argText(args[0]))
+	if text == "" {
+		return 0, fmt.Errorf("%s: empty argument", verb)
+	}
+	if strings.HasPrefix(text, "-") {
+		return 0, fmt.Errorf("%s: negative values are not representable (got %q)", verb, text)
+	}
+	n, err := strconv.ParseUint(text, 0, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: invalid integer %q: %w", verb, text, err)
+	}
+	if n > max {
+		return 0, fmt.Errorf("%s: value %d does not fit in %d bits", verb, n, bitsForMax(max))
+	}
+	return n, nil
+}
+
+// formatLE writes n as a width-byte little-endian hex string. The
+// caller has already range-checked n against the width's maximum,
+// so any high bits that exceed `width` bytes are silently dropped
+// here (they cannot exist in a value singleUintArg let through).
+func formatLE(n uint64, width int) string {
+	var sb strings.Builder
+	sb.Grow(width * 2)
+	for i := 0; i < width; i++ {
+		fmt.Fprintf(&sb, "%02x", byte(n>>(8*i)))
+	}
+	return sb.String()
+}
+
+// bitsForMax returns 32 for math.MaxUint32 and 64 for
+// math.MaxUint64. Used only for error messages.
+func bitsForMax(max uint64) int {
+	if max == math.MaxUint32 {
+		return 32
+	}
+	return 64
+}
+
+// handleU32LE / handleU64LE adapt the repl* helpers to the
+// builtin dispatch shape.
+func handleU32LE(c builtinCtx) (shell.Value, error) { return replU32LE(c.Args) }
+func handleU64LE(c builtinCtx) (shell.Value, error) { return replU64LE(c.Args) }

@@ -210,14 +210,35 @@ func (c *checker) inferExprKind(e Expr) OriginKind {
 }
 
 // inferBindShape returns the Shape a bind RHS CommandStmt
-// produces in its primary slot. Recognised:
+// produces in its primary slot.
 //
-//   - 'start ...'                  -> Job
-//   - 'exec', 'wait', 'kill', or
-//     external-command fallthrough -> result
-//   - 'jq', 'file'                 -> unknown wildcard
-//   - 'bpfman <verb> <subverb>'    -> per-subcommand
-//     (delegated to inferBpfmanBindShape)
+// The shell distinguishes three families of bind-RHS commands:
+//
+//  1. Process-shaped commands (run as a subprocess or wrap one):
+//     `exec`, `wait`, `kill`, and any unrecognised first word
+//     that falls through to the external-command runner. These
+//     capture an Envelope (rc, stdout, stderr) and the primary
+//     slot reads as a result.
+//
+//  2. Typed-payload builtins (in-process, return a domain value
+//     that is *not* a captured-result envelope): `start` returns
+//     a Job; `bpfman <verb> <subverb>` returns Program / Link /
+//     list-of via inferBpfmanBindShape.
+//
+//  3. Pure value-producing builtins (in-process, no subprocess,
+//     no stdout capture, no domain object -- just a value
+//     computation that the `<-` form lets the caller bind):
+//     `u32le` and `u64le` return scalars. The `=` form is
+//     reserved for pure expressions today and does not dispatch
+//     builtins, so `<-` is the only way to invoke them; the
+//     shape inference reads them as plain scalars rather than
+//     as captured envelopes.
+//
+// `jq` and `file` produce typed-but-shape-unknown values handled
+// by the runtime's path machinery; they fall in family (2) but
+// without a registered Shape, so the inference returns the
+// permissive OriginUnknown wildcard and lets downstream
+// path/equality checks proceed.
 //
 // The rc slot of a tuple bind is always result and is set by
 // the caller.
@@ -245,6 +266,14 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 		return KindShape(OriginEnvelope)
 	case "jq", "file":
 		return Shape{Sealed: false, Kind: OriginUnknown}
+	case "u32le", "u64le":
+		// Pure value-producing builtins: no subprocess, no stdout
+		// capture, just an integer-to-hex encoding. The `<-` bind
+		// form is the only way to invoke them today (the parser
+		// reserves `let X = expr` for pure expressions and does
+		// not dispatch builtins from there), so the bind result
+		// reads as a plain scalar and not as a captured envelope.
+		return KindShape(OriginScalar)
 	case "bpfman":
 		return inferBpfmanBindShape(cmd.Args[1:])
 	}
