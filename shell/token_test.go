@@ -195,12 +195,12 @@ func TestTokenise(t *testing.T) {
 		{
 			name:    "unterminated double quote",
 			input:   `"hello`,
-			wantErr: `unterminated "-quoted string`,
+			wantErr: `unterminated double-quoted string`,
 		},
 		{
 			name:    "unterminated single quote",
 			input:   `'hello`,
-			wantErr: `unterminated '-quoted string`,
+			wantErr: `unterminated single-quoted string`,
 		},
 		{
 			name:    "unterminated braced varref",

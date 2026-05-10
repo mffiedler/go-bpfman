@@ -205,7 +205,13 @@ func tokenise(input string, strict bool) ([]Token, error) {
 		case ch == '"' || ch == '\'':
 			tok, n, err := lexQuoted(input, i)
 			if err != nil {
-				return nil, err
+				// The lexer's quote/escape/interpolation
+				// errors do not carry a Loc; cite the
+				// opening quote's position so the user
+				// knows which string is unterminated when
+				// the source has many.
+				openLoc := locAt(start, lineStarts)
+				return nil, fmt.Errorf("%d:%d: %v", openLoc.Line, openLoc.Col, err)
 			}
 			tokens = emit(tokens, start, tok)
 			i += n
@@ -484,7 +490,7 @@ func lexSingleQuoted(input string, pos int) (Token, int, error) {
 		i++
 	}
 	if i >= len(input) {
-		return Token{}, 0, fmt.Errorf("unterminated '-quoted string")
+		return Token{}, 0, fmt.Errorf("unterminated single-quoted string (no matching ' before end of input)")
 	}
 	text := input[pos+1 : i]
 	i++ // skip closing quote
@@ -598,7 +604,7 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 		}
 	}
 
-	return Token{}, 0, fmt.Errorf("unterminated \"-quoted string")
+	return Token{}, 0, fmt.Errorf("unterminated double-quoted string (no matching \" before end of input)")
 }
 
 // scanInterpBody returns the offset of the '}' that closes an
@@ -628,7 +634,7 @@ func scanInterpBody(input string, pos int) (int, error) {
 				k++
 			}
 			if k >= len(input) {
-				return 0, fmt.Errorf("unterminated '-quoted string inside interpolation")
+				return 0, fmt.Errorf("unterminated single-quoted string inside ${...}")
 			}
 			j = k
 		case '"':
