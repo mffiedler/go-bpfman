@@ -543,15 +543,15 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return shell.Value{}, err
 	}
 
-	if len(result.Programs) == 0 {
-		return shell.Value{}, nil
-	}
-
-	val, err := shell.ValueFromStruct(result.Programs[0])
+	// The DSL value wraps the full load result so callers can address
+	// every loaded program. Single-prog scripts read $loaded.programs[0];
+	// multi-prog scripts iterate or filter via jq. Same shape as
+	// `bpfman program list -o json` so users learn one path pattern.
+	val, err := shell.ValueFromStruct(bpfman.LoadResult{Programs: result.Programs})
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val.WithKind(shell.OriginProgram), nil
+	return val, nil
 }
 
 // LinkAttachCommand represents a fully parsed "link attach" command.
@@ -1552,15 +1552,14 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		return shell.Value{}, err
 	}
 
-	if len(result.Programs) == 0 {
-		return shell.Value{}, nil
-	}
-
-	val, err := shell.ValueFromStruct(result.Programs[0])
+	// See parseLoadFile for the rationale: wrap as {programs: [...]}
+	// so the DSL surface for load matches list and never silently
+	// drops loaded programs.
+	val, err := shell.ValueFromStruct(bpfman.LoadResult{Programs: result.Programs})
 	if err != nil {
 		return shell.Value{}, nil
 	}
-	return val.WithKind(shell.OriginProgram), nil
+	return val, nil
 }
 
 // GetProgramCommand represents a fully parsed "program get" command

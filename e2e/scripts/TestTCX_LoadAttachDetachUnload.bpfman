@@ -33,7 +33,8 @@ guard _ <- ip netns exec bpfman-tcx ip addr add 198.51.100.2/24 dev veth-tcx-ns
 guard _ <- ip netns exec bpfman-tcx ip link set veth-tcx-ns up
 
 # Load the TCX counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
-guard prog <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+guard loaded <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports

@@ -118,8 +118,12 @@ guard one <- bpfman program list
 guard arg_after <- diff file:$a file:$b
 
 # Tuple binding captures the result envelope and the primary
-# separately. Only legal on '<-'; '=' stays single-name.
-guard (rc, prog) <- bpfman program load file --path ./foo.o --programs xdp:pass
+# separately. Only legal on '<-'; '=' stays single-name. The
+# primary of a 'bpfman program load' is a {programs: [...]}
+# wrapper; downstream code reads the first (or only) program
+# through `.programs[0]`.
+guard (rc, loaded) <- bpfman program load file --path ./foo.o --programs xdp:pass
+let prog = $loaded.programs[0]
 let (rc2, _) <- ip link del veth-host
 
 # '_' discards a slot. The single-name discard form is the
@@ -133,7 +137,8 @@ guard _ <- ip netns add bpfman-test
 # exit, on both normal completion and guard halt. Argument
 # values are captured at defer-statement time, so a later
 # rebinding of the variable does not change the deferred call.
-guard prog2 <- bpfman program load file --path ./bar.o --programs xdp:bar
+guard loaded2 <- bpfman program load file --path ./bar.o --programs xdp:bar
+let prog2 = $loaded2.programs[0]
 defer bpfman program unload $prog2
 guard link2 <- bpfman link attach xdp -i bpfman-demo $prog2
 defer bpfman link detach $link2

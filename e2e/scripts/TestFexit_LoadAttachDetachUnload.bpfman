@@ -23,7 +23,8 @@ require path exists /sys/kernel/btf/vmlinux
 # Load the fexit counter. The source is the same object as the
 # fentry test; only the section (test_fexit) and declared type
 # differ.
-guard prog <- bpfman program load file --path testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat
+guard loaded <- bpfman program load file --path testdata/bpf/fentry_counter.bpf.o --programs fexit:test_fexit:do_unlinkat
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response.

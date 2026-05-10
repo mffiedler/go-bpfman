@@ -257,7 +257,7 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 // inferBpfmanBindShape recognises the bpfman subcommands whose
 // primary slot binds a typed domain record or a list of one:
 //
-//	bpfman program load ...   -> Program
+//	bpfman program load ...   -> {programs: [Program]} (one entry per --programs)
 //	bpfman program get ...    -> Program
 //	bpfman program list       -> list of Program
 //	bpfman link attach ...    -> Link
@@ -268,6 +268,12 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 // Elem that points at the registered Program / Link Shape, so a
 // path like '$progs[0].record.program_id' descends through Elem
 // to the Program shape and validates against its sealed fields.
+//
+// Load returns a sealed object with a single recognised field
+// `programs` whose elements are Program shapes; this matches the
+// runtime contract that load wraps result.Programs as a
+// LoadResult so callers can address every loaded program rather
+// than silently using only the first.
 func inferBpfmanBindShape(args []Expr) Shape {
 	if len(args) < 2 {
 		return Shape{Sealed: false, Kind: OriginUnknown}
@@ -283,7 +289,16 @@ func inferBpfmanBindShape(args []Expr) Shape {
 	switch noun.Text {
 	case "program":
 		switch verb.Text {
-		case "load", "get":
+		case "load":
+			elem := KindShape(OriginProgram)
+			return Shape{
+				Sealed: true,
+				Kind:   OriginUnknown,
+				Fields: map[string]Shape{
+					"programs": {Sealed: false, Kind: OriginUnknown, Elem: &elem},
+				},
+			}
+		case "get":
 			return KindShape(OriginProgram)
 		case "list":
 			elem := KindShape(OriginProgram)

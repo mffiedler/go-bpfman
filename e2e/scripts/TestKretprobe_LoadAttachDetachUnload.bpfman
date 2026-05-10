@@ -21,7 +21,8 @@
 # Pull in the shared lifecycle assertion helpers.
 source lib.bpfman
 
-guard prog <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
+guard loaded <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports

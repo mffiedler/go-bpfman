@@ -21,7 +21,8 @@ source lib.bpfman
 
 # Load the tracepoint counter. The map is unpinned (LIBBPF_PIN_NONE), which uses
 # LIBBPF_PIN_NONE so the counter map is private to this program.
-guard prog <- bpfman program load file --path testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+guard loaded <- bpfman program load file --path testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response.

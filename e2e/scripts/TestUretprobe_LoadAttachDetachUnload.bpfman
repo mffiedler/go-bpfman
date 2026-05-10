@@ -22,7 +22,8 @@
 source lib.bpfman
 
 # Load the uprobe counter ELF as a uretprobe program.
-guard prog <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter
+guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response.

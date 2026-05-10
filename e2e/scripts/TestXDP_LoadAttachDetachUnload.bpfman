@@ -32,7 +32,8 @@ guard _ <- ip netns exec bpfman-xdp ip addr add 198.51.100.2/24 dev veth-xdp-ns
 guard _ <- ip netns exec bpfman-xdp ip link set veth-xdp-ns up
 
 # Load the XDP pass program. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
-guard prog <- bpfman program load file --path testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
+guard loaded <- bpfman program load file --path testdata/bpf/xdp_pass.bpf.o --programs xdp:pass
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. XDP programs are

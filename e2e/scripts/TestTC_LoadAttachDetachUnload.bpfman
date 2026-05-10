@@ -32,7 +32,8 @@ guard _ <- ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-ns
 guard _ <- ip netns exec bpfman-tc ip link set veth-tc-ns up
 
 # Load the TC counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
-guard prog <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. TC programs are
