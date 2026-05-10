@@ -1,0 +1,115 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn.
+#
+# Three TCX programs at distinct priorities. The .bpf.o bakes in
+# the verdicts:
+#
+#   mtcx_chain_a (prio 50)  TC_ACT_UNSPEC -- runs, chain continues
+#   mtcx_chain_b (prio 60)  TC_ACT_OK     -- runs, chain STOPS
+#   mtcx_chain_c (prio 70)  (TC_ACT_UNSPEC -- never reached)
+#
+# TCX uses native kernel multi-prog (no bpfman dispatcher, no
+# --proceed-on flag). The chain-continue verdict is TC_ACT_UNSPEC
+# (aliased TCX_NEXT). Any other verdict -- including OK -- stops
+# the chain and the kernel honours it. b's OK lets the kernel
+# deliver the packet, so ping succeeds.
+#
+# Counters end at:
+#   a = N * weight_a   (ran, returned UNSPEC)
+#   b = N * weight_b   (ran, returned OK)
+#   c = 0              (never ran)
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn.bpfman
+
+source lib.bpfman
+
+let n        = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+let ns      = "bpfsh-mtcxok"
+let veth_a  = "vea-mtcxok"
+let veth_b  = "veb-mtcxok"
+let ip_a    = "198.51.100.1"
+let ip_b    = "198.51.100.2"
+
+let _ <- ip link del $veth_a
+let _ <- ip netns del $ns
+
+guard _ <- ip netns add $ns
+defer ip netns del $ns
+
+guard _ <- ip link add $veth_a type veth peer name $veth_b
+defer ip link del $veth_a
+
+guard _ <- ip link set $veth_b netns $ns
+
+guard _ <- ip link set $veth_a up
+guard _ <- ip addr add "${ip_a}/32" dev $veth_a
+guard _ <- ip route add "${ip_b}/32" dev $veth_a
+
+guard _ <- ip -n $ns link set $veth_b up
+guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
+guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+
+guard wa_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
+guard wb_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
+guard wc_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_tcx_chain_stops_at_ok.bpf.o \
+    --programs tcx:mtcx_chain_a,tcx:mtcx_chain_b,tcx:mtcx_chain_c \
+    -g "weight_a=0x${wa_le.stdout}" \
+    -g "weight_b=0x${wb_le.stdout}" \
+    -g "weight_c=0x${wc_le.stdout}"
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxca_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxcb_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxcc_count\") | .id][0]"
+
+guard link_a <- bpfman link attach tcx -i $veth_a -d ingress -p 50 $pid_a
+guard link_b <- bpfman link attach tcx -i $veth_a -d ingress -p 60 $pid_b
+guard link_c <- bpfman link attach tcx -i $veth_a -d ingress -p 70 $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = 0
+
+print "a: got=${count_a} want=${want_a}  (ran, returned UNSPEC)"
+print "b: got=${count_b} want=${want_b}  (ran, returned OK)"
+print "c: got=${count_c} want=${want_c}    (never ran)"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+bpfman link detach $link_a
+bpfman link detach $link_b
+bpfman link detach $link_c
