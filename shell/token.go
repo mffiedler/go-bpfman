@@ -211,7 +211,7 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			i += n
 
 		case ch == '[' || ch == ']':
-			return nil, fmt.Errorf("unexpected %q: brackets are not a DSL form (jq filters carry their own brackets inside quoted strings)", ch)
+			return nil, fmt.Errorf("unexpected %q; to capture a command's result use 'guard X <- COMMAND' or 'let X <- COMMAND'; quote a literal '[' inside a string", ch)
 
 		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was

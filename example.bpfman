@@ -50,14 +50,14 @@ guard _ <- ip link set bpfman-example up
 
 # Two kernel program IDs from the same object file; bpfman assigns
 # each its own ID, and the dispatcher multiplexes by priority.
-let p1 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=first]
-let p2 = [b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=second]
+guard p1 <- b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=first
+guard p2 <- b program load file --path e2e/testdata/bpf/xdp_pass_pinned.bpf.o --programs xdp:pass -m role=second
 require not nil p1
 require not nil p2
 assert $p1.record.program_id != $p2.record.program_id
 
-let l1 = [b link attach xdp -i bpfman-example --priority 50  $p1]
-let l2 = [b link attach xdp -i bpfman-example --priority 100 $p2]
+guard l1 <- b link attach xdp -i bpfman-example --priority 50 $p1
+guard l2 <- b link attach xdp -i bpfman-example --priority 100 $p2
 require not nil l1
 require not nil l2
 

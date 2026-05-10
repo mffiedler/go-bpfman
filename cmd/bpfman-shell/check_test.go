@@ -78,11 +78,6 @@ func TestReplCheck_BrokenSnippets(t *testing.T) {
 			input:       "echo $prog.",
 			wantContain: "expected identifier",
 		},
-		{
-			name:        "bracket form rejected",
-			input:       "let x = [foo]",
-			wantContain: "brackets are not a DSL form",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

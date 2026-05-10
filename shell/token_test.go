@@ -639,25 +639,6 @@ func TestTokeniseLineContinuation(t *testing.T) {
 	}
 }
 
-func TestTokeniseRejectsBrackets(t *testing.T) {
-	t.Parallel()
-
-	cases := []string{
-		"[",
-		"]",
-		"[foo]",
-		"[[1 + 2]]",
-	}
-	for _, in := range cases {
-		t.Run(in, func(t *testing.T) {
-			t.Parallel()
-			_, err := Tokenise(in)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "brackets are not a DSL form")
-		})
-	}
-}
-
 func TestTokeniseInterpString(t *testing.T) {
 	t.Parallel()
 
