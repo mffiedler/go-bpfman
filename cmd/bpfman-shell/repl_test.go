@@ -3594,7 +3594,7 @@ func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "needs something to print")
+	assert.Contains(t, errBuf.String(), "needs at least one value")
 }
 
 func TestReplLoop_JQNullBinding(t *testing.T) {

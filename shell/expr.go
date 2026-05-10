@@ -1417,10 +1417,10 @@ func evalCompare(op string, l, r Value, loc Loc) (Value, error) {
 	lk := compareKind(l)
 	rk := compareKind(r)
 	if lk == "" {
-		return Value{}, locErrorf(loc, "%s: left side is a %s, not something you can compare with %s", op, l.Kind(), op)
+		return Value{}, locErrorf(loc, "%s: left side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, l.Kind(), op)
 	}
 	if rk == "" {
-		return Value{}, locErrorf(loc, "%s: right side is a %s, not something you can compare with %s", op, r.Kind(), op)
+		return Value{}, locErrorf(loc, "%s: right side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, r.Kind(), op)
 	}
 	if lk != rk {
 		return Value{}, locErrorf(loc, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
