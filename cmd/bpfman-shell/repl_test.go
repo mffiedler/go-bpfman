@@ -1860,7 +1860,7 @@ func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "not a boolean")
+	assert.Contains(t, errBuf.String(), "use a comparison")
 	_, ok := session.Get("out")
 	assert.False(t, ok, "body should not run when condition errors")
 }
@@ -2025,7 +2025,7 @@ func TestReplLoop_AssertSingleBoolExpr(t *testing.T) {
 		{"not_false_passes", "assert not false\n", false, ""},
 		{"compound_via_let", "let r = true and true\nassert $r\n", false, ""},
 		{"compound_or_via_let", "let r = false or true\nassert $r\n", false, ""},
-		{"non_bool_literal_errors", "assert hello\n", false, "condition is not a boolean"},
+		{"non_bool_literal_errors", "assert hello\n", false, "use a comparison"},
 		{"bare_prefix_verb_keeps_arity_error", "assert nil\n", false, "nil requires"},
 	}
 	for _, tc := range cases {
@@ -2182,7 +2182,7 @@ func TestReplLoop_AssertExtraTokens(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "unexpected token")
+	assert.Contains(t, errBuf.String(), "unexpected")
 }
 
 func TestReplLoop_AssertBareBinaryOpErrors(t *testing.T) {

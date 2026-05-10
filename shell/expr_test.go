@@ -333,7 +333,7 @@ func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
 		WordArg{Text: "operand"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unary predicate")
+	assert.Contains(t, err.Error(), "expected a check like")
 }
 
 func TestExprFromArgs_Binary(t *testing.T) {
@@ -375,7 +375,7 @@ func TestExprFromArgs_TooManyArgs(t *testing.T) {
 		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "4 operands")
+	assert.Contains(t, err.Error(), "got 4 argument")
 }
 
 func TestExprFromArgs_Empty(t *testing.T) {
@@ -397,7 +397,7 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 	for _, v := range cases {
 		_, err := AsBool(v)
 		require.Error(t, err, "kind=%s", v.Kind())
-		assert.Contains(t, err.Error(), "not a boolean")
+		assert.Contains(t, err.Error(), "use a comparison")
 	}
 }
 

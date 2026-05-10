@@ -279,7 +279,7 @@ func (p *parser) parseStmts(isEnd func() bool) ([]Stmt, error) {
 		// error at the offending token rather than a hang.
 		if stmt == nil && p.pos == before {
 			t := p.peek()
-			return nil, locErrorf(t.Loc, "unexpected token %q", t.Text)
+			return nil, locErrorf(t.Loc, "unexpected %q", t.Text)
 		}
 	}
 	return stmts, nil
@@ -1119,9 +1119,9 @@ func parseExpression(tokens []Token) (Expr, error) {
 	if !ep.eof() {
 		t := ep.peek()
 		if hint, ok := smushedArithmeticHint(t); ok {
-			return nil, locErrorf(t.Loc, "unexpected token %q after expression; %s", t.Text, hint)
+			return nil, locErrorf(t.Loc, "unexpected %q after expression; %s", t.Text, hint)
 		}
-		return nil, locErrorf(t.Loc, "unexpected token %q after expression", t.Text)
+		return nil, locErrorf(t.Loc, "unexpected %q after expression", t.Text)
 	}
 	return e, nil
 }
@@ -1652,7 +1652,7 @@ func parsePrimary(t Token) (Expr, error) {
 		}
 		return &InterpStringExpr{Segments: segs, Loc: t.Loc}, nil
 	default:
-		return nil, locErrorf(t.Loc, "unexpected token %q", t.Text)
+		return nil, locErrorf(t.Loc, "unexpected %q", t.Text)
 	}
 }
 

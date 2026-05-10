@@ -87,7 +87,7 @@ func (p *parser) parseMatchesBlock(matchesLoc Loc) (*MatchesBlockExpr, error) {
 			// would loop forever. Reaching here means the next
 			// token is something the helper should have either
 			// consumed or surfaced as a stop condition above.
-			return nil, locErrorf(p.peek().Loc, "unexpected token %q inside matches block", p.peek().Text)
+			return nil, locErrorf(p.peek().Loc, "unexpected %q inside matches block", p.peek().Text)
 		}
 		entry, err := parseMatchEntry(entryToks)
 		if err != nil {

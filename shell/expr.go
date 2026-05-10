@@ -1417,10 +1417,10 @@ func evalCompare(op string, l, r Value, loc Loc) (Value, error) {
 	lk := compareKind(l)
 	rk := compareKind(r)
 	if lk == "" {
-		return Value{}, locErrorf(loc, "binary %s: left operand is not a comparable scalar (got %T)", op, l.Raw())
+		return Value{}, locErrorf(loc, "%s: left side is a %s, not something you can compare with %s", op, l.Kind(), op)
 	}
 	if rk == "" {
-		return Value{}, locErrorf(loc, "binary %s: right operand is not a comparable scalar (got %T)", op, r.Raw())
+		return Value{}, locErrorf(loc, "%s: right side is a %s, not something you can compare with %s", op, r.Kind(), op)
 	}
 	if lk != rk {
 		return Value{}, locErrorf(loc, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
@@ -1641,7 +1641,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 	case 2:
 		pred, ok := argAsUnaryPred(args[0])
 		if !ok {
-			return nil, fmt.Errorf("expected unary predicate as first operand, got %q", argDisplay(args[0]))
+			return nil, fmt.Errorf("expected a check like 'not-empty' as the first word, got %q", argDisplay(args[0]))
 		}
 		operand, err := argToPrimary(args[1])
 		if err != nil {
@@ -1663,7 +1663,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 		}
 		return &BinaryExpr{Left: left, Op: op, Right: right}, nil
 	default:
-		return nil, fmt.Errorf("expression has %d operands; expected 1 (primary), 2 (unary) or 3 (binary)", len(args))
+		return nil, fmt.Errorf("got %d argument(s); expected one value, a unary check like 'not-empty $x', or a comparison like '$x == 5'", len(args))
 	}
 }
 
@@ -1727,7 +1727,7 @@ func AsBool(v Value) (bool, error) {
 	if v.Kind() == OriginBool {
 		return false, fmt.Errorf("condition has boolean origin but non-boolean value %T", v.Raw())
 	}
-	return false, fmt.Errorf("condition is not a boolean (got %s); use a comparison or unary predicate", v.Kind())
+	return false, fmt.Errorf("condition is a %s; use a comparison like '$x == 5' or a check like 'not-empty $x' to produce a boolean", v.Kind())
 }
 
 // exprLoc extracts the Loc embedded in any Expr variant. Used for

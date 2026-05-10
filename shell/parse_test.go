@@ -112,12 +112,13 @@ func TestParse_LetAssignment_Literal(t *testing.T) {
 func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 	t.Parallel()
 
-	// "load file" is two tokens, not a primary/unary/binary; the
-	// recursive-descent parser surfaces this as "unexpected
-	// token" against the trailing word.
+	// "load file" is two words, neither of which forms a
+	// valid expression on the right of '='; the recursive-
+	// descent parser surfaces this as "unexpected" against
+	// the trailing word.
 	_, err := parseSource(t, "let prog = load file")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected token")
+	assert.Contains(t, err.Error(), "unexpected")
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
