@@ -55,8 +55,8 @@ defer kill --signal=KILL $work
 # required by `bpfman -g NAME=HEX`. There is no DSL-native helper
 # for this, so an `exec sh -c` shells out via printf. u32 for
 # expected_pid (4 bytes), u64 for weight (8 bytes); low byte first.
-guard pid_le <- exec sh -c 'printf "%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff))' x ${work.pid}
-guard wt_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight}
+let pid_le <- u32le ${work.pid}
+let wt_le <- u64le ${weight}
 
 # Load the kprobe program with the worker PID baked in so only the
 # worker's syscalls count. weight is the per-event increment so a
@@ -64,8 +64,8 @@ guard wt_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0x
 guard loaded <- bpfman program load file \
     --path testdata/bpf/kprobe_exact.bpf.o \
     --programs kprobe:kprobe_counter \
-    -g "expected_pid=0x${pid_le.stdout}" \
-    -g "weight=0x${wt_le.stdout}"
+    -g "expected_pid=0x${pid_le}" \
+    -g "weight=0x${wt_le}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 

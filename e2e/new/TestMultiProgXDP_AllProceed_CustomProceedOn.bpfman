@@ -61,17 +61,17 @@ guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
 # script's pings would never resolve A's MAC.
 guard _ <- ip netns exec $ns ping -c 1 -W 1 $ip_a
 
-guard wa_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
-guard wb_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
-guard wc_le <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+let wa_le <- u64le ${weight_a}
+let wb_le <- u64le ${weight_b}
+let wc_le <- u64le ${weight_c}
 
 # All programs return XDP_DROP = 1 -> 0x01000000.
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_xdp_param_verdict.bpf.o \
     --programs xdp:mxdv_a,xdp:mxdv_b,xdp:mxdv_c \
-    -g "weight_a=0x${wa_le.stdout}" \
-    -g "weight_b=0x${wb_le.stdout}" \
-    -g "weight_c=0x${wc_le.stdout}" \
+    -g "weight_a=0x${wa_le}" \
+    -g "weight_b=0x${wb_le}" \
+    -g "weight_c=0x${wc_le}" \
     -g verdict_a=0x01000000 \
     -g verdict_b=0x01000000 \
     -g verdict_c=0x01000000
