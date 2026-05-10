@@ -58,7 +58,11 @@ const (
 	OriginNull
 )
 
-// String returns the canonical name used in error messages.
+// String returns the canonical name used in user-facing error
+// messages. The names are user-facing labels, not the Go type
+// identifiers: OriginEnvelope renders as "result" because that
+// is what users call the captured outcome of running a command,
+// not the implementation name "envelope".
 func (k OriginKind) String() string {
 	switch k {
 	case OriginUnknown:
@@ -76,7 +80,7 @@ func (k OriginKind) String() string {
 	case OriginMap:
 		return "map"
 	case OriginEnvelope:
-		return "envelope"
+		return "result"
 	case OriginJob:
 		return "job"
 	case OriginNull:
@@ -135,4 +139,113 @@ func ExpectOrigin(v Value, varName string, wanted ...OriginKind) error {
 		return nil
 	}
 	return &OriginMismatchError{VarName: varName, Got: got, Want: wanted}
+}
+
+// Shape describes the structural type of a Value at static-check
+// time. A Shape is sealed when its field set is exhaustive (a
+// record-shaped type with a fixed schema); an unsealed Shape
+// permits any field name (a map, an unknown lookup result, or a
+// not-yet-registered kind). Scalar leaves are sealed with no
+// fields. List shapes carry an Elem describing the element type
+// so paths that index into a list can keep walking.
+//
+// The Shape tree is what the static checker walks when it sees a
+// path like $prog.record.program_id: descend Fields["record"],
+// then Fields["program_id"], reporting the first segment that
+// is not in a sealed parent's field set. Levels reported by an
+// unsealed Shape are unconditionally accepted.
+type Shape struct {
+	// Sealed reports whether Fields enumerates the record's
+	// structure exhaustively. False means "any field is
+	// allowed"; true means "only entries in Fields are valid",
+	// and a missing Fields map (zero map) means "no fields are
+	// valid at all" (scalar/bool/null leaves).
+	Sealed bool
+	// Kind is the OriginKind tag this Shape implies. Used by
+	// the checker so a path traversal can produce a leaf kind
+	// for downstream inference (let q = $r.code -> q has kind
+	// Scalar).
+	Kind OriginKind
+	// Fields maps a field name to its child Shape. Only
+	// consulted when Sealed.
+	Fields map[string]Shape
+	// Elem describes the shape of a list element when the
+	// surrounding Shape is itself a list. Nil for non-list
+	// Shapes. The walker descends into Elem when a path
+	// segment is "[N]".
+	Elem *Shape
+}
+
+var (
+	// shapeRegistry holds the Shape for each OriginKind. The
+	// hard-coded entries below cover the kinds whose schemas are
+	// known to the shell package itself; richer schemas (Program,
+	// Link, Dispatcher) get registered from cmd/bpfman-shell at
+	// init time via RegisterShape, so the shell layer stays free
+	// of any dependency on the bpfman domain types.
+	shapeRegistry = map[OriginKind]Shape{
+		OriginScalar: {Sealed: true, Kind: OriginScalar},
+		OriginBool:   {Sealed: true, Kind: OriginBool},
+		OriginNull:   {Sealed: true, Kind: OriginNull},
+		OriginJob: {
+			Sealed: true,
+			Kind:   OriginJob,
+			Fields: map[string]Shape{
+				"pid": {Sealed: true, Kind: OriginScalar},
+			},
+		},
+		OriginEnvelope: {
+			Sealed: true,
+			Kind:   OriginEnvelope,
+			Fields: map[string]Shape{
+				"ok":     {Sealed: true, Kind: OriginBool},
+				"code":   {Sealed: true, Kind: OriginScalar},
+				"stdout": {Sealed: true, Kind: OriginScalar},
+				"stderr": {Sealed: true, Kind: OriginScalar},
+				"killed": {Sealed: true, Kind: OriginBool},
+				"signal": {Sealed: true, Kind: OriginScalar},
+				"pid":    {Sealed: true, Kind: OriginScalar},
+			},
+		},
+		// OriginProgram, OriginLink are tagged at runtime by
+		// the bpfman command parsers; their schemas come from
+		// the bpfman domain types and register themselves at
+		// init time from cmd/bpfman-shell. Until that happens
+		// (or in tests that do not link the cmd) they default
+		// to unsealed.
+		//
+		// OriginDispatcher is reserved: the kind exists in the
+		// enum and renders as "dispatcher" in error messages,
+		// but no construction site currently emits a Value
+		// tagged with it. The dispatcher subcommands
+		// (`bpfman dispatcher list/get/delete`) print
+		// formatted output and bind only an envelope through
+		// the bind path. When a future refactor returns
+		// typed snapshots from `bpfman dispatcher get`,
+		// registration is a one-line addition in
+		// cmd/bpfman-shell/kindshapes.go alongside Program
+		// and Link.
+		OriginMap:     {Sealed: false, Kind: OriginMap},
+		OriginUnknown: {Sealed: false, Kind: OriginUnknown},
+	}
+)
+
+// RegisterShape installs s as the Shape for k, overwriting any
+// previous entry. The cmd/bpfman-shell init code uses this to
+// feed reflection-derived schemas for OriginProgram and
+// OriginLink into the static checker without making the shell
+// package depend on the bpfman domain types directly.
+func RegisterShape(k OriginKind, s Shape) {
+	shapeRegistry[k] = s
+}
+
+// KindShape returns the Shape registered for k. Kinds that are
+// not in the registry default to an unsealed Shape carrying that
+// kind, which the checker treats as "permit any path" so absence
+// of a registration does not produce false positives.
+func KindShape(k OriginKind) Shape {
+	if s, ok := shapeRegistry[k]; ok {
+		return s
+	}
+	return Shape{Sealed: false, Kind: k}
 }

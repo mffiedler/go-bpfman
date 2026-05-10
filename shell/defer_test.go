@@ -23,7 +23,7 @@ type recorder struct {
 	rc    func(args []Arg) Envelope
 }
 
-func (r *recorder) execBind(args []Arg) (BindResult, error) {
+func (r *recorder) execBind(args []Arg, _ Span) (BindResult, error) {
 	rc := Envelope{OK: true}
 	if r.rc != nil {
 		rc = r.rc(args)
@@ -224,7 +224,7 @@ func TestEvalProgram_Defer_FailureRendersAndCounts(t *testing.T) {
 	env := &Env{
 		Session:  session,
 		ExecBind: r.execBind,
-		RenderDeferFailure: func(stmtLoc Loc, args []Arg, rc Envelope) {
+		RenderDeferFailure: func(stmtLoc Pos, args []Arg, rc Envelope) {
 			rendered++
 		},
 	}

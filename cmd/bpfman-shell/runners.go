@@ -270,7 +270,7 @@ func resolveExternalArgs(args []shell.Arg) (argv []string, tempFiles []string, e
 				return nil, nil, fmt.Errorf("adapter file: %w", terr)
 			}
 			tempFiles = append(tempFiles, path)
-			resolved[i] = shell.ScalarValueArg{Text: path}
+			resolved[i] = shell.ScalarValueArg{Text: path, Span: aa.Span}
 		case shell.StructuredValueArg:
 			for _, f := range tempFiles {
 				os.Remove(f)

@@ -209,7 +209,7 @@ func TestCheck_LeakReportedAtStartSite(t *testing.T) {
 	src := "let x = 1\n\nlet p <- start sleep 60"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
-	assert.Equal(t, 3, issues[0].Loc.Line, "leak should be cited at the start site, not elsewhere")
+	assert.Equal(t, 3, issues[0].Pos.Line, "leak should be cited at the start site, not elsewhere")
 }
 
 func TestCheck_TupleBindOnStartReportsPrimary(t *testing.T) {
@@ -459,4 +459,202 @@ func TestCheck_KillGraceMalformedReported(t *testing.T) {
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "kill --grace:")
+}
+
+func TestCheck_KindFieldAccess_JobBadField(t *testing.T) {
+	t.Parallel()
+
+	// 'start' produces a Job whose only sealed field is 'pid'.
+	// Any other field name on $p is statically detectable.
+	src := "let p <- start sleep 60\nprint $p.pidd\nkill $p"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p has kind job")
+	assert.Contains(t, issues[0].Msg, `"pidd"`)
+	assert.Contains(t, issues[0].Msg, "valid: pid")
+}
+
+func TestCheck_KindFieldAccess_JobValidField(t *testing.T) {
+	t.Parallel()
+
+	src := "let p <- start sleep 60\nprint $p.pid\nkill $p"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_KindFieldAccess_EnvelopeBadField(t *testing.T) {
+	t.Parallel()
+
+	// An external command (here 'which') binds through the
+	// envelope path, so $bpftool.exit_code is statically
+	// detectable as a typo for $bpftool.code.
+	src := `let bpftool <- which bpftool
+if $bpftool.exit_code == 0 {
+    print "found"
+}`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "bpftool has kind result")
+	assert.Contains(t, issues[0].Msg, `"exit_code"`)
+	assert.Contains(t, issues[0].Msg, "code")
+}
+
+func TestCheck_KindFieldAccess_ScalarRejectsAnyField(t *testing.T) {
+	t.Parallel()
+
+	src := "let n = 42\nprint $n.value"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "n has kind scalar")
+	assert.Contains(t, issues[0].Msg, "field access is not valid")
+}
+
+func TestCheck_KindFieldAccess_BoolRejectsAnyField(t *testing.T) {
+	t.Parallel()
+
+	src := "let flag = true\nprint $flag.value"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "flag has kind boolean")
+}
+
+func TestCheck_KindFieldAccess_UnknownKindIsPermissive(t *testing.T) {
+	t.Parallel()
+
+	// 'jq' returns OriginUnknown so any field access is
+	// allowed. Same for 'bpfman' subcommands and 'file' until
+	// Phase 2 enumerates their shapes.
+	src := `guard data <- jq "." '{"x":1}'
+print $data.anything.we.want`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_KindFieldAccess_LetCopyKindFromVarRef(t *testing.T) {
+	t.Parallel()
+
+	// 'let q = $p' copies p's inferred kind onto q, so
+	// $q.field is checked the same way $p.field would be.
+	src := "let p <- start sleep 60\nlet q = $p\nprint $q.pidd\nkill $p"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "q has kind job")
+}
+
+func TestCheck_KindFieldAccess_TupleRcIsEnvelope(t *testing.T) {
+	t.Parallel()
+
+	// The rc slot of a tuple bind is always an envelope, so
+	// $rc.exit_code (the typo) gets the same treatment as
+	// $bpftool.exit_code did.
+	src := `let (rc, prog) <- bpfman program get 42
+if $rc.exit_code == 0 {
+    print $prog
+}`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "rc has kind result")
+	assert.Contains(t, issues[0].Msg, `"exit_code"`)
+}
+
+func TestCheck_KindFieldAccess_DidYouMeanSuggestion(t *testing.T) {
+	t.Parallel()
+
+	// A near-miss field name produces a suggestion derived
+	// through internal/strdist's nearest-string ranker.
+	src := "let p <- start sleep 60\nprint $p.pidd\nkill $p"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "did you mean")
+	assert.Contains(t, issues[0].Msg, `"pid"`)
+}
+
+func TestCheck_KindFieldAccess_NestedKindPropagation(t *testing.T) {
+	t.Parallel()
+
+	// 'let q = $r.code' inherits Scalar from the result's
+	// code field, so $q.field on q reports the scalar
+	// constraint rather than silently passing.
+	src := `let r <- exec ls
+let q = $r.code
+print $q.field`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "q has kind scalar")
+}
+
+func TestCheck_KindFieldAccess_UnknownBindIsPermissive(t *testing.T) {
+	t.Parallel()
+
+	// jq returns a value the static checker has no shape for,
+	// so $data.anything.deep is permitted: the alternative is
+	// false positives on every dynamic structure.
+	src := `guard data <- jq "." '{"x":{"y":1}}'
+print $data.x.y.z`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
+func TestCheck_AliasExpansionInBindKindInference(t *testing.T) {
+	t.Parallel()
+
+	// 'alias s = start' is a runtime alias the checker
+	// mirrors at static-check time. After the alias, 'let p
+	// <- s sleep 5' must infer the same OriginJob shape it
+	// would for the un-aliased 'let p <- start sleep 5'
+	// form, so a typo on the Job's only sealed field (pid)
+	// is caught. The test uses 'start' rather than 'bpfman'
+	// because Job is registered by the shell package itself
+	// while OriginProgram only registers when cmd/bpfman-shell
+	// is linked.
+	src := `alias s = start
+let p <- s sleep 5
+print $p.pidd
+kill $p`
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "p has kind job")
+	assert.Contains(t, issues[0].Msg, `"pidd"`)
+}
+
+func TestCheck_UnaliasReinstatesUnknownShape(t *testing.T) {
+	t.Parallel()
+
+	// 'unalias s' between the alias and the bind means the
+	// bind no longer benefits from the alias expansion: the
+	// inferred shape falls back to the external-command
+	// result default, and $p.pidd is not flagged as a Job
+	// field typo. This is the right behaviour: the runtime
+	// would also fail to expand 's' once unaliased.
+	src := `alias s = start
+unalias s
+let p <- s sleep 5
+print $p.pidd`
+	issues := checkSource(t, src)
+	for _, iss := range issues {
+		assert.NotContains(t, iss.Msg, "p has kind job",
+			"after unalias, s is not start; kind inference must not produce job")
+	}
+}
+
+func TestCheck_ForEachScopeRestoresShape(t *testing.T) {
+	t.Parallel()
+
+	// 'let x = 5' defines x as a numeric scalar. A foreach
+	// that reuses 'x' as the loop variable must not leak the
+	// loop's per-iteration shape past the body. After the
+	// loop, the original 'let' shape stays in effect.
+	src := `let x = 5
+foreach x in $list {
+    print $x
+}
+print "${4 * $x}"`
+	issues := checkSource(t, src)
+	// $list is undefined -> one issue. The trailing "${4 * $x}"
+	// arithmetic must not flag $x as non-numeric: x's outer
+	// shape (Scalar with literal RHS "5") was restored.
+	for _, iss := range issues {
+		assert.NotContains(t, iss.Msg, "x is",
+			"foreach must restore x's outer shape on exit")
+	}
 }

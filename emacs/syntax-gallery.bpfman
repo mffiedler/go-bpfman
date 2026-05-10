@@ -45,15 +45,19 @@ let path_lit   = /sys/fs/bpf/bpfman
 # ---- 2a. Placeholder bindings for demonstrations below ----
 #
 # The sections that follow use these names as stand-ins so the
-# syntax forms parse cleanly under '--check'. Each is a scalar
-# default; in a real script the binding would come from a
-# bpfman command, an external capture, or a prior 'let'. Adding
-# them here keeps the gallery a single self-contained file
-# that '--check' accepts without external context.
-let prog       = "demo-prog"
-let progs      = "demo-progs"
-let items      = "demo-items"
-let data       = "demo-data"
+# syntax forms parse cleanly under '--check'. Names that the
+# downstream demos walk with field or index paths bind through
+# 'jq .' against an inline JSON string -- jq's output kind is
+# unknown to the static checker so any '.field' or '[n]' access
+# is permitted. Names used in scalar position bind directly to
+# a literal. In a real script the structured bindings would
+# come from a bpfman command, an exec capture, or a prior 'let
+# <- ...'; the placeholder shape is a self-contained substitute
+# so the gallery accepts '--check' without external context.
+guard prog     <- jq "." '{"record":{"program_id":42},"name":"demo"}'
+guard progs    <- jq "." '[{"id":1},{"id":2}]'
+guard items    <- jq "." '[{"field":"a"},{"field":"b"},{"field":"c"},{"field":"d"}]'
+guard data     <- jq "." '{"maps":[{"name":"counts"}]}'
 let count      = 5
 let raw_count  = "5"
 let name       = "demo-name"
@@ -136,8 +140,8 @@ defer bpfman link detach $link2
 
 # ---- 5. Binary comparisons (textual vs numeric) ----
 
-assert $prog.record.name == xdp_pass
-assert $prog.record.name != tc_ingress
+assert $prog.record.meta.name == xdp_pass
+assert $prog.record.meta.name != tc_ingress
 assert $name < $other
 assert $name <= $other
 assert $name > $other
@@ -439,15 +443,15 @@ foreach item in $progs {
 # polling terminate on wall-clock or attempt count.
 retry {
     guard status <- bpfman program get 42 -o json
-} until $status.ready or timeout 60s
+} until $status.record.gpl_compatible or timeout 60s
 
 retry {
     guard status <- bpfman program get 42 -o json
-} until $status.ready or iteration 10
+} until $status.record.gpl_compatible or iteration 10
 
 retry {
     guard link <- bpfman link get 8801 -o json
-} until ($link.state == active) or timeout 2m or iteration 20
+} until ($link.record.kind == xdp) or timeout 2m or iteration 20
 
 # ---- 23. jq as a higher-order operator over structured data ----
 

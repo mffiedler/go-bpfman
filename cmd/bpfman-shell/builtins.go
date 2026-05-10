@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -66,12 +65,20 @@ type builtinCtx struct {
 	// few that take []string convert via argTexts(c.Args).
 	Args []shell.Arg
 
-	// Loc is the source location of the chunk this builtin
+	// Pos is the source location of the chunk this builtin
 	// was dispatched from. Used by 'assert'/'require' for
 	// chunk-line composition on failure messages and by
 	// 'start' to carry the start-site origin into the Job
 	// handle.
-	Loc sourceLoc
+	Pos sourceLoc
+
+	// Span is the source extent of the originating CommandStmt
+	// or BindStmt. Handlers that emit *shell.SyntaxError use it
+	// to frame diagnostics at the failing command rather than
+	// at the chunk start. Set by replShellCmd from the value
+	// the evaluator threaded through Env.ExecCommand /
+	// Env.ExecBind.
+	Span shell.Span
 }
 
 // argCompleter is a per-builtin completion callback for tokens
@@ -165,7 +172,7 @@ var keywordRegistry = map[string]keyword{
 		Summary: "Bind an expression result, a command's primary, or a (rc, primary) pair.",
 		Detail: "let evaluates the right-hand side and binds the named variable(s) " +
 			"in the current session. The '<-' form runs a command and binds its " +
-			"primary result; failure flows into the variable as an envelope with " +
+			"primary result; failure flows into the variable as a result with " +
 			"ok=false rather than halting the script. Use 'guard' for the " +
 			"halt-on-failure variant.",
 	},
@@ -389,8 +396,8 @@ func init() {
 			Name: "wait", Handler: handleWait,
 			Category: categoryJobs,
 			Usage:    "wait $job",
-			Summary:  "Block until the job exits; primary is the captured envelope (assignable).",
-			Detail: "The envelope carries ok, code, stdout, stderr, killed, signal. " +
+			Summary:  "Block until the job exits; primary is the captured result (assignable).",
+			Detail: "The result carries ok, code, stdout, stderr, killed, signal. " +
 				"A killed job that the script asked to terminate reports killed=true " +
 				"with signal set; the script distinguishes 'I asked for this' from " +
 				"'real failure' via $r.killed rather than $r.ok. " +
@@ -414,13 +421,16 @@ func handleAliases(c builtinCtx) (shell.Value, error) {
 // shared body distinguishes assert from require by an internal
 // bool; the registry keeps them as two entries pointing at
 // dedicated wrappers so each call site is grep-able by verb.
+// Any error from the verb dispatcher is framed at the command's
+// Span by the dispatcher in replShellCmd; handler-level
+// wrapping is unnecessary.
 func handleAssert(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, false, c.Loc)
+	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, false, c.Pos)
 }
 
 // handleRequire runs replAssertRequire in halt-on-fail mode.
 func handleRequire(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, true, c.Loc)
+	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, true, c.Pos)
 }
 
 // handleDefs adapts replDefs to the builtin shape.
@@ -450,7 +460,7 @@ func handleHelp(c builtinCtx) (shell.Value, error) {
 // error message is consistent with the other arg-less builtins.
 func handleJobs(c builtinCtx) (shell.Value, error) {
 	if len(c.Args) > 0 {
-		return shell.Value{}, fmt.Errorf("jobs takes no arguments")
+		return shell.Value{}, shell.SpanErrorf(c.Span, "jobs takes no arguments")
 	}
 	return shell.Value{}, replJobs(c.CLI, c.Env)
 }
@@ -461,7 +471,7 @@ func handleJobs(c builtinCtx) (shell.Value, error) {
 // trimmed.
 func handleReap(c builtinCtx) (shell.Value, error) {
 	if len(c.Args) > 0 {
-		return shell.Value{}, fmt.Errorf("reap takes no arguments")
+		return shell.Value{}, shell.SpanErrorf(c.Span, "reap takes no arguments")
 	}
 	return shell.Value{}, replReap(c.Env)
 }
@@ -492,7 +502,7 @@ func handlePrint(c builtinCtx) (shell.Value, error) {
 // through; the dispatcher already enforces this before calling.
 func handleSource(c builtinCtx) (shell.Value, error) {
 	if c.Env == nil {
-		return shell.Value{}, fmt.Errorf("source requires an active shell environment")
+		return shell.Value{}, shell.SpanErrorf(c.Span, "source requires an active shell environment")
 	}
 	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, argTexts(c.Args))
 }
@@ -501,7 +511,7 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 // derived from the chunk's loc so the leak-walk diagnostic can
 // cite the start site even when the leak fires far from it.
 func handleStart(c builtinCtx) (shell.Value, error) {
-	return replStart(c.Ctx, c.Env, c.Loc.cite(), c.Args)
+	return replStart(c.Ctx, c.Env, c.Pos.cite(), c.Args)
 }
 
 // handleUnalias adapts replUnalias to the builtin shape.

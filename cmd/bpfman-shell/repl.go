@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -201,7 +200,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
 		},
-		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 		},
 		HandleJobLeak: strictJobLeakHandler(cli, session),
@@ -248,7 +247,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-				if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+				if err := evalChunkInScope(cli, env, accumulated, src, loc); err != nil {
 					return err
 				}
 			}
@@ -258,25 +257,42 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 
 // evalChunkInScope tokenises, parses, and evaluates one chunk
 // against an env whose defer scope was already opened by the
-// caller. Errors are rendered in the same shape as replEval:
-// guard halts trigger renderEnvelopeFailure; everything else
-// is printed with the chunk's source-loc prefix.
-func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sourceLoc) error {
-	report := func(err error) error {
-		errLoc := loc
-		msg := err.Error()
-		if line, col, rest, ok := splitLineColPrefix(msg); ok && loc.file != "" {
-			// chunk-relative line from the parser/evaluator
-			// composes with the chunk's startLine to yield the
-			// absolute file line; matches the convention in
-			// assert.go. Column is preserved as-is because
-			// the tokeniser's columns are line-relative and
-			// translate directly.
-			errLoc.line = loc.line + line - 1
-			errLoc.col = col
-			msg = rest
+// caller. Typed errors with a Span are rendered as rust-style
+// frames against frameSrc; the chunk-relative Span is shifted
+// by loc.line so frames cite the absolute file line. When
+// frameSrc is empty (interactive mode without a slurped buffer)
+// the chunk input itself is used as the frame source. Errors
+// without typed Span info fall back to the legacy single-line
+// "file:line:col: error: msg" shape.
+func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string, loc sourceLoc) error {
+	emitFrame := func(span shell.Span, msg string) {
+		src := frameSrc
+		shift := loc.line - 1
+		if src == "" {
+			src = input
+			shift = 0
 		}
-		_ = cli.PrintErrf("%serror: %s\n", errLoc, msg)
+		shifted := span
+		if shift > 0 {
+			shifted.Pos.Line += shift
+			shifted.End.Line += shift
+		}
+		_ = cli.PrintErr(shell.RenderDiagnostic(src, loc.file, shell.Diagnostic{
+			Span: shifted,
+			Msg:  msg,
+		}))
+	}
+	report := func(err error) error {
+		var se *shell.SyntaxError
+		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
+			emitFrame(se.Span, se.Msg)
+			return errScriptError
+		}
+		// Defensive: an error reached here without a Span.
+		// After G1 every parser/runtime path is typed, so
+		// this should be unreachable; if it fires, print a
+		// flat line so something still surfaces.
+		_ = cli.PrintErrf("%serror: %v\n", loc, err)
 		return errScriptError
 	}
 	tokens, err := shell.Tokenise(input)
@@ -296,7 +312,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input string, loc sour
 		}
 		var gf *shell.GuardFailure
 		if errors.As(err, &gf) {
-			renderEnvelopeFailure(cli, "guard", loc, gf.Loc, gf.Args, gf.Envelope)
+			renderEnvelopeFailure(cli, "guard", loc, gf.Pos, gf.Args, gf.Envelope)
 			return errScriptError
 		}
 		return report(err)
@@ -333,7 +349,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		PrintResult: func(v shell.Value) error {
 			return writeValue(cli, v)
 		},
-		RenderDeferFailure: func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
 		},
 		HandleJobLeak: silentJobLeakHandler(),
@@ -431,7 +447,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
 
 			chunkErr := shell.WithDeferScope(env, func() error {
-				return evalChunkInScope(cli, env, accumulated, loc)
+				return evalChunkInScope(cli, env, accumulated, "", loc)
 			})
 			cancelChunk()
 
@@ -581,7 +597,7 @@ func (c *contState) open() bool {
 // one (exec, file, jq, kill, start, wait); it is the zero
 // Value for builtins that do not bind anything (alias, vars,
 // help, ...).
-func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc sourceLoc) (bool, shell.Value, error) {
+func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc sourceLoc, span shell.Span) (bool, shell.Value, error) {
 	if len(args) == 0 {
 		return false, shell.Value{}, nil
 	}
@@ -597,39 +613,15 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		Env:  env,
 		Cmd:  cmd,
 		Args: args[1:],
-		Loc:  loc,
+		Pos:  loc,
+		Span: span,
 	}
 	val, err := b.Handler(c)
-	return true, val, err
-}
-
-// splitLineColPrefix recognises the "LINE:COL: REST" diagnostic
-// prefix produced by shell.locErrorf. When present, it returns
-// the line number and the remainder of the message; the caller
-// uses the line to replace the script-level prefix's line
-// (which would otherwise always be 1 in script mode after the
-// whole-script slurp).
-func splitLineColPrefix(msg string) (line, col int, rest string, ok bool) {
-	colon1 := strings.IndexByte(msg, ':')
-	if colon1 <= 0 {
-		return 0, 0, "", false
-	}
-	l, err := strconv.Atoi(msg[:colon1])
-	if err != nil || l <= 0 {
-		return 0, 0, "", false
-	}
-	tail := msg[colon1+1:]
-	colon2 := strings.IndexByte(tail, ':')
-	if colon2 <= 0 {
-		return 0, 0, "", false
-	}
-	c, err := strconv.Atoi(tail[:colon2])
-	if err != nil {
-		return 0, 0, "", false
-	}
-	rest = tail[colon2+1:]
-	rest = strings.TrimPrefix(rest, " ")
-	return l, c, rest, true
+	// Frame any non-typed error at the originating command's Span
+	// so the renderer can draw a frame regardless of which handler
+	// emitted it. Handlers that pinpoint a tighter Span themselves
+	// keep theirs (FrameAt short-circuits on existing *SyntaxError).
+	return true, val, shell.FrameAt(span, err)
 }
 
 // renderEnvelopeFailure prints a captured-result failure as a
@@ -640,7 +632,7 @@ func splitLineColPrefix(msg string) (line, col int, rest string, ok bool) {
 // indented two spaces per line. The format matches the shape
 // described in the REPL design's section on the shared failure
 // renderer.
-func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc, stmtLoc shell.Loc, args []shell.Arg, env shell.Envelope) {
+func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc, stmtLoc shell.Pos, args []shell.Arg, env shell.Envelope) {
 	file := scriptLoc.file
 	if file == "" {
 		file = "<repl>"
@@ -686,13 +678,13 @@ func writeIndented(b *strings.Builder, s string) {
 // dispatcher handles "bpfman ..."; an unrecognised first word
 // falls through to runExternal so 'ip link add ...' spawns the
 // system 'ip' without an explicit 'exec' prefix.
-func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg) (shell.Value, error) {
-	return func(args []shell.Arg) (shell.Value, error) {
+func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.Value, error) {
+	return func(args []shell.Arg, span shell.Span) (shell.Value, error) {
 		if len(args) == 0 {
 			return shell.Value{}, nil
 		}
 		args = applyAlias(session, args)
-		handled, val, err := replShellCmd(ctx, cli, mgr, session, env, args, loc)
+		handled, val, err := replShellCmd(ctx, cli, mgr, session, env, args, loc, span)
 		if err != nil {
 			return shell.Value{}, err
 		}
@@ -700,14 +692,24 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return val, nil
 		}
 		first := argText(args[0])
+		// Frame errors from the bpfman domain dispatcher and
+		// the subprocess fallthrough at the originating
+		// command's Span. The dispatcher and parser sites
+		// inside command.go return plain fmt.Errorf strings
+		// today; wrapping at the boundary covers all of them
+		// in one place. FrameAt short-circuits on existing
+		// *SyntaxError values so any tighter Span set
+		// downstream (e.g. via SpanErrorf) is preserved.
 		if first == "bpfman" {
-			return replDispatch(ctx, cli, mgr, args)
+			val, err := replDispatch(ctx, cli, mgr, args)
+			return val, shell.FrameAt(span, err)
 		}
 		if domainNouns[first] {
-			return shell.Value{}, fmt.Errorf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
+			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
 		}
 		// Fallthrough: unknown first word runs as a subprocess.
-		return replExec(ctx, cli, args)
+		val, err = replExec(ctx, cli, args)
+		return val, shell.FrameAt(span, err)
 	}
 }
 
@@ -731,11 +733,11 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 //     runs as a subprocess (the registry's implicit fallthrough).
 //     'ip link del foo', 'bpftool map dump id 5', etc. work
 //     without an explicit 'exec' prefix.
-func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg) (shell.BindResult, error) {
-	return func(args []shell.Arg) (shell.BindResult, error) {
+func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.BindResult, error) {
+	return func(args []shell.Arg, span shell.Span) (shell.BindResult, error) {
 		args = applyAlias(session, args)
 		if len(args) == 0 {
-			return shell.BindResult{}, fmt.Errorf("empty command form on '<-' RHS")
+			return shell.BindResult{}, shell.SpanErrorf(span, "empty command form on '<-' RHS")
 		}
 
 		if argText(args[0]) == "exec" {
@@ -757,7 +759,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		}
 
 		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, env, args, loc)
+		handled, val, err := replShellCmd(ctx, quiet, mgr, session, env, args, loc, span)
 		if handled {
 			if err != nil {
 				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
@@ -912,7 +914,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 		env.ExecAssertStmt = savedExecAssert
 		env.RenderDeferFailure = savedRenderDefer
 	}()
-	env.RenderDeferFailure = func(stmtLoc shell.Loc, args []shell.Arg, rc shell.Envelope) {
+	env.RenderDeferFailure = func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 		renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
 	}
 
@@ -963,7 +965,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-			if err := evalChunkInScope(cli, env, accumulated, loc); err != nil {
+			if err := evalChunkInScope(cli, env, accumulated, "", loc); err != nil {
 				return err
 			}
 		}

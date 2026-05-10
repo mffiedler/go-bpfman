@@ -307,12 +307,13 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 	for i := 0; i < len(rest); i++ {
 		text := argText(rest[i])
 		if text == "-o" {
+			flagSpan := shell.ArgSpan(rest[i])
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("show program: duplicate -o flag")
+				return nil, shell.SpanErrorf(flagSpan, "show program: duplicate -o flag")
 			}
 			i++
 			if i >= len(rest) {
-				return nil, fmt.Errorf("show program: -o requires a value")
+				return nil, shell.SpanErrorf(flagSpan, "show program: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(rest[i]),
@@ -321,14 +322,14 @@ func parseShowProgram(args []shell.Arg) (*ShowProgramCommand, error) {
 			continue
 		}
 		if strings.HasPrefix(text, "-") {
-			return nil, fmt.Errorf("show program: unknown flag %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(rest[i]), "show program: unknown flag %q", text)
 		}
 		if viewSet {
-			return nil, fmt.Errorf("show program: only one view may be specified")
+			return nil, shell.SpanErrorf(shell.ArgSpan(rest[i]), "show program: only one view may be specified")
 		}
 		// Treat as view name.
 		if !validShowViews[text] {
-			return nil, fmt.Errorf("show program: unknown view %q (valid: summary, links, maps, paths)", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(rest[i]), "show program: unknown view %q (valid: summary, links, maps, paths)", text)
 		}
 		cmd.View = text
 		viewSet = true
@@ -411,13 +412,13 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 		case "-p", "--path":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: %s requires a value", text)
 			}
 			cmd.Path = argText(args[i])
 		case "--programs":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: --programs requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: --programs requires a value")
 			}
 			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
 			if err != nil {
@@ -427,7 +428,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 		case "-m", "--metadata":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: %s requires a value", text)
 			}
 			kv, err := bpfmancli.ParseKeyValue(argText(args[i]))
 			if err != nil {
@@ -437,7 +438,7 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 		case "-g", "--global":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: %s requires a value", text)
 			}
 			gd, err := bpfmancli.ParseGlobalData(argText(args[i]))
 			if err != nil {
@@ -447,13 +448,13 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 		case "-a", "--application":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: %s requires a value", text)
 			}
 			cmd.Application = argText(args[i])
 		case "--map-owner-id":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: --map-owner-id requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: --map-owner-id requires a value")
 			}
 			parsed, err := bpfmancli.ParseProgramID(argText(args[i]))
 			if err != nil {
@@ -462,18 +463,18 @@ func parseLoadFile(args []shell.Arg) (*LoadFileCommand, error) {
 			cmd.MapOwnerID = parsed.Value
 		case "-o":
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("load file: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load file: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load file: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load file: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("load file: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load file: unknown flag %q", text)
 			}
-			return nil, fmt.Errorf("load file: unexpected argument %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load file: unexpected argument %q", text)
 		}
 	}
 
@@ -616,13 +617,13 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "-i", "--iface":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach xdp: %s requires a value", text)
 			}
 			iface = argText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach xdp: %s requires a value", text)
 			}
 			v, err := strconv.Atoi(argText(args[i]))
 			if err != nil {
@@ -632,33 +633,33 @@ func parseLinkAttachXDP(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "--proceed-on":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: --proceed-on requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach xdp: --proceed-on requires a value")
 			}
 			proceedOn = append(proceedOn, splitComma(argText(args[i]))...)
 			defaults = false
 		case "-n", "--netns":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach xdp: %s requires a value", text)
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
 			return nil, fmt.Errorf("link attach xdp: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach xdp: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach xdp: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach xdp: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach xdp: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach xdp: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach xdp: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach xdp: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach xdp: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -723,19 +724,19 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "-i", "--iface":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
 			}
 			iface = argText(args[i])
 		case "-d", "--direction":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
 			}
 			direction = argText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
 			}
 			v, err := strconv.Atoi(argText(args[i]))
 			if err != nil {
@@ -745,33 +746,33 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "--proceed-on":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: --proceed-on requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: --proceed-on requires a value")
 			}
 			proceedOn = append(proceedOn, splitComma(argText(args[i]))...)
 			defaults = false
 		case "-n", "--netns":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: %s requires a value", text)
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
 			return nil, fmt.Errorf("link attach tc: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach tc: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tc: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tc: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tc: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach tc: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tc: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach tc: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tc: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -845,19 +846,19 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "-i", "--iface":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
 			}
 			iface = argText(args[i])
 		case "-d", "--direction":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
 			}
 			direction = argText(args[i])
 		case "-p", "--priority":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
 			}
 			v, err := strconv.Atoi(argText(args[i]))
 			if err != nil {
@@ -867,26 +868,26 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "-n", "--netns":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tcx: %s requires a value", text)
 			}
 			netns = argText(args[i])
 		case "-m", "--metadata":
 			return nil, fmt.Errorf("link attach tcx: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach tcx: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tcx: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tcx: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tcx: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach tcx: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tcx: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach tcx: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tcx: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -949,16 +950,16 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 			return nil, fmt.Errorf("link attach tracepoint: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach tracepoint: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tracepoint: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach tracepoint: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach tracepoint: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach tracepoint: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tracepoint: unknown flag %q", text)
 			}
 			switch {
 			case progArg == nil:
@@ -966,7 +967,7 @@ func parseLinkAttachTracepoint(args []shell.Arg) (*LinkAttachCommand, error) {
 			case tracepoint == "":
 				tracepoint = text
 			default:
-				return nil, fmt.Errorf("link attach tracepoint: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach tracepoint: unexpected argument %q", text)
 			}
 		}
 	}
@@ -1013,13 +1014,13 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "-f", "--fn-name":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach kprobe: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach kprobe: %s requires a value", text)
 			}
 			fnName = argText(args[i])
 		case "--offset":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach kprobe: --offset requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach kprobe: --offset requires a value")
 			}
 			v, err := strconv.ParseUint(argText(args[i]), 0, 64)
 			if err != nil {
@@ -1030,19 +1031,19 @@ func parseLinkAttachKprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			return nil, fmt.Errorf("link attach kprobe: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach kprobe: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach kprobe: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach kprobe: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach kprobe: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach kprobe: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach kprobe: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach kprobe: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach kprobe: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -1091,19 +1092,19 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "--target":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: --target requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach uprobe: --target requires a value")
 			}
 			target = argText(args[i])
 		case "-f", "--fn-name":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach uprobe: %s requires a value", text)
 			}
 			fnName = argText(args[i])
 		case "--offset":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: --offset requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach uprobe: --offset requires a value")
 			}
 			v, err := strconv.ParseUint(argText(args[i]), 0, 64)
 			if err != nil {
@@ -1113,7 +1114,7 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 		case "--container-pid":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: --container-pid requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach uprobe: --container-pid requires a value")
 			}
 			v, err := strconv.ParseInt(argText(args[i]), 10, 32)
 			if err != nil {
@@ -1124,19 +1125,19 @@ func parseLinkAttachUprobe(args []shell.Arg) (*LinkAttachCommand, error) {
 			return nil, fmt.Errorf("link attach uprobe: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach uprobe: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach uprobe: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach uprobe: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach uprobe: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach uprobe: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach uprobe: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach uprobe: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach uprobe: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -1187,19 +1188,19 @@ func parseLinkAttachFentry(args []shell.Arg) (*LinkAttachCommand, error) {
 			return nil, fmt.Errorf("link attach fentry: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach fentry: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fentry: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach fentry: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach fentry: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach fentry: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fentry: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach fentry: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fentry: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -1238,19 +1239,19 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 			return nil, fmt.Errorf("link attach fexit: metadata is not supported for attach commands")
 		case "-o":
 			if output.Output.IsSet {
-				return nil, fmt.Errorf("link attach fexit: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fexit: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link attach fexit: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link attach fexit: -o requires a value")
 			}
 			output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link attach fexit: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fexit: unknown flag %q", text)
 			}
 			if progArg != nil {
-				return nil, fmt.Errorf("link attach fexit: unexpected argument %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link attach fexit: unexpected argument %q", text)
 			}
 			progArg = args[i]
 		}
@@ -1382,13 +1383,13 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 		case "-i", "--image-url":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: %s requires a value", text)
 			}
 			cmd.ImageURL = argText(args[i])
 		case "--programs":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: --programs requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: --programs requires a value")
 			}
 			spec, err := bpfmancli.ParseProgramSpec(argText(args[i]))
 			if err != nil {
@@ -1398,25 +1399,25 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 		case "-p", "--pull-policy":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: %s requires a value", text)
 			}
 			cmd.PullPolicy = argText(args[i])
 		case "--registry-auth":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: --registry-auth requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: --registry-auth requires a value")
 			}
 			cmd.RegistryAuth = argText(args[i])
 		case "-a", "--application":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: %s requires a value", text)
 			}
 			cmd.Application = argText(args[i])
 		case "--map-owner-id":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: --map-owner-id requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: --map-owner-id requires a value")
 			}
 			parsed, err := bpfmancli.ParseProgramID(argText(args[i]))
 			if err != nil {
@@ -1426,7 +1427,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 		case "-m", "--metadata":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: %s requires a value", text)
 			}
 			kv, err := bpfmancli.ParseKeyValue(argText(args[i]))
 			if err != nil {
@@ -1436,7 +1437,7 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 		case "-g", "--global":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: %s requires a value", text)
 			}
 			gd, err := bpfmancli.ParseGlobalData(argText(args[i]))
 			if err != nil {
@@ -1445,18 +1446,18 @@ func parseLoadImage(args []shell.Arg) (*LoadImageCommand, error) {
 			cmd.GlobalData = append(cmd.GlobalData, gd)
 		case "-o":
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("load image: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load image: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("load image: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "load image: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("load image: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load image: unknown flag %q", text)
 			}
-			return nil, fmt.Errorf("load image: unexpected argument %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "load image: unexpected argument %q", text)
 		}
 	}
 
@@ -1592,11 +1593,11 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 		text := argText(args[i])
 		if text == "-o" {
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("program get: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program get: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("program get: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "program get: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(args[i]),
@@ -1605,9 +1606,9 @@ func parseGetProgram(args []shell.Arg) (*GetProgramCommand, error) {
 			continue
 		}
 		if strings.HasPrefix(text, "-") {
-			return nil, fmt.Errorf("program get: unknown flag %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program get: unknown flag %q", text)
 		}
-		return nil, fmt.Errorf("program get: unexpected argument %q", text)
+		return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program get: unexpected argument %q", text)
 	}
 
 	return cmd, nil
@@ -1671,11 +1672,11 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 		text := argText(args[i])
 		if text == "-o" {
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("link get: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link get: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link get: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link get: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{
 				Value: argText(args[i]),
@@ -1684,9 +1685,9 @@ func parseGetLink(args []shell.Arg) (*GetLinkCommand, error) {
 			continue
 		}
 		if strings.HasPrefix(text, "-") {
-			return nil, fmt.Errorf("link get: unknown flag %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link get: unknown flag %q", text)
 		}
-		return nil, fmt.Errorf("link get: unexpected argument %q", text)
+		return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link get: unexpected argument %q", text)
 	}
 
 	return cmd, nil
@@ -1788,7 +1789,7 @@ func parseDeleteProgram(args []shell.Arg) (*DeleteProgramCommand, error) {
 			cmd.Recursive = true
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("program delete: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program delete: unknown flag %q", text)
 			}
 			positionals = append(positionals, args[i])
 		}
@@ -1857,7 +1858,7 @@ func parseDeleteLink(args []shell.Arg) (*DeleteLinkCommand, error) {
 			cmd.Recursive = true
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link delete: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link delete: unknown flag %q", text)
 			}
 			positionals = append(positionals, args[i])
 		}
@@ -1946,29 +1947,29 @@ func parseListPrograms(args []shell.Arg) (*ListProgramsCommand, error) {
 		case "--type":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("program list: --type requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "program list: --type requires a value")
 			}
 			cmd.Types = append(cmd.Types, splitComma(argText(args[i]))...)
 		case "-l", "--selector":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("program list: %s requires a value", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "program list: %s requires a value", text)
 			}
 			cmd.Selector = argText(args[i])
 		case "-o":
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("program list: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program list: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("program list: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "program list: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("program list: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program list: unknown flag %q", text)
 			}
-			return nil, fmt.Errorf("program list: unexpected argument %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "program list: unexpected argument %q", text)
 		}
 	}
 
@@ -2068,7 +2069,7 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 		case "--program-id":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link list: --program-id requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link list: --program-id requires a value")
 			}
 			id, err := parseProgramIDArg(args[i])
 			if err != nil {
@@ -2078,23 +2079,23 @@ func parseListLinks(args []shell.Arg) (*ListLinksCommand, error) {
 		case "--kind":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link list: --kind requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link list: --kind requires a value")
 			}
 			cmd.Kinds = append(cmd.Kinds, splitComma(argText(args[i]))...)
 		case "-o":
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("link list: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link list: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("link list: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "link list: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("link list: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link list: unknown flag %q", text)
 			}
-			return nil, fmt.Errorf("link list: unexpected argument %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "link list: unexpected argument %q", text)
 		}
 	}
 
@@ -2174,23 +2175,23 @@ func parseDispatcherList(args []shell.Arg) (*DispatcherListCommand, error) {
 		case "--type":
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("dispatcher list: --type requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "dispatcher list: --type requires a value")
 			}
 			cmd.Type = argText(args[i])
 		case "-o":
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("dispatcher list: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher list: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("dispatcher list: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "dispatcher list: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 		default:
 			if strings.HasPrefix(text, "-") {
-				return nil, fmt.Errorf("dispatcher list: unknown flag %q", text)
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher list: unknown flag %q", text)
 			}
-			return nil, fmt.Errorf("dispatcher list: unexpected argument %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher list: unexpected argument %q", text)
 		}
 	}
 
@@ -2276,19 +2277,19 @@ func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 		text := argText(args[i])
 		if text == "-o" {
 			if cmd.Output.Output.IsSet {
-				return nil, fmt.Errorf("dispatcher get: duplicate -o flag")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher get: duplicate -o flag")
 			}
 			i++
 			if i >= len(args) {
-				return nil, fmt.Errorf("dispatcher get: -o requires a value")
+				return nil, shell.SpanErrorf(shell.ArgSpan(args[i-1]), "dispatcher get: -o requires a value")
 			}
 			cmd.Output.Output = cliformat.OutputValue{Value: argText(args[i]), IsSet: true}
 			continue
 		}
 		if strings.HasPrefix(text, "-") {
-			return nil, fmt.Errorf("dispatcher get: unknown flag %q", text)
+			return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher get: unknown flag %q", text)
 		}
-		return nil, fmt.Errorf("dispatcher get: unexpected argument %q", text)
+		return nil, shell.SpanErrorf(shell.ArgSpan(args[i]), "dispatcher get: unexpected argument %q", text)
 	}
 
 	return cmd, nil

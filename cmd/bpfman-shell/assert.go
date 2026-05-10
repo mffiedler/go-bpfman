@@ -135,10 +135,11 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 
 	// Prefix verb dispatch (command assertions and remaining special
 	// verbs: ok, fail, path, contains).
-	verb := argText(args[0])
+	verbArg := args[0]
+	verb := argText(verbArg)
 	verbArgs := args[1:]
 
-	result, err := evalAssertVerb(ctx, cli, mgr, session, verb, verbArgs)
+	result, err := evalAssertVerb(ctx, cli, mgr, session, verbArg, verb, verbArgs)
 	if err != nil {
 		return err
 	}
@@ -275,25 +276,29 @@ func exprScalar(e shell.Expr, session *shell.Session) string {
 // fail), filesystem checks (path), and string containment
 // (contains). Value-based comparisons and unary predicates go
 // through the expression path (see evalExprAssertion).
-func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verb string, args []shell.Arg) (assertResult, error) {
+func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verbArg shell.Arg, verb string, args []shell.Arg) (assertResult, error) {
 	ss := argTexts(args)
+	verbSpan := shell.ArgSpan(verbArg)
 	switch verb {
 	case "ok":
-		return assertOk(ctx, cli, mgr, session, args)
+		return assertOk(ctx, cli, mgr, session, verbSpan, args)
 	case "fail":
-		return assertFail(ctx, cli, mgr, session, args)
+		return assertFail(ctx, cli, mgr, session, verbSpan, args)
 	case "path":
-		return assertPath(ss)
+		return assertPath(verbSpan, ss)
 	case "contains":
-		return assertContains(ss)
+		return assertContains(verbSpan, ss)
 	case "nil":
-		return assertNil(session, ss)
+		return assertNil(session, verbSpan, ss)
 	case "==", "!=", "<", "<=", ">", ">=":
-		return assertResult{}, fmt.Errorf("%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
+		return assertResult{}, shell.SpanErrorf(verbSpan,
+			"%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
 	case "not-empty":
-		return assertResult{}, fmt.Errorf("%q takes one value: try 'assert %s $name'", verb, verb)
+		return assertResult{}, shell.SpanErrorf(verbSpan,
+			"%q takes one value: try 'assert %s $name'", verb, verb)
 	default:
-		return assertResult{}, fmt.Errorf("unknown assertion verb %q", verb)
+		return assertResult{}, shell.SpanErrorf(verbSpan,
+			"unknown assertion verb %q", verb)
 	}
 }
 
@@ -302,9 +307,9 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 // Session can hold nil values but variable expansion refuses to
 // carry them through, so the only way to inspect nil-ness is by
 // name.
-func assertNil(session *shell.Session, args []string) (assertResult, error) {
+func assertNil(session *shell.Session, verbSpan shell.Span, args []string) (assertResult, error) {
 	if len(args) != 1 {
-		return assertResult{}, fmt.Errorf("nil requires exactly 1 argument (bare variable name, no $)")
+		return assertResult{}, shell.SpanErrorf(verbSpan, "nil requires exactly 1 argument (bare variable name, no $)")
 	}
 	v, err := lookupBareVar(session, args[0])
 	if err != nil {
@@ -320,7 +325,7 @@ func assertNil(session *shell.Session, args []string) (assertResult, error) {
 // and the domain dispatch layer. It is used by assertion verbs (ok,
 // fail) to test whether a sub-command succeeds or fails.
 func runCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
-	handled, _, err := replShellCmd(ctx, cli, mgr, session, nil, args, sourceLoc{})
+	handled, _, err := replShellCmd(ctx, cli, mgr, session, nil, args, sourceLoc{}, shell.Span{})
 	if err != nil {
 		return err
 	}
@@ -331,9 +336,9 @@ func runCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 	return err
 }
 
-func assertOk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
+func assertOk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
-		return assertResult{}, fmt.Errorf("ok requires a command")
+		return assertResult{}, shell.SpanErrorf(verbSpan, "ok requires a command")
 	}
 	err := runCommand(ctx, cli.WithDiscardOutput(), mgr, session, args)
 	if err != nil {
@@ -348,9 +353,9 @@ func assertOk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, ses
 	}, nil
 }
 
-func assertFail(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) (assertResult, error) {
+func assertFail(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
 	if len(args) == 0 {
-		return assertResult{}, fmt.Errorf("fail requires a command")
+		return assertResult{}, shell.SpanErrorf(verbSpan, "fail requires a command")
 	}
 	err := runCommand(ctx, cli.WithDiscardOutput(), mgr, session, args)
 	if err != nil {
@@ -365,9 +370,9 @@ func assertFail(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 	}, nil
 }
 
-func assertPath(args []string) (assertResult, error) {
+func assertPath(verbSpan shell.Span, args []string) (assertResult, error) {
 	if len(args) != 2 || args[0] != "exists" {
-		return assertResult{}, fmt.Errorf("path requires: path exists <filepath>")
+		return assertResult{}, shell.SpanErrorf(verbSpan, "path requires: path exists <filepath>")
 	}
 	_, err := os.Stat(args[1])
 	pass := err == nil
@@ -377,9 +382,9 @@ func assertPath(args []string) (assertResult, error) {
 	}, nil
 }
 
-func assertContains(args []string) (assertResult, error) {
+func assertContains(verbSpan shell.Span, args []string) (assertResult, error) {
 	if len(args) != 2 {
-		return assertResult{}, fmt.Errorf("contains requires exactly 2 arguments: <haystack> <needle>")
+		return assertResult{}, shell.SpanErrorf(verbSpan, "contains requires exactly 2 arguments: <haystack> <needle>")
 	}
 	pass := strings.Contains(args[0], args[1])
 	return assertResult{
@@ -404,13 +409,13 @@ func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourc
 
 	// locate prefixes a path message with the entry's source
 	// location so multi-mismatch failures point at the specific
-	// offending line inside the block. The shell.Loc carried by
+	// offending line inside the block. The shell.Pos carried by
 	// each entry is relative to the accumulated REPL chunk; when
 	// the assert statement has a known file/start-line, translate
 	// the chunk-local line into an absolute file line so the
 	// diagnostic agrees with the rest of the REPL's "file:line:"
 	// convention.
-	locate := func(loc shell.Loc, msg string) string {
+	locate := func(loc shell.Pos, msg string) string {
 		if loc.Line == 0 {
 			return msg
 		}
@@ -425,23 +430,23 @@ func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourc
 	for _, entry := range block.Entries {
 		actual, err := sva.Value.LookupValue(sva.Name, entry.Path)
 		if err != nil {
-			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: %v", entry.Path, err)))
+			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: %v", entry.Path, err)))
 			continue
 		}
 		if entry.NotEmpty {
 			s, err := actual.Scalar()
 			if err != nil {
-				mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected non-empty scalar, got %s", entry.Path, actual.Kind())))
+				mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected non-empty scalar, got %s", entry.Path, actual.Kind())))
 				continue
 			}
 			if s == "" {
-				mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected non-empty, got \"\"", entry.Path)))
+				mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected non-empty, got \"\"", entry.Path)))
 			}
 			continue
 		}
 		actualS, err := actual.Scalar()
 		if err != nil {
-			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected scalar value, got %s", entry.Path, actual.Kind())))
+			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected scalar value, got %s", entry.Path, actual.Kind())))
 			continue
 		}
 		expected, err := entry.Value.Scalar()
@@ -449,7 +454,7 @@ func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourc
 			return assertResult{}, fmt.Errorf("matches entry %q: pattern is not a scalar value", entry.Path)
 		}
 		if actualS != expected {
-			mismatches = append(mismatches, locate(entry.Loc, fmt.Sprintf("%s: expected %q, got %q", entry.Path, expected, actualS)))
+			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected %q, got %q", entry.Path, expected, actualS)))
 		}
 	}
 	if len(mismatches) == 0 {

@@ -115,11 +115,12 @@ func TestReplCheck_ReportsMultipleStaticIssues(t *testing.T) {
 func TestReplCheck_LinePrefixTracksParserPosition(t *testing.T) {
 	t.Parallel()
 
-	// The parser emits errors with embedded LINE:COL prefixes;
-	// replCheckInput strips them and uses the parser's line
-	// for the file:line: rendering. A 'help' on line 1, a
+	// Parser errors are typed *shell.SyntaxError carrying a
+	// Span; the renderer cites the Span's start position via
+	// the "--> file:line:col" header. A 'help' on line 1, a
 	// blank line 2, then the offending 'let x = 1 = 2' on
-	// line 3 should report at line 3, not line 1.
+	// line 3 should produce a frame whose header cites line
+	// 3, not line 1.
 	src := "help\n\nlet x = 1 = 2\n"
 	hadErrors, errOut := runCheckInput(t, src)
 	assert.True(t, hadErrors)

@@ -84,7 +84,7 @@ func TestRunWithDeferScope_DeferKillRunsBeforeLeakCheck(t *testing.T) {
 	env := &Env{
 		Session:       sess,
 		HandleJobLeak: rec.handle,
-		ExecBind: func(args []Arg) (BindResult, error) {
+		ExecBind: func(args []Arg, _ Span) (BindResult, error) {
 			job.MarkManaged()
 			return BindResult{Rc: Envelope{OK: true}}, nil
 		},

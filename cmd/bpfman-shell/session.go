@@ -16,7 +16,7 @@ import (
 
 // replVars lists all session variables and their kinds. The
 // kind is the OriginKind's string form (scalar, boolean,
-// program, link, job, envelope, map, dispatcher, null,
+// program, link, job, result, map, dispatcher, null,
 // unknown), so a quick 'vars' tells the user what each binding
 // is without forcing them to 'print $name' to find out.
 func replVars(cli *bpfmancli.CLI, session *shell.Session) error {
@@ -46,7 +46,7 @@ func applyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
 	}
 	rewritten := make([]shell.Arg, len(args))
 	copy(rewritten, args)
-	rewritten[0] = shell.WordArg{Text: expansion}
+	rewritten[0] = shell.WordArg{Text: expansion, Span: shell.ArgSpan(args[0])}
 	return rewritten
 }
 

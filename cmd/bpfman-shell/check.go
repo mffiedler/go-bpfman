@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,35 +43,45 @@ func slurpReader(r LineReader) (string, error) {
 }
 
 // preflightCheck tokenises and parses src, runs the static
-// checker, and writes any issues to cli.Err with file:line:
-// prefixes. Returns true when at least one issue was emitted
-// so the caller can refuse to evaluate. Tokenise / Parse
-// errors are reported as a single file:line: line with the
-// embedded LINE:COL prefix stripped, matching how --check
-// renders the same errors.
+// checker, and writes any issues to cli.Err as rust-compiler-
+// style multi-line diagnostics with a "  --> file:line:col"
+// citation, the offending source line, and a caret span
+// underlining the region. Returns true when at least one
+// issue was emitted so the caller can refuse to evaluate.
+// Tokeniser, parser, and Check issues all flow as typed
+// *shell.SyntaxError values; the caller pulls Span and Msg
+// straight off and hands them to the renderer.
 func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
 	if strings.TrimSpace(src) == "" {
 		return false
 	}
 	hadIssues := false
-	report := func(line, col int, msg string) {
+	emitFrame := func(span shell.Span, msg string) {
 		hadIssues = true
-		loc := sourceLoc{file: file, line: line, col: col}
-		_ = cli.PrintErrf("%serror: %s\n", loc, msg)
+		_ = cli.PrintErr(shell.RenderDiagnostic(src, file, shell.Diagnostic{
+			Span: span,
+			Msg:  msg,
+		}))
 	}
-	stagedReport := func(err error) {
-		msg := err.Error()
-		line, col := 1, 0
-		if l, c, rest, ok := splitLineColPrefix(msg); ok {
-			line, col = l, c
-			msg = rest
+	reportSyntaxErr := func(err error) {
+		var se *shell.SyntaxError
+		if errors.As(err, &se) {
+			emitFrame(se.Span, se.Msg)
+			return
 		}
-		report(line, col, msg)
+		// Fallback: untyped error. Cite line 1 col 1 with a
+		// degenerate single-column span so the renderer still
+		// produces a frame; this path should be unreachable
+		// once every parser/tokeniser site emits SyntaxError.
+		emitFrame(shell.Span{
+			Pos: shell.Pos{Line: 1, Col: 1},
+			End: shell.Pos{Line: 1, Col: 2},
+		}, err.Error())
 	}
 
 	tokens, tokErr := shell.Tokenise(src)
 	if tokErr != nil {
-		stagedReport(tokErr)
+		reportSyntaxErr(tokErr)
 		return hadIssues
 	}
 	if len(tokens) == 0 {
@@ -78,11 +89,11 @@ func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
 	}
 	prog, parseErr := shell.Parse(tokens)
 	if parseErr != nil {
-		stagedReport(parseErr)
+		reportSyntaxErr(parseErr)
 		return hadIssues
 	}
 	for _, issue := range shell.Check(prog) {
-		report(issue.Loc.Line, issue.Loc.Col, issue.Msg)
+		emitFrame(issue.Span, issue.Msg)
 	}
 	return hadIssues
 }
@@ -151,30 +162,28 @@ func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
 	}
 
 	hadErrors := false
-	report := func(line, col int, msg string) {
+	emitFrame := func(span shell.Span, msg string) {
 		hadErrors = true
-		loc := sourceLoc{file: file, line: line, col: col}
-		fmt.Fprintf(errOut, "%serror: %s\n", loc, msg)
+		fmt.Fprint(errOut, shell.RenderDiagnostic(src, file, shell.Diagnostic{
+			Span: span,
+			Msg:  msg,
+		}))
 	}
-
-	// stagedReport pulls a leading 'LINE:COL: ' prefix off
-	// tokeniser and parser error messages so the file:line:col
-	// rendering in report stays consistent. Without the
-	// strip the user would see 'test.bpfman:1: error: 1:11:
-	// unexpected ...' with the position rendered twice.
-	stagedReport := func(err error) {
-		msg := err.Error()
-		line, col := 1, 0
-		if l, c, rest, ok := splitLineColPrefix(msg); ok {
-			line, col = l, c
-			msg = rest
+	reportSyntaxErr := func(err error) {
+		var se *shell.SyntaxError
+		if errors.As(err, &se) {
+			emitFrame(se.Span, se.Msg)
+			return
 		}
-		report(line, col, msg)
+		emitFrame(shell.Span{
+			Pos: shell.Pos{Line: 1, Col: 1},
+			End: shell.Pos{Line: 1, Col: 2},
+		}, err.Error())
 	}
 
 	tokens, tokErr := shell.Tokenise(src)
 	if tokErr != nil {
-		stagedReport(tokErr)
+		reportSyntaxErr(tokErr)
 		return hadErrors
 	}
 	if len(tokens) == 0 {
@@ -182,11 +191,11 @@ func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
 	}
 	prog, parseErr := shell.Parse(tokens)
 	if parseErr != nil {
-		stagedReport(parseErr)
+		reportSyntaxErr(parseErr)
 		return hadErrors
 	}
 	for _, issue := range shell.Check(prog) {
-		report(issue.Loc.Line, issue.Loc.Col, issue.Msg)
+		emitFrame(issue.Span, issue.Msg)
 	}
 	return hadErrors
 }

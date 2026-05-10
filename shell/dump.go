@@ -10,7 +10,7 @@
 //
 // Reflective so that adding a new Stmt or Expr variant does not
 // require touching the dumper. The cost is that field tags or
-// special-case formatting (e.g. hiding empty Loc values) live
+// special-case formatting (e.g. hiding empty Pos values) live
 // in the dumper's render logic rather than on each AST type.
 
 package shell
@@ -74,10 +74,10 @@ func dumpValue(b *strings.Builder, v reflect.Value, depth int, label string) {
 }
 
 // dumpStruct prints a struct as 'TypeName {' followed by one
-// line per non-zero field and a closing '}'. Embedded Loc
-// fields render as a single 'Loc: line:col' shorthand because
-// every AST node carries one and the full struct form would
-// triple the dump's vertical space.
+// line per non-zero field and a closing '}'. Embedded Pos and
+// Span fields render as a single shorthand line because every
+// AST node carries a Span and the full nested form would more
+// than double the dump's vertical space.
 func dumpStruct(b *strings.Builder, v reflect.Value, depth int, label string) {
 	indent := strings.Repeat("  ", depth)
 	t := v.Type()
@@ -91,11 +91,15 @@ func dumpStruct(b *strings.Builder, v reflect.Value, depth int, label string) {
 		if isZero(fv) {
 			continue
 		}
-		// Loc shorthand: render as "Loc: 3:14" rather than a
-		// nested struct dump. Applies to any field of type
-		// shell.Loc, including embedded ones (anonymous Loc).
-		if loc, ok := fv.Interface().(Loc); ok {
-			fmt.Fprintf(b, "%s  Loc: %d:%d\n", indent, loc.Line, loc.Col)
+		// Span shorthand: render as "Span: line:col-line:col".
+		if sp, ok := fv.Interface().(Span); ok {
+			fmt.Fprintf(b, "%s  Span: %d:%d-%d:%d\n", indent,
+				sp.Pos.Line, sp.Pos.Col, sp.End.Line, sp.End.Col)
+			continue
+		}
+		// Pos shorthand for any non-embedded Pos field.
+		if loc, ok := fv.Interface().(Pos); ok {
+			fmt.Fprintf(b, "%s  %s: %d:%d\n", indent, field.Name, loc.Line, loc.Col)
 			continue
 		}
 		dumpValue(b, fv, depth+1, field.Name)
@@ -167,11 +171,15 @@ func isZero(v reflect.Value) bool {
 		}
 		return true
 	case reflect.Struct:
-		// Loc{} is the only struct we want to elide; everything
-		// else is treated as non-zero so the dump preserves
-		// shape even for default-looking values.
-		if loc, ok := v.Interface().(Loc); ok {
+		// Pos{} and Span{} are the only structs we want to
+		// elide; everything else is treated as non-zero so the
+		// dump preserves shape even for default-looking values.
+		if loc, ok := v.Interface().(Pos); ok {
 			return loc.Line == 0 && loc.Col == 0
+		}
+		if sp, ok := v.Interface().(Span); ok {
+			return sp.Pos.Line == 0 && sp.Pos.Col == 0 &&
+				sp.End.Line == 0 && sp.End.Col == 0
 		}
 		return false
 	}

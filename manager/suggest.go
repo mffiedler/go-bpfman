@@ -167,88 +167,19 @@ package manager
 import (
 	"sort"
 	"strings"
+
+	"github.com/frobware/go-bpfman/internal/strdist"
 )
 
-// levenshtein returns the Levenshtein edit distance between two strings,
-// counting insertions, deletions, and substitutions each as cost 1. The
-// inputs are iterated rune-by-rune.
-func levenshtein(a, b string) int {
-	ar, br := []rune(a), []rune(b)
-	m, n := len(ar), len(br)
-	if m == 0 {
-		return n
-	}
-	if n == 0 {
-		return m
-	}
-	prev := make([]int, n+1)
-	curr := make([]int, n+1)
-	for j := 0; j <= n; j++ {
-		prev[j] = j
-	}
-	for i := 1; i <= m; i++ {
-		curr[0] = i
-		for j := 1; j <= n; j++ {
-			cost := 1
-			if ar[i-1] == br[j-1] {
-				cost = 0
-			}
-			curr[j] = min(prev[j]+1, min(curr[j-1]+1, prev[j-1]+cost))
-		}
-		prev, curr = curr, prev
-	}
-	return prev[n]
-}
+// levenshtein and nearestStrings are thin shims onto the shared
+// internal/strdist primitives so the existing tracepoint-aware
+// scoring code below can keep its short call-site names without
+// breaking parity with the static checker's "did you mean"
+// suggestions.
+func levenshtein(a, b string) int { return strdist.Levenshtein(a, b) }
 
-// nearestStrings returns up to limit entries from candidates that are
-// closest to target by Levenshtein distance, breaking ties
-// lexicographically.
-//
-// Two caps filter the results. An absolute cap of max(len(target)/2, 3)
-// drops entries that are more than half an edit away and keeps
-// nonsense input from yielding unrelated matches. A relative cap of
-// 2 * bestDistance, applied on top, trims the tail when there is a
-// clearly better candidate: if the closest match is a single edit
-// away, a candidate three edits away is almost certainly coincidental
-// (long shared prefix, happens-to-match substring) and is dropped.
-// When the closest match is itself distant, the relative cap relaxes
-// and the absolute cap dominates.
 func nearestStrings(target string, candidates []string, limit int) []string {
-	if limit <= 0 || len(candidates) == 0 {
-		return nil
-	}
-
-	type scored struct {
-		s    string
-		dist int
-	}
-	scores := make([]scored, 0, len(candidates))
-	for _, c := range candidates {
-		scores = append(scores, scored{s: c, dist: levenshtein(target, c)})
-	}
-	sort.Slice(scores, func(i, j int) bool {
-		if scores[i].dist != scores[j].dist {
-			return scores[i].dist < scores[j].dist
-		}
-		return scores[i].s < scores[j].s
-	})
-
-	maxDist := max(len([]rune(target))/2, 3)
-	if tight := 2 * scores[0].dist; tight < maxDist {
-		maxDist = tight
-	}
-
-	out := make([]string, 0, limit)
-	for _, s := range scores {
-		if len(out) >= limit {
-			break
-		}
-		if s.dist > maxDist {
-			break
-		}
-		out = append(out, s.s)
-	}
-	return out
+	return strdist.Nearest(target, candidates, limit)
 }
 
 // nearestTracepoints returns up to limit tracepoint paths from

@@ -31,7 +31,7 @@ type Expr interface {
 type LiteralExpr struct {
 	Text   string
 	Quoted bool
-	Loc
+	Span
 }
 
 // VarRefExpr is a variable reference with an optional field/index
@@ -40,7 +40,7 @@ type LiteralExpr struct {
 type VarRefExpr struct {
 	Name string
 	Path string
-	Loc
+	Span
 }
 
 // AdapterExpr is an adapter-decorated variable reference such as
@@ -50,7 +50,7 @@ type AdapterExpr struct {
 	Adapter string
 	Name    string
 	Path    string
-	Loc
+	Span
 }
 
 // InterpStringExpr is a double-quoted string with one or more
@@ -63,7 +63,7 @@ type AdapterExpr struct {
 // segment.
 type InterpStringExpr struct {
 	Segments []InterpStringSegment
-	Loc
+	Span
 }
 
 // InterpStringSegment is one alternation inside an
@@ -85,7 +85,7 @@ type BinaryExpr struct {
 	Left  Expr
 	Op    string
 	Right Expr
-	Loc
+	Span
 }
 
 // UnaryExpr is a single-operand predicate. Pred is the only
@@ -96,34 +96,34 @@ type BinaryExpr struct {
 type UnaryExpr struct {
 	Pred    string
 	Operand Expr
-	Loc
+	Span
 }
 
 // ThreadExpr is a value-threading composition: evaluate LHS to a
 // Value, append that Value as the last argument of the command
 // described by Args, and dispatch. The operator binds tighter than
-// comparison operators but looser than the primary forms. Loc
+// comparison operators but looser than the primary forms. Pos
 // identifies the '|>' token itself.
 type ThreadExpr struct {
 	LHS  Expr
 	Args []Expr
-	Loc
+	Span
 }
 
 // LogicalExpr is a short-circuit boolean combinator.  Op is
 // either "and" or "or"; both operands must evaluate to a
-// BoolValue at runtime.  Loc identifies the operator token.
+// BoolValue at runtime.  Pos identifies the operator token.
 type LogicalExpr struct {
 	Op          string
 	Left, Right Expr
-	Loc
+	Span
 }
 
 // NotExpr is boolean negation.  The operand must evaluate to a
-// BoolValue at runtime.  Loc identifies the 'not' token.
+// BoolValue at runtime.  Pos identifies the 'not' token.
 type NotExpr struct {
 	Operand Expr
-	Loc
+	Span
 }
 
 // NegateExpr is arithmetic negation.  The operand must evaluate
@@ -132,7 +132,7 @@ type NotExpr struct {
 // two unary forms live in separate namespaces.
 type NegateExpr struct {
 	Operand Expr
-	Loc
+	Span
 }
 
 // TimeoutExpr is a retry-scoped primary expression that evaluates
@@ -150,7 +150,7 @@ type NegateExpr struct {
 //	until $ready or timeout $max_wait
 type TimeoutExpr struct {
 	Arg Expr
-	Loc
+	Span
 }
 
 // IterationExpr is a retry-scoped primary expression that
@@ -167,7 +167,7 @@ type TimeoutExpr struct {
 //	until $done or iteration $max      -- configurable cap
 type IterationExpr struct {
 	Arg Expr
-	Loc
+	Span
 }
 
 func (*LiteralExpr) exprNode()      {}
@@ -195,20 +195,24 @@ func (*IterationExpr) exprNode()    {}
 type Env struct {
 	Session *Session
 
-	// ExecCommand runs a top-level CommandStmt. The returned
-	// Value may be nil; any output is visible on the CLI.
-	ExecCommand func(args []Arg) (Value, error)
+	// ExecCommand runs a top-level CommandStmt. span is the
+	// originating statement's source extent so handlers (and any
+	// errors they emit) can frame diagnostics at the failing
+	// command. The returned Value may be nil; any output is
+	// visible on the CLI.
+	ExecCommand func(args []Arg, span Span) (Value, error)
 
 	// ExecBind runs a command form on the right of a '<-' bind.
-	// The returned BindResult carries the result envelope (Rc)
-	// and the provider's primary result (Primary). Command
-	// failure (non-zero exit, in-process error) is encoded on
-	// Rc as OK: false with code, stdout, and stderr set, not
-	// as a Go error. A Go error is reserved for structural
-	// failures (empty argv, malformed adapter, no provider for
-	// this hook). Set by the REPL driver; nil makes any
-	// BindStmt a runtime error.
-	ExecBind func(args []Arg) (BindResult, error)
+	// span is the bind statement's source extent. The returned
+	// BindResult carries the result envelope (Rc) and the
+	// provider's primary result (Primary). Command failure
+	// (non-zero exit, in-process error) is encoded on Rc as OK:
+	// false with code, stdout, and stderr set, not as a Go
+	// error. A Go error is reserved for structural failures
+	// (empty argv, malformed adapter, no provider for this
+	// hook). Set by the REPL driver; nil makes any BindStmt a
+	// runtime error.
+	ExecBind func(args []Arg, span Span) (BindResult, error)
 
 	// ExecAssertStmt runs an AssertStmt: evaluate its expression,
 	// AsBool the result, apply the optional Negate, and dispatch
@@ -231,7 +235,7 @@ type Env struct {
 	// so the driver can emit the labelled-block diagnostic. A
 	// nil callback discards the rendering; the failure still
 	// counts toward the script's exit code via Session.
-	RenderDeferFailure func(stmtLoc Loc, args []Arg, rc Envelope)
+	RenderDeferFailure func(stmtLoc Pos, args []Arg, rc Envelope)
 
 	// HandleJobLeak is called once per unmanaged job at scope
 	// exit. The driver renders the diagnostic ('[job] FAIL at
@@ -336,43 +340,50 @@ func evalProgramBody(prog *Program, env *Env) error {
 		case errors.Is(err, errContinue):
 			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
 		default:
-			return err
+			// Defensive safety net: any runtime error that
+			// reached the program level without a Span gets
+			// framed at the offending statement. Most paths
+			// already return a *SyntaxError (frameAtSpan
+			// short-circuits); this catches anything that
+			// slipped through future evaluators or escape
+			// hatches.
+			return frameAtSpan(nodeSpan(stmt), err)
 		}
 	}
 	return nil
 }
 
-// stmtLoc returns the Loc on any Stmt variant.  Used by
+// stmtLoc returns the Pos on any Stmt variant.  Used by
 // EvalProgram to cite a source location when break / continue
 // reach the top level without being caught by a loop.
-func stmtLoc(s Stmt) Loc {
+func stmtLoc(s Stmt) Pos {
 	switch v := s.(type) {
 	case *LetStmt:
-		return v.Loc
+		return v.Pos
 	case *BindStmt:
-		return v.Loc
+		return v.Pos
 	case *DeferStmt:
-		return v.Loc
+		return v.Pos
 	case *IfStmt:
-		return v.Loc
+		return v.Pos
 	case *CommandStmt:
-		return v.Loc
+		return v.Pos
 	case *ExprStmt:
-		return v.Loc
+		return v.Pos
 	case *ForEachStmt:
-		return v.Loc
+		return v.Pos
 	case *RetryStmt:
-		return v.Loc
+		return v.Pos
 	case *BreakStmt:
-		return v.Loc
+		return v.Pos
 	case *ContinueStmt:
-		return v.Loc
+		return v.Pos
 	case *DefStmt:
-		return v.Loc
+		return v.Pos
 	case *AssertStmt:
-		return v.Loc
+		return v.Pos
 	}
-	return Loc{}
+	return Pos{}
 }
 
 // errBreak and errContinue are sentinel errors that carry a
@@ -392,7 +403,7 @@ func evalStmt(stmt Stmt, env *Env) error {
 			return err
 		}
 		if val.IsNil() {
-			return locErrorf(s.Loc, "expression produced no result to assign")
+			return spanErrorf(s.Span, "expression produced no result to assign")
 		}
 		env.Session.Set(s.Name, val)
 		return nil
@@ -418,7 +429,7 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalDefStmt(s, env)
 	case *AssertStmt:
 		if env.ExecAssertStmt == nil {
-			return locErrorf(s.Loc, "assert/require has no executor on the env")
+			return spanErrorf(s.Span, "assert/require has no executor on the env")
 		}
 		return env.ExecAssertStmt(s, env)
 	default:
@@ -433,7 +444,7 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 		Name:   s.Name,
 		Params: s.Params,
 		Body:   s.Body,
-		Loc:    s.Loc,
+		Span:   s.Span,
 	})
 	return nil
 }
@@ -448,10 +459,10 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 // absent) before the body runs and reinstated afterwards. Recursion
 // works naturally because each call's saves slice is local to its
 // invocation.
-func callDef(def *DefValue, args []Arg, callLoc Loc, env *Env) error {
+func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 	if len(args) != len(def.Params) {
 		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
-			def.Name, len(def.Params), len(args), def.Loc.Line, def.Loc.Col)
+			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
 	type saved struct {
 		name string
@@ -570,7 +581,7 @@ func evalRetryStmt(s *RetryStmt, env *Env) error {
 		}
 		untilB, err := AsBool(untilV)
 		if err != nil {
-			return locErrorf(s.Loc, "retry: until expression: %v", err)
+			return spanErrorf(s.Span, "retry: until expression: %v", err)
 		}
 		if untilB {
 			return bodyErr
@@ -585,7 +596,7 @@ func evalRetryStmt(s *RetryStmt, env *Env) error {
 // measure against.
 func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 	if env.retryStart.IsZero() {
-		return Value{}, locErrorf(e.Loc, "timeout expression is only valid inside a retry body or its until clause")
+		return Value{}, spanErrorf(e.Span, "timeout expression is only valid inside a retry body or its until clause")
 	}
 	v, err := EvalExpr(e.Arg, env)
 	if err != nil {
@@ -593,11 +604,11 @@ func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "timeout: argument must be a scalar duration: %v", err)
+		return Value{}, spanErrorf(e.Span, "timeout: argument must be a scalar duration: %v", err)
 	}
 	d, err := parseDurationLiteral(s)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "timeout: %v", err)
+		return Value{}, spanErrorf(e.Span, "timeout: %v", err)
 	}
 	return BoolValue(time.Since(env.retryStart) >= d), nil
 }
@@ -607,7 +618,7 @@ func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 // Outside a retry context (Env.retryIter zero) it errors.
 func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
 	if env.retryIter == 0 {
-		return Value{}, locErrorf(e.Loc, "iteration expression is only valid inside a retry body or its until clause")
+		return Value{}, spanErrorf(e.Span, "iteration expression is only valid inside a retry body or its until clause")
 	}
 	v, err := EvalExpr(e.Arg, env)
 	if err != nil {
@@ -615,14 +626,14 @@ func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "iteration: argument must be a scalar count: %v", err)
+		return Value{}, spanErrorf(e.Span, "iteration: argument must be a scalar count: %v", err)
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "iteration: %q is not a valid integer count", s)
+		return Value{}, spanErrorf(e.Span, "iteration: %q is not a valid integer count", s)
 	}
 	if n < 0 {
-		return Value{}, locErrorf(e.Loc, "iteration: count %d is negative", n)
+		return Value{}, spanErrorf(e.Span, "iteration: count %d is negative", n)
 	}
 	return BoolValue(env.retryIter >= n), nil
 }
@@ -633,11 +644,11 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 		return err
 	}
 	if v.IsNil() {
-		return locErrorf(s.Loc, "foreach: list expression is null")
+		return spanErrorf(s.Span, "foreach: list expression is null")
 	}
 	list, ok := v.Raw().([]any)
 	if !ok {
-		return locErrorf(s.Loc, "foreach: expected a list, got %s", v.Kind())
+		return spanErrorf(s.Span, "foreach: expected a list, got %s", v.Kind())
 	}
 	// The loop variable is body-scoped: any prior binding of the
 	// same name is restored after the loop ends, and a name that
@@ -679,7 +690,11 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		if err != nil {
 			return false, err
 		}
-		return AsBool(v)
+		b, err := AsBool(v)
+		if err != nil {
+			return false, spanErrorf(nodeSpan(cond), "if: %v", err)
+		}
+		return b, nil
 	}
 	runBody := func(body []Stmt) error {
 		for _, stmt := range body {
@@ -716,7 +731,7 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 // holds the original command form so the diagnostic renderer can
 // cite the source location of the defer statement.
 type deferEntry struct {
-	Loc  Loc
+	Span
 	Args []Arg
 }
 
@@ -728,14 +743,14 @@ type deferEntry struct {
 // check.
 func evalDeferStmt(s *DeferStmt, env *Env) error {
 	if env.defers == nil {
-		return locErrorf(s.Loc, "defer outside any defer scope")
+		return spanErrorf(s.Span, "defer outside any defer scope")
 	}
 	args, err := EvalArgs(s.Cmd.Args, env)
 	if err != nil {
 		return err
 	}
 	*env.defers = append(*env.defers, deferEntry{
-		Loc:  s.Loc,
+		Span: s.Span,
 		Args: args,
 	})
 	return nil
@@ -754,18 +769,18 @@ func runDefers(env *Env, stack []deferEntry) {
 	}
 	for i := len(stack) - 1; i >= 0; i-- {
 		entry := stack[i]
-		result, err := env.ExecBind(entry.Args)
+		result, err := env.ExecBind(entry.Args, entry.Span)
 		if err != nil {
 			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
 			if env.RenderDeferFailure != nil {
-				env.RenderDeferFailure(entry.Loc, entry.Args, rc)
+				env.RenderDeferFailure(entry.Pos, entry.Args, rc)
 			}
 			env.Session.RecordDeferFailure()
 			continue
 		}
 		if !result.Rc.OK {
 			if env.RenderDeferFailure != nil {
-				env.RenderDeferFailure(entry.Loc, entry.Args, result.Rc)
+				env.RenderDeferFailure(entry.Pos, entry.Args, result.Rc)
 			}
 			env.Session.RecordDeferFailure()
 		}
@@ -906,18 +921,18 @@ func reportJobLeaks(env *Env, jobs []*Job) {
 // slot.
 func evalBindStmt(s *BindStmt, env *Env) error {
 	if env.ExecBind == nil {
-		return locErrorf(s.Loc, "'<-' bind: command execution is not configured")
+		return spanErrorf(s.Span, "'<-' bind: command execution is not configured")
 	}
 	args, err := EvalArgs(s.Cmd.Args, env)
 	if err != nil {
 		return err
 	}
-	result, err := env.ExecBind(args)
+	result, err := env.ExecBind(args, s.Span)
 	if err != nil {
-		return err
+		return frameAtSpan(s.Span, err)
 	}
 	if s.Guard && !result.Rc.OK {
-		return &GuardFailure{Loc: s.Loc, Primary: s.Primary, Args: args, Envelope: result.Rc}
+		return &GuardFailure{Span: s.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
 	}
 	if s.Rc != "" && s.Rc != "_" {
 		env.Session.Set(s.Rc, ValueFromEnvelope(result.Rc))
@@ -937,7 +952,7 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 // failed and the Primary name (the bind target the user wrote)
 // for the diagnostic.
 type GuardFailure struct {
-	Loc      Loc
+	Span
 	Primary  string
 	Args     []Arg
 	Envelope Envelope
@@ -963,15 +978,15 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	if len(args) > 0 {
 		if name, ok := commandHeadName(args[0]); ok {
 			if def, hit := env.Session.GetDef(name); hit {
-				return callDef(def, args[1:], s.Loc, env)
+				return callDef(def, args[1:], s.Pos, env)
 			}
 		}
 	}
 	if env.ExecCommand == nil {
-		return locErrorf(s.Loc, "command execution is not configured")
+		return spanErrorf(s.Span, "command execution is not configured")
 	}
-	_, err = env.ExecCommand(args)
-	return err
+	_, err = env.ExecCommand(args, s.Span)
+	return frameAtSpan(s.Span, err)
 }
 
 // commandHeadName extracts the command name from the first argument
@@ -1012,6 +1027,11 @@ func evalExprStmt(s *ExprStmt, env *Env) error {
 // binary and unary expressions combine their operands per their op
 // or predicate. Adapter references are rejected — they only make
 // sense as command arguments.
+// EvalExpr is the public expression entry point. Each leaf
+// evaluator is responsible for wrapping its own errors with a
+// Span; callers above the evaluator (e.g. the chunk runner) add
+// a final safety net that frames anything that escaped here
+// without a Span.
 func EvalExpr(expr Expr, env *Env) (Value, error) {
 	switch e := expr.(type) {
 	case *LiteralExpr:
@@ -1019,7 +1039,7 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 	case *VarRefExpr:
 		return resolveVarRefValue(e, env)
 	case *AdapterExpr:
-		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
+		return Value{}, spanErrorf(e.Span, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
 	case *InterpStringExpr:
 		return evalInterpString(e, env)
 	case *ThreadExpr:
@@ -1057,7 +1077,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 	}
 	leftB, err := AsBool(leftV)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "%s: left: %v", e.Op, err)
+		return Value{}, spanErrorf(e.Span, "%s: left: %v", e.Op, err)
 	}
 	switch e.Op {
 	case "and":
@@ -1069,7 +1089,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 			return BoolValue(true), nil
 		}
 	default:
-		return Value{}, locErrorf(e.Loc, "unknown logical operator %q", e.Op)
+		return Value{}, spanErrorf(e.Span, "unknown logical operator %q", e.Op)
 	}
 	rightV, err := EvalExpr(e.Right, env)
 	if err != nil {
@@ -1077,7 +1097,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 	}
 	rightB, err := AsBool(rightV)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "%s: right: %v", e.Op, err)
+		return Value{}, spanErrorf(e.Span, "%s: right: %v", e.Op, err)
 	}
 	return BoolValue(rightB), nil
 }
@@ -1092,7 +1112,7 @@ func evalNot(e *NotExpr, env *Env) (Value, error) {
 	}
 	b, err := AsBool(v)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "not: %v", err)
+		return Value{}, spanErrorf(e.Span, "not: %v", err)
 	}
 	return BoolValue(!b), nil
 }
@@ -1144,7 +1164,7 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 		}
 		s, err := RenderCompact(v)
 		if err != nil {
-			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: %v", err)
+			return Value{}, spanErrorf(nodeSpan(seg.Expr), "interpolation: %v", err)
 		}
 		b.WriteString(s)
 	}
@@ -1191,9 +1211,9 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 	switch e := expr.(type) {
 	case *LiteralExpr:
 		if e.Quoted {
-			return QuotedArg{Text: e.Text}, nil
+			return QuotedArg{Text: e.Text, Span: e.Span}, nil
 		}
-		return WordArg{Text: e.Text}, nil
+		return WordArg{Text: e.Text, Span: e.Span}, nil
 	case *VarRefExpr:
 		return resolveVarRefArg(e, env)
 	case *AdapterExpr:
@@ -1205,25 +1225,25 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		}
 		s, err := val.Scalar()
 		if err != nil {
-			return nil, locErrorf(e.Loc, "interpolated string: %v", err)
+			return nil, spanErrorf(e.Span, "interpolated string: %v", err)
 		}
-		return ScalarValueArg{Text: s}, nil
+		return ScalarValueArg{Text: s, Span: e.Span}, nil
 	case *ThreadExpr:
 		val, err := dispatchThread(e, env)
 		if err != nil {
 			return nil, err
 		}
 		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "thread produced no value")
+			return nil, spanErrorf(e.Span, "thread produced no value")
 		}
 		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
+			return StructuredValueArg{Value: val, Span: e.Span}, nil
 		}
 		s, err := val.Scalar()
 		if err != nil {
-			return nil, locErrorf(e.Loc, "thread: %v", err)
+			return nil, spanErrorf(e.Span, "thread: %v", err)
 		}
-		return ScalarValueArg{Text: s}, nil
+		return ScalarValueArg{Text: s, Span: e.Span}, nil
 	case *MatchesBlockExpr:
 		return evalMatchesBlockArg(e, env)
 	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *NegateExpr, *TimeoutExpr, *IterationExpr:
@@ -1236,38 +1256,42 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 func resolveVarRefValue(e *VarRefExpr, env *Env) (Value, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return Value{}, locErrorf(e.Loc, "undefined variable %q", e.Name)
+		return Value{}, spanErrorf(e.Span, "undefined variable %q", e.Name)
 	}
 	if e.Path == "" {
 		return v, nil
 	}
-	return v.LookupValue(e.Name, e.Path)
+	lv, err := v.LookupValue(e.Name, e.Path)
+	if err != nil {
+		return Value{}, spanErrorf(e.Span, "%v", err)
+	}
+	return lv, nil
 }
 
 func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return nil, locErrorf(e.Loc, "undefined variable: %s", e.Name)
+		return nil, spanErrorf(e.Span, "undefined variable: %s", e.Name)
 	}
 	resolved := v
 	if e.Path != "" {
 		lv, err := v.LookupValue(e.Name, e.Path)
 		if err != nil {
-			return nil, err
+			return nil, spanErrorf(e.Span, "%v", err)
 		}
 		resolved = lv
 	}
 	if resolved.IsNil() {
-		return nil, locErrorf(e.Loc, "variable %s is null", qualify(e.Name, e.Path))
+		return nil, spanErrorf(e.Span, "variable %s is null", qualify(e.Name, e.Path))
 	}
 	if resolved.IsStructured() {
-		return StructuredValueArg{Name: e.Name, Value: resolved}, nil
+		return StructuredValueArg{Name: e.Name, Value: resolved, Span: e.Span}, nil
 	}
 	s, err := resolved.Scalar()
 	if err != nil {
-		return nil, locErrorf(e.Loc, "variable %s: %v", qualify(e.Name, e.Path), err)
+		return nil, spanErrorf(e.Span, "variable %s: %v", qualify(e.Name, e.Path), err)
 	}
-	return ScalarValueArg{Text: s}, nil
+	return ScalarValueArg{Text: s, Span: e.Span}, nil
 }
 
 // qualify produces a "name.path" string for error messages, or
@@ -1282,24 +1306,25 @@ func qualify(name, path string) string {
 func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return nil, locErrorf(e.Loc, "undefined variable: %s", e.Name)
+		return nil, spanErrorf(e.Span, "undefined variable: %s", e.Name)
 	}
 	resolved := v
 	if e.Path != "" {
 		lv, err := v.LookupValue(e.Name, e.Path)
 		if err != nil {
-			return nil, err
+			return nil, spanErrorf(e.Span, "%v", err)
 		}
 		resolved = lv
 	}
 	if resolved.IsNil() {
-		return nil, locErrorf(e.Loc, "adapter %s: variable %s is null", e.Adapter, e.Name)
+		return nil, spanErrorf(e.Span, "adapter %s: variable %s is null", e.Adapter, e.Name)
 	}
 	return AdapterArg{
 		Adapter: e.Adapter,
 		Name:    e.Name,
 		Path:    e.Path,
 		Value:   resolved,
+		Span:    e.Span,
 	}, nil
 }
 
@@ -1313,51 +1338,54 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 // failure must propagate.
 func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if env.ExecBind == nil {
-		return Value{}, locErrorf(e.Loc, "'|>' is only valid where commands can run; not available in this context")
+		return Value{}, spanErrorf(e.Span, "'|>' is only valid where commands can run; not available in this context")
 	}
 	lhsVal, err := EvalExpr(e.LHS, env)
 	if err != nil {
 		return Value{}, err
 	}
 	if lhsVal.IsNil() {
-		return Value{}, locErrorf(e.Loc, "thread: left-hand side is null")
+		return Value{}, spanErrorf(e.Span, "thread: left-hand side is null")
 	}
 	args, err := EvalArgs(e.Args, env)
 	if err != nil {
 		return Value{}, err
 	}
-	lhsArg, err := valueToArg(lhsVal)
+	lhsArg, err := valueToArg(lhsVal, nodeSpan(e.LHS))
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "thread: %v", err)
+		return Value{}, spanErrorf(e.Span, "thread: %v", err)
 	}
-	result, err := env.ExecBind(append(args, lhsArg))
+	result, err := env.ExecBind(append(args, lhsArg), e.Span)
 	if err != nil {
-		return Value{}, err
+		return Value{}, frameAtSpan(e.Span, err)
 	}
 	if !result.Rc.OK {
 		if result.Rc.Stderr != "" {
-			return Value{}, locErrorf(e.Loc, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
+			return Value{}, spanErrorf(e.Span, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
 		}
-		return Value{}, locErrorf(e.Loc, "thread: command failed (exit %d)", result.Rc.Code)
+		return Value{}, spanErrorf(e.Span, "thread: command failed (exit %d)", result.Rc.Code)
 	}
 	return result.Primary, nil
 }
 
 // valueToArg wraps a Value in the most specific Arg variant for
 // the dispatch boundary: structured values stay structured,
-// scalars become ScalarValueArg, nil is a caller problem.
-func valueToArg(v Value) (Arg, error) {
+// scalars become ScalarValueArg, nil is a caller problem. span
+// is attached to the resulting Arg so command-handler parsers
+// can frame argument-position errors at the originating
+// expression.
+func valueToArg(v Value, span Span) (Arg, error) {
 	if v.IsNil() {
 		return nil, fmt.Errorf("value is null")
 	}
 	if v.IsStructured() {
-		return StructuredValueArg{Value: v}, nil
+		return StructuredValueArg{Value: v, Span: span}, nil
 	}
 	s, err := v.Scalar()
 	if err != nil {
 		return nil, err
 	}
-	return ScalarValueArg{Text: s}, nil
+	return ScalarValueArg{Text: s, Span: span}, nil
 }
 
 func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
@@ -1372,19 +1400,19 @@ func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
 	if isArithmeticOpText(e.Op) {
 		left, err := leftV.Scalar()
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "binary %s: left: %v", e.Op, err)
+			return Value{}, spanErrorf(e.Span, "binary %s: left: %v", e.Op, err)
 		}
 		right, err := rightV.Scalar()
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "binary %s: right: %v", e.Op, err)
+			return Value{}, spanErrorf(e.Span, "binary %s: right: %v", e.Op, err)
 		}
 		v, err := evalArithmetic(e.Op, left, right)
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "%v", err)
+			return Value{}, spanErrorf(e.Span, "%v", err)
 		}
 		return v, nil
 	}
-	return evalCompare(e.Op, leftV, rightV, e.Loc)
+	return evalCompare(e.Op, leftV, rightV, e.Span)
 }
 
 // compareKind classifies a Value for the purpose of strict comparison
@@ -1413,36 +1441,48 @@ func compareKind(v Value) string {
 // jq's strict equality and surfacing operator misuse loudly. To
 // compare stringy numeric input (e.g. exec stdout) against a
 // number, coerce explicitly via "$x |> jq tonumber" first.
-func evalCompare(op string, l, r Value, loc Loc) (Value, error) {
+func evalCompare(op string, l, r Value, span Span) (Value, error) {
 	lk := compareKind(l)
 	rk := compareKind(r)
 	if lk == "" {
-		return Value{}, locErrorf(loc, "%s: left side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, l.Kind(), op)
+		return Value{}, spanErrorf(span, "%s: left side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, l.Kind(), op)
 	}
 	if rk == "" {
-		return Value{}, locErrorf(loc, "%s: right side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, r.Kind(), op)
+		return Value{}, spanErrorf(span, "%s: right side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, r.Kind(), op)
 	}
 	if lk != rk {
-		return Value{}, locErrorf(loc, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
+		return Value{}, spanErrorf(span, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
 	}
 	left, err := l.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(loc, "binary %s: left: %v", op, err)
+		return Value{}, spanErrorf(span, "binary %s: left: %v", op, err)
 	}
 	right, err := r.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(loc, "binary %s: right: %v", op, err)
+		return Value{}, spanErrorf(span, "binary %s: right: %v", op, err)
 	}
 	switch lk {
 	case "number":
-		return evalNumericComparison(op, left, right)
+		v, err := evalNumericComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	case "bool":
 		if op != "==" && op != "!=" {
-			return Value{}, locErrorf(loc, "binary %s: booleans support only == and !=", op)
+			return Value{}, spanErrorf(span, "binary %s: booleans support only == and !=", op)
 		}
-		return evalSymbolicTextComparison(op, left, right)
+		v, err := evalSymbolicTextComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	default:
-		return evalSymbolicTextComparison(op, left, right)
+		v, err := evalSymbolicTextComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	}
 }
 
@@ -1544,11 +1584,11 @@ func evalNegate(e *NegateExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "negate: %v", err)
+		return Value{}, spanErrorf(e.Span, "negate: %v", err)
 	}
 	x, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "negate: operand %q is not numeric", s)
+		return Value{}, spanErrorf(e.Span, "negate: operand %q is not numeric", s)
 	}
 	return numericValue(-x), nil
 }
@@ -1562,11 +1602,11 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 	case "not-empty":
 		s, err := operand.Scalar()
 		if err != nil {
-			return Value{}, fmt.Errorf("not-empty: %w", err)
+			return Value{}, spanErrorf(e.Span, "not-empty: %v", err)
 		}
 		return BoolValue(s != ""), nil
 	default:
-		return Value{}, fmt.Errorf("unknown unary predicate %q", e.Pred)
+		return Value{}, spanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
 	}
 }
 
@@ -1629,7 +1669,7 @@ func evalNumericComparison(op, left, right string) (Value, error) {
 // list of already-evaluated arguments. The assertion layer calls
 // this to re-interpret a command's evaluated args as a comparison
 // or predicate expression and then evaluate the whole thing via
-// EvalExpr. The returned expression has zero Loc on every node
+// EvalExpr. The returned expression has zero Pos on every node
 // because the original token positions are not available at this
 // point in the pipeline.
 func ExprFromArgs(args []Arg) (Expr, error) {
@@ -1730,37 +1770,37 @@ func AsBool(v Value) (bool, error) {
 	return false, fmt.Errorf("condition is a %s; use a comparison like '$x == 5' or a check like 'not-empty $x' to produce a boolean", v.Kind())
 }
 
-// exprLoc extracts the Loc embedded in any Expr variant. Used for
+// exprLoc extracts the Pos embedded in any Expr variant. Used for
 // error formatting where the caller has the Expr but not the
 // concrete type.
-func exprLoc(e Expr) Loc {
+func exprLoc(e Expr) Pos {
 	switch v := e.(type) {
 	case *LiteralExpr:
-		return v.Loc
+		return v.Pos
 	case *VarRefExpr:
-		return v.Loc
+		return v.Pos
 	case *AdapterExpr:
-		return v.Loc
+		return v.Pos
 	case *InterpStringExpr:
-		return v.Loc
+		return v.Pos
 	case *BinaryExpr:
-		return v.Loc
+		return v.Pos
 	case *UnaryExpr:
-		return v.Loc
+		return v.Pos
 	case *ThreadExpr:
-		return v.Loc
+		return v.Pos
 	case *LogicalExpr:
-		return v.Loc
+		return v.Pos
 	case *NotExpr:
-		return v.Loc
+		return v.Pos
 	case *NegateExpr:
-		return v.Loc
+		return v.Pos
 	case *TimeoutExpr:
-		return v.Loc
+		return v.Pos
 	case *IterationExpr:
-		return v.Loc
+		return v.Pos
 	case *MatchesBlockExpr:
-		return v.Loc
+		return v.Pos
 	}
-	return Loc{}
+	return Pos{}
 }

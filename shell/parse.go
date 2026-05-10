@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -29,7 +30,7 @@ func parseDurationLiteral(s string) (time.Duration, error) {
 // of statements with the source location of the first token.
 type Program struct {
 	Stmts []Stmt
-	Loc
+	Span
 }
 
 // Stmt is the sealed sum type for statements. Embedding Node
@@ -45,7 +46,7 @@ type Stmt interface {
 type LetStmt struct {
 	Name string
 	RHS  Expr
-	Loc
+	Span
 }
 
 // BindStmt runs Cmd and binds its primary result, and optionally
@@ -64,7 +65,7 @@ type BindStmt struct {
 	Rc      string
 	Cmd     *CommandStmt
 	Guard   bool
-	Loc
+	Span
 }
 
 // IfBranch pairs a condition expression with a block body. Used
@@ -72,7 +73,7 @@ type BindStmt struct {
 type IfBranch struct {
 	Cond Expr
 	Body []Stmt
-	Loc
+	Span
 }
 
 // IfStmt is an if-elif-else conditional.
@@ -81,14 +82,14 @@ type IfStmt struct {
 	Then  []Stmt
 	Elifs []IfBranch
 	Else  []Stmt
-	Loc
+	Span
 }
 
 // CommandStmt is a plain command invocation. The first element of
 // Args names the command.
 type CommandStmt struct {
 	Args []Expr
-	Loc
+	Span
 }
 
 // ExprStmt is an expression appearing in statement position.  It is
@@ -101,7 +102,7 @@ type CommandStmt struct {
 // result".
 type ExprStmt struct {
 	Expr Expr
-	Loc
+	Span
 }
 
 // ForEachStmt iterates a block over the elements of a list.  At
@@ -113,20 +114,20 @@ type ForEachStmt struct {
 	Name string
 	List Expr
 	Body []Stmt
-	Loc
+	Span
 }
 
 // BreakStmt terminates the nearest enclosing ForEachStmt. Outside
 // a loop it is a runtime error.
 type BreakStmt struct {
-	Loc
+	Span
 }
 
 // ContinueStmt skips the remainder of the current ForEachStmt
 // iteration and advances to the next element.  Outside a loop it
 // is a runtime error.
 type ContinueStmt struct {
-	Loc
+	Span
 }
 
 // RetryStmt runs Body repeatedly until the Until expression
@@ -145,7 +146,7 @@ type ContinueStmt struct {
 type RetryStmt struct {
 	Body  []Stmt
 	Until Expr
-	Loc
+	Span
 }
 
 // AssertStmt is the expression-form of "assert"/"require": the
@@ -163,7 +164,7 @@ type RetryStmt struct {
 type AssertStmt struct {
 	IsRequire bool
 	Expr      Expr
-	Loc
+	Span
 }
 
 // DeferStmt registers a cleanup command for the enclosing defer
@@ -177,7 +178,7 @@ type AssertStmt struct {
 // failures.
 type DeferStmt struct {
 	Cmd *CommandStmt
-	Loc
+	Span
 }
 
 // DefStmt declares a user-defined command. Name is the command name,
@@ -189,7 +190,7 @@ type DefStmt struct {
 	Name   string
 	Params []string
 	Body   []Stmt
-	Loc
+	Span
 }
 
 func (*LetStmt) stmtNode()      {}
@@ -213,11 +214,11 @@ func Parse(tokens []Token) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	var start Loc
+	var start Pos
 	if len(tokens) > 0 {
-		start = tokens[0].Loc
+		start = tokens[0].Pos
 	}
-	prog := &Program{Stmts: stmts, Loc: start}
+	prog := &Program{Stmts: stmts, Span: p.spanFrom(start)}
 	if err := validateLocs(prog); err != nil {
 		return nil, err
 	}
@@ -225,19 +226,19 @@ func Parse(tokens []Token) (*Program, error) {
 }
 
 // validateLocs walks every node of prog and asserts that each
-// has a non-zero Loc (both line and column populated). The
+// has a non-zero Pos (both line and column populated). The
 // position infrastructure is end-to-end -- the tokeniser
-// builds Loc{Line, Col} from a lineStarts table, every AST
-// node copies its Loc from a token, and the renderers print
+// builds Pos{Line, Col} from a lineStarts table, every AST
+// node copies its Pos from a token, and the renderers print
 // 'file:line:col:' for diagnostics. A regression that adds a
 // new AST variant without copying its source position would
-// silently land an empty Loc on user-facing error messages;
+// silently land an empty Pos on user-facing error messages;
 // validateLocs catches that at parse time so the next
 // developer to introduce the gap sees a loud failure rather
 // than a quiet column drop.
 //
 // Program nodes are skipped when they have no Stmts: an empty
-// input is a valid parse with an empty Loc, and we do not
+// input is a valid parse with an empty Pos, and we do not
 // want to reject empty programs. Every other node, including
 // the Program of a non-empty input, must have Line > 0 and
 // Col > 0.
@@ -250,41 +251,46 @@ func validateLocs(prog *Program) error {
 		if p, ok := n.(*Program); ok && len(p.Stmts) == 0 {
 			return true
 		}
-		loc := nodeLoc(n)
-		if loc.Line == 0 || loc.Col == 0 {
-			missing = append(missing, fmt.Sprintf("%T at line=%d col=%d", n, loc.Line, loc.Col))
+		sp := nodeSpan(n)
+		switch {
+		case sp.Pos.Line == 0 || sp.Pos.Col == 0:
+			missing = append(missing, fmt.Sprintf("%T missing start (line=%d col=%d)",
+				n, sp.Pos.Line, sp.Pos.Col))
+		case sp.End.Line == 0 || sp.End.Col == 0:
+			missing = append(missing, fmt.Sprintf("%T missing end (start=%d:%d, end=%d:%d)",
+				n, sp.Pos.Line, sp.Pos.Col, sp.End.Line, sp.End.Col))
 		}
 		return true
 	})
 	if len(missing) > 0 {
-		return fmt.Errorf("internal: AST node(s) missing source position: %s",
+		return fmt.Errorf("internal: AST node(s) with incomplete source spans: %s",
 			strings.Join(missing, ", "))
 	}
 	return nil
 }
 
-// nodeLoc returns the Loc value embedded in n. Every AST
-// type embeds shell.Loc as an anonymous struct field; reflect
-// over n to find that field. Used by validateLocs to enforce
-// the position-completeness invariant; the rest of the code
-// reaches Loc through concrete-type access.
-func nodeLoc(n Node) Loc {
+// nodeSpan returns the Span value embedded in n. Every AST type
+// embeds shell.Span as an anonymous struct field; reflect over
+// n to find that field. Used by validateSpans to enforce the
+// position-completeness invariant; the rest of the code reaches
+// Span through concrete-type access.
+func nodeSpan(n Node) Span {
 	v := reflect.ValueOf(n)
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
-			return Loc{}
+			return Span{}
 		}
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return Loc{}
+		return Span{}
 	}
 	for i := 0; i < v.NumField(); i++ {
-		if loc, ok := v.Field(i).Interface().(Loc); ok {
-			return loc
+		if sp, ok := v.Field(i).Interface().(Span); ok {
+			return sp
 		}
 	}
-	return Loc{}
+	return Span{}
 }
 
 // parser is the recursive-descent state: a token stream and a
@@ -312,6 +318,20 @@ func (p *parser) advance() Token {
 
 func (p *parser) atEOF() bool {
 	return p.pos >= len(p.tokens)
+}
+
+// spanFrom builds a Span starting at start and ending at the End of
+// the most recently consumed token. Use at AST construction sites
+// so every node carries its full source extent: callers capture the
+// first token's Pos before parsing the construct, then call
+// spanFrom once construction is complete. When no tokens have been
+// consumed (start of input) the End collapses to start so the Span
+// is well-formed but empty-width.
+func (p *parser) spanFrom(start Pos) Span {
+	if p.pos == 0 {
+		return Span{Pos: start, End: start}
+	}
+	return Span{Pos: start, End: p.tokens[p.pos-1].End}
 }
 
 func (p *parser) atBlockClose() bool {
@@ -347,7 +367,7 @@ func (p *parser) parseStmts(isEnd func() bool) ([]Stmt, error) {
 		// error at the offending token rather than a hang.
 		if stmt == nil && p.pos == before {
 			t := p.peek()
-			return nil, locErrorf(t.Loc, "unexpected %q", t.Text)
+			return nil, spanErrorf(t.Span, "unexpected %q", t.Text)
 		}
 	}
 	return stmts, nil
@@ -443,16 +463,16 @@ func (p *parser) parseAssertStmt(isRequire bool) (Stmt, error) {
 		return nil, err
 	}
 	if len(tokens) == 0 {
-		return nil, locErrorf(keywordTok.Loc, "%s requires an expression target", keywordTok.Text)
+		return nil, spanErrorf(keywordTok.Span, "%s requires an expression target", keywordTok.Text)
 	}
 	expr, err := parseExpression(tokens)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", keywordTok.Text, err)
+		return nil, wrapSyntaxErr(keywordTok.Text, err)
 	}
 	return &AssertStmt{
 		IsRequire: isRequire,
 		Expr:      expr,
-		Loc:       keywordTok.Loc,
+		Span:      p.spanFrom(keywordTok.Pos),
 	}, nil
 }
 
@@ -486,7 +506,7 @@ func leadsExpression(t Token) bool {
 // combinators, threading, unary predicates, parens -- works
 // unchanged at the top level.
 func (p *parser) parseExprStmt() (Stmt, error) {
-	startLoc := p.peek().Loc
+	startLoc := p.peek().Pos
 	tokens, err := p.takeStmtTokens(false)
 	if err != nil {
 		return nil, err
@@ -498,7 +518,7 @@ func (p *parser) parseExprStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ExprStmt{Expr: expr, Loc: startLoc}, nil
+	return &ExprStmt{Expr: expr, Span: p.spanFrom(startLoc)}, nil
 }
 
 func (p *parser) parseBreakStmt() (Stmt, error) {
@@ -506,7 +526,7 @@ func (p *parser) parseBreakStmt() (Stmt, error) {
 	if err := p.rejectTrailingArgs("break"); err != nil {
 		return nil, err
 	}
-	return &BreakStmt{Loc: t.Loc}, nil
+	return &BreakStmt{Span: p.spanFrom(t.Pos)}, nil
 }
 
 func (p *parser) parseContinueStmt() (Stmt, error) {
@@ -514,7 +534,7 @@ func (p *parser) parseContinueStmt() (Stmt, error) {
 	if err := p.rejectTrailingArgs("continue"); err != nil {
 		return nil, err
 	}
-	return &ContinueStmt{Loc: t.Loc}, nil
+	return &ContinueStmt{Span: p.spanFrom(t.Pos)}, nil
 }
 
 // rejectTrailingArgs errors when a bare-keyword statement
@@ -533,13 +553,13 @@ func (p *parser) rejectTrailingArgs(name string) error {
 	if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
 		return nil
 	}
-	return locErrorf(t.Loc, "%s takes no arguments; got %q", name, t.Text)
+	return spanErrorf(t.Span, "%s takes no arguments; got %q", name, t.Text)
 }
 
 func (p *parser) parseLetStmt() (Stmt, error) {
 	letTok := p.advance() // "let"
 	if p.atEOF() {
-		return nil, locErrorf(letTok.Loc, "let requires: let <name> = <expr> or let <name> <- <command...> or let (<rc>, <prim>) <- <command...>")
+		return nil, spanErrorf(letTok.Span, "let requires: let <name> = <expr> or let <name> <- <command...> or let (<rc>, <prim>) <- <command...>")
 	}
 	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
 		// Tuple form: let (RC, PRIM) <- COMMAND. Tuple is only
@@ -549,20 +569,20 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 			return nil, err
 		}
 		if p.atEOF() || p.peek().Kind != TokenBind {
-			return nil, locErrorf(letTok.Loc, "tuple bind requires '<-' after target list")
+			return nil, spanErrorf(letTok.Span, "tuple bind requires '<-' after target list")
 		}
-		return p.parseBindRHS(letTok.Loc, rc, prim, false)
+		return p.parseBindRHS(letTok.Pos, rc, prim, false)
 	}
 	if p.peek().Kind != TokenWord {
-		return nil, locErrorf(letTok.Loc, "let requires an identifier, got %q", p.peek().Text)
+		return nil, spanErrorf(letTok.Span, "let requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
 	name := nameTok.Text
 	if !IsIdent(name) {
-		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
+		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
 	}
 	if p.atEOF() {
-		return nil, locErrorf(letTok.Loc, "let requires '=' or '<-' after the name")
+		return nil, spanErrorf(letTok.Span, "let requires '=' or '<-' after the name")
 	}
 	switch p.peek().Kind {
 	case TokenAssign:
@@ -572,17 +592,17 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 			return nil, err
 		}
 		if len(rhsTokens) == 0 {
-			return nil, locErrorf(letTok.Loc, "let requires: let <name> = <value...>")
+			return nil, spanErrorf(letTok.Span, "let requires: let <name> = <value...>")
 		}
 		rhs, err := parseExpression(rhsTokens)
 		if err != nil {
 			return nil, err
 		}
-		return &LetStmt{Name: name, RHS: rhs, Loc: letTok.Loc}, nil
+		return &LetStmt{Name: name, RHS: rhs, Span: p.spanFrom(letTok.Pos)}, nil
 	case TokenBind:
-		return p.parseBindRHS(letTok.Loc, "", name, false)
+		return p.parseBindRHS(letTok.Pos, "", name, false)
 	default:
-		return nil, locErrorf(letTok.Loc, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
+		return nil, spanErrorf(letTok.Span, "let requires '=' or '<-' after the name, got %q", p.peek().Text)
 	}
 }
 
@@ -603,20 +623,20 @@ func (p *parser) parseDeferStmt() (Stmt, error) {
 		return nil, err
 	}
 	if len(cmdTokens) == 0 {
-		return nil, locErrorf(deferTok.Loc, "defer requires a command form")
+		return nil, spanErrorf(deferTok.Span, "defer requires a command form")
 	}
 	args, err := parseCommandArgs(cmdTokens, false)
 	if err != nil {
 		return nil, err
 	}
-	cmd := &CommandStmt{Args: args, Loc: cmdTokens[0].Loc}
-	return &DeferStmt{Cmd: cmd, Loc: deferTok.Loc}, nil
+	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
+	return &DeferStmt{Cmd: cmd, Span: p.spanFrom(deferTok.Pos)}, nil
 }
 
 func (p *parser) parseGuardStmt() (Stmt, error) {
 	guardTok := p.advance() // "guard"
 	if p.atEOF() {
-		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> or guard (<rc>, <prim>) <- <command...>")
+		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...> or guard (<rc>, <prim>) <- <command...>")
 	}
 	if t := p.peek(); t.Kind == TokenWord && t.Text == "(" {
 		rc, prim, err := p.parseBindTuple(guardTok)
@@ -624,22 +644,22 @@ func (p *parser) parseGuardStmt() (Stmt, error) {
 			return nil, err
 		}
 		if p.atEOF() || p.peek().Kind != TokenBind {
-			return nil, locErrorf(guardTok.Loc, "tuple bind requires '<-' after target list")
+			return nil, spanErrorf(guardTok.Span, "tuple bind requires '<-' after target list")
 		}
-		return p.parseBindRHS(guardTok.Loc, rc, prim, true)
+		return p.parseBindRHS(guardTok.Pos, rc, prim, true)
 	}
 	if p.peek().Kind != TokenWord {
-		return nil, locErrorf(guardTok.Loc, "guard requires an identifier, got %q", p.peek().Text)
+		return nil, spanErrorf(guardTok.Span, "guard requires an identifier, got %q", p.peek().Text)
 	}
 	nameTok := p.advance()
 	name := nameTok.Text
 	if !IsIdent(name) {
-		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
+		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
 	}
 	if p.atEOF() || p.peek().Kind != TokenBind {
-		return nil, locErrorf(guardTok.Loc, "guard requires: guard <name> <- <command...> (missing '<-')")
+		return nil, spanErrorf(guardTok.Span, "guard requires: guard <name> <- <command...> (missing '<-')")
 	}
-	return p.parseBindRHS(guardTok.Loc, "", name, true)
+	return p.parseBindRHS(guardTok.Pos, "", name, true)
 }
 
 // parseBindTuple consumes a parenthesised tuple target list:
@@ -662,7 +682,7 @@ func (p *parser) parseBindTuple(keywordTok Token) (rc, prim string, err error) {
 			p.pos++
 		}
 		if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "," {
-			return "", "", locErrorf(openTok.Loc, "tuple bind: expected ',' between targets")
+			return "", "", spanErrorf(openTok.Span, "tuple bind: expected ',' between targets")
 		}
 		p.advance() // ","
 	}
@@ -677,11 +697,11 @@ func (p *parser) parseBindTuple(keywordTok Token) (rc, prim string, err error) {
 		p.pos++
 	}
 	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != ")" {
-		return "", "", locErrorf(openTok.Loc, "tuple bind: expected ')' after targets")
+		return "", "", spanErrorf(openTok.Span, "tuple bind: expected ')' after targets")
 	}
 	p.advance() // ")"
 	if rc == "_" && prim == "_" {
-		return "", "", locErrorf(openTok.Loc, "tuple bind cannot discard both slots")
+		return "", "", spanErrorf(openTok.Span, "tuple bind cannot discard both slots")
 	}
 	return rc, prim, nil
 }
@@ -693,7 +713,7 @@ func (p *parser) parseBindTuple(keywordTok Token) (rc, prim string, err error) {
 // comma consumption.
 func (p *parser) parseBindTargetName(keywordTok Token) (name string, sawComma bool, err error) {
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return "", false, locErrorf(keywordTok.Loc, "tuple bind: expected identifier or '_', got %q", p.peek().Text)
+		return "", false, spanErrorf(keywordTok.Span, "tuple bind: expected identifier or '_', got %q", p.peek().Text)
 	}
 	t := p.advance()
 	text := t.Text
@@ -705,7 +725,7 @@ func (p *parser) parseBindTargetName(keywordTok Token) (name string, sawComma bo
 		return "_", sawComma, nil
 	}
 	if !IsIdent(text) {
-		return "", false, locErrorf(t.Loc, "tuple bind: invalid name %q", text)
+		return "", false, spanErrorf(t.Span, "tuple bind: invalid name %q", text)
 	}
 	return text, sawComma, nil
 }
@@ -717,7 +737,7 @@ func (p *parser) parseBindTargetName(keywordTok Token) (name string, sawComma bo
 // tokens so every primary expression the command-statement grammar
 // accepts works on the right of a bind. rc is "" for single-name
 // bindings, an identifier (or "_") for tuple bindings.
-func (p *parser) parseBindRHS(stmtLoc Loc, rc, primary string, guard bool) (Stmt, error) {
+func (p *parser) parseBindRHS(stmtLoc Pos, rc, primary string, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
 	cmdTokens, err := p.takeBindRHSTokens(bindTok)
 	if err != nil {
@@ -727,8 +747,8 @@ func (p *parser) parseBindRHS(stmtLoc Loc, rc, primary string, guard bool) (Stmt
 	if err != nil {
 		return nil, err
 	}
-	cmd := &CommandStmt{Args: args, Loc: cmdTokens[0].Loc}
-	return &BindStmt{Primary: primary, Rc: rc, Cmd: cmd, Guard: guard, Loc: stmtLoc}, nil
+	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
+	return &BindStmt{Primary: primary, Rc: rc, Cmd: cmd, Guard: guard, Span: p.spanFrom(stmtLoc)}, nil
 }
 
 // takeBindRHSTokens collects the tokens that form the command on the
@@ -746,16 +766,16 @@ func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 			break
 		}
 		if t.Kind == TokenAssign {
-			return nil, locErrorf(t.Loc, "unexpected '=' on bind RHS; the right of '<-' must be a command form")
+			return nil, spanErrorf(t.Span, "unexpected '=' on bind RHS; the right of '<-' must be a command form")
 		}
 		if t.Kind == TokenBind {
-			return nil, locErrorf(t.Loc, "unexpected '<-' on bind RHS; chain via separate let/guard statements")
+			return nil, spanErrorf(t.Span, "unexpected '<-' on bind RHS; chain via separate let/guard statements")
 		}
 		buf = append(buf, t)
 		p.pos++
 	}
 	if len(buf) == 0 {
-		return nil, locErrorf(bindTok.Loc, "bind requires a command after '<-'")
+		return nil, spanErrorf(bindTok.Span, "bind requires a command after '<-'")
 	}
 	return buf, nil
 }
@@ -775,7 +795,7 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 			break
 		}
 		if rejectAssign && t.Kind == TokenAssign {
-			return nil, locErrorf(t.Loc, "unexpected '=' in let RHS")
+			return nil, spanErrorf(t.Span, "unexpected '=' in let RHS")
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -785,7 +805,7 @@ func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 
 func (p *parser) parseCommandStmt() (Stmt, error) {
 	first := p.peek()
-	startLoc := first.Loc
+	startLoc := first.Pos
 	// A bare `{` or `}` at statement position is not the start of a
 	// command (parseStmt has already routed if/foreach/retry/...
 	// keywords away from here), so reject it explicitly. Returning
@@ -793,7 +813,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 	// loop forever on the same token; this surfaces a real parse
 	// error at the offending location instead.
 	if first.Kind == TokenWord && (first.Text == "{" || first.Text == "}") {
-		return nil, locErrorf(first.Loc, "unexpected %q at statement start", first.Text)
+		return nil, spanErrorf(first.Span, "unexpected %q at statement start", first.Text)
 	}
 	isAlias := first.Kind == TokenWord && first.Text == "alias"
 	var buf []Token
@@ -806,7 +826,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 			break
 		}
 		if t.Kind == TokenAssign && !isAlias {
-			return nil, locErrorf(t.Loc, "unexpected '='; use \"let <name> = <value...>\" for assignment")
+			return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -827,9 +847,9 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		matchesTok := buf[len(buf)-1]
 		buf = buf[:len(buf)-1]
 		if len(buf) == 0 {
-			return nil, locErrorf(matchesTok.Loc, "matches { ... } requires a target expression and a host command")
+			return nil, spanErrorf(matchesTok.Span, "matches { ... } requires a target expression and a host command")
 		}
-		mb, err := p.parseMatchesBlock(matchesTok.Loc)
+		mb, err := p.parseMatchesBlock(matchesTok.Pos)
 		if err != nil {
 			return nil, err
 		}
@@ -843,7 +863,7 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 	if matchesBlock != nil {
 		args = append(args, matchesBlock)
 	}
-	return &CommandStmt{Args: args, Loc: startLoc}, nil
+	return &CommandStmt{Args: args, Span: p.spanFrom(startLoc)}, nil
 }
 
 // reservedDefNames lists identifiers that cannot be used as a def
@@ -883,24 +903,24 @@ var reservedDefNames = map[string]bool{
 func (p *parser) parseDefStmt() (Stmt, error) {
 	defTok := p.advance() // "def"
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return nil, locErrorf(defTok.Loc, "def requires: def <name>(<params>) { ... }")
+		return nil, spanErrorf(defTok.Span, "def requires: def <name>(<params>) { ... }")
 	}
 	if p.peek().Text == "(" {
-		return nil, locErrorf(defTok.Loc, "def requires a name before '('")
+		return nil, spanErrorf(defTok.Span, "def requires a name before '('")
 	}
 	nameTok := p.advance()
 	name := nameTok.Text
 	if !IsIdent(name) {
-		return nil, locErrorf(nameTok.Loc, "invalid def name: %q", name)
+		return nil, spanErrorf(nameTok.Span, "invalid def name: %q", name)
 	}
 	if reservedDefNames[name] {
-		return nil, locErrorf(nameTok.Loc, "cannot use reserved word %q as a def name", name)
+		return nil, spanErrorf(nameTok.Span, "cannot use reserved word %q as a def name", name)
 	}
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "(") {
-		return nil, locErrorf(defTok.Loc, "def requires '(' after the name")
+		return nil, spanErrorf(defTok.Span, "def requires '(' after the name")
 	}
 	p.advance() // "("
-	params, err := p.parseDefParams(defTok.Loc)
+	params, err := p.parseDefParams(defTok.Pos)
 	if err != nil {
 		return nil, err
 	}
@@ -910,9 +930,9 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 	}
 	body, err := p.parseBlock()
 	if err != nil {
-		return nil, fmt.Errorf("def %s: %w", name, err)
+		return nil, wrapSyntaxErr(fmt.Sprintf("def %s", name), err)
 	}
-	return &DefStmt{Name: name, Params: params, Body: body, Loc: defTok.Loc}, nil
+	return &DefStmt{Name: name, Params: params, Body: body, Span: p.spanFrom(defTok.Pos)}, nil
 }
 
 // parseDefParams consumes the parameter list up to and including the
@@ -923,7 +943,7 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 // ("a," is one TokenWord); the parser strips the trailing comma in
 // that case and treats it as a separator, mirroring how matches
 // blocks handle the same pattern.
-func (p *parser) parseDefParams(defLoc Loc) ([]string, error) {
+func (p *parser) parseDefParams(defLoc Pos) ([]string, error) {
 	var params []string
 	seen := make(map[string]bool)
 	expectName := true
@@ -943,17 +963,17 @@ func (p *parser) parseDefParams(defLoc Loc) ([]string, error) {
 		}
 		if t.Kind == TokenWord && t.Text == "," {
 			if expectName {
-				return nil, locErrorf(t.Loc, "def: missing parameter name before ','")
+				return nil, spanErrorf(t.Span, "def: missing parameter name before ','")
 			}
 			p.advance()
 			expectName = true
 			continue
 		}
 		if !expectName {
-			return nil, locErrorf(t.Loc, "def: expected ',' or ')' in parameter list, got %q", t.Text)
+			return nil, spanErrorf(t.Span, "def: expected ',' or ')' in parameter list, got %q", t.Text)
 		}
 		if t.Kind != TokenWord {
-			return nil, locErrorf(t.Loc, "def: expected parameter name, got %q", t.Text)
+			return nil, spanErrorf(t.Span, "def: expected parameter name, got %q", t.Text)
 		}
 		// Strip a trailing comma glued to the identifier ("a," tokenises
 		// as one WORD because ',' is not a tokenisation boundary). The
@@ -966,10 +986,10 @@ func (p *parser) parseDefParams(defLoc Loc) ([]string, error) {
 			trailingComma = true
 		}
 		if !IsIdent(nameText) {
-			return nil, locErrorf(t.Loc, "def: invalid parameter name %q", nameText)
+			return nil, spanErrorf(t.Span, "def: invalid parameter name %q", nameText)
 		}
 		if seen[nameText] {
-			return nil, locErrorf(t.Loc, "def: duplicate parameter name %q", nameText)
+			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", nameText)
 		}
 		seen[nameText] = true
 		params = append(params, nameText)
@@ -982,14 +1002,14 @@ func (p *parser) parseRetryStmt() (Stmt, error) {
 	retryTok := p.advance() // "retry"
 	body, err := p.parseBlock()
 	if err != nil {
-		return nil, fmt.Errorf("retry: %w", err)
+		return nil, wrapSyntaxErr("retry", err)
 	}
 	// Skip separators between `}` and `until`.
 	for !p.atEOF() && p.peek().Kind == TokenSep {
 		p.pos++
 	}
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "until") {
-		return nil, locErrorf(retryTok.Loc, "retry requires 'until' after the body")
+		return nil, spanErrorf(retryTok.Span, "retry requires 'until' after the body")
 	}
 	p.advance() // "until"
 	exprTokens, err := p.takeStmtTokens(false)
@@ -997,30 +1017,30 @@ func (p *parser) parseRetryStmt() (Stmt, error) {
 		return nil, err
 	}
 	if len(exprTokens) == 0 {
-		return nil, locErrorf(retryTok.Loc, "retry until requires an expression")
+		return nil, spanErrorf(retryTok.Span, "retry until requires an expression")
 	}
 	until, err := parseExpression(exprTokens)
 	if err != nil {
 		return nil, err
 	}
-	return &RetryStmt{Body: body, Until: until, Loc: retryTok.Loc}, nil
+	return &RetryStmt{Body: body, Until: until, Span: p.spanFrom(retryTok.Pos)}, nil
 }
 
 func (p *parser) parseForEachStmt() (Stmt, error) {
 	feTok := p.advance() // "foreach"
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return nil, locErrorf(feTok.Loc, "foreach requires: foreach <name> in <expr> { ... }")
+		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
 	}
 	nameTok := p.advance()
 	name := nameTok.Text
 	if name == "in" {
-		return nil, locErrorf(nameTok.Loc, "foreach requires a variable name before 'in'")
+		return nil, spanErrorf(nameTok.Span, "foreach requires a variable name before 'in'")
 	}
 	if !IsIdent(name) {
-		return nil, locErrorf(nameTok.Loc, "invalid variable name: %q", name)
+		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
 	}
 	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "in" {
-		return nil, locErrorf(feTok.Loc, "foreach requires 'in' after the loop variable")
+		return nil, spanErrorf(feTok.Span, "foreach requires 'in' after the loop variable")
 	}
 	p.advance() // "in"
 	listTokens, err := p.takeUntilOpenBrace()
@@ -1028,7 +1048,7 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 		return nil, err
 	}
 	if len(listTokens) == 0 {
-		return nil, locErrorf(feTok.Loc, "foreach requires: foreach <name> in <expr> { ... }")
+		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
 	}
 	list, err := parseExpression(listTokens)
 	if err != nil {
@@ -1038,7 +1058,7 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ForEachStmt{Name: name, List: list, Body: body, Loc: feTok.Loc}, nil
+	return &ForEachStmt{Name: name, List: list, Body: body, Span: p.spanFrom(feTok.Pos)}, nil
 }
 
 // takeUntilOpenBrace collects tokens up to (but not including) the
@@ -1066,11 +1086,11 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 	ifTok := p.advance() // "if"
 	cond, err := p.parseCondition()
 	if err != nil {
-		return nil, fmt.Errorf("if: %w", err)
+		return nil, wrapSyntaxErr("if", err)
 	}
 	then, err := p.parseBlock()
 	if err != nil {
-		return nil, fmt.Errorf("if: %w", err)
+		return nil, wrapSyntaxErr("if", err)
 	}
 	var elifs []IfBranch
 	var els []Stmt
@@ -1090,26 +1110,26 @@ func (p *parser) parseIfStmt() (Stmt, error) {
 			elifTok := p.advance()
 			ec, err := p.parseCondition()
 			if err != nil {
-				return nil, fmt.Errorf("elif: %w", err)
+				return nil, wrapSyntaxErr("elif", err)
 			}
 			eb, err := p.parseBlock()
 			if err != nil {
-				return nil, fmt.Errorf("elif: %w", err)
+				return nil, wrapSyntaxErr("elif", err)
 			}
-			elifs = append(elifs, IfBranch{Cond: ec, Body: eb, Loc: elifTok.Loc})
+			elifs = append(elifs, IfBranch{Cond: ec, Body: eb, Span: p.spanFrom(elifTok.Pos)})
 		case "else":
 			p.advance()
 			eb, err := p.parseBlock()
 			if err != nil {
-				return nil, fmt.Errorf("else: %w", err)
+				return nil, wrapSyntaxErr("else", err)
 			}
 			els = eb
-			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Loc: ifTok.Loc}, nil
+			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
 		default:
-			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Loc: ifTok.Loc}, nil
+			return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
 		}
 	}
-	return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Loc: ifTok.Loc}, nil
+	return &IfStmt{Cond: cond, Then: then, Elifs: elifs, Else: els, Span: p.spanFrom(ifTok.Pos)}, nil
 }
 
 // parseCondition collects tokens up to the next `{` and parses them
@@ -1187,9 +1207,9 @@ func parseExpression(tokens []Token) (Expr, error) {
 	if !ep.eof() {
 		t := ep.peek()
 		if hint, ok := smushedArithmeticHint(t); ok {
-			return nil, locErrorf(t.Loc, "unexpected %q after expression; %s", t.Text, hint)
+			return nil, spanErrorf(t.Span, "unexpected %q after expression; %s", t.Text, hint)
 		}
-		return nil, locErrorf(t.Loc, "unexpected %q after expression", t.Text)
+		return nil, spanErrorf(t.Span, "unexpected %q after expression", t.Text)
 	}
 	return e, nil
 }
@@ -1239,20 +1259,56 @@ func smushedArithmeticHint(t Token) (string, bool) {
 // Inside braces is the right place for the relaxation because
 // the surrounding double-quoted string already disambiguates
 // the syntactic context.
-func parseInterpBody(inner string, loc Loc) (Expr, error) {
+func parseInterpBody(inner string, span Span) (Expr, error) {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
-		return nil, locErrorf(loc, "empty interpolation")
+		return nil, spanErrorf(span, "empty interpolation")
 	}
+	// Compute the original-source position of trimmed[0]. The
+	// outer span starts at '$', so the body's first byte is
+	// two columns past Pos (skip "${"). Walk any leading
+	// whitespace inside the body to land trimmedStart on the
+	// first non-whitespace byte. The walk handles multi-line
+	// bodies (rare but legal) by tracking newlines.
+	bodyStart := Pos{Line: span.Pos.Line, Col: span.Pos.Col + 2}
+	leadingWS := inner[:len(inner)-len(strings.TrimLeft(inner, " \t\n\r"))]
+	trimmedStart := advancePos(bodyStart, leadingWS)
+
+	// translate maps a position from the synthesised
+	// re-tokenisation of the trimmed body back to the
+	// original source. The first line of the trimmed body is
+	// at trimmedStart.Line and starts at trimmedStart.Col;
+	// later lines correspond to original lines one-for-one
+	// because they begin at column 1 in both encodings.
+	translate := func(p Pos) Pos {
+		if p.Line == 1 {
+			return Pos{Line: trimmedStart.Line, Col: trimmedStart.Col + p.Col - 1}
+		}
+		return Pos{Line: trimmedStart.Line + p.Line - 1, Col: p.Col}
+	}
+	translateSpan := func(s Span) Span {
+		return Span{Pos: translate(s.Pos), End: translate(s.End)}
+	}
+
 	// Bare-name shortcut: "${name}" / "${name.path}" /
 	// "${name[0]}" tokenise (after a synthesised "$") to a
 	// single TokenVarRef. Use that fast path so the common
-	// case stays a simple VarRefExpr.
+	// case stays a simple VarRefExpr; the Span covers the
+	// trimmed body in the original source -- excluding the
+	// "${" / "}" wrappers -- so the caret underlines just the
+	// name.
 	if trimmed[0] != '$' {
 		if tokens, err := Tokenise("$" + trimmed); err == nil &&
 			len(tokens) == 1 && tokens[0].Kind == TokenVarRef {
 			t := tokens[0]
-			return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: loc}, nil
+			return &VarRefExpr{
+				Name: t.VarName,
+				Path: t.VarPath,
+				Span: Span{
+					Pos: trimmedStart,
+					End: advancePos(trimmedStart, trimmed),
+				},
+			}, nil
 		}
 		// Not a bare-name reference: fall through to the
 		// general expression path below, which parses the
@@ -1261,13 +1317,79 @@ func parseInterpBody(inner string, loc Loc) (Expr, error) {
 	}
 	tokens, err := Tokenise(trimmed)
 	if err != nil {
-		return nil, locErrorf(loc, "string interpolation ${%s}: %v", inner, err)
+		return nil, spanErrorf(span, "string interpolation ${%s}: %v", inner, err)
 	}
 	expr, ok := tryParseExpression(tokens)
 	if !ok {
-		return nil, locErrorf(loc, "string interpolation ${%s}: not a valid expression", inner)
+		return nil, spanErrorf(span, "string interpolation ${%s}: not a valid expression", inner)
 	}
+	rewriteSpansWith(expr, translateSpan)
 	return expr, nil
+}
+
+// advancePos walks s as if appended after start, returning the
+// position after the last byte. Newlines reset the column to 1
+// and bump the line; everything else advances the column by one.
+// Used by parseInterpBody to convert byte counts (leading
+// whitespace, full trimmed-body length) into Pos coordinates so
+// inner-parsed spans translate back to the original source.
+func advancePos(start Pos, s string) Pos {
+	line := start.Line
+	col := start.Col
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return Pos{Line: line, Col: col}
+}
+
+// rewriteSpansWith walks every node reachable from root and
+// replaces its embedded Span with translate(span). Used when a
+// sub-AST is parsed from a synthesised slice (interpolation
+// bodies) so the original source coordinates are preserved
+// across the boundary; the previous version overwrote every
+// inner span with a single outer span, which was correct but
+// blunted carets to the whole "${...}" run. Per-node translation
+// keeps caret precision: an error inside "${4 * bogus}" can
+// underline just "bogus" rather than the whole interpolation.
+func rewriteSpansWith(root Node, translate func(Span) Span) {
+	Inspect(root, func(n Node) bool {
+		if n == nil {
+			return true
+		}
+		setNodeSpan(n, translate(nodeSpan(n)))
+		return true
+	})
+}
+
+// setNodeSpan reflects over n looking for an embedded Span
+// field and overwrites it. Mirrors nodeSpan; pulled out so
+// rewriteSpans does not duplicate the reflection traversal.
+func setNodeSpan(n Node, span Span) {
+	v := reflect.ValueOf(n)
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return
+	}
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		if !f.CanSet() {
+			continue
+		}
+		if _, ok := f.Interface().(Span); ok {
+			f.Set(reflect.ValueOf(span))
+			return
+		}
+	}
 }
 
 // tryParseExpression attempts to interpret tokens as a single
@@ -1312,6 +1434,16 @@ func (p *exprParser) eof() bool {
 	return p.pos >= len(p.tokens)
 }
 
+// spanFrom returns Span{start, end-of-last-consumed-token} so every
+// expression node carries its full source extent. Mirrors the
+// statement parser's helper.
+func (p *exprParser) spanFrom(start Pos) Span {
+	if p.pos == 0 {
+		return Span{Pos: start, End: start}
+	}
+	return Span{Pos: start, End: p.tokens[p.pos-1].End}
+}
+
 // parseOr recognises left-associative 'or' chains.  'or' is the
 // loosest logical connective; it binds looser than 'and' and
 // looser than the comparison level.  Short-circuit evaluation is
@@ -1327,7 +1459,7 @@ func (p *exprParser) parseOr() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &LogicalExpr{Op: "or", Left: left, Right: right, Loc: opTok.Loc}
+		left = &LogicalExpr{Op: "or", Left: left, Right: right, Span: p.spanFrom(opTok.Pos)}
 	}
 	return left, nil
 }
@@ -1345,7 +1477,7 @@ func (p *exprParser) parseAnd() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &LogicalExpr{Op: "and", Left: left, Right: right, Loc: opTok.Loc}
+		left = &LogicalExpr{Op: "and", Left: left, Right: right, Span: p.spanFrom(opTok.Pos)}
 	}
 	return left, nil
 }
@@ -1362,7 +1494,7 @@ func (p *exprParser) parseNot() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &NotExpr{Operand: operand, Loc: notTok.Loc}, nil
+		return &NotExpr{Operand: operand, Span: p.spanFrom(notTok.Pos)}, nil
 	}
 	return p.parseComparison()
 }
@@ -1397,7 +1529,7 @@ func (p *exprParser) parseComparison() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &BinaryExpr{Left: left, Op: op, Right: right, Loc: opTok.Loc}, nil
+	return &BinaryExpr{Left: left, Op: op, Right: right, Span: p.spanFrom(opTok.Pos)}, nil
 }
 
 // parseAdditive recognises left-associative '+' and '-' chains.
@@ -1420,7 +1552,7 @@ func (p *exprParser) parseAdditive() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Loc: opTok.Loc}
+		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Span: p.spanFrom(opTok.Pos)}
 	}
 	return left, nil
 }
@@ -1444,7 +1576,7 @@ func (p *exprParser) parseMultiplicative() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Loc: opTok.Loc}
+		left = &BinaryExpr{Left: left, Op: opTok.Text, Right: right, Span: p.spanFrom(opTok.Pos)}
 	}
 	return left, nil
 }
@@ -1463,7 +1595,7 @@ func (p *exprParser) parsePredicate() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &UnaryExpr{Pred: pred, Operand: operand, Loc: predTok.Loc}, nil
+		return &UnaryExpr{Pred: pred, Operand: operand, Span: p.spanFrom(predTok.Pos)}, nil
 	}
 	return p.parseNegate()
 }
@@ -1481,7 +1613,7 @@ func (p *exprParser) parseNegate() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &NegateExpr{Operand: operand, Loc: negTok.Loc}, nil
+		return &NegateExpr{Operand: operand, Span: p.spanFrom(negTok.Pos)}, nil
 	}
 	return p.parseThread()
 }
@@ -1547,11 +1679,11 @@ func (p *exprParser) parseThread() (Expr, error) {
 	}
 	for !p.eof() && p.peek().Kind == TokenThread {
 		threadTok := p.advance()
-		args, err := p.parseThreadRHS(threadTok.Loc)
+		args, err := p.parseThreadRHS(threadTok.Pos)
 		if err != nil {
 			return nil, err
 		}
-		lhs = &ThreadExpr{LHS: lhs, Args: args, Loc: threadTok.Loc}
+		lhs = &ThreadExpr{LHS: lhs, Args: args, Span: p.spanFrom(threadTok.Pos)}
 	}
 	return lhs, nil
 }
@@ -1569,7 +1701,7 @@ func (p *exprParser) parseThread() (Expr, error) {
 // substitution, or interpolation lets the enclosing form close);
 // or end of input. A literal binary-op, arithmetic, logical, or
 // bracket word used as a command argument must be quoted.
-func (p *exprParser) parseThreadRHS(threadLoc Loc) ([]Expr, error) {
+func (p *exprParser) parseThreadRHS(threadLoc Pos) ([]Expr, error) {
 	var args []Expr
 	for !p.eof() {
 		t := p.peek()
@@ -1619,7 +1751,7 @@ func (p *exprParser) parseTerm() (Expr, error) {
 			return nil, err
 		}
 		if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == ")") {
-			return nil, locErrorf(openTok.Loc, "missing ')' to close parenthesised expression")
+			return nil, spanErrorf(openTok.Span, "missing ')' to close parenthesised expression")
 		}
 		p.advance() // consume ')'
 		return inner, nil
@@ -1642,13 +1774,13 @@ func (p *exprParser) parseTerm() (Expr, error) {
 func (p *exprParser) parseTimeoutExpr() (Expr, error) {
 	tok := p.advance() // "timeout"
 	if p.eof() {
-		return nil, locErrorf(tok.Loc, "timeout requires a duration (e.g. timeout 30s, timeout $max_wait)")
+		return nil, spanErrorf(tok.Span, "timeout requires a duration (e.g. timeout 30s, timeout $max_wait)")
 	}
 	arg, err := p.parseTerm()
 	if err != nil {
-		return nil, locErrorf(tok.Loc, "timeout: %v", err)
+		return nil, spanErrorf(tok.Span, "timeout: %v", err)
 	}
-	return &TimeoutExpr{Arg: arg, Loc: tok.Loc}, nil
+	return &TimeoutExpr{Arg: arg, Span: p.spanFrom(tok.Pos)}, nil
 }
 
 // parseIterationExpr consumes an 'iteration' keyword followed
@@ -1659,13 +1791,13 @@ func (p *exprParser) parseTimeoutExpr() (Expr, error) {
 func (p *exprParser) parseIterationExpr() (Expr, error) {
 	tok := p.advance() // "iteration"
 	if p.eof() {
-		return nil, locErrorf(tok.Loc, "iteration requires a count (e.g. iteration 10, iteration $max)")
+		return nil, spanErrorf(tok.Span, "iteration requires a count (e.g. iteration 10, iteration $max)")
 	}
 	arg, err := p.parseTerm()
 	if err != nil {
-		return nil, locErrorf(tok.Loc, "iteration: %v", err)
+		return nil, spanErrorf(tok.Span, "iteration: %v", err)
 	}
-	return &IterationExpr{Arg: arg, Loc: tok.Loc}, nil
+	return &IterationExpr{Arg: arg, Span: p.spanFrom(tok.Pos)}, nil
 }
 
 // parseCommandArgs turns a command's token run into argument
@@ -1677,9 +1809,9 @@ func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 	for _, t := range tokens {
 		if t.Kind == TokenAssign {
 			if !allowAssign {
-				return nil, locErrorf(t.Loc, "unexpected '='; use \"let <name> = <value...>\" for assignment")
+				return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
 			}
-			exprs = append(exprs, &LiteralExpr{Text: "=", Loc: t.Loc})
+			exprs = append(exprs, &LiteralExpr{Text: "=", Span: t.Span})
 			continue
 		}
 		e, err := parsePrimary(t)
@@ -1698,13 +1830,13 @@ func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 func parsePrimary(t Token) (Expr, error) {
 	switch t.Kind {
 	case TokenWord:
-		return &LiteralExpr{Text: t.Text, Loc: t.Loc}, nil
+		return &LiteralExpr{Text: t.Text, Span: t.Span}, nil
 	case TokenQuoted:
-		return &LiteralExpr{Text: t.Text, Quoted: true, Loc: t.Loc}, nil
+		return &LiteralExpr{Text: t.Text, Quoted: true, Span: t.Span}, nil
 	case TokenVarRef:
-		return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Loc: t.Loc}, nil
+		return &VarRefExpr{Name: t.VarName, Path: t.VarPath, Span: t.Span}, nil
 	case TokenAdapterRef:
-		return &AdapterExpr{Adapter: t.Adapter, Name: t.VarName, Path: t.VarPath, Loc: t.Loc}, nil
+		return &AdapterExpr{Adapter: t.Adapter, Name: t.VarName, Path: t.VarPath, Span: t.Span}, nil
 	case TokenInterpString:
 		segs := make([]InterpStringSegment, 0, len(t.Segments))
 		for _, s := range t.Segments {
@@ -1712,15 +1844,15 @@ func parsePrimary(t Token) (Expr, error) {
 				segs = append(segs, InterpStringSegment{Literal: s.Literal})
 				continue
 			}
-			expr, err := parseInterpBody(s.Inner, s.Loc)
+			expr, err := parseInterpBody(s.Inner, s.Span)
 			if err != nil {
 				return nil, err
 			}
 			segs = append(segs, InterpStringSegment{Expr: expr})
 		}
-		return &InterpStringExpr{Segments: segs, Loc: t.Loc}, nil
+		return &InterpStringExpr{Segments: segs, Span: t.Span}, nil
 	default:
-		return nil, locErrorf(t.Loc, "unexpected %q", t.Text)
+		return nil, spanErrorf(t.Span, "unexpected %q", t.Text)
 	}
 }
 
@@ -1750,13 +1882,102 @@ func stripSeps(tokens []Token) []Token {
 	return out
 }
 
-// locErrorf formats a diagnostic with a "line:col:" prefix when the
-// location is known. Callers use it for every parse error so the
-// REPL and scripted runs can point at the offending token.
-func locErrorf(loc Loc, format string, args ...any) error {
-	msg := fmt.Sprintf(format, args...)
-	if loc.Line == 0 {
-		return fmt.Errorf("%s", msg)
+// SyntaxError is the typed error shape returned by Tokenise,
+// Parse, and the runtime evaluators for every diagnosable
+// problem. Span carries the offending region; Msg is the
+// human-readable message; Cause optionally holds an underlying
+// error so errors.Is and errors.As traversals walk through to
+// any sentinel a command handler emitted. Error() renders the
+// legacy "line:col: message" form for string-only callers; the
+// renderer-aware paths in cmd/bpfman-shell type-assert via
+// errors.As and pull the Span directly so the rust-frame caret
+// underlines the actual region.
+type SyntaxError struct {
+	Span  Span
+	Msg   string
+	Cause error
+}
+
+func (e *SyntaxError) Error() string {
+	if e.Span.Pos.Line == 0 {
+		return e.Msg
 	}
-	return fmt.Errorf("%d:%d: %s", loc.Line, loc.Col, msg)
+	return fmt.Sprintf("%d:%d: %s", e.Span.Pos.Line, e.Span.Pos.Col, e.Msg)
+}
+
+// Unwrap exposes the underlying error so errors.Is and errors.As
+// see through the SyntaxError wrapper. Runtime sentinels emitted
+// from command handlers stay reachable via errors.Is(err, sentinel)
+// after the safety-net wrap at statement boundaries; without
+// Unwrap the wrap would erase pointer identity.
+func (e *SyntaxError) Unwrap() error { return e.Cause }
+
+// spanErrorf builds a *SyntaxError covering span. Use whenever
+// the offending region is known as a Span (the common parser
+// case: capture the first token's Span, parse the construct, then
+// build the Span from first.Pos through the last consumed token's
+// End).
+func spanErrorf(span Span, format string, args ...any) error {
+	return &SyntaxError{Span: span, Msg: fmt.Sprintf(format, args...)}
+}
+
+// SpanErrorf is the exported form of spanErrorf so cmd-side
+// handlers (assert verbs, builtins) can build *SyntaxError
+// values with a Span and a formatted message without spelling
+// out the literal. The internal package-local helper retains
+// the lowercase name; this shim is API surface for the rest of
+// the bpfman-shell program.
+func SpanErrorf(span Span, format string, args ...any) error {
+	return spanErrorf(span, format, args...)
+}
+
+// wrapSyntaxErr preserves a child *SyntaxError's Span while
+// prepending a parent context prefix to its message. Without
+// this, fmt.Errorf("%s: %w", prefix, err) builds a wrapper
+// whose Error() string carries the prefix but whose underlying
+// *SyntaxError.Msg does not, so renderer paths that pull se.Msg
+// via errors.As silently lose the prefix. Falls through to a
+// plain fmt.Errorf for non-SyntaxError children.
+func wrapSyntaxErr(prefix string, err error) error {
+	var se *SyntaxError
+	if errors.As(err, &se) {
+		return &SyntaxError{Span: se.Span, Msg: prefix + ": " + se.Msg, Cause: se.Cause}
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
+}
+
+// frameAtSpan attaches span to err so the renderer can frame the
+// diagnostic at a known region. err is preserved as Cause so
+// errors.Is/errors.As reach any sentinel underneath; if err is
+// already a *SyntaxError the original Span is kept (the inner
+// site knew better). Use at every point where a runtime error
+// crosses a Span-bearing boundary -- the command and bind
+// statement evaluators, the program-level safety net, future
+// builtin/assert dispatchers.
+func frameAtSpan(span Span, err error) error {
+	if err == nil {
+		return nil
+	}
+	var se *SyntaxError
+	if errors.As(err, &se) {
+		return err
+	}
+	return &SyntaxError{Span: span, Msg: err.Error(), Cause: err}
+}
+
+// FrameAt is the exported form of frameAtSpan. Use from cmd-side
+// dispatchers (assert verbs, builtins) that catch a non-typed
+// error from a sub-call and want to frame it at the originating
+// statement's Span.
+func FrameAt(span Span, err error) error { return frameAtSpan(span, err) }
+
+// locErrorf is the legacy point-location helper. The Span it
+// builds is collapsed at loc; renderers will draw a one-column
+// caret. Prefer spanErrorf where the full Span is reachable so
+// frames cover the offending run.
+func locErrorf(loc Pos, format string, args ...any) error {
+	return &SyntaxError{
+		Span: Span{Pos: loc, End: loc},
+		Msg:  fmt.Sprintf(format, args...),
+	}
 }

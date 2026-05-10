@@ -26,7 +26,7 @@
 # Feature-detect bpftool; it is optional for load/attach but we use
 # it for the cross-validation section below.
 let bpftool <- which bpftool
-if $bpftool.exit_code == 0 {
+if $bpftool.code == 0 {
     let have_bpftool = yes
 } else {
     let have_bpftool = no

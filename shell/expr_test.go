@@ -19,9 +19,9 @@ func evalEnv(s *Session) *Env {
 // bindFromValue adapts a (Value, error)-returning closure to the
 // ExecBind signature so tests that drove ExecSubstitution can keep
 // the same body shape under the new hook.
-func bindFromValue(f func([]Arg) (Value, error)) func([]Arg) (BindResult, error) {
-	return func(args []Arg) (BindResult, error) {
-		v, err := f(args)
+func bindFromValue(f func([]Arg, Span) (Value, error)) func([]Arg, Span) (BindResult, error) {
+	return func(args []Arg, span Span) (BindResult, error) {
+		v, err := f(args, span)
 		if err != nil {
 			return BindResult{}, err
 		}
@@ -438,7 +438,7 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	var captured []Arg
 	env := &Env{
 		Session: s,
-		ExecBind: bindFromValue(func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			captured = args
 			return StringValue("ok"), nil
 		}),
@@ -469,7 +469,7 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	var captured []Arg
 	env := &Env{
 		Session: s,
-		ExecBind: bindFromValue(func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			captured = args
 			return StringValue("ok"), nil
 		}),
@@ -493,7 +493,7 @@ func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
 	s.Set("x", Value{}) // nil value
 	env := &Env{
 		Session: s,
-		ExecBind: bindFromValue(func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			return StringValue("should-not-run"), nil
 		}),
 	}
@@ -531,7 +531,7 @@ func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	s.Set("x", StringValue("start"))
 	env := &Env{
 		Session: s,
-		ExecBind: bindFromValue(func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			// Return the last arg's text with a prefix so a chain
 			// accumulates visible stages.
 			last := args[len(args)-1].(ScalarValueArg).Text
@@ -563,7 +563,7 @@ func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 	s.Set("x", StringValue("42"))
 	env := &Env{
 		Session: s,
-		ExecBind: bindFromValue(func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			return StringValue("piped"), nil
 		}),
 	}
@@ -593,7 +593,7 @@ func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			require.Len(t, args, 1)
 			scalar, ok := args[0].(ScalarValueArg)
 			require.True(t, ok)
@@ -627,7 +627,7 @@ func TestEvalProgram_ForEach_LoopVarBodyScoped(t *testing.T) {
 	s.Set("xs", listValue)
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -652,7 +652,7 @@ func TestEvalProgram_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
 	s.Set("i", StringValue("outer"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -680,7 +680,7 @@ func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -705,7 +705,7 @@ func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
 	s.Set("notalist", StringValue("hello"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -730,7 +730,7 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	boom := errors.New("boom")
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			seen++
 			if seen == 2 {
 				return Value{}, boom
@@ -747,7 +747,7 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	}}
 	evErr := EvalProgram(prog, env)
 	require.Error(t, evErr)
-	assert.Same(t, boom, evErr, "body error should propagate unwrapped")
+	require.ErrorIs(t, evErr, boom, "body error must remain reachable via errors.Is after the statement-level frame wrap")
 	assert.Equal(t, 2, seen, "loop must stop at the first failing iteration")
 }
 
@@ -761,7 +761,7 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -802,7 +802,7 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -848,7 +848,7 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -1026,7 +1026,7 @@ func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -1050,7 +1050,7 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1062,7 +1062,7 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err, "last body error should propagate unwrapped")
+	require.ErrorIs(t, err, sentinel, "the last body error must remain reachable via errors.Is")
 }
 
 func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
@@ -1074,7 +1074,7 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1086,7 +1086,7 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err)
+	require.ErrorIs(t, err, sentinel)
 }
 
 func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
@@ -1096,7 +1096,7 @@ func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
 	s := NewSession()
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
@@ -1118,7 +1118,7 @@ func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -1141,7 +1141,7 @@ func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1153,7 +1153,7 @@ func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err)
+	require.ErrorIs(t, err, sentinel)
 }
 
 func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
@@ -1163,7 +1163,7 @@ func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
 	s.Set("max", StringValue("-3"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
@@ -1204,7 +1204,7 @@ func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
 	seq := []string{}
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			seq = append(seq, args[0].(WordArg).Text)
 			return Value{}, nil
 		},

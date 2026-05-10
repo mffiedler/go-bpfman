@@ -84,5 +84,5 @@ func TestValueFromEnvelope_ValueFieldNotPresent(t *testing.T) {
 
 func TestOriginKind_EnvelopeString(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "envelope", OriginEnvelope.String())
+	assert.Equal(t, "result", OriginEnvelope.String())
 }

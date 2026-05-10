@@ -233,13 +233,13 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
 
-	// We expect exactly two error lines: one for "bogus", one for
-	// "also-bogus".
-	lines := strings.Split(strings.TrimSpace(errBuf.String()), "\n")
-	require.Len(t, lines, 2)
-	assert.True(t, strings.HasPrefix(lines[0], "error:"), "expected 'error:' prefix: %s", lines[0])
-	assert.Contains(t, lines[0], "bogus")
-	assert.Contains(t, lines[1], "also-bogus")
+	// Two frames are expected, one per failing command. Each frame
+	// is several lines (header, citation, gutter, source, caret),
+	// so count "error:" headers rather than total lines.
+	out := errBuf.String()
+	assert.Equal(t, 2, strings.Count(out, "error:"), "expected exactly two error frames; got %s", out)
+	assert.Contains(t, out, "bogus")
+	assert.Contains(t, out, "also-bogus")
 }
 
 func TestReplComplete_CommandCompletion(t *testing.T) {
@@ -1585,11 +1585,11 @@ func TestParseLinkIDArg_RejectsProgramVariable(t *testing.T) {
 func TestAssertContains(t *testing.T) {
 	t.Parallel()
 
-	r, err := assertContains([]string{"hello world", "world"})
+	r, err := assertContains(shell.Span{}, []string{"hello world", "world"})
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 
-	r, err = assertContains([]string{"hello", "xyz"})
+	r, err = assertContains(shell.Span{}, []string{"hello", "xyz"})
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 }
@@ -1601,11 +1601,11 @@ func TestAssertPath(t *testing.T) {
 	existing := filepath.Join(dir, "exists.txt")
 	require.NoError(t, os.WriteFile(existing, nil, 0o644))
 
-	r, err := assertPath([]string{"exists", existing})
+	r, err := assertPath(shell.Span{}, []string{"exists", existing})
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 
-	r, err = assertPath([]string{"exists", filepath.Join(dir, "nope")})
+	r, err = assertPath(shell.Span{}, []string{"exists", filepath.Join(dir, "nope")})
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 }
@@ -1613,7 +1613,7 @@ func TestAssertPath(t *testing.T) {
 func TestAssertPath_BadArgs(t *testing.T) {
 	t.Parallel()
 
-	_, err := assertPath([]string{"nope"})
+	_, err := assertPath(shell.Span{}, []string{"nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "path requires")
 }
@@ -1633,7 +1633,7 @@ func TestAssertOk_UnknownCommand(t *testing.T) {
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "bogus" is not a valid command, so it should fail.
-	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("bogus"))
+	r, err := assertOk(context.Background(), cli, nil, session, shell.Span{}, wordArgs("bogus"))
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 	assert.Contains(t, r.message, "succeed")
@@ -1644,7 +1644,7 @@ func TestAssertFail_UnknownCommand(t *testing.T) {
 
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
-	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("bogus"))
+	r, err := assertFail(context.Background(), cli, nil, session, shell.Span{}, wordArgs("bogus"))
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 }
@@ -1655,7 +1655,7 @@ func TestAssertOk_SuccessfulCommand(t *testing.T) {
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
 	// "help" always succeeds.
-	r, err := assertOk(context.Background(), cli, nil, session, wordArgs("help"))
+	r, err := assertOk(context.Background(), cli, nil, session, shell.Span{}, wordArgs("help"))
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 }
@@ -1665,7 +1665,7 @@ func TestAssertFail_SuccessfulCommand(t *testing.T) {
 
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: io.Discard}
 	session := shell.NewSession()
-	r, err := assertFail(context.Background(), cli, nil, session, wordArgs("help"))
+	r, err := assertFail(context.Background(), cli, nil, session, shell.Span{}, wordArgs("help"))
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 }
@@ -2427,7 +2427,10 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 	t.Parallel()
 
 	// When the filename is "<stdin>" (piped input), errors should
-	// carry a <stdin>:line: prefix and halt execution.
+	// frame against the offending line. The runtime exec failure
+	// reaches the chunk runner as a *shell.SyntaxError after the
+	// statement-level safety net, so the rust frame's "--> file:
+	// line:col" header carries the source coordinates.
 	input := "version\nx\nversion\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
@@ -2435,7 +2438,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>", false, true)
 	require.ErrorIs(t, err, errScriptError)
-	assert.Contains(t, errBuf.String(), "<stdin>:2: error:")
+	assert.Contains(t, errBuf.String(), "--> <stdin>:2:1")
 	// The third line should not have run.
 	assert.Equal(t, 1, strings.Count(outBuf.String(), "Version:"), "expected only one version output before halt")
 }

@@ -13,7 +13,7 @@
 //		source → Tokenise → []Token → Parse → *Program → EvalProgram
 //
 //	  - [Tokenise] produces a flat stream of [Token]s, each carrying
-//	    its source line/column in a [Loc].
+//	    its source line/column in a [Pos].
 //	  - [Parse] builds a [Program] of typed AST nodes. Command
 //	    substitutions are parsed eagerly so syntax errors inside [ ]
 //	    surface at parse time.
@@ -47,7 +47,7 @@
 //     !=. Cross-type compares error rather than silently returning
 //     false. See evalCompare in expr.go for the dispatch rules.
 //
-// Every AST node carries a [Loc] for diagnostic reporting.
+// Every AST node carries a [Pos] for diagnostic reporting.
 //
 // # Variable naming vs substitution
 //

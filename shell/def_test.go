@@ -29,7 +29,7 @@ func runProgram(t *testing.T, src string) (*Session, [][]string) {
 	var calls [][]string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			row := make([]string, len(args))
 			for i, a := range args {
 				switch x := a.(type) {
@@ -166,7 +166,7 @@ f "only"
 	prog := parseProgram(t, src)
 	env := &Env{
 		Session:     NewSession(),
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
@@ -207,7 +207,7 @@ boom
 	prog := parseProgram(t, src)
 	env := &Env{
 		Session: NewSession(),
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			if len(args) > 0 {
 				if w, ok := args[0].(WordArg); ok && w.Text == "fail" {
 					return Value{}, assertErr("kaboom")

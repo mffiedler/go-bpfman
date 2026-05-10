@@ -21,7 +21,7 @@ type DefValue struct {
 	Name   string
 	Params []string
 	Body   []Stmt
-	Loc    Loc
+	Span
 }
 
 // RecordAssertFailure increments the assertion failure counter.

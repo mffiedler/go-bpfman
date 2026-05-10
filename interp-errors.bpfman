@@ -1,0 +1,79 @@
+# Failing-interpolation showcase. Run with:
+#
+#     bpfman-shell --check interp-errors.bpfman
+#
+# Every case below produces a Rust-compiler-style frame with a
+# byte-precise caret pointing inside the "${...}" run -- the win
+# from the post-G5 renderer. Pre-G5 the caret would have spanned
+# the whole "${...}" for every case.
+#
+# All errors below are caught at static-check time so this file
+# does not need a live bpfman daemon to demonstrate the rendering.
+# A few runtime-only cases live at the bottom as comments.
+
+let count = 5
+let name = "world"
+
+
+# 1. Bare-name reference to an undefined variable.
+#    The shortcut form treats "${nobody}" as a varref; the static
+#    checker reports the missing binding and the caret underlines
+#    just "nobody".
+print "Hello ${nobody}"
+
+
+# 2. Undefined variable with a dotted path. The bare-name
+#    shortcut covers this shape too; the caret covers the whole
+#    "missing.field" reference.
+print "id: ${missing.field}"
+
+
+# 3. Arithmetic with a non-numeric word literal. "bogus" is a
+#    bare word (no $), so the static arithmetic check flags it.
+#    The caret lands on "bogus" alone, not on the whole
+#    "${4 * bogus}" run.
+print "value: ${4 * bogus}"
+
+
+# 4. Two non-numeric operands. Each gets its own frame; the
+#    carets land on "a" and "b" individually.
+print "sum: ${a + b}"
+
+
+# 5. Leading and trailing whitespace inside the braces is
+#    skipped: the caret lands on "z", not on a space.
+print "spaced: ${  7 * z  }"
+
+
+# 6. Nested expression with parentheses. The caret pins the
+#    offending sub-expression even when it sits inside a paren
+#    group.
+print "nested: ${(2 * a) + 1}"
+
+
+# 7. Sigil-led arithmetic with an undefined variable reference.
+#    "$undef" is a varref, not a bare word, so this fires through
+#    the undefined-variable check rather than the
+#    arithmetic-on-literal check.
+print "ref: ${$undef + 1}"
+
+
+# 8. Multiple interpolations in one string. Each error gets its
+#    own frame with a caret over the offending piece, so a string
+#    with two failing interps reports two frames.
+print "left: ${a} right: ${b}"
+
+
+# Runtime-only cases (commented out; the static checker has no
+# visibility into a Value's structural shape, so these only fire
+# at evaluation time):
+#
+#   let prog = "not-a-record"
+#   print "${$prog.id}"          -- field lookup on a scalar
+#
+#   let xs = "no-list"
+#   print "${$xs[0]}"            -- index on a non-array
+#
+# Run those without --check to see the runtime frame:
+#
+#     bpfman-shell interp-errors.bpfman

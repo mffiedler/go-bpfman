@@ -22,7 +22,7 @@ func TestOriginKind_String(t *testing.T) {
 		{OriginLink, "link"},
 		{OriginDispatcher, "dispatcher"},
 		{OriginMap, "map"},
-		{OriginEnvelope, "envelope"},
+		{OriginEnvelope, "result"},
 		{OriginKind(999), "OriginKind(999)"},
 	}
 	for _, tc := range cases {

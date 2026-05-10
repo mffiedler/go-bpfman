@@ -69,12 +69,16 @@ func TestDumpAST_EmptyProgram(t *testing.T) {
 	assert.NotContains(t, out, "Stmts:")
 }
 
-func TestDumpAST_LocShorthand(t *testing.T) {
+func TestDumpAST_SpanShorthand(t *testing.T) {
 	t.Parallel()
 
-	// Loc renders as 'Loc: line:col', not as a nested struct.
+	// Span renders as 'Span: line:col-line:col' on a single
+	// line, not as a nested struct with two embedded Pos
+	// values. Without the shorthand the dump's vertical
+	// space would more than double.
 	out := dumpString(t, "let x = 1")
-	assert.Contains(t, out, "Loc: 1:")
+	assert.Contains(t, out, "Span: 1:")
+	assert.Contains(t, out, "-1:")
 	assert.NotContains(t, out, "Line:")
 	assert.NotContains(t, out, "Col:")
 }

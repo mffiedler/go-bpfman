@@ -362,7 +362,7 @@ func TestParse_EmptyProgram(t *testing.T) {
 func TestParse_LocPropagation(t *testing.T) {
 	t.Parallel()
 
-	// Statements and expressions should carry Loc from their first
+	// Statements and expressions should carry Pos from their first
 	// token.  A multi-line program has different lines on each
 	// statement.
 	prog, err := parseSource(t, "help\nshow program")
@@ -370,10 +370,10 @@ func TestParse_LocPropagation(t *testing.T) {
 	require.Len(t, prog.Stmts, 2)
 	first, ok := prog.Stmts[0].(*CommandStmt)
 	require.True(t, ok)
-	assert.Equal(t, 1, first.Loc.Line)
+	assert.Equal(t, 1, first.Pos.Line)
 	second, ok := prog.Stmts[1].(*CommandStmt)
 	require.True(t, ok)
-	assert.Equal(t, 2, second.Loc.Line)
+	assert.Equal(t, 2, second.Pos.Line)
 }
 
 func TestParse_Thread_Basic(t *testing.T) {
@@ -438,19 +438,19 @@ func TestParse_Thread_TighterThanComparison(t *testing.T) {
 func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	t.Parallel()
 
-	// The Loc on a ThreadExpr identifies the `|>` itself so errors
+	// The Pos on a ThreadExpr identifies the `|>` itself so errors
 	// about the threading step can point at the operator rather
 	// than at the LHS or RHS.
 	prog, err := parseSource(t, "let r = $x |> jq \"add\"")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
 	thread := let.RHS.(*ThreadExpr)
-	assert.Equal(t, 1, thread.Loc.Line)
+	assert.Equal(t, 1, thread.Pos.Line)
 	// Column of the `|>` in "let r = $x |> jq \"add\"":
 	//   columns 1..9 = "let r = $"
 	//   column 10 = 'x' (end of varref) — the `|>` is
 	//   after `$x ` so at column 12.
-	assert.Equal(t, 12, thread.Loc.Col)
+	assert.Equal(t, 12, thread.Pos.Col)
 }
 
 func TestParse_Thread_StopsAtClosingParen(t *testing.T) {
@@ -1128,7 +1128,7 @@ func TestParse_AllNodesHaveSourcePosition(t *testing.T) {
 	// invariant: every AST node Parse produces must have
 	// both line and column populated. A new AST variant
 	// added without copying its source position would
-	// silently surface as an empty Loc in user-facing
+	// silently surface as an empty Pos in user-facing
 	// diagnostics; this test catches that at parse time.
 	cases := []string{
 		"let x = 1",
@@ -1158,9 +1158,9 @@ func TestParse_AllNodesHaveSourcePosition(t *testing.T) {
 				if p, ok := n.(*Program); ok && len(p.Stmts) == 0 {
 					return true
 				}
-				loc := nodeLoc(n)
-				assert.Greater(t, loc.Line, 0, "%T missing line", n)
-				assert.Greater(t, loc.Col, 0, "%T missing col", n)
+				sp := nodeSpan(n)
+				assert.Greater(t, sp.Pos.Line, 0, "%T missing line", n)
+				assert.Greater(t, sp.Pos.Col, 0, "%T missing col", n)
 				return true
 			})
 		})
@@ -1171,7 +1171,7 @@ func TestParse_EmptyProgramAccepted(t *testing.T) {
 	t.Parallel()
 
 	// validateLocs skips the empty-program case; an empty
-	// input is a valid parse with an empty Loc and must not
+	// input is a valid parse with an empty Pos and must not
 	// be rejected as 'missing source position'.
 	prog, err := parseSource(t, "")
 	require.NoError(t, err)
@@ -1183,19 +1183,19 @@ func TestValidateLocs_FailsOnDeliberatelyBrokenNode(t *testing.T) {
 	t.Parallel()
 
 	// Confirm the invariant has teeth: a hand-built program
-	// whose statement carries a zero Loc is rejected with the
+	// whose statement carries a zero Pos is rejected with the
 	// internal-error message. If a future AST variant lands
 	// without copying its source position, this is the shape
 	// the failure takes.
 	prog := &Program{
 		Stmts: []Stmt{
-			&LetStmt{Name: "x", RHS: &LiteralExpr{Text: "1", Loc: Loc{Line: 1, Col: 9}}},
+			&LetStmt{Name: "x", RHS: &LiteralExpr{Text: "1", Span: Span{Pos: Pos{Line: 1, Col: 9}}}},
 		},
-		Loc: Loc{Line: 1, Col: 1},
+		Span: Span{Pos: Pos{Line: 1, Col: 1}},
 	}
 	err := validateLocs(prog)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing source position")
+	assert.Contains(t, err.Error(), "incomplete source spans")
 	assert.Contains(t, err.Error(), "LetStmt")
 }
 
@@ -1213,7 +1213,7 @@ func TestParseInterpBody_BareNameShortcut(t *testing.T) {
 
 	// "${name}" is a variable reference shortcut: the user
 	// writes the bare identifier rather than $-prefixing.
-	expr, err := parseInterpBody("name", Loc{})
+	expr, err := parseInterpBody("name", Span{})
 	require.NoError(t, err)
 	v, ok := expr.(*VarRefExpr)
 	require.True(t, ok, "expected VarRefExpr, got %T", expr)
@@ -1224,7 +1224,7 @@ func TestParseInterpBody_BareNameShortcut(t *testing.T) {
 func TestParseInterpBody_BareNameWithPath(t *testing.T) {
 	t.Parallel()
 
-	expr, err := parseInterpBody("rec.field", Loc{})
+	expr, err := parseInterpBody("rec.field", Span{})
 	require.NoError(t, err)
 	v, ok := expr.(*VarRefExpr)
 	require.True(t, ok, "expected VarRefExpr, got %T", expr)
@@ -1238,7 +1238,7 @@ func TestParseInterpBody_SigilLedExpression(t *testing.T) {
 	// "${$n * 2}" is the sigil-led expression form: bash's
 	// $((...)) shape transposed to ${...}. The parser
 	// treats the whole body as an expression.
-	expr, err := parseInterpBody("$n * 2", Loc{})
+	expr, err := parseInterpBody("$n * 2", Span{})
 	require.NoError(t, err)
 	_, ok := expr.(*BinaryExpr)
 	require.True(t, ok, "expected BinaryExpr, got %T", expr)
@@ -1251,7 +1251,7 @@ func TestParseInterpBody_LiteralLedExpression(t *testing.T) {
 	// for inline arithmetic in command args without a named
 	// intermediate. Previously rejected; now parses as an
 	// expression.
-	expr, err := parseInterpBody("4 * 2", Loc{})
+	expr, err := parseInterpBody("4 * 2", Span{})
 	require.NoError(t, err)
 	_, ok := expr.(*BinaryExpr)
 	require.True(t, ok, "expected BinaryExpr, got %T", expr)
@@ -1262,7 +1262,7 @@ func TestParseInterpBody_ComplexLiteralLedExpression(t *testing.T) {
 
 	// "${(1 + 2) * 3}" exercises the parser's grouping path
 	// from a literal-led starting position.
-	expr, err := parseInterpBody("(1 + 2) * 3", Loc{})
+	expr, err := parseInterpBody("(1 + 2) * 3", Span{})
 	require.NoError(t, err)
 	_, ok := expr.(*BinaryExpr)
 	require.True(t, ok, "expected BinaryExpr, got %T", expr)
@@ -1271,7 +1271,7 @@ func TestParseInterpBody_ComplexLiteralLedExpression(t *testing.T) {
 func TestParseInterpBody_EmptyIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseInterpBody("", Loc{})
+	_, err := parseInterpBody("", Span{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 }
@@ -1281,6 +1281,6 @@ func TestParseInterpBody_GarbageIsError(t *testing.T) {
 
 	// Tokens that do not form a valid expression must error
 	// rather than silently produce a malformed Expr.
-	_, err := parseInterpBody(") +", Loc{})
+	_, err := parseInterpBody(") +", Span{})
 	require.Error(t, err)
 }

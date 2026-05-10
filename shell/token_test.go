@@ -946,9 +946,9 @@ func TestTokeniseStrict(t *testing.T) {
 	}
 }
 
-// stripLocs zeroes Loc fields on a slice of tokens so tests that
+// stripLocs zeroes Pos fields on a slice of tokens so tests that
 // care about kind/text/etc. can compare against literals without
-// having to spell out every token's position. Dedicated Loc
+// having to spell out every token's position. Dedicated Pos
 // assertions belong in TestTokeniseLoc.
 func stripLocs(tokens []Token) []Token {
 	if tokens == nil {
@@ -956,7 +956,7 @@ func stripLocs(tokens []Token) []Token {
 	}
 	out := make([]Token, len(tokens))
 	for i, t := range tokens {
-		t.Loc = Loc{}
+		t.Span = Span{}
 		out[i] = t
 	}
 	return out
@@ -969,18 +969,18 @@ func TestTokeniseLoc(t *testing.T) {
 		name  string
 		input string
 		// wantLocs maps a token's 0-based index to its expected
-		// Loc. Only the listed tokens are checked.
-		wantLocs map[int]Loc
+		// Pos. Only the listed tokens are checked.
+		wantLocs map[int]Pos
 	}{
 		{
 			name:     "single word starts at 1:1",
 			input:    "help",
-			wantLocs: map[int]Loc{0: {Line: 1, Col: 1}},
+			wantLocs: map[int]Pos{0: {Line: 1, Col: 1}},
 		},
 		{
 			name:  "second word on same line",
 			input: "show program 123",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1},  // show
 				1: {Line: 1, Col: 6},  // program
 				2: {Line: 1, Col: 14}, // 123
@@ -989,7 +989,7 @@ func TestTokeniseLoc(t *testing.T) {
 		{
 			name:  "tokens on later lines",
 			input: "first\nsecond\nthird",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1}, // first
 				1: {Line: 1, Col: 6}, // \n
 				2: {Line: 2, Col: 1}, // second
@@ -1000,14 +1000,14 @@ func TestTokeniseLoc(t *testing.T) {
 		{
 			name:  "leading whitespace shifts column",
 			input: "   help",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 4},
 			},
 		},
 		{
 			name:  "varref and bind sigil carry start column",
 			input: "let r <- show $prog",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1},  // let
 				1: {Line: 1, Col: 5},  // r
 				2: {Line: 1, Col: 7},  // <-
@@ -1018,7 +1018,7 @@ func TestTokeniseLoc(t *testing.T) {
 		{
 			name:  "token after comment preserves column",
 			input: "show # c\nnext",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1}, // show
 				1: {Line: 1, Col: 9}, // \n (comment body replaced with spaces)
 				2: {Line: 2, Col: 1}, // next
@@ -1033,7 +1033,7 @@ func TestTokeniseLoc(t *testing.T) {
 			require.NoError(t, err)
 			for idx, want := range tt.wantLocs {
 				require.Greater(t, len(got), idx, "token index %d out of range; got %d tokens", idx, len(got))
-				assert.Equal(t, want, got[idx].Loc, "token %d (%q)", idx, got[idx].Text)
+				assert.Equal(t, want, got[idx].Pos, "token %d (%q)", idx, got[idx].Text)
 			}
 		})
 	}

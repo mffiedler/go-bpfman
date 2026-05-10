@@ -1,7 +1,6 @@
 package shell
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -17,7 +16,7 @@ import (
 // MatchEntry for the recognised pattern shapes.
 type MatchesBlockExpr struct {
 	Entries []MatchEntry
-	Loc
+	Span
 }
 
 // MatchEntry is one row inside a matches block. Path is a
@@ -31,7 +30,7 @@ type MatchEntry struct {
 	Path     string
 	Pattern  Expr
 	NotEmpty bool
-	Loc
+	Span
 }
 
 func (*MatchesBlockExpr) exprNode() {}
@@ -48,12 +47,12 @@ func (*MatchesBlockExpr) exprNode() {}
 // apply here.  See the def parameter list for the contrasting
 // case where commas *are* required: parameters are a value list,
 // not a table.
-func (p *parser) parseMatchesBlock(matchesLoc Loc) (*MatchesBlockExpr, error) {
+func (p *parser) parseMatchesBlock(matchesLoc Pos) (*MatchesBlockExpr, error) {
 	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "{") {
 		return nil, locErrorf(matchesLoc, "expected '{' after matches")
 	}
 	openTok := p.advance()
-	expr := &MatchesBlockExpr{Loc: openTok.Loc}
+	expr := &MatchesBlockExpr{Span: Span{Pos: openTok.Pos, End: openTok.End}}
 	for {
 		// Skip newline separators between entries.  Multiple
 		// consecutive newlines (blank lines inside the block) are
@@ -62,20 +61,21 @@ func (p *parser) parseMatchesBlock(matchesLoc Loc) (*MatchesBlockExpr, error) {
 			p.pos++
 		}
 		if p.atEOF() {
-			return nil, locErrorf(openTok.Loc, "unterminated matches block: missing '}'")
+			return nil, spanErrorf(openTok.Span, "unterminated matches block: missing '}'")
 		}
 		if p.peek().Kind == TokenSep && p.peek().Text == ";" {
-			return nil, locErrorf(p.peek().Loc, "matches: ';' is not a valid entry separator; entries are separated by newlines")
+			return nil, locErrorf(p.peek().Pos, "matches: ';' is not a valid entry separator; entries are separated by newlines")
 		}
 		if p.peek().Kind == TokenWord && p.peek().Text == "," {
-			return nil, locErrorf(p.peek().Loc, "matches: ',' is not a valid entry separator; entries are separated by newlines")
+			return nil, locErrorf(p.peek().Pos, "matches: ',' is not a valid entry separator; entries are separated by newlines")
 		}
 		if p.peek().Kind == TokenWord && p.peek().Text == "}" {
-			p.advance()
+			closeTok := p.advance()
+			expr.End = closeTok.End
 			return expr, nil
 		}
 		if p.peek().Kind == TokenWord && p.peek().Text == "{" {
-			return nil, locErrorf(p.peek().Loc, "unexpected '{' inside matches block")
+			return nil, locErrorf(p.peek().Pos, "unexpected '{' inside matches block")
 		}
 		entryToks, err := p.takeMatchEntryTokens()
 		if err != nil {
@@ -87,7 +87,7 @@ func (p *parser) parseMatchesBlock(matchesLoc Loc) (*MatchesBlockExpr, error) {
 			// would loop forever. Reaching here means the next
 			// token is something the helper should have either
 			// consumed or surfaced as a stop condition above.
-			return nil, locErrorf(p.peek().Loc, "unexpected %q inside matches block", p.peek().Text)
+			return nil, locErrorf(p.peek().Pos, "unexpected %q inside matches block", p.peek().Text)
 		}
 		entry, err := parseMatchEntry(entryToks)
 		if err != nil {
@@ -112,16 +112,16 @@ func (p *parser) takeMatchEntryTokens() ([]Token, error) {
 			return toks, nil
 		}
 		if t.Kind == TokenSep && t.Text == ";" {
-			return nil, locErrorf(t.Loc, "matches: ';' is not a valid entry separator; entries are separated by newlines")
+			return nil, spanErrorf(t.Span, "matches: ';' is not a valid entry separator; entries are separated by newlines")
 		}
 		if t.Kind == TokenWord && (t.Text == "}" || t.Text == "{") {
 			return toks, nil
 		}
 		if t.Kind == TokenWord && t.Text == "," {
-			return nil, locErrorf(t.Loc, "matches: ',' is not a valid entry separator; entries are separated by newlines")
+			return nil, spanErrorf(t.Span, "matches: ',' is not a valid entry separator; entries are separated by newlines")
 		}
 		if t.Kind == TokenWord && len(t.Text) > 1 && strings.HasSuffix(t.Text, ",") {
-			return nil, locErrorf(t.Loc, "matches: trailing ',' on %q is not allowed; entries are separated by newlines", t.Text)
+			return nil, spanErrorf(t.Span, "matches: trailing ',' on %q is not allowed; entries are separated by newlines", t.Text)
 		}
 		toks = append(toks, t)
 		p.pos++
@@ -142,11 +142,17 @@ func isMatchesSep(t Token) bool {
 // (":pattern"), or stand alone as its own token.
 func parseMatchEntry(toks []Token) (MatchEntry, error) {
 	if len(toks) == 0 {
-		return MatchEntry{}, fmt.Errorf("empty matches entry")
+		// Defensive: takeMatchEntryTokens should never return
+		// an empty slice unless its caller has already routed
+		// the stop condition (newline, brace, separator) back
+		// to the loop. A bare fmt.Errorf reaching the chunk
+		// runner would render unframed, so emit a typed error
+		// even though this branch is not expected to fire.
+		return MatchEntry{}, &SyntaxError{Msg: "empty matches entry"}
 	}
 	first := toks[0]
 	if first.Kind != TokenWord {
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry: path must be a word, got %q", first.Text)
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry: path must be a word, got %q", first.Text)
 	}
 
 	var pathText string
@@ -156,7 +162,7 @@ func parseMatchEntry(toks []Token) (MatchEntry, error) {
 		pathText = first.Text[:len(first.Text)-1]
 		rest = toks[1:]
 	case first.Text == ":":
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry: missing path before ':'")
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry: missing path before ':'")
 	case len(toks) >= 2 && toks[1].Kind == TokenWord && toks[1].Text == ":":
 		pathText = first.Text
 		rest = toks[2:]
@@ -172,16 +178,16 @@ func parseMatchEntry(toks []Token) (MatchEntry, error) {
 			rest = append(rest, toks[2:]...)
 		}
 	default:
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry: missing ':' between path and pattern")
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry: missing ':' between path and pattern")
 	}
 	if pathText == "" {
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry: empty path")
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry: empty path")
 	}
 	if !isValidMatchPath(pathText) {
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry: invalid path %q", pathText)
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry: invalid path %q", pathText)
 	}
 	if len(rest) == 0 {
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry %q: missing pattern after ':'", pathText)
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry %q: missing pattern after ':'", pathText)
 	}
 
 	// `not-empty` written alone (no operand) is the lifted form of
@@ -189,15 +195,17 @@ func parseMatchEntry(toks []Token) (MatchEntry, error) {
 	// remaining tokens to the expression parser, because the
 	// expression parser would otherwise treat the bare keyword as a
 	// literal at end-of-input.
+	last := toks[len(toks)-1]
+	entrySpan := Span{Pos: first.Pos, End: last.End}
 	if len(rest) == 1 && rest[0].Kind == TokenWord && rest[0].Text == "not-empty" {
-		return MatchEntry{Path: pathText, NotEmpty: true, Loc: first.Loc}, nil
+		return MatchEntry{Path: pathText, NotEmpty: true, Span: entrySpan}, nil
 	}
 
 	pattern, err := parseExpression(rest)
 	if err != nil {
-		return MatchEntry{}, locErrorf(first.Loc, "matches entry %q: %v", pathText, err)
+		return MatchEntry{}, spanErrorf(first.Span, "matches entry %q: %v", pathText, err)
 	}
-	return MatchEntry{Path: pathText, Pattern: pattern, Loc: first.Loc}, nil
+	return MatchEntry{Path: pathText, Pattern: pattern, Span: entrySpan}, nil
 }
 
 // evalMatchesBlockArg resolves each entry's pattern eagerly and
@@ -207,17 +215,20 @@ func parseMatchEntry(toks []Token) (MatchEntry, error) {
 // resulting Value. The path string is preserved verbatim for the
 // host command to walk against the actual record.
 func evalMatchesBlockArg(e *MatchesBlockExpr, env *Env) (Arg, error) {
-	out := MatchesBlockArg{Entries: make([]MatchesBlockEntry, 0, len(e.Entries))}
+	out := MatchesBlockArg{
+		Entries: make([]MatchesBlockEntry, 0, len(e.Entries)),
+		Span:    e.Span,
+	}
 	for _, entry := range e.Entries {
 		ent := MatchesBlockEntry{
 			Path:     entry.Path,
 			NotEmpty: entry.NotEmpty,
-			Loc:      entry.Loc,
+			Span:     entry.Span,
 		}
 		if !entry.NotEmpty {
 			v, err := EvalExpr(entry.Pattern, env)
 			if err != nil {
-				return nil, locErrorf(entry.Loc, "matches entry %q: %v", entry.Path, err)
+				return nil, spanErrorf(entry.Span, "matches entry %q: %v", entry.Path, err)
 			}
 			ent.Value = v
 		}

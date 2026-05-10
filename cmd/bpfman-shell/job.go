@@ -146,7 +146,7 @@ func resolveAdapterArgs(name string, args []shell.Arg) ([]string, []shell.Arg, e
 				return nil, nil, fmt.Errorf("adapter file: %w", err)
 			}
 			tempFiles = append(tempFiles, path)
-			resolved[i] = shell.ScalarValueArg{Text: path}
+			resolved[i] = shell.ScalarValueArg{Text: path, Span: aa.Span}
 		case shell.StructuredValueArg:
 			removeTempFiles(tempFiles)
 			return nil, nil, fmt.Errorf(
