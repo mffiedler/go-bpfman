@@ -1,0 +1,161 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgUretprobe_LoadAttachDetachUnload.
+#
+# Three uretprobe programs (mup_a/b/c) all attached to
+# bpfman_shell_uprobe_call_malloc inside the bpfman-shell binary.
+# Same .bpf.o as the uprobe variant; retprobe semantics come from
+# the program type declared at load. The bpfman link attach verb
+# is `uprobe` either way -- the kernel resolves the right hook
+# from the loaded program type.
+#
+# Three waves of N firings each, staggered detach so each program
+# ends up with a distinct event count:
+#
+#     a counts waves 1+2+3   = 3 * N events
+#     b counts waves 1+2     = 2 * N events
+#     c counts wave 1        = 1 * N events
+#
+# Difference from the Go test:
+#   - The fixture symbol lives in bpfman-shell rather than e2e.test.
+#     Same pattern -- one binary, multiple modes -- so no separate
+#     helper binary is needed and there is no dependency on locating
+#     a libc path.
+#   - The worker is bpfman-shell launched in
+#     BPFMAN_SHELL_MODE=uprobe-fire-worker mode (see
+#     cmd/bpfman-shell/uprobe_helper.go). It runs the same
+#     sentinel/ack wave loop the python workers do, but fires the
+#     in-binary cgo target N times per wave rather than issuing
+#     unlink/kill syscalls. Stable PID throughout.
+#   - Between detach and the next wave we sleep briefly to let the
+#     kernel's perf-link RCU deferral window close. The observed
+#     window is sub-millisecond on modern kernels.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo direnv exec . ../bin/bpfman-shell new/TestMultiProgUretprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool.
+
+source lib.bpfman
+
+let n      = 5
+let waves  = 3
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+let sentinel = "/tmp/bpfman-shell-muret.go"
+let ack      = "/tmp/bpfman-shell-muret.ack"
+
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+
+# Resolve the absolute path to the bpfman-shell binary so the
+# uprobe target path is independent of the script's cwd. printf
+# strips the trailing newline that readlink writes, which would
+# otherwise embed a literal newline in the captured stdout that
+# bpfman would then choke on.
+guard shell_bin <- exec sh -c 'printf %s "$(readlink -f -- "$1")"' x ../bin/bpfman-shell
+
+# Start the worker. `start env BPFMAN_SHELL_MODE=...` uses the
+# busybox-style env(1) to set the mode env var without needing a
+# shell wrapper. Stable PID across all 3 waves.
+guard work <- start env BPFMAN_SHELL_MODE=uprobe-fire-worker $shell_bin.stdout $sentinel $ack $n $waves
+defer kill --signal=KILL $work
+
+# LE-hex helpers for the global-data injection (one u32 expected_pid,
+# three u64 weights).
+guard pid_le <- exec sh -c 'printf "%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff))' x ${work.pid}
+guard wa_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_a}
+guard wb_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_b}
+guard wc_le  <- exec sh -c 'printf "%02x%02x%02x%02x%02x%02x%02x%02x" $(($1 & 0xff)) $((($1 >> 8) & 0xff)) $((($1 >> 16) & 0xff)) $((($1 >> 24) & 0xff)) $((($1 >> 32) & 0xff)) $((($1 >> 40) & 0xff)) $((($1 >> 48) & 0xff)) $((($1 >> 56) & 0xff))' x ${weight_c}
+
+# Load three uprobe programs from one object file.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_uprobe_counter.bpf.o \
+    --programs uretprobe:mup_a,uretprobe:mup_b,uretprobe:mup_c \
+    -g "expected_pid=0x${pid_le.stdout}" \
+    -g "weight_a=0x${wa_le.stdout}" \
+    -g "weight_b=0x${wb_le.stdout}" \
+    -g "weight_c=0x${wc_le.stdout}"
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mup_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mup_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mup_c_count\") | .id][0]"
+print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
+
+# Attach each program at bpfman_shell_uprobe_call_malloc inside
+# the bpfman-shell binary the worker is running.
+guard link_a <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_a
+guard link_b <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_b
+guard link_c <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# --- Wave 1: a, b, c all attached ---
+guard _ <- touch "${sentinel}.1"
+retry {
+    let probe <- test -f "${ack}.1"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+bpfman link detach $link_c
+guard _ <- sleep 0.1
+
+# --- Wave 2: a, b attached; c detached ---
+guard _ <- touch "${sentinel}.2"
+retry {
+    let probe <- test -f "${ack}.2"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+bpfman link detach $link_b
+guard _ <- sleep 0.1
+
+# --- Wave 3: only a attached ---
+guard _ <- touch "${sentinel}.3"
+retry {
+    let probe <- test -f "${ack}.3"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+guard work_r <- wait $work
+assert $work_r.ok
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = 3 * $n * $weight_a
+let want_b = 2 * $n * $weight_b
+let want_c = 1 * $n * $weight_c
+
+print "a: got=${count_a} want=${want_a}"
+print "b: got=${count_b} want=${want_b}"
+print "c: got=${count_c} want=${want_c}"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+# link_a is still attached on the happy path; detach it explicitly
+# before the deferred program-unloads fire.
+bpfman link detach $link_a
+
+let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
