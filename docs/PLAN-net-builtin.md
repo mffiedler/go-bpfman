@@ -138,6 +138,36 @@ the topology parameters (names, addresses), the built-in owns
 the imperative order, idempotency, and cleanup. The script
 states what topology it needs; `net` knows how to build it.
 
+The parallel to fire is tighter than the difference in *what*
+each absorbs (mechanism vs choreography) first suggests. fire
+could have decomposed into `fire syscall NAME` / `fire signal
+SIG` / `fire symbol PATH`; it did not, because that
+decomposition would have been abstraction for its own sake.
+fire's three kinds (unlinkat, kill, uprobe) are not arbitrary
+primitives -- they are the specific test-domain operations the
+BPF corpus exercises. `net veth-pair` is the same kind of
+narrow encoding: not "a way to compose network primitives" but
+"the topology BPF dispatcher tests need". Both builtins encode
+actual test-domain operations rather than theoretical
+decompositions, and the narrowness is what makes each succeed
+in its corpus.
+
+The symmetry between the two builtins, once stated outright:
+
+```
+                            fire                            net
+domain stimulus      deterministic syscall events    deterministic packet flow
+stable identity      stable PID                      stable interface topology
+managed lifecycle    helper process                  topology
+narrow purpose       kernel-observable events        packet-flow setup
+shape                kind-dispatched, recipe-like    recipe-shaped
+escape hatch         start env BPFMAN_SHELL_MODE=... raw ip(8) / iptables / ...
+```
+
+Both are narrow-minded by construction. The escape hatch in
+each row is the safety valve that lets the builtin stay narrow
+without trapping the corpus.
+
 ## 5. Declarative shape
 
 A dispatcher test reads as:
