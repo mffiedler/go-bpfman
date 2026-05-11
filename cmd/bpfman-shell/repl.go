@@ -758,6 +758,22 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			return shell.BindResult{Rc: env, Primary: shell.ValueFromEnvelope(env)}, nil
 		}
 
+		// 'net exec $pair CMD...' captures into a real
+		// envelope so the bind's Rc reflects the netns
+		// command's actual outcome, not merely "the handler
+		// returned without an error". Mirrors the wait
+		// special case so 'guard _ <- net exec $pair ping'
+		// halts on a non-zero ping exactly the way 'guard _
+		// <- ip netns exec NS ping' does in the
+		// pre-migration scripts.
+		if argText(args[0]) == "net" && len(args) >= 2 && argText(args[1]) == "exec" {
+			env, err := replNetExec(ctx, args[2:])
+			if err != nil {
+				return shell.BindResult{}, err
+			}
+			return shell.BindResult{Rc: env, Primary: shell.ValueFromEnvelope(env)}, nil
+		}
+
 		quiet := cli.WithDiscardOutput()
 		handled, val, err := replShellCmd(ctx, quiet, mgr, session, env, args, loc, span)
 		if handled {

@@ -376,6 +376,25 @@ func init() {
 				"--target $work.target_binary' attaches to the running bpfman-shell ELF. " +
 				"start env BPFMAN_SHELL_MODE=... remains valid as a debug escape hatch.",
 		},
+		"net": {
+			Name: "net", Handler: handleNet,
+			Category: categoryJobs,
+			Usage: "net veth-pair --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME --peer-addr=CIDR [--no-routes]  |  " +
+				"net release $pair  |  net exec $pair CMD ARGS...  |  net start $pair CMD ARGS...",
+			Summary: "Paired-veth single-netns topology fixture for TC / TCX / XDP dispatcher tests.",
+			Detail: "net is the e2e built-in for the topology dispatcher tests share: a single " +
+				"veth pair, a netns the peer end lives in, two /32 addresses, and the two " +
+				"symmetric routes that make the pair pingable. veth-pair builds the whole " +
+				"thing in one call and returns a $pair handle whose fields (ns, host_link, " +
+				"peer_link, host_addr, peer_addr) thread through 'bpfman link attach -i " +
+				"$pair.host_link' and 'net exec $pair ping $pair.peer_addr'. release tears " +
+				"the topology down in LIFO order and is idempotent (re-release is a no-op; " +
+				"missing resources are fine). exec runs a command in the netns and captures " +
+				"the result envelope (sync); start launches a command in the netns as a " +
+				"background $job (async). Operational use after release is a runtime error; " +
+				"field reads stay valid. Raw ip(8) remains the documented escape hatch for " +
+				"topologies net does not cover (bridges, VLANs, IPv6, multiple pairs).",
+		},
 		"unalias": {
 			Name: "unalias", Handler: handleUnalias,
 			Category: categorySession,

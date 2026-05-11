@@ -56,6 +56,19 @@ const (
 	// boundaries: a null is assignable and renderable as "null";
 	// an absent value trips "produces no assignable value".
 	OriginNull
+	// OriginNetPair tags a Value that wraps a NetPair: the
+	// handle returned by `net veth-pair`. It owns a single
+	// veth pair plus the netns the peer sits in, plus the host
+	// and peer addresses, and exposes their names through the
+	// standard path-walker so the script can pass
+	// $pair.host_link to `bpfman link attach` and $pair.peer_addr
+	// to commands like ping. A NetPair handle is a lifecycle
+	// capability, not ordinary immutable data: `net release`
+	// consumes the topology after which `net exec` / `net start`
+	// against the same handle is a runtime error. Field reads
+	// remain valid after release because the strings are a
+	// historical description of what existed.
+	OriginNetPair
 )
 
 // String returns the canonical name used in user-facing error
@@ -85,6 +98,8 @@ func (k OriginKind) String() string {
 		return "job"
 	case OriginNull:
 		return "null"
+	case OriginNetPair:
+		return "net pair"
 	default:
 		return fmt.Sprintf("OriginKind(%d)", int(k))
 	}
@@ -215,6 +230,17 @@ var (
 				"killed": {Sealed: true, Kind: OriginBool},
 				"signal": {Sealed: true, Kind: OriginScalar},
 				"pid":    {Sealed: true, Kind: OriginScalar},
+			},
+		},
+		OriginNetPair: {
+			Sealed: true,
+			Kind:   OriginNetPair,
+			Fields: map[string]Shape{
+				"ns":        {Sealed: true, Kind: OriginScalar},
+				"host_link": {Sealed: true, Kind: OriginScalar},
+				"peer_link": {Sealed: true, Kind: OriginScalar},
+				"host_addr": {Sealed: true, Kind: OriginScalar},
+				"peer_addr": {Sealed: true, Kind: OriginScalar},
 			},
 		},
 		// OriginProgram, OriginLink are tagged at runtime by

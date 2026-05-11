@@ -274,6 +274,8 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 		return Shape{Sealed: false, Kind: OriginUnknown}
 	case "bpfman":
 		return inferBpfmanBindShape(cmd.Args[1:])
+	case "net":
+		return inferNetBindShape(cmd.Args[1:])
 	}
 	// Default: unknown first word runs as an external
 	// subprocess via runExternalAsBind, which always returns
@@ -339,6 +341,36 @@ func inferBpfmanBindShape(args []Expr) Shape {
 			elem := KindShape(OriginLink)
 			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
 		}
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
+}
+
+// inferNetBindShape recognises the net subcommands whose primary
+// slot has a non-default kind:
+//
+//	net veth-pair ...    -> NetPair (the constructed handle)
+//	net release ...      -> Envelope (idempotent teardown)
+//	net exec ...         -> Envelope (sync command in the netns)
+//	net start ...        -> Job (async command in the netns)
+//
+// Unknown subcommands fall through to the unsealed-Unknown
+// wildcard so a runtime-validated typo still parses cleanly
+// against the bind-target.
+func inferNetBindShape(args []Expr) Shape {
+	if len(args) < 1 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	sub, ok := args[0].(*LiteralExpr)
+	if !ok || sub.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	switch sub.Text {
+	case "veth-pair":
+		return KindShape(OriginNetPair)
+	case "release", "exec":
+		return KindShape(OriginEnvelope)
+	case "start":
+		return KindShape(OriginJob)
 	}
 	return Shape{Sealed: false, Kind: OriginUnknown}
 }
