@@ -235,11 +235,15 @@ in what gets fired, not in what the script does with the result.
 
 `net` is one verb with subcommands because the operations
 themselves differ in shape: `veth-pair` constructs a handle,
-`release` consumes one, `exec` consumes one and returns an
-envelope. The lifecycle verbs are not shared across operations.
-A kind-dispatch model would force unnatural uniformity (every
-kind produces a NetPair? returns a NetPair-or-Envelope-or-Job
-union?). Subcommands fit the shape of the operations.
+`release` reaps one, `exec` runs against one and returns an
+envelope, `start` runs against one and returns a job. Only
+`release` consumes the handle; `exec` and `start` operate on it
+without invalidating it, so `net exec $pair ping` followed by
+another `net exec $pair ping` is fine. The lifecycle verbs are
+not shared across operations. A kind-dispatch model would force
+unnatural uniformity (every kind produces a NetPair? returns a
+NetPair-or-Envelope-or-Job union?). Subcommands fit the shape
+of the operations.
 
 This is the same shape `bpfman <subcommand>` uses for its
 domain commands, and the existing builtin set already uses
