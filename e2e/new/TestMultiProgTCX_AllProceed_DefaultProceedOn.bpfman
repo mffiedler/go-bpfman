@@ -34,8 +34,8 @@ let weight_b = 42
 let weight_c = 43
 
 guard pair <- net veth-pair --ns=bpfsh-mtcx \
-    --host-link=vea-mtcx --host-addr=198.51.100.1/32 \
-    --peer-link=veb-mtcx --peer-addr=198.51.100.2/32
+    --host-link=vea-mtcx \
+    --peer-link=veb-mtcx
 defer net release $pair
 
 # Load the three TCX programs.

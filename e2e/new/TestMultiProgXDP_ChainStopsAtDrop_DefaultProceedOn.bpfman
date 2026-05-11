@@ -33,8 +33,8 @@ let weight_b = 42
 let weight_c = 43
 
 guard pair <- net veth-pair --ns=bpfsh-mxdpcs \
-    --host-link=vea-mxdpcs --host-addr=198.51.100.1/32 \
-    --peer-link=veb-mxdpcs --peer-addr=198.51.100.2/32
+    --host-link=vea-mxdpcs \
+    --peer-link=veb-mxdpcs
 defer net release $pair
 
 # Warmup ping to populate the ARP caches both ways before any

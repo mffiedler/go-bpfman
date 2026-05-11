@@ -31,8 +31,8 @@ let weight_b = 42
 let weight_c = 43
 
 guard pair <- net veth-pair --ns=bpfsh-mxdp \
-    --host-link=vea-mxdp --host-addr=198.51.100.1/32 \
-    --peer-link=veb-mxdp --peer-addr=198.51.100.2/32
+    --host-link=vea-mxdp \
+    --peer-link=veb-mxdp
 defer net release $pair
 
 # Load the three XDP programs.
