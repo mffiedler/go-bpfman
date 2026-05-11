@@ -260,7 +260,7 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 		return pb.ReturnShape
 	}
 	switch headText {
-	case "start":
+	case "start", "fire":
 		return KindShape(OriginJob)
 	case "exec", "wait", "kill":
 		return KindShape(OriginEnvelope)
@@ -996,6 +996,7 @@ func (c *checker) checkBuiltinArity(prog *Program) {
 		"kill":  {min: 1, max: 1},  // exactly one $job (after flags)
 		"jobs":  {min: 0, max: 0},
 		"reap":  {min: 0, max: 0},
+		"fire":  {min: 3, max: 3}, // kind, sentinel, ack (flags --count= --waves= skipped)
 	}
 	Inspect(prog, func(n Node) bool {
 		cmd, ok := n.(*CommandStmt)

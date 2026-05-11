@@ -15,6 +15,14 @@ import (
 	"time"
 )
 
+func init() {
+	registerFireKind("kill", fireKind{
+		Mode:        "kill-fire-worker",
+		Summary:     "Fire kill(2) syscalls on self for syscalls/sys_enter_kill.",
+		NeedsBinary: false,
+	})
+}
+
 // runKillFireWorker is the entry point for
 // BPFMAN_SHELL_MODE=kill-fire-worker. Args:
 //

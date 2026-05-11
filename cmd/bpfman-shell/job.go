@@ -45,12 +45,58 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 	}
 
 	argv := argTexts(resolved)
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+
+	// Best-effort identity: plain start populates target_binary
+	// from argv[0] so a downstream `--target $job.target_binary`
+	// has the executable path the user pointed at. The semantic
+	// guarantee (stable image for kernel attachment) belongs only
+	// to fire kinds with NeedsBinary == true; here the field is
+	// just what the user asked us to launch.
+	job, err := spawnJob(ctx, env, spawnSpec{
+		Argv:         argv,
+		Origin:       origin,
+		TempFiles:    tempFiles,
+		TargetBinary: argv[0],
+	})
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("start %s: %w", argv[0], err)
+	}
+	return shell.ValueFromJob(job), nil
+}
+
+// spawnSpec is the parameter pack for spawnJob. The fields are
+// the small superset of what start and fire need: argv, origin,
+// adapter-temp files to clean up after exit, the optional process
+// environment override, and the optional target-binary path to
+// publish on the resulting Job.
+type spawnSpec struct {
+	Argv         []string // resolved argv; Argv[0] is the executable
+	Env          []string // explicit environment; nil inherits os.Environ
+	Origin       string   // source citation for leak diagnostics
+	TempFiles    []string // adapter temp files reaped with the process
+	TargetBinary string   // value to publish on Job.target_binary; "" leaves it unset
+}
+
+// spawnJob is the shared subprocess-launch path for start and
+// fire. It sets the process up as its own process-group leader,
+// captures stdout/stderr into buffers, and registers a *shell.Job
+// in env's active scope. A reaper goroutine waits on the child,
+// records the final Stdout/Stderr/ExitCode/Signal, cleans up the
+// temp files, and closes Done.
+//
+// On launch failure the temp files are removed before the error
+// is returned, so the caller does not have to repeat the cleanup.
+func spawnJob(ctx context.Context, env *shell.Env, spec spawnSpec) (*shell.Job, error) {
+	cmd := exec.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
 
 	// Process-group leader: 'kill -<pgid>' reaches every
 	// descendant the child fork-execs (an 'ip netns exec ...
 	// ping' wrapper, a shell-c spawned worker, etc.).
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if spec.Env != nil {
+		cmd.Env = spec.Env
+	}
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -58,32 +104,33 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {
-		removeTempFiles(tempFiles)
-		return shell.Value{}, fmt.Errorf("start %s: %w", argv[0], err)
+		removeTempFiles(spec.TempFiles)
+		return nil, err
 	}
 
 	job := &shell.Job{
-		PID:     cmd.Process.Pid,
-		Done:    make(chan struct{}),
-		Args:    argv,
-		Origin:  origin,
-		Started: time.Now(),
+		PID:          cmd.Process.Pid,
+		Done:         make(chan struct{}),
+		Args:         spec.Argv,
+		Origin:       spec.Origin,
+		Started:      time.Now(),
+		TargetBinary: spec.TargetBinary,
 	}
 	if env != nil {
 		env.RegisterJob(job)
 	}
 
 	// Reap the process in a goroutine. The goroutine is the sole
-	// writer of Stdout/Stderr/ExitCode/Signal; close(Done) is
-	// the happens-before barrier for any reader (typically
-	// wait). Signal is set when the process ended via a signal
-	// (whether from our kill builtin, an external sender, or
-	// a parent shutdown); the kill builtin also records its
-	// requested signal up-front, but the reaper's value is
-	// what actually ended the process.
+	// writer of Stdout/Stderr/ExitCode/Signal; close(Done) is the
+	// happens-before barrier for any reader (typically wait).
+	// Signal is set when the process ended via a signal (whether
+	// from our kill builtin, an external sender, or a parent
+	// shutdown); the kill builtin also records its requested
+	// signal up-front, but the reaper's value is what actually
+	// ended the process.
 	go func() {
 		defer close(job.Done)
-		defer removeTempFiles(tempFiles)
+		defer removeTempFiles(spec.TempFiles)
 		err := cmd.Wait()
 		exitCode := 0
 		var sigName string
@@ -120,7 +167,7 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 		job.Mu.Unlock()
 	}()
 
-	return shell.ValueFromJob(job), nil
+	return job, nil
 }
 
 // resolveAdapterArgs walks args, resolving file: adapter values

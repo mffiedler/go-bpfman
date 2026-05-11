@@ -24,6 +24,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func init() {
+	registerFireKind("unlinkat", fireKind{
+		Mode:        "unlinkat-fire-worker",
+		Summary:     "Fire unlinkat(2) syscalls for do_unlinkat / sys_*_unlinkat hooks.",
+		NeedsBinary: false,
+	})
+}
+
 // runUnlinkatFireWorker is the entry point for
 // BPFMAN_SHELL_MODE=unlinkat-fire-worker. Args:
 //

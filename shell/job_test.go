@@ -30,21 +30,39 @@ func TestValueFromJob_PIDFieldAccess(t *testing.T) {
 	assert.Equal(t, "4321", s)
 }
 
-func TestValueFromJob_OnlyPIDIsExposed(t *testing.T) {
+func TestValueFromJob_AbsentFieldsErrorRatherThanReturnEmpty(t *testing.T) {
 	t.Parallel()
 
-	// 'pid' is the only field in the mirror; the script reaches
-	// stdout/stderr/exit-code through 'wait', not through
-	// $job.<field>. Confirm that absent fields error rather
-	// than silently returning an empty string.
+	// 'pid' is in the mirror; 'target_binary' lands there only
+	// when the producer (start, fire) populated Job.TargetBinary.
+	// The script reaches stdout/stderr/exit-code through 'wait',
+	// not through $job.<field>. Confirm that fields not on the
+	// mirror error rather than silently returning an empty
+	// string; an empty string could flow into a downstream
+	// `--target ""` undetected.
 	v := ValueFromJob(&Job{PID: 99})
-	for _, field := range []string{"stdout", "stderr", "code", "exit_code", "killed"} {
+	for _, field := range []string{"stdout", "stderr", "code", "exit_code", "killed", "target_binary"} {
 		t.Run(field, func(t *testing.T) {
 			t.Parallel()
 			_, err := v.LookupValue("$job", field)
-			require.Error(t, err, "field %q should not resolve on a job", field)
+			require.Error(t, err, "field %q should not resolve on a job without that producer field", field)
 		})
 	}
+}
+
+func TestValueFromJob_TargetBinaryWhenSet(t *testing.T) {
+	t.Parallel()
+
+	// fire kinds with NeedsBinary == true populate TargetBinary
+	// with /proc/self/exe; plain start populates it with argv[0]
+	// as best-effort identity. In both cases the path-walker
+	// returns the value the producer set.
+	v := ValueFromJob(&Job{PID: 7, TargetBinary: "/usr/local/bin/bpfman-shell"})
+	got, err := v.Lookup("$job", "target_binary")
+	require.NoError(t, err)
+	s, err := got.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "/usr/local/bin/bpfman-shell", s)
 }
 
 func TestJob_MarkManagedRoundTrip(t *testing.T) {

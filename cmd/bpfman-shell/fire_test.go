@@ -1,0 +1,123 @@
+package main
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/shell"
+)
+
+// callFire invokes handleFire with the given word-arg sequence
+// and returns the error. Tests rely on this for arg-parsing
+// failures that fail before any spawn: a successful spawn from
+// the test binary is not possible because the test binary's main
+// is the go test runner, not bpfman-shell's runMode dispatcher.
+func callFire(args ...string) (shell.Value, error) {
+	wargs := make([]shell.Arg, len(args))
+	for i, a := range args {
+		wargs[i] = shell.WordArg{Text: a}
+	}
+	return handleFire(builtinCtx{
+		Ctx:  context.Background(),
+		Cmd:  "fire",
+		Args: wargs,
+	})
+}
+
+func TestHandleFire_UnknownKind(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("nosuch", "/tmp/s", "/tmp/a", "--count=1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown kind "nosuch"`)
+	assert.Contains(t, err.Error(), "registered:")
+}
+
+func TestHandleFire_TooFewPositionals(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "--count=1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected 3 positional arguments")
+}
+
+func TestHandleFire_TooManyPositionals(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "/tmp/extra", "--count=1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected 3 positional arguments")
+}
+
+func TestHandleFire_MissingCount(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--count=N is required")
+}
+
+func TestHandleFire_BadCount(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--count")
+}
+
+func TestHandleFire_NegativeCount(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--count must not be negative")
+}
+
+func TestHandleFire_BadWaves(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=xyz")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--waves")
+}
+
+func TestHandleFire_ZeroWaves(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--waves=0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--waves must be at least 1")
+}
+
+func TestHandleFire_UnknownFlag(t *testing.T) {
+	t.Parallel()
+	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a", "--count=1", "--bogus=x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown flag "--bogus=x"`)
+}
+
+// TestFireKinds_RegisteredAtInit verifies that the three helper
+// files' init functions populated the registry by the time tests
+// run. The Mode values are part of the contract with the
+// BPFMAN_SHELL_MODE switch in main.go:runMode and must match.
+func TestFireKinds_RegisteredAtInit(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]fireKind{
+		"unlinkat": {Mode: "unlinkat-fire-worker", NeedsBinary: false},
+		"kill":     {Mode: "kill-fire-worker", NeedsBinary: false},
+		"uprobe":   {Mode: "uprobe-fire-worker", NeedsBinary: true},
+	}
+	for name, w := range want {
+		got, ok := fireKinds[name]
+		require.Truef(t, ok, "fire kind %q is not registered", name)
+		assert.Equal(t, w.Mode, got.Mode, "kind %s mode", name)
+		assert.Equal(t, w.NeedsBinary, got.NeedsBinary, "kind %s NeedsBinary", name)
+		assert.NotEmpty(t, got.Summary, "kind %s should carry a Summary", name)
+	}
+}
+
+// TestFireKindNames_Sorted verifies the diagnostic helper returns
+// names in a stable order so error messages are reproducible.
+func TestFireKindNames_Sorted(t *testing.T) {
+	t.Parallel()
+	names := fireKindNames()
+	for i := 1; i < len(names); i++ {
+		assert.LessOrEqual(t, names[i-1], names[i], "fireKindNames should be sorted")
+	}
+}

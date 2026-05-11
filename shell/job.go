@@ -93,6 +93,23 @@ type Job struct {
 	// monotonic because the primary use is "what time did
 	// this start?", not "how long has this been running?".
 	Started time.Time
+
+	// TargetBinary is populated when the launched job corresponds
+	// to a stable executable image that kernel attachment APIs
+	// may target (uprobes, symbol resolution, etc.). It is not
+	// intended as a general process-inspection surface.
+	//
+	// fire kinds with NeedsBinary == true populate this with the
+	// running bpfman-shell ELF (/proc/self/exe) so the script can
+	// pass it to `bpfman link attach uprobe --target ...`. Plain
+	// start populates it with argv[0] as best-effort identity; the
+	// semantic guarantee belongs only to fire kinds.
+	//
+	// Empty when the producer did not publish a target binary.
+	// Path-walking the absent field is a runtime error, not a
+	// silent empty string, so a typo cannot flow into a downstream
+	// `--target ""` undetected.
+	TargetBinary string
 }
 
 // MarkManaged records that the script has acknowledged this
@@ -119,6 +136,9 @@ func (j *Job) IsManaged() bool {
 func ValueFromJob(j *Job) Value {
 	mirror := map[string]any{
 		"pid": numFromInt(j.PID),
+	}
+	if j.TargetBinary != "" {
+		mirror["target_binary"] = j.TargetBinary
 	}
 	return Value{v: mirror, origin: j, kind: OriginJob}
 }

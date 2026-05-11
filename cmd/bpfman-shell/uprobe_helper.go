@@ -33,6 +33,14 @@ import (
 	"time"
 )
 
+func init() {
+	registerFireKind("uprobe", fireKind{
+		Mode:        "uprobe-fire-worker",
+		Summary:     "Fire uprobe target symbol bpfman_shell_uprobe_call_malloc.",
+		NeedsBinary: true,
+	})
+}
+
 // invokeUprobeCallMalloc calls the cgo'd target symbol once,
 // firing whichever uprobe (or uretprobe) is attached to it.
 func invokeUprobeCallMalloc() {

@@ -362,6 +362,20 @@ func init() {
 				"unwaited/unkilled job as a leak (FAIL, exit 1); interactive mode " +
 				"silently SIGKILLs on session exit.",
 		},
+		"fire": {
+			Name: "fire", Handler: handleFire,
+			Category: categoryJobs,
+			Usage:    "fire <kind> <sentinel> <ack> --count=N [--waves=K]",
+			Summary:  "Spawn a deterministic kernel-stimulus worker; primary is a $job handle (assignable).",
+			Detail: "fire is a typed wrapper over start for e2e fixtures. <kind> selects " +
+				"one of the registered kernel-event generators (unlinkat, kill, uprobe). " +
+				"sentinel/ack are file-path prefixes for the wave protocol: the worker " +
+				"blocks on sentinel.W, fires --count=N events, and creates ack.W per " +
+				"wave W in 1..K. --waves defaults to 1. Uprobe kinds publish " +
+				"target_binary on the returned $job so 'bpfman link attach uprobe " +
+				"--target $work.target_binary' attaches to the running bpfman-shell ELF. " +
+				"start env BPFMAN_SHELL_MODE=... remains valid as a debug escape hatch.",
+		},
 		"unalias": {
 			Name: "unalias", Handler: handleUnalias,
 			Category: categorySession,
