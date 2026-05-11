@@ -86,7 +86,7 @@ RUN case "${BUILD_DATE}" in \
         * ) BUILD_DATE=$(date -u -d "@${BUILD_DATE}" +%Y-%m-%dT%H:%M:%SZ) ;; \
     esac; \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    make bpfman-compile \
+    make bpfman-compile STAMP=1 \
     EXTRA_TAGS=strictfipsruntime \
     GIT_COMMIT="${BUILD_COMMIT}" \
     GIT_BRANCH="${BUILD_BRANCH}" \
