@@ -67,6 +67,7 @@ func (*NotExpr) astNode()          {}
 func (*NegateExpr) astNode()       {}
 func (*TimeoutExpr) astNode()      {}
 func (*IterationExpr) astNode()    {}
+func (*PureCallExpr) astNode()     {}
 func (*MatchesBlockExpr) astNode() {}
 
 // Inspect traverses node in pre-order, calling f on every
@@ -192,6 +193,10 @@ func walk(node Node, f func(Node) bool) {
 		walk(n.Arg, f)
 	case *IterationExpr:
 		walk(n.Arg, f)
+	case *PureCallExpr:
+		for _, a := range n.Args {
+			walk(a, f)
+		}
 	case *MatchesBlockExpr:
 		// MatchesBlockExpr's children are pattern entries
 		// rather than child Exprs; nothing to walk for the

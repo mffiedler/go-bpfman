@@ -195,6 +195,11 @@ func (c *checker) inferExprShape(e Expr) Shape {
 		return KindShape(OriginScalar)
 	case *InterpStringExpr:
 		return KindShape(OriginScalar)
+	case *PureCallExpr:
+		if pb, ok := LookupPureBuiltin(v.Name); ok {
+			return pb.ReturnShape
+		}
+		return Shape{Sealed: false, Kind: OriginUnknown}
 	}
 	return Shape{Sealed: false, Kind: OriginUnknown}
 }

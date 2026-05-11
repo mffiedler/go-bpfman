@@ -1760,6 +1760,74 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	if isKeywordWord(t, "iteration") {
 		return p.parseIterationExpr()
 	}
+	if t.Kind == TokenWord {
+		if pb, ok := LookupPureBuiltin(t.Text); ok {
+			return p.parsePureCall(pb)
+		}
+	}
+	p.advance()
+	return parsePrimary(t)
+}
+
+// parsePureCall consumes a registered pure-builtin name followed
+// by exactly pb.Arity primary arguments. Arguments are parsed as
+// primaries (parsePrimary tokens or parenthesised sub-expressions),
+// not as full expressions, so trailing operators bind to the
+// surrounding expression rather than to the call. The rule keeps
+// "range 5 + 1" parsing as "(range 5) + 1" and forces nested calls
+// to be explicit via parens: "u32le (jq '.x' $v)".
+func (p *exprParser) parsePureCall(pb PureBuiltin) (Expr, error) {
+	nameTok := p.advance()
+	args := make([]Expr, 0, pb.Arity)
+	for i := 0; i < pb.Arity; i++ {
+		if p.eof() {
+			return nil, spanErrorf(nameTok.Span, "%s: expected %d argument(s), got %d", pb.Name, pb.Arity, i)
+		}
+		arg, err := p.parsePureCallArg(pb.Name)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+	}
+	return &PureCallExpr{Name: pb.Name, Args: args, Span: p.spanFrom(nameTok.Pos)}, nil
+}
+
+// parsePureCallArg accepts one primary argument for a pure-builtin
+// call: a parenthesised sub-expression (full expression grammar
+// inside), a single literal / varref / adapter / interp-string
+// token, or a sigil-led varref. Operators (and / or / not / +
+// / - / * / / / % / |> / comparison) are not primaries and stop
+// the argument list, leaving the outer expression to pick them up.
+func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
+	t := p.peek()
+	if t.Kind == TokenWord && t.Text == "(" {
+		openTok := p.advance()
+		inner, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		if p.eof() || !(p.peek().Kind == TokenWord && p.peek().Text == ")") {
+			return nil, spanErrorf(openTok.Span, "missing ')' to close parenthesised expression")
+		}
+		p.advance()
+		return inner, nil
+	}
+	switch t.Kind {
+	case TokenWord:
+		if _, isBinOp := binaryOpFromToken(t); isBinOp {
+			return nil, spanErrorf(t.Span, "%s: unexpected %q in argument position", name, t.Text)
+		}
+		if isArithmeticOp(t) {
+			return nil, spanErrorf(t.Span, "%s: unexpected %q in argument position", name, t.Text)
+		}
+		if isKeywordWord(t, "and") || isKeywordWord(t, "or") || isKeywordWord(t, "not") {
+			return nil, spanErrorf(t.Span, "%s: unexpected %q in argument position", name, t.Text)
+		}
+	case TokenQuoted, TokenVarRef, TokenAdapterRef, TokenInterpString:
+		// Recognised primary tokens; fall through to consume.
+	default:
+		return nil, spanErrorf(t.Span, "%s: unexpected %q in argument position", name, t.Text)
+	}
 	p.advance()
 	return parsePrimary(t)
 }

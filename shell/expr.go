@@ -170,6 +170,26 @@ type IterationExpr struct {
 	Span
 }
 
+// PureCallExpr is an expression-position invocation of a pure
+// builtin: a name registered in the pure-builtin registry plus
+// exactly Arity primary expressions as arguments. The parser
+// emits it when it sees a bare identifier in expression position
+// whose text matches a registration; the eval path dispatches
+// through ExecBind so the handler resolution is identical to the
+// '<-' bind form, but the result envelope is discarded and only
+// the primary Value flows back into the surrounding expression.
+//
+// Pure-builtin handlers are by contract side-effect-free and
+// return a typed Value rather than an envelope, so the discarded
+// envelope carries no information the script could observe. A
+// handler failure is an evaluation error cited at PureCallExpr's
+// Span, not a captured result the caller could inspect.
+type PureCallExpr struct {
+	Name string
+	Args []Expr
+	Span
+}
+
 func (*LiteralExpr) exprNode()      {}
 func (*VarRefExpr) exprNode()       {}
 func (*AdapterExpr) exprNode()      {}
@@ -182,6 +202,7 @@ func (*NotExpr) exprNode()          {}
 func (*NegateExpr) exprNode()       {}
 func (*TimeoutExpr) exprNode()      {}
 func (*IterationExpr) exprNode()    {}
+func (*PureCallExpr) exprNode()     {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand dispatches top-level
@@ -1056,9 +1077,47 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalTimeoutExpr(e, env)
 	case *IterationExpr:
 		return evalIterationExpr(e, env)
+	case *PureCallExpr:
+		return dispatchPureCall(e, env)
 	default:
 		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
 	}
+}
+
+// dispatchPureCall evaluates the pure-builtin call's arguments,
+// hands them to ExecBind (the same dispatch path the '<-' form
+// uses) with the builtin name prepended, then returns the
+// primary Value. The result envelope is discarded because pure
+// builtins are by contract side-effect-free and have no failure
+// state worth capturing; a handler error halts the expression.
+func dispatchPureCall(e *PureCallExpr, env *Env) (Value, error) {
+	if env.ExecBind == nil {
+		return Value{}, spanErrorf(e.Span, "%s: pure-builtin calls require an active command dispatcher", e.Name)
+	}
+	args := make([]Arg, 0, len(e.Args)+1)
+	args = append(args, WordArg{Text: e.Name, Span: e.Span})
+	for _, a := range e.Args {
+		v, err := EvalExpr(a, env)
+		if err != nil {
+			return Value{}, err
+		}
+		arg, err := valueToArg(v, nodeSpan(a))
+		if err != nil {
+			return Value{}, spanErrorf(nodeSpan(a), "%s: %v", e.Name, err)
+		}
+		args = append(args, arg)
+	}
+	result, err := env.ExecBind(args, e.Span)
+	if err != nil {
+		return Value{}, frameAtSpan(e.Span, err)
+	}
+	if !result.Rc.OK {
+		if result.Rc.Stderr != "" {
+			return Value{}, spanErrorf(e.Span, "%s: %s", e.Name, result.Rc.Stderr)
+		}
+		return Value{}, spanErrorf(e.Span, "%s: call failed (exit %d)", e.Name, result.Rc.Code)
+	}
+	return result.Primary, nil
 }
 
 // evalLogical evaluates 'and' / 'or' with short-circuit
