@@ -43,7 +43,7 @@ let want = $n * $weight
 
 let sentinel = "/tmp/bpfman-shell-kprobe.go"
 let ack      = "/tmp/bpfman-shell-kprobe.ack"
-let _ <- rm -f "${sentinel}.1" "${ack}.1"
+rm -f "${sentinel}.1" "${ack}.1"
 
 # Start the worker. It blocks on ${sentinel}.1; we have a known
 # PID we can pin into the BPF program before the worker fires
@@ -149,4 +149,4 @@ assert $delta == 0
 bpfman program unload $pid
 assert fail bpfman program get $prog
 
-let _ <- rm -f "${sentinel}.1" "${ack}.1"
+rm -f "${sentinel}.1" "${ack}.1"

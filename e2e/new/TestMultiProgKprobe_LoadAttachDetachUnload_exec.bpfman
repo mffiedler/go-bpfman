@@ -25,7 +25,7 @@ let sentinel = "/tmp/bpfman-shell-mkp-exec.go"
 let ack      = "/tmp/bpfman-shell-mkp-exec.ack"
 
 # Cleanup any leftover sentinels from a prior run.
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n $waves
 defer kill --signal=KILL $work
@@ -130,4 +130,4 @@ assert $count_c == $want_c
 # before the deferred program-unloads fire.
 exec bpfman link detach $link_a_id
 
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"

@@ -51,7 +51,7 @@ let ack      = "/tmp/bpfman-shell-mfe.ack"
 # Cleanup any leftover sentinels from a prior run. We know the
 # wave count statically, so listing the paths is enough -- no need
 # for a shell glob.
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 # Start the worker. Stable PID across all 3 waves.
 
@@ -159,4 +159,4 @@ assert $count_c == $want_c
 # refuses to unload).
 bpfman link detach $link_a
 
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"

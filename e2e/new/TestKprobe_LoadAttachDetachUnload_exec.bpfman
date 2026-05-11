@@ -45,7 +45,7 @@ let want = $n * $weight
 
 let sentinel = "/tmp/bpfman-shell-kprobe-exec.go"
 let ack      = "/tmp/bpfman-shell-kprobe-exec.ack"
-let _ <- rm -f "${sentinel}.1" "${ack}.1"
+rm -f "${sentinel}.1" "${ack}.1"
 
 guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
 defer kill --signal=KILL $work
@@ -141,4 +141,4 @@ exec bpfman program unload $pid
 let get_after <- exec bpfman program get $pid -o json
 assert not $get_after.ok
 
-let _ <- rm -f "${sentinel}.1" "${ack}.1"
+rm -f "${sentinel}.1" "${ack}.1"

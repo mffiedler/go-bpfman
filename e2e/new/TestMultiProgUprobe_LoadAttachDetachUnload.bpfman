@@ -44,7 +44,7 @@ let weight_c = 43
 let sentinel = "/tmp/bpfman-shell-mup.go"
 let ack      = "/tmp/bpfman-shell-mup.ack"
 
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 # Resolve the absolute path to the bpfman-shell binary so the
 # uprobe target path is independent of the script's cwd. printf
@@ -147,4 +147,4 @@ assert $count_c == $want_c
 # before the deferred program-unloads fire.
 bpfman link detach $link_a
 
-let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
