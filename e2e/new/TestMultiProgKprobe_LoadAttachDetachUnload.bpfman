@@ -48,7 +48,7 @@ let ack      = "/tmp/bpfman-shell-mkp.ack"
 rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
 # Start the worker. Stable PID across all 3 waves.
-guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n $waves
+guard work <- fire unlinkat $sentinel $ack --count $n --waves $waves
 defer kill --signal=KILL $work
 
 # Load all three kprobe programs from one object file. The new

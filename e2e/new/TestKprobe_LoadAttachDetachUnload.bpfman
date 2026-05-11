@@ -47,8 +47,9 @@ rm -f "${sentinel}.1" "${ack}.1"
 
 # Start the worker. It blocks on ${sentinel}.1; we have a known
 # PID we can pin into the BPF program before the worker fires
-# anything.
-guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
+# anything. fire unlinkat is the typed wrapper for the
+# BPFMAN_SHELL_MODE=unlinkat-fire-worker dispatch.
+guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
 defer kill --signal=KILL $work
 
 # Load the kprobe program with the worker PID baked in so only the

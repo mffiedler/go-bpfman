@@ -50,17 +50,11 @@ let ack      = "/tmp/bpfman-shell-muret.ack"
 
 rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
 
-# Resolve the absolute path to the bpfman-shell binary so the
-# uprobe target path is independent of the script's cwd. printf
-# strips the trailing newline that readlink writes, which would
-# otherwise embed a literal newline in the captured stdout that
-# bpfman would then choke on.
-guard shell_bin <- exec sh -c 'printf %s "$(command -v bpfman-shell)"'
-
-# Start the worker. `start env BPFMAN_SHELL_MODE=...` uses the
-# busybox-style env(1) to set the mode env var without needing a
-# shell wrapper. Stable PID across all 3 waves.
-guard work <- start env BPFMAN_SHELL_MODE=uprobe-fire-worker $shell_bin.stdout $sentinel $ack $n $waves
+# Start the uprobe-fire worker. fire uprobe resolves
+# /proc/self/exe at launch and publishes the path on the Job's
+# target_binary, so the uprobe attach below points at the exact
+# image the worker is running in. Stable PID across all 3 waves.
+guard work <- fire uprobe $sentinel $ack --count $n --waves $waves
 defer kill --signal=KILL $work
 
 # Load three uprobe programs from one object file.
@@ -91,9 +85,9 @@ print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
 
 # Attach each program at bpfman_shell_uprobe_call_malloc inside
 # the bpfman-shell binary the worker is running.
-guard link_a <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_a
-guard link_b <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_b
-guard link_c <- bpfman link attach uprobe --target $shell_bin.stdout -f bpfman_shell_uprobe_call_malloc $pid_c
+guard link_a <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_a
+guard link_b <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_b
+guard link_c <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_c
 
 let counter_filter = ".[0].formatted.value | tonumber"
 
