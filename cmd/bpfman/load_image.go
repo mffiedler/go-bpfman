@@ -58,7 +58,7 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		Programs []bpfman.Program
 	}
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var res loadImageResult
 
 		// Parse auth config from base64-encoded registry-auth

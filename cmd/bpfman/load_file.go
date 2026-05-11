@@ -57,7 +57,7 @@ func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 		return loadFileResult{}, err
 	}
 
-	return bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+	return bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		// Convert global data
 		var globalData map[string][]byte
 		if len(c.GlobalData) > 0 {

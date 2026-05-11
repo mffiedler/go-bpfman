@@ -31,7 +31,7 @@ func (c *UnloadCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	for i, pid := range c.ProgramIDs {
 		ids[i] = pid.Value
 	}
-	return bpfmancli.RunBatchMutation(ctx, cli, ids, "program", "unload",
+	return bpfmancli.RunBatchMutation(ctx, cli, mgr, ids, "program", "unload",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			err := mgr.Unload(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {

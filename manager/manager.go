@@ -489,10 +489,11 @@ func (m *Manager) GCRemediate(ctx context.Context, writeLock lock.WriterScope, o
 // sweep that reconciles store, kernel, and bpffs state.
 //
 // Re-entry: if the context already carries the opActiveKey marker
-// (a nested mutating call within the same outer operation), GC is
-// skipped because the outer caller already swept. The marker is
-// set before the GC call so any internal recursion sees it and
-// bails.
+// (a nested mutating call within the same outer operation, or an
+// outer caller that ran the lockless GCScan and accepted
+// responsibility for the clean-slate invariant via WithGCDone),
+// GC is skipped. The marker is set before the GC call so any
+// internal recursion sees it and bails.
 //
 // computeStoreGC has its own gate on kernel-enumeration
 // completeness inside ComputeGC; partial enumeration skips the
@@ -511,4 +512,19 @@ func (m *Manager) gcOnEntry(ctx context.Context, writeLock lock.WriterScope) (co
 		return ctx, err
 	}
 	return ctx, nil
+}
+
+// WithGCDone marks ctx so subsequent gcOnEntry calls within the
+// same manager operation short-circuit. Callers that ran the
+// lockless GCScan plus conditional GCRemediate themselves (the
+// bpfmancli.RunMutation helper, the CLI mutation handlers) use
+// this to declare "the clean-slate invariant is established;
+// don't pay for it again under my writer lock". The marker is
+// honoured by every mutating manager method that flows through
+// gcOnEntry.
+func WithGCDone(ctx context.Context) context.Context {
+	if ctx.Value(opActiveKey{}) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, opActiveKey{}, true)
 }

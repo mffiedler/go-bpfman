@@ -56,7 +56,7 @@ func executeDeletePrograms(ctx context.Context, cli *bpfmancli.CLI, mgr *manager
 	}
 	results := make([]result, 0, len(ids))
 
-	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := bpfmancli.RunMutation(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range ids {
 			err := deleteProgram(ctx, writeLock, mgr, id, recursive)
 			results = append(results, result{id: id, err: err})

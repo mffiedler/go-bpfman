@@ -37,7 +37,7 @@ func runAttach(cli *bpfmancli.CLI, ctx context.Context, flags *cliformat.OutputF
 	}
 	defer cleanup()
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
+	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (attachResult, error) {
 		return fn(ctx, mgr, writeLock)
 	})
 	if err != nil {

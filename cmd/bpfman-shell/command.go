@@ -496,7 +496,7 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return shell.Value{}, err
 	}
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
+	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
 			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
@@ -1280,7 +1280,7 @@ func parseLinkAttachFexit(args []shell.Arg) (*LinkAttachCommand, error) {
 // BPF program under lock, printing output, and returning a structured
 // Value for optional variable assignment.
 func execLinkAttach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkAttachCommand) (shell.Value, error) {
-	link, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
+	link, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (bpfman.Link, error) {
 		return mgr.Attach(ctx, writeLock, cmd.Spec)
 	})
 	if err != nil {
@@ -1333,7 +1333,7 @@ func parseLinkDetach(args []shell.Arg) (*LinkDetachCommand, error) {
 // execLinkDetach executes a parsed LinkDetachCommand, detaching each
 // link under lock.
 func execLinkDetach(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *LinkDetachCommand) error {
-	return bpfmancli.RunBatchMutation(ctx, cli, cmd.LinkIDs, "link", "detach",
+	return bpfmancli.RunBatchMutation(ctx, cli, mgr, cmd.LinkIDs, "link", "detach",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
 			return mgr.Detach(ctx, writeLock, id)
 		})
@@ -1485,7 +1485,7 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		Programs []bpfman.Program
 	}
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
+	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
 		var globalData map[string][]byte
 		if len(cmd.GlobalData) > 0 {
 			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
@@ -1759,7 +1759,7 @@ func parseUnloadProgram(args []shell.Arg) (*UnloadProgramCommand, error) {
 // execUnloadProgram executes a parsed UnloadProgramCommand, unloading
 // each program under lock.
 func execUnloadProgram(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *UnloadProgramCommand) error {
-	return bpfmancli.RunBatchMutation(ctx, cli, cmd.ProgramIDs, "program", "unload",
+	return bpfmancli.RunBatchMutation(ctx, cli, mgr, cmd.ProgramIDs, "program", "unload",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.ProgramID) error {
 			return mgr.Unload(ctx, writeLock, id)
 		})
@@ -1891,7 +1891,7 @@ func execDeleteLink(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 	}
 	results := make([]result, 0, len(cmd.LinkIDs))
 
-	lockErr := bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := bpfmancli.RunMutation(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range cmd.LinkIDs {
 			err := deleteLink(ctx, writeLock, mgr, id, cmd.Recursive)
 			results = append(results, result{id: id, err: err})
@@ -2361,7 +2361,7 @@ func parseDispatcherDelete(args []shell.Arg) (*DispatcherDeleteCommand, error) {
 // execDispatcherDelete executes a parsed DispatcherDeleteCommand,
 // deleting the dispatcher under lock.
 func execDispatcherDelete(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherDeleteCommand) error {
-	return bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	return bpfmancli.RunMutation(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, cmd.Key)
 	})
 }
