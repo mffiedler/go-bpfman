@@ -1,6 +1,12 @@
 package shell
 
-import "sync"
+import (
+	"fmt"
+	"hash/fnv"
+	"os"
+	"sync"
+	"sync/atomic"
+)
 
 // NetPair is the user-visible handle for a paired-veth single-netns
 // topology built by `net veth-pair`. The five string fields are
@@ -89,4 +95,41 @@ func ValueFromNetPair(p *NetPair) Value {
 		"peer_addr": p.PeerAddr,
 	}
 	return Value{v: mirror, origin: p, kind: OriginNetPair}
+}
+
+// linkNameSeq is the process-local atomic counter feeding
+// uniqueLinkBase. PID plus counter is hashed to produce a 12-hex
+// identifier, so two parallel processes (different PIDs) and two
+// sequential calls within the same process (different counters)
+// always produce distinct bases.
+var linkNameSeq atomic.Uint64
+
+// uniqueLinkBase returns a 14-character identifier suitable for use
+// as the shared base of a veth-pair plus netns trio. The format is
+// "B<12 hex>N" -- the leading "B" and trailing "N" are the first and
+// last letters of "bpfman" so a stray name is recognisable as our
+// allocation. The total length leaves exactly one character of
+// headroom under Linux IFNAMSIZ (15), so a per-end suffix like "a"
+// or "b" still fits the host- and peer-side veth names.
+//
+// Borrowed verbatim from e2e/helpers.go's uniqueTestName; the e2e
+// suite and bpfman-shell now share the same name shape so a
+// breadcrumb in /sys/class/net or /run/netns is attributable from
+// either side.
+func uniqueLinkBase() string {
+	n := linkNameSeq.Add(1)
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%d:%d", os.Getpid(), n)
+	return fmt.Sprintf("B%012xN", h.Sum64()&0xffffffffffff)
+}
+
+// GenerateTopologyNames returns a trio of unique names suitable for
+// `net veth-pair`'s auto-naming mode. The netns name is the bare
+// 14-character base; the host- and peer-side veth names are the
+// base with "a" and "b" suffixes (15 chars each, IFNAMSIZ-safe).
+// The three names share a base so a script that prints any one of
+// them can be cross-referenced to its peers visually.
+func GenerateTopologyNames() (ns, hostLink, peerLink string) {
+	base := uniqueLinkBase()
+	return base, base + "a", base + "b"
 }

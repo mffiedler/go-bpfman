@@ -91,8 +91,10 @@ func ensureNetPair(a shell.Arg) (*shell.NetPair, error) {
 // HostAddrCIDR / PeerAddrCIDR are the full prefix forms the
 // caller passed via --host-addr / --peer-addr; HostAddr /
 // PeerAddr are the matching bare addresses. Both pairs are empty
-// in auto mode (Auto == true), where the address pool fills them
-// in at acquire time.
+// in auto-address mode (AutoAddrs == true), where the address
+// pool fills them in at acquire time. Ns / HostLink / PeerLink
+// are empty in auto-naming mode (AutoNames == true), where
+// shell.GenerateTopologyNames fills them in at handler entry.
 type vethPairFlags struct {
 	Ns           string
 	HostLink     string
@@ -102,21 +104,38 @@ type vethPairFlags struct {
 	PeerAddrCIDR string
 	PeerAddr     string
 
-	// Auto is true when neither --host-addr nor --peer-addr was
-	// passed; the pool allocates a /30 in that case. Auto and
-	// the explicit-address fields are mutually exclusive: passing
+	// AutoAddrs is true when neither --host-addr nor --peer-addr
+	// was passed; the pool allocates a /30 in that case. Passing
 	// exactly one of --host-addr / --peer-addr is a parse error.
-	Auto bool
+	AutoAddrs bool
+
+	// AutoNames is true when none of --ns / --host-link /
+	// --peer-link were passed; the handler then derives all three
+	// from shell.GenerateTopologyNames so two concurrent runs of
+	// the same script do not collide on identity. Passing any
+	// proper subset is a parse error: the three identity flags
+	// move together.
+	AutoNames bool
 }
 
 // parseVethPairFlags walks `net veth-pair`'s arg list, accepting
 // both the `--name=value` and `--name value` spellings for each
-// flag (matching fire's convention). --ns, --host-link, and
-// --peer-link are required. --host-addr / --peer-addr are
-// optional but mutually-required: pass both for explicit-address
-// mode or neither for pool-allocated auto mode. Unknown flags
-// and positional arguments are rejected with the offending token
-// quoted so the user can correct it.
+// flag (matching fire's convention).
+//
+// All five flags are optional but split into two mutually-
+// required groups so partial specifications are caught early:
+//
+//   - Identity group: --ns, --host-link, --peer-link. Pass all
+//     three for explicit naming, none for pool-derived auto
+//     naming (the handler then calls
+//     shell.GenerateTopologyNames).
+//   - Address group: --host-addr, --peer-addr. Pass both for
+//     explicit addressing, neither for pool-allocated /30.
+//
+// The groups are independent: explicit addresses with auto names
+// (or vice versa) are both valid. Unknown flags and positional
+// arguments are rejected with the offending token quoted so the
+// user can correct it.
 func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 	var f vethPairFlags
 	for i := 0; i < len(args); {
@@ -174,23 +193,33 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 		}
 	}
 
-	missing := []string{}
-	if f.Ns == "" {
-		missing = append(missing, "--ns")
+	// Identity group: --ns / --host-link / --peer-link must move
+	// together. Count populated flags; 0 = auto-naming, 3 =
+	// explicit, anything else is a partial spec and rejected.
+	nameCount := 0
+	if f.Ns != "" {
+		nameCount++
 	}
-	if f.HostLink == "" {
-		missing = append(missing, "--host-link")
+	if f.HostLink != "" {
+		nameCount++
 	}
-	if f.PeerLink == "" {
-		missing = append(missing, "--peer-link")
+	if f.PeerLink != "" {
+		nameCount++
 	}
-	if len(missing) > 0 {
-		return f, fmt.Errorf("missing required flag(s): %s", strings.Join(missing, ", "))
+	switch nameCount {
+	case 0:
+		f.AutoNames = true
+	case 3:
+		// explicit naming, nothing to fill in
+	default:
+		given, missing := identityFlagsBreakdown(f)
+		return f, fmt.Errorf("--ns / --host-link / --peer-link must be passed together or all omitted (got %s; missing %s)", given, missing)
 	}
 
+	// Address group: same shape, two flags.
 	switch {
 	case f.HostAddrCIDR == "" && f.PeerAddrCIDR == "":
-		f.Auto = true
+		f.AutoAddrs = true
 	case f.HostAddrCIDR != "" && f.PeerAddrCIDR != "":
 		bare, err := parseIPv4Prefix(f.HostAddrCIDR)
 		if err != nil {
@@ -208,6 +237,30 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 		return f, fmt.Errorf("--host-addr was given without --peer-addr (pass both for explicit-address mode or neither for auto mode)")
 	}
 	return f, nil
+}
+
+// identityFlagsBreakdown reports which identity flags were given
+// and which were missing, formatted for the parse-error message
+// when the group is partially specified. Reading the message
+// makes the fix obvious without forcing the user to re-scan their
+// argv.
+func identityFlagsBreakdown(f vethPairFlags) (given, missing string) {
+	pairs := []struct {
+		name, val string
+	}{
+		{"--ns", f.Ns},
+		{"--host-link", f.HostLink},
+		{"--peer-link", f.PeerLink},
+	}
+	var givenNames, missingNames []string
+	for _, p := range pairs {
+		if p.val != "" {
+			givenNames = append(givenNames, p.name)
+		} else {
+			missingNames = append(missingNames, p.name)
+		}
+	}
+	return strings.Join(givenNames, ", "), strings.Join(missingNames, ", ")
 }
 
 // parseIPv4Prefix validates s as an IPv4 prefix in CIDR form and
@@ -242,12 +295,20 @@ func handleNetVethPair(ctx context.Context, origin string, args []shell.Arg) (sh
 		return shell.Value{}, fmt.Errorf("net veth-pair: %w", err)
 	}
 
+	// Auto-naming runs before pool acquisition so the slot's
+	// provenance body records the names the next acquirer's leak
+	// check will compare against. The pool's flock + released_at
+	// is what protects ordering; the identity is just the label.
+	if f.AutoNames {
+		f.Ns, f.HostLink, f.PeerLink = shell.GenerateTopologyNames()
+	}
+
 	var lease *shell.PoolLease
 	hostCIDR := f.HostAddrCIDR
 	peerCIDR := f.PeerAddrCIDR
 	hostAddr := f.HostAddr
 	peerAddr := f.PeerAddr
-	if f.Auto {
+	if f.AutoAddrs {
 		lease, err = shell.AcquirePoolSlot(ctx, shell.PoolAcquireRequest{
 			Origin:    origin,
 			NsName:    f.Ns,

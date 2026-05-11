@@ -88,11 +88,12 @@ func TestParseVethPairFlags_ExplicitMode_BothSpellings(t *testing.T) {
 		assert.Equal(t, "198.51.100.2/32", f.PeerAddrCIDR)
 		assert.Equal(t, "198.51.100.1", f.HostAddr)
 		assert.Equal(t, "198.51.100.2", f.PeerAddr)
-		assert.Falsef(t, f.Auto, "explicit-address args should not flip Auto")
+		assert.Falsef(t, f.AutoAddrs, "explicit-address args should not flip AutoAddrs")
+		assert.Falsef(t, f.AutoNames, "explicit-name args should not flip AutoNames")
 	}
 }
 
-func TestParseVethPairFlags_AutoMode_NoAddrFlags(t *testing.T) {
+func TestParseVethPairFlags_AutoAddrs_NoAddrFlags(t *testing.T) {
 	t.Parallel()
 	args := []string{"--ns=ns0", "--host-link=h0", "--peer-link=p0"}
 	wargs := make([]shell.Arg, len(args))
@@ -101,11 +102,69 @@ func TestParseVethPairFlags_AutoMode_NoAddrFlags(t *testing.T) {
 	}
 	f, err := parseVethPairFlags(wargs)
 	require.NoError(t, err)
-	assert.True(t, f.Auto, "no addr flags should select auto mode")
+	assert.True(t, f.AutoAddrs, "no addr flags should select auto-addresses")
+	assert.False(t, f.AutoNames, "explicit names should not flip AutoNames")
 	assert.Empty(t, f.HostAddrCIDR)
 	assert.Empty(t, f.PeerAddrCIDR)
 	assert.Empty(t, f.HostAddr)
 	assert.Empty(t, f.PeerAddr)
+}
+
+func TestParseVethPairFlags_AutoNames_NoIdentityFlags(t *testing.T) {
+	t.Parallel()
+	args := []string{"--host-addr=198.51.100.1/30", "--peer-addr=198.51.100.2/30"}
+	wargs := make([]shell.Arg, len(args))
+	for i, a := range args {
+		wargs[i] = shell.WordArg{Text: a}
+	}
+	f, err := parseVethPairFlags(wargs)
+	require.NoError(t, err)
+	assert.True(t, f.AutoNames, "no identity flags should select auto-naming")
+	assert.False(t, f.AutoAddrs, "explicit addresses should not flip AutoAddrs")
+	assert.Empty(t, f.Ns)
+	assert.Empty(t, f.HostLink)
+	assert.Empty(t, f.PeerLink)
+}
+
+func TestParseVethPairFlags_AutoEverything_NoFlags(t *testing.T) {
+	t.Parallel()
+	f, err := parseVethPairFlags(nil)
+	require.NoError(t, err, "an empty arg list should select auto-naming and auto-addresses")
+	assert.True(t, f.AutoNames)
+	assert.True(t, f.AutoAddrs)
+	assert.Empty(t, f.Ns)
+	assert.Empty(t, f.HostLink)
+	assert.Empty(t, f.PeerLink)
+	assert.Empty(t, f.HostAddrCIDR)
+	assert.Empty(t, f.PeerAddrCIDR)
+}
+
+func TestParseVethPairFlags_PartialIdentityGroupIsError(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"only_ns", []string{"--ns=ns0"}, "--ns"},
+		{"only_host_link", []string{"--host-link=h0"}, "--host-link"},
+		{"only_peer_link", []string{"--peer-link=p0"}, "--peer-link"},
+		{"ns_and_host_link", []string{"--ns=ns0", "--host-link=h0"}, "--peer-link"},
+		{"ns_and_peer_link", []string{"--ns=ns0", "--peer-link=p0"}, "--host-link"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			wargs := make([]shell.Arg, len(c.args))
+			for i, a := range c.args {
+				wargs[i] = shell.WordArg{Text: a}
+			}
+			_, err := parseVethPairFlags(wargs)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be passed together or all omitted")
+			assert.Contains(t, err.Error(), c.want)
+		})
+	}
 }
 
 func TestParseVethPairFlags_HostAddrAloneIsError(t *testing.T) {
@@ -144,22 +203,6 @@ func TestParseVethPairFlags_NoRoutesFlagIsUnknown(t *testing.T) {
 	_, err := parseVethPairFlags(wargs)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown flag "--no-routes"`)
-}
-
-func TestParseVethPairFlags_MissingRequiredFlags(t *testing.T) {
-	t.Parallel()
-	wargs := []shell.Arg{
-		shell.WordArg{Text: "--ns=ns0"},
-	}
-	_, err := parseVethPairFlags(wargs)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing required flag(s)")
-	assert.Contains(t, err.Error(), "--host-link")
-	assert.Contains(t, err.Error(), "--peer-link")
-	assert.NotContains(t, err.Error(), "--host-addr",
-		"--host-addr is optional and must not appear in the missing-required list")
-	assert.NotContains(t, err.Error(), "--peer-addr",
-		"--peer-addr is optional and must not appear in the missing-required list")
 }
 
 func TestParseVethPairFlags_BareAddressRejected(t *testing.T) {

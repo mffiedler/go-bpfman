@@ -30,9 +30,7 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-guard pair <- net veth-pair --ns=bpfsh-mtcxok \
-    --host-link=vea-mtcxok \
-    --peer-link=veb-mtcxok
+guard pair <- net veth-pair
 defer net release $pair
 
 
