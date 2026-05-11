@@ -87,7 +87,7 @@
                  "bpfman"
                  ;; shell-language builtins
                  "alias" "aliases" "assert" "defs" "exec" "file"
-                 "help" "jq" "print" "require" "source"
+                 "help" "jq" "print" "range" "require" "source"
                  "unalias" "undef" "unset" "vars" "version"))
       (puthash w t ht))
     ht)

@@ -325,6 +325,57 @@ let total = $a + $b
 let ok = $count > 0
 ```
 
+#### Pure-builtin calls in expression position
+
+A pure builtin (`range`, `u32le`, `u64le`, `jq`, ...) is
+deterministic and side-effect-free, so the `=` form invokes
+one directly with its name followed by the registered number
+of primary arguments:
+
+```
+let pid_le = u32le $work.pid
+let wt_le  = u64le $weight
+let xs     = range 5
+foreach i in (range 5) { print "i=${i}" }
+```
+
+The inline call also works inside `${...}` string interpolation,
+which removes the intermediate `let` for one-shot encodings:
+
+```
+guard loaded <- bpfman program load file ...        \
+    -g "expected_pid=0x${u32le $work.pid}"          \
+    -g "weight=0x${u64le $weight}"
+```
+
+The `<-` form is rejected for pure builtins. A bind captures
+a result envelope plus a primary; pure builtins produce no
+envelope, so a single-name bind would fabricate an empty rc
+and a tuple bind would name a fake one. The static checker
+emits a clear hint that rewrites the line to `=`:
+
+```
+let x <- u32le 5
+        ^^^^^^^^ u32le is a pure builtin;
+                 use 'let x = u32le ...' rather than '<-'
+```
+
+Failure semantics: a pure-builtin call that fails (negative
+input to `u32le`, malformed jq filter, out-of-range `range`)
+is an evaluation error. The script halts in script mode the
+same way any other expression error halts -- there is no
+captured envelope to inspect for `ok: false`.
+
+Argument consumption is primary-only -- literals, varrefs,
+parenthesised sub-expressions -- so a trailing operator
+binds to the surrounding expression (`range 5 + 1` is
+`(range 5) + 1`), and nested calls require explicit parens
+(`u32le (jq ".x" $v)`).
+
+Effectful builtins (`start`, `wait`, `kill`, `exec`) are not
+in the pure-builtin registry; they remain unrepresentable in
+expression position by construction.
+
 ### 6.2 `<-` for command results
 
 The RHS of `<-` is a command form. Every command yields a
