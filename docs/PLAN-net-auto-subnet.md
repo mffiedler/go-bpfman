@@ -217,11 +217,12 @@ kernel releases the flock. Finally set `pair.Released = true`.
 Subsequent calls short-circuit at the `Released` latch. The
 teardown happens before the provenance write so the body
 records the canonical "what was released" payload. The flock
-release happens before the `Released` flip so a concurrent
-re-acquire by another process sees a freshly-released slot,
-not a slot held by an "open" handle. The `Released` flip is
-the final gate; once set, no further work happens against
-this handle.
+release happens before the `Released` flip so the slot becomes
+externally available before subsequent operations on the local
+handle start short-circuiting. `Released` is a process-local
+guard only; cross-process visibility comes entirely from the
+flock lifetime and the provenance file. Once `Released` is
+set, no further work happens against this handle.
 
 Explicit mode skips the provenance write and the lockfile
 close entirely: no slot, no flock to release.
