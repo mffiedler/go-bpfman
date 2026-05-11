@@ -106,8 +106,12 @@ enough to do this without re-reading flags.
 `net exec` runs a command in the handle's netns synchronously and
 returns a captured-result Envelope, mirroring the existing `exec`
 builtin's shape. The current corpus uses this exclusively: `net
-exec $pair ping -c $n -i 0.05 -W 1 $pair.peer_addr` reads as one
-statement without the script naming the netns separately.
+exec $pair ping -c $n -i 0.05 -W 1 $pair.host_addr` reads as one
+statement without the script naming the netns separately. The
+ping originates inside the peer netns and targets the host side,
+so the destination is `host_addr`; `peer_addr` is what the script
+would hand to a command running on the host that wants to reach
+into the netns.
 
 `net start` is the asynchronous sibling, returning a Job. It
 matches `start`'s shape: process-group leader, captured streams,
@@ -343,7 +347,7 @@ Three commits, mirroring the fire arc:
    `TestMultiProg{TC,TCX,XDP}_*.bpfman` scripts. The
    nineteen-line `ip` block collapses into the
    `net veth-pair` + `defer net release` pair; the ping line
-   becomes `net exec $pair ping ... $pair.peer_addr`; the BPF
+   becomes `net exec $pair ping ... $pair.host_addr`; the BPF
    attach uses `$pair.host_link`. Expected diff: ~150 lines
    removed across the corpus, no behavioural change.
 
