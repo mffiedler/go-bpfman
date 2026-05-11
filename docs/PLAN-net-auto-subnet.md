@@ -117,12 +117,17 @@ for no realistic gain at the corpus's scale.
 
 ## 7. Cross-process coordination via flock(2)
 
-The pool lives at `/run/bpfman-net-pool/`. Each slot has its
-own lockfile (`01.lock` through `64.lock`). Acquiring a slot
-means opening the lockfile and taking `flock(LOCK_EX|LOCK_NB)`.
-The kernel releases the flock when the holding process exits,
-including under `kill -9`, so the pool is self-cleaning against
-crashes without a daemon or a cleanup script.
+The pool lives at `/run/bpfman-net-pool/` and is global per
+host. All bpfman-shell processes on the same machine coordinate
+through the same pool directory: interactive sessions, GNU
+parallel runners, and ad-hoc debugging coexist safely because
+they share the flock arbitration over the same set of
+lockfiles. Each slot has its own lockfile (`01.lock` through
+`64.lock`). Acquiring a slot means opening the lockfile and
+taking `flock(LOCK_EX|LOCK_NB)`. The kernel releases the flock
+when the holding process exits, including under `kill -9`, so
+the pool is self-cleaning against crashes without a daemon or a
+cleanup script.
 
 Each lockfile's body is a small JSON document carrying
 provenance: `test_name`, `ns_name`, `link_a_name`,
