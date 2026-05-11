@@ -15,10 +15,12 @@ import (
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
-// Load implements the Load RPC method.
+// Load implements the Load RPC method. Lockless by construction
+// (docs/PLAN-load-lockless.md): the kernel allocates each program a
+// unique id, the bytecode dir is namespaced by that id, and the
+// sqlite commit is one transaction at the end. The daemon does not
+// acquire the writer flock for Load.
 func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadResponse, error) {
-	writeLock := WriteLockFromContext(ctx)
-
 	if req.Bytecode == nil {
 		return nil, status.Error(codes.InvalidArgument, "bytecode location is required")
 	}
@@ -95,7 +97,7 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 	}
 
 	// Call Load with ShareMaps enabled for multi-program loads
-	loaded, err := s.mgr.Load(ctx, writeLock, source, programs, manager.LoadOpts{
+	loaded, err := s.mgr.Load(ctx, source, programs, manager.LoadOpts{
 		UserMetadata: req.Metadata,
 		GlobalData:   req.GlobalData,
 		Owner:        "bpfman",

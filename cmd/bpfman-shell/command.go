@@ -496,44 +496,43 @@ func execLoadFile(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return shell.Value{}, err
 	}
 
-	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
-		var globalData map[string][]byte
-		if len(cmd.GlobalData) > 0 {
-			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
-		}
+	// load is lockless by construction (docs/PLAN-load-lockless.md):
+	// the kernel BPF_PROG_LOAD, bytecode publish, and single
+	// sqlite commit transaction all run without acquiring the
+	// writer flock.
+	var globalData map[string][]byte
+	if len(cmd.GlobalData) > 0 {
+		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
+	}
 
-		metadata := bpfmancli.MetadataMap(cmd.Metadata)
-		if cmd.Application != "" {
-			if metadata == nil {
-				metadata = make(map[string]string)
-			}
-			metadata["bpfman.io/application"] = cmd.Application
+	metadata := bpfmancli.MetadataMap(cmd.Metadata)
+	if cmd.Application != "" {
+		if metadata == nil {
+			metadata = make(map[string]string)
 		}
+		metadata["bpfman.io/application"] = cmd.Application
+	}
 
-		var programs []manager.ProgramSpec
-		for _, prog := range cmd.Programs {
-			programs = append(programs, manager.ProgramSpec{
-				Name:       prog.Name,
-				Type:       prog.Type,
-				AttachFunc: prog.AttachFunc,
-				MapOwnerID: cmd.MapOwnerID,
-			})
-		}
-
-		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
-			FilePath: objPath.Path,
-		}, programs, manager.LoadOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
+	var programs []manager.ProgramSpec
+	for _, prog := range cmd.Programs {
+		programs = append(programs, manager.ProgramSpec{
+			Name:       prog.Name,
+			Type:       prog.Type,
+			AttachFunc: prog.AttachFunc,
+			MapOwnerID: cmd.MapOwnerID,
 		})
-		if loadErr != nil {
-			return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
-		}
-		return loadFileResult{Programs: loaded}, nil
+	}
+
+	loaded, err := mgr.Load(ctx, manager.LoadSource{
+		FilePath: objPath.Path,
+	}, programs, manager.LoadOpts{
+		UserMetadata: metadata,
+		GlobalData:   globalData,
 	})
 	if err != nil {
-		return shell.Value{}, err
+		return shell.Value{}, fmt.Errorf("failed to load programs: %w", err)
 	}
+	result := loadFileResult{Programs: loaded}
 
 	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {
@@ -1485,64 +1484,63 @@ func execLoadImage(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager
 		Programs []bpfman.Program
 	}
 
-	result, err := bpfmancli.RunMutationValue(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
-		var globalData map[string][]byte
-		if len(cmd.GlobalData) > 0 {
-			globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
-		}
+	// load is lockless by construction (docs/PLAN-load-lockless.md):
+	// the OCI pull, kernel BPF_PROG_LOAD, bytecode publish, and
+	// single sqlite commit transaction all run without acquiring
+	// the writer flock.
+	var globalData map[string][]byte
+	if len(cmd.GlobalData) > 0 {
+		globalData = bpfmancli.GlobalDataMap(cmd.GlobalData)
+	}
 
-		metadata := bpfmancli.MetadataMap(cmd.Metadata)
-		if cmd.Application != "" {
-			if metadata == nil {
-				metadata = make(map[string]string)
-			}
-			metadata["bpfman.io/application"] = cmd.Application
+	metadata := bpfmancli.MetadataMap(cmd.Metadata)
+	if cmd.Application != "" {
+		if metadata == nil {
+			metadata = make(map[string]string)
 		}
+		metadata["bpfman.io/application"] = cmd.Application
+	}
 
-		ref := platform.ImageRef{
-			URL:        cmd.ImageURL,
-			PullPolicy: pullPolicy,
+	ref := platform.ImageRef{
+		URL:        cmd.ImageURL,
+		PullPolicy: pullPolicy,
+	}
+
+	if cmd.RegistryAuth != "" {
+		decoded, decErr := base64.StdEncoding.DecodeString(cmd.RegistryAuth)
+		if decErr != nil {
+			return shell.Value{}, fmt.Errorf("invalid registry-auth: invalid base64 encoding: %w", decErr)
 		}
-
-		if cmd.RegistryAuth != "" {
-			decoded, decErr := base64.StdEncoding.DecodeString(cmd.RegistryAuth)
-			if decErr != nil {
-				return loadImageResult{}, fmt.Errorf("invalid registry-auth: invalid base64 encoding: %w", decErr)
-			}
-			parts := strings.SplitN(string(decoded), ":", 2)
-			if len(parts) != 2 {
-				return loadImageResult{}, fmt.Errorf("invalid registry-auth: expected 'username:password' format")
-			}
-			ref.Auth = &platform.ImageAuth{
-				Username: parts[0],
-				Password: parts[1],
-			}
+		parts := strings.SplitN(string(decoded), ":", 2)
+		if len(parts) != 2 {
+			return shell.Value{}, fmt.Errorf("invalid registry-auth: expected 'username:password' format")
 		}
-
-		var programs []manager.ProgramSpec
-		for _, prog := range cmd.Programs {
-			programs = append(programs, manager.ProgramSpec{
-				Name:       prog.Name,
-				Type:       prog.Type,
-				AttachFunc: prog.AttachFunc,
-				MapOwnerID: cmd.MapOwnerID,
-			})
+		ref.Auth = &platform.ImageAuth{
+			Username: parts[0],
+			Password: parts[1],
 		}
+	}
 
-		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
-			Image: &ref,
-		}, programs, manager.LoadOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
+	var programs []manager.ProgramSpec
+	for _, prog := range cmd.Programs {
+		programs = append(programs, manager.ProgramSpec{
+			Name:       prog.Name,
+			Type:       prog.Type,
+			AttachFunc: prog.AttachFunc,
+			MapOwnerID: cmd.MapOwnerID,
 		})
-		if loadErr != nil {
-			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
-		}
-		return loadImageResult{Programs: loaded}, nil
+	}
+
+	loaded, err := mgr.Load(ctx, manager.LoadSource{
+		Image: &ref,
+	}, programs, manager.LoadOpts{
+		UserMetadata: metadata,
+		GlobalData:   globalData,
 	})
 	if err != nil {
-		return shell.Value{}, err
+		return shell.Value{}, fmt.Errorf("failed to load from image: %w", err)
 	}
+	result := loadImageResult{Programs: loaded}
 
 	output, err := cliformat.FormatLoadedPrograms(result.Programs, &cmd.Output)
 	if err != nil {

@@ -305,16 +305,13 @@ func callerOp() string {
 	return name
 }
 
-// LoadImage loads BPF programs from an OCI image.
+// LoadImage loads BPF programs from an OCI image. Lockless after v2
+// (docs/PLAN-load-lockless.md): Manager.Load does not require the
+// writer lock.
 func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
-	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
-			Image: &ref,
-		}, programs, opts)
-		return loadErr
-	})
+	result, err := e.Manager.Load(ctx, manager.LoadSource{
+		Image: &ref,
+	}, programs, opts)
 	if err == nil {
 		e.trackPrograms(result)
 	}
@@ -327,18 +324,16 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 // which the embedded testdata/bpf/ tree is materialised at
 // NewTestEnv. This lets call sites keep their historical
 // "testdata/bpf/foo.bpf.o" form regardless of cwd.
+//
+// Lockless after v2 (docs/PLAN-load-lockless.md): Manager.Load
+// does not require the writer lock.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(e.baseDir, filePath)
 	}
-	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
-			FilePath: filePath,
-		}, programs, opts)
-		return loadErr
-	})
+	result, err := e.Manager.Load(ctx, manager.LoadSource{
+		FilePath: filePath,
+	}, programs, opts)
 	if err == nil {
 		e.trackPrograms(result)
 	}
