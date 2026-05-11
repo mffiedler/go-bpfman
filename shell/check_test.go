@@ -523,8 +523,10 @@ func TestCheck_KindFieldAccess_UnknownKindIsPermissive(t *testing.T) {
 
 	// 'jq' returns OriginUnknown so any field access is
 	// allowed. Same for 'bpfman' subcommands and 'file'
-	// whose shapes are not yet enumerated.
-	src := `guard data <- jq "." '{"x":1}'
+	// whose shapes are not yet enumerated. jq is a pure
+	// builtin so the expression-position '=' form is the
+	// only legal call shape.
+	src := `let data = jq "." '{"x":1}'
 print $data.anything.we.want`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)
@@ -588,8 +590,9 @@ func TestCheck_KindFieldAccess_UnknownBindIsPermissive(t *testing.T) {
 
 	// jq returns a value the static checker has no shape for,
 	// so $data.anything.deep is permitted: the alternative is
-	// false positives on every dynamic structure.
-	src := `guard data <- jq "." '{"x":{"y":1}}'
+	// false positives on every dynamic structure. jq is a pure
+	// builtin invoked in expression position.
+	src := `let data = jq "." '{"x":{"y":1}}'
 print $data.x.y.z`
 	issues := checkSource(t, src)
 	assert.Empty(t, issues)

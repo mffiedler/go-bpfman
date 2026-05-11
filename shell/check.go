@@ -343,6 +343,45 @@ func inferBpfmanBindShape(args []Expr) Shape {
 	return Shape{Sealed: false, Kind: OriginUnknown}
 }
 
+// bindHeadPureBuiltin reports whether cmd's first word is a
+// registered pure builtin (after alias expansion). The hint
+// emitted by walkStmt cites the resolved name so a user reading
+// the diagnostic sees the same spelling the registry would.
+func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, bool) {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return "", false
+	}
+	first, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || first.Quoted {
+		return "", false
+	}
+	head := first.Text
+	if expanded, ok := aliases[head]; ok {
+		head = expanded
+	}
+	if _, ok := LookupPureBuiltin(head); ok {
+		return head, true
+	}
+	return "", false
+}
+
+// primaryNameForHint picks a placeholder for the bind-target
+// slot in the diagnostic suggestion. The user's original name
+// is reused when one was supplied; the tuple target is
+// approximated by the primary slot's name when present;
+// otherwise a generic "x" reads cleanly in the rewritten form
+// the hint suggests.
+func primaryNameForHint(n *BindStmt) string {
+	switch {
+	case n.Primary != "" && n.Primary != "_":
+		return n.Primary
+	case n.Rc != "" && n.Rc != "_":
+		return n.Rc
+	default:
+		return "x"
+	}
+}
+
 // walkStmts walks a statement list in source order. Defining
 // statements (let, bind, foreach, def) update c.defined as a
 // side effect of being walked; expression statements run
@@ -379,6 +418,14 @@ func (c *checker) walkStmt(s Stmt) {
 			for _, a := range n.Cmd.Args {
 				c.checkExpr(a)
 			}
+		}
+		// A '<-' bind on a pure builtin is rejected: pure
+		// builtins produce no result envelope, so the rc slot
+		// of '<-' (and the synthetic one a single-name bind
+		// would discard) has nothing to carry. The '=' form is
+		// the only correct call shape in binding position.
+		if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
+			c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
 		}
 		primaryShape := c.inferBindShape(n.Cmd)
 		if n.Primary != "" && n.Primary != "_" {

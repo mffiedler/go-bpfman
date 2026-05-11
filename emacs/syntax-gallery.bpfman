@@ -54,10 +54,10 @@ let path_lit   = /sys/fs/bpf/bpfman
 # come from a bpfman command, an exec capture, or a prior 'let
 # <- ...'; the placeholder shape is a self-contained substitute
 # so the gallery accepts '--check' without external context.
-guard prog     <- jq "." '{"record":{"program_id":42},"name":"demo"}'
-guard progs    <- jq "." '[{"id":1},{"id":2}]'
-guard items    <- jq "." '[{"field":"a"},{"field":"b"},{"field":"c"},{"field":"d"}]'
-guard data     <- jq "." '{"maps":[{"name":"counts"}]}'
+let prog = jq "." '{"record":{"program_id":42},"name":"demo"}'
+let progs = jq "." '[{"id":1},{"id":2}]'
+let items = jq "." '[{"field":"a"},{"field":"b"},{"field":"c"},{"field":"d"}]'
+let data = jq "." '{"maps":[{"name":"counts"}]}'
 let count      = 5
 let raw_count  = "5"
 let name       = "demo-name"
@@ -254,7 +254,7 @@ let _ <- diff -u file:$raw1.stdout file:$raw2.stdout
 # redundant.
 let r2 <- exec bpfman version
 
-guard parsed <- jq "." '{"name":"xdp_pass","id":42}'
+let parsed = jq "." '{"name":"xdp_pass","id":42}'
 jq "." '{"a":1}'     # bare form prints the parsed value
 
 let data     = hello
@@ -461,10 +461,10 @@ retry {
 # ---- 23. jq as a higher-order operator over structured data ----
 
 guard raw <- bpfman program list -o json
-guard xdp <- jq ".[] | select(.kind == \"xdp\")" $raw
-guard names <- jq "[ .[].name ]" $raw
-guard first <- jq ".[0]" $raw
-guard scalar <- jq "." '{"answer": 42}'
+let xdp = jq ".[] | select(.kind == \"xdp\")" $raw
+let names = jq "[ .[].name ]" $raw
+let first = jq ".[0]" $raw
+let scalar = jq "." '{"answer": 42}'
 
 # ---- 24. assert <expr> matches { ... } ----
 

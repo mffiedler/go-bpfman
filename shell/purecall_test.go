@@ -246,6 +246,41 @@ func TestCheck_PureCall_ArgsAreCheckedForUndefinedVars(t *testing.T) {
 	assert.Contains(t, combined, "undef")
 }
 
+func TestCheck_PureBuiltin_RejectedInBindForm(t *testing.T) {
+	t.Parallel()
+
+	name := registerTestPureBuiltin(t, "ud", 1)
+	src := "let x <- " + name + " 1"
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues)
+	combined := joinIssues(issues)
+	assert.Contains(t, combined, name)
+	assert.Contains(t, combined, "pure builtin")
+	assert.Contains(t, combined, "let x = "+name)
+}
+
+func TestCheck_PureBuiltin_RejectedInGuardForm(t *testing.T) {
+	t.Parallel()
+
+	name := registerTestPureBuiltin(t, "ud", 1)
+	src := "guard x <- " + name + " 1"
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues)
+	combined := joinIssues(issues)
+	assert.Contains(t, combined, "pure builtin")
+}
+
+func TestCheck_PureBuiltin_RejectedInTupleBind(t *testing.T) {
+	t.Parallel()
+
+	name := registerTestPureBuiltin(t, "ud", 1)
+	src := "let (rc, x) <- " + name + " 1"
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues)
+	combined := joinIssues(issues)
+	assert.Contains(t, combined, "pure builtin")
+}
+
 // joinIssues collapses a slice of issues into one string so a
 // single assertion can probe for substrings that may appear in
 // any entry.

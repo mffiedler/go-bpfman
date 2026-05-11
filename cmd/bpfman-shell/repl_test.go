@@ -3000,7 +3000,7 @@ func TestReplComplete_ExecInCommandNames(t *testing.T) {
 func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"name":"test","id":42}'` + "\nassert $data.name == test\nassert $data.id == 42\n"
+	input := `let data = jq "." '{"name":"test","id":42}'` + "\nassert $data.name == test\nassert $data.id == 42\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3019,7 +3019,7 @@ func TestReplLoop_JQ_FromJsonObject(t *testing.T) {
 func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 	t.Parallel()
 
-	input := `let arr <- jq "." '[1,2,3]'` + "\nassert $arr[0] == 1\nassert $arr[2] == 3\n"
+	input := `let arr = jq "." '[1,2,3]'` + "\nassert $arr[0] == 1\nassert $arr[2] == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3033,7 +3033,7 @@ func TestReplLoop_JQ_FromJsonArray(t *testing.T) {
 func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 	t.Parallel()
 
-	input := `let v <- jq "." 123` + "\nassert $v == 123\n"
+	input := `let v = jq "." 123` + "\nassert $v == 123\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3047,10 +3047,14 @@ func TestReplLoop_JQ_FromJsonScalar(t *testing.T) {
 func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
 	t.Parallel()
 
-	// Under '<-' jq failure does not auto-fail the script: the
-	// envelope reports !ok and the consumer inspects $data.ok or
-	// $data.stderr. guard would halt; let does not.
-	input := `let data <- jq "." not-json` + "\n"
+	// jq is a pure builtin and is invoked from expression
+	// position. Invalid JSON input is an evaluation error: the
+	// expression cannot produce a value, so the script reports
+	// the error and $data is left unbound. The previous
+	// envelope-capturing '<-' form was retired because pure
+	// builtins have no envelope to capture; an evaluation error
+	// is the natural shape for a parse failure.
+	input := `let data = jq "." not-json` + "\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3058,14 +3062,10 @@ func TestReplLoop_JQ_FromJsonInvalidInput(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
-	assert.Empty(t, errBuf.String())
+	assert.Contains(t, errBuf.String(), "not valid JSON")
 
-	v, ok := session.Get("data")
-	require.True(t, ok)
-	got, err := v.Lookup("$data", "ok")
-	require.NoError(t, err)
-	s, _ := got.Scalar()
-	assert.Equal(t, "false", s)
+	_, ok := session.Get("data")
+	assert.False(t, ok, "failed pure-builtin call leaves the target unbound")
 }
 
 func TestReplLoop_JQ_WrongArgCount(t *testing.T) {
@@ -3114,7 +3114,7 @@ func TestReplLoop_JQ_FromJsonAssertFail(t *testing.T) {
 func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"a":{"b":{"c":"deep"}}}'` + "\nassert $data.a.b.c == deep\n"
+	input := `let data = jq "." '{"a":{"b":{"c":"deep"}}}'` + "\nassert $data.a.b.c == deep\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3130,7 +3130,7 @@ func TestReplLoop_JQ_WithExec(t *testing.T) {
 
 	// End-to-end: exec produces JSON text, jq on JSON text makes it
 	// structured.
-	input := `let raw <- exec echo '{"status":"ok","count":3}'` + "\nlet data <- jq \".\" $raw.stdout\nassert $data.status == ok\nassert $data.count == 3\n"
+	input := `let raw <- exec echo '{"status":"ok","count":3}'` + "\nlet data = jq \".\" $raw.stdout\nassert $data.status == ok\nassert $data.count == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3170,7 +3170,7 @@ func TestReplLoop_FileTempScalar(t *testing.T) {
 func TestReplLoop_FileTempStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"b":2,"a":1}'` + "\nlet f <- file temp $data\n"
+	input := `let data = jq "." '{"b":2,"a":1}'` + "\nlet f <- file temp $data\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3222,7 +3222,7 @@ func TestReplLoop_FileTempPathScalar(t *testing.T) {
 func TestReplLoop_FileTempPathStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"items":[{"id":1},{"id":2}]}'` + "\nlet f <- file temp $data.items\n"
+	input := `let data = jq "." '{"items":[{"id":1},{"id":2}]}'` + "\nlet f <- file temp $data.items\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3318,7 +3318,7 @@ func TestReplLoop_ExecFileAdapterScalar(t *testing.T) {
 func TestReplLoop_ExecFileAdapterStructured(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"name":"test"}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout name\n"
+	input := `let data = jq "." '{"name":"test"}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout name\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3395,7 +3395,7 @@ func TestReplLoop_ExecFileAdapterCleanup(t *testing.T) {
 func TestReplLoop_ExecFileAdapterLetBinding(t *testing.T) {
 	t.Parallel()
 
-	input := `let data <- jq "." '{"a":1}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout '\"a\": 1'\n"
+	input := `let data = jq "." '{"a":1}'` + "\nlet out <- exec cat file:$data\nassert contains $out.stdout '\"a\": 1'\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	session := shell.NewSession()
@@ -3564,7 +3564,7 @@ func TestReplLoop_PrintMultipleArgs(t *testing.T) {
 	// mix of scalars and records fits on one line.
 	input := strings.Join([]string{
 		`let n = 42`,
-		`let r <- jq "." '{"a":1,"b":2}'`,
+		`let r = jq "." '{"a":1,"b":2}'`,
 		`print 1 2 3`,
 		`print "count=" $n`,
 		`print "r=" $r`,
@@ -3605,8 +3605,8 @@ func TestReplLoop_JQNullBinding(t *testing.T) {
 	// interpolate it without tripping "produced no assignable
 	// value" — the whole point of OriginNull.
 	input := strings.Join([]string{
-		`let r <- jq "." '{"a":1}'`,
-		`let x <- jq ".missing" $r`,
+		`let r = jq "." '{"a":1}'`,
+		`let x = jq ".missing" $r`,
 		`print $x`,
 		`print "missing=${x}"`,
 		``,

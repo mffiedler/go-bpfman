@@ -42,7 +42,7 @@ sleep 1
 
 # Snapshot the counters after the first burst.
 guard raw1 <- bpftool map dump id $prog.status.maps[0].id
-guard snap1 <- jq "." $raw1.stdout
+let snap1 = jq "." $raw1.stdout
 
 # Second burst of traffic.
 guard _ <- ip netns exec bpfman-test ping -c 3 -i 0.1 198.51.100.1
@@ -52,7 +52,7 @@ sleep 1
 # on different CPUs across bursts, so compare the full dump rather than
 # a single CPU slot.
 guard raw2 <- bpftool map dump id $prog.status.maps[0].id
-guard snap2 <- jq "." $raw2.stdout
+let snap2 = jq "." $raw2.stdout
 assert $raw1.stdout != $raw2.stdout
 
 # Show the actual differences between the two snapshots. diff

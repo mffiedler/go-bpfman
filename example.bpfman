@@ -88,7 +88,7 @@ if $have_bpftool == yes {
     # loop (not in the language today).
     guard raw <- bpftool prog show -j
     assert not-empty $raw.stdout
-    guard progs <- jq "." $raw.stdout
+    let progs = jq "." $raw.stdout
     # progs is a list; demonstrate index access.
     assert not-empty $progs[0].type
 }
