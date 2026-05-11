@@ -374,6 +374,16 @@ func init() {
 			Usage:    "undef <name>...",
 			Summary:  "Remove user-defined commands.",
 		},
+		"range": {
+			Name: "range", Handler: handleRange,
+			Category: categoryIO,
+			Usage:    "range <integer>",
+			Summary:  "Produce the sequence [0, 1, ..., N-1] (jq-style range; assignable).",
+			Detail: "Mirrors jq's 'range(N)' semantics: zero-indexed, upper bound " +
+				"exclusive. Use in expression position as 'foreach i in (range 5) { ... }' " +
+				"or via 'let xs <- range 5'. Negative bounds are rejected; the upper " +
+				"limit is INT32_MAX to keep pathological scripts loud rather than OOM.",
+		},
 		"u32le": {
 			Name: "u32le", Handler: handleU32LE,
 			Category: categoryIO,

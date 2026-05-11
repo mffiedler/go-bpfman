@@ -53,6 +53,11 @@ func init() {
 	// shape; everything else lands here.
 	shell.RegisterPureBuiltin("u32le", 1, shell.KindShape(shell.OriginScalar))
 	shell.RegisterPureBuiltin("u64le", 1, shell.KindShape(shell.OriginScalar))
+	// range returns a list of scalars; the registry stores the
+	// outer Shape and foreach descends into elements via the
+	// list iteration path.
+	rangeElem := shell.KindShape(shell.OriginScalar)
+	shell.RegisterPureBuiltin("range", 1, shell.Shape{Sealed: false, Kind: shell.OriginUnknown, Elem: &rangeElem})
 }
 
 // shapeFromType reflects t into a Shape tree honouring JSON
