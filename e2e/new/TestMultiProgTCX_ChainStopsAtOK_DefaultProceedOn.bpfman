@@ -55,16 +55,13 @@ guard _ <- ip -n $ns link set $veth_b up
 guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
 guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
 
-let wa_le <- u64le ${weight_a}
-let wb_le <- u64le ${weight_b}
-let wc_le <- u64le ${weight_c}
 
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_tcx_chain_stops_at_ok.bpf.o \
     --programs tcx:mtcx_chain_a,tcx:mtcx_chain_b,tcx:mtcx_chain_c \
-    -g "weight_a=0x${wa_le}" \
-    -g "weight_b=0x${wb_le}" \
-    -g "weight_c=0x${wc_le}"
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}"
 
 let prog_a = $loaded.programs[0]
 let prog_b = $loaded.programs[1]

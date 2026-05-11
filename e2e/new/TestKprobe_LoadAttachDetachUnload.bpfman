@@ -51,21 +51,17 @@ let _ <- rm -f "${sentinel}.1" "${ack}.1"
 guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
 defer kill --signal=KILL $work
 
-# Convert the worker PID and weight to little-endian hex strings as
-# required by `bpfman -g NAME=HEX`. There is no DSL-native helper
-# for this, so an `exec sh -c` shells out via printf. u32 for
-# expected_pid (4 bytes), u64 for weight (8 bytes); low byte first.
-let pid_le <- u32le ${work.pid}
-let wt_le <- u64le ${weight}
-
 # Load the kprobe program with the worker PID baked in so only the
 # worker's syscalls count. weight is the per-event increment so a
 # misrouted event surfaces as wrong arithmetic, not a missed signal.
+# u32le / u64le are pure builtins; they encode the integer as a
+# little-endian hex string suitable for `bpfman -g NAME=HEX`. u32
+# for expected_pid (4 bytes), u64 for weight (8 bytes).
 guard loaded <- bpfman program load file \
     --path testdata/bpf/kprobe_exact.bpf.o \
     --programs kprobe:kprobe_counter \
-    -g "expected_pid=0x${pid_le}" \
-    -g "weight=0x${wt_le}"
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight=0x${u64le $weight}"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 

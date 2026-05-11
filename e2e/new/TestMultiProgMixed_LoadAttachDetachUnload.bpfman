@@ -49,10 +49,6 @@ let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack
 guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n $waves
 defer kill --signal=KILL $work
 
-let pid_le <- u32le ${work.pid}
-let wtp_le <- u64le ${weight_tp}
-let wkp_le <- u64le ${weight_kp}
-let wkrp_le <- u64le ${weight_krp}
 
 # Load three programs of three different types from one object
 # file. The --programs spec carries the type per entry; bpfman
@@ -60,10 +56,10 @@ let wkrp_le <- u64le ${weight_krp}
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_mixed_counter.bpf.o \
     --programs tracepoint:mixed_tp,kprobe:mixed_kp,kretprobe:mixed_krp \
-    -g "expected_pid=0x${pid_le}" \
-    -g "weight_tp=0x${wtp_le}" \
-    -g "weight_kp=0x${wkp_le}" \
-    -g "weight_krp=0x${wkrp_le}"
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight_tp=0x${u64le $weight_tp}" \
+    -g "weight_kp=0x${u64le $weight_kp}" \
+    -g "weight_krp=0x${u64le $weight_krp}"
 
 let prog_tp  = $loaded.programs[0]
 let prog_kp  = $loaded.programs[1]

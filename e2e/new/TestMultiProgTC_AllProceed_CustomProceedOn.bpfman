@@ -53,19 +53,12 @@ guard _ <- ip -n $ns link set $veth_b up
 guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
 guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
 
-# LE-hex helpers for the three weight u64 globals. The verdict
-# globals are u32 TC_ACT_OK (= 0) for all three; the literal
-# `0x00000000` does not need the printf dance.
-let wa_le <- u64le ${weight_a}
-let wb_le <- u64le ${weight_b}
-let wc_le <- u64le ${weight_c}
-
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_tc_param_verdict.bpf.o \
     --programs tc:mtcv_a,tc:mtcv_b,tc:mtcv_c \
-    -g "weight_a=0x${wa_le}" \
-    -g "weight_b=0x${wb_le}" \
-    -g "weight_c=0x${wc_le}" \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}" \
     -g verdict_a=0x00000000 \
     -g verdict_b=0x00000000 \
     -g verdict_c=0x00000000

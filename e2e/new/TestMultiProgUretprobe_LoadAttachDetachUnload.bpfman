@@ -63,21 +63,14 @@ guard shell_bin <- exec sh -c 'printf %s "$(command -v bpfman-shell)"'
 guard work <- start env BPFMAN_SHELL_MODE=uprobe-fire-worker $shell_bin.stdout $sentinel $ack $n $waves
 defer kill --signal=KILL $work
 
-# LE-hex helpers for the global-data injection (one u32 expected_pid,
-# three u64 weights).
-let pid_le <- u32le ${work.pid}
-let wa_le <- u64le ${weight_a}
-let wb_le <- u64le ${weight_b}
-let wc_le <- u64le ${weight_c}
-
 # Load three uprobe programs from one object file.
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_uprobe_counter.bpf.o \
     --programs uretprobe:mup_a,uretprobe:mup_b,uretprobe:mup_c \
-    -g "expected_pid=0x${pid_le}" \
-    -g "weight_a=0x${wa_le}" \
-    -g "weight_b=0x${wb_le}" \
-    -g "weight_c=0x${wc_le}"
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}"
 
 let prog_a = $loaded.programs[0]
 let prog_b = $loaded.programs[1]

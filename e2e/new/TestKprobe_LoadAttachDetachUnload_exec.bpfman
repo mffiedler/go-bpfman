@@ -50,16 +50,14 @@ let _ <- rm -f "${sentinel}.1" "${ack}.1"
 guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker bpfman-shell $sentinel $ack $n 1
 defer kill --signal=KILL $work
 
-let pid_le <- u32le ${work.pid}
-let wt_le <- u64le ${weight}
 
 # Load via subprocess; capture stdout, parse the JSON load result,
 # then index into it the same way the in-process variant does.
 guard load_r <- exec bpfman program load file \
     --path testdata/bpf/kprobe_exact.bpf.o \
     --programs kprobe:kprobe_counter \
-    -g "expected_pid=0x${pid_le}" \
-    -g "weight=0x${wt_le}" \
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight=0x${u64le $weight}" \
     -o json
 let loaded = $load_r.stdout |> jq "."
 let prog = $loaded.programs[0]

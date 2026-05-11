@@ -57,18 +57,15 @@ guard _ <- ip -n $ns link set $veth_b up
 guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
 guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
 
-let wa_le <- u64le ${weight_a}
-let wb_le <- u64le ${weight_b}
-let wc_le <- u64le ${weight_c}
 
 # Verdicts are u32 little-endian. XDP_DROP = 1 -> 0x01000000;
 # XDP_PASS = 2 -> 0x02000000.
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_xdp_param_verdict.bpf.o \
     --programs xdp:mxdv_a,xdp:mxdv_b,xdp:mxdv_c \
-    -g "weight_a=0x${wa_le}" \
-    -g "weight_b=0x${wb_le}" \
-    -g "weight_c=0x${wc_le}" \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}" \
     -g verdict_a=0x01000000 \
     -g verdict_b=0x02000000 \
     -g verdict_c=0x01000000

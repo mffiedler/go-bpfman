@@ -54,23 +54,16 @@ let _ <- rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack
 guard work <- start env BPFMAN_SHELL_MODE=kill-fire-worker bpfman-shell $sentinel $ack $n $waves
 defer kill --signal=KILL $work
 
-# LE-hex helpers for the global-data injection (one u32 expected_pid,
-# three u64 weights). Inline because there's no DSL-native helper.
-let pid_le <- u32le ${work.pid}
-let wa_le <- u64le ${weight_a}
-let wb_le <- u64le ${weight_b}
-let wc_le <- u64le ${weight_c}
-
 # Load three tracepoint programs from one object file. The load
 # contract returns {programs: [...]} with all loaded programs in
 # input order.
 guard loaded <- bpfman program load file \
     --path testdata/bpf/multi_prog_tracepoint_counter.bpf.o \
     --programs tracepoint:tp_a,tracepoint:tp_b,tracepoint:tp_c \
-    -g "expected_pid=0x${pid_le}" \
-    -g "weight_a=0x${wa_le}" \
-    -g "weight_b=0x${wb_le}" \
-    -g "weight_c=0x${wc_le}"
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}"
 
 let prog_a = $loaded.programs[0]
 let prog_b = $loaded.programs[1]
