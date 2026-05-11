@@ -126,12 +126,15 @@ bolting async on later with awkward semantics.
 ```
 
 `net` is sugar over the same `ip(8)` commands the scripts call
-today. Internally `net veth-pair` issues the same six creates and
-three state changes; `net release` issues the same two deletes;
-`net exec` is `ip netns exec NS CMD ARGS`. The current spellings
-remain valid as a debug escape hatch -- if a test needs an
-asymmetric setup `net` does not cover, dropping back to raw `ip`
-calls works and is the documented path.
+today. Internally `net veth-pair` issues the same `ip`
+operations: create netns, create veth, move peer, bring links
+up, assign addresses, and add routes. `net release` issues the
+two corresponding deletes (host veth, then netns; the kernel
+removes the peer when the netns goes away). `net exec` is `ip
+netns exec NS CMD ARGS`. The current spellings remain valid as
+a debug escape hatch -- if a test needs an asymmetric setup
+`net` does not cover, dropping back to raw `ip` calls works and
+is the documented path.
 
 The deep-module move is the same as fire's: the script chooses
 the topology parameters (names, addresses), the built-in owns
