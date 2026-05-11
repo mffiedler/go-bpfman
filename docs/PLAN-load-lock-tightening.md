@@ -2,324 +2,277 @@
 
 ## 1. What this document is
 
-A design memo for shrinking `bpfman program load`'s critical
-section so the global writer lock at `/run/bpfman/.lock` is held
-only for the cross-process exclusion that genuinely needs it.
-The current code wraps the entire load -- gc, verifier syscall,
-bytecode publish, sqlite writes -- in one lock-held window;
-under heavy parallel load (16 workers each doing ~10 mutations
-per script) the lock queue dominates and unlucky waiters blow
-through `--lock-timeout=30s`. The proposal here splits gc into
-its scan and remediate halves, moves the slow kernel and
-filesystem steps outside the lock, and uses a short-lived
-pending-row marker to close the gc-vs-in-flight-load race the
-move introduces.
+A design memo for shrinking the per-mutation hold-time on the
+global writer lock at `/run/bpfman/.lock`. The 16-way parallel
+stress test on the dispatcher corpus
+(`e2e/parallel-scripts.sh -r 100 -j 16`, 900 jobs) saturates the
+lock and pushes unlucky waiters past `--lock-timeout=30s`. A
+diagnostic experiment isolates where the time goes and points the
+design at the single dominant cost.
 
-Out of scope: link attach, link detach, program unload, and
-the TC / XDP / TCX dispatcher rebuild. Those operations
-read-modify-write the dispatcher chain or the kernel<->store
+The empirical result reshapes priorities. The original draft
+emphasised moving `BPF_PROG_LOAD` out of the lock as the
+load-bearing change; the experiment shows that bypassing
+`gcOnEntry` alone gives a ~3.3x speedup and clears every
+lock-timeout failure. gc is the dominant cost. Moving the
+verifier syscall out of the lock is a smaller follow-up rather
+than the primary fix, and is ruled out separately by the
+per-operation single-sqlite-transaction invariant the codebase
+prefers.
+
+Out of scope: link attach, link detach, program unload, and the
+TC / XDP / TCX dispatcher rebuild. Those operations
+read-modify-write the dispatcher chain or the kernel-to-store
 correspondence and genuinely need the lock.
 
-## 2. Current critical section
+## 2. Where the time actually goes
 
 `cmd/bpfman/load_file.go:60` wraps the whole load in
 `bpfmancli.RunWithLockValue`. Inside the closure,
-`manager.Manager.Load` (`manager/load.go:102`) runs `gcOnEntry`
-first (`manager/load.go:103`) and then a five-step operation
-plan per program (`manager/load.go:176`):
+`manager.Manager.Load` (`manager/load.go:102`) runs
+`gcOnEntry` first (`manager/load.go:103`) and then a per-program
+operation plan of five steps (`manager/load.go:176`):
 
-1. `kernel-load` -- `action.LoadProgram` invokes the
-   cilium/ebpf loader, which constructs map fds and issues
-   `BPF_PROG_LOAD`. The verifier runs here. This is the slow
-   step: tens to hundreds of milliseconds for non-trivial
-   programs.
-2. `db-consistency-check` -- read-only sqlite query.
-3. `fs-publish` -- writes `/run/bpfman/programs/<id>/`. The
-   destination is namespaced by the kernel-assigned program ID
-   and is cross-process-safe by construction.
-4. `store-save` -- the sqlite write that records the program.
-5. `save-shared-maps` (optional) -- additional sqlite writes
-   for shared-map pin metadata.
+1. `kernel-load`, `BPF_PROG_LOAD`, the verifier syscall.
+2. `db-consistency-check`, read-only sqlite query.
+3. `fs-publish`, writes `/run/bpfman/programs/<id>/`.
+4. `store-save`, the sqlite write.
+5. `save-shared-maps` (optional), additional sqlite writes.
 
-Of those, only step 4 and 5 actually mutate shared sqlite
-state. Step 1 and 3 are namespaced by a kernel-assigned ID
-and need no inter-process serialisation. SQLite already
-serialises writes through its own per-database lock, so the
-bpfman flock on top of steps 4 and 5 is belt-and-braces. What
-makes the lock load-bearing today is `gcOnEntry`: it does a
-read-modify-write across the `programs`, `links`, and
-`dispatchers` tables to remediate orphans, and that RMW must
-be serialised against any concurrent mutation.
+`gcOnEntry` does a full coherency sweep before any of the above:
+enumerate kernel programs / links / dispatchers, cross-reference
+with the store, compute orphan deletions, and execute them. On a
+healthy system the result is always an empty plan, but the
+gather pass itself runs every time.
 
-## 3. gc splits cleanly into scan and remediate
+Measured on the dispatcher corpus at `-j 16 -r 100`:
 
-`gc` has two distinct phases that the current code conflates:
+| Variant | 900-job wall time | Failures | Mean lock-hold |
+| --- | --- | --- | --- |
+| Baseline (current code) | 5 min 5 s | 9 / 900 (lock timeouts) | ~333 ms |
+| `gcOnEntry` bypassed | 1 min 33 s | 0 / 900 | ~103 ms |
 
-- **Scan.** Read kernel state via
-  `bpf(BPF_PROG_GET_NEXT_ID, ...)` and the per-link
-  enumeration syscalls; cross-reference with the
-  `programs` / `links` / `dispatchers` tables. Pure read.
-  Returns a list of orphans (in-kernel without store record,
-  or in-store without kernel program, depending on the
-  direction). Runs concurrently with anything.
-- **Remediate.** Take the lock; under the lock re-scan to
-  confirm the orphans are still orphans (state may have
-  advanced since the lockless scan); then issue the
-  remediation actions. Mutates.
+The verifier plus fs-publish plus sqlite together account for
+the ~103 ms residual; `gcOnEntry` adds another ~230 ms on top.
+At 16-way concurrency that 230 ms-per-script swing is what
+pushes the lock queue past the 30 s timeout in the worst cases.
+
+## 3. v1, split gc into Scan and Remediate
+
+`gc` has two distinct phases that the current code conflates,
+and the cheap one runs every time the expensive one would:
+
+- **Scan.** Read kernel state via the per-id enumeration
+  syscalls; cross-reference with the `programs` / `links` /
+  `dispatchers` tables. Pure read. Returns a list of orphans
+  (in-kernel without store record, or in-store without kernel
+  program). Runs concurrently with anything, including with
+  itself across processes.
+- **Remediate.** Take the lock; under the lock re-scan to get
+  the authoritative set (state may have advanced since the
+  lockless scan); execute the remediation actions. Mutates.
 
 In practice the orphan list is empty on the overwhelming
 majority of invocations. A clean run after a clean run finds
 nothing; the remediation lock is taken only when a previous
-operation crashed mid-flight. Treating the empty-orphans path
-as lockless keeps the contention floor at zero for the common
-case.
-
-## 4. The race the tightening introduces
-
-Moving `BPF_PROG_LOAD` and `fs-publish` out of the lock creates
-a window where the kernel program exists with no sqlite record.
-A concurrent process B's `gc.Scan` running during that window
-sees the kernel program as an orphan. If B then takes the lock
-to remediate, the re-scan under the lock still sees it as an
-orphan (truth has not advanced -- process A is waiting for the
-lock to commit), and B kills A's in-flight program. A's
-`store-save` then fails because its kernel ID is gone.
-
-The race exists any time `BPF_PROG_LOAD` is outside the same
-critical section as `store-save`. To close it without giving
-up the tightening, the in-flight load registers a
-**pending-row marker** in sqlite before the kernel work begins:
-
-1. `INSERT INTO program_pending(txn_id, started_at)` -- a
-   short-lived sentinel keyed by a per-invocation transaction
-   id (pid + atomic counter, the same shape `uniqueLinkBase`
-   uses).
-2. `BPF_PROG_LOAD` -- the slow step, now lockless.
-3. `PublishBytecode` -- lockless, namespaced by kernel id.
-4. Under the lock:
-   - `UPDATE program_pending SET kernel_id = Y WHERE txn_id = X`
-     -- bind the kernel id to the pending row.
-   - `INSERT INTO programs ...` -- the real record.
-   - `DELETE FROM program_pending WHERE txn_id = X` -- consume
-     the marker.
-
-`gc.Scan` ignores any in-kernel program whose id appears in
-`program_pending` with a `started_at` newer than a small bound
-(say 60s, well above the worst plausible verifier time on the
-slowest target). Programs whose pending row is older than the
-bound are treated as orphans (a process crashed before binding
-its kernel id), which is the correct outcome.
-
-The pending row is a one-row insert, then a one-row update, then
-a one-row delete -- three cheap sqlite operations sandwiching
-the slow kernel call. None of them needs the bpfman flock,
-because sqlite's own serialisation is sufficient for the writes
-and the lookup is keyed by a per-process txn id that no other
-process generates.
-
-## 5. Proposed flow
+operation crashed mid-flight. Treating the empty-orphans path as
+lockless keeps the contention floor at zero for the common case.
 
 ```
 process A:
   orphans := gc.Scan()                              # lockless
   if len(orphans) > 0:
     acquire lock
-      reverified := gc.Scan()                       # under lock
-      gc.Remediate(reverified)
+      authoritative := gc.Scan()                    # under lock
+      gc.Remediate(authoritative)                   # single sqlite tx
     release lock
 
-  txn := uniqueTxnID()                              # pid:counter
-  INSERT INTO program_pending(txn_id=txn, ...)      # sqlite-only
-
-  BPF_PROG_LOAD                                     # lockless, slow
-  PublishBytecode                                   # lockless
-
   acquire lock
-    UPDATE program_pending SET kernel_id = Y ...    # bind
-    INSERT INTO programs ...                        # the record
-    DELETE FROM program_pending WHERE txn_id = txn  # consume
+    # existing per-program plan: BPF_PROG_LOAD,
+    # PublishBytecode, store-save, etc. Unchanged
+    # critical section, sqlite writes collapsed
+    # into one transaction at the end (section 4).
   release lock
 ```
 
-The two locked regions are independent and almost always tiny:
+The under-lock re-scan is load-bearing, not a sanity check. It
+exists for two reasons:
 
-- The gc-remediate region is reached only when the lockless
-  scan found something, which is rare on a clean system.
-- The commit region holds three single-row sqlite operations
-  under the lock. Empirically these are well under 10ms each
-  with WAL-mode sqlite on tmpfs (`/run`).
+- Between the lockless scan and acquiring the lock, another
+  process may have taken the lock and remediated the same
+  orphans. The re-scan returns an empty set in that case and
+  the remediate is a no-op release-the-lock-and-go.
+- A new orphan may have appeared between the two scans (another
+  process crashed). The re-scan picks it up. Without the
+  re-scan we would remediate the stale lockless set and miss
+  the fresh orphan.
 
-Lock-hold per script drops from the current ~200-500ms
-(verifier + kernel + fs + sqlite + gc) to ~10-30ms (three
-small sqlite writes). At 16 contending workers that moves the
-worst-case 16th-waiter wait from ~5-8s to ~200-500ms,
-comfortably under the 30s timeout even at the tail.
+### Concurrent gc invocations resolve cleanly
 
-## 6. Rollback semantics
+Two processes running their lockless `gc.Scan` at the same time
+both see the same orphan candidates, both decide to take the
+lock, B happens to win first. B's under-lock re-scan sees the
+orphans; remediates them; releases. A's under-lock re-scan now
+sees an empty set; remediates nothing; releases. No work is
+done twice, no mutation race. The "non-authoritative first
+scan" property is precisely what makes concurrent gc safe: the
+lockless snapshot is a hint, never the basis for a mutation.
 
-The two-phase split introduces a new failure window: the
-pre-lock work (`INSERT pending`, `BPF_PROG_LOAD`,
-`PublishBytecode`) succeeds, then the commit region fails (lock
-acquire times out, or sqlite write fails). The rollback path
-mirrors the existing `cleanupLoaded` closure
-(`manager/load.go:130`): on commit-region failure, walk back
-through the pre-lock outputs:
+The worst case under burst-after-crash is many processes
+serialising briefly on the lock to perform a single small
+sqlite read each. Bounded, microseconds per hold; far below the
+existing per-load lock cost.
 
-- Unload the BPF program (kernel cleanup via
-  `action.UnloadProgram`).
-- Remove the bytecode directory
-  (`action.RemoveMapsPins`, `action.RemoveProgramDir`).
-- Delete the pending row outside the lock (sqlite handles its
-  own serialisation; even if the lock acquisition timed out,
-  this `DELETE` does not require the bpfman flock).
+### Synchronous semantics are preserved
 
-The undo actions are already defined in the operation plan
-(`operation.UndoFrom` calls in `loadPlan`); the change is in
-when they fire, not what they do.
+gc remains synchronous on every mutating call: every process
+runs `gc.Scan` before doing its mutation, every process that
+finds orphans remediates them before proceeding. The clean-slate
+invariant ("no orphans are visible to this operation's critical
+section") holds for any operation that finds an empty scan or
+that remediates and re-scans. What the split buys is moving the
+empty-scan case off the lock entirely.
 
-Lock-timeout is a new failure mode for the pre-lock phase
-(it cannot happen today). Rollback handles it identically to
-any other commit-region error. No state is corrupt, and the
-caller's error message points at the lock, not at the kernel.
+## 4. Per-operation single sqlite transaction
 
-## 7. Why not also tighten attach / detach
+The codebase prefers each manager operation's mutations to land
+as a single sqlite transaction at the end of the operation. The
+current load plan issues separate writes across the operation
+plan steps (`store-save`, `save-shared-maps`, and the gc
+remediation when applicable). v1 should fold these into one
+transaction per operation:
 
-Both attach and detach for TC / XDP / TCX go through the
-dispatcher chain, which is the only multi-program-aware
-dispatcher mechanism on those hooks. Rebuilding the chain is
-RMW across two surfaces: the kernel (which dispatcher BPF
-program is currently attached to the interface) and the store
-(which programs comprise the chain in what order). Two
-concurrent rebuilds for the same interface produce a lost
-update; the lock prevents that.
+- `gc.Remediate` (under lock) issues its deletions as a single
+  transaction, not row at a time.
+- The load's per-program plan accumulates the intended writes
+  in-memory after `BPF_PROG_LOAD` and `PublishBytecode`, then
+  flushes them as one transaction inside the existing critical
+  section.
+
+The transactional collapse is independent of the gc split: it
+applies to today's code path too. Doing it as part of v1 keeps
+the lock-hold predictable (one fsync per script instead of
+several) and gives the gc-vs-load and load-vs-load ordering
+properties a cleaner story to reason about: a load either
+committed in full or did not commit at all.
+
+## 5. v2, deferred
+
+Moving `BPF_PROG_LOAD` out of the lock is ruled out for now on
+two independent grounds:
+
+- *Measured priority.* v1 brings the corpus from 5 min 5 s with
+  9 lock-timeouts down to 1 min 33 s with zero failures. The
+  remaining lock-hold of ~103 ms is dominated by `BPF_PROG_LOAD`
+  itself (~80 ms) plus sqlite (~20 ms). Moving the verifier
+  out would buy roughly another 1.5x throughput, smaller than
+  v1 and worth deferring until the residual contention
+  genuinely motivates it.
+- *Schema constraint.* The pending-row scheme that would close
+  the gc-vs-in-flight-load race needs separate sqlite writes
+  before and after `BPF_PROG_LOAD` (INSERT pending, then
+  UPDATE pending, then INSERT programs, then DELETE pending).
+  That breaks the per-operation single-transaction invariant.
+  Any v2 design has to either re-establish that invariant some
+  other way or argue why the load operation is special.
+
+If v2 ever lands, it owes a separate design pass starting from
+the transaction-shape constraint, not the lock-shape one.
+
+## 6. Why not also tighten attach / detach / unload
+
+Attach and detach for TC / XDP / TCX go through the dispatcher
+chain. Rebuilding the chain is read-modify-write across the
+kernel (which dispatcher BPF program is currently attached to
+the interface) and the store (which programs comprise the chain
+in what order). Two concurrent rebuilds for the same interface
+produce a lost update; the lock prevents that. The same applies
+to unload of a dispatcher-resident program.
 
 For non-dispatcher attach paths (tracepoint, kprobe, uprobe,
-fentry, fexit, uretprobe) the lock is theoretically excessive
-in the same way load is. That can be a follow-up after this
-work lands and measures favourably; the dispatcher cases are
-the harder design problem and stay in the lock by default.
+fentry, fexit, uretprobe) the lock is theoretically excessive in
+the same way pre-v1 load was. v1's gc split benefits those
+paths too (they go through `gcOnEntry`), and the kernel work in
+those attaches is small enough that no further tightening is
+likely needed.
 
-## 8. Why not also tighten unload
+Once v1 lands, the next likely contention source is the
+dispatcher rebuild on attach. That is its own design problem
+(per-interface locks vs full serialisation) and out of scope
+here.
 
-Unload of a dispatcher-resident program needs to rebuild the
-chain, so it stays in the lock for the same reason attach
-does. Unload of a stand-alone program (no dispatcher) is
-bookkeeping-only and a candidate for the same pre-lock /
-commit-region split, but is left for a follow-up because the
-corpus's lock pressure is dominated by load and attach, not
-unload.
+## 7. Migration plan
 
-## 9. Schema changes
+Three commits for v1:
 
-One new table:
-
-```sql
-CREATE TABLE program_pending (
-    txn_id      TEXT    PRIMARY KEY,    -- pid:counter, unique per invocation
-    kernel_id   INTEGER NULL,           -- bound after BPF_PROG_LOAD succeeds
-    program_name TEXT   NOT NULL,
-    source_path  TEXT   NOT NULL,
-    started_at  INTEGER NOT NULL        -- unix nanos
-);
-CREATE INDEX program_pending_kernel_id ON program_pending(kernel_id);
-```
-
-`gc.Scan`'s orphan check becomes:
-
-```sql
--- kernel program with no real record and no fresh pending row
-SELECT kernel_id FROM kernel_view  -- enumerated via syscalls
-WHERE kernel_id NOT IN (SELECT program_id FROM programs)
-  AND kernel_id NOT IN (
-      SELECT kernel_id FROM program_pending
-      WHERE kernel_id IS NOT NULL
-        AND started_at > <now - grace_period>
-  );
-```
-
-`grace_period` defaults to 60s. A pending row older than the
-grace period whose `kernel_id` is still set in the kernel is a
-crashed-mid-load orphan and gc remediates both halves (kernel
-unload + delete pending row).
-
-## 10. Migration plan
-
-Three commits, mirroring the auto-subnet arc:
-
-1. *Schema + manager refactor.* Add `program_pending` table
-   and migration. Add `Manager.LoadPhaseA(ctx, ...)` returning
-   loaded program info + txn id, and
-   `Manager.LoadPhaseB(ctx, writeLock, info, txn)` performing
-   the commit. Internal-only, no caller change yet. Split gc
-   into `Manager.GCScan(ctx)` and
-   `Manager.GCRemediate(ctx, writeLock, orphans)`. Unit tests
-   under `manager/load_test.go` cover both phases independently
-   and the rollback between them.
-2. *Wire the CLI.* `cmd/bpfman/load_file.go` calls
-   `mgr.GCScan` lockless, then conditionally takes the lock for
-   `GCRemediate` if needed, then calls `mgr.LoadPhaseA`
-   lockless, then takes the lock for `mgr.LoadPhaseB`. The
-   rollback closure that today fires on plan-step failure
-   becomes the rollback closure that fires on commit-region
-   failure. The user-visible CLI is unchanged.
+1. *Manager refactor.* Split `Manager.GC` into
+   `Manager.GCScan(ctx)` (lockless, returns the orphan list and
+   the gather-state used to compute it) and
+   `Manager.GCRemediate(ctx, writeLock, state)` (takes the lock,
+   re-scans, executes the remediation in one sqlite
+   transaction). Internal-only, no caller change yet. Unit
+   tests under `manager/gc_test.go` cover both phases
+   independently and the empty-list short-circuit.
+2. *Wire `gcOnEntry` and collapse load writes.* Rework
+   `gcOnEntry` (`manager/manager.go:440`) to call `GCScan`
+   lockless and only acquire the lock plus call `GCRemediate`
+   when the scan returns work. Inside `Manager.Load`, collapse
+   the per-program plan's sqlite writes into a single
+   transaction at the end of the critical section. The
+   `opActiveKey` re-entry guard stays as-is.
 3. *Measurement.* Re-run `e2e/parallel-scripts.sh -r 100 -j 16`
-   on the dispatcher corpus and record the failure rate.
-   Expected outcome: zero lock-timeout failures on `program
-   load`. If a residual contention bucket appears it is
-   attach-side dispatcher churn, which is the next candidate.
+   on the dispatcher corpus and record wall time and failure
+   count. Expected outcome: zero lock-timeout failures, ~1 min
+   30 s wall (the experimental floor). Update this doc with
+   the v1 numbers.
 
-## 11. Alternatives considered
+## 8. Alternatives considered
 
 ### Just bump the timeout
 
 `--lock-timeout=120s` would absorb the queue depth at the cost
 of slow failures. It does not move the structural throughput
-ceiling (~3 jobs/sec aggregate at `-j16` because of the lock);
-the system is still mutation-rate-bound. Rejected because
-hiding contention is not fixing it.
+ceiling and was rejected upfront. v1 makes the timeout
+irrelevant in practice.
 
 ### Lower default concurrency
 
 `-j 4` would reduce lock pressure but also halves wall-clock
-throughput on uncontended workloads. The harness already
-exposes `-j`; this is the caller's lever, not the engine's
-solution.
+throughput on uncontended workloads. The harness exposes `-j`
+as a caller's lever, not an engine fix.
+
+### Skip gc on entry entirely
+
+Removing `gcOnEntry` from `Manager.Load` (the diagnostic
+experiment) gives the same wall-time win as v1 but breaks the
+clean-slate invariant: crashed mid-load state is never
+reconciled until an explicit `bpfman gc` invocation. v1
+preserves the invariant by keeping gc synchronous on every
+entry while moving the empty-result path off the lock.
+
+### Background gc pulse / daemon-mode gc
+
+Periodic gc detached from the per-call entry. Eventual
+consistency model, not the "clean slate at the boundary"
+property load relies on. Rejected upfront; v1's split achieves
+the throughput goal without changing the synchronous-on-entry
+property.
 
 ### Fine-grained locks (per-interface, per-program)
 
 A separate lock per dispatcher target would let unrelated TC
-loads on different interfaces proceed in parallel. The design
-is straightforward (interface name -> flock path) but the
-correctness analysis crosses sqlite tables that today implicitly
-rely on a single writer. Rejected for v1 because the load
-tightening is the cheaper win and unblocks the parallel-scripts
-stress test without changing the locking semantics callers
-depend on. Worth re-evaluating once the load split shows the
-attach side is the next bottleneck.
+loads on different interfaces proceed in parallel. The
+correctness analysis crosses sqlite tables that today
+implicitly rely on a single writer. Rejected for v1 because
+gc-split is the cheaper win. Worth re-evaluating if the
+post-v1 residual contention is attach-side.
 
-### Keep `BPF_PROG_LOAD` inside the lock
+### v2 today, BPF_PROG_LOAD out of the lock with pending rows
 
-The conservative shape: only split gc into scan and remediate;
-keep the rest of the operation plan inside the lock. Easier
-correctness story (no pending rows, no new race window). Loses
-the bulk of the tightening because the verifier syscall is the
-biggest contributor to lock-hold duration. Rejected for v1
-because the throughput target is the verifier step coming out
-of the lock.
-
-### Pre-register a sentinel BPF program
-
-Instead of a sqlite pending row, register a sentinel in the
-kernel (e.g. a pinned dummy program) under the would-be id.
-Race-free but invasive and adds an extra syscall pair per
-load. The sqlite pending row achieves the same correctness
-at much lower cost.
-
-### gc as a daemon-mode background pulse
-
-Already debated upthread. Rejected because gc must be
-synchronous: we need to start from a known clean slate before
-the per-invocation operation proceeds. A background pulse
-gives eventual consistency, not the "clean slate at the
-boundary" property load relies on for its kernel<->store
-correspondence guarantee.
+Considered and deferred. v1's measured gain clears the
+lock-timeout failures and brings throughput inside the 30 s
+budget with ~10x of headroom; v2's marginal gain is ~1.5x
+further on top, and the pending-row design conflicts with the
+per-operation single-transaction invariant. Land v1, measure,
+then decide whether the remaining contention is worth a v2
+design that earns its way past both constraints.
