@@ -81,7 +81,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # Trigger the tracepoint. kill(2) with signal 0 fires the syscall
 # without delivering anything, so the sh invocation exits cleanly
 # and require-ok is a real check.
-foreach _ in '0' |> jq "[range(5)]" {
+foreach _ in (range 5) {
     guard _ <- sh -c 'kill -0 $$'
 }
 

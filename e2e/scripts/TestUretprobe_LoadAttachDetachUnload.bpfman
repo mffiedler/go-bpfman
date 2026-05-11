@@ -89,7 +89,7 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # The REPL exec builtin doesn't take per-command env vars; env(1)
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
-foreach _ in '0' |> jq "[range(5)]" {
+foreach _ in (range 5) {
     guard _ <- env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
 }
 
