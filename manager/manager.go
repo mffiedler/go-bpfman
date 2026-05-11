@@ -179,25 +179,68 @@ type GCPlan struct {
 	LiveOrphans int
 }
 
+// IsEmpty reports whether the plan has no remediation work to do.
+// A plan is empty when there are no store actions and no coherency
+// violations whose Intent is non-nil. Violations without an Intent
+// are diagnostic-only and do not constitute remediation work; they
+// surface in audit reports but do not warrant taking the writer
+// lock.
+//
+// gcOnEntry's lockless pre-check uses this to decide whether the
+// lock acquisition is worth paying for: on an empty plan the
+// caller can skip the lock entirely.
+func (p GCPlan) IsEmpty() bool {
+	if len(p.StoreActions) > 0 {
+		return false
+	}
+	for _, v := range p.Violations {
+		if v.Intent != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // errRollback is a sentinel used to force a transaction rollback
 // without indicating a real failure.
 var errRollback = errors.New("rollback")
 
-// ComputeGC gathers state and computes what GC would do, without
-// executing any actions. The returned GCPlan can be inspected for
-// dry-run reporting or passed to ExecuteGC for execution.
+// ComputeGC is the legacy entry point that takes a WriterScope as a
+// proof-of-lock-held sentinel. The body delegates to GCScan, which
+// is safe to call without the lock; callers that hold the writer
+// lock are free to use either method.
+//
+// New code should prefer GCScan (lockless) followed by GCRemediate
+// (under lock, only when GCScan returns non-empty). See
+// docs/PLAN-load-lock-tightening.md.
+func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCPlan, error) {
+	_ = writeLock
+	return m.GCScan(ctx, opts)
+}
+
+// GCScan gathers state and computes what GC would do, without
+// executing any actions and without holding the global writer
+// lock. The returned GCPlan can be inspected for dry-run reporting
+// or fed into GCRemediate / ExecuteGC for execution.
 //
 // State is gathered once via GatherState (which includes a full
 // inspect.Snapshot). The store GC inputs are derived from the
 // resulting Observation, avoiding the redundant kernel and store
-// enumeration that previously occurred between ComputeGC's direct
-// queries and the Snapshot inside evaluateCoherency.
+// enumeration that previously occurred between direct queries and
+// the Snapshot inside evaluateCoherency.
 //
-// When there are store actions, they are applied inside a transaction
-// that is then rolled back, so that coherency rules evaluate against
-// the post-deletion state and the plan reflects the full set of
-// operations that ExecuteGC would perform.
-func (m *Manager) ComputeGC(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCPlan, error) {
+// When there are store actions, they are applied inside a sqlite
+// transaction that is then rolled back, so that coherency rules
+// evaluate against the post-deletion state and the plan reflects
+// the full set of operations remediation would perform. The
+// rolled-back transaction touches sqlite only; the global writer
+// lock is not required because sqlite manages its own
+// serialisation and no kernel state is modified.
+//
+// Callers that intend to remediate must follow this with
+// GCRemediate (which re-scans under the lock for the authoritative
+// set; the plan returned here is a hint, not a contract).
+func (m *Manager) GCScan(ctx context.Context, opts GCOptions) (GCPlan, error) {
 	var plan GCPlan
 
 	// Single gather pass for both store GC and coherency.
@@ -410,10 +453,32 @@ func (m *Manager) ExecuteGC(ctx context.Context, writeLock lock.WriterScope, pla
 }
 
 // GCWithOptions runs garbage collection with the given options.
+// Equivalent to GCRemediate -- the original entry point is preserved
+// for callers (audit, e2e harness) that already hold the lock and
+// want a single all-in-one call.
 func (m *Manager) GCWithOptions(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCResult, error) {
-	plan, err := m.ComputeGC(ctx, writeLock, opts)
+	return m.GCRemediate(ctx, writeLock, opts)
+}
+
+// GCRemediate is the under-lock half of the scan / remediate split.
+// It scans state from scratch (the authoritative read), executes any
+// remediation actions, and returns the result. An empty scan
+// short-circuits with the zero GCResult and no lock-time work other
+// than the scan itself; callers that already ran a lockless GCScan
+// pay one extra scan in exchange for not racing against state
+// changes between the lockless scan and the lock acquisition.
+//
+// The lockless GCScan result is intentionally not passed in. It
+// is a hint only: gcOnEntry uses it to decide whether the lock is
+// worth acquiring; the authoritative set comes from the under-lock
+// re-scan here.
+func (m *Manager) GCRemediate(ctx context.Context, writeLock lock.WriterScope, opts GCOptions) (GCResult, error) {
+	plan, err := m.GCScan(ctx, opts)
 	if err != nil {
 		return GCResult{}, err
+	}
+	if plan.IsEmpty() {
+		return GCResult{}, nil
 	}
 	return m.ExecuteGC(ctx, writeLock, plan, opts)
 }

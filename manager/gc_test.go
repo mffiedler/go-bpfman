@@ -8,6 +8,7 @@ import (
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager/action"
+	"github.com/frobware/go-bpfman/manager/coherency"
 	"github.com/frobware/go-bpfman/platform"
 )
 
@@ -510,5 +511,81 @@ func TestComputeStoreGC_TCExtensionSurvivesWithLiveDispatcher(t *testing.T) {
 
 	if len(actions) != 0 {
 		t.Errorf("expected 0 actions (TC extension survives with live dispatcher), got %d: %+v", len(actions), actions)
+	}
+}
+
+// TestGCPlan_IsEmpty covers the matrix that gcOnEntry's lockless
+// pre-check relies on. The plan is empty iff there are no store
+// actions and no actionable (Intent != nil) coherency violations.
+// Diagnostic-only violations (Intent == nil) do not count: they
+// surface in audit output but should not pull the writer lock.
+func TestGCPlan_IsEmpty(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		plan GCPlan
+		want bool
+	}{
+		{
+			name: "zero value is empty",
+			plan: GCPlan{},
+			want: true,
+		},
+		{
+			name: "diagnostic-only violation is empty",
+			plan: GCPlan{
+				Violations: []coherency.Violation{{
+					Severity:    coherency.SeverityWarning,
+					RuleName:    "diagnostic-rule",
+					Description: "no intent",
+					// Intent is nil
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "live orphans without intent are empty",
+			plan: GCPlan{LiveOrphans: 5},
+			want: true,
+		},
+		{
+			name: "store action makes plan non-empty",
+			plan: GCPlan{
+				StoreActions: []action.Action{
+					action.DeleteProgram{ProgramID: 7},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "actionable violation makes plan non-empty",
+			plan: GCPlan{
+				Violations: []coherency.Violation{{
+					RuleName: "with-intent",
+					Intent:   coherency.RemoveOrphanArtefact{Path: "/tmp/x"},
+				}},
+			},
+			want: false,
+		},
+		{
+			name: "mixed actionable and diagnostic non-empty",
+			plan: GCPlan{
+				Violations: []coherency.Violation{
+					{RuleName: "diagnostic"},
+					{RuleName: "actionable", Intent: coherency.RemoveOrphanArtefact{Path: "/tmp/y"}},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := c.plan.IsEmpty(); got != c.want {
+				t.Errorf("IsEmpty() = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
