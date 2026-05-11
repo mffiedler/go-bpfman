@@ -36,7 +36,7 @@ func handleNet(c builtinCtx) (shell.Value, error) {
 	rest := c.Args[1:]
 	switch sub {
 	case "veth-pair":
-		return handleNetVethPair(c.Ctx, rest)
+		return handleNetVethPair(c.Ctx, c.Pos.cite(), rest)
 	case "release":
 		return handleNetRelease(c.Ctx, rest)
 	case "exec":
@@ -88,10 +88,11 @@ func ensureNetPair(a shell.Arg) (*shell.NetPair, error) {
 }
 
 // vethPairFlags is the parsed form of `net veth-pair`'s flag set.
-// HostAddrCIDR / PeerAddrCIDR are the full prefix forms passed to
-// `ip addr add` and `ip route add`; HostAddr / PeerAddr are the
-// bare addresses published on the NetPair handle so the script
-// can hand them to commands like ping that take an unmasked IP.
+// HostAddrCIDR / PeerAddrCIDR are the full prefix forms the
+// caller passed via --host-addr / --peer-addr; HostAddr /
+// PeerAddr are the matching bare addresses. Both pairs are empty
+// in auto mode (Auto == true), where the address pool fills them
+// in at acquire time.
 type vethPairFlags struct {
 	Ns           string
 	HostLink     string
@@ -100,14 +101,21 @@ type vethPairFlags struct {
 	PeerLink     string
 	PeerAddrCIDR string
 	PeerAddr     string
-	NoRoutes     bool
+
+	// Auto is true when neither --host-addr nor --peer-addr was
+	// passed; the pool allocates a /30 in that case. Auto and
+	// the explicit-address fields are mutually exclusive: passing
+	// exactly one of --host-addr / --peer-addr is a parse error.
+	Auto bool
 }
 
 // parseVethPairFlags walks `net veth-pair`'s arg list, accepting
 // both the `--name=value` and `--name value` spellings for each
-// flag (matching fire's convention). All five name/address flags
-// are required; --no-routes is optional. Unknown flags and
-// positional arguments are rejected with the offending token
+// flag (matching fire's convention). --ns, --host-link, and
+// --peer-link are required. --host-addr / --peer-addr are
+// optional but mutually-required: pass both for explicit-address
+// mode or neither for pool-allocated auto mode. Unknown flags
+// and positional arguments are rejected with the offending token
 // quoted so the user can correct it.
 func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 	var f vethPairFlags
@@ -159,9 +167,6 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 		case strings.HasPrefix(text, "--peer-addr="):
 			f.PeerAddrCIDR = strings.TrimPrefix(text, "--peer-addr=")
 			i++
-		case text == "--no-routes":
-			f.NoRoutes = true
-			i++
 		case strings.HasPrefix(text, "--"):
 			return f, fmt.Errorf("unknown flag %q", text)
 		default:
@@ -176,29 +181,32 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 	if f.HostLink == "" {
 		missing = append(missing, "--host-link")
 	}
-	if f.HostAddrCIDR == "" {
-		missing = append(missing, "--host-addr")
-	}
 	if f.PeerLink == "" {
 		missing = append(missing, "--peer-link")
-	}
-	if f.PeerAddrCIDR == "" {
-		missing = append(missing, "--peer-addr")
 	}
 	if len(missing) > 0 {
 		return f, fmt.Errorf("missing required flag(s): %s", strings.Join(missing, ", "))
 	}
 
-	bare, err := parseIPv4Prefix(f.HostAddrCIDR)
-	if err != nil {
-		return f, fmt.Errorf("--host-addr: %w", err)
+	switch {
+	case f.HostAddrCIDR == "" && f.PeerAddrCIDR == "":
+		f.Auto = true
+	case f.HostAddrCIDR != "" && f.PeerAddrCIDR != "":
+		bare, err := parseIPv4Prefix(f.HostAddrCIDR)
+		if err != nil {
+			return f, fmt.Errorf("--host-addr: %w", err)
+		}
+		f.HostAddr = bare
+		bare, err = parseIPv4Prefix(f.PeerAddrCIDR)
+		if err != nil {
+			return f, fmt.Errorf("--peer-addr: %w", err)
+		}
+		f.PeerAddr = bare
+	case f.HostAddrCIDR == "":
+		return f, fmt.Errorf("--peer-addr was given without --host-addr (pass both for explicit-address mode or neither for auto mode)")
+	default:
+		return f, fmt.Errorf("--host-addr was given without --peer-addr (pass both for explicit-address mode or neither for auto mode)")
 	}
-	f.HostAddr = bare
-	bare, err = parseIPv4Prefix(f.PeerAddrCIDR)
-	if err != nil {
-		return f, fmt.Errorf("--peer-addr: %w", err)
-	}
-	f.PeerAddr = bare
 	return f, nil
 }
 
@@ -219,16 +227,39 @@ func parseIPv4Prefix(s string) (string, error) {
 }
 
 // handleNetVethPair builds the paired-veth single-netns topology
-// in the canonical order: best-effort pre-clean, create netns,
-// create the veth pair, move the peer end into the netns, bring
-// both ends up, assign addresses, and add the symmetric /32
-// routes (unless --no-routes opts out). A mid-setup failure
-// rolls the partially-built state back so a leaked script does
+// in the canonical order: best-effort pre-clean, (auto mode
+// only) acquire a pool slot, create the netns, create the veth
+// pair, move the peer end into the netns, bring both ends up,
+// and assign addresses. The /30 layout means the kernel
+// installs the connected route automatically; this builtin does
+// not manage explicit routes in either auto or explicit mode.
+// A mid-setup failure rolls the partially-built state back --
+// including releasing the pool slot -- so a leaked script does
 // not require manual `ip netns del` to recover.
-func handleNetVethPair(ctx context.Context, args []shell.Arg) (shell.Value, error) {
+func handleNetVethPair(ctx context.Context, origin string, args []shell.Arg) (shell.Value, error) {
 	f, err := parseVethPairFlags(args)
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("net veth-pair: %w", err)
+	}
+
+	var lease *shell.PoolLease
+	hostCIDR := f.HostAddrCIDR
+	peerCIDR := f.PeerAddrCIDR
+	hostAddr := f.HostAddr
+	peerAddr := f.PeerAddr
+	if f.Auto {
+		lease, err = shell.AcquirePoolSlot(ctx, shell.PoolAcquireRequest{
+			Origin:    origin,
+			NsName:    f.Ns,
+			LinkAName: f.HostLink,
+		})
+		if err != nil {
+			return shell.Value{}, fmt.Errorf("net veth-pair: %w", err)
+		}
+		hostCIDR = lease.HostCIDR
+		peerCIDR = lease.PeerCIDR
+		hostAddr = lease.HostAddr
+		peerAddr = lease.PeerAddr
 	}
 
 	// Best-effort pre-clean against leftover state from a prior
@@ -246,9 +277,13 @@ func handleNetVethPair(ctx context.Context, args []shell.Arg) (shell.Value, erro
 		if nsCreated {
 			runIPIgnoreErr(ctx, "netns", "del", f.Ns)
 		}
+		if lease != nil {
+			_ = shell.ReleasePoolSlot(lease, f.Ns, f.HostLink)
+		}
 	}
 
 	if err := runIP(ctx, "netns", "add", f.Ns); err != nil {
+		rollback()
 		return shell.Value{}, fmt.Errorf("net veth-pair: %w", err)
 	}
 	nsCreated = true
@@ -262,17 +297,9 @@ func handleNetVethPair(ctx context.Context, args []shell.Arg) (shell.Value, erro
 	steps := [][]string{
 		{"link", "set", f.PeerLink, "netns", f.Ns},
 		{"link", "set", f.HostLink, "up"},
-		{"addr", "add", f.HostAddrCIDR, "dev", f.HostLink},
-	}
-	if !f.NoRoutes {
-		steps = append(steps, []string{"route", "add", f.PeerAddrCIDR, "dev", f.HostLink})
-	}
-	steps = append(steps,
-		[]string{"-n", f.Ns, "link", "set", f.PeerLink, "up"},
-		[]string{"-n", f.Ns, "addr", "add", f.PeerAddrCIDR, "dev", f.PeerLink},
-	)
-	if !f.NoRoutes {
-		steps = append(steps, []string{"-n", f.Ns, "route", "add", f.HostAddrCIDR, "dev", f.PeerLink})
+		{"addr", "add", hostCIDR, "dev", f.HostLink},
+		{"-n", f.Ns, "link", "set", f.PeerLink, "up"},
+		{"-n", f.Ns, "addr", "add", peerCIDR, "dev", f.PeerLink},
 	}
 	for _, step := range steps {
 		if err := runIP(ctx, step...); err != nil {
@@ -285,8 +312,9 @@ func handleNetVethPair(ctx context.Context, args []shell.Arg) (shell.Value, erro
 		Ns:       f.Ns,
 		HostLink: f.HostLink,
 		PeerLink: f.PeerLink,
-		HostAddr: f.HostAddr,
-		PeerAddr: f.PeerAddr,
+		HostAddr: hostAddr,
+		PeerAddr: peerAddr,
+		Lease:    lease,
 	}
 	return shell.ValueFromNetPair(pair), nil
 }
@@ -294,9 +322,12 @@ func handleNetVethPair(ctx context.Context, args []shell.Arg) (shell.Value, erro
 // handleNetRelease tears the topology down in LIFO-correct order:
 // delete the host-side veth first (the kernel reclaims the peer
 // end with it), then delete the netns. Both steps ignore failure
-// because missing resources are the desired terminal state, and
-// the second call against an already-released handle short-
-// circuits at the lifecycle latch. The envelope is always OK so
+// because missing resources are the desired terminal state. When
+// the handle carries a pool lease (auto-address mode), the slot
+// is released after the kernel teardown so the lockfile's final
+// provenance reflects the just-torn-down topology. The second
+// call against an already-released handle short-circuits at the
+// lifecycle latch. The envelope is always OK so
 // `defer net release $pair` never disturbs a clean exit.
 func handleNetRelease(ctx context.Context, args []shell.Arg) (shell.Value, error) {
 	if len(args) != 1 {
@@ -311,6 +342,9 @@ func handleNetRelease(ctx context.Context, args []shell.Arg) (shell.Value, error
 	}
 	runIPIgnoreErr(ctx, "link", "del", pair.HostLink)
 	runIPIgnoreErr(ctx, "netns", "del", pair.Ns)
+	if pair.Lease != nil {
+		_ = shell.ReleasePoolSlot(pair.Lease, pair.Ns, pair.HostLink)
+	}
 	return shell.ValueFromEnvelope(shell.Envelope{OK: true, Code: 0}), nil
 }
 

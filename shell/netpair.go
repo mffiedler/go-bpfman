@@ -42,6 +42,16 @@ type NetPair struct {
 	// topology. Subsequent net exec / net start error; subsequent
 	// net release is a no-op (idempotent cleanup).
 	Released bool
+
+	// Lease is the slot leased from the address pool when net
+	// veth-pair ran in auto-address mode. Nil when the caller
+	// passed --host-addr / --peer-addr explicitly. Carried on the
+	// handle so net release knows to write the slot's released_at
+	// provenance and close the flock'd lockfile during teardown.
+	// The field is intentionally not surfaced through
+	// ValueFromNetPair: the DSL only sees the five identity
+	// strings; the lease is implementation machinery.
+	Lease *PoolLease
 }
 
 // MarkReleased sets the lifecycle latch and reports whether this

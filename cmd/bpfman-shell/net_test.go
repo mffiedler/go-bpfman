@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,7 +62,7 @@ func TestHandleNet_UnknownSubcommand(t *testing.T) {
 	assert.Contains(t, err.Error(), "exec, release, start, veth-pair")
 }
 
-func TestParseVethPairFlags_BothSpellings(t *testing.T) {
+func TestParseVethPairFlags_ExplicitMode_BothSpellings(t *testing.T) {
 	t.Parallel()
 	cases := [][]string{
 		{
@@ -86,24 +88,62 @@ func TestParseVethPairFlags_BothSpellings(t *testing.T) {
 		assert.Equal(t, "198.51.100.2/32", f.PeerAddrCIDR)
 		assert.Equal(t, "198.51.100.1", f.HostAddr)
 		assert.Equal(t, "198.51.100.2", f.PeerAddr)
-		assert.False(t, f.NoRoutes)
+		assert.Falsef(t, f.Auto, "explicit-address args should not flip Auto")
 	}
 }
 
-func TestParseVethPairFlags_NoRoutesAccepted(t *testing.T) {
+func TestParseVethPairFlags_AutoMode_NoAddrFlags(t *testing.T) {
 	t.Parallel()
-	args := []string{
-		"--ns=ns0", "--host-link=h0", "--host-addr=198.51.100.1/32",
-		"--peer-link=p0", "--peer-addr=198.51.100.2/32",
-		"--no-routes",
-	}
+	args := []string{"--ns=ns0", "--host-link=h0", "--peer-link=p0"}
 	wargs := make([]shell.Arg, len(args))
 	for i, a := range args {
 		wargs[i] = shell.WordArg{Text: a}
 	}
 	f, err := parseVethPairFlags(wargs)
 	require.NoError(t, err)
-	assert.True(t, f.NoRoutes)
+	assert.True(t, f.Auto, "no addr flags should select auto mode")
+	assert.Empty(t, f.HostAddrCIDR)
+	assert.Empty(t, f.PeerAddrCIDR)
+	assert.Empty(t, f.HostAddr)
+	assert.Empty(t, f.PeerAddr)
+}
+
+func TestParseVethPairFlags_HostAddrAloneIsError(t *testing.T) {
+	t.Parallel()
+	args := []string{"--ns=ns0", "--host-link=h0", "--peer-link=p0", "--host-addr=198.51.100.1/30"}
+	wargs := make([]shell.Arg, len(args))
+	for i, a := range args {
+		wargs[i] = shell.WordArg{Text: a}
+	}
+	_, err := parseVethPairFlags(wargs)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--host-addr was given without --peer-addr")
+}
+
+func TestParseVethPairFlags_PeerAddrAloneIsError(t *testing.T) {
+	t.Parallel()
+	args := []string{"--ns=ns0", "--host-link=h0", "--peer-link=p0", "--peer-addr=198.51.100.2/30"}
+	wargs := make([]shell.Arg, len(args))
+	for i, a := range args {
+		wargs[i] = shell.WordArg{Text: a}
+	}
+	_, err := parseVethPairFlags(wargs)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--peer-addr was given without --host-addr")
+}
+
+func TestParseVethPairFlags_NoRoutesFlagIsUnknown(t *testing.T) {
+	t.Parallel()
+	args := []string{
+		"--ns=ns0", "--host-link=h0", "--peer-link=p0", "--no-routes",
+	}
+	wargs := make([]shell.Arg, len(args))
+	for i, a := range args {
+		wargs[i] = shell.WordArg{Text: a}
+	}
+	_, err := parseVethPairFlags(wargs)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown flag "--no-routes"`)
 }
 
 func TestParseVethPairFlags_MissingRequiredFlags(t *testing.T) {
@@ -115,9 +155,11 @@ func TestParseVethPairFlags_MissingRequiredFlags(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required flag(s)")
 	assert.Contains(t, err.Error(), "--host-link")
-	assert.Contains(t, err.Error(), "--host-addr")
 	assert.Contains(t, err.Error(), "--peer-link")
-	assert.Contains(t, err.Error(), "--peer-addr")
+	assert.NotContains(t, err.Error(), "--host-addr",
+		"--host-addr is optional and must not appear in the missing-required list")
+	assert.NotContains(t, err.Error(), "--peer-addr",
+		"--peer-addr is optional and must not appear in the missing-required list")
 }
 
 func TestParseVethPairFlags_BareAddressRejected(t *testing.T) {
@@ -328,4 +370,76 @@ func TestNetBuiltin_RegisteredInRegistry(t *testing.T) {
 	assert.NotNil(t, entry.Handler)
 	assert.NotEmpty(t, entry.Usage)
 	assert.NotEmpty(t, entry.Summary)
+}
+
+// TestHandleNetRelease_AutoModeReleasesLease guards the
+// handler-to-pool wiring on the release path. A NetPair that
+// carries a Lease must trigger ReleasePoolSlot during teardown
+// so the lockfile body picks up a released_at and the flock is
+// dropped. The ip(8) commands inside handleNetRelease fail
+// silently against the synthetic ns / link names; that is the
+// existing behaviour and not what this test exercises.
+func TestHandleNetRelease_AutoModeReleasesLease(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	lease, err := shell.AcquirePoolSlot(context.Background(), shell.PoolAcquireRequest{
+		Root:        root,
+		Origin:      "test_release.bpfman:1",
+		NsName:      "ns-rel",
+		LinkAName:   "vea-rel",
+		LinkExists:  func(string) bool { return false },
+		NetnsExists: func(string) bool { return false },
+	})
+	require.NoError(t, err)
+	pair := &shell.NetPair{
+		Ns:       "ns-rel",
+		HostLink: "vea-rel",
+		PeerLink: "veb-rel",
+		HostAddr: lease.HostAddr,
+		PeerAddr: lease.PeerAddr,
+		Lease:    lease,
+	}
+	v, err := handleNet(builtinCtx{
+		Ctx:  context.Background(),
+		Cmd:  "net",
+		Args: []shell.Arg{shell.WordArg{Text: "release"}, pairArg(pair)},
+	})
+	require.NoError(t, err)
+	env, ok := v.Origin().(shell.Envelope)
+	require.True(t, ok)
+	assert.True(t, env.OK)
+
+	body, err := os.ReadFile(slotLockPathForTest(t, root, lease.Slot))
+	require.NoError(t, err)
+	var prov struct {
+		Origin     string `json:"origin"`
+		NsName     string `json:"ns_name"`
+		LinkAName  string `json:"link_a_name"`
+		ReleasedAt string `json:"released_at"`
+	}
+	require.NoError(t, json.Unmarshal(body, &prov))
+	assert.Equal(t, "test_release.bpfman:1", prov.Origin)
+	assert.Equal(t, "ns-rel", prov.NsName)
+	assert.Equal(t, "vea-rel", prov.LinkAName)
+	assert.NotEmpty(t, prov.ReleasedAt, "release path must write released_at into the slot body")
+	assert.True(t, pair.IsReleased())
+}
+
+// slotLockPathForTest reproduces the pool's slot-to-path mapping
+// for the integration test above. Kept here rather than exported
+// from shell/netpool.go because it is a one-line implementation
+// detail, not a stable API contract.
+func slotLockPathForTest(t *testing.T, root string, slot uint32) string {
+	t.Helper()
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	want := []byte{byte('0' + slot/10), byte('0' + slot%10)}
+	for _, e := range entries {
+		name := e.Name()
+		if len(name) >= 2 && name[0] == want[0] && name[1] == want[1] {
+			return root + "/" + name
+		}
+	}
+	t.Fatalf("no lockfile for slot %d under %s", slot, root)
+	return ""
 }
