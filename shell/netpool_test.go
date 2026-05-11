@@ -202,14 +202,16 @@ func TestAcquirePoolSlot_Exhaustion(t *testing.T) {
 	assert.Contains(t, err.Error(), "more than 64")
 }
 
-// TestAcquirePoolSlot_StaleLeak_Link models the post-crash
-// attribution path: the previous tenant's host-side veth is
-// still present in the kernel, so the next acquire MUST fail
-// with a message naming the previous origin and the lingering
-// resource. We seed slot 1 with a long-ago released_at and the
-// other 63 slots with a fresh released_at so the FIFO sort
-// puts slot 1 first; the leak-check then fires.
-func TestAcquirePoolSlot_StaleLeak_Link(t *testing.T) {
+// TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink confirms
+// the post-fix behaviour: a slot whose previous tenant wrote
+// released_at is trusted to have cleaned up, even when an
+// extant link of the same name still exists in the kernel.
+// That extant link is presumed to belong to a later unrelated
+// process (typically another concurrent run of a script with
+// deterministic names) and must not be flagged as a leak this
+// acquirer attributes. Without this carve-out, parallel runs of
+// the same fixture script reliably produce false positives.
+func TestAcquirePoolSlot_ReleasedSlotIgnoresExtantLink(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
@@ -223,18 +225,18 @@ func TestAcquirePoolSlot_StaleLeak_Link(t *testing.T) {
 
 	req := poolReq(root, "next_test.bpfman:1", "ns-next", "vea-next")
 	req.LinkExists = func(name string) bool { return name == "vea-leaker" }
-	_, err := AcquirePoolSlot(context.Background(), req)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "slot 1")
-	assert.Contains(t, err.Error(), `link "vea-leaker"`)
-	assert.Contains(t, err.Error(), "previous_test.bpfman:42")
-	assert.Contains(t, err.Error(), "released")
+	lease, err := AcquirePoolSlot(context.Background(), req)
+	require.NoError(t, err, "released_at should suppress the existence check")
+	defer ReleasePoolSlot(lease, "ns-next", "vea-next")
+	assert.Equal(t, uint32(1), lease.Slot)
 }
 
-// TestAcquirePoolSlot_StaleLeak_Netns is the sibling case: the
-// netns is still present even though the link was reaped. The
-// stub flags "ns-leaker" as present; the link check is clean.
-func TestAcquirePoolSlot_StaleLeak_Netns(t *testing.T) {
+// TestAcquirePoolSlot_ReleasedSlotIgnoresExtantNetns is the
+// netns sibling of the above. Same reasoning: a released slot
+// trusts its released_at promise; any extant netns of the
+// previous name is attributed to an unrelated concurrent
+// process.
+func TestAcquirePoolSlot_ReleasedSlotIgnoresExtantNetns(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
@@ -248,11 +250,51 @@ func TestAcquirePoolSlot_StaleLeak_Netns(t *testing.T) {
 
 	req := poolReq(root, "next_test.bpfman:1", "ns-next", "vea-next")
 	req.NetnsExists = func(name string) bool { return name == "ns-leaker" }
-	_, err := AcquirePoolSlot(context.Background(), req)
+	lease, err := AcquirePoolSlot(context.Background(), req)
+	require.NoError(t, err, "released_at should suppress the existence check")
+	defer ReleasePoolSlot(lease, "ns-next", "vea-next")
+	assert.Equal(t, uint32(1), lease.Slot)
+}
+
+// TestAcquirePoolSlot_CrashLeakedLinkAttributed exercises the
+// remaining attribution path: the previous tenant crashed
+// before writing released_at and left its link behind. This
+// is the scenario assertSlotClean is now scoped to, and the
+// failure must name the previous origin and the lingering link.
+func TestAcquirePoolSlot_CrashLeakedLinkAttributed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// Slot 1 has an acquire-time body with no released_at; mtime
+	// is forced into the past so it sorts ahead of the freshly-
+	// seeded slots 2..PoolSize.
+	body := provenance{
+		Origin:     "crashed_test.bpfman:13",
+		NsName:     "ns-leaker",
+		LinkAName:  "vea-leaker",
+		AcquiredAt: "2020-01-01T00:00:00Z",
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	slot1 := slotLockPath(root, 1)
+	require.NoError(t, os.WriteFile(slot1, raw, 0o600))
+	pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, os.Chtimes(slot1, pastTime, pastTime))
+	fresh := provenance{ReleasedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	rawFresh, err := json.Marshal(fresh)
+	require.NoError(t, err)
+	for slot := uint32(2); slot <= PoolSize; slot++ {
+		require.NoError(t, os.WriteFile(slotLockPath(root, slot), rawFresh, 0o600))
+	}
+
+	req := poolReq(root, "next_test.bpfman:1", "ns-next", "vea-next")
+	req.LinkExists = func(name string) bool { return name == "vea-leaker" }
+	_, err = AcquirePoolSlot(context.Background(), req)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "slot 1")
-	assert.Contains(t, err.Error(), `netns "ns-leaker"`)
-	assert.Contains(t, err.Error(), "previous_test.bpfman:7")
+	assert.Contains(t, err.Error(), `link "vea-leaker"`)
+	assert.Contains(t, err.Error(), "crashed_test.bpfman:13")
+	assert.Contains(t, err.Error(), "never released")
 }
 
 // TestAcquirePoolSlot_StaleLeak_NeverReleased is the crash-

@@ -328,12 +328,25 @@ func scanSlots(root string) ([]slotCandidate, error) {
 	return out, nil
 }
 
-// assertSlotClean fails the acquire if the previous tenant's
-// kernel artefacts are still present. Both checks are name-
-// targeted (no link-table dumps) to avoid NLM_F_DUMP_INTR under
-// parallel churn and to keep the failure message attributable to
-// the specific leaked resource.
+// assertSlotClean fails the acquire if the previous tenant
+// crashed before releasing the slot AND its kernel artefacts are
+// still present. The check is scoped to the crash case
+// (prev.ReleasedAt == "") because a slot that recorded
+// released_at is a strong promise that the release path deleted
+// the named resources before writing the timestamp; any extant
+// resource with the same name today was created by a later
+// unrelated process (e.g. a concurrent run of a deterministically-
+// named script in the test corpus) and is not a leak this
+// acquirer should attribute. Treating that as a leak produces
+// false positives whenever the same script runs back-to-back on
+// the same host.
+//
+// Both checks remain name-targeted (no link-table dumps) so
+// NLM_F_DUMP_INTR cannot strike under parallel churn.
 func assertSlotClean(slot uint32, prev provenance, linkCheck LinkExistsFn, netnsCheck NetnsExistsFn) error {
+	if prev.ReleasedAt != "" {
+		return nil
+	}
 	if prev.LinkAName != "" && linkCheck(prev.LinkAName) {
 		return leakError(slot, prev, "link", prev.LinkAName)
 	}
