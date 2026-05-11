@@ -30,30 +30,10 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-let ns      = "bpfsh-mtcxok"
-let veth_a  = "vea-mtcxok"
-let veth_b  = "veb-mtcxok"
-let ip_a    = "198.51.100.1"
-let ip_b    = "198.51.100.2"
-
-let _ <- ip link del $veth_a
-let _ <- ip netns del $ns
-
-guard _ <- ip netns add $ns
-defer ip netns del $ns
-
-guard _ <- ip link add $veth_a type veth peer name $veth_b
-defer ip link del $veth_a
-
-guard _ <- ip link set $veth_b netns $ns
-
-guard _ <- ip link set $veth_a up
-guard _ <- ip addr add "${ip_a}/32" dev $veth_a
-guard _ <- ip route add "${ip_b}/32" dev $veth_a
-
-guard _ <- ip -n $ns link set $veth_b up
-guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
-guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+guard pair <- net veth-pair --ns=bpfsh-mtcxok \
+    --host-link=vea-mtcxok --host-addr=198.51.100.1/32 \
+    --peer-link=veb-mtcxok --peer-addr=198.51.100.2/32
+defer net release $pair
 
 
 guard loaded <- bpfman program load file \
@@ -79,13 +59,13 @@ let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxca_count\") |
 let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxcb_count\") | .id][0]"
 let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxcc_count\") | .id][0]"
 
-guard link_a <- bpfman link attach tcx -i $veth_a -d ingress -p 50 $pid_a
-guard link_b <- bpfman link attach tcx -i $veth_a -d ingress -p 60 $pid_b
-guard link_c <- bpfman link attach tcx -i $veth_a -d ingress -p 70 $pid_c
+guard link_a <- bpfman link attach tcx -i $pair.host_link -d ingress -p 50 $pid_a
+guard link_b <- bpfman link attach tcx -i $pair.host_link -d ingress -p 60 $pid_b
+guard link_c <- bpfman link attach tcx -i $pair.host_link -d ingress -p 70 $pid_c
 
 let counter_filter = ".[0].formatted.value | tonumber"
 
-guard _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+guard _ <- net exec $pair ping -c $n -i 0.05 -W 1 $pair.host_addr
 
 guard dump_a <- bpftool map dump id $mapID_a -j
 guard dump_b <- bpftool map dump id $mapID_b -j

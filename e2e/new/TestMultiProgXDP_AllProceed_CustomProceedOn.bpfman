@@ -30,36 +30,16 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-let ns      = "bpfsh-mxdvc"
-let veth_a  = "vea-mxdvc"
-let veth_b  = "veb-mxdvc"
-let ip_a    = "198.51.100.1"
-let ip_b    = "198.51.100.2"
-
-let _ <- ip link del $veth_a
-let _ <- ip netns del $ns
-
-guard _ <- ip netns add $ns
-defer ip netns del $ns
-
-guard _ <- ip link add $veth_a type veth peer name $veth_b
-defer ip link del $veth_a
-
-guard _ <- ip link set $veth_b netns $ns
-
-guard _ <- ip link set $veth_a up
-guard _ <- ip addr add "${ip_a}/32" dev $veth_a
-guard _ <- ip route add "${ip_b}/32" dev $veth_a
-
-guard _ <- ip -n $ns link set $veth_b up
-guard _ <- ip -n $ns addr add "${ip_b}/32" dev $veth_b
-guard _ <- ip -n $ns route add "${ip_a}/32" dev $veth_b
+guard pair <- net veth-pair --ns=bpfsh-mxdvc \
+    --host-link=vea-mxdvc --host-addr=198.51.100.1/32 \
+    --peer-link=veb-mxdvc --peer-addr=198.51.100.2/32
+defer net release $pair
 
 # Warmup ping to populate the ARP caches both ways before any
 # BPF programs attach. The chain ends with DROP and the kernel
 # never sees the packet, so without a primed ARP cache the
 # script's pings would never resolve A's MAC.
-guard _ <- ip netns exec $ns ping -c 1 -W 1 $ip_a
+guard _ <- net exec $pair ping -c 1 -W 1 $pair.host_addr
 
 
 # All programs return XDP_DROP = 1 -> 0x01000000.
@@ -90,16 +70,16 @@ let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxdv_b_count\")
 let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxdv_c_count\") | .id][0]"
 
 # Custom proceed-on includes DROP so the chain doesn't stop.
-guard link_a <- bpfman link attach xdp -i $veth_a -p 50 --proceed-on drop,dispatcher_return $pid_a
-guard link_b <- bpfman link attach xdp -i $veth_a -p 60 --proceed-on drop,dispatcher_return $pid_b
-guard link_c <- bpfman link attach xdp -i $veth_a -p 70 --proceed-on drop,dispatcher_return $pid_c
+guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 --proceed-on drop,dispatcher_return $pid_a
+guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 --proceed-on drop,dispatcher_return $pid_b
+guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 --proceed-on drop,dispatcher_return $pid_c
 
 let counter_filter = ".[0].formatted.value | tonumber"
 
 # Send N pings and discard the rc; final verdict is DROP so the
 # kernel never replies and ping reports 100% loss. The XDP
 # counters still advance for every program in the chain.
-let _ <- ip netns exec $ns ping -c $n -i 0.05 -W 1 $ip_a
+let _ <- net exec $pair ping -c $n -i 0.05 -W 1 $pair.host_addr
 
 guard dump_a <- bpftool map dump id $mapID_a -j
 guard dump_b <- bpftool map dump id $mapID_b -j
