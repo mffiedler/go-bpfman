@@ -43,6 +43,16 @@ var typeToOriginKind = map[reflect.Type]shell.OriginKind{
 func init() {
 	shell.RegisterShape(shell.OriginProgram, shapeFromType(reflect.TypeOf(bpfman.Program{}), shell.OriginProgram))
 	shell.RegisterShape(shell.OriginLink, shapeFromType(reflect.TypeOf(bpfman.Link{}), shell.OriginLink))
+
+	// Pure builtins whose handlers live in this command. Tag
+	// each entry with its arity (number of primary args the
+	// parser consumes in expression position) and the Shape
+	// it returns. jq is the only intrinsic the shell package
+	// registers from its own init (see shell/purebuiltin.go)
+	// because shell-package tests assert on its check-time
+	// shape; everything else lands here.
+	shell.RegisterPureBuiltin("u32le", 1, shell.KindShape(shell.OriginScalar))
+	shell.RegisterPureBuiltin("u64le", 1, shell.KindShape(shell.OriginScalar))
 }
 
 // shapeFromType reflects t into a Shape tree honouring JSON

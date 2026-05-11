@@ -225,18 +225,12 @@ func (c *checker) inferExprKind(e Expr) OriginKind {
 //
 //  3. Pure value-producing builtins (in-process, no subprocess,
 //     no stdout capture, no domain object -- just a value
-//     computation that the `<-` form lets the caller bind):
-//     `u32le` and `u64le` return scalars. The `=` form is
-//     reserved for pure expressions today and does not dispatch
-//     builtins, so `<-` is the only way to invoke them; the
-//     shape inference reads them as plain scalars rather than
-//     as captured envelopes.
-//
-// `jq` and `file` produce typed-but-shape-unknown values handled
-// by the runtime's path machinery; they fall in family (2) but
-// without a registered Shape, so the inference returns the
-// permissive OriginUnknown wildcard and lets downstream
-// path/equality checks proceed.
+//     computation). Recognition is registry-driven via
+//     LookupPureBuiltin; cmd/bpfman-shell registers each pure
+//     entry's name, arity, and return Shape at init time. The
+//     `<-` form remains available as a compatibility spelling;
+//     `=` and `${...}` invoke the same handler in expression
+//     position (see PureCallExpr).
 //
 // The rc slot of a tuple bind is always result and is set by
 // the caller.
@@ -257,21 +251,22 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 	if expanded, ok := c.aliases[headText]; ok {
 		headText = expanded
 	}
+	if pb, ok := LookupPureBuiltin(headText); ok {
+		return pb.ReturnShape
+	}
 	switch headText {
 	case "start":
 		return KindShape(OriginJob)
 	case "exec", "wait", "kill":
 		return KindShape(OriginEnvelope)
-	case "jq", "file":
+	case "file":
+		// 'file temp $var' returns a path string the caller
+		// binds and reads through string interpolation; the
+		// primary is not an envelope. file is not pure -- it
+		// writes to disk -- so it does not belong in the
+		// pure-builtin registry; the static checker carries
+		// the shape contract here as a one-off named case.
 		return Shape{Sealed: false, Kind: OriginUnknown}
-	case "u32le", "u64le":
-		// Pure value-producing builtins: no subprocess, no stdout
-		// capture, just an integer-to-hex encoding. The `<-` bind
-		// form is the only way to invoke them today (the parser
-		// reserves `let X = expr` for pure expressions and does
-		// not dispatch builtins from there), so the bind result
-		// reads as a plain scalar and not as a captured envelope.
-		return KindShape(OriginScalar)
 	case "bpfman":
 		return inferBpfmanBindShape(cmd.Args[1:])
 	}
