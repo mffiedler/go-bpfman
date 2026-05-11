@@ -996,7 +996,16 @@ func (c *checker) checkBuiltinArity(prog *Program) {
 		"kill":  {min: 1, max: 1},  // exactly one $job (after flags)
 		"jobs":  {min: 0, max: 0},
 		"reap":  {min: 0, max: 0},
-		"fire":  {min: 3, max: 3}, // kind, sentinel, ack (flags --count= --waves= skipped)
+		// fire's positional shape is (KIND, SENTINEL, ACK) but its
+		// flags (--count=N, --waves=K) frequently interpolate (e.g.
+		// --count=$n), which makes them non-LiteralExpr args that
+		// nonFlagArgCount cannot recognise as flags. Strict static
+		// counting would reject every interpolated invocation. The
+		// runtime handler enforces the exact positional/flag shape;
+		// the v2 work in PLAN-fire-builtin.md hoists kind-name and
+		// NeedsBinary validation into the checker, which is where a
+		// flag-aware arity check belongs.
+		"fire": {min: 1, max: -1},
 	}
 	Inspect(prog, func(n Node) bool {
 		cmd, ok := n.(*CommandStmt)

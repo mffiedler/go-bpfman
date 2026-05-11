@@ -53,7 +53,7 @@ func TestHandleFire_MissingCount(t *testing.T) {
 	t.Parallel()
 	_, err := callFire("unlinkat", "/tmp/s", "/tmp/a")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--count=N is required")
+	assert.Contains(t, err.Error(), "--count is required")
 }
 
 func TestHandleFire_BadCount(t *testing.T) {

@@ -40,10 +40,20 @@ first argument and a `--count` / `--waves` protocol pair as flags.
 Sentinel and ack are positional (their order is obvious from
 adjacent `let` bindings).
 
+The flags use the space-separated form (`--count $n`, not
+`--count=$n`) because the shell's word-splitting tokenises
+`--count=$n` into two args (`--count=` plus the substituted
+value), so the equals form requires the noisy
+`"--count=${n}"` to keep the flag together. The handler accepts
+both spellings -- the equals form works fine for literal values
+(`--count=5`) and aligns with kill's `--signal=KILL` -- but the
+script-facing convention is the space form because every flag in
+the corpus passes a variable.
+
 ```
-guard work <- fire unlinkat $sentinel $ack --count=$n --waves=1
-guard work <- fire kill     $sentinel $ack --count=$n --waves=1
-guard work <- fire uprobe   $sentinel $ack --count=$n --waves=1
+guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
+guard work <- fire kill     $sentinel $ack --count $n --waves 1
+guard work <- fire uprobe   $sentinel $ack --count $n --waves 1
 ```
 
 `fire` returns a `Job` primary, the same shape `start` produces. From
@@ -52,7 +62,7 @@ process; `wait`, `kill`, and `defer kill $work` all compose
 unchanged:
 
 ```
-guard work <- fire unlinkat $sentinel $ack --count=$n --waves=1
+guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
 defer kill --signal=KILL $work
 guard loaded <- bpfman program load file \
     --path testdata/bpf/kprobe_exact.bpf.o \
@@ -126,7 +136,7 @@ guard work <- start env BPFMAN_SHELL_MODE=unlinkat-fire-worker \
 into:
 
 ```
-guard work <- fire unlinkat $sentinel $ack --count=$n --waves=1
+guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
 ```
 
 The second form says what the test needs: "fire unlinkat events".

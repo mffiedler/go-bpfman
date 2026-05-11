@@ -192,6 +192,16 @@ var (
 			Kind:   OriginJob,
 			Fields: map[string]Shape{
 				"pid": {Sealed: true, Kind: OriginScalar},
+				// target_binary is populated by fire kinds with
+				// NeedsBinary == true and by plain start (best-
+				// effort identity from argv[0]); the static
+				// checker accepts the path here so a script can
+				// pass it to bpfman link attach uprobe --target.
+				// The runtime ValueFromJob only writes the field
+				// when the producer set Job.TargetBinary, so a
+				// read on a Job that never carried a target is a
+				// runtime field error rather than a silent empty.
+				"target_binary": {Sealed: true, Kind: OriginScalar},
 			},
 		},
 		OriginEnvelope: {
