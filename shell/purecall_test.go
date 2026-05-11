@@ -18,7 +18,7 @@ func registerTestPureBuiltin(t *testing.T, prefix string, arity int) string {
 	t.Helper()
 	name := prefix + "_" + strings.ReplaceAll(t.Name(), "/", "_")
 	RegisterPureBuiltin(name, arity, KindShape(OriginScalar))
-	t.Cleanup(func() { delete(pureBuiltinRegistry, name) })
+	t.Cleanup(func() { UnregisterPureBuiltin(name) })
 	return name
 }
 
@@ -214,7 +214,7 @@ func TestCheck_PureCall_ReturnShapeFlowsThroughLet(t *testing.T) {
 	// register our own to avoid coupling.
 	const name = "__check_ud_scalar__"
 	RegisterPureBuiltin(name, 1, KindShape(OriginScalar))
-	t.Cleanup(func() { delete(pureBuiltinRegistry, name) })
+	t.Cleanup(func() { UnregisterPureBuiltin(name) })
 
 	src := "let x = " + name + " 42\nprint $x.field"
 	issues := checkSource(t, src)
@@ -227,7 +227,7 @@ func TestCheck_PureCall_UnknownReturnShapeIsPermissive(t *testing.T) {
 
 	const name = "__check_anything__"
 	RegisterPureBuiltin(name, 1, Shape{Sealed: false, Kind: OriginUnknown})
-	t.Cleanup(func() { delete(pureBuiltinRegistry, name) })
+	t.Cleanup(func() { UnregisterPureBuiltin(name) })
 
 	src := "let x = " + name + " 1\nprint $x.deep.path[0]"
 	issues := checkSource(t, src)

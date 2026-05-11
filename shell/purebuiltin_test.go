@@ -32,7 +32,7 @@ func TestPureBuiltinRegistry_RegisterOverwrites(t *testing.T) {
 	// test stays isolated from concurrent registrations.
 	const name = "__purebuiltin_test_overwrite__"
 	RegisterPureBuiltin(name, 1, KindShape(OriginScalar))
-	t.Cleanup(func() { delete(pureBuiltinRegistry, name) })
+	t.Cleanup(func() { UnregisterPureBuiltin(name) })
 
 	pb, ok := LookupPureBuiltin(name)
 	require.True(t, ok)

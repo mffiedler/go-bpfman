@@ -1,5 +1,7 @@
 package shell
 
+import "sync"
+
 // Pure builtins are deterministic value-producing functions: no
 // subprocess, no kernel state, no captured-result envelope. The
 // classic examples are `u32le` (int -> hex string), `u64le`, `jq`
@@ -41,7 +43,27 @@ type PureBuiltin struct {
 	ReturnShape Shape
 }
 
-var pureBuiltinRegistry = map[string]PureBuiltin{}
+// pureBuiltinRegistry is the source of truth for the pure-builtin
+// set. The parser, the checker, and any handler dispatch consult
+// it; init-time registrations from cmd/bpfman-shell populate it
+// before tests run, and tests register additional throwaway names
+// at runtime under t.Cleanup. The mutex makes both paths safe
+// when the test runner parallelises:
+//
+//   - RegisterPureBuiltin / UnregisterPureBuiltin take the write
+//     lock so additions and cleanups serialise against each
+//     other and against readers.
+//   - LookupPureBuiltin takes the read lock so concurrent parses
+//     and checks see a consistent snapshot.
+//
+// Without this guard, a parallel parse calling LookupPureBuiltin
+// races against a test cleanup deleting a temporary entry, which
+// the Go race detector flags and which can corrupt the map under
+// load.
+var (
+	pureBuiltinRegistryMu sync.RWMutex
+	pureBuiltinRegistry   = map[string]PureBuiltin{}
+)
 
 func init() {
 	// jq is the threading and structured-data primitive the
@@ -62,11 +84,24 @@ func init() {
 // free of cmd-side imports while still letting the parser and
 // checker consult an authoritative source of truth.
 func RegisterPureBuiltin(name string, arity int, returnShape Shape) {
+	pureBuiltinRegistryMu.Lock()
+	defer pureBuiltinRegistryMu.Unlock()
 	pureBuiltinRegistry[name] = PureBuiltin{
 		Name:        name,
 		Arity:       arity,
 		ReturnShape: returnShape,
 	}
+}
+
+// UnregisterPureBuiltin removes name from the registry. Tests
+// that register a throwaway entry under t.Cleanup must use this
+// helper rather than `delete(pureBuiltinRegistry, name)` so the
+// removal serialises with concurrent lookups under
+// pureBuiltinRegistryMu.
+func UnregisterPureBuiltin(name string) {
+	pureBuiltinRegistryMu.Lock()
+	defer pureBuiltinRegistryMu.Unlock()
+	delete(pureBuiltinRegistry, name)
 }
 
 // LookupPureBuiltin reports the registration for name, if any.
@@ -75,6 +110,8 @@ func RegisterPureBuiltin(name string, arity int, returnShape Shape) {
 // checker calls it on the first word of a bind RHS to read the
 // return Shape.
 func LookupPureBuiltin(name string) (PureBuiltin, bool) {
+	pureBuiltinRegistryMu.RLock()
+	defer pureBuiltinRegistryMu.RUnlock()
 	pb, ok := pureBuiltinRegistry[name]
 	return pb, ok
 }
