@@ -12,7 +12,6 @@ Multiple components need to query bpfman's state:
 |----------|---------|
 | CLI `list` commands | Display programs, links, dispatchers to users |
 | Diagnostic tools | Inspect state for debugging and troubleshooting |
-| Coherency engine | Gather facts for rule evaluation (separate implementation) |
 
 The `inspect` package provides the "state of the bpfman world" by
 correlating three sources:
@@ -274,19 +273,6 @@ scanner := bpffs.NewScanner(dirs).WithOnMalformed(func(path string, err error) {
     log.Printf("malformed entry: %s: %v", path, err)
 })
 ```
-
-## Relationship to Coherency
-
-The coherency engine (`manager/coherency.go`) has its own `GatherState`
-function that builds an `ObservedState`. This is intentionally separate:
-
-- Coherency needs additional facts (TC filter probes, link counts, etc.)
-- Coherency writes to SQL for rule evaluation
-- The `inspect` package is for CLI/diagnostics display
-
-Both share `bpffs.Scanner` as the FS enumeration primitive. In future,
-coherency could optionally consume `inspect.World` for the common facts,
-but this coupling is not forced.
 
 ## Usage Example
 

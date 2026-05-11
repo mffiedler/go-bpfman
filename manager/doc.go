@@ -72,8 +72,12 @@
 //
 // On failure the plan interpreter rolls back completed actions in
 // reverse order (UnloadProgram, RemoveProgramDir). On success,
-// programs only appear in the store after the full sequence completes.
-// GC handles orphans from crashes.
+// programs only appear in the store after the full sequence
+// completes. Crash residue (kernel program plus bpffs pin plus
+// bytecode directory without a matching store row) is benign: the
+// kernel keeps the program alive while the pin holds, so the
+// kernel ID cannot be recycled. Operators clean up manually with
+// bpftool plus rm under the bytecode directory.
 //
 // # Rollback and Error Reporting
 //
@@ -101,30 +105,6 @@
 // operations (Load, Unload, Attach*, Detach*) return plain errors.
 // Rollback failures are logged but do not alter the returned error.
 //
-// # Garbage Collection
-//
-// GC reconciles the store against kernel and filesystem state. Each
-// mutating method (Load, Unload, Attach, Detach) runs GC on the way
-// in via gcOnEntry, so callers never need to coordinate GC
-// themselves. There is no flag, no scheduling state: every mutating
-// method simply runs GC as its first step. The active-marker in the
-// context prevents nested mutating calls within the same outer
-// operation from re-running GC.
-//
-// computeStoreGC inside ComputeGC is gated on kernel-enumeration
-// completeness; partial enumeration skips the store-deletion phases
-// rather than misclassifying healthy state as stale.
-//
-// GC removes:
-//
-//   - Store entries for programs no longer in the kernel
-//   - Store entries where bpffs pins are missing (ID reuse detection)
-//   - Orphan dispatcher directories and pins
-//   - Stale staging directories from interrupted operations
-//
-// The coherency engine (manager/coherency/) evaluates rules to detect
-// violations and produces executable remediation operations.
-//
 // # Attachment Types
 //
 // The manager supports multiple BPF attachment points:
@@ -139,16 +119,16 @@
 //
 // XDP and TC attachments use dispatcher programs that chain multiple
 // extension programs at a single attach point. The dispatcher state
-// is tracked in the store and reconciled by GC.
+// is tracked in the store.
 //
 // # Concurrency
 //
 // The manager itself is not safe for concurrent use. Callers must
 // serialise access, typically via the lock package (lock/) which
-// provides writer-exclusive locking at the server level.
-//
-// Mutating methods run GC on entry via gcOnEntry; callers do not
-// need to coordinate GC explicitly.
+// provides writer-exclusive locking at the server level. Load is
+// the one exception: it is purely additive and runs lockless; see
+// the package-level comments on Manager.Load for the safety
+// argument.
 //
 // # Dependencies
 //

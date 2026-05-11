@@ -209,16 +209,3 @@ func (f *testFixture) LoadDirect(ctx context.Context, source manager.LoadSource,
 	f.t.Helper()
 	return f.Manager.Load(ctx, source, programs, opts)
 }
-
-// GC is a convenience wrapper that acquires the lock and calls
-// Manager.GC.
-func (f *testFixture) GC(ctx context.Context) (manager.GCResult, error) {
-	f.t.Helper()
-	var result manager.GCResult
-	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		var gcErr error
-		result, gcErr = f.Manager.GC(ctx, writeLock)
-		return gcErr
-	})
-	return result, err
-}

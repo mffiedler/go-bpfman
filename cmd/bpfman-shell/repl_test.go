@@ -1171,12 +1171,6 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			wantReplace: 0,
 		},
 		{
-			name:        "bpfman audit completes subcommands",
-			line:        "bpfman audit ",
-			wantAny:     []string{"checkup ", "explain "},
-			wantReplace: 0,
-		},
-		{
 			name:        "bpfman program completes new subcommands",
 			line:        "bpfman program ",
 			wantAny:     []string{"get ", "unload "},
@@ -1218,46 +1212,6 @@ func TestReplComplete_NewCommands(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestReplLoop_AuditExplain(t *testing.T) {
-	t.Parallel()
-
-	// "bpfman audit explain" without a rule should list all rules.
-	input := "bpfman audit explain\n"
-	var outBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
-	require.NoError(t, err)
-	assert.Contains(t, outBuf.String(), "Available coherency rules")
-}
-
-func TestReplLoop_AuditExplainUnknown(t *testing.T) {
-	t.Parallel()
-
-	input := "bpfman audit explain nosuch-rule\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "unknown rule")
-}
-
-func TestReplLoop_AuditUnknownSubcommand(t *testing.T) {
-	t.Parallel()
-
-	input := "bpfman audit bogus\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(input), nil)
-
-	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
-	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "unknown subcommand \"bogus\" (valid: checkup, explain)")
 }
 
 func TestReplLoop_ProgramGetNoArgs(t *testing.T) {
@@ -1355,15 +1309,17 @@ func TestReplLoop_AliasBasic(t *testing.T) {
 	t.Parallel()
 
 	// Define an alias and use it to invoke a domain command.
-	// "bpfman audit explain" lists rules; the alias should work the same.
-	input := "alias b = bpfman\nb audit explain\n"
-	var outBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
+	// "bpfman program" without a subcommand produces a specific
+	// targeted error; the alias should reach the same dispatcher
+	// and surface the same message.
+	input := "alias b = bpfman\nb program\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, outBuf.String(), "Available coherency rules")
+	assert.Contains(t, errBuf.String(), "program: subcommand required")
 }
 
 func TestReplLoop_AliasRejectsShellCommand(t *testing.T) {
@@ -1470,7 +1426,7 @@ func TestReplLoop_AliasInBindBinding(t *testing.T) {
 	// through the domain pipeline. The script does not halt -- a
 	// let bind never auto-fails -- so the alias's reach is
 	// confirmed by the absence of an "unknown command" error.
-	input := "alias b = bpfman\nlet x <- b audit explain\n"
+	input := "alias b = bpfman\nlet x <- b version\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()

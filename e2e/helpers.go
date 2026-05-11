@@ -537,19 +537,6 @@ func (e *TestEnv) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key)
 	return e.Manager.GetDispatcherSnapshot(ctx, key)
 }
 
-// GC runs garbage collection, removing stale store entries that no
-// longer correspond to kernel objects. This mirrors the GC that the
-// daemon runs before each gRPC RPC.
-func (e *TestEnv) GC(ctx context.Context) (manager.GCResult, error) {
-	var result manager.GCResult
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var gcErr error
-		result, gcErr = e.Manager.GC(ctx, writeLock)
-		return gcErr
-	})
-	return result, err
-}
-
 // AssertCleanState verifies that no programs or links are managed.
 func (e *TestEnv) AssertCleanState() {
 	e.T.Helper()

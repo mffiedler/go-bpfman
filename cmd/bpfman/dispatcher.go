@@ -127,7 +127,7 @@ func (c *DeleteDispatcherCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error
 	}
 	defer cleanup()
 
-	return bpfmancli.RunMutation(ctx, cli, mgr, func(ctx context.Context, writeLock lock.WriterScope) error {
+	return bpfmancli.RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		return mgr.DeleteDispatcherSnapshot(ctx, writeLock, key)
 	})
 }

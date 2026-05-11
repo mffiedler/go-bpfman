@@ -31,7 +31,7 @@ func (c *DetachCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	for i, lid := range c.LinkIDs {
 		ids[i] = lid.Value
 	}
-	return bpfmancli.RunBatchMutation(ctx, cli, mgr, ids, "link", "detach",
+	return bpfmancli.RunBatchMutation(ctx, cli, ids, "link", "detach",
 		func(ctx context.Context, writeLock lock.WriterScope, id kernel.LinkID) error {
 			err := mgr.Detach(ctx, writeLock, id)
 			if err != nil && c.IgnoreMissing {

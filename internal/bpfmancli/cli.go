@@ -20,7 +20,6 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
-	"github.com/frobware/go-bpfman/manager"
 )
 
 // CLI carries the global flags, the configured output and error
@@ -258,59 +257,12 @@ func RunWithLockValue[T any](ctx context.Context, c *CLI, fn func(context.Contex
 	return result, nil
 }
 
-// RunMutationValue is the mutation entry point: it runs the
-// lockless GC pre-check via mgr.GCScan, takes the writer lock and
-// remediates only when the scan returns work, then executes fn
-// under the writer lock with the clean-slate context marker set
-// so the manager's gcOnEntry sees the gc already happened and
-// short-circuits. Callers that today wrap RunWithLockValue for a
-// mutating operation should call this instead.
-//
-// The lockless scan plus conditional remediate is what shrinks
-// the per-mutation lock-hold under sustained parallel load: the
-// empty-plan case (the overwhelmingly common one on a healthy
-// system) never blocks on the writer lock for its gc pass, and
-// the fn lock-hold is reduced to just the operation's own work.
-// See docs/PLAN-load-lock-tightening.md.
-func RunMutationValue[T any](ctx context.Context, c *CLI, mgr *manager.Manager, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
-	var zero T
-	plan, err := mgr.GCScan(ctx, manager.GCOptions{})
-	if err != nil {
-		return zero, fmt.Errorf("gc scan: %w", err)
-	}
-	if !plan.IsEmpty() {
-		if err := RunWithLock(ctx, c, func(ctx context.Context, writeLock lock.WriterScope) error {
-			_, gcErr := mgr.GCRemediate(ctx, writeLock, manager.GCOptions{})
-			return gcErr
-		}); err != nil {
-			return zero, err
-		}
-	}
-	return RunWithLockValue(manager.WithGCDone(ctx), c, fn)
-}
-
-// RunMutation is the error-only counterpart of RunMutationValue.
-// Use this for mutations that do not return a value.
-func RunMutation(ctx context.Context, c *CLI, mgr *manager.Manager, fn func(context.Context, lock.WriterScope) error) error {
-	_, err := RunMutationValue(ctx, c, mgr, func(ctx context.Context, writeLock lock.WriterScope) (struct{}, error) {
-		return struct{}{}, fn(ctx, writeLock)
-	})
-	return err
-}
-
 // RunBatchMutation executes mutate for each ID under the global
 // writer lock, collects errors, and prints failures after releasing
 // the lock. Returns a summary error if any mutations failed.
-//
-// When mgr is non-nil, runs the lockless GC pre-check via
-// RunMutation so the entire batch pays for at most one gc pass
-// and the writer lock is only taken for the batch's actual
-// mutations. mgr == nil falls back to the legacy lock-acquisition
-// path (gc happens inside mgr.* via gcOnEntry).
 func RunBatchMutation[ID ~uint32](
 	ctx context.Context,
 	cli *CLI,
-	mgr *manager.Manager,
 	ids []ID,
 	noun string,
 	verb string,
@@ -322,13 +274,7 @@ func RunBatchMutation[ID ~uint32](
 	}
 	results := make([]result, 0, len(ids))
 
-	runner := RunWithLock
-	if mgr != nil {
-		runner = func(ctx context.Context, c *CLI, fn func(context.Context, lock.WriterScope) error) error {
-			return RunMutation(ctx, c, mgr, fn)
-		}
-	}
-	lockErr := runner(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
+	lockErr := RunWithLock(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) error {
 		for _, id := range ids {
 			err := mutate(ctx, writeLock, id)
 			results = append(results, result{id: id, err: err})

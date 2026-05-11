@@ -32,7 +32,6 @@ type CLI struct {
 	Dispatcher DispatcherCmd `cmd:"" group:"resources" help:"Manage dispatchers."`
 	Image      ImageCmd      `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
 	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
-	Audit      AuditCmd      `cmd:"" group:"diag" help:"Audit database, kernel, and filesystem coherency; --repair to execute the cleanup plan."`
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
 }
 
@@ -99,7 +98,6 @@ func KongOptions() []kong.Option {
 			"global":    "Global Flags:",
 			"resources": "BPF Resources:",
 			"infra":     "Infrastructure:",
-			"diag":      "Diagnostics:",
 		},
 		kong.Help(compactHelpPrinter),
 		kong.PostBuild(func(k *kong.Kong) error {
