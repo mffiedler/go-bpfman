@@ -149,6 +149,7 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 // Variable assignment and expansion use the shell.Session,
 // which is shared across modes.
 func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
+	ctx = ensureInteractiveBaseDir(ctx)
 	if interactive {
 		return replInteractive(ctx, cli, mgr, lr, session)
 	}
@@ -1008,7 +1009,49 @@ func argTexts(args []shell.Arg) []string {
 
 type replContextKey int
 
-const replSourcingKey replContextKey = iota
+const (
+	replSourcingKey replContextKey = iota
+	replInteractiveBaseDirKey
+)
+
+// ensureInteractiveBaseDir attaches the directory that interactive
+// `source FOO` should resolve relative paths against, if one is not
+// already present on the context. Captured once at replLoop entry
+// (the shell has no `cd` builtin, so cwd is fixed for the life of
+// the loop) so a parallel test that calls os.Chdir later cannot pull
+// the rug. Failures of os.Getwd are swallowed: the only consumer
+// (handleSource) falls back to leaving the path as-is, matching the
+// pre-refactor behaviour where os.Open would simply have used
+// whatever cwd it could see.
+func ensureInteractiveBaseDir(ctx context.Context) context.Context {
+	if ctx.Value(replInteractiveBaseDirKey) != nil {
+		return ctx
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, replInteractiveBaseDirKey, cwd)
+}
+
+// withInteractiveBaseDir injects a base directory for interactive
+// `source` resolution. Test seam: tests that want to assert
+// interactive cwd-relative behaviour use this instead of os.Chdir,
+// since os.Chdir mutates process-global state and races other
+// t.Parallel tests reading the cwd.
+func withInteractiveBaseDir(ctx context.Context, dir string) context.Context {
+	return context.WithValue(ctx, replInteractiveBaseDirKey, dir)
+}
+
+// interactiveBaseDir returns the captured base directory, or "" if
+// none was attached (in which case the caller should fall through to
+// the previous cwd-relative path).
+func interactiveBaseDir(ctx context.Context) string {
+	if v, ok := ctx.Value(replInteractiveBaseDirKey).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // replSource reads commands from a file and executes each line in
 // the caller's session. Source is shaped like a def body, not a

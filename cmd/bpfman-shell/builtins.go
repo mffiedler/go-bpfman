@@ -595,16 +595,29 @@ func handleKill(c builtinCtx) (shell.Value, error) {
 // A relative path argument resolves against the directory of the
 // script that contains the `source` statement -- the same shape
 // Python `import` and Ruby `require_relative` use, and what most
-// readers expect. Absolute paths and paths typed at the
-// interactive prompt (where c.Pos.file is empty) keep cwd-relative
-// resolution.
+// readers expect. Absolute paths bypass this transform.
+//
+// Paths typed at the interactive prompt (where c.Pos.file is
+// empty) anchor against the cwd captured at replLoop entry, not
+// against the live process cwd at evaluation time. Indistinguishable
+// in production (the shell has no cd builtin so cwd does not change
+// during a loop), but it lets parallel tests inject a base dir via
+// withInteractiveBaseDir instead of calling os.Chdir, which would
+// race other t.Parallel tests reading the global cwd.
 func handleSource(c builtinCtx) (shell.Value, error) {
 	if c.Env == nil {
 		return shell.Value{}, shell.SpanErrorf(c.Span, "source requires an active shell environment")
 	}
 	args := argTexts(c.Args)
-	if len(args) == 1 && c.Pos.file != "" && !filepath.IsAbs(args[0]) {
-		args[0] = filepath.Join(filepath.Dir(c.Pos.file), args[0])
+	if len(args) == 1 && !filepath.IsAbs(args[0]) {
+		switch {
+		case c.Pos.file != "":
+			args[0] = filepath.Join(filepath.Dir(c.Pos.file), args[0])
+		default:
+			if base := interactiveBaseDir(c.Ctx); base != "" {
+				args[0] = filepath.Join(base, args[0])
+			}
+		}
 	}
 	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, args)
 }
