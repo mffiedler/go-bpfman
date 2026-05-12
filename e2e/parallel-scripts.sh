@@ -28,7 +28,7 @@
 #
 # (-E preserves the flake-provided PATH so `parallel` resolves.)
 #
-# Usage: parallel-scripts.sh [-j NUM] [-f FILTER] [-r N] [-- [parallel-args...]]
+# Usage: parallel-scripts.sh [-j NUM] [-f FILTER] [-r N] [-F] [-- [parallel-args...]]
 #
 #   -j NUM     Number of parallel jobs (default: nproc).
 #   -f FILTER  Substring match against the script basename; only
@@ -37,6 +37,14 @@
 #              stress-testing the address pool's cross-process
 #              exclusion under sustained concurrent load -- e.g.
 #              -r 100 turns 20 scripts into 2000 jobs.
+#   -F, --fail-fast
+#              Stop on the first failing job. Translates to GNU
+#              parallel's `--halt now,fail=1` -- running jobs are
+#              killed, no further jobs are scheduled, and the
+#              harness exits non-zero. Default is to run every
+#              job and produce a summary, which is what you want
+#              for triage; -F is what you want when you're
+#              already triaging one bug and do not need a second.
 #   --         Everything after -- is passed through to GNU parallel.
 #   -h         Show help and exit.
 #
@@ -59,6 +67,7 @@ show_help() {
 jobs=
 filter=
 repeats=1
+fail_fast=0
 parallel_passthrough=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -77,6 +86,10 @@ while [[ $# -gt 0 ]]; do
         -r|--repeats)
             repeats="$2"
             shift 2
+            ;;
+        -F|--fail-fast)
+            fail_fast=1
+            shift
             ;;
         --)
             shift
@@ -188,14 +201,21 @@ fi
 # prepended to PATH so any helper sub-invocations of bpfman-shell
 # from inside a script resolve.
 #
-# --halt never keeps the run going through failures; the summary
-# at the end attributes each one. Default GNU parallel parses {#}
-# substitution; we do not need {%} or job slots.
+# Default halt policy is `never`: keep going through failures so
+# the summary can attribute every one. -F/--fail-fast swaps to
+# `now,fail=1`, which kills running jobs and stops scheduling new
+# ones the moment the first failure lands -- useful when you are
+# already triaging a flake and a second instance would only add
+# noise.
+halt_arg=(--halt never)
+if [[ "$fail_fast" -eq 1 ]]; then
+    halt_arg=(--halt "now,fail=1")
+fi
 set +e
 printf '%s\n' "${expanded[@]}" | parallel \
     "${progress_args[@]}" \
     --joblog "$joblog" \
-    --halt never \
+    "${halt_arg[@]}" \
     -j "$jobs" \
     "${parallel_passthrough[@]}" \
     "cd \"$e2e_dir\" && PATH=\"$bin_dir:\$PATH\" \"$shell_bin\" {} > \"$logdir/job-{#}.log\" 2>&1"
@@ -203,24 +223,34 @@ parallel_rc=$?
 set -e
 
 # Parse the joblog for failed entries. The joblog columns we care
-# about are Seq (1) and Exitval (7); the Command column is the
+# about are Seq, Exitval, and Signal; the Command column is the
 # wrapped shell pipeline, not a clean script path, so we recover
 # the script identity by indexing into the in-memory scripts[]
 # array via Seq -- the same array we fed to parallel, in the
-# same order.
+# same order. Under -F/--fail-fast the trigger failure is what
+# the user wants to see; parallel's SIGTERM of the in-flight
+# siblings is collateral and would only add noise to the summary,
+# so we suppress rows where the kernel signal column says the
+# job was killed (Signal != 0). Without -F that filter is off,
+# because a script that genuinely died on SIGSEGV is a real
+# failure worth surfacing.
 get_col() {
     awk -v col="$1" 'NR==1 { for (i=1;i<=NF;i++) if ($i==col) { print i; exit } }' "$joblog"
 }
 seq_col=$(get_col Seq)
 exit_col=$(get_col Exitval)
+signal_col=$(get_col Signal)
 
-if [[ -z "$seq_col" || -z "$exit_col" ]]; then
-    echo "error: could not parse joblog columns (Seq/Exitval)" >&2
+if [[ -z "$seq_col" || -z "$exit_col" || -z "$signal_col" ]]; then
+    echo "error: could not parse joblog columns (Seq/Exitval/Signal)" >&2
     exit 1
 fi
 
-mapfile -t failures < <(awk -v sc="$seq_col" -v ec="$exit_col" '
-    NR > 1 && $ec != 0 { print $sc "\t" $ec }
+mapfile -t failures < <(awk -v sc="$seq_col" -v ec="$exit_col" -v sigc="$signal_col" -v ff="$fail_fast" '
+    NR > 1 && $ec != 0 {
+        if (ff == 1 && $sigc != 0) next
+        print $sc "\t" $ec
+    }
 ' "$joblog")
 
 if [[ ${#failures[@]} -eq 0 ]]; then
