@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/alecthomas/kong"
 
@@ -23,12 +24,13 @@ type CLI struct {
 
 	kctx *kong.Context `kong:"-"`
 
-	Script  string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
-	Check   bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
-	NoCheck bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
-	AST     bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
-	Trace   bool   `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
-	Version bool   `name:"version" short:"V" help:"Print version information and exit."`
+	Script    string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
+	Directory string `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, sourced files, spawned subprocesses, and external commands all see the new working directory."`
+	Check     bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	NoCheck   bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
+	AST       bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
+	Trace     bool   `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
+	Version   bool   `name:"version" short:"V" help:"Print version information and exit."`
 }
 
 // NewCLI creates and initialises a CLI instance by parsing
@@ -54,6 +56,17 @@ func NewCLI() (*CLI, error) {
 func (c *CLI) Execute(ctx context.Context) error {
 	if c.Version {
 		return c.PrintOut(version.Get().Long())
+	}
+	// Apply -C / --directory before anything path-relative
+	// runs: opening the script file, the static checker, the
+	// manager's bytecode cache, every subprocess spawned at
+	// runtime. Matches make -C / git -C semantics: change cwd
+	// once, then proceed as if the user had cd'd there manually.
+	if c.Directory != "" {
+		if err := os.Chdir(c.Directory); err != nil {
+			_ = c.PrintErrf("bpfman-shell: error: chdir %q: %v\n", c.Directory, err)
+			return err
+		}
 	}
 	if err := c.Run(ctx); err != nil {
 		if !errors.Is(err, ErrSilent) {
