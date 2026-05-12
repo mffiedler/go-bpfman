@@ -26,10 +26,7 @@ import (
 // Preflight failures (store lookup, not-managed check, dispatcher key
 // extraction) return plain errors.
 func (m *Manager) Detach(ctx context.Context, writeLock lock.WriterScope, linkID kernel.LinkID) error {
-	ctx, err := m.gcOnEntry(ctx, writeLock)
-	if err != nil {
-		return err
-	}
+	_ = writeLock // reserved for symmetry with other mutating methods
 
 	// Preflight: get link record.
 	record, err := m.getLink(ctx, linkID)

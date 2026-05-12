@@ -11,39 +11,39 @@ import (
 
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
+	"github.com/frobware/go-bpfman/version"
 )
 
-// CLI is the root command structure for bpfman-shell. It embeds the
-// shared bpfmancli.CLI for global flags, output writers, and runtime
-// services; the Kong-tagged subcommand fields here are the
-// dev/test/ops verb set.
+// CLI is the root command structure for bpfman-shell. The binary is
+// a single-purpose REPL/script runner: with no positional argument
+// it starts an interactive prompt; with a positional Script it runs
+// the named file (or stdin when Script is "-"); with --check it
+// parses without evaluating.
 type CLI struct {
 	bpfmancli.CLI
 
 	kctx *kong.Context `kong:"-"`
 
-	Repl    ReplCmd    `cmd:"" group:"diag" help:"Start an interactive inspection shell."`
-	Version VersionCmd `cmd:"" group:"infra" help:"Print version information."`
+	Script    string `arg:"" optional:"" name:"script" help:"Script file to run; '-' reads from stdin; omit for an interactive prompt."`
+	Directory string `name:"directory" short:"C" help:"Change to this directory before doing anything else, like make -C dir. The script path, sourced files, spawned subprocesses, and external commands all see the new working directory."`
+	Check     bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
+	NoCheck   bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
+	AST       bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
+	Trace     bool   `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
+	Version   bool   `name:"version" short:"V" help:"Print version information and exit."`
 }
 
-// NewCLI creates and initialises a CLI instance by parsing command-line arguments.
+// NewCLI creates and initialises a CLI instance by parsing
+// command-line arguments.
 func NewCLI() (*CLI, error) {
-	if len(os.Args) == 1 {
-		os.Args = append(os.Args, "repl")
-	}
-
-	if len(os.Args) >= 2 && os.Args[1] == "help" {
-		rest := os.Args[2:]
-		os.Args = append(append([]string{os.Args[0]}, rest...), "--help")
-	}
-
 	var c CLI
 	c.kctx = kong.Parse(&c, KongOptions()...)
 	c.DefaultWriters()
 
-	// Initialise logger eagerly. Skip for repl --check, which does no I/O
-	// and must be runnable without access to the system config file.
-	if !c.Repl.Check {
+	// Initialise logger eagerly. Skip for --check, --ast, and
+	// --version, which do no I/O against the manager and must
+	// be runnable without access to the system config file.
+	if !c.Check && !c.AST && !c.Version {
 		if err := c.InitLogger(); err != nil {
 			return nil, fmt.Errorf("create logger: %w", err)
 		}
@@ -54,10 +54,21 @@ func NewCLI() (*CLI, error) {
 
 // Execute runs the parsed command.
 func (c *CLI) Execute(ctx context.Context) error {
-	c.kctx.BindTo(ctx, (*context.Context)(nil))
-	c.kctx.Bind(&c.CLI)
-
-	if err := c.kctx.Run(c); err != nil {
+	if c.Version {
+		return c.PrintOut(version.Get().Long())
+	}
+	// Apply -C / --directory before anything path-relative
+	// runs: opening the script file, the static checker, the
+	// manager's bytecode cache, every subprocess spawned at
+	// runtime. Matches make -C / git -C semantics: change cwd
+	// once, then proceed as if the user had cd'd there manually.
+	if c.Directory != "" {
+		if err := os.Chdir(c.Directory); err != nil {
+			_ = c.PrintErrf("bpfman-shell: error: chdir %q: %v\n", c.Directory, err)
+			return err
+		}
+	}
+	if err := c.Run(ctx); err != nil {
 		if !errors.Is(err, ErrSilent) {
 			_ = c.PrintErrf("bpfman-shell: error: %v\n", err)
 		}
@@ -74,11 +85,6 @@ func KongOptions() []kong.Option {
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 		}),
-		kong.Groups{
-			"global": "Global Flags:",
-			"infra":  "Infrastructure:",
-			"diag":   "Diagnostics:",
-		},
 		kong.ShortUsageOnError(),
 		kong.Vars{
 			"default_runtime_dir":     fs.DefaultRoot,

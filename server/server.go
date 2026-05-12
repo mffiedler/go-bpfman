@@ -335,8 +335,6 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 // per-request coordination: operation ID assignment, error logging,
 // locking, and dispatch.
 //
-// GC is handled internally by the manager's mutating methods, so the
-// interceptor no longer needs to call GCIfNeeded or MarkMutated.
 // Mutating RPCs (Load, Unload, Attach, Detach) acquire the
 // cross-process flock and the in-process write mutex. All other RPCs
 // acquire the in-process read mutex. The writer lock is stored in
@@ -374,8 +372,7 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 // handleMutating runs a mutating RPC under the cross-process flock
 // and in-process write mutex. The writer lock is stored in context
 // for handlers that need it (container uprobes pass the lock fd to
-// the bpfman-ns helper). GC and mutation tracking are handled by the
-// manager's mutating methods themselves.
+// the bpfman-ns helper).
 func (s *Server) handleMutating(ctx context.Context, req any, handler grpc.UnaryHandler) (any, error) {
 	var resp any
 	err := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger, func(ctx context.Context, writeLock lock.WriterScope) error {

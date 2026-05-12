@@ -305,16 +305,13 @@ func callerOp() string {
 	return name
 }
 
-// LoadImage loads BPF programs from an OCI image.
+// LoadImage loads BPF programs from an OCI image. Lockless after v2
+// (docs/PLAN-load-lockless.md): Manager.Load does not require the
+// writer lock.
 func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
-	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
-			Image: &ref,
-		}, programs, opts)
-		return loadErr
-	})
+	result, err := e.Manager.Load(ctx, manager.LoadSource{
+		Image: &ref,
+	}, programs, opts)
 	if err == nil {
 		e.trackPrograms(result)
 	}
@@ -327,18 +324,16 @@ func (e *TestEnv) LoadImage(ctx context.Context, ref platform.ImageRef, programs
 // which the embedded testdata/bpf/ tree is materialised at
 // NewTestEnv. This lets call sites keep their historical
 // "testdata/bpf/foo.bpf.o" form regardless of cwd.
+//
+// Lockless after v2 (docs/PLAN-load-lockless.md): Manager.Load
+// does not require the writer lock.
 func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(e.baseDir, filePath)
 	}
-	var result []bpfman.Program
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var loadErr error
-		result, loadErr = e.Manager.Load(ctx, writeLock, manager.LoadSource{
-			FilePath: filePath,
-		}, programs, opts)
-		return loadErr
-	})
+	result, err := e.Manager.Load(ctx, manager.LoadSource{
+		FilePath: filePath,
+	}, programs, opts)
 	if err == nil {
 		e.trackPrograms(result)
 	}
@@ -540,19 +535,6 @@ func (e *TestEnv) GetLink(ctx context.Context, linkID kernel.LinkID) (bpfman.Lin
 // given type, namespace, and interface.
 func (e *TestEnv) GetDispatcherSnapshot(ctx context.Context, key dispatcher.Key) (platform.DispatcherSnapshot, error) {
 	return e.Manager.GetDispatcherSnapshot(ctx, key)
-}
-
-// GC runs garbage collection, removing stale store entries that no
-// longer correspond to kernel objects. This mirrors the GC that the
-// daemon runs before each gRPC RPC.
-func (e *TestEnv) GC(ctx context.Context) (manager.GCResult, error) {
-	var result manager.GCResult
-	err := e.runWithLock(ctx, func(ctx context.Context, writeLock lock.WriterScope) error {
-		var gcErr error
-		result, gcErr = e.Manager.GC(ctx, writeLock)
-		return gcErr
-	})
-	return result, err
 }
 
 // AssertCleanState verifies that no programs or links are managed.

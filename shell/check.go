@@ -1,0 +1,1123 @@
+// Static checks that run between parse and evaluation. The
+// goal is to catch bugs that would otherwise surface at run
+// time (and thus only after some side effects have fired) one
+// pass earlier, when the whole program is still in front of
+// us. The current set covers undefined variables, uncaptured
+// background jobs, arithmetic on non-numeric literals or
+// non-numeric variables, comparison-kind mismatches,
+// break/continue outside foreach, builtin arity, kill-flag
+// validation, and field-access typos against sealed kinds
+// (Job, the captured-command-result kind, Program, Link).
+//
+// Like go/types, this is a separate pass over the AST that
+// produces a list of issues; it stays much smaller because the
+// DSL has a fixed kind enum and no user-extensible types. Each
+// check uses Inspect for expression-level work; scope-bearing
+// constructs (let, bind, foreach, def) drive the structural
+// part by hand because pre-order traversal cannot express
+// "define this name after processing the RHS, before walking
+// the next statement".
+
+package shell
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/frobware/go-bpfman/internal/strdist"
+)
+
+// Issue is one finding from a Check pass: a source location
+// and a human-readable message. Multiple issues can be
+// reported in a single Check invocation; severity is
+// implicit (every Issue is an error today, but the field
+// could grow if warnings become useful).
+type Issue struct {
+	Span
+	Msg string
+}
+
+// Error renders the issue as 'line:col: message' so the
+// driver layer can prepend a file path and emit the same
+// shape parser/evaluator errors already use.
+func (i Issue) Error() string {
+	return fmt.Sprintf("%d:%d: %s", i.Pos.Line, i.Pos.Col, i.Msg)
+}
+
+// Check runs static analysis over prog and returns every
+// issue it finds. Returning a slice rather than the first
+// error lets callers report all problems at once instead of
+// the user having to re-run after fixing each. An empty
+// return slice means the program is clean by every check
+// implemented today; future checks land here without changing
+// the signature.
+func Check(prog *Program) []Issue {
+	c := &checker{
+		defined:  map[string]bool{},
+		shapes:   map[string]Shape{},
+		literals: map[string]*LiteralExpr{},
+		aliases:  map[string]string{},
+	}
+	c.walkStmts(prog.Stmts)
+	c.checkJobLeaks(prog)
+	c.checkArithmeticOperands(prog)
+	c.checkComparisonOperands(prog)
+	c.checkLoopExits(prog.Stmts, 0)
+	c.checkBuiltinArity(prog)
+	c.checkKillFlags(prog)
+	return c.issues
+}
+
+// checker carries the rolling state for one Check pass. The
+// defined map is the active set of variable names visible at
+// the current point in the walk; foreach loop variables and
+// def parameters are pushed on entry and popped on exit so
+// they do not leak into following sibling statements at the
+// same level. The shapes map carries each visible variable's
+// inferred Shape when it can be inferred from the let or bind
+// RHS; absent entries default to an unsealed OriginUnknown and
+// are treated as wildcards by the path-validity check. The
+// literals map carries the verbatim let RHS LiteralExpr for
+// variables bound to a single literal, so type checks that
+// need to know whether a Scalar variable holds a number or a
+// non-numeric token (e.g. arithmetic operand validation) can
+// inspect the original expression.
+type checker struct {
+	defined  map[string]bool
+	shapes   map[string]Shape
+	literals map[string]*LiteralExpr
+	aliases  map[string]string
+	issues   []Issue
+}
+
+// snapshotVar captures the current state of every per-variable
+// map for name and returns a restore closure. Used at scope
+// boundaries (foreach, def parameters) so a body's mutation of
+// a name does not leak past the scope. The maps covered are
+// defined, shapes, and literals; aliases is not per-name in the
+// scope sense (alias / unalias are explicit user actions, not
+// implicit by entering a block) so it is left out.
+func (c *checker) snapshotVar(name string) func() {
+	hadDefined := c.defined[name]
+	prevShape, hadShape := c.shapes[name]
+	prevLit, hadLit := c.literals[name]
+	return func() {
+		if hadDefined {
+			c.defined[name] = true
+		} else {
+			delete(c.defined, name)
+		}
+		if hadShape {
+			c.shapes[name] = prevShape
+		} else {
+			delete(c.shapes, name)
+		}
+		if hadLit {
+			c.literals[name] = prevLit
+		} else {
+			delete(c.literals, name)
+		}
+	}
+}
+
+// addIssue records an issue at span with the given message.
+// Pulled out so the formatter is in one place if the message
+// shape changes. Callers pass the offending node's full Span
+// so the renderer can underline the relevant region rather than
+// caret a single column.
+func (c *checker) addIssue(span Span, format string, args ...any) {
+	c.issues = append(c.issues, Issue{Span: span, Msg: fmt.Sprintf(format, args...)})
+}
+
+// inferExprShape returns the Shape a let RHS expression produces
+// at static-check time. The Shape carries the OriginKind tag
+// (so scalar / bool / known-record cases resolve directly) and
+// any nested structure: a path-walk through a sealed parent
+// returns the leaf field's Shape, a list-bound variable
+// preserves its element shape, and unknown expressions return
+// an unsealed wildcard.
+func (c *checker) inferExprShape(e Expr) Shape {
+	switch v := e.(type) {
+	case *LiteralExpr:
+		if v.Quoted {
+			return KindShape(OriginScalar)
+		}
+		switch v.Text {
+		case "true", "false":
+			return KindShape(OriginBool)
+		}
+		return KindShape(OriginScalar)
+	case *VarRefExpr:
+		shape, ok := c.shapes[v.Name]
+		if !ok {
+			return Shape{Sealed: false, Kind: OriginUnknown}
+		}
+		if v.Path == "" {
+			return shape
+		}
+		// Walk the Shape tree to find the leaf so a chained
+		// let inherits the right shape. 'let q = $r.code'
+		// gives q a Scalar shape; 'let head = $progs[0]'
+		// gives head a Program shape (via the list's Elem).
+		// An unsealed step returns Unknown, which still
+		// propagates as a wildcard but disables nested
+		// validation further down.
+		for _, seg := range splitPathSegments(v.Path) {
+			if seg.index {
+				if shape.Elem != nil {
+					shape = *shape.Elem
+					continue
+				}
+				return Shape{Sealed: false, Kind: OriginUnknown}
+			}
+			if !shape.Sealed {
+				return Shape{Sealed: false, Kind: OriginUnknown}
+			}
+			child, ok := shape.Fields[seg.name]
+			if !ok {
+				return Shape{Sealed: false, Kind: OriginUnknown}
+			}
+			shape = child
+		}
+		return shape
+	case *BinaryExpr:
+		switch v.Op {
+		case "+", "-", "*", "/", "%":
+			return KindShape(OriginScalar)
+		}
+		return KindShape(OriginBool)
+	case *LogicalExpr, *NotExpr, *UnaryExpr:
+		return KindShape(OriginBool)
+	case *NegateExpr:
+		return KindShape(OriginScalar)
+	case *InterpStringExpr:
+		return KindShape(OriginScalar)
+	case *PureCallExpr:
+		if pb, ok := LookupPureBuiltin(v.Name); ok {
+			return pb.ReturnShape
+		}
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
+}
+
+// inferExprKind is sugar for inferExprShape(e).Kind. Existing
+// kind-based checks (arithmetic, comparison) consult it without
+// caring about the surrounding Shape; richer queries call
+// inferExprShape directly.
+func (c *checker) inferExprKind(e Expr) OriginKind {
+	return c.inferExprShape(e).Kind
+}
+
+// inferBindShape returns the Shape a bind RHS CommandStmt
+// produces in its primary slot.
+//
+// Resolution order:
+//
+//  1. The bind-shape registry (RegisterBindShape). cmd/bpfman-shell
+//     wires every effectful builtin entry (start, fire, exec, wait,
+//     kill, file, net, tempdir, ...) through this registry at init
+//     time; the `bpfman` domain prefix registers itself the same
+//     way. The registered BindShapeFn receives the args after the
+//     command name so subcommand-aware shapes (net veth-pair ->
+//     NetPair, net release -> result, net start -> Job; bpfman
+//     program get -> Program, bpfman link list -> [Link], ...)
+//     live next to the handler.
+//
+//  2. The pure-builtin registry (RegisterPureBuiltin). Pure entries
+//     declare their return Shape there; the `<-` form remains a
+//     compatibility spelling but `=` and `${...}` invoke the same
+//     handler in expression position.
+//
+//  3. Everything else falls through to an external-subprocess
+//     result envelope.
+//
+// The rc slot of a tuple bind is always result and is set by
+// the caller.
+func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	first, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || first.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	// Mirror the runtime's first-arg alias expansion (see
+	// applyAlias in cmd/bpfman-shell/session.go) so an aliased
+	// 'b program load file' resolves to bpfman's typed Program
+	// shape rather than falling through to the external-command
+	// result default.
+	headText := first.Text
+	if expanded, ok := c.aliases[headText]; ok {
+		headText = expanded
+	}
+	if fn, ok := LookupBindShape(headText); ok {
+		return fn(cmd.Args[1:])
+	}
+	if pb, ok := LookupPureBuiltin(headText); ok {
+		return pb.ReturnShape
+	}
+	// Default: unknown first word runs as an external
+	// subprocess via runExternalAsBind, which always returns
+	// a result.
+	return KindShape(OriginEnvelope)
+}
+
+func init() {
+	// bpfman is a domain prefix rather than a regular builtin
+	// (its grammar is multi-level: `bpfman <verb> <subverb>`),
+	// so it does not appear in cmd/bpfman-shell's builtinRegistry
+	// and is registered here against the same bind-shape registry
+	// every other typed-primary command flows through. Keeping
+	// inferBpfmanBindShape inside the shell package -- where it
+	// already lives because it references shell-package Shape /
+	// OriginKind values -- avoids creating a domain-types import
+	// cycle on cmd/bpfman-shell.
+	RegisterBindShape("bpfman", inferBpfmanBindShape)
+}
+
+// inferBpfmanBindShape recognises the bpfman subcommands whose
+// primary slot binds a typed domain record or a list of one:
+//
+//	bpfman program load ...   -> {programs: [Program]} (one entry per --programs)
+//	bpfman program get ...    -> Program
+//	bpfman program list       -> list of Program
+//	bpfman link attach ...    -> Link
+//	bpfman link get ...       -> Link
+//	bpfman link list          -> list of Link
+//
+// List shapes are returned as an unsealed Shape carrying an
+// Elem that points at the registered Program / Link Shape, so a
+// path like '$progs[0].record.program_id' descends through Elem
+// to the Program shape and validates against its sealed fields.
+//
+// Load returns a sealed object with a single recognised field
+// `programs` whose elements are Program shapes; this matches the
+// runtime contract that load wraps result.Programs as a
+// LoadResult so callers can address every loaded program rather
+// than silently using only the first.
+func inferBpfmanBindShape(args []Expr) Shape {
+	if len(args) < 2 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	noun, ok := args[0].(*LiteralExpr)
+	if !ok || noun.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	verb, ok := args[1].(*LiteralExpr)
+	if !ok || verb.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	switch noun.Text {
+	case "program":
+		switch verb.Text {
+		case "load":
+			elem := KindShape(OriginProgram)
+			return Shape{
+				Sealed: true,
+				Kind:   OriginUnknown,
+				Fields: map[string]Shape{
+					"programs": {Sealed: false, Kind: OriginUnknown, Elem: &elem},
+				},
+			}
+		case "get":
+			return KindShape(OriginProgram)
+		case "list":
+			elem := KindShape(OriginProgram)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	case "link":
+		switch verb.Text {
+		case "attach", "get":
+			return KindShape(OriginLink)
+		case "list":
+			elem := KindShape(OriginLink)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
+}
+
+// bindHeadPureBuiltin reports whether cmd's first word is a
+// registered pure builtin (after alias expansion). The hint
+// emitted by walkStmt cites the resolved name so a user reading
+// the diagnostic sees the same spelling the registry would.
+func bindHeadPureBuiltin(cmd *CommandStmt, aliases map[string]string) (string, bool) {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return "", false
+	}
+	first, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || first.Quoted {
+		return "", false
+	}
+	head := first.Text
+	if expanded, ok := aliases[head]; ok {
+		head = expanded
+	}
+	if _, ok := LookupPureBuiltin(head); ok {
+		return head, true
+	}
+	return "", false
+}
+
+// primaryNameForHint picks a placeholder for the bind-target
+// slot in the diagnostic suggestion. The user's original name
+// is reused when one was supplied; the tuple target is
+// approximated by the primary slot's name when present;
+// otherwise a generic "x" reads cleanly in the rewritten form
+// the hint suggests.
+func primaryNameForHint(n *BindStmt) string {
+	switch {
+	case n.Primary != "" && n.Primary != "_":
+		return n.Primary
+	case n.Rc != "" && n.Rc != "_":
+		return n.Rc
+	default:
+		return "x"
+	}
+}
+
+// walkStmts walks a statement list in source order. Defining
+// statements (let, bind, foreach, def) update c.defined as a
+// side effect of being walked; expression statements run
+// their VarRef-usage check via checkExpr.
+func (c *checker) walkStmts(stmts []Stmt) {
+	for _, s := range stmts {
+		c.walkStmt(s)
+	}
+}
+
+// walkStmt dispatches on statement kind. The order of work
+// inside each case matters: RHS expressions are checked before
+// the binding name is added to defined, so 'let x = $x' on a
+// previously-undefined x correctly reports $x undefined rather
+// than silently letting the new binding shadow the lookup.
+func (c *checker) walkStmt(s Stmt) {
+	switch n := s.(type) {
+	case *LetStmt:
+		c.checkExpr(n.RHS)
+		c.defined[n.Name] = true
+		c.shapes[n.Name] = c.inferExprShape(n.RHS)
+		// Record the RHS literal when the binding is a single
+		// LiteralExpr, quoted or not. The arithmetic check
+		// consults the .Text and .Quoted fields so a quoted
+		// string ('let s = "world"') and an unquoted
+		// non-numeric token ('let s = bogus') both fire,
+		// while a numeric literal stays clean.
+		if lit, ok := n.RHS.(*LiteralExpr); ok {
+			c.literals[n.Name] = lit
+		}
+
+	case *BindStmt:
+		if n.Cmd != nil {
+			for _, a := range n.Cmd.Args {
+				c.checkExpr(a)
+			}
+		}
+		// A '<-' bind on a pure builtin is rejected: pure
+		// builtins produce no result envelope, so the rc slot
+		// of '<-' (and the synthetic one a single-name bind
+		// would discard) has nothing to carry. The '=' form is
+		// the only correct call shape in binding position.
+		if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
+			c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
+		}
+		primaryShape := c.inferBindShape(n.Cmd)
+		if n.Primary != "" && n.Primary != "_" {
+			c.defined[n.Primary] = true
+			c.shapes[n.Primary] = primaryShape
+		}
+		if n.Rc != "" && n.Rc != "_" {
+			c.defined[n.Rc] = true
+			c.shapes[n.Rc] = KindShape(OriginEnvelope)
+		}
+
+	case *ForEachStmt:
+		c.checkExpr(n.List)
+		// Loop variable is in scope inside the body only.
+		// Save and restore the previous binding (if any)
+		// across all per-variable maps so outer scope is
+		// preserved on exit. Without restoring c.shapes and
+		// c.literals, a body that reassigns the loop var to
+		// a new shape would leak that shape past the loop.
+		restore := c.snapshotVar(n.Name)
+		c.defined[n.Name] = true
+		c.walkStmts(n.Body)
+		restore()
+
+	case *DefStmt:
+		// Parameters are visible inside the body. Save and
+		// restore all per-variable maps so nothing leaks to
+		// subsequent siblings.
+		restores := make([]func(), 0, len(n.Params))
+		for _, p := range n.Params {
+			restores = append(restores, c.snapshotVar(p))
+			c.defined[p] = true
+		}
+		c.walkStmts(n.Body)
+		for _, r := range restores {
+			r()
+		}
+
+	case *IfStmt:
+		c.checkExpr(n.Cond)
+		c.walkStmts(n.Then)
+		for _, b := range n.Elifs {
+			c.checkExpr(b.Cond)
+			c.walkStmts(b.Body)
+		}
+		c.walkStmts(n.Else)
+
+	case *DeferStmt:
+		if n.Cmd != nil {
+			for _, a := range n.Cmd.Args {
+				c.checkExpr(a)
+			}
+		}
+
+	case *RetryStmt:
+		c.walkStmts(n.Body)
+		c.checkExpr(n.Until)
+
+	case *AssertStmt:
+		c.checkExpr(n.Expr)
+
+	case *ExprStmt:
+		c.checkExpr(n.Expr)
+
+	case *CommandStmt:
+		c.recordAlias(n)
+		for _, a := range n.Args {
+			c.checkExpr(a)
+		}
+
+	case *BreakStmt, *ContinueStmt:
+		// Leaves; nothing to check today.
+	}
+}
+
+// recordAlias detects an `alias NAME = VALUE` command and
+// records the mapping so subsequent bind-RHS inference can see
+// through aliases. The runtime expands aliases at the first-arg
+// boundary (applyAlias in cmd/bpfman-shell); the checker mirrors
+// that expansion at static-check time so a script that aliases
+// 'b = bpfman' and writes 'guard p <- b program get $pid' gets
+// the same OriginProgram inference it would with the alias
+// expanded inline. 'unalias NAME' removes the mapping.
+//
+// The grammar is the same one cmd/bpfman-shell/session.go's
+// replAlias enforces: 'alias NAME = VALUE' with exactly four
+// argument slots and a literal '=' in slot two. Anything else
+// is left to the runtime checks; recordAlias is best-effort.
+func (c *checker) recordAlias(n *CommandStmt) {
+	if len(n.Args) == 0 {
+		return
+	}
+	head, ok := n.Args[0].(*LiteralExpr)
+	if !ok {
+		return
+	}
+	switch head.Text {
+	case "alias":
+		if len(n.Args) != 4 {
+			return
+		}
+		name, nameOK := n.Args[1].(*LiteralExpr)
+		eq, eqOK := n.Args[2].(*LiteralExpr)
+		val, valOK := n.Args[3].(*LiteralExpr)
+		if !nameOK || !eqOK || !valOK || eq.Text != "=" {
+			return
+		}
+		c.aliases[name.Text] = val.Text
+	case "unalias":
+		for _, a := range n.Args[1:] {
+			if lit, ok := a.(*LiteralExpr); ok {
+				delete(c.aliases, lit.Text)
+			}
+		}
+	}
+}
+
+// checkExpr scans an expression subtree for VarRef usages
+// against the current defined-set, plus path-validity against
+// any sealed kinds the checker has inferred for the variable.
+// Inspect is the right instrument here: an expression has no
+// scoping of its own, so generic pre-order is exactly what we
+// want.
+func (c *checker) checkExpr(e Expr) {
+	if e == nil {
+		return
+	}
+	Inspect(e, func(n Node) bool {
+		if v, ok := n.(*VarRefExpr); ok {
+			if !c.defined[v.Name] {
+				c.addIssue(v.Span, "undefined variable: %s", v.Name)
+				return true
+			}
+			c.checkVarRefPath(v)
+		}
+		return true
+	})
+}
+
+// checkVarRefPath validates v's path against the variable's
+// inferred Shape, descending field by field. The walker stops at
+// the first segment that is not in a sealed parent's field set
+// and emits a frame underlining the whole varref with a "did you
+// mean ..." suggestion derived via internal/strdist.
+//
+// Index segments ([N]) descend through Shape.Elem when the
+// Shape is a list; lists with no Elem (or non-list parents)
+// permit indexing without comment because we cannot disprove the
+// shape. Once the walk lands on an unsealed Shape every
+// remaining segment is accepted -- the checker has lost
+// visibility into nested structure and refusing to walk further
+// would produce false positives.
+func (c *checker) checkVarRefPath(v *VarRefExpr) {
+	if v.Path == "" {
+		return
+	}
+	current, ok := c.shapes[v.Name]
+	if !ok {
+		return
+	}
+	currentName := v.Name
+	currentKind := current.Kind
+
+	for _, seg := range splitPathSegments(v.Path) {
+		if seg.index {
+			if current.Elem != nil {
+				current = *current.Elem
+				currentKind = current.Kind
+				continue
+			}
+			// Either this Shape isn't a list, or its Elem
+			// is not registered. Descend into Unknown so we
+			// stop trying to validate further fields.
+			current = Shape{Sealed: false, Kind: OriginUnknown}
+			currentKind = OriginUnknown
+			continue
+		}
+		if !current.Sealed {
+			return
+		}
+		if len(current.Fields) == 0 {
+			c.addIssue(v.Span, "%s has kind %s; field access is not valid", currentName, currentKind)
+			return
+		}
+		child, ok := current.Fields[seg.name]
+		if !ok {
+			c.addIssue(v.Span, "%s",
+				unknownFieldMsg(currentName, currentKind, seg.name, current.Fields))
+			return
+		}
+		current = child
+		currentName = currentName + "." + seg.name
+		currentKind = child.Kind
+	}
+}
+
+// pathSegment is a single step inside a varref path: either a
+// dotted field name or a "[N]" index step.
+type pathSegment struct {
+	name  string
+	index bool
+}
+
+// splitPathSegments parses a varref path into its component
+// steps. The grammar is the same one the lexer accepts inside
+// "${name.path}" / "$name[0].field": dotted names alternate with
+// "[N]" index steps, and the leading dot (if any) is implicit
+// because VarRefExpr.Path is stored without it.
+func splitPathSegments(path string) []pathSegment {
+	var out []pathSegment
+	i := 0
+	for i < len(path) {
+		if path[i] == '.' {
+			i++
+			continue
+		}
+		if path[i] == '[' {
+			j := i + 1
+			for j < len(path) && path[j] != ']' {
+				j++
+			}
+			out = append(out, pathSegment{index: true})
+			if j < len(path) {
+				j++
+			}
+			i = j
+			continue
+		}
+		j := i
+		for j < len(path) && path[j] != '.' && path[j] != '[' {
+			j++
+		}
+		out = append(out, pathSegment{name: path[i:j]})
+		i = j
+	}
+	return out
+}
+
+// unknownFieldMsg renders the "no field X (valid: ...; did you
+// mean Y?)" message used when a path segment misses the parent
+// Shape's field set. The kind label is included only when it is
+// informative -- nested record types (Program.Record, Link.Record,
+// etc.) carry OriginUnknown for their kind tag because the
+// reflector does not cross-link Go types to OriginKinds, and
+// "X has kind unknown" reads as noise; the field set is the
+// useful information. The valid list is sorted so error
+// rendering is stable; the suggestion list comes from
+// internal/strdist.
+func unknownFieldMsg(name string, kind OriginKind, seg string, fields map[string]Shape) string {
+	valid := slices.Sorted(maps.Keys(fields))
+	suggestions := strdist.Nearest(seg, valid, 3)
+	var msg string
+	if kind == OriginUnknown {
+		msg = fmt.Sprintf("%s has no field %q (valid: %s)",
+			name, seg, strings.Join(valid, ", "))
+	} else {
+		msg = fmt.Sprintf("%s has kind %s; field %q does not exist (valid: %s)",
+			name, kind, seg, strings.Join(valid, ", "))
+	}
+	if len(suggestions) > 0 {
+		msg += "; did you mean " + strings.Join(quoteAll(suggestions), ", ") + "?"
+	}
+	return msg
+}
+
+func quoteAll(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = fmt.Sprintf("%q", s)
+	}
+	return out
+}
+
+// checkJobLeaks reports started-but-never-managed jobs. A
+// 'let X <- start ...' or 'guard X <- start ...' creates a
+// job named X; a later 'kill $X', 'wait $X', or 'defer kill
+// $X' marks it managed. An unmanaged job at script end is
+// the static analogue of the runtime leak walk: same rule,
+// caught one pass earlier so the user sees it before any
+// side effects fire.
+//
+// The check is intentionally conservative: a 'kill $X' or
+// 'wait $X' anywhere in the program counts, even inside a
+// conditional branch the runtime might never enter. We
+// prefer false-negatives (missed leaks the user sees at run
+// time anyway) to false-positives (warning about scripts
+// that work fine in practice). Sourced files are not
+// analysed cross-file; each script is checked in isolation.
+func (c *checker) checkJobLeaks(prog *Program) {
+	type jobBinding struct {
+		Name string
+		Span
+	}
+
+	var started []jobBinding
+	managed := map[string]bool{}
+
+	Inspect(prog, func(n Node) bool {
+		switch s := n.(type) {
+		case *BindStmt:
+			if isStartCommand(s.Cmd) && s.Primary != "" && s.Primary != "_" {
+				started = append(started, jobBinding{Name: s.Primary, Span: s.Span})
+			}
+		case *CommandStmt:
+			if name := jobReferenceTarget(s); name != "" {
+				managed[name] = true
+			}
+		case *DeferStmt:
+			if s.Cmd != nil {
+				if name := jobReferenceTarget(s.Cmd); name != "" {
+					managed[name] = true
+				}
+			}
+		}
+		return true
+	})
+
+	for _, j := range started {
+		if !managed[j.Name] {
+			c.addIssue(j.Span, "started job %q has no matching wait or kill", j.Name)
+		}
+	}
+}
+
+// isStartCommand reports whether cmd is a 'start ...' invocation.
+// Used to recognise job-creating BindStmts; any other Cmd binds
+// a non-job value and is not subject to leak analysis.
+func isStartCommand(cmd *CommandStmt) bool {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return false
+	}
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	return ok && lit.Text == "start"
+}
+
+// checkArithmeticOperands flags literal operands of arithmetic
+// operators (+, -, *, /, %) that cannot parse as numeric. The
+// runtime evaluator already produces 'left operand "Z" is not
+// numeric' for these; the static check pulls the diagnostic
+// one pass earlier so an arithmetic typo in '${4 * Z}' or
+// 'let r = A / B' surfaces before any side effect runs.
+//
+// Variable-reference operands are trusted (we cannot know
+// their value at static time); only LiteralExpr operands are
+// inspected. The numeric-vs-not test is strconv.ParseFloat
+// which accepts the same lexical shapes the runtime
+// arithmetic does (decimal integer, decimal float, scientific
+// notation; hex via 0x prefix is rejected by ParseFloat but
+// accepted by the runtime, so '0x1a + 1' would false-flag --
+// match ParseFloat's behaviour by also trying ParseInt as a
+// fallback so the static and runtime acceptances agree).
+func (c *checker) checkArithmeticOperands(prog *Program) {
+	Inspect(prog, func(n Node) bool {
+		be, ok := n.(*BinaryExpr)
+		if !ok || !isArithmeticOpText(be.Op) {
+			return true
+		}
+		c.flagNonNumericOperand(be.Left, be.Op)
+		c.flagNonNumericOperand(be.Right, be.Op)
+		return true
+	})
+}
+
+// flagNonNumericOperand emits an issue when e is statically
+// known to be non-numeric. Three sources of evidence are
+// consulted in turn: a literal whose text fails the numeric
+// parser; a varref whose kind cannot represent a number
+// (Bool, Job, the captured-result kind, the bpfman record
+// kinds, Map, Null); and a varref bound to a literal whose
+// text is non-numeric (Scalar kind alone is ambiguous because
+// "world" and "5" are both Scalar -- the recorded RHS text
+// resolves the ambiguity). Variables of OriginUnknown or
+// path-walked Scalars are trusted at static time because the
+// runtime value is genuinely opaque.
+func (c *checker) flagNonNumericOperand(e Expr, op string) {
+	if lit, ok := e.(*LiteralExpr); ok {
+		if isNumericLiteral(lit.Text) {
+			return
+		}
+		c.addIssue(lit.Span, "arithmetic %s: operand %q is not numeric", op, lit.Text)
+		return
+	}
+	v, ok := e.(*VarRefExpr)
+	if !ok {
+		return
+	}
+	kind := c.inferExprKind(v)
+	switch kind {
+	case OriginScalar, OriginUnknown:
+		// Scalars may be numeric or not; consult the recorded
+		// literal RHS when the varref is a bare name with no
+		// path walk and was bound to a single LiteralExpr.
+		// A quoted string ('let s = "world"') is always
+		// non-numeric; an unquoted token gets the same
+		// numeric-parser test isNumericLiteral applies to
+		// arithmetic-on-literal operands.
+		if v.Path == "" {
+			if lit, ok := c.literals[v.Name]; ok {
+				if lit.Quoted || !isNumericLiteral(lit.Text) {
+					c.addIssue(v.Span, "arithmetic %s: %s is %q, not a number", op, v.Name, lit.Text)
+				}
+			}
+		}
+	case OriginBool:
+		c.addIssue(v.Span, "arithmetic %s: %s is a boolean, not a number", op, v.Name)
+	case OriginNull:
+		c.addIssue(v.Span, "arithmetic %s: %s is null, not a number", op, v.Name)
+	default:
+		c.addIssue(v.Span, "arithmetic %s: %s has kind %s, not a number", op, v.Name, kind)
+	}
+}
+
+// checkComparisonOperands reports comparisons whose operand
+// kinds are known and incompatible. The runtime's evalCompare
+// already errors on a Bool-vs-Scalar comparison or on any
+// non-scalar operand; this static check catches the same
+// shapes earlier so the user does not have to run the script
+// to find them. Only sealed kinds with a clear mismatch are
+// flagged; one operand of OriginUnknown or OriginScalar
+// (without a known literal text) silences the check because
+// the runtime types are genuinely ambiguous.
+func (c *checker) checkComparisonOperands(prog *Program) {
+	Inspect(prog, func(n Node) bool {
+		be, ok := n.(*BinaryExpr)
+		if !ok || isArithmeticOpText(be.Op) {
+			return true
+		}
+		if !isComparisonOp(be.Op) {
+			return true
+		}
+		l := c.inferExprKind(be.Left)
+		r := c.inferExprKind(be.Right)
+		if l == OriginUnknown || r == OriginUnknown {
+			return true
+		}
+		if comparable, mismatch := classifyComparison(l, r, be.Op); !comparable {
+			c.addIssue(be.Span, "binary %s: %s", be.Op, mismatch)
+		}
+		return true
+	})
+}
+
+// isComparisonOp reports whether op is one of the binary
+// comparison operators evalCompare handles: equality, ordering,
+// or their textual aliases. Logical operators (and, or) and
+// arithmetic operators are handled by their own checks.
+func isComparisonOp(op string) bool {
+	switch op {
+	case "==", "!=", "<", "<=", ">", ">=":
+		return true
+	}
+	return false
+}
+
+// classifyComparison returns whether two kinds can be compared
+// under op, and a human-readable explanation when they cannot.
+// The rules mirror evalCompare: non-scalar operands cannot be
+// compared; Bool supports only == and !=; Scalar-vs-Bool is a
+// kind mismatch; otherwise the operands are comparable. The
+// caller has already filtered out OriginUnknown so this
+// classifier never sees a wildcard.
+func classifyComparison(l, r OriginKind, op string) (ok bool, msg string) {
+	if !isScalarLikeKind(l) {
+		return false, fmt.Sprintf("left side has kind %s; only scalars (numbers, strings, booleans) can be compared with %s", l, op)
+	}
+	if !isScalarLikeKind(r) {
+		return false, fmt.Sprintf("right side has kind %s; only scalars (numbers, strings, booleans) can be compared with %s", r, op)
+	}
+	if l != r {
+		return false, fmt.Sprintf("cannot compare %s to %s; coerce explicitly", l, r)
+	}
+	if l == OriginBool && op != "==" && op != "!=" {
+		return false, fmt.Sprintf("booleans support only == and !=, not %s", op)
+	}
+	return true, ""
+}
+
+// isScalarLikeKind reports whether kind names a value that the
+// comparison evaluator accepts. Scalars (numbers, strings),
+// Booleans, and Null are scalar-like; record kinds, jobs,
+// command results, lists, and maps are not.
+func isScalarLikeKind(k OriginKind) bool {
+	switch k {
+	case OriginScalar, OriginBool, OriginNull:
+		return true
+	}
+	return false
+}
+
+// isNumericLiteral reports whether text is a literal the
+// arithmetic evaluator will accept. Tries ParseFloat first
+// (handles decimal integers, floats, scientific notation),
+// then ParseInt with base 0 as a fallback (handles 0x... and
+// 0... that ParseFloat rejects). Matches the runtime's de
+// facto accepted shapes; if the runtime ever tightens this,
+// the check tightens with it via the same helper.
+func isNumericLiteral(text string) bool {
+	if _, err := strconv.ParseFloat(text, 64); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseInt(text, 0, 64); err == nil {
+		return true
+	}
+	return false
+}
+
+// checkLoopExits walks stmts with a foreach-depth counter,
+// flagging 'break' or 'continue' that appear at depth 0
+// (outside any enclosing foreach). Retry blocks do not count
+// as foreach for this purpose -- the runtime errBreak /
+// errContinue are caught only by ForEachStmt's evaluator -- so
+// retry bodies inherit the caller's depth. Def bodies reset
+// the depth: a def is a callable unit, and break/continue
+// inside the body but not inside a foreach within the def
+// body is wrong even if the def itself is later called from
+// inside a foreach.
+func (c *checker) checkLoopExits(stmts []Stmt, depth int) {
+	for _, s := range stmts {
+		switch n := s.(type) {
+		case *ForEachStmt:
+			c.checkLoopExits(n.Body, depth+1)
+		case *RetryStmt:
+			c.checkLoopExits(n.Body, depth)
+		case *IfStmt:
+			c.checkLoopExits(n.Then, depth)
+			for _, b := range n.Elifs {
+				c.checkLoopExits(b.Body, depth)
+			}
+			c.checkLoopExits(n.Else, depth)
+		case *DefStmt:
+			c.checkLoopExits(n.Body, 0)
+		case *BreakStmt:
+			if depth == 0 {
+				c.addIssue(n.Span, "'break' outside any foreach loop")
+			}
+		case *ContinueStmt:
+			if depth == 0 {
+				c.addIssue(n.Span, "'continue' outside any foreach loop")
+			}
+		}
+	}
+}
+
+// checkBuiltinArity flags shape errors on the async-job
+// builtins the runtime documents as taking specific argument
+// counts. Static catches typos like 'kill --signa=USR1 $p'
+// (--signa is not a flag, so the kill ends up with two
+// non-flag args) one pass before the runtime does. Flag args
+// (anything starting with '--') are skipped so the count
+// reflects only the positional args the runtime cares about.
+//
+// Coupling: the builtin names and their arities are
+// duplicated here from cmd/bpfman-shell. The set is small and
+// stable; if a new lifecycle verb lands, the entry adds in
+// one place. Driver-side dispatch and static check stay in
+// step via convention rather than a shared registry.
+func (c *checker) checkBuiltinArity(prog *Program) {
+	type aritySpec struct {
+		min, max int // -1 max means unbounded
+	}
+	specs := map[string]aritySpec{
+		"start": {min: 1, max: -1}, // command and optional args
+		"wait":  {min: 1, max: 1},  // exactly one $job
+		"kill":  {min: 1, max: 1},  // exactly one $job (after flags)
+		"jobs":  {min: 0, max: 0},
+		"reap":  {min: 0, max: 0},
+		// fire's positional shape is (KIND, SENTINEL, ACK) but its
+		// flags (--count=N, --waves=K) frequently interpolate (e.g.
+		// --count=$n), which makes them non-LiteralExpr args that
+		// nonFlagArgCount cannot recognise as flags. Strict static
+		// counting would reject every interpolated invocation. The
+		// runtime handler enforces the exact positional/flag shape;
+		// the v2 work in PLAN-fire-builtin.md hoists kind-name and
+		// NeedsBinary validation into the checker, which is where a
+		// flag-aware arity check belongs.
+		"fire": {min: 1, max: -1},
+	}
+	Inspect(prog, func(n Node) bool {
+		cmd, ok := n.(*CommandStmt)
+		if !ok || len(cmd.Args) == 0 {
+			return true
+		}
+		head, ok := cmd.Args[0].(*LiteralExpr)
+		if !ok {
+			return true
+		}
+		spec, known := specs[head.Text]
+		if !known {
+			return true
+		}
+		got := nonFlagArgCount(cmd.Args[1:])
+		switch {
+		case got < spec.min:
+			c.addIssue(cmd.Span, "%s: expected at least %d argument(s), got %d", head.Text, spec.min, got)
+		case spec.max >= 0 && got > spec.max:
+			c.addIssue(cmd.Span, "%s: expected at most %d argument(s), got %d", head.Text, spec.max, got)
+		}
+		return true
+	})
+}
+
+// checkKillFlags validates --signal=NAME and --grace=DUR
+// values on kill invocations. The runtime catches the same
+// errors when the kill builtin actually runs; static checking
+// surfaces the typo before any side effect. NAME is matched
+// against the same fixed signal set the runtime accepts
+// (TERM, KILL, INT, QUIT, HUP, USR1, USR2, STOP, CONT) with
+// optional 'SIG' prefix and case-insensitive lookup. DUR is
+// fed to time.ParseDuration which matches the runtime's
+// acceptance.
+func (c *checker) checkKillFlags(prog *Program) {
+	Inspect(prog, func(n Node) bool {
+		cmd, ok := n.(*CommandStmt)
+		if !ok || len(cmd.Args) == 0 {
+			return true
+		}
+		head, ok := cmd.Args[0].(*LiteralExpr)
+		if !ok || head.Text != "kill" {
+			return true
+		}
+		for _, arg := range cmd.Args[1:] {
+			lit, ok := arg.(*LiteralExpr)
+			if !ok {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(lit.Text, "--signal="):
+				name := strings.TrimPrefix(lit.Text, "--signal=")
+				if !isKnownSignalName(name) {
+					c.addIssue(lit.Span, "kill --signal: unknown signal %q", name)
+				}
+			case strings.HasPrefix(lit.Text, "--grace="):
+				dur := strings.TrimPrefix(lit.Text, "--grace=")
+				if _, err := time.ParseDuration(dur); err != nil {
+					c.addIssue(lit.Span, "kill --grace: %v", err)
+				}
+			}
+		}
+		return true
+	})
+}
+
+// nonFlagArgCount returns the number of args that are not
+// '--'-prefixed flag literals. Flag args (--signal=NAME,
+// --grace=DUR, ...) are skipped so an arity check counts
+// only the positional args the runtime cares about.
+func nonFlagArgCount(args []Expr) int {
+	n := 0
+	for _, a := range args {
+		if lit, ok := a.(*LiteralExpr); ok && len(lit.Text) >= 2 && lit.Text[:2] == "--" {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// isKnownSignalName reports whether name matches one of the
+// signals the runtime kill builtin accepts. Case-insensitive,
+// optional 'SIG' prefix. Mirrors signalFromName in
+// cmd/bpfman-shell/job.go; if that list grows, this list
+// grows the same way.
+func isKnownSignalName(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	upper = strings.TrimPrefix(upper, "SIG")
+	switch upper {
+	case "TERM", "KILL", "INT", "QUIT", "HUP", "USR1", "USR2", "STOP", "CONT":
+		return true
+	}
+	return false
+}
+
+// jobReferenceTarget returns the variable name of a 'kill $X'
+// or 'wait $X' command (the X), or "" if the command is not a
+// kill or wait, or its target is not a simple VarRefExpr.
+// Flag args (--signal=NAME, --grace=DUR) are skipped so 'kill
+// --signal=USR1 $job' still picks up $job as the target.
+func jobReferenceTarget(cmd *CommandStmt) string {
+	if cmd == nil || len(cmd.Args) == 0 {
+		return ""
+	}
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	if !ok || (lit.Text != "kill" && lit.Text != "wait") {
+		return ""
+	}
+	for _, arg := range cmd.Args[1:] {
+		// Skip flag args; the target is the first non-flag.
+		if l, ok := arg.(*LiteralExpr); ok && len(l.Text) >= 2 && l.Text[:2] == "--" {
+			continue
+		}
+		if v, ok := arg.(*VarRefExpr); ok {
+			return v.Name
+		}
+	}
+	return ""
+}

@@ -10,7 +10,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestFentry_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestFentry_LoadAttachDetachUnload.bpfman
 #
 # Requires root, bpftool, and kernel BTF.
 
@@ -22,8 +22,8 @@ require path exists /sys/kernel/btf/vmlinux
 
 # Load the fentry counter. The --programs spec is TYPE:NAME:ATTACH_FUNC;
 # fentry/fexit encode the target function at load time.
-let prog = [bpfman program load file --path testdata/bpf/fentry_counter.bpf.o --programs fentry:test_fentry:do_unlinkat]
-require not nil prog
+guard loaded <- bpfman program load file --path testdata/bpf/fentry_counter.bpf.o --programs fentry:test_fentry:do_unlinkat
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
@@ -31,13 +31,11 @@ let pid = $prog.record.program_id
 expect_program_load $prog fentry tracing test_fentry
 
 # Round-trip: Get returns the same program record.
-let got = [bpfman program get $pid]
-require not nil got
+guard got <- bpfman program get $pid
 expect_program_round_trip $got $prog
 
 # Attach the fentry program. The target is already baked in.
-let link = [bpfman link attach fentry $prog]
-require not nil link
+guard link <- bpfman link attach fentry $prog
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -47,15 +45,14 @@ assert $link.record.details.fn_name == do_unlinkat
 assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
-let gotLink = [bpfman link get $linkID]
-require not nil gotLink
+guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.fn_name == $link.record.details.fn_name
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
-let listedLinks = [bpfman link list -o json]
+guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -68,17 +65,17 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value | tonumber] | add"
 
-let dumpBefore = [exec bpftool map dump id $mapID -j]
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Trigger do_unlinkat by creating and removing temp files.
-foreach _ in [jq "[range(5)]" '0'] {
-    require ok exec sh -c 'f=$(mktemp); rm "$f"'
+foreach _ in (range 5) {
+    guard _ <- sh -c 'f=$(mktemp); rm "$f"'
 }
 
-let dumpAfter = [exec bpftool map dump id $mapID -j]
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
-let delta     = [[$after - $before]]
+let delta     = $after - $before
 print $delta
 assert $delta >= 5
 

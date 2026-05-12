@@ -6,18 +6,16 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/xdp.bpfman
+#   sudo bpfman-shell examples/xdp.bpfman
 
-require ok exec ip link add bpfman-xdp type dummy
-require ok exec ip link set bpfman-xdp up
+guard _ <- ip link add bpfman-xdp type dummy
+defer ip link del bpfman-xdp
+guard _ <- ip link set bpfman-xdp up
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/xdp_pass.bpf.o \
-    --programs xdp:pass]
+    --programs xdp:pass
+defer bpfman program unload $prog
 
-let link = [bpfman link attach xdp --iface bpfman-xdp $prog]
-
-bpfman link detach $link
-bpfman program unload $prog
-
-exec ip link del bpfman-xdp
+guard link <- bpfman link attach xdp --iface bpfman-xdp $prog
+defer bpfman link detach $link

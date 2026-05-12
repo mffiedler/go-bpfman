@@ -1,6 +1,6 @@
 // CLI helpers duplicated from cmd/bpfman: small operational helpers
-// that the REPL Command ADT shares with bpfman's Kong subcommands. The
-// duplication keeps the two binaries independent at the package
+// that the REPL Command ADT shares with bpfman's Kong subcommands.
+// The duplication keeps the two binaries independent at the package
 // boundary; if these grow further or drift, lift them into a shared
 // internal package.
 package main
@@ -8,16 +8,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
-	"text/tabwriter"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/manager/action"
-	"github.com/frobware/go-bpfman/manager/coherency"
 )
 
 // loadFileResult captures the result of a load file operation.
@@ -155,117 +151,4 @@ func deleteDependents(ctx context.Context, writeLock lock.WriterScope, mgr *mana
 	}
 
 	return nil
-}
-
-// repairFooter selects the closing prompt that points the user at the
-// next step after a read-only audit.
-type repairFooter int
-
-const (
-	// repairFooterCLI suggests re-running with --repair.
-	repairFooterCLI repairFooter = iota
-	// repairFooterREPL suggests shelling out from the REPL.
-	repairFooterREPL
-)
-
-// renderAuditPlan formats a GCPlan as the read-only audit output:
-// findings grouped by category and rule, plus the cleanup plan that
-// --repair would execute. The footer text varies by context.
-func renderAuditPlan(plan manager.GCPlan, footer repairFooter) string {
-	if len(plan.Violations) == 0 && len(plan.StoreActions) == 0 && plan.LiveOrphans == 0 {
-		return "All checks passed. Database, kernel, and filesystem are coherent.\n"
-	}
-
-	var out strings.Builder
-	var errorCount, warningCount, repairableCount int
-
-	if len(plan.Violations) > 0 {
-		ruleCounts := make(map[string]int)
-		for _, v := range plan.Violations {
-			ruleCounts[v.RuleName]++
-		}
-		lastCategory := ""
-		lastRule := ""
-		w := tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
-
-		for _, v := range plan.Violations {
-			category := categoryHeading(v.Category)
-			if category != lastCategory {
-				w.Flush()
-				if lastCategory != "" {
-					out.WriteString("\n")
-				}
-				out.WriteString(category)
-				out.WriteString("\n")
-				lastCategory = category
-				lastRule = ""
-				w = tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
-			}
-			if v.RuleName != lastRule {
-				w.Flush()
-				fmt.Fprintf(&out, "  [%s] (%d)\n", v.RuleName, ruleCounts[v.RuleName])
-				lastRule = v.RuleName
-				w = tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
-			}
-			fmt.Fprintf(w, "    %s\t%s\n", v.Severity, v.Description)
-			if v.Intent != nil {
-				fmt.Fprintf(w, "    \t  -> %s\n", v.Intent.Describe())
-				repairableCount++
-			}
-			switch v.Severity {
-			case coherency.SeverityError:
-				errorCount++
-			case coherency.SeverityWarning:
-				warningCount++
-			}
-		}
-		w.Flush()
-	}
-
-	if len(plan.StoreActions) > 0 {
-		out.WriteString("\nStore-level cleanup:\n")
-		for _, a := range plan.StoreActions {
-			fmt.Fprintf(&out, "  %s\n", action.Describe(a))
-		}
-	}
-
-	fmt.Fprintf(&out, "\nSummary: %d error(s), %d warning(s)", errorCount, warningCount)
-	if plan.LiveOrphans > 0 {
-		fmt.Fprintf(&out, "; %d live orphan(s) skipped", plan.LiveOrphans)
-	}
-	out.WriteString("\n")
-
-	if repairableCount > 0 || len(plan.StoreActions) > 0 {
-		switch footer {
-		case repairFooterCLI:
-			out.WriteString("\nRe-run with --repair to execute the cleanup plan.\n")
-		case repairFooterREPL:
-			out.WriteString("\nRun '! bpfman audit --repair' to execute the cleanup plan.\n")
-		}
-	}
-
-	return out.String()
-}
-
-func categoryHeading(cat string) string {
-	switch cat {
-	case "enumeration":
-		return "Checking enumeration quality..."
-	case "db-vs-kernel":
-		return "Checking database vs kernel..."
-	case "db-vs-fs":
-		return "Checking database vs filesystem..."
-	case "fs-vs-db":
-		return "Checking filesystem for orphans..."
-	case "kernel-vs-db":
-		return "Checking kernel vs database..."
-	case "consistency":
-		return "Checking derived state consistency..."
-	case "gc-dispatcher":
-		return "Stale dispatchers..."
-	case "gc-orphan-pin":
-		return "Orphan filesystem artefacts..."
-	default:
-		return cat
-	}
 }

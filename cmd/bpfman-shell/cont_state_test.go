@@ -55,12 +55,6 @@ func TestContState_SingleLine_OpenBrace(t *testing.T) {
 	assert.True(t, feedLines("if $x > 0 {"), "unterminated if is open")
 }
 
-func TestContState_SingleLine_OpenBracket(t *testing.T) {
-	t.Parallel()
-
-	assert.True(t, feedLines("let x = [bpfman program list"), "unterminated cmdsub is open")
-}
-
 func TestContState_MultiLine_IfBlockBalanced(t *testing.T) {
 	t.Parallel()
 
@@ -70,17 +64,6 @@ func TestContState_MultiLine_IfBlockBalanced(t *testing.T) {
 		"}",
 	)
 	assert.True(t, closed, "multi-line if/block should close after matching '}'")
-}
-
-func TestContState_MultiLine_CmdSubBalanced(t *testing.T) {
-	t.Parallel()
-
-	closed := !feedLines(
-		"let x = [bpfman",
-		"  program",
-		"  list]",
-	)
-	assert.True(t, closed, "multi-line cmdsub should close after matching ']'")
 }
 
 func TestContState_Comment_EndsLine(t *testing.T) {
@@ -115,17 +98,6 @@ func TestContState_MultiLine_QuotedString_UnbalancedBraceIsText(t *testing.T) {
 		`"`,
 	)
 	assert.True(t, closed, "unbalanced '{' inside a multi-line double-quoted string must not be counted as an open block")
-}
-
-func TestContState_MultiLine_QuotedString_UnbalancedBracketIsText(t *testing.T) {
-	t.Parallel()
-
-	closed := !feedLines(
-		`exec bash -c '`,
-		`  echo [ only-open`,
-		`'`,
-	)
-	assert.True(t, closed, "unbalanced '[' inside a multi-line single-quoted string must not be counted as an open cmdsub")
 }
 
 func TestContState_MultiLine_QuotedString_ThenRealBlock(t *testing.T) {

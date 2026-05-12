@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/platform"
@@ -99,12 +99,7 @@ type LoadOpts struct {
 //
 // On failure, all previously loaded programs are cleaned up by
 // calling Unload for each.
-func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
-	ctx, err := m.gcOnEntry(ctx, writeLock)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *Manager) Load(ctx context.Context, source LoadSource, programs []ProgramSpec, opts LoadOpts) ([]bpfman.Program, error) {
 	objectPath, pulled, err := m.resolveBatchSource(ctx, source)
 	if err != nil {
 		return nil, err
@@ -126,11 +121,30 @@ func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source L
 		Owner:        opts.Owner,
 	}
 
+	// Phase A: per-program kernel + filesystem work. Lockless;
+	// see docs/PLAN-load-lockless.md. The kernel allocates each
+	// program a unique id, the bytecode directory is namespaced
+	// by that id, and no shared state is mutated -- so two
+	// concurrent loads cannot collide.
+	type loadedItem struct {
+		out    bpfman.LoadOutput
+		spec   bpfman.LoadSpec
+		record bpfman.ProgramRecord
+		now    time.Time
+	}
 	var loaded []bpfman.Program
+	var items []loadedItem
+	// Cleanup invariant: in v2 the rollback can fire either after the
+	// per-program kernel/fs work succeeded but before the phase-B
+	// commit transaction, or during phase B when the commit fails.
+	// Either way no sqlite row was persisted for any of these programs
+	// (the transaction either rolled back or never started), so the
+	// unload runs with persisted=false to skip the store delete and
+	// avoid a misleading "record not found" error.
 	cleanupLoaded := func() {
 		for j := len(loaded) - 1; j >= 0; j-- {
 			r := loaded[j].Record
-			if uerr := m.unload(ctx, r.ProgramID, r.Meta.Name, nil, true); uerr != nil {
+			if uerr := m.unload(ctx, r.ProgramID, r.Meta.Name, nil, false); uerr != nil {
 				m.logger.Error("failed to unload during batch rollback",
 					"program_id", r.ProgramID, "error", uerr)
 			}
@@ -167,13 +181,53 @@ func (m *Manager) Load(ctx context.Context, writeLock lock.WriterScope, source L
 				Maps:   bpfman.ToMapStatus(kernelMaps),
 			},
 		})
+		items = append(items, loadedItem{out: lo, spec: spec, record: record, now: now})
 	}
+
+	// Phase B: single sqlite transaction commits the whole batch.
+	// No flock: load is lockless by construction
+	// (docs/PLAN-load-lockless.md). The kernel allocates each
+	// program a unique id, the bytecode dir is namespaced by that
+	// id, and the primary-key constraint on `programs` makes the
+	// commit non-conflicting across concurrent loads. Sqlite's
+	// own writer mutex serialises the commits themselves.
+	//
+	// We call platform.Store methods directly rather than going
+	// through the executor because the executor's SaveProgram and
+	// SaveSharedMapPins handlers each open their own internal
+	// transaction, which would nest here.
+	if err := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		for _, it := range items {
+			if _, err := tx.Get(ctx, it.out.Program.ID); err == nil {
+				return fmt.Errorf("program %d already exists in database", it.out.Program.ID)
+			} else if !errors.Is(err, platform.ErrRecordNotFound) {
+				return fmt.Errorf("check existing program %d: %w", it.out.Program.ID, err)
+			}
+			if err := tx.Save(ctx, it.out.Program.ID, it.record); err != nil {
+				return fmt.Errorf("save program %d: %w", it.out.Program.ID, err)
+			}
+			if len(it.out.SharedMapNames) > 0 {
+				if err := tx.SaveSharedMapPins(ctx, it.out.Program.ID, it.out.SharedMapNames); err != nil {
+					return fmt.Errorf("save shared map pins for program %d: %w", it.out.Program.ID, err)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		cleanupLoaded()
+		return nil, err
+	}
+
 	return loaded, nil
 }
 
-// loadPlan builds the per-program plan: kernel-load, db-consistency-check
-// fs-publish, store-save.
+// loadPlan builds the per-program plan: kernel-load and
+// fs-publish. The remaining sqlite work (db-consistency-check,
+// store-save, save-shared-maps) is batched into a single
+// transaction at the end of the load, see Manager.Load's
+// phase B.
 func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) operation.Plan {
+	_ = opts // reserved: phase B builds program records from the spec + load output directly.
 	programName := spec.ProgramName()
 	rt := m.rt.Bytecode()
 
@@ -202,15 +256,6 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 			}),
 		),
 
-		operation.Do("db-consistency-check", programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
-				l := operation.Get(b, loadedKey)
-				return exec.Execute(ctx, action.CheckProgramNotInStore{
-					ProgramID: l.Program.ID,
-				})
-			},
-		),
-
 		operation.Do("fs-publish", programName,
 			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
 				l := operation.Get(b, loadedKey)
@@ -233,30 +278,6 @@ func (m *Manager) loadPlan(spec bpfman.LoadSpec, opts loadOpts, now time.Time) o
 					action.RemoveProgramDir{Path: rt.ProgramDir(l.Program.ID)},
 				}
 			}),
-		),
-
-		operation.Do("store-save", programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
-				l := operation.Get(b, loadedKey)
-				record := buildProgramRecord(spec, l, opts, rt, now)
-				return exec.Execute(ctx, action.SaveProgram{
-					ProgramID: l.Program.ID,
-					Metadata:  record,
-				})
-			},
-		),
-
-		operation.Do("save-shared-maps", programName,
-			func(ctx context.Context, exec action.ExecutorWithResult, b *operation.Bindings) error {
-				l := operation.Get(b, loadedKey)
-				if len(l.SharedMapNames) == 0 {
-					return nil
-				}
-				return exec.Execute(ctx, action.SaveSharedMapPins{
-					ProgramID: l.Program.ID,
-					MapNames:  l.SharedMapNames,
-				})
-			},
 		),
 	)
 }

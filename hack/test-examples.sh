@@ -26,7 +26,7 @@ for f in examples/*.bpfman; do
         continue
     fi
     printf "=== %s ===\n" "$name"
-    if sudo "$bin_dir/bpfman-shell" repl -f "$f"; then
+    if sudo "$bin_dir/bpfman-shell" "$f"; then
         echo "    pass: $name"
     else
         echo "    FAIL: $name"

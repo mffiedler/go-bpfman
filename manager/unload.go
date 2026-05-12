@@ -219,10 +219,7 @@ func (m *Manager) removeProgramBytecodeDir(programID kernel.ProgramID) error {
 // cleanly. ErrProgramNotFound from preflight is informative ("you
 // asked to unload an ID that does not exist") and is left in place.
 func (m *Manager) Unload(ctx context.Context, writeLock lock.WriterScope, programID kernel.ProgramID) error {
-	ctx, err := m.gcOnEntry(ctx, writeLock)
-	if err != nil {
-		return err
-	}
+	_ = writeLock // reserved for symmetry with other mutating methods
 
 	// FETCH: Get metadata and links (for link cleanup)
 	progSpec, err := m.getProgram(ctx, programID)

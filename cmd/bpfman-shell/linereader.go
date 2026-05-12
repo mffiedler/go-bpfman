@@ -29,6 +29,17 @@ type HistoryWriter interface {
 	SaveHistory(entry string) error
 }
 
+// PromptSetter is implemented by LineReaders that can change the
+// prompt between calls to Readline. Used by interactive mode to
+// switch between the primary prompt ('bpfman> ') and a
+// continuation prompt ('... ') so the user sees when a chunk is
+// still mid-form (an unclosed brace, paren, quote, comment, or
+// backslash continuation). Backends without a visible prompt
+// (script and pipe readers) do not implement it.
+type PromptSetter interface {
+	SetPrompt(prompt string)
+}
+
 // scannerReader wraps a bufio.Scanner to implement LineReader for
 // non-interactive input (files, pipes).
 type scannerReader struct {

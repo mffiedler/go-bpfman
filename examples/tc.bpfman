@@ -6,18 +6,16 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/tc.bpfman
+#   sudo bpfman-shell examples/tc.bpfman
 
-require ok exec ip link add bpfman-tc type dummy
-require ok exec ip link set bpfman-tc up
+guard _ <- ip link add bpfman-tc type dummy
+defer ip link del bpfman-tc
+guard _ <- ip link set bpfman-tc up
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tc_counter.bpf.o \
-    --programs tc:stats]
+    --programs tc:stats
+defer bpfman program unload $prog
 
-let link = [bpfman link attach tc --iface bpfman-tc --direction ingress $prog]
-
-bpfman link detach $link
-bpfman program unload $prog
-
-exec ip link del bpfman-tc
+guard link <- bpfman link attach tc --iface bpfman-tc --direction ingress $prog
+defer bpfman link detach $link

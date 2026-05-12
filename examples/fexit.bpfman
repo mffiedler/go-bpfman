@@ -10,13 +10,12 @@
 # commands.
 #
 # Requires root. Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/fexit.bpfman
+#   sudo bpfman-shell examples/fexit.bpfman
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/fentry_counter.bpf.o \
-    --programs fexit:test_fexit:do_unlinkat]
+    --programs fexit:test_fexit:do_unlinkat
+defer bpfman program unload $prog
 
-let link = [bpfman link attach fexit $prog]
-
-bpfman link detach $link
-bpfman program unload $prog
+guard link <- bpfman link attach fexit $prog
+defer bpfman link detach $link

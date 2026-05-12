@@ -116,7 +116,14 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}}))
+	// _txlock=immediate makes BeginTx acquire the writer lock at
+	// transaction start. Without it (the database/sql default of
+	// BEGIN DEFERRED) two transactions that both read then write
+	// can deadlock at the read-to-write upgrade; sqlite breaks the
+	// deadlock by returning SQLITE_BUSY_SNAPSHOT immediately,
+	// bypassing busy_timeout. With IMMEDIATE the wait happens at
+	// BeginTx where busy_timeout applies cleanly.
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}})+"&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

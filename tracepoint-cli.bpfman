@@ -17,17 +17,17 @@
 #     time, before any kernel I/O runs.
 #
 # Requires root. Run with:
-#   sudo bpfman-shell repl -f tracepoint-cli.bpfman
+#   sudo bpfman-shell tracepoint-cli.bpfman
 
 # ---- Happy path ----------------------------------------------------
 
-let prog = [bpfman program load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder]
-require not nil prog
+guard prog <- bpfman program load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+defer bpfman program unload $prog
 let pid = $prog.record.program_id
 
 # New positional form: program-id first, tracepoint second. No flag.
-let link = [bpfman link attach tracepoint $pid syscalls/sys_enter_kill]
-require not nil link
+guard link <- bpfman link attach tracepoint $pid syscalls/sys_enter_kill
+defer bpfman link detach $link
 
 assert $link.record.kind == tracepoint
 assert $link.record.details.group == syscalls
@@ -54,12 +54,4 @@ assert fail bpfman link attach tracepoint $pid a/b/c
 # parses, because the program id must come first.
 assert fail bpfman link attach tracepoint syscalls/sys_enter_kill $pid
 
-# ---- Teardown ------------------------------------------------------
-
-bpfman link detach $link
-assert fail bpfman link get $link
-
-bpfman program unload $pid
-assert fail bpfman program get $prog
-
-unset link prog pid
+# Teardown is handled by the defers above (LIFO: detach, then unload).

@@ -1,6 +1,9 @@
 package shell
 
-import "sort"
+import (
+	"maps"
+	"slices"
+)
 
 // Session holds variable bindings, aliases, and user-defined commands
 // (defs) for the REPL. It is the runtime state that persists across
@@ -10,6 +13,9 @@ type Session struct {
 	aliases        map[string]string
 	defs           map[string]*DefValue
 	assertFailures int
+	deferFailures  int
+	jobLeaks       int
+	traceEnabled   bool
 }
 
 // DefValue is a user-defined command registered via the `def NAME(P1,
@@ -19,7 +25,7 @@ type DefValue struct {
 	Name   string
 	Params []string
 	Body   []Stmt
-	Loc    Loc
+	Span
 }
 
 // RecordAssertFailure increments the assertion failure counter.
@@ -30,6 +36,48 @@ func (s *Session) RecordAssertFailure() {
 // AssertFailures returns the number of recorded assertion failures.
 func (s *Session) AssertFailures() int {
 	return s.assertFailures
+}
+
+// RecordDeferFailure increments the defer-failure counter.
+func (s *Session) RecordDeferFailure() {
+	s.deferFailures++
+}
+
+// DeferFailures returns the number of recorded defer failures.
+// Drivers consult this after script completion to set the
+// process exit code: any non-zero count means at least one
+// defer reported a non-ok rc.
+func (s *Session) DeferFailures() int {
+	return s.deferFailures
+}
+
+// RecordJobLeak increments the unmanaged-job counter. The
+// scope-exit leak check calls it for each started job that the
+// script never waited or killed; drivers consult JobLeaks after
+// script completion to fail the exit code.
+func (s *Session) RecordJobLeak() {
+	s.jobLeaks++
+}
+
+// JobLeaks returns the number of unmanaged jobs reported at
+// scope exit. A non-zero count means at least one 'start' had
+// no matching wait or kill before its enclosing defer scope
+// unwound, and the script should fail.
+func (s *Session) JobLeaks() int {
+	return s.jobLeaks
+}
+
+// SetTrace enables or disables execution tracing. Drivers usually
+// install an Env.Trace callback whose body consults this so the
+// `trace on` / `trace off` builtin (and a startup CLI flag) can
+// flip the state mid-session without swapping the Env hook itself.
+func (s *Session) SetTrace(on bool) {
+	s.traceEnabled = on
+}
+
+// TraceEnabled reports whether tracing is currently enabled.
+func (s *Session) TraceEnabled() bool {
+	return s.traceEnabled
 }
 
 // NewSession returns an empty session.
@@ -66,12 +114,7 @@ func (s *Session) DeleteDef(name string) bool {
 
 // DefNames returns the sorted list of registered def names.
 func (s *Session) DefNames() []string {
-	names := make([]string, 0, len(s.defs))
-	for k := range s.defs {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.defs))
 }
 
 // Set binds a value to a variable name, replacing any existing binding.
@@ -93,12 +136,7 @@ func (s *Session) Delete(name string) {
 
 // Names returns the sorted list of bound variable names.
 func (s *Session) Names() []string {
-	names := make([]string, 0, len(s.vars))
-	for k := range s.vars {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.vars))
 }
 
 // SetAlias binds a first-token alias. The caller is responsible for
@@ -121,10 +159,5 @@ func (s *Session) DeleteAlias(name string) {
 
 // AliasNames returns the sorted list of defined alias names.
 func (s *Session) AliasNames() []string {
-	names := make([]string, 0, len(s.aliases))
-	for k := range s.aliases {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.aliases))
 }

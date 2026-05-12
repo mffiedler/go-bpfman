@@ -8,7 +8,6 @@ import (
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 )
 
@@ -26,7 +25,7 @@ type LoadFileCmd struct {
 
 	Example     ExampleFlag             `name:"example" help:"Show working examples and exit."`
 	Path        string                  `short:"p" name:"path" help:"Path to the BPF object file (.o)." required:""`
-	Programs    []bpfmancli.ProgramSpec `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
+	Programs    []bpfmancli.ProgramSpec `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the object file are loaded."`
 	Application string                  `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
 	MapOwnerID  kernel.ProgramID        `name:"map-owner-id" help:"Program ID of another program to share maps with."`
 }
@@ -51,51 +50,54 @@ func (c *LoadFileCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 // BPF program from a local object file, returning the result without
 // formatting. Both the CLI command and the REPL call this function.
 func executeLoadFileResult(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, c *LoadFileCmd) (loadFileResult, error) {
-	// Validate object file exists (before acquiring lock)
+	_ = cli // reserved for future use; load no longer takes the writer lock.
+
+	// Validate object file exists.
 	objPath, err := bpfmancli.ParseObjectPath(c.Path)
 	if err != nil {
 		return loadFileResult{}, err
 	}
 
-	return bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadFileResult, error) {
-		// Convert global data
-		var globalData map[string][]byte
-		if len(c.GlobalData) > 0 {
-			globalData = bpfmancli.GlobalDataMap(c.GlobalData)
-		}
+	// Convert global data.
+	var globalData map[string][]byte
+	if len(c.GlobalData) > 0 {
+		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
+	}
 
-		// Build metadata map, adding application if specified
-		metadata := bpfmancli.MetadataMap(c.Metadata)
-		if c.Application != "" {
-			if metadata == nil {
-				metadata = make(map[string]string)
-			}
-			metadata["bpfman.io/application"] = c.Application
+	// Build metadata map, adding application if specified.
+	metadata := bpfmancli.MetadataMap(c.Metadata)
+	if c.Application != "" {
+		if metadata == nil {
+			metadata = make(map[string]string)
 		}
+		metadata["bpfman.io/application"] = c.Application
+	}
 
-		// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec
-		var programs []manager.ProgramSpec
-		for _, prog := range c.Programs {
-			programs = append(programs, manager.ProgramSpec{
-				Name:       prog.Name,
-				Type:       prog.Type,
-				AttachFunc: prog.AttachFunc,
-				MapOwnerID: c.MapOwnerID,
-			})
-		}
-
-		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
-			FilePath: objPath.Path,
-		}, programs, manager.LoadOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
+	// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec.
+	var programs []manager.ProgramSpec
+	for _, prog := range c.Programs {
+		programs = append(programs, manager.ProgramSpec{
+			Name:       prog.Name,
+			Type:       prog.Type,
+			AttachFunc: prog.AttachFunc,
+			MapOwnerID: c.MapOwnerID,
 		})
+	}
 
-		if loadErr != nil {
-			return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
-		}
-		return loadFileResult{Programs: loaded}, nil
+	// load is lockless by construction (docs/PLAN-load-lockless.md):
+	// the kernel allocates unique program ids, the bytecode directory
+	// is namespaced by that id, and the sqlite commit is one
+	// transaction at the end. No flock acquisition is needed.
+	loaded, loadErr := mgr.Load(ctx, manager.LoadSource{
+		FilePath: objPath.Path,
+	}, programs, manager.LoadOpts{
+		UserMetadata: metadata,
+		GlobalData:   globalData,
 	})
+	if loadErr != nil {
+		return loadFileResult{}, fmt.Errorf("failed to load programs: %w", loadErr)
+	}
+	return loadFileResult{Programs: loaded}, nil
 }
 
 // executeLoadFile is the shared implementation for loading a BPF

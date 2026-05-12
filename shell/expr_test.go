@@ -3,7 +3,6 @@ package shell
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,6 +14,19 @@ import (
 // pure-evaluation layer.
 func evalEnv(s *Session) *Env {
 	return &Env{Session: s}
+}
+
+// bindFromValue adapts a (Value, error)-returning closure to the
+// ExecBind signature so tests that drove ExecSubstitution can keep
+// the same body shape under the new hook.
+func bindFromValue(f func([]Arg, Span) (Value, error)) func([]Arg, Span) (BindResult, error) {
+	return func(args []Arg, span Span) (BindResult, error) {
+		v, err := f(args, span)
+		if err != nil {
+			return BindResult{}, err
+		}
+		return BindResult{Rc: Envelope{OK: true}, Primary: v}, nil
+	}
 }
 
 func TestEvalExpr_Literal(t *testing.T) {
@@ -103,37 +115,6 @@ func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {
 	_, err := EvalExpr(&AdapterExpr{Adapter: "file", Name: "x"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "adapter")
-}
-
-func TestEvalExpr_CmdSub_NoRunner(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	e := &CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "foo"}}}}}}
-	_, err := EvalExpr(e, evalEnv(s))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not permitted")
-}
-
-func TestEvalExpr_CmdSub_DispatchesViaEnv(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			require.Len(t, args, 1)
-			w, ok := args[0].(WordArg)
-			require.True(t, ok)
-			return StringValue("hello-" + w.Text), nil
-		},
-	}
-	e := &CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "foo"}}}}}}
-	v, err := EvalExpr(e, env)
-	require.NoError(t, err)
-	s2, err := v.Scalar()
-	require.NoError(t, err)
-	assert.Equal(t, "hello-foo", s2)
 }
 
 func TestEvalExpr_Binary_Textual(t *testing.T) {
@@ -352,7 +333,7 @@ func TestExprFromArgs_UnaryRejectsNonPred(t *testing.T) {
 		WordArg{Text: "operand"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unary predicate")
+	assert.Contains(t, err.Error(), "expected a check like")
 }
 
 func TestExprFromArgs_Binary(t *testing.T) {
@@ -384,7 +365,7 @@ func TestExprFromArgs_BinaryRejectsNonOp(t *testing.T) {
 		WordArg{Text: "b"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "binary operator")
+	assert.Contains(t, err.Error(), "expected an operator")
 }
 
 func TestExprFromArgs_TooManyArgs(t *testing.T) {
@@ -394,7 +375,7 @@ func TestExprFromArgs_TooManyArgs(t *testing.T) {
 		WordArg{Text: "a"}, WordArg{Text: "b"}, WordArg{Text: "c"}, WordArg{Text: "d"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "4 operands")
+	assert.Contains(t, err.Error(), "got 4 argument")
 }
 
 func TestExprFromArgs_Empty(t *testing.T) {
@@ -416,7 +397,7 @@ func TestAsBool_RejectsNonBool(t *testing.T) {
 	for _, v := range cases {
 		_, err := AsBool(v)
 		require.Error(t, err, "kind=%s", v.Kind())
-		assert.Contains(t, err.Error(), "not a boolean")
+		assert.Contains(t, err.Error(), "use a comparison")
 	}
 }
 
@@ -446,62 +427,8 @@ func TestIsUnaryPred(t *testing.T) {
 	}
 }
 
-// Coverage for nested CmdSub dispatch via EvalArgs (replaces the
-// old resolveCmdSubs unit tests).
-
-func TestEvalArgs_CmdSub_FlattensScalar(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			require.Len(t, args, 1)
-			w, ok := args[0].(WordArg)
-			require.True(t, ok)
-			assert.Equal(t, "inner", w.Text)
-			return StringValue("hello"), nil
-		},
-	}
-	exprs := []Expr{
-		&LiteralExpr{Text: "outer"},
-		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
-	}
-	out, err := EvalArgs(exprs, env)
-	require.NoError(t, err)
-	require.Len(t, out, 2)
-	assert.Equal(t, WordArg{Text: "outer"}, out[0])
-	scalar, ok := out[1].(ScalarValueArg)
-	require.True(t, ok)
-	assert.Equal(t, "hello", scalar.Text)
-}
-
-func TestEvalArgs_CmdSub_PreservesStructured(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	structured := ValueFromMap(map[string]any{"id": "42"}).WithKind(OriginProgram)
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			return structured, nil
-		},
-	}
-	exprs := []Expr{
-		&LiteralExpr{Text: "outer"},
-		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
-	}
-	out, err := EvalArgs(exprs, env)
-	require.NoError(t, err)
-	require.Len(t, out, 2)
-	sva, ok := out[1].(StructuredValueArg)
-	require.True(t, ok)
-	assert.Equal(t, "", sva.Name)
-	assert.Equal(t, OriginProgram, sva.Value.Kind())
-}
-
 // ThreadExpr evaluation: LHS's Value is appended as the last arg to
-// the pipe's command, which then dispatches via ExecSubstitution.
+// the pipe's command, which then dispatches via ExecBind.
 
 func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	t.Parallel()
@@ -511,10 +438,10 @@ func TestEvalExpr_Thread_AppendsScalarValueAsLastArg(t *testing.T) {
 	var captured []Arg
 	env := &Env{
 		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			captured = args
 			return StringValue("ok"), nil
-		},
+		}),
 	}
 	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
@@ -542,10 +469,10 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	var captured []Arg
 	env := &Env{
 		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			captured = args
 			return StringValue("ok"), nil
-		},
+		}),
 	}
 	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "p"},
@@ -566,9 +493,9 @@ func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
 	s.Set("x", Value{}) // nil value
 	env := &Env{
 		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			return StringValue("should-not-run"), nil
-		},
+		}),
 	}
 	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
@@ -591,7 +518,7 @@ func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
 	}
 	_, err := EvalExpr(e, env)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "thread")
+	assert.Contains(t, err.Error(), "'|>'")
 }
 
 func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
@@ -604,12 +531,12 @@ func TestEvalExpr_Thread_Chain_FeedsSuccessively(t *testing.T) {
 	s.Set("x", StringValue("start"))
 	env := &Env{
 		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			// Return the last arg's text with a prefix so a chain
 			// accumulates visible stages.
 			last := args[len(args)-1].(ScalarValueArg).Text
 			return StringValue("<" + last + ">"), nil
-		},
+		}),
 	}
 	inner := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
@@ -631,14 +558,14 @@ func TestEvalArgs_Thread_WrapsThreadResultAsArg(t *testing.T) {
 
 	// A ThreadExpr used as a command argument: the evaluator should
 	// dispatch the pipe, then wrap the returned Value as a
-	// ScalarValueArg or StructuredValueArg just like CmdSubExpr.
+	// ScalarValueArg or StructuredValueArg.
 	s := NewSession()
 	s.Set("x", StringValue("42"))
 	env := &Env{
 		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
+		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
 			return StringValue("piped"), nil
-		},
+		}),
 	}
 	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
@@ -666,7 +593,7 @@ func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			require.Len(t, args, 1)
 			scalar, ok := args[0].(ScalarValueArg)
 			require.True(t, ok)
@@ -700,7 +627,7 @@ func TestEvalProgram_ForEach_LoopVarBodyScoped(t *testing.T) {
 	s.Set("xs", listValue)
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -725,7 +652,7 @@ func TestEvalProgram_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
 	s.Set("i", StringValue("outer"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -753,7 +680,7 @@ func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -778,7 +705,7 @@ func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
 	s.Set("notalist", StringValue("hello"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
@@ -803,7 +730,7 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	boom := errors.New("boom")
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			seen++
 			if seen == 2 {
 				return Value{}, boom
@@ -820,7 +747,7 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	}}
 	evErr := EvalProgram(prog, env)
 	require.Error(t, evErr)
-	assert.Same(t, boom, evErr, "body error should propagate unwrapped")
+	require.ErrorIs(t, evErr, boom, "body error must remain reachable via errors.Is after the statement-level frame wrap")
 	assert.Equal(t, 2, seen, "loop must stop at the first failing iteration")
 }
 
@@ -834,7 +761,7 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -875,7 +802,7 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -921,7 +848,7 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 	var captured []string
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			scalar := args[0].(ScalarValueArg)
 			captured = append(captured, scalar.Text)
 			return Value{}, nil
@@ -1099,7 +1026,7 @@ func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -1123,7 +1050,7 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1135,7 +1062,7 @@ func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err, "last body error should propagate unwrapped")
+	require.ErrorIs(t, err, sentinel, "the last body error must remain reachable via errors.Is")
 }
 
 func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
@@ -1147,7 +1074,7 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1159,7 +1086,7 @@ func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err)
+	require.ErrorIs(t, err, sentinel)
 }
 
 func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
@@ -1169,7 +1096,7 @@ func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
 	s := NewSession()
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
@@ -1191,7 +1118,7 @@ func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
 	callCount := 0
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			callCount++
 			return Value{}, nil
 		},
@@ -1214,7 +1141,7 @@ func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
 	sentinel := errors.New("not yet")
 	env := &Env{
 		Session: s,
-		ExecCommand: func([]Arg) (Value, error) {
+		ExecCommand: func([]Arg, Span) (Value, error) {
 			return Value{}, sentinel
 		},
 	}
@@ -1226,7 +1153,7 @@ func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
 	}}
 	err := EvalProgram(prog, env)
 	require.Error(t, err)
-	assert.Same(t, sentinel, err)
+	require.ErrorIs(t, err, sentinel)
 }
 
 func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
@@ -1236,7 +1163,7 @@ func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
 	s.Set("max", StringValue("-3"))
 	env := &Env{
 		Session:     s,
-		ExecCommand: func([]Arg) (Value, error) { return Value{}, nil },
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
 	}
 	prog := &Program{Stmts: []Stmt{
 		&RetryStmt{
@@ -1277,7 +1204,7 @@ func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
 	seq := []string{}
 	env := &Env{
 		Session: s,
-		ExecCommand: func(args []Arg) (Value, error) {
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
 			seq = append(seq, args[0].(WordArg).Text)
 			return Value{}, nil
 		},
@@ -1298,24 +1225,6 @@ func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
 	// Outer runs twice.  Each outer iteration runs two inner
 	// iterations.  Expected: outer inner inner outer inner inner.
 	assert.Equal(t, []string{"outer", "inner", "inner", "outer", "inner", "inner"}, seq)
-}
-
-func TestEvalArgs_CmdSub_NilResultIsError(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			return Value{}, nil
-		},
-	}
-	exprs := []Expr{
-		&CmdSubExpr{Inner: &Program{Stmts: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}}}},
-	}
-	_, err := EvalArgs(exprs, env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "produced no value")
 }
 
 // --- arithmetic ----------------------------------------------------
@@ -1476,60 +1385,6 @@ func TestEvalExpr_Arithmetic_LetRHS(t *testing.T) {
 	assert.Equal(t, "11", got)
 }
 
-func TestEvalExpr_ExprSub_Arithmetic(t *testing.T) {
-	t.Parallel()
-
-	// [[expr]] uses strict tokenisation so '-' and '/' split
-	// without surrounding whitespace.  Each case here would
-	// either error or return a string under the shell
-	// tokenisation used inside [cmd].
-	cases := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"division no whitespace", "[[4/2]]", "2"},
-		{"division fractional", "[[1/2]]", "0.5"},
-		{"subtraction no whitespace", "[[3-1]]", "2"},
-		{"modulo no whitespace", "[[8%3]]", "2"},
-		{"multiplication", "[[10*5]]", "50"},
-		{"addition with whitespace still works", "[[4 + 2]]", "6"},
-		{"mixed precedence", "[[2+3*4]]", "14"},
-		{"grouping with parens", "[[(2+3)*4]]", "20"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			prog, err := parseSource(t, "let x = "+tc.input)
-			require.NoError(t, err)
-			s := NewSession()
-			require.NoError(t, EvalProgram(prog, evalEnv(s)))
-			v, ok := s.Get("x")
-			require.True(t, ok)
-			got, err := v.Scalar()
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-func TestEvalExpr_ExprSub_VarRef(t *testing.T) {
-	t.Parallel()
-
-	// Expression substitutions read session variables and
-	// combine them with arithmetic just like any other
-	// expression.
-	prog, err := parseSource(t, "let count = 21\nlet n = [[$count*2]]")
-	require.NoError(t, err)
-	s := NewSession()
-	require.NoError(t, EvalProgram(prog, evalEnv(s)))
-	v, ok := s.Get("n")
-	require.True(t, ok)
-	got, err := v.Scalar()
-	require.NoError(t, err)
-	assert.Equal(t, "42", got)
-}
-
 func TestEvalExpr_InterpString_LiteralOnly(t *testing.T) {
 	t.Parallel()
 
@@ -1676,9 +1531,9 @@ func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 			want:  "helloworld",
 		},
 		{
-			name:  "arithmetic inside interpolation via [[...]]",
+			name:  "arithmetic inside interpolation",
 			setup: func(s *Session) { s.Set("n", StringValue("30")) },
-			input: `let x = "${[[$n * 2]]}s"`,
+			input: `let x = "${$n * 2}s"`,
 			want:  "60s",
 		},
 	}
@@ -1701,28 +1556,6 @@ func TestEvalExpr_InterpString_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestEvalExpr_InterpString_DoubleSigilRejected(t *testing.T) {
-	t.Parallel()
-
-	// "${$n}" was the shape a naive "body is a general expression"
-	// rule would have exposed; the bash-style "${name}" rule rejects
-	// it so there is one spelling of variable interpolation.
-	_, err := parseSource(t, `let x = "${$n}"`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "variable reference")
-}
-
-func TestEvalExpr_InterpString_ExpressionWithoutBrackets(t *testing.T) {
-	t.Parallel()
-
-	// Inside ${...} the body must be a var ref or start with "[".
-	// Bare arithmetic is rejected so users reach for the explicit
-	// ${[[...]]} form.
-	_, err := parseSource(t, `let x = "${n + 1}"`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "variable reference")
-}
-
 func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 	t.Parallel()
 
@@ -1735,118 +1568,4 @@ func TestEvalExpr_InterpString_UndefinedVar(t *testing.T) {
 	_, err := EvalExpr(e, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined variable")
-}
-
-func TestEvalExpr_ExprSub_InCondition(t *testing.T) {
-	t.Parallel()
-
-	// `if [[$count - 1]] > 0 { ... }`: condition grammar is
-	// already expression-mode at the parser level, so an
-	// expression substitution is a legal primary whose numeric
-	// result feeds into the comparison.
-	s := NewSession()
-	s.Set("count", StringValue("5"))
-	prog, err := parseSource(t, "let out = 0\nif [[$count - 1]] > 0 { let out = 1 }")
-	require.NoError(t, err)
-	require.NoError(t, EvalProgram(prog, evalEnv(s)))
-	v, ok := s.Get("out")
-	require.True(t, ok)
-	got, err := v.Scalar()
-	require.NoError(t, err)
-	assert.Equal(t, "1", got)
-}
-
-func TestEvalExpr_ExprSub_NestedCmdSub(t *testing.T) {
-	t.Parallel()
-
-	// [cmd] is still allowed as an operand inside [[expr]]
-	// so expressions can combine arithmetic with command
-	// results.
-	s := NewSession()
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			return StringValue("5"), nil
-		},
-	}
-	prog, err := parseSource(t, "let n = [[[count] + 1]]")
-	require.NoError(t, err)
-	require.NoError(t, EvalProgram(prog, env))
-	v, ok := s.Get("n")
-	require.True(t, ok)
-	got, err := v.Scalar()
-	require.NoError(t, err)
-	assert.Equal(t, "6", got)
-}
-
-func TestEvalExpr_ExprSub_ThreadWithFlagHintsCmdSubForm(t *testing.T) {
-	t.Parallel()
-
-	// Threading with a flagged command inside "[[...]]" fails
-	// because strict tokenisation splits "-c" into "-" and "c".
-	// The error should point the user at "[...]" where shell
-	// tokenisation keeps "-c" whole.
-	_, err := parseSource(t, `let out = [[$prog |> jq -c "."]]`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "threading with flags")
-	assert.Contains(t, err.Error(), "use [$prog |> jq -c \".\"]")
-}
-
-func TestEvalExpr_CmdSub_AcceptsThreadExpr(t *testing.T) {
-	t.Parallel()
-
-	// "[$x |> cmd -c arg]" is the command-shaped thread form; the
-	// parser must accept it under shell tokenisation so flags like
-	// "-c" stay whole.  The strict-mode "[[...]]" alternative would
-	// split "-c" into "-" and "c" and break the invocation.
-	s := NewSession()
-	s.Set("prog", StringValue("input"))
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func(args []Arg) (Value, error) {
-			require.Len(t, args, 4)
-			got := make([]string, len(args))
-			for i, a := range args {
-				switch v := a.(type) {
-				case WordArg:
-					got[i] = v.Text
-				case QuotedArg:
-					got[i] = v.Text
-				case ScalarValueArg:
-					got[i] = v.Text
-				default:
-					got[i] = fmt.Sprintf("%T", a)
-				}
-			}
-			// jq receives: "jq", "-c", ".", then the threaded LHS.
-			assert.Equal(t, []string{"jq", "-c", ".", "input"}, got)
-			return StringValue("\"input\""), nil
-		},
-	}
-	prog, err := parseSource(t, `let out = [$prog |> jq -c "."]`)
-	require.NoError(t, err)
-	require.NoError(t, EvalProgram(prog, env))
-	v, ok := s.Get("out")
-	require.True(t, ok)
-	got, err := v.Scalar()
-	require.NoError(t, err)
-	assert.Equal(t, `"input"`, got)
-}
-
-func TestEvalExpr_CmdSub_RejectsExpressionInner(t *testing.T) {
-	t.Parallel()
-
-	// [1/2] no longer masquerades as an expression.  The parser
-	// must reject it and point the user at the [[...]] form.
-	_, err := parseSource(t, "print [1/2]")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "[[")
-}
-
-func TestEvalExpr_CmdSub_RejectsBareArithmetic(t *testing.T) {
-	t.Parallel()
-
-	_, err := parseSource(t, "print [1 + 1]")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "[[")
 }

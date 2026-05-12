@@ -115,25 +115,6 @@ func TestAttachTracepoint_Success(t *testing.T) {
 	assert.Equal(t, prog.Record.ProgramID, link.Record.ProgramID)
 }
 
-// TestGC_Success_OutcomeTracksPhases verifies that GC completes
-// successfully and reports correct statistics.
-func TestGC_Success_OutcomeTracksPhases(t *testing.T) {
-	t.Parallel()
-
-	fix := newTestFixture(t)
-	ctx := context.Background()
-
-	result, err := fix.GC(ctx)
-	require.NoError(t, err)
-
-	// On an empty manager, GC should remove nothing.
-	assert.Equal(t, 0, result.ProgramsRemoved)
-	assert.Equal(t, 0, result.DispatchersRemoved)
-	assert.Equal(t, 0, result.LinksRemoved)
-	assert.Equal(t, 0, result.OrphanPinsRemoved)
-	assert.Equal(t, 0, result.LiveOrphans)
-}
-
 // TestOutcome_SystemStateReflectsActualState verifies that after an unload
 // the system state is clean.
 func TestOutcome_SystemStateReflectsActualState(t *testing.T) {

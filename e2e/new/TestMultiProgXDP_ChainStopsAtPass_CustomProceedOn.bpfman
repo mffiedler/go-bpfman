@@ -1,0 +1,101 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn.
+#
+# Inverse of ChainStopsAtDrop. Three XDP programs at distinct
+# priorities, with custom proceed-on `[drop, dispatcher_return]`
+# that excludes XDP_PASS:
+#
+#   mxdv_a (prio 50)  XDP_DROP -- runs, chain continues (DROP in proceed-on)
+#   mxdv_b (prio 60)  XDP_PASS -- runs, chain STOPS (PASS excluded)
+#   mxdv_c (prio 70)  (XDP_DROP -- never reached)
+#
+# This proves the WithProceedOn knob plumbs through to the
+# dispatcher: the same XDP_PASS return that would CONTINUE the
+# chain under the default bitmask now STOPS it under the custom
+# bitmask. The verdicts are the inverse of what the default
+# would treat as "continue".
+#
+# Side effect: the chain's last verdict is PASS, so the
+# dispatcher returns PASS to the kernel and the ICMP responder
+# delivers the reply. ping succeeds and `guard`s normally; ARP
+# also resolves through the chain because PASS at b lets the
+# kernel see the ARP request.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn.bpfman
+
+source lib.bpfman
+
+let n        = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+guard pair <- net veth-pair
+defer net release $pair
+
+
+# Verdicts are u32 little-endian. XDP_DROP = 1 -> 0x01000000;
+# XDP_PASS = 2 -> 0x02000000.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_xdp_param_verdict.bpf.o \
+    --programs xdp:mxdv_a,xdp:mxdv_b,xdp:mxdv_c \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}" \
+    -g verdict_a=0x01000000 \
+    -g verdict_b=0x02000000 \
+    -g verdict_c=0x01000000
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxdv_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxdv_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxdv_c_count\") | .id][0]"
+
+# Custom proceed-on includes DROP (so the chain continues past
+# a's DROP) and excludes PASS (so the chain stops at b's PASS).
+guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 --proceed-on drop,dispatcher_return $pid_a
+guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 --proceed-on drop,dispatcher_return $pid_b
+guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 --proceed-on drop,dispatcher_return $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# b's PASS becomes the dispatcher's final verdict, so the kernel
+# delivers and ping receives replies. guard the ping rc.
+guard _ <- net exec $pair ping -c $n -i 0.05 -W 1 $pair.host_addr
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = 0
+
+print "a: got=${count_a} want=${want_a}  (ran, returned DROP)"
+print "b: got=${count_b} want=${want_b}  (ran, returned PASS)"
+print "c: got=${count_c} want=${want_c}    (never ran)"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+bpfman link detach $link_a
+bpfman link detach $link_b
+bpfman link detach $link_c

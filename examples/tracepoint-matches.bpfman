@@ -9,12 +9,12 @@
 # without edits.
 #
 # Run from the repo root with:
-#   sudo bpfman-shell repl -f examples/tracepoint-matches.bpfman
+#   sudo bpfman-shell examples/tracepoint-matches.bpfman
 
-let prog = [bpfman program load file \
+guard prog <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
-    --programs tracepoint:tracepoint_kill_recorder]
-require not nil prog
+    --programs tracepoint:tracepoint_kill_recorder
+defer bpfman program unload $prog
 let pid = $prog.record.program_id
 
 # One block replaces eight separate `assert path == value` /
@@ -33,8 +33,7 @@ assert $prog matches {
 # Round-trip: Get returns a record whose tracked fields agree with
 # what load returned. Anything outside this block can vary without
 # breaking the script.
-let got = [bpfman program get $pid]
-require not nil got
+guard got <- bpfman program get $pid
 assert $got matches {
     status.kernel.id:            $prog.status.kernel.id
     status.kernel.program_type:  $prog.status.kernel.program_type
@@ -44,8 +43,8 @@ assert $got matches {
     record.handles.pin_path:     $prog.record.handles.pin_path
 }
 
-let link = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]
-require not nil link
+guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
+defer bpfman link detach $link
 let linkID = $link.record.id
 
 assert $link matches {
@@ -56,8 +55,7 @@ assert $link matches {
     status.kernel_seen:          true
 }
 
-let gotLink = [bpfman link get $linkID]
-require not nil gotLink
+guard gotLink <- bpfman link get $linkID
 assert $gotLink matches {
     record.id:                   $linkID
     record.kind:                 $link.record.kind
@@ -65,8 +63,6 @@ assert $gotLink matches {
     record.details.name:         $link.record.details.name
 }
 
-bpfman link detach $link
 assert fail bpfman link get $linkID
 
-bpfman program unload $pid
 assert fail bpfman program get $prog

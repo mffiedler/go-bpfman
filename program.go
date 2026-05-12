@@ -222,19 +222,10 @@ func ToMapStatus(maps []kernel.Map) []MapStatus {
 func (p ProgramRecord) WithDescription(desc string) ProgramRecord {
 	cp := p
 	cp.Meta.Description = desc
-	cp.Meta.Metadata = cloneMap(p.Meta.Metadata)
+	cp.Meta.Metadata = maps.Clone(p.Meta.Metadata)
 	// Clone global data by reconstructing the LoadSpec with cloned data
-	cp.Load = cp.Load.WithGlobalData(cloneMap(p.Load.GlobalData()))
+	cp.Load = cp.Load.WithGlobalData(maps.Clone(p.Load.GlobalData()))
 	return cp
-}
-
-func cloneMap[K comparable, V any](m map[K]V) map[K]V {
-	if m == nil {
-		return nil
-	}
-	result := make(map[K]V, len(m))
-	maps.Copy(result, m)
-	return result
 }
 
 // LoadOutput is the raw result of kernel.Load().

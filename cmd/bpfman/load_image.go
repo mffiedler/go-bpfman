@@ -10,7 +10,6 @@ import (
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 )
@@ -23,7 +22,7 @@ type LoadImageCmd struct {
 
 	Example      ExampleFlag               `name:"example" help:"Show working examples and exit."`
 	ImageURL     string                    `short:"i" name:"image-url" help:"OCI image reference (e.g., quay.io/bpfman-bytecode/xdp_pass:latest)." required:""`
-	Programs     []bpfmancli.ProgramSpec   `name:"programs" help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (can be repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
+	Programs     []bpfmancli.ProgramSpec   `name:"programs" sep:"," help:"TYPE:NAME or TYPE:NAME:ATTACH_FUNC program to load (comma-separated or repeated). For fentry/fexit, ATTACH_FUNC is required. If not specified, all programs in the image are loaded."`
 	PullPolicy   bpfmancli.ImagePullPolicy `short:"p" name:"pull-policy" help:"Image pull policy (Always, IfNotPresent, Never)." default:"IfNotPresent"`
 	RegistryAuth string                    `name:"registry-auth" env:"BPFMAN_REGISTRY_AUTH" help:"Base64-encoded registry auth (username:password). Prefer BPFMAN_REGISTRY_AUTH env var to avoid exposing credentials in process listings."`
 	Application  string                    `short:"a" name:"application" help:"Application name to group programs (stored as bpfman.io/application metadata)."`
@@ -58,73 +57,69 @@ func (c *LoadImageCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 		Programs []bpfman.Program
 	}
 
-	result, err := bpfmancli.RunWithLockValue(ctx, cli, func(ctx context.Context, writeLock lock.WriterScope) (loadImageResult, error) {
-		var res loadImageResult
+	// load is lockless by construction (docs/PLAN-load-lockless.md):
+	// the OCI pull, kernel BPF_PROG_LOAD, bytecode publish, and
+	// single sqlite commit transaction all run without acquiring
+	// the writer flock.
 
-		// Parse auth config from base64-encoded registry-auth
-		var auth *platform.ImageAuth
-		if c.RegistryAuth != "" {
-			username, password, parseErr := parseRegistryAuth(c.RegistryAuth)
-			if parseErr != nil {
-				return res, fmt.Errorf("invalid registry-auth: %w", parseErr)
-			}
-			logger.Debug("using registry auth", "username", username)
-			auth = &platform.ImageAuth{
-				Username: username,
-				Password: password,
-			}
+	// Parse auth config from base64-encoded registry-auth.
+	var auth *platform.ImageAuth
+	if c.RegistryAuth != "" {
+		username, password, parseErr := parseRegistryAuth(c.RegistryAuth)
+		if parseErr != nil {
+			return fmt.Errorf("invalid registry-auth: %w", parseErr)
 		}
-
-		// Convert global data
-		var globalData map[string][]byte
-		if len(c.GlobalData) > 0 {
-			globalData = bpfmancli.GlobalDataMap(c.GlobalData)
+		logger.Debug("using registry auth", "username", username)
+		auth = &platform.ImageAuth{
+			Username: username,
+			Password: password,
 		}
-
-		// Build metadata map, adding application if specified
-		metadata := bpfmancli.MetadataMap(c.Metadata)
-		if c.Application != "" {
-			if metadata == nil {
-				metadata = make(map[string]string)
-			}
-			metadata["bpfman.io/application"] = c.Application
-		}
-
-		// Build image ref
-		ref := platform.ImageRef{
-			URL:        c.ImageURL,
-			PullPolicy: pullPolicy,
-			Auth:       auth,
-		}
-
-		// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec
-		var programs []manager.ProgramSpec
-		for _, prog := range c.Programs {
-			programs = append(programs, manager.ProgramSpec{
-				Name:       prog.Name,
-				Type:       prog.Type,
-				AttachFunc: prog.AttachFunc,
-				MapOwnerID: c.MapOwnerID,
-			})
-		}
-
-		loaded, loadErr := mgr.Load(ctx, writeLock, manager.LoadSource{
-			Image: &ref,
-		}, programs, manager.LoadOpts{
-			UserMetadata: metadata,
-			GlobalData:   globalData,
-		})
-
-		if loadErr != nil {
-			return loadImageResult{}, fmt.Errorf("failed to load from image: %w", loadErr)
-		}
-		return loadImageResult{Programs: loaded}, nil
-	})
-	if err != nil {
-		return err
 	}
 
-	// Format and emit output outside the lock
+	// Convert global data.
+	var globalData map[string][]byte
+	if len(c.GlobalData) > 0 {
+		globalData = bpfmancli.GlobalDataMap(c.GlobalData)
+	}
+
+	// Build metadata map, adding application if specified.
+	metadata := bpfmancli.MetadataMap(c.Metadata)
+	if c.Application != "" {
+		if metadata == nil {
+			metadata = make(map[string]string)
+		}
+		metadata["bpfman.io/application"] = c.Application
+	}
+
+	// Build image ref.
+	ref := platform.ImageRef{
+		URL:        c.ImageURL,
+		PullPolicy: pullPolicy,
+		Auth:       auth,
+	}
+
+	// Convert CLI bpfmancli.ProgramSpec to manager.ProgramSpec.
+	var programs []manager.ProgramSpec
+	for _, prog := range c.Programs {
+		programs = append(programs, manager.ProgramSpec{
+			Name:       prog.Name,
+			Type:       prog.Type,
+			AttachFunc: prog.AttachFunc,
+			MapOwnerID: c.MapOwnerID,
+		})
+	}
+
+	loaded, err := mgr.Load(ctx, manager.LoadSource{
+		Image: &ref,
+	}, programs, manager.LoadOpts{
+		UserMetadata: metadata,
+		GlobalData:   globalData,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to load from image: %w", err)
+	}
+	result := loadImageResult{Programs: loaded}
+
 	output, err := cliformat.FormatLoadedPrograms(result.Programs, &c.OutputFlags)
 	if err != nil {
 		return err

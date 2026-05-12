@@ -13,7 +13,7 @@
 //		source → Tokenise → []Token → Parse → *Program → EvalProgram
 //
 //	  - [Tokenise] produces a flat stream of [Token]s, each carrying
-//	    its source line/column in a [Loc].
+//	    its source line/column in a [Pos].
 //	  - [Parse] builds a [Program] of typed AST nodes. Command
 //	    substitutions are parsed eagerly so syntax errors inside [ ]
 //	    surface at parse time.
@@ -37,8 +37,7 @@
 //
 // Expression nodes are reachable via the sealed [Expr] interface:
 //
-//   - [LiteralExpr], [VarRefExpr], [AdapterExpr], [CmdSubExpr] —
-//     primary forms.
+//   - [LiteralExpr], [VarRefExpr], [AdapterExpr] -- primary forms.
 //   - [UnaryExpr] — a single-operand predicate (true, false,
 //     not-empty).
 //   - [BinaryExpr] -- a two-operand comparison (==, !=, <, <=, >, >=).
@@ -48,7 +47,7 @@
 //     !=. Cross-type compares error rather than silently returning
 //     false. See evalCompare in expr.go for the dispatch rules.
 //
-// Every AST node carries a [Loc] for diagnostic reporting.
+// Every AST node carries a [Pos] for diagnostic reporting.
 //
 // # Variable naming vs substitution
 //
@@ -67,7 +66,7 @@
 // # Args as the dispatch boundary
 //
 // When the evaluator hands a command to [Env.ExecCommand] or
-// [Env.ExecSubstitution], it supplies a []Arg — a typed
+// [Env.ExecBind], it supplies a []Arg -- a typed
 // post-evaluation representation whose variants preserve useful
 // distinctions that a plain []string would lose:
 //

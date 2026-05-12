@@ -11,12 +11,26 @@ import (
 // token recognition.
 var adapterPrefixes = []string{"file"}
 
-// Loc is a source location. Line and Col are 1-based; Col is a byte
-// offset within the line, not a rune offset. The zero value means
-// "unknown location".
-type Loc struct {
+// Pos is a single point in source: 1-based line and column. Col is
+// a byte offset within the line, not a rune offset. The zero value
+// means "unknown location".
+type Pos struct {
 	Line int
 	Col  int
+}
+
+// Span is a half-open source range. The embedded Pos is the start
+// (inclusive); End is one past the last byte of the spanned region
+// (exclusive). All AST nodes and tokens embed Span so callers can
+// either ask for the start (node.Pos, node.Line, node.Col, all
+// promoted from Span.Pos) or for the full extent (node.Span, or
+// node.End for the closing point). End == Pos{} means the End
+// field is unset and only the start is meaningful; validateSpans
+// rejects unset Ends after parsing so renderers can rely on having
+// both sides populated.
+type Span struct {
+	Pos
+	End Pos
 }
 
 // TokenKind classifies a lexed token.
@@ -37,18 +51,6 @@ const (
 	// file:$var.path. It carries the adapter name, the variable
 	// name, and the optional field path.
 	TokenAdapterRef
-	// TokenCmdSub is a command substitution [cmd args...]. The
-	// Inner field carries the raw inner text (without the outer
-	// brackets); Expand recursively tokenises and expands it.
-	TokenCmdSub
-	// TokenExprSub is an expression substitution [[expr]]. The
-	// Inner field carries the raw inner text (without the outer
-	// double brackets); the parser retokenises it in strict mode
-	// via TokeniseStrict and parses as a single expression.  The
-	// strict mode treats '-' and '/' as operator tokens regardless
-	// of whitespace, so [[4/2]] and [[$x - 1]] split the way
-	// arithmetic expects rather than the way paths and flags do.
-	TokenExprSub
 	// TokenSep is a statement separator: a newline or a semicolon.
 	// Consecutive separators are collapsed at parse time.
 	TokenSep
@@ -60,6 +62,14 @@ const (
 	// macro.  Inside a bare word or quoted string, '|>' stays
 	// part of the surrounding literal.
 	TokenThread
+	// TokenBind is the '<-' sigil at a token boundary. It binds
+	// the result of running a command form on its right to the
+	// name on its left: "let r <- bpfman program get $pid" or
+	// "guard r <- bpfman program load file --path foo.o". Inside
+	// a bare word the bytes '<-' stay part of the surrounding
+	// literal; '<-' only emits as TokenBind when it sits at a
+	// token boundary (whitespace or start of input on the left).
+	TokenBind
 	// TokenInterpString is a double-quoted string containing one
 	// or more ${...} interpolation points.  Segments carries the
 	// alternation of literal text and raw expression text; the
@@ -76,25 +86,28 @@ const (
 // Inner is unused; IsLit false means Inner carries the raw source
 // of an "${expr}" interpolation (without the '${' and '}'
 // delimiters) and the parser tokenises and parses it at parse
-// time.  Loc points at the segment's first byte in the enclosing
+// time.  Pos points at the segment's first byte in the enclosing
 // input so diagnostics cite the right column.
 type InterpSegment struct {
 	Literal string
 	Inner   string
-	Loc     Loc
-	IsLit   bool
+	Span
+	IsLit bool
 }
 
-// Token is a single lexical element produced by Tokenise.
+// Token is a single lexical element produced by Tokenise. The
+// embedded Span covers the token's full extent: Span.Pos is the
+// first byte, Span.End is one past the last byte. Reads via
+// promoted fields -- tok.Pos for the start, tok.Line / tok.Col,
+// tok.End for the end -- match the AST-node pattern.
 type Token struct {
 	Kind     TokenKind
 	Text     string          // content (stripped quotes for TokenQuoted)
 	VarName  string          // variable name for TokenVarRef and TokenAdapterRef
 	VarPath  string          // field path for TokenVarRef and TokenAdapterRef (empty if bare)
 	Adapter  string          // adapter name for TokenAdapterRef (e.g. "file")
-	Inner    string          // raw inner text for TokenCmdSub (between brackets)
 	Segments []InterpSegment // literal/interp pieces for TokenInterpString
-	Loc      Loc             // source location of the token's first byte
+	Span
 }
 
 // Tokenise lexes input in shell mode: '-' and '/' are valid
@@ -129,8 +142,11 @@ func tokenise(input string, strict bool) ([]Token, error) {
 
 	lineStarts := buildLineStarts(input)
 
-	emit := func(tokens []Token, start int, tok Token) []Token {
-		tok.Loc = locAt(start, lineStarts)
+	emit := func(tokens []Token, start, end int, tok Token) []Token {
+		tok.Span = Span{
+			Pos: locAt(start, lineStarts),
+			End: locAt(end, lineStarts),
+		}
 		return append(tokens, tok)
 	}
 
@@ -164,11 +180,11 @@ func tokenise(input string, strict bool) ([]Token, error) {
 		start := i
 		switch {
 		case ch == '\n' || ch == ';':
-			tokens = emit(tokens, start, Token{Kind: TokenSep, Text: string(ch)})
+			tokens = emit(tokens, start, start+1, Token{Kind: TokenSep, Text: string(ch)})
 			i++
 
 		case ch == '{' || ch == '}' || ch == '(' || ch == ')':
-			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
+			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
 		case ch == '+' || ch == '*' || ch == '%':
@@ -178,7 +194,7 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			// literals, flags, and paths).  Emitting them as
 			// single-char tokens lets "1+1", "$x*2", "7%3" split
 			// cleanly without requiring surrounding whitespace.
-			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
+			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
 		case strict && (ch == '-' || ch == '/'):
@@ -186,70 +202,79 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			// single-char operator tokens.  Callers that reach
 			// strict mode are inside [[...]] where paths and
 			// negative literals do not appear bare.
-			tokens = emit(tokens, start, Token{Kind: TokenWord, Text: string(ch)})
+			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
 			i++
 
 		case ch == '=' && isTokenStart(tokens):
 			// Distinguish == (comparison) from = (assignment).
 			if i+1 < len(input) && input[i+1] == '=' {
-				tokens = emit(tokens, start, Token{Kind: TokenWord, Text: "=="})
+				tokens = emit(tokens, start, start+2, Token{Kind: TokenWord, Text: "=="})
 				i += 2
 			} else {
-				tokens = emit(tokens, start, Token{Kind: TokenAssign, Text: "="})
+				tokens = emit(tokens, start, start+1, Token{Kind: TokenAssign, Text: "="})
 				i++
 			}
 
 		case ch == '$':
 			tok, n, err := lexVarRef(input, i)
 			if err != nil {
-				return nil, err
+				end := i + 1
+				if n > 0 {
+					end = i + n
+				}
+				return nil, spanErrorf(Span{
+					Pos: locAt(start, lineStarts),
+					End: locAt(end, lineStarts),
+				}, "%v", err)
 			}
-			tokens = emit(tokens, start, tok)
+			tokens = emit(tokens, start, start+n, tok)
 			i += n
 
 		case ch == '"' || ch == '\'':
 			tok, n, err := lexQuoted(input, i)
 			if err != nil {
-				return nil, err
+				// The lex helpers' quote/escape/interpolation
+				// errors do not themselves carry a Span; the
+				// opening quote's position is what the user
+				// needs to find the string when the source
+				// has many. End collapses to the same point
+				// so renderers cite without a misleading
+				// multi-byte caret over an unknown region.
+				openPos := locAt(start, lineStarts)
+				return nil, spanErrorf(Span{Pos: openPos, End: openPos}, "%v", err)
 			}
-			tokens = emit(tokens, start, tok)
+			tokens = emit(tokens, start, start+n, tok)
 			i += n
 
-		case ch == '[':
-			if i+1 < len(input) && input[i+1] == '[' {
-				tok, n, err := lexExprSub(input, i)
-				if err != nil {
-					return nil, err
-				}
-				tokens = emit(tokens, start, tok)
-				i += n
-			} else {
-				tok, n, err := lexCmdSub(input, i)
-				if err != nil {
-					return nil, err
-				}
-				tokens = emit(tokens, start, tok)
-				i += n
-			}
-
-		case ch == ']':
-			return nil, fmt.Errorf("unmatched ']'")
+		case ch == '[' || ch == ']':
+			return nil, spanErrorf(Span{
+				Pos: locAt(start, lineStarts),
+				End: locAt(start+1, lineStarts),
+			}, "unexpected %q; to capture a command's result use 'guard X <- COMMAND' or 'let X <- COMMAND'; quote a literal '[' inside a string", ch)
 
 		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was
 			// whitespace or absent, so '|>' sits at a token
 			// boundary.  The lexWord path keeps '|' as an
 			// interior word character, so 'a|>b' stays a word.
-			tokens = emit(tokens, start, Token{Kind: TokenThread, Text: "|>"})
+			tokens = emit(tokens, start, start+2, Token{Kind: TokenThread, Text: "|>"})
+			i += 2
+
+		case ch == '<' && i+1 < len(input) && input[i+1] == '-':
+			// Reaching this case means the previous byte was
+			// whitespace or absent, so '<-' sits at a token
+			// boundary. The lexWord path keeps '<' and '-' as
+			// interior word characters, so 'x<-y' stays a word.
+			tokens = emit(tokens, start, start+2, Token{Kind: TokenBind, Text: "<-"})
 			i += 2
 
 		default:
 			if tok, n, ok := lexAdapterRef(input, i); ok {
-				tokens = emit(tokens, start, tok)
+				tokens = emit(tokens, start, start+n, tok)
 				i += n
 			} else {
 				tok, n := lexWord(input, i, strict)
-				tokens = emit(tokens, start, tok)
+				tokens = emit(tokens, start, start+n, tok)
 				i += n
 			}
 		}
@@ -273,7 +298,7 @@ func buildLineStarts(input string) []int {
 
 // locAt returns the 1-based line/column for a byte offset. The
 // column is a byte offset within the line, counting from 1.
-func locAt(pos int, lineStarts []int) Loc {
+func locAt(pos int, lineStarts []int) Pos {
 	// Binary search for the largest k with lineStarts[k] <= pos.
 	lo, hi := 0, len(lineStarts)-1
 	for lo < hi {
@@ -284,7 +309,7 @@ func locAt(pos int, lineStarts []int) Loc {
 			hi = mid - 1
 		}
 	}
-	return Loc{Line: lo + 1, Col: pos - lineStarts[lo] + 1}
+	return Pos{Line: lo + 1, Col: pos - lineStarts[lo] + 1}
 }
 
 // isTokenStart returns true when the current position is at a token
@@ -479,104 +504,6 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 	return tok, i - pos, nil
 }
 
-// lexExprSub lexes an expression substitution [[expr]].  The
-// caller guarantees input[pos:pos+2] == "[[".  Nested "[[...]]"
-// and "[...]" are both recognised so the inner span may contain
-// further substitutions; quoted strings are skipped so a ']' or
-// ']]' inside a string does not close the substitution.  The
-// returned token's Inner field carries the raw content between
-// the outer double brackets, which the parser retokenises via
-// TokeniseStrict at parse time.
-func lexExprSub(input string, pos int) (Token, int, error) {
-	depth := 1
-	i := pos + 2
-	for i < len(input) {
-		// Prefer the two-character sigils over single brackets
-		// so "[[" and "]]" are recognised before a lone '[' /
-		// ']' handler has a chance to fire.
-		if i+1 < len(input) && input[i] == '[' && input[i+1] == '[' {
-			depth++
-			i += 2
-			continue
-		}
-		if i+1 < len(input) && input[i] == ']' && input[i+1] == ']' {
-			depth--
-			if depth == 0 {
-				inner := input[pos+2 : i]
-				tok := Token{
-					Kind:  TokenExprSub,
-					Text:  input[pos : i+2],
-					Inner: inner,
-				}
-				return tok, i + 2 - pos, nil
-			}
-			i += 2
-			continue
-		}
-		switch input[i] {
-		case '[':
-			// A lone '[' opens a nested command substitution.
-			// Delegate to lexCmdSub so its own depth counter
-			// matches the nested brackets correctly.
-			_, n, err := lexCmdSub(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		case ']':
-			return Token{}, 0, fmt.Errorf("unmatched ']' inside [[...]]; closing brackets must come in pairs")
-		case '"', '\'':
-			_, n, err := lexQuoted(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		default:
-			i++
-		}
-	}
-	return Token{}, 0, fmt.Errorf("unterminated expression substitution: missing ']]'")
-}
-
-// lexCmdSub lexes a command substitution [cmd args...]. The brackets
-// nest; quoted strings inside are skipped so a `]` inside a string
-// does not close the substitution. The returned token's Inner field
-// carries the raw content between the outer brackets; Expand
-// recursively tokenises and expands it at evaluation time.
-func lexCmdSub(input string, pos int) (Token, int, error) {
-	depth := 1
-	i := pos + 1
-	for i < len(input) && depth > 0 {
-		ch := input[i]
-		switch ch {
-		case '[':
-			depth++
-			i++
-		case ']':
-			depth--
-			i++
-		case '"', '\'':
-			_, n, err := lexQuoted(input, i)
-			if err != nil {
-				return Token{}, 0, err
-			}
-			i += n
-		default:
-			i++
-		}
-	}
-	if depth > 0 {
-		return Token{}, 0, fmt.Errorf("unterminated command substitution: missing ']'")
-	}
-	inner := input[pos+1 : i-1]
-	tok := Token{
-		Kind:  TokenCmdSub,
-		Text:  input[pos:i],
-		Inner: inner,
-	}
-	return tok, i - pos, nil
-}
-
 // lexQuoted lexes a single- or double-quoted string. $ is literal
 // inside quotes; no backslash escapes.
 func lexQuoted(input string, pos int) (Token, int, error) {
@@ -596,7 +523,7 @@ func lexSingleQuoted(input string, pos int) (Token, int, error) {
 		i++
 	}
 	if i >= len(input) {
-		return Token{}, 0, fmt.Errorf("unterminated '-quoted string")
+		return Token{}, 0, fmt.Errorf("unterminated single-quoted string (no matching ' before end of input)")
 	}
 	text := input[pos+1 : i]
 	i++ // skip closing quote
@@ -617,23 +544,26 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 	i := pos + 1
 	var segments []InterpSegment
 	var lit strings.Builder
-	var litLoc Loc
+	var litStart int
 	litOpen := false
 
 	startLiteral := func(at int) {
 		if !litOpen {
-			litLoc = locAt(at, lineStarts)
+			litStart = at
 			litOpen = true
 		}
 	}
-	flushLiteral := func() {
+	flushLiteral := func(at int) {
 		if !litOpen {
 			return
 		}
 		segments = append(segments, InterpSegment{
 			Literal: lit.String(),
-			Loc:     litLoc,
-			IsLit:   true,
+			Span: Span{
+				Pos: locAt(litStart, lineStarts),
+				End: locAt(at, lineStarts),
+			},
+			IsLit: true,
 		})
 		lit.Reset()
 		litOpen = false
@@ -643,7 +573,7 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 		ch := input[i]
 		switch ch {
 		case '"':
-			flushLiteral()
+			flushLiteral(i)
 			i++ // skip closing quote
 			if len(segments) == 0 {
 				return Token{Kind: TokenQuoted, Text: ""}, i - pos, nil
@@ -687,7 +617,7 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 			if i+1 >= len(input) || input[i+1] != '{' {
 				return Token{}, 0, fmt.Errorf("'$' in double-quoted string must be followed by '{...}' (use single quotes or '\\$' for a literal '$')")
 			}
-			flushLiteral()
+			flushLiteral(i)
 			start := i
 			innerEnd, err := scanInterpBody(input, i+2)
 			if err != nil {
@@ -699,7 +629,10 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 			}
 			segments = append(segments, InterpSegment{
 				Inner: inner,
-				Loc:   locAt(start, lineStarts),
+				Span: Span{
+					Pos: locAt(start, lineStarts),
+					End: locAt(innerEnd+1, lineStarts),
+				},
 				IsLit: false,
 			})
 			i = innerEnd + 1 // skip past closing '}'
@@ -710,7 +643,7 @@ func lexDoubleQuoted(input string, pos int) (Token, int, error) {
 		}
 	}
 
-	return Token{}, 0, fmt.Errorf("unterminated \"-quoted string")
+	return Token{}, 0, fmt.Errorf("unterminated double-quoted string (no matching \" before end of input)")
 }
 
 // scanInterpBody returns the offset of the '}' that closes an
@@ -740,7 +673,7 @@ func scanInterpBody(input string, pos int) (int, error) {
 				k++
 			}
 			if k >= len(input) {
-				return 0, fmt.Errorf("unterminated '-quoted string inside interpolation")
+				return 0, fmt.Errorf("unterminated single-quoted string inside ${...}")
 			}
 			j = k
 		case '"':

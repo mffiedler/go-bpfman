@@ -1,0 +1,142 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgUprobe_LoadAttachDetachUnload.
+#
+# Three uprobe programs (mup_a/b/c) all attached to
+# bpfman_shell_uprobe_call_malloc, a cgo'd target symbol inside
+# the bpfman-shell binary itself. Three waves of N firings each,
+# with a staggered detach between waves so each program ends up
+# with a distinct event count:
+#
+#     a counts waves 1+2+3   = 3 * N events
+#     b counts waves 1+2     = 2 * N events
+#     c counts wave 1        = 1 * N events
+#
+# Difference from the Go test:
+#   - The fixture symbol lives in bpfman-shell rather than e2e.test.
+#     Same pattern -- one binary, multiple modes -- so no separate
+#     helper binary is needed and there is no dependency on locating
+#     a libc path.
+#   - The worker is bpfman-shell launched in
+#     BPFMAN_SHELL_MODE=uprobe-fire-worker mode (see
+#     cmd/bpfman-shell/uprobe_helper.go). It runs the same
+#     sentinel/ack wave loop the python workers do, but fires the
+#     in-binary cgo target N times per wave rather than issuing
+#     unlink/kill syscalls. Stable PID throughout.
+#   - Between detach and the next wave we sleep briefly to let the
+#     kernel's perf-link RCU deferral window close. The observed
+#     window is sub-millisecond on modern kernels.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgUprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root, bpftool.
+
+source lib.bpfman
+
+let n      = 5
+let waves  = 3
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+guard workdir <- tempdir bpfman-shell-mup
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
+
+# Start the uprobe-fire worker. fire uprobe resolves
+# /proc/self/exe at launch and publishes the path on the Job's
+# target_binary, so the uprobe attach below points at the exact
+# image the worker is running in. Stable PID across all 3 waves.
+guard work <- fire uprobe $sentinel $ack --count $n --waves $waves
+defer kill --signal=KILL $work
+
+# Load three uprobe programs from one object file.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_uprobe_counter.bpf.o \
+    --programs uprobe:mup_a,uprobe:mup_b,uprobe:mup_c \
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}"
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mup_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mup_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mup_c_count\") | .id][0]"
+print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
+
+# Attach each program at bpfman_shell_uprobe_call_malloc inside
+# the bpfman-shell binary the worker is running.
+guard link_a <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_a
+guard link_b <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_b
+guard link_c <- bpfman link attach uprobe --target $work.target_binary -f bpfman_shell_uprobe_call_malloc $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# --- Wave 1: a, b, c all attached ---
+guard _ <- touch "${sentinel}.1"
+retry {
+    let probe <- test -f "${ack}.1"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+bpfman link detach $link_c
+sleep 0.1
+
+# --- Wave 2: a, b attached; c detached ---
+guard _ <- touch "${sentinel}.2"
+retry {
+    let probe <- test -f "${ack}.2"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+bpfman link detach $link_b
+sleep 0.1
+
+# --- Wave 3: only a attached ---
+guard _ <- touch "${sentinel}.3"
+retry {
+    let probe <- test -f "${ack}.3"
+} until $probe.ok or timeout 5s
+require $probe.ok
+
+guard work_r <- wait $work
+assert $work_r.ok
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = 3 * $n * $weight_a
+let want_b = 2 * $n * $weight_b
+let want_c = 1 * $n * $weight_c
+
+print "a: got=${count_a} want=${want_a}"
+print "b: got=${count_b} want=${want_b}"
+print "c: got=${count_c} want=${want_c}"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+# link_a is still attached on the happy path; detach it explicitly
+# before the deferred program-unloads fire.
+bpfman link detach $link_a

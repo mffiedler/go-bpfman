@@ -73,34 +73,26 @@ func TestParse_LineContinuation(t *testing.T) {
 		}
 	})
 
-	t.Run("continuation inside command substitution", func(t *testing.T) {
+	t.Run("continuation inside bind RHS", func(t *testing.T) {
 		t.Parallel()
-		prog, err := parseSource(t, "let p = [show program \\\n123]")
+		prog, err := parseSource(t, "let p <- show program \\\n123")
 		require.NoError(t, err)
-		let, ok := firstStmt(t, prog).(*LetStmt)
+		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		assert.Equal(t, "p", let.Name)
-		sub, ok := let.RHS.(*CmdSubExpr)
-		require.True(t, ok)
-		require.Len(t, sub.Inner.Stmts, 1)
-		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-		require.True(t, ok)
-		require.Len(t, inner.Args, 3)
+		assert.Equal(t, "p", bind.Primary)
+		require.NotNil(t, bind.Cmd)
+		require.Len(t, bind.Cmd.Args, 3)
 	})
 
-	t.Run("multiple continuations inside command substitution", func(t *testing.T) {
+	t.Run("multiple continuations inside bind RHS", func(t *testing.T) {
 		t.Parallel()
-		src := "let p = [show \\\nprogram \\\n123]"
+		src := "let p <- show \\\nprogram \\\n123"
 		prog, err := parseSource(t, src)
 		require.NoError(t, err)
-		let, ok := firstStmt(t, prog).(*LetStmt)
+		bind, ok := firstStmt(t, prog).(*BindStmt)
 		require.True(t, ok)
-		sub, ok := let.RHS.(*CmdSubExpr)
-		require.True(t, ok)
-		require.Len(t, sub.Inner.Stmts, 1)
-		inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-		require.True(t, ok)
-		require.Len(t, inner.Args, 3)
+		require.NotNil(t, bind.Cmd)
+		require.Len(t, bind.Cmd.Args, 3)
 	})
 }
 
@@ -120,13 +112,13 @@ func TestParse_LetAssignment_Literal(t *testing.T) {
 func TestParse_LetRejectsMultiTokenCommand(t *testing.T) {
 	t.Parallel()
 
-	// "load file" is two tokens, not a primary/unary/binary; the
-	// recursive-descent parser surfaces this as "unexpected
-	// token" with a hint to wrap commands in [...].
+	// "load file" is two words, neither of which forms a
+	// valid expression on the right of '='; the recursive-
+	// descent parser surfaces this as "unexpected" against
+	// the trailing word.
 	_, err := parseSource(t, "let prog = load file")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected token")
-	assert.Contains(t, err.Error(), "[...]")
+	assert.Contains(t, err.Error(), "unexpected")
 }
 
 func TestParse_LetWithVarRef(t *testing.T) {
@@ -142,22 +134,6 @@ func TestParse_LetWithVarRef(t *testing.T) {
 	assert.Equal(t, "prog", ref.Name)
 }
 
-func TestParse_LetWithCmdSub(t *testing.T) {
-	t.Parallel()
-
-	prog, err := parseSource(t, "let x = [load file --path p]")
-	require.NoError(t, err)
-	let, ok := firstStmt(t, prog).(*LetStmt)
-	require.True(t, ok)
-	sub, ok := let.RHS.(*CmdSubExpr)
-	require.True(t, ok)
-	require.NotNil(t, sub.Inner)
-	require.Len(t, sub.Inner.Stmts, 1)
-	inner, ok := sub.Inner.Stmts[0].(*CommandStmt)
-	require.True(t, ok)
-	require.Len(t, inner.Args, 4)
-}
-
 func TestParse_LetErrors(t *testing.T) {
 	t.Parallel()
 
@@ -168,7 +144,7 @@ func TestParse_LetErrors(t *testing.T) {
 	}{
 		{"no command after equals", "let x =", "let requires"},
 		{"too few tokens", "let x", "let requires"},
-		{"missing equals", "let x load file", "missing '='"},
+		{"missing equals or bind", "let x load file", "let requires '=' or '<-'"},
 		{"non-identifier LHS", "let $x = foo", "let requires an identifier"},
 		{"invalid identifier", "let 0bad = foo", "invalid variable name"},
 		{"second assign in RHS", "let x = a = b", "unexpected '='"},
@@ -181,6 +157,112 @@ func TestParse_LetErrors(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestParse_LetBindSingle(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let r <- bpfman version")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "r", bind.Primary)
+	assert.Equal(t, "", bind.Rc, "single-name bind must leave Rc empty")
+	assert.False(t, bind.Guard, "let bind must not set Guard")
+	require.NotNil(t, bind.Cmd)
+	require.Len(t, bind.Cmd.Args, 2)
+	head, ok := bind.Cmd.Args[0].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "bpfman", head.Text)
+}
+
+func TestParse_GuardBindSingle(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "guard prog <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "prog", bind.Primary)
+	assert.Equal(t, "", bind.Rc)
+	assert.True(t, bind.Guard, "guard bind must set Guard")
+	require.NotNil(t, bind.Cmd)
+	require.Len(t, bind.Cmd.Args, 4)
+	ref, ok := bind.Cmd.Args[3].(*VarRefExpr)
+	require.True(t, ok, "last arg should be VarRef, got %T", bind.Cmd.Args[3])
+	assert.Equal(t, "pid", ref.Name)
+}
+
+func TestParse_LetBindTuple(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let (rc, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
+	assert.Equal(t, "rc", bind.Rc)
+	assert.Equal(t, "prog", bind.Primary)
+	assert.False(t, bind.Guard)
+}
+
+func TestParse_GuardBindTuple(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "guard (rc, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok)
+	assert.Equal(t, "rc", bind.Rc)
+	assert.Equal(t, "prog", bind.Primary)
+	assert.True(t, bind.Guard)
+}
+
+func TestParse_BindTupleDiscard(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, "let (_, prog) <- bpfman program get $pid")
+	require.NoError(t, err)
+	bind, ok := firstStmt(t, prog).(*BindStmt)
+	require.True(t, ok)
+	assert.Equal(t, "_", bind.Rc, "underscore must round-trip in the AST")
+	assert.Equal(t, "prog", bind.Primary)
+}
+
+func TestParse_BindErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"empty let bind RHS", "let x <-", "bind requires a command after '<-'"},
+		{"empty guard bind RHS", "guard x <-", "bind requires a command after '<-'"},
+		{"guard without bind sigil", "guard x = foo", "missing '<-'"},
+		{"guard without name", "guard <- foo", "guard requires"},
+		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
+		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
+		{"tuple with assign rejected", "let (rc, prog) = foo", "tuple bind requires '<-'"},
+		{"tuple discard both rejected", "let (_, _) <- foo", "cannot discard both slots"},
+		{"tuple missing comma", "let (rc prog) <- foo", "expected ',' between targets"},
+		{"tuple missing close paren", "let (rc, prog <- foo", "expected ')'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParse_GuardIsReservedDefName(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseSource(t, "def guard() { print hi }")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reserved word \"guard\"")
 }
 
 func TestParse_BareAssignIsError(t *testing.T) {
@@ -237,7 +319,6 @@ func TestParse_ExprStmt_TriggerTokens(t *testing.T) {
 		{"varref with path", "$x.a.b", "expr"},
 		{"varref with comparison", "$x == 5", "expr"},
 		{"varref with thread", "$x |> jq \".\"", "expr"},
-		{"exprsub", "[[1 == 1]]", "expr"},
 		{"quoted", "\"hello\"", "expr"},
 		{"single-quoted", "'hello'", "expr"},
 		{"paren expression", "(1 == 1)", "expr"},
@@ -281,7 +362,7 @@ func TestParse_EmptyProgram(t *testing.T) {
 func TestParse_LocPropagation(t *testing.T) {
 	t.Parallel()
 
-	// Statements and expressions should carry Loc from their first
+	// Statements and expressions should carry Pos from their first
 	// token.  A multi-line program has different lines on each
 	// statement.
 	prog, err := parseSource(t, "help\nshow program")
@@ -289,10 +370,10 @@ func TestParse_LocPropagation(t *testing.T) {
 	require.Len(t, prog.Stmts, 2)
 	first, ok := prog.Stmts[0].(*CommandStmt)
 	require.True(t, ok)
-	assert.Equal(t, 1, first.Loc.Line)
+	assert.Equal(t, 1, first.Pos.Line)
 	second, ok := prog.Stmts[1].(*CommandStmt)
 	require.True(t, ok)
-	assert.Equal(t, 2, second.Loc.Line)
+	assert.Equal(t, 2, second.Pos.Line)
 }
 
 func TestParse_Thread_Basic(t *testing.T) {
@@ -354,35 +435,22 @@ func TestParse_Thread_TighterThanComparison(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestParse_Thread_CmdSubLHS(t *testing.T) {
-	t.Parallel()
-
-	// [cmd] |> jq "FILTER" is valid: LHS is a CmdSubExpr, RHS is a thread.
-	prog, err := parseSource(t, "let r = [bpfman program list] |> jq \"length\"")
-	require.NoError(t, err)
-	let := firstStmt(t, prog).(*LetStmt)
-	thread, ok := let.RHS.(*ThreadExpr)
-	require.True(t, ok)
-	_, ok = thread.LHS.(*CmdSubExpr)
-	assert.True(t, ok, "thread LHS should be CmdSubExpr, got %T", thread.LHS)
-}
-
 func TestParse_Thread_LocPointsAtThreadToken(t *testing.T) {
 	t.Parallel()
 
-	// The Loc on a ThreadExpr identifies the `|>` itself so errors
+	// The Pos on a ThreadExpr identifies the `|>` itself so errors
 	// about the threading step can point at the operator rather
 	// than at the LHS or RHS.
 	prog, err := parseSource(t, "let r = $x |> jq \"add\"")
 	require.NoError(t, err)
 	let := firstStmt(t, prog).(*LetStmt)
 	thread := let.RHS.(*ThreadExpr)
-	assert.Equal(t, 1, thread.Loc.Line)
+	assert.Equal(t, 1, thread.Pos.Line)
 	// Column of the `|>` in "let r = $x |> jq \"add\"":
 	//   columns 1..9 = "let r = $"
 	//   column 10 = 'x' (end of varref) — the `|>` is
 	//   after `$x ` so at column 12.
-	assert.Equal(t, 12, thread.Loc.Col)
+	assert.Equal(t, 12, thread.Pos.Col)
 }
 
 func TestParse_Thread_StopsAtClosingParen(t *testing.T) {
@@ -396,21 +464,6 @@ func TestParse_Thread_StopsAtClosingParen(t *testing.T) {
 	thread, ok := ifStmt.Cond.(*ThreadExpr)
 	require.True(t, ok, "expected ThreadExpr inside the parens, got %T", ifStmt.Cond)
 	require.Len(t, thread.Args, 2, "thread RHS should be jq + filter, not jq + filter + ')'")
-}
-
-func TestParse_Thread_StopsAtClosingBracket(t *testing.T) {
-	t.Parallel()
-
-	// A thread inside a [cmdsub] or [[exprsub]] must let the ']'
-	// close the substitution rather than swallow it.
-	prog, err := parseSource(t, "let r = [[$xs |> jq \"length\"]]")
-	require.NoError(t, err)
-	let := firstStmt(t, prog).(*LetStmt)
-	exprSub, ok := let.RHS.(*ExprSubExpr)
-	require.True(t, ok, "expected ExprSubExpr, got %T", let.RHS)
-	thread, ok := exprSub.Inner.(*ThreadExpr)
-	require.True(t, ok, "expected ThreadExpr inside [[...]], got %T", exprSub.Inner)
-	require.Len(t, thread.Args, 2)
 }
 
 func TestParse_ForEach_ParenthesisedThreadSource(t *testing.T) {
@@ -899,17 +952,6 @@ func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
 	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
 }
 
-func TestParse_CmdSubInnerSyntaxErrorAtParseTime(t *testing.T) {
-	t.Parallel()
-
-	// A syntax error inside [ ... ] surfaces at the outer Parse
-	// call: eager inner parsing is a deliberate behavioural change
-	// documented in the refactor plan.
-	_, err := parseSource(t, "let x = [let y = ]")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "command substitution")
-}
-
 // --- arithmetic ----------------------------------------------------
 
 func TestParse_Arithmetic_AdditivePrecedence(t *testing.T) {
@@ -1070,12 +1112,91 @@ func TestParse_Arithmetic_SmushedMinusHintsAtWhitespace(t *testing.T) {
 
 	// '-' and '/' stay word-interior (negative literals, flags,
 	// paths), so "$x -1" still tokenises as "$x" + "-1" and
-	// fails to parse.  The error should point at whitespace
-	// rather than the generic "wrap in [...]" suggestion.
+	// fails to parse. The error should point at whitespace
+	// rather than the generic "commands belong on '<-'"
+	// suggestion.
 	_, err := parseSource(t, "let r = $x -1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "whitespace")
 	assert.Contains(t, err.Error(), "'-'")
+}
+
+func TestParse_AllNodesHaveSourcePosition(t *testing.T) {
+	t.Parallel()
+
+	// Regression guard for the position-completeness
+	// invariant: every AST node Parse produces must have
+	// both line and column populated. A new AST variant
+	// added without copying its source position would
+	// silently surface as an empty Pos in user-facing
+	// diagnostics; this test catches that at parse time.
+	cases := []string{
+		"let x = 1",
+		"let r = 4 * 2 + 1",
+		`print "${$n * 2}"`,
+		"let p <- start sleep 60\nwait $p",
+		"foreach x in $xs { print $x }",
+		"if $x { let r = 1 } elif $y { let r = 2 } else { let r = 3 }",
+		"retry { let r <- foo } until iteration 5 or timeout 30s",
+		"def greet(name) { print $name }\ngreet alice",
+		"defer kill $p",
+		"assert $a == $b",
+		"let z = $x |> jq tonumber",
+		"assert matches {\n    .name: \"foo\"\n    .id: 5\n} $rec",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			t.Parallel()
+			tokens, err := Tokenise(src)
+			require.NoError(t, err)
+			prog, err := Parse(tokens)
+			require.NoError(t, err, "src=%q", src)
+			Inspect(prog, func(n Node) bool {
+				if n == nil {
+					return true
+				}
+				if p, ok := n.(*Program); ok && len(p.Stmts) == 0 {
+					return true
+				}
+				sp := nodeSpan(n)
+				assert.Greater(t, sp.Pos.Line, 0, "%T missing line", n)
+				assert.Greater(t, sp.Pos.Col, 0, "%T missing col", n)
+				return true
+			})
+		})
+	}
+}
+
+func TestParse_EmptyProgramAccepted(t *testing.T) {
+	t.Parallel()
+
+	// validateLocs skips the empty-program case; an empty
+	// input is a valid parse with an empty Pos and must not
+	// be rejected as 'missing source position'.
+	prog, err := parseSource(t, "")
+	require.NoError(t, err)
+	require.NotNil(t, prog)
+	assert.Empty(t, prog.Stmts)
+}
+
+func TestValidateLocs_FailsOnDeliberatelyBrokenNode(t *testing.T) {
+	t.Parallel()
+
+	// Confirm the invariant has teeth: a hand-built program
+	// whose statement carries a zero Pos is rejected with the
+	// internal-error message. If a future AST variant lands
+	// without copying its source position, this is the shape
+	// the failure takes.
+	prog := &Program{
+		Stmts: []Stmt{
+			&LetStmt{Name: "x", RHS: &LiteralExpr{Text: "1", Span: Span{Pos: Pos{Line: 1, Col: 9}}}},
+		},
+		Span: Span{Pos: Pos{Line: 1, Col: 1}},
+	}
+	err := validateLocs(prog)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "incomplete source spans")
+	assert.Contains(t, err.Error(), "LetStmt")
 }
 
 func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
@@ -1085,4 +1206,80 @@ func TestParse_Arithmetic_SmushedSlashHintsAtWhitespace(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "whitespace")
 	assert.Contains(t, err.Error(), "'/'")
+}
+
+func TestParseInterpBody_BareNameShortcut(t *testing.T) {
+	t.Parallel()
+
+	// "${name}" is a variable reference shortcut: the user
+	// writes the bare identifier rather than $-prefixing.
+	expr, err := parseInterpBody("name", Span{})
+	require.NoError(t, err)
+	v, ok := expr.(*VarRefExpr)
+	require.True(t, ok, "expected VarRefExpr, got %T", expr)
+	assert.Equal(t, "name", v.Name)
+	assert.Empty(t, v.Path)
+}
+
+func TestParseInterpBody_BareNameWithPath(t *testing.T) {
+	t.Parallel()
+
+	expr, err := parseInterpBody("rec.field", Span{})
+	require.NoError(t, err)
+	v, ok := expr.(*VarRefExpr)
+	require.True(t, ok, "expected VarRefExpr, got %T", expr)
+	assert.Equal(t, "rec", v.Name)
+	assert.Equal(t, "field", v.Path)
+}
+
+func TestParseInterpBody_SigilLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${$n * 2}" is the sigil-led expression form: bash's
+	// $((...)) shape transposed to ${...}. The parser
+	// treats the whole body as an expression.
+	expr, err := parseInterpBody("$n * 2", Span{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_LiteralLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${4 * 2}" is the literal-led expression form: useful
+	// for inline arithmetic in command args without a named
+	// intermediate.
+	expr, err := parseInterpBody("4 * 2", Span{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_ComplexLiteralLedExpression(t *testing.T) {
+	t.Parallel()
+
+	// "${(1 + 2) * 3}" exercises the parser's grouping path
+	// from a literal-led starting position.
+	expr, err := parseInterpBody("(1 + 2) * 3", Span{})
+	require.NoError(t, err)
+	_, ok := expr.(*BinaryExpr)
+	require.True(t, ok, "expected BinaryExpr, got %T", expr)
+}
+
+func TestParseInterpBody_EmptyIsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseInterpBody("", Span{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+}
+
+func TestParseInterpBody_GarbageIsError(t *testing.T) {
+	t.Parallel()
+
+	// Tokens that do not form a valid expression must error
+	// rather than silently produce a malformed Expr.
+	_, err := parseInterpBody(") +", Span{})
+	require.Error(t, err)
 }

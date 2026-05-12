@@ -1,0 +1,152 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestKprobe_LoadAttachDetachUnload as a
+# bpfman-shell script.
+#
+# The Go test drives a workload-driver subprocess over a bidirectional
+# NDJSON pipe and asserts `events * weight == counter` exactly. This
+# script reaches the same exactness using the patterns the DSL has
+# today: a worker process that blocks on a filesystem sentinel, a
+# `wait $worker` to know firing has finished, and `bpftool map dump`
+# for the counter readout.
+#
+# Differences from the Go test (deliberate):
+#   - Worker is bpfman-shell launched in
+#     BPFMAN_SHELL_MODE=unlinkat-fire-worker mode (see
+#     cmd/bpfman-shell/unlink_helper.go). It blocks on a numbered
+#     sentinel, then issues exactly N unlinkat(2) syscalls in its
+#     own (stable) PID, then writes a numbered ack and exits.
+#   - Synchronisation is the sentinel file plus `wait $worker`;
+#     `wait $worker` is the completion barrier for K=1.
+#   - No t.Parallel(): the script runs serially. PID-isolation
+#     across concurrent tests is unnecessary so long as no other
+#     process on the host shares the worker's PID.
+#   - Post-detach quiescence is replaced by a brief settle sleep +
+#     counter delta check, rather than the polled stable-counter
+#     barrier.
+#
+# Invoke from the e2e/ directory so testdata paths resolve:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestKprobe_LoadAttachDetachUnload.bpfman
+#
+# Requires root and bpftool.
+
+source lib.bpfman
+
+# Exact-event count and weight for the assertion. Fixed values rather
+# than randomly drawn ones; uniqueWeights() in the Go test exists to
+# catch swapped-map bugs in the multi-prog variants. With one program
+# there is no swap to detect.
+let n = 5
+let weight = 42
+let want = $n * $weight
+
+guard workdir <- tempdir bpfman-shell-kprobe
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
+
+# Start the worker. It blocks on ${sentinel}.1; we have a known
+# PID we can pin into the BPF program before the worker fires
+# anything. fire unlinkat is the typed wrapper for the
+# BPFMAN_SHELL_MODE=unlinkat-fire-worker dispatch.
+guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
+defer kill --signal=KILL $work
+
+# Load the kprobe program with the worker PID baked in so only the
+# worker's syscalls count. weight is the per-event increment so a
+# misrouted event surfaces as wrong arithmetic, not a missed signal.
+# u32le / u64le are pure builtins; they encode the integer as a
+# little-endian hex string suitable for `bpfman -g NAME=HEX`. u32
+# for expected_pid (4 bytes), u64 for weight (8 bytes).
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/kprobe_exact.bpf.o \
+    --programs kprobe:kprobe_counter \
+    -g "expected_pid=0x${u32le $work.pid}" \
+    -g "weight=0x${u64le $weight}"
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+expect_program_load $prog kprobe kprobe kprobe_counter
+
+# Round-trip: Get returns the same program record.
+guard got <- bpfman program get $pid
+expect_program_round_trip $got $prog
+
+# Round-trip: program appears in the list with the same identity.
+guard listed <- bpfman program list -o json
+let progFilter = ".programs[] | select(.record.program_id == ${pid})"
+let ours = $listed |> jq $progFilter
+require not nil ours
+assert $ours.record.meta.name == $prog.record.meta.name
+assert $ours.status.kernel.id == $prog.status.kernel.id
+
+# Attach to do_unlinkat. The worker calls unlink directly; nothing
+# else on the host shares the worker's PID, so the counter only moves
+# when the worker fires.
+guard link <- bpfman link attach kprobe --fn-name do_unlinkat $prog
+let linkID = $link.record.id
+
+assert $link.record.kind == kprobe
+assert $link.record.program_id == $pid
+assert $link.record.details.fn_name == do_unlinkat
+assert $link.record.details.offset == 0
+assert not $link.record.details.retprobe
+assert $link.status.kernel_seen
+
+# Round-trip: GetLink and ListLinks return the same link.
+guard gotLink <- bpfman link get $linkID
+assert $gotLink.record.id == $linkID
+assert $gotLink.record.kind == $link.record.kind
+assert $gotLink.record.details.fn_name == $link.record.details.fn_name
+assert $gotLink.record.details.retprobe == $link.record.details.retprobe
+
+guard listedLinks <- bpfman link list -o json
+let linkFilter = ".links[] | select(.id == ${linkID})"
+let ourLink = $listedLinks |> jq $linkFilter
+require not nil ourLink
+assert $ourLink.id == $link.record.id
+assert $ourLink.kind == $link.record.kind
+
+# Release the worker. From here `wait $work` blocks until the worker
+# has issued exactly $n unlinkats and exited.
+guard _ <- touch "${sentinel}.1"
+
+guard work_r <- wait $work
+assert $work_r.ok
+assert $work_r.code == 0
+
+# Counter == events * weight, exact.
+let mapID = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+# kp_count is BPF_MAP_TYPE_ARRAY (single value), not PERCPU_ARRAY,
+# so the dump shape is .[0].formatted.value (scalar), not
+# .[0].formatted.values[].value (per-CPU list).
+let sumFilter = ".[0].formatted.value | tonumber"
+guard dump <- bpftool map dump id $mapID -j
+let got_counter = $dump.stdout |> jq $sumFilter
+print "got=${got_counter} want=${want}"
+assert $got_counter == $want
+
+# Detach. After this, no further unlinks from any PID should advance
+# the counter. We give the kernel a brief settle window for the
+# perf-link RCU deferral, snapshot, and assert delta == 0.
+bpfman link detach $link
+assert fail bpfman link get $linkID
+
+guard before_dump <- bpftool map dump id $mapID -j
+let before = $before_dump.stdout |> jq $sumFilter
+
+# Brief settle for the perf-link RCU GP. The Go test polls for
+# stable-counter quiescence; sleep is the simpler shape and the
+# window is well under a kernel tick on modern systems.
+sleep 0.1
+
+guard after_dump <- bpftool map dump id $mapID -j
+let after = $after_dump.stdout |> jq $sumFilter
+let delta = $after - $before
+print "post-detach delta=${delta}"
+assert $delta == 0
+
+# Unload, verify clean state.
+bpfman program unload $pid
+assert fail bpfman program get $prog

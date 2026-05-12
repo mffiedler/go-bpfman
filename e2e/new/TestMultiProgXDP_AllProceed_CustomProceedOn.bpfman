@@ -1,0 +1,104 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestMultiProgXDP_AllProceed_CustomProceedOn.
+#
+# Three XDP programs at distinct dispatcher priorities; all
+# return XDP_DROP. The default proceed-on `[XDP_PASS]` excludes
+# DROP, which would normally stop the chain at the first
+# program. Custom proceed-on `[drop, dispatcher_return]`
+# includes DROP, so the chain proceeds and every program counts
+# every packet. The chain's last verdict is DROP, so the kernel
+# drops the packet and ping reports 100% loss.
+#
+# Counters end at:
+#   a = N * weight_a   (ran, returned DROP)
+#   b = N * weight_b   (ran, returned DROP)
+#   c = N * weight_c   (ran, returned DROP)
+#
+# This is the inverse of ChainStopsAtDrop: same DROP verdict,
+# but the custom bitmask flips the chain behaviour. ARP
+# resolution suffers the same fate as the ICMP packets, so a
+# warmup ping primes the cache before the BPF programs attach.
+#
+# Run from e2e/:
+#   cd e2e
+#   sudo bpfman-shell new/TestMultiProgXDP_AllProceed_CustomProceedOn.bpfman
+
+source lib.bpfman
+
+let n        = 5
+let weight_a = 41
+let weight_b = 42
+let weight_c = 43
+
+guard pair <- net veth-pair
+defer net release $pair
+
+# Warmup ping to populate the ARP caches both ways before any
+# BPF programs attach. The chain ends with DROP and the kernel
+# never sees the packet, so without a primed ARP cache the
+# script's pings would never resolve A's MAC.
+guard _ <- net exec $pair ping -c 1 -W 1 $pair.host_addr
+
+
+# All programs return XDP_DROP = 1 -> 0x01000000.
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/multi_prog_xdp_param_verdict.bpf.o \
+    --programs xdp:mxdv_a,xdp:mxdv_b,xdp:mxdv_c \
+    -g "weight_a=0x${u64le $weight_a}" \
+    -g "weight_b=0x${u64le $weight_b}" \
+    -g "weight_c=0x${u64le $weight_c}" \
+    -g verdict_a=0x01000000 \
+    -g verdict_b=0x01000000 \
+    -g verdict_c=0x01000000
+
+let prog_a = $loaded.programs[0]
+let prog_b = $loaded.programs[1]
+let prog_c = $loaded.programs[2]
+let pid_a = $prog_a.record.program_id
+let pid_b = $prog_b.record.program_id
+let pid_c = $prog_c.record.program_id
+print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
+
+defer bpfman program unload $pid_a
+defer bpfman program unload $pid_b
+defer bpfman program unload $pid_c
+
+let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxdv_a_count\") | .id][0]"
+let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxdv_b_count\") | .id][0]"
+let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxdv_c_count\") | .id][0]"
+
+# Custom proceed-on includes DROP so the chain doesn't stop.
+guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 --proceed-on drop,dispatcher_return $pid_a
+guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 --proceed-on drop,dispatcher_return $pid_b
+guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 --proceed-on drop,dispatcher_return $pid_c
+
+let counter_filter = ".[0].formatted.value | tonumber"
+
+# Send N pings and discard the rc; final verdict is DROP so the
+# kernel never replies and ping reports 100% loss. The XDP
+# counters still advance for every program in the chain.
+let _ <- net exec $pair ping -c $n -i 0.05 -W 1 $pair.host_addr
+
+guard dump_a <- bpftool map dump id $mapID_a -j
+guard dump_b <- bpftool map dump id $mapID_b -j
+guard dump_c <- bpftool map dump id $mapID_c -j
+
+let count_a = $dump_a.stdout |> jq $counter_filter
+let count_b = $dump_b.stdout |> jq $counter_filter
+let count_c = $dump_c.stdout |> jq $counter_filter
+
+let want_a = $n * $weight_a
+let want_b = $n * $weight_b
+let want_c = $n * $weight_c
+
+print "a: got=${count_a} want=${want_a}  (ran, returned DROP)"
+print "b: got=${count_b} want=${want_b}  (ran, returned DROP)"
+print "c: got=${count_c} want=${want_c}  (ran, returned DROP)"
+
+assert $count_a == $want_a
+assert $count_b == $want_b
+assert $count_c == $want_c
+
+bpfman link detach $link_a
+bpfman link detach $link_b
+bpfman link detach $link_c

@@ -476,6 +476,11 @@ LINT_DOCKERFILES := \
 # ---------------------------------------------------------------------------
 all: bpfman-build bpfman-shell-build
 
+# Alias so 'make build-all' works as advertised in 'make help'.
+# 'all' stays the canonical default-target name; 'build-all' is
+# the spelling the help text and tab-completion expose.
+build-all: all
+
 help:
 	@echo "Build:"
 	@echo "  build-all                   Build all binaries"
@@ -485,7 +490,7 @@ help:
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
-	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ (requires root)"
+	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ and e2e/new/ (requires root)"
 	@echo "  test-examples               Run REPL scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
 	@echo "  test-nsenter-cross          Run nsenter tests on amd64/arm64/ppc64le/s390x"
@@ -658,12 +663,12 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 test-e2e: $(BIN_DIR)/e2e.test
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
-# Run every REPL script under e2e/scripts/ against the built
-# bpfman binary. Each script executes from e2e/ so testdata paths
-# match the Go e2e tests. The target runs them sequentially,
-# reports failures as it goes, and exits non-zero at the end if
-# any script failed. Pass TEST=<name> to restrict to scripts whose
-# filename contains <name>.
+# Run every REPL script under e2e/scripts/ and e2e/new/ against
+# the built bpfman binary. Each script executes from e2e/ so
+# testdata paths match the Go e2e tests. The target runs them
+# sequentially, reports failures as it goes, and exits non-zero
+# at the end if any script failed. Pass TEST=<name> to restrict
+# to scripts whose filename contains <name>.
 # Split into build + run so CI can extract pre-built artefacts
 # from a hermetic container build (Dockerfile.ci's e2e-export
 # stage) and invoke `run-e2e-scripts` directly on the runner
@@ -1138,8 +1143,8 @@ ci-test-e2e:
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
-# scripts under e2e/scripts/ are interpreted by the bpfman
-# binary, so the bundle's bpfman + testdata are extracted
+# scripts under e2e/scripts/ and e2e/new/ are interpreted by the
+# bpfman binary, so the bundle's bpfman + testdata are extracted
 # directly into the source tree (the layout matches), and the
 # scripts run via `make run-e2e-scripts` which assumes the
 # artefacts are already in place. No outer sudo: the inner

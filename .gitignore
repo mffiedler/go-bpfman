@@ -4,9 +4,11 @@ bpfman/internal/server/pb/
 archive/bpfman-kernel/bpfman-kernel
 .direnv/
 .bpf-build-stamp
-e2e/testdata/bpf/*.bpf.o
-e2e/testdata/bpf/*.bpf.d
-platform/ebpf/*.bpf.o
-platform/ebpf/*.bpf.d
+# BPF objects and dependency files at any depth. Matches both
+# the scoped build trees (e2e/testdata/bpf, platform/ebpf,
+# dispatcher) and any future subtree, so a stray .bpf.o cannot
+# slip into the index when a new test directory is added.
+*.bpf.o
+*.bpf.d
 /ci-e2e-bundle/
 .cache/

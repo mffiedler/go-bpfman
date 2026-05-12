@@ -195,12 +195,12 @@ func TestTokenise(t *testing.T) {
 		{
 			name:    "unterminated double quote",
 			input:   `"hello`,
-			wantErr: `unterminated "-quoted string`,
+			wantErr: `unterminated double-quoted string`,
 		},
 		{
 			name:    "unterminated single quote",
 			input:   `'hello`,
-			wantErr: `unterminated '-quoted string`,
+			wantErr: `unterminated single-quoted string`,
 		},
 		{
 			name:    "unterminated braced varref",
@@ -371,7 +371,7 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenVarRef, Text: "$var", VarName: "var"},
 			},
 		},
-		// Comparison operator tokenisation (Phase 2 infix assertions).
+		// Comparison operator tokenisation.
 		{
 			name:  "== is a single word token, not two assigns",
 			input: "assert $a == 1",
@@ -502,6 +502,58 @@ func TestTokenise(t *testing.T) {
 				{Kind: TokenWord, Text: "b"},
 			},
 		},
+
+		// Bind sigil. A `<-` at a token boundary is a standalone
+		// TokenBind; inside a bare word the characters stay part
+		// of the surrounding literal.
+
+		{
+			name:  "bind between tokens",
+			input: "let r <- bpfman version",
+			want: []Token{
+				{Kind: TokenWord, Text: "let"},
+				{Kind: TokenWord, Text: "r"},
+				{Kind: TokenBind, Text: "<-"},
+				{Kind: TokenWord, Text: "bpfman"},
+				{Kind: TokenWord, Text: "version"},
+			},
+		},
+		{
+			name:  "guard with bind",
+			input: "guard r <- bpfman program get $pid",
+			want: []Token{
+				{Kind: TokenWord, Text: "guard"},
+				{Kind: TokenWord, Text: "r"},
+				{Kind: TokenBind, Text: "<-"},
+				{Kind: TokenWord, Text: "bpfman"},
+				{Kind: TokenWord, Text: "program"},
+				{Kind: TokenWord, Text: "get"},
+				{Kind: TokenVarRef, Text: "$pid", VarName: "pid"},
+			},
+		},
+		{
+			name:  "bind inside bare word stays part of word",
+			input: "a<-b",
+			want: []Token{
+				{Kind: TokenWord, Text: "a<-b"},
+			},
+		},
+		{
+			name:  "bind inside quoted string is literal",
+			input: `"a <- b"`,
+			want: []Token{
+				{Kind: TokenQuoted, Text: "a <- b"},
+			},
+		},
+		{
+			name:  "bare less-than without dash is word content",
+			input: "$a < $b",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$a", VarName: "a"},
+				{Kind: TokenWord, Text: "<"},
+				{Kind: TokenVarRef, Text: "$b", VarName: "b"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -548,10 +600,6 @@ func TestTokeniseLineContinuation(t *testing.T) {
 				{Kind: TokenWord, Text: "xdp:pass"},
 			},
 		},
-		// Continuation inside [...] is tested via TestParseCmdSubContinuation
-		// below, because the inner text is not re-tokenised at the outer
-		// tokenise step — it is captured literally into TokenCmdSub.Inner
-		// and re-tokenised at parse time.
 		{
 			name:  "CRLF continuation",
 			input: "foo \\\r\nbar",
@@ -585,69 +633,6 @@ func TestTokeniseLineContinuation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := Tokenise(tt.input)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, stripLocs(got))
-		})
-	}
-}
-
-func TestTokeniseExprSub(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		input   string
-		want    []Token
-		wantErr string
-	}{
-		{
-			name:  "bare double brackets around arithmetic",
-			input: "[[1 + 2]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[1 + 2]]", Inner: "1 + 2"},
-			},
-		},
-		{
-			name:  "no whitespace around slash",
-			input: "[[4/2]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[4/2]]", Inner: "4/2"},
-			},
-		},
-		{
-			name:  "nested command substitution is consumed",
-			input: "[[1 + [count]]]",
-			want: []Token{
-				{Kind: TokenExprSub, Text: "[[1 + [count]]]", Inner: "1 + [count]"},
-			},
-		},
-		{
-			name:  "quoted right bracket does not close sigil",
-			input: `[[$x eq "]]"]]`,
-			want: []Token{
-				{Kind: TokenExprSub, Text: `[[$x eq "]]"]]`, Inner: `$x eq "]]"`},
-			},
-		},
-		{
-			name:    "unterminated",
-			input:   "[[1 + 2",
-			wantErr: "unterminated expression substitution",
-		},
-		{
-			name:    "unmatched single close inside",
-			input:   "[[a ] b]]",
-			wantErr: "unmatched ']'",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := Tokenise(tt.input)
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				return
-			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, stripLocs(got))
 		})
@@ -961,9 +946,9 @@ func TestTokeniseStrict(t *testing.T) {
 	}
 }
 
-// stripLocs zeroes Loc fields on a slice of tokens so tests that
+// stripLocs zeroes Pos fields on a slice of tokens so tests that
 // care about kind/text/etc. can compare against literals without
-// having to spell out every token's position. Dedicated Loc
+// having to spell out every token's position. Dedicated Pos
 // assertions belong in TestTokeniseLoc.
 func stripLocs(tokens []Token) []Token {
 	if tokens == nil {
@@ -971,7 +956,7 @@ func stripLocs(tokens []Token) []Token {
 	}
 	out := make([]Token, len(tokens))
 	for i, t := range tokens {
-		t.Loc = Loc{}
+		t.Span = Span{}
 		out[i] = t
 	}
 	return out
@@ -984,18 +969,18 @@ func TestTokeniseLoc(t *testing.T) {
 		name  string
 		input string
 		// wantLocs maps a token's 0-based index to its expected
-		// Loc. Only the listed tokens are checked.
-		wantLocs map[int]Loc
+		// Pos. Only the listed tokens are checked.
+		wantLocs map[int]Pos
 	}{
 		{
 			name:     "single word starts at 1:1",
 			input:    "help",
-			wantLocs: map[int]Loc{0: {Line: 1, Col: 1}},
+			wantLocs: map[int]Pos{0: {Line: 1, Col: 1}},
 		},
 		{
 			name:  "second word on same line",
 			input: "show program 123",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1},  // show
 				1: {Line: 1, Col: 6},  // program
 				2: {Line: 1, Col: 14}, // 123
@@ -1004,7 +989,7 @@ func TestTokeniseLoc(t *testing.T) {
 		{
 			name:  "tokens on later lines",
 			input: "first\nsecond\nthird",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1}, // first
 				1: {Line: 1, Col: 6}, // \n
 				2: {Line: 2, Col: 1}, // second
@@ -1015,23 +1000,25 @@ func TestTokeniseLoc(t *testing.T) {
 		{
 			name:  "leading whitespace shifts column",
 			input: "   help",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 4},
 			},
 		},
 		{
-			name:  "varref and cmdsub carry start column",
-			input: "show $prog [inner cmd]",
-			wantLocs: map[int]Loc{
-				0: {Line: 1, Col: 1},  // show
-				1: {Line: 1, Col: 6},  // $prog
-				2: {Line: 1, Col: 12}, // [inner cmd]
+			name:  "varref and bind sigil carry start column",
+			input: "let r <- show $prog",
+			wantLocs: map[int]Pos{
+				0: {Line: 1, Col: 1},  // let
+				1: {Line: 1, Col: 5},  // r
+				2: {Line: 1, Col: 7},  // <-
+				3: {Line: 1, Col: 10}, // show
+				4: {Line: 1, Col: 15}, // $prog
 			},
 		},
 		{
 			name:  "token after comment preserves column",
 			input: "show # c\nnext",
-			wantLocs: map[int]Loc{
+			wantLocs: map[int]Pos{
 				0: {Line: 1, Col: 1}, // show
 				1: {Line: 1, Col: 9}, // \n (comment body replaced with spaces)
 				2: {Line: 2, Col: 1}, // next
@@ -1046,7 +1033,7 @@ func TestTokeniseLoc(t *testing.T) {
 			require.NoError(t, err)
 			for idx, want := range tt.wantLocs {
 				require.Greater(t, len(got), idx, "token index %d out of range; got %d tokens", idx, len(got))
-				assert.Equal(t, want, got[idx].Loc, "token %d (%q)", idx, got[idx].Text)
+				assert.Equal(t, want, got[idx].Pos, "token %d (%q)", idx, got[idx].Text)
 			}
 		})
 	}

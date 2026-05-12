@@ -10,7 +10,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestTracepoint_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestTracepoint_LoadAttachDetachUnload.bpfman
 #
 # Requires root and bpftool.
 
@@ -21,21 +21,20 @@ source lib.bpfman
 
 # Load the tracepoint counter. The map is unpinned (LIBBPF_PIN_NONE), which uses
 # LIBBPF_PIN_NONE so the counter map is private to this program.
-let prog = [bpfman program load file --path testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder]
-require not nil prog
+guard loaded <- bpfman program load file --path testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response.
 expect_program_load $prog tracepoint tracepoint tracepoint_kill_recorder
 
 # Round-trip: Get returns the same program record.
-let got = [bpfman program get $pid]
-require not nil got
+guard got <- bpfman program get $pid
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.
-let listed = [bpfman program list -o json]
+guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
@@ -43,8 +42,7 @@ assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
 # Attach to the syscalls/sys_enter_kill tracepoint.
-let link = [bpfman link attach tracepoint $prog syscalls/sys_enter_kill]
-require not nil link
+guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -55,8 +53,7 @@ assert $link.record.details.name == sys_enter_kill
 assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
-let gotLink = [bpfman link get $linkID]
-require not nil gotLink
+guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.group == $link.record.details.group
@@ -65,7 +62,7 @@ assert $gotLink.record.details.name == $link.record.details.name
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
-let listedLinks = [bpfman link list -o json]
+guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -78,19 +75,19 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-let dumpBefore = [exec bpftool map dump id $mapID -j]
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Trigger the tracepoint. kill(2) with signal 0 fires the syscall
 # without delivering anything, so the sh invocation exits cleanly
 # and require-ok is a real check.
-foreach _ in [jq "[range(5)]" '0'] {
-    require ok exec sh -c 'kill -0 $$'
+foreach _ in (range 5) {
+    guard _ <- sh -c 'kill -0 $$'
 }
 
-let dumpAfter = [exec bpftool map dump id $mapID -j]
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
-let delta     = [[$after - $before]]
+let delta     = $after - $before
 print $delta
 assert $delta == 5
 

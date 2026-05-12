@@ -13,7 +13,7 @@
 # relative to e2e/, so invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell repl -f scripts/TestUprobe_LoadAttachDetachUnload.bpfman
+#   sudo bpfman-shell scripts/TestUprobe_LoadAttachDetachUnload.bpfman
 #
 # Requires root and bpftool. The e2e.test binary must be built
 # first (`make bin/e2e.test`).
@@ -22,8 +22,8 @@
 source lib.bpfman
 
 # Load the uprobe counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
-let prog = [bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter]
-require not nil prog
+guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uprobe:uprobe_counter
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 # Structural assertions on the load response. The kernel reports
@@ -31,13 +31,12 @@ let pid = $prog.record.program_id
 expect_program_load $prog uprobe kprobe uprobe_counter
 
 # Round-trip: Get returns the same program record.
-let got = [bpfman program get $pid]
-require not nil got
+guard got <- bpfman program get $pid
 expect_program_round_trip $got $prog
 
 # Round-trip: our program appears in the program list with the
 # same meta and kernel ids.
-let listed = [bpfman program list -o json]
+guard listed <- bpfman program list -o json
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
@@ -50,8 +49,7 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # distributions; this REPL script targets the same binary on
 # disk for symmetry. The binary lives at $(BIN_DIR)/e2e.test;
 # from cwd=e2e/ that resolves to ../bin/e2e.test.
-let link = [bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_uprobe_call_malloc $prog]
-require not nil link
+guard link <- bpfman link attach uprobe --target ../bin/e2e.test --fn-name e2e_uprobe_call_malloc $prog
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
@@ -64,8 +62,7 @@ assert not $link.record.details.retprobe
 assert $link.status.kernel_seen
 
 # Round-trip: GetLink returns the same link record.
-let gotLink = [bpfman link get $linkID]
-require not nil gotLink
+guard gotLink <- bpfman link get $linkID
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.target == $link.record.details.target
@@ -75,7 +72,7 @@ assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 
 # Round-trip: our link appears in the link list with the same
 # kind and id.
-let listedLinks = [bpfman link list -o json]
+guard listedLinks <- bpfman link list -o json
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -89,7 +86,7 @@ assert $ourLink.kind == $link.record.kind
 let mapID     = $prog.status.maps[0].id
 let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
 
-let dumpBefore = [exec bpftool map dump id $mapID -j]
+guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
 # Each invocation of e2e.test in helper mode runs e2e_uprobe_call_malloc
@@ -97,13 +94,13 @@ let before     = $dumpBefore.stdout |> jq $sumFilter
 # The REPL exec builtin doesn't take per-command env vars; env(1)
 # sets BPFMAN_E2E_MODE=uprobe-trigger-call-malloc on the spawned process so
 # TestMain dispatches to the helper instead of running tests.
-foreach _ in [jq "[range(5)]" '0'] {
-    require ok exec env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
+foreach _ in (range 5) {
+    guard _ <- env BPFMAN_E2E_MODE=uprobe-trigger-call-malloc ../bin/e2e.test
 }
 
-let dumpAfter = [exec bpftool map dump id $mapID -j]
+guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
-let delta     = [[$after - $before]]
+let delta     = $after - $before
 print $delta
 assert $delta == 5
 

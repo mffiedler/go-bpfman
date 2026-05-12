@@ -1,10 +1,12 @@
 package ebpf
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/cilium/ebpf"
@@ -82,8 +84,8 @@ func DiscoverProgramsFromReader(rd io.ReaderAt) ([]platform.DiscoveredProgram, e
 	}
 
 	// Sort programs by name for deterministic ordering
-	sort.Slice(programs, func(i, j int) bool {
-		return programs[i].Name < programs[j].Name
+	slices.SortFunc(programs, func(a, b platform.DiscoveredProgram) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	// If no loadable programs found, return an appropriate error
@@ -169,12 +171,8 @@ func ValidateProgramsFromReader(rd io.ReaderAt, programNames []string) error {
 	}
 
 	if len(missing) > 0 {
-		sort.Strings(missing)
-		availableList := make([]string, 0, len(available))
-		for name := range available {
-			availableList = append(availableList, name)
-		}
-		sort.Strings(availableList)
+		slices.Sort(missing)
+		availableList := slices.Sorted(maps.Keys(available))
 		return fmt.Errorf("program(s) not found in object file: %v; available programs: %v", missing, availableList)
 	}
 

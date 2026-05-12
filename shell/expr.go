@@ -16,10 +16,11 @@ import (
 // The grammar:
 //
 //	expr    := primary | unary | binary
-//	primary := LiteralExpr | VarRefExpr | AdapterExpr | CmdSubExpr
+//	primary := LiteralExpr | VarRefExpr | AdapterExpr | InterpStringExpr
 //	unary   := UnaryExpr (pred operand)
 //	binary  := BinaryExpr (left op right)
 type Expr interface {
+	Node
 	exprNode()
 }
 
@@ -30,7 +31,7 @@ type Expr interface {
 type LiteralExpr struct {
 	Text   string
 	Quoted bool
-	Loc
+	Span
 }
 
 // VarRefExpr is a variable reference with an optional field/index
@@ -39,7 +40,7 @@ type LiteralExpr struct {
 type VarRefExpr struct {
 	Name string
 	Path string
-	Loc
+	Span
 }
 
 // AdapterExpr is an adapter-decorated variable reference such as
@@ -49,28 +50,7 @@ type AdapterExpr struct {
 	Adapter string
 	Name    string
 	Path    string
-	Loc
-}
-
-// CmdSubExpr is a command substitution [cmd args...]. Inner is the
-// parsed inner program; at evaluation time the evaluator dispatches
-// its single CommandStmt via Env.ExecSubstitution and returns the
-// resulting Value.
-type CmdSubExpr struct {
-	Inner *Program
-	Loc
-}
-
-// ExprSubExpr is an expression substitution [[expr]].  The grammar
-// inside double brackets is the same expression grammar used
-// everywhere else, but the tokeniser runs in strict mode so '-'
-// and '/' split as operators.  At evaluation time the node
-// delegates to its Inner expression; the wrapper exists so source
-// locations point at the '[[' rather than at whatever primary
-// happens to sit at the head of the inner expression.
-type ExprSubExpr struct {
-	Inner Expr
-	Loc
+	Span
 }
 
 // InterpStringExpr is a double-quoted string with one or more
@@ -83,7 +63,7 @@ type ExprSubExpr struct {
 // segment.
 type InterpStringExpr struct {
 	Segments []InterpStringSegment
-	Loc
+	Span
 }
 
 // InterpStringSegment is one alternation inside an
@@ -105,7 +85,7 @@ type BinaryExpr struct {
 	Left  Expr
 	Op    string
 	Right Expr
-	Loc
+	Span
 }
 
 // UnaryExpr is a single-operand predicate. Pred is the only
@@ -116,34 +96,34 @@ type BinaryExpr struct {
 type UnaryExpr struct {
 	Pred    string
 	Operand Expr
-	Loc
+	Span
 }
 
 // ThreadExpr is a value-threading composition: evaluate LHS to a
 // Value, append that Value as the last argument of the command
 // described by Args, and dispatch. The operator binds tighter than
-// comparison operators but looser than the primary forms. Loc
+// comparison operators but looser than the primary forms. Pos
 // identifies the '|>' token itself.
 type ThreadExpr struct {
 	LHS  Expr
 	Args []Expr
-	Loc
+	Span
 }
 
 // LogicalExpr is a short-circuit boolean combinator.  Op is
 // either "and" or "or"; both operands must evaluate to a
-// BoolValue at runtime.  Loc identifies the operator token.
+// BoolValue at runtime.  Pos identifies the operator token.
 type LogicalExpr struct {
 	Op          string
 	Left, Right Expr
-	Loc
+	Span
 }
 
 // NotExpr is boolean negation.  The operand must evaluate to a
-// BoolValue at runtime.  Loc identifies the 'not' token.
+// BoolValue at runtime.  Pos identifies the 'not' token.
 type NotExpr struct {
 	Operand Expr
-	Loc
+	Span
 }
 
 // NegateExpr is arithmetic negation.  The operand must evaluate
@@ -152,7 +132,7 @@ type NotExpr struct {
 // two unary forms live in separate namespaces.
 type NegateExpr struct {
 	Operand Expr
-	Loc
+	Span
 }
 
 // TimeoutExpr is a retry-scoped primary expression that evaluates
@@ -170,7 +150,7 @@ type NegateExpr struct {
 //	until $ready or timeout $max_wait
 type TimeoutExpr struct {
 	Arg Expr
-	Loc
+	Span
 }
 
 // IterationExpr is a retry-scoped primary expression that
@@ -187,14 +167,32 @@ type TimeoutExpr struct {
 //	until $done or iteration $max      -- configurable cap
 type IterationExpr struct {
 	Arg Expr
-	Loc
+	Span
+}
+
+// PureCallExpr is an expression-position invocation of a pure
+// builtin: a name registered in the pure-builtin registry plus
+// exactly Arity primary expressions as arguments. The parser
+// emits it when it sees a bare identifier in expression position
+// whose text matches a registration; the eval path dispatches
+// through ExecBind so the handler resolution is identical to the
+// '<-' bind form, but the result envelope is discarded and only
+// the primary Value flows back into the surrounding expression.
+//
+// Pure-builtin handlers are by contract side-effect-free and
+// return a typed Value rather than an envelope, so the discarded
+// envelope carries no information the script could observe. A
+// handler failure is an evaluation error cited at PureCallExpr's
+// Span, not a captured result the caller could inspect.
+type PureCallExpr struct {
+	Name string
+	Args []Expr
+	Span
 }
 
 func (*LiteralExpr) exprNode()      {}
 func (*VarRefExpr) exprNode()       {}
 func (*AdapterExpr) exprNode()      {}
-func (*CmdSubExpr) exprNode()       {}
-func (*ExprSubExpr) exprNode()      {}
 func (*InterpStringExpr) exprNode() {}
 func (*BinaryExpr) exprNode()       {}
 func (*UnaryExpr) exprNode()        {}
@@ -204,28 +202,38 @@ func (*NotExpr) exprNode()          {}
 func (*NegateExpr) exprNode()       {}
 func (*TimeoutExpr) exprNode()      {}
 func (*IterationExpr) exprNode()    {}
+func (*PureCallExpr) exprNode()     {}
 
 // Env is the execution environment for the evaluator. Session is
-// the variable and alias store; ExecCommand and ExecSubstitution
-// dispatch commands to the REPL's shell and domain pipelines,
-// differing only in output visibility and return-value
-// requirements.
+// the variable and alias store; ExecCommand dispatches top-level
+// commands to the REPL's shell and domain pipelines; ExecBind
+// dispatches command forms on the right of a '<-' bind.
 //
 // A nil ExecCommand makes any top-level CommandStmt a runtime
-// error; a nil ExecSubstitution makes any CmdSubExpr a runtime
-// error. Tests that only exercise expression evaluation can leave
-// both unset.
+// error; a nil ExecBind makes any BindStmt a runtime error.
+// Tests that only exercise expression evaluation can leave both
+// unset.
 type Env struct {
 	Session *Session
 
-	// ExecCommand runs a top-level CommandStmt. The returned
-	// Value may be nil; any output is visible on the CLI.
-	ExecCommand func(args []Arg) (Value, error)
+	// ExecCommand runs a top-level CommandStmt. span is the
+	// originating statement's source extent so handlers (and any
+	// errors they emit) can frame diagnostics at the failing
+	// command. The returned Value may be nil; any output is
+	// visible on the CLI.
+	ExecCommand func(args []Arg, span Span) (Value, error)
 
-	// ExecSubstitution runs a command inside a cmd-sub
-	// expression. Output is suppressed; the returned Value must
-	// be non-nil or the evaluator reports an error.
-	ExecSubstitution func(args []Arg) (Value, error)
+	// ExecBind runs a command form on the right of a '<-' bind.
+	// span is the bind statement's source extent. The returned
+	// BindResult carries the result envelope (Rc) and the
+	// provider's primary result (Primary). Command failure
+	// (non-zero exit, in-process error) is encoded on Rc as OK:
+	// false with code, stdout, and stderr set, not as a Go
+	// error. A Go error is reserved for structural failures
+	// (empty argv, malformed adapter, no provider for this
+	// hook). Set by the REPL driver; nil makes any BindStmt a
+	// runtime error.
+	ExecBind func(args []Arg, span Span) (BindResult, error)
 
 	// ExecAssertStmt runs an AssertStmt: evaluate its expression,
 	// AsBool the result, apply the optional Negate, and dispatch
@@ -242,6 +250,39 @@ type Env struct {
 	// about side output.
 	PrintResult func(Value) error
 
+	// RenderDeferFailure formats a defer-failure for the user.
+	// The shell layer evaluates the deferred command via
+	// ExecBind and, when the rc is not ok, calls this callback
+	// so the driver can emit the labelled-block diagnostic. A
+	// nil callback discards the rendering; the failure still
+	// counts toward the script's exit code via Session.
+	RenderDeferFailure func(stmtLoc Pos, args []Arg, rc Envelope)
+
+	// HandleJobLeak is called once per unmanaged job at scope
+	// exit. The driver renders the diagnostic ('[job] FAIL at
+	// file:line: argv') and is responsible for any cleanup
+	// signal (typically SIGKILL so a leaked background process
+	// does not survive the script). The shell layer increments
+	// Session.RecordJobLeak regardless of whether HandleJobLeak
+	// is set, so the exit code reflects the leak even with a
+	// nil callback.
+	HandleJobLeak func(*Job)
+
+	// defers is the active defer scope's stack. evalDeferStmt
+	// appends; runDefers drains LIFO at scope exit. The
+	// top-level program and def bodies establish new scopes by
+	// saving and replacing the field; if/foreach/retry blocks
+	// share the enclosing scope.
+	defers *[]deferEntry
+
+	// jobs is the active scope's started-job registry. start
+	// appends via RegisterJob; the scope-exit leak check walks
+	// the slice after defers have run (so 'defer kill $job' has
+	// the chance to mark Managed first) and reports any
+	// unmanaged entries. Saved/restored alongside defers so
+	// nested scopes compose.
+	jobs *[]*Job
+
 	// retryStart is the time when the current retry loop began,
 	// or the zero value when no retry is active.  TimeoutExpr
 	// reads it to decide whether a duration has elapsed.
@@ -254,6 +295,19 @@ type Env struct {
 	// retry.  IterationExpr reads it.  evalRetryStmt manages
 	// the save / set / restore dance alongside retryStart.
 	retryIter int
+
+	// Trace, when non-nil, is invoked just before a statement
+	// executes (and again when a deferred command fires at scope
+	// exit). line is the statement's chunk-relative source line;
+	// rendered is a one-line summary of the statement with
+	// interpolations resolved, e.g. an argv with `$prog`
+	// substituted by its compact-JSON form, or `let x = <value>`
+	// after the RHS has evaluated. Drivers typically prepend
+	// `file:line:` and write the result to stderr. shell/ never
+	// decides whether to trace; it only emits when the callback
+	// is non-nil, so policy (a `trace on` toggle, a CLI flag)
+	// lives in the driver-side installer.
+	Trace func(line int, rendered string)
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -285,6 +339,31 @@ func IsUnaryPred(s string) bool {
 // continue that escapes every enclosing ForEachStmt is reported
 // as a runtime error rather than silently swallowed.
 func EvalProgram(prog *Program, env *Env) error {
+	return runWithDeferScope(env, func() error {
+		return evalProgramBody(prog, env)
+	})
+}
+
+// EvalProgramInScope evaluates prog against env without opening a
+// new defer scope. The caller must already have established one
+// (typically via WithDeferScope). Used by script mode, where the
+// REPL drives one balanced chunk at a time but every chunk must
+// share the script-level defer scope so 'defer cleanup' near the
+// top of the file runs at script exit, not at end-of-chunk.
+func EvalProgramInScope(prog *Program, env *Env) error {
+	return evalProgramBody(prog, env)
+}
+
+// WithDeferScope runs fn inside a fresh defer scope, restoring
+// the outer scope on return and executing every registered
+// deferred statement in LIFO order regardless of fn's outcome.
+// Exposed so the REPL can wrap a sequence of EvalProgramInScope
+// calls in one shared scope.
+func WithDeferScope(env *Env, fn func() error) error {
+	return runWithDeferScope(env, fn)
+}
+
+func evalProgramBody(prog *Program, env *Env) error {
 	for _, stmt := range prog.Stmts {
 		err := evalStmt(stmt, env)
 		switch {
@@ -295,39 +374,50 @@ func EvalProgram(prog *Program, env *Env) error {
 		case errors.Is(err, errContinue):
 			return locErrorf(stmtLoc(stmt), "continue outside a foreach loop")
 		default:
-			return err
+			// Defensive safety net: any runtime error that
+			// reached the program level without a Span gets
+			// framed at the offending statement. Most paths
+			// already return a *SyntaxError (frameAtSpan
+			// short-circuits); this catches anything that
+			// slipped through future evaluators or escape
+			// hatches.
+			return frameAtSpan(nodeSpan(stmt), err)
 		}
 	}
 	return nil
 }
 
-// stmtLoc returns the Loc on any Stmt variant.  Used by
+// stmtLoc returns the Pos on any Stmt variant.  Used by
 // EvalProgram to cite a source location when break / continue
 // reach the top level without being caught by a loop.
-func stmtLoc(s Stmt) Loc {
+func stmtLoc(s Stmt) Pos {
 	switch v := s.(type) {
 	case *LetStmt:
-		return v.Loc
+		return v.Pos
+	case *BindStmt:
+		return v.Pos
+	case *DeferStmt:
+		return v.Pos
 	case *IfStmt:
-		return v.Loc
+		return v.Pos
 	case *CommandStmt:
-		return v.Loc
+		return v.Pos
 	case *ExprStmt:
-		return v.Loc
+		return v.Pos
 	case *ForEachStmt:
-		return v.Loc
+		return v.Pos
 	case *RetryStmt:
-		return v.Loc
+		return v.Pos
 	case *BreakStmt:
-		return v.Loc
+		return v.Pos
 	case *ContinueStmt:
-		return v.Loc
+		return v.Pos
 	case *DefStmt:
-		return v.Loc
+		return v.Pos
 	case *AssertStmt:
-		return v.Loc
+		return v.Pos
 	}
-	return Loc{}
+	return Pos{}
 }
 
 // errBreak and errContinue are sentinel errors that carry a
@@ -347,10 +437,21 @@ func evalStmt(stmt Stmt, env *Env) error {
 			return err
 		}
 		if val.IsNil() {
-			return locErrorf(s.Loc, "expression produced no result to assign")
+			return spanErrorf(s.Span, "expression produced no result to assign")
+		}
+		if env.Trace != nil {
+			rendered, rerr := RenderCompact(val)
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %s>", val.Kind())
+			}
+			env.Trace(s.Span.Pos.Line, fmt.Sprintf("let %s = %s", s.Name, rendered))
 		}
 		env.Session.Set(s.Name, val)
 		return nil
+	case *BindStmt:
+		return evalBindStmt(s, env)
+	case *DeferStmt:
+		return evalDeferStmt(s, env)
 	case *IfStmt:
 		return evalIfStmt(s, env)
 	case *CommandStmt:
@@ -369,7 +470,7 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalDefStmt(s, env)
 	case *AssertStmt:
 		if env.ExecAssertStmt == nil {
-			return locErrorf(s.Loc, "assert/require has no executor on the env")
+			return spanErrorf(s.Span, "assert/require has no executor on the env")
 		}
 		return env.ExecAssertStmt(s, env)
 	default:
@@ -384,7 +485,7 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 		Name:   s.Name,
 		Params: s.Params,
 		Body:   s.Body,
-		Loc:    s.Loc,
+		Span:   s.Span,
 	})
 	return nil
 }
@@ -399,10 +500,10 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 // absent) before the body runs and reinstated afterwards. Recursion
 // works naturally because each call's saves slice is local to its
 // invocation.
-func callDef(def *DefValue, args []Arg, callLoc Loc, env *Env) error {
+func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 	if len(args) != len(def.Params) {
 		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
-			def.Name, len(def.Params), len(args), def.Loc.Line, def.Loc.Col)
+			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
 	type saved struct {
 		name string
@@ -424,12 +525,14 @@ func callDef(def *DefValue, args []Arg, callLoc Loc, env *Env) error {
 			}
 		}
 	}()
-	for _, stmt := range def.Body {
-		if err := evalStmt(stmt, env); err != nil {
-			return err
+	return runWithDeferScope(env, func() error {
+		for _, stmt := range def.Body {
+			if err := evalStmt(stmt, env); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // argToValue converts a post-expansion Arg into a Value suitable for
@@ -463,9 +566,7 @@ func argToValue(a Arg) Value {
 // back must save it explicitly.
 // retryBackoff is the fixed sleep between retry iterations.
 // Small enough to keep short condition windows responsive, large
-// enough to avoid pegging the CPU for long-running checks.  A
-// future enhancement could expose this via a CLI flag or
-// environment variable.
+// enough to avoid pegging the CPU for long-running checks.
 const retryBackoff = 100 * time.Millisecond
 
 // evalRetryStmt runs s.Body repeatedly until s.Until evaluates
@@ -519,7 +620,7 @@ func evalRetryStmt(s *RetryStmt, env *Env) error {
 		}
 		untilB, err := AsBool(untilV)
 		if err != nil {
-			return locErrorf(s.Loc, "retry: until expression: %v", err)
+			return spanErrorf(s.Span, "retry: until expression: %v", err)
 		}
 		if untilB {
 			return bodyErr
@@ -534,7 +635,7 @@ func evalRetryStmt(s *RetryStmt, env *Env) error {
 // measure against.
 func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 	if env.retryStart.IsZero() {
-		return Value{}, locErrorf(e.Loc, "timeout expression is only valid inside a retry body or its until clause")
+		return Value{}, spanErrorf(e.Span, "timeout expression is only valid inside a retry body or its until clause")
 	}
 	v, err := EvalExpr(e.Arg, env)
 	if err != nil {
@@ -542,11 +643,11 @@ func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "timeout: argument must be a scalar duration: %v", err)
+		return Value{}, spanErrorf(e.Span, "timeout: argument must be a scalar duration: %v", err)
 	}
 	d, err := parseDurationLiteral(s)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "timeout: %v", err)
+		return Value{}, spanErrorf(e.Span, "timeout: %v", err)
 	}
 	return BoolValue(time.Since(env.retryStart) >= d), nil
 }
@@ -556,7 +657,7 @@ func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
 // Outside a retry context (Env.retryIter zero) it errors.
 func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
 	if env.retryIter == 0 {
-		return Value{}, locErrorf(e.Loc, "iteration expression is only valid inside a retry body or its until clause")
+		return Value{}, spanErrorf(e.Span, "iteration expression is only valid inside a retry body or its until clause")
 	}
 	v, err := EvalExpr(e.Arg, env)
 	if err != nil {
@@ -564,14 +665,14 @@ func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "iteration: argument must be a scalar count: %v", err)
+		return Value{}, spanErrorf(e.Span, "iteration: argument must be a scalar count: %v", err)
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "iteration: %q is not a valid integer count", s)
+		return Value{}, spanErrorf(e.Span, "iteration: %q is not a valid integer count", s)
 	}
 	if n < 0 {
-		return Value{}, locErrorf(e.Loc, "iteration: count %d is negative", n)
+		return Value{}, spanErrorf(e.Span, "iteration: count %d is negative", n)
 	}
 	return BoolValue(env.retryIter >= n), nil
 }
@@ -582,11 +683,11 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 		return err
 	}
 	if v.IsNil() {
-		return locErrorf(s.Loc, "foreach: list expression is null")
+		return spanErrorf(s.Span, "foreach: list expression is null")
 	}
 	list, ok := v.Raw().([]any)
 	if !ok {
-		return locErrorf(s.Loc, "foreach: expected a list, got %s", v.Kind())
+		return spanErrorf(s.Span, "foreach: expected a list, got %s", v.Kind())
 	}
 	// The loop variable is body-scoped: any prior binding of the
 	// same name is restored after the loop ends, and a name that
@@ -605,6 +706,13 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 iter:
 	for _, elem := range list {
 		env.Session.Set(s.Name, ValueFromAny(elem))
+		if env.Trace != nil {
+			rendered, rerr := RenderCompact(ValueFromAny(elem))
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %T>", elem)
+			}
+			env.Trace(s.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", s.Name, rendered))
+		}
 		for _, stmt := range s.Body {
 			err := evalStmt(stmt, env)
 			switch {
@@ -628,7 +736,11 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		if err != nil {
 			return false, err
 		}
-		return AsBool(v)
+		b, err := AsBool(v)
+		if err != nil {
+			return false, spanErrorf(nodeSpan(cond), "if: %v", err)
+		}
+		return b, nil
 	}
 	runBody := func(body []Stmt) error {
 		for _, stmt := range body {
@@ -660,23 +772,301 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 	return nil
 }
 
+// deferEntry is one captured invocation in a defer scope. Args
+// are evaluated at register time and frozen onto the entry; Cmd
+// holds the original command form so the diagnostic renderer can
+// cite the source location of the defer statement.
+type deferEntry struct {
+	Span
+	Args []Arg
+
+	// trace is the Env.Trace callback captured at registration
+	// time, or nil if tracing was not active when defer ran.
+	// runDefers invokes this saved callback (not the current
+	// env.Trace) so the fire trace cites the file:line of the
+	// REGISTRATION site, not whatever chunk happens to be
+	// unwinding. Without this, a script-scope defer registered
+	// in chunk 5 but fired at scope exit in chunk 152 would
+	// inherit chunk 152's shift and cite the wrong line.
+	trace func(line int, rendered string)
+}
+
+// evalDeferStmt evaluates the deferred command's arguments now
+// (so values are captured at register time, not at scope exit)
+// and appends the entry to the active defer scope's stack. A
+// missing scope is a runtime error; the parser does not enforce
+// that defer is reachable, so a malformed driver could trip this
+// check.
+func evalDeferStmt(s *DeferStmt, env *Env) error {
+	if env.defers == nil {
+		return spanErrorf(s.Span, "defer outside any defer scope")
+	}
+	args, err := EvalArgs(s.Cmd.Args, env)
+	if err != nil {
+		return err
+	}
+	if env.Trace != nil {
+		env.Trace(s.Span.Pos.Line, "defer "+renderArgvTrace(args))
+	}
+	*env.defers = append(*env.defers, deferEntry{
+		Span:  s.Span,
+		Args:  args,
+		trace: env.Trace,
+	})
+	return nil
+}
+
+// runDefers drains stack in LIFO order, dispatching each entry
+// via env.ExecBind. A non-ok rc is rendered through
+// RenderDeferFailure (when set) and counted via Session so the
+// script's exit code reflects the failure; cleanup continues
+// across failures. Structural errors from ExecBind are rare;
+// they are rendered with an empty-rc envelope so the user still
+// sees a labelled block.
+func runDefers(env *Env, stack []deferEntry) {
+	if env.ExecBind == nil {
+		return
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		entry := stack[i]
+		// Use the trace callback captured at registration so
+		// the fire's file:line cites where defer was written,
+		// not where the surrounding scope happens to be
+		// unwinding. Fall back to the current env.Trace only
+		// when tracing was off at registration time but is on
+		// now -- still useful, even if the line is approximate.
+		traceFn := entry.trace
+		if traceFn == nil {
+			traceFn = env.Trace
+		}
+		if traceFn != nil {
+			traceFn(entry.Pos.Line, "defer fire: "+renderArgvTrace(entry.Args))
+		}
+		result, err := env.ExecBind(entry.Args, entry.Span)
+		if err != nil {
+			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			if env.RenderDeferFailure != nil {
+				env.RenderDeferFailure(entry.Pos, entry.Args, rc)
+			}
+			env.Session.RecordDeferFailure()
+			continue
+		}
+		if !result.Rc.OK {
+			if env.RenderDeferFailure != nil {
+				env.RenderDeferFailure(entry.Pos, entry.Args, result.Rc)
+			}
+			env.Session.RecordDeferFailure()
+		}
+	}
+}
+
+// RegisterJob appends a started Job to the active job scope's
+// registry so the scope-exit leak check can detect an unmanaged
+// lifecycle. Outside any job scope (no driver-established
+// WithJobScope) the call is a no-op: there is nothing to leak
+// from. j must be non-nil; nil is reserved for "no job" rather
+// than used as a sentinel here.
+func (e *Env) RegisterJob(j *Job) {
+	if e.jobs == nil {
+		return
+	}
+	*e.jobs = append(*e.jobs, j)
+}
+
+// ActiveJobs returns a snapshot of the jobs registered in the
+// innermost active job scope, in registration order. The slice
+// is a fresh copy so callers may sort or filter without
+// disturbing the registry. Outside any job scope the result is
+// nil. Used by the 'jobs' builtin to list everything alive in
+// the current session.
+func (e *Env) ActiveJobs() []*Job {
+	if e.jobs == nil {
+		return nil
+	}
+	out := make([]*Job, len(*e.jobs))
+	copy(out, *e.jobs)
+	return out
+}
+
+// ReapJobs removes every job from the active job scope's
+// registry for which shouldReap returns true. Registration
+// order is preserved for survivors. Outside any job scope
+// the call is a no-op. Used by the 'reap' builtin to drop
+// completed entries while leaving running jobs alone; the
+// predicate shape lets callers choose their own definition
+// of 'done' (closed Done channel, Managed flag, both, ...).
+func (e *Env) ReapJobs(shouldReap func(*Job) bool) {
+	if e.jobs == nil {
+		return
+	}
+	src := *e.jobs
+	dst := src[:0]
+	for _, j := range src {
+		if !shouldReap(j) {
+			dst = append(dst, j)
+		}
+	}
+	// Clear any tail references so reaped jobs are not held
+	// alive by the underlying array.
+	for i := len(dst); i < len(src); i++ {
+		src[i] = nil
+	}
+	*e.jobs = dst
+}
+
+// runWithDeferScope establishes a defer scope around fn. The
+// previous scope is saved and restored on exit so nested scopes
+// (program, def body) compose. fn's error is returned verbatim;
+// defer execution happens regardless of fn's outcome.
+//
+// Defer scopes are independent of job scopes (see WithJobScope)
+// because they nest differently: a def body opens its own defer
+// scope (defers fire at def return) but inherits the caller's
+// job scope (a job started in a def joins the caller's
+// registry, so returning the handle for the caller to wait is
+// not flagged as a leak).
+func runWithDeferScope(env *Env, fn func() error) error {
+	saved := env.defers
+	var stack []deferEntry
+	env.defers = &stack
+	bodyErr := fn()
+	env.defers = saved
+	runDefers(env, stack)
+	return bodyErr
+}
+
+// WithJobScope establishes a job scope around fn: any Job that
+// fn registers via Env.RegisterJob is tracked in this scope's
+// registry, and on exit each unmanaged entry is reported through
+// HandleJobLeak and counted on the session.
+//
+// Drivers open exactly one job scope per session unit: the whole
+// script in script mode, the whole sourced file in source mode,
+// the whole interactive session in interactive mode. Inner
+// blocks (def bodies, foreach, retry) deliberately do not open
+// new job scopes, so a job started inside a def joins the
+// caller's registry and survives the def's return without
+// being flagged.
+//
+// Job leak reporting runs after fn returns. When the driver
+// composes WithJobScope around an outer WithDeferScope (the
+// usual shape: defers nest inside jobs), the outer defers run
+// before the leak walk, so 'defer kill $job' marks a job
+// Managed before the leak walk sees it.
+func WithJobScope(env *Env, fn func() error) error {
+	saved := env.jobs
+	var jobs []*Job
+	env.jobs = &jobs
+	bodyErr := fn()
+	env.jobs = saved
+	reportJobLeaks(env, jobs)
+	return bodyErr
+}
+
+// reportJobLeaks walks the scope's registered jobs and invokes
+// HandleJobLeak on any the script never marked Managed (via
+// wait or kill). The handler owns the policy: a strict driver
+// renders a diagnostic, kills the process, and records the
+// leak on the session so the run exits non-zero; a friendly
+// driver kills silently and leaves the session counter
+// untouched. The shell layer takes no opinion -- a nil handler
+// means "nothing to do; the leak passes silently".
+func reportJobLeaks(env *Env, jobs []*Job) {
+	if env.HandleJobLeak == nil {
+		return
+	}
+	for _, j := range jobs {
+		if j.IsManaged() {
+			continue
+		}
+		env.HandleJobLeak(j)
+	}
+}
+
+// evalBindStmt runs the command form on the right of a '<-' bind
+// and assigns its result. For guard, a non-ok rc halts via
+// GuardFailure with no bindings happening. For let, bindings
+// happen regardless of rc.ok, with the rc carrying ok: false on
+// failure so the consumer can inspect it.
+//
+// Single-name binding (Rc == "") binds Primary only. Tuple
+// binding (Rc set) binds both names. "_" as a name discards that
+// slot.
+func evalBindStmt(s *BindStmt, env *Env) error {
+	if env.ExecBind == nil {
+		return spanErrorf(s.Span, "'<-' bind: command execution is not configured")
+	}
+	args, err := EvalArgs(s.Cmd.Args, env)
+	if err != nil {
+		return err
+	}
+	if env.Trace != nil {
+		header := bindTraceHeader(s)
+		env.Trace(s.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
+	}
+	result, err := env.ExecBind(args, s.Span)
+	if err != nil {
+		return frameAtSpan(s.Span, err)
+	}
+	if s.Guard && !result.Rc.OK {
+		return &GuardFailure{Span: s.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
+	}
+	if s.Rc != "" && s.Rc != "_" {
+		env.Session.Set(s.Rc, ValueFromEnvelope(result.Rc))
+	}
+	if s.Primary != "" && s.Primary != "_" {
+		env.Session.Set(s.Primary, result.Primary)
+	}
+	return nil
+}
+
+// GuardFailure is the error type a 'guard ... <- CMD' statement
+// returns when the captured rc is not ok. The driver formats the
+// failure through its renderer; the language layer carries the
+// envelope so the renderer has the captured stdout, stderr, exit
+// code, and the offending bind's source location, plus the
+// resolved Args so the renderer can show the command line that
+// failed and the Primary name (the bind target the user wrote)
+// for the diagnostic.
+type GuardFailure struct {
+	Span
+	Primary  string
+	Args     []Arg
+	Envelope Envelope
+}
+
+func (e *GuardFailure) Error() string {
+	target := e.Primary
+	if target == "" || target == "_" {
+		target = "_"
+	}
+	if e.Envelope.Stderr != "" {
+		return fmt.Sprintf("guard %s: command failed (exit %d): %s",
+			target, e.Envelope.Code, e.Envelope.Stderr)
+	}
+	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.Code)
+}
+
 func evalCommandStmt(s *CommandStmt, env *Env) error {
 	args, err := EvalArgs(s.Args, env)
 	if err != nil {
 		return err
 	}
+	if env.Trace != nil {
+		env.Trace(s.Span.Pos.Line, renderArgvTrace(args))
+	}
 	if len(args) > 0 {
 		if name, ok := commandHeadName(args[0]); ok {
 			if def, hit := env.Session.GetDef(name); hit {
-				return callDef(def, args[1:], s.Loc, env)
+				return callDef(def, args[1:], s.Pos, env)
 			}
 		}
 	}
 	if env.ExecCommand == nil {
-		return locErrorf(s.Loc, "command execution is not configured")
+		return spanErrorf(s.Span, "command execution is not configured")
 	}
-	_, err = env.ExecCommand(args)
-	return err
+	_, err = env.ExecCommand(args, s.Span)
+	return frameAtSpan(s.Span, err)
 }
 
 // commandHeadName extracts the command name from the first argument
@@ -717,6 +1107,11 @@ func evalExprStmt(s *ExprStmt, env *Env) error {
 // binary and unary expressions combine their operands per their op
 // or predicate. Adapter references are rejected — they only make
 // sense as command arguments.
+// EvalExpr is the public expression entry point. Each leaf
+// evaluator is responsible for wrapping its own errors with a
+// Span; callers above the evaluator (e.g. the chunk runner) add
+// a final safety net that frames anything that escaped here
+// without a Span.
 func EvalExpr(expr Expr, env *Env) (Value, error) {
 	switch e := expr.(type) {
 	case *LiteralExpr:
@@ -724,11 +1119,7 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 	case *VarRefExpr:
 		return resolveVarRefValue(e, env)
 	case *AdapterExpr:
-		return Value{}, locErrorf(e.Loc, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
-	case *CmdSubExpr:
-		return dispatchCmdSub(e, env)
-	case *ExprSubExpr:
-		return EvalExpr(e.Inner, env)
+		return Value{}, spanErrorf(e.Span, "adapter %s:$%s cannot be used as an expression operand", e.Adapter, e.Name)
 	case *InterpStringExpr:
 		return evalInterpString(e, env)
 	case *ThreadExpr:
@@ -747,9 +1138,47 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalTimeoutExpr(e, env)
 	case *IterationExpr:
 		return evalIterationExpr(e, env)
+	case *PureCallExpr:
+		return dispatchPureCall(e, env)
 	default:
 		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
 	}
+}
+
+// dispatchPureCall evaluates the pure-builtin call's arguments,
+// hands them to ExecBind (the same dispatch path the '<-' form
+// uses) with the builtin name prepended, then returns the
+// primary Value. The result envelope is discarded because pure
+// builtins are by contract side-effect-free and have no failure
+// state worth capturing; a handler error halts the expression.
+func dispatchPureCall(e *PureCallExpr, env *Env) (Value, error) {
+	if env.ExecBind == nil {
+		return Value{}, spanErrorf(e.Span, "%s: pure-builtin calls require an active command dispatcher", e.Name)
+	}
+	args := make([]Arg, 0, len(e.Args)+1)
+	args = append(args, WordArg{Text: e.Name, Span: e.Span})
+	for _, a := range e.Args {
+		v, err := EvalExpr(a, env)
+		if err != nil {
+			return Value{}, err
+		}
+		arg, err := valueToArg(v, nodeSpan(a))
+		if err != nil {
+			return Value{}, spanErrorf(nodeSpan(a), "%s: %v", e.Name, err)
+		}
+		args = append(args, arg)
+	}
+	result, err := env.ExecBind(args, e.Span)
+	if err != nil {
+		return Value{}, frameAtSpan(e.Span, err)
+	}
+	if !result.Rc.OK {
+		if result.Rc.Stderr != "" {
+			return Value{}, spanErrorf(e.Span, "%s: %s", e.Name, result.Rc.Stderr)
+		}
+		return Value{}, spanErrorf(e.Span, "%s: call failed (exit %d)", e.Name, result.Rc.Code)
+	}
+	return result.Primary, nil
 }
 
 // evalLogical evaluates 'and' / 'or' with short-circuit
@@ -766,7 +1195,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 	}
 	leftB, err := AsBool(leftV)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "%s: left: %v", e.Op, err)
+		return Value{}, spanErrorf(e.Span, "%s: left: %v", e.Op, err)
 	}
 	switch e.Op {
 	case "and":
@@ -778,7 +1207,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 			return BoolValue(true), nil
 		}
 	default:
-		return Value{}, locErrorf(e.Loc, "unknown logical operator %q", e.Op)
+		return Value{}, spanErrorf(e.Span, "unknown logical operator %q", e.Op)
 	}
 	rightV, err := EvalExpr(e.Right, env)
 	if err != nil {
@@ -786,7 +1215,7 @@ func evalLogical(e *LogicalExpr, env *Env) (Value, error) {
 	}
 	rightB, err := AsBool(rightV)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "%s: right: %v", e.Op, err)
+		return Value{}, spanErrorf(e.Span, "%s: right: %v", e.Op, err)
 	}
 	return BoolValue(rightB), nil
 }
@@ -801,7 +1230,7 @@ func evalNot(e *NotExpr, env *Env) (Value, error) {
 	}
 	b, err := AsBool(v)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "not: %v", err)
+		return Value{}, spanErrorf(e.Span, "not: %v", err)
 	}
 	return BoolValue(!b), nil
 }
@@ -853,7 +1282,7 @@ func evalInterpString(e *InterpStringExpr, env *Env) (Value, error) {
 		}
 		s, err := RenderCompact(v)
 		if err != nil {
-			return Value{}, locErrorf(exprLoc(seg.Expr), "interpolation: %v", err)
+			return Value{}, spanErrorf(nodeSpan(seg.Expr), "interpolation: %v", err)
 		}
 		b.WriteString(s)
 	}
@@ -882,11 +1311,86 @@ func RenderCompact(v Value) (string, error) {
 	return v.Scalar()
 }
 
+// argTraceText renders a single Arg as text suitable for an
+// execution trace. Scalars and word forms emit their resolved
+// text; structured values render as compact JSON so the user can
+// see the value that flowed into the call rather than the bare
+// `$name` placeholder; adapter args keep their `adapter:$var.path`
+// form because the temp-file backing path is uninteresting for
+// debugging. Mirrors the cmd-side argText spelling, with the
+// deliberate difference that StructuredValueArg yields the value
+// not the variable name.
+func argTraceText(a Arg) string {
+	switch v := a.(type) {
+	case WordArg:
+		return v.Text
+	case QuotedArg:
+		return v.Text
+	case ScalarValueArg:
+		return v.Text
+	case StructuredValueArg:
+		s, err := RenderCompact(v.Value)
+		if err != nil {
+			return "$" + v.Name
+		}
+		return s
+	case AdapterArg:
+		if v.Path != "" {
+			return fmt.Sprintf("%s:$%s.%s", v.Adapter, v.Name, v.Path)
+		}
+		return fmt.Sprintf("%s:$%s", v.Adapter, v.Name)
+	default:
+		return ""
+	}
+}
+
+// renderArgvTrace joins the resolved Arg list as a single line for
+// the trace hook. Whitespace inside a scalar is left as-is; the
+// trace is for human reading, not for re-parsing, so re-quoting
+// every value would obscure more than it clarifies.
+func renderArgvTrace(args []Arg) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = argTraceText(a)
+	}
+	return strings.Join(parts, " ")
+}
+
+// bindTraceHeader formats the left-hand side of a BindStmt for the
+// trace output: `let r`, `let (rc, v)`, `guard r`, `guard (rc, v)`,
+// or `let _` when neither slot was named. The user typed this
+// verbatim in source; reproducing it in the trace makes it easy to
+// match an entry to the binding line.
+func bindTraceHeader(s *BindStmt) string {
+	verb := "let"
+	if s.Guard {
+		verb = "guard"
+	}
+	rc := s.Rc
+	primary := s.Primary
+	switch {
+	case rc != "" && primary != "":
+		return fmt.Sprintf("%s (%s, %s)", verb, named(rc), named(primary))
+	case primary != "":
+		return fmt.Sprintf("%s %s", verb, named(primary))
+	case rc != "":
+		return fmt.Sprintf("%s %s", verb, named(rc))
+	default:
+		return verb + " _"
+	}
+}
+
+// named keeps `_` for the discard slot and adds nothing else; the
+// name is already a bare identifier in the source.
+func named(s string) string {
+	if s == "" {
+		return "_"
+	}
+	return s
+}
+
 // EvalArgs evaluates each Expr in exprs as a command argument and
-// returns the resulting []Arg, suitable for dispatch. Command
-// substitutions nested inside the list are evaluated via
-// Env.ExecSubstitution, with their results wrapped as
-// ScalarValueArg/StructuredValueArg according to their shape.
+// returns the resulting []Arg, suitable for dispatch.
 func EvalArgs(exprs []Expr, env *Env) ([]Arg, error) {
 	out := make([]Arg, 0, len(exprs))
 	for _, e := range exprs {
@@ -903,45 +1407,13 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 	switch e := expr.(type) {
 	case *LiteralExpr:
 		if e.Quoted {
-			return QuotedArg{Text: e.Text}, nil
+			return QuotedArg{Text: e.Text, Span: e.Span}, nil
 		}
-		return WordArg{Text: e.Text}, nil
+		return WordArg{Text: e.Text, Span: e.Span}, nil
 	case *VarRefExpr:
 		return resolveVarRefArg(e, env)
 	case *AdapterExpr:
 		return resolveAdapterArg(e, env)
-	case *CmdSubExpr:
-		val, err := dispatchCmdSub(e, env)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "nested command substitution produced no value")
-		}
-		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, locErrorf(e.Loc, "nested command substitution: %v", err)
-		}
-		return ScalarValueArg{Text: s}, nil
-	case *ExprSubExpr:
-		val, err := EvalExpr(e.Inner, env)
-		if err != nil {
-			return nil, err
-		}
-		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "expression substitution produced no value")
-		}
-		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
-		}
-		s, err := val.Scalar()
-		if err != nil {
-			return nil, locErrorf(e.Loc, "expression substitution: %v", err)
-		}
-		return ScalarValueArg{Text: s}, nil
 	case *InterpStringExpr:
 		val, err := evalInterpString(e, env)
 		if err != nil {
@@ -949,25 +1421,25 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		}
 		s, err := val.Scalar()
 		if err != nil {
-			return nil, locErrorf(e.Loc, "interpolated string: %v", err)
+			return nil, spanErrorf(e.Span, "interpolated string: %v", err)
 		}
-		return ScalarValueArg{Text: s}, nil
+		return ScalarValueArg{Text: s, Span: e.Span}, nil
 	case *ThreadExpr:
 		val, err := dispatchThread(e, env)
 		if err != nil {
 			return nil, err
 		}
 		if val.IsNil() {
-			return nil, locErrorf(e.Loc, "thread produced no value")
+			return nil, spanErrorf(e.Span, "thread produced no value")
 		}
 		if val.IsStructured() {
-			return StructuredValueArg{Value: val}, nil
+			return StructuredValueArg{Value: val, Span: e.Span}, nil
 		}
 		s, err := val.Scalar()
 		if err != nil {
-			return nil, locErrorf(e.Loc, "thread: %v", err)
+			return nil, spanErrorf(e.Span, "thread: %v", err)
 		}
-		return ScalarValueArg{Text: s}, nil
+		return ScalarValueArg{Text: s, Span: e.Span}, nil
 	case *MatchesBlockExpr:
 		return evalMatchesBlockArg(e, env)
 	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *NegateExpr, *TimeoutExpr, *IterationExpr:
@@ -980,38 +1452,42 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 func resolveVarRefValue(e *VarRefExpr, env *Env) (Value, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return Value{}, locErrorf(e.Loc, "undefined variable %q", e.Name)
+		return Value{}, spanErrorf(e.Span, "undefined variable %q", e.Name)
 	}
 	if e.Path == "" {
 		return v, nil
 	}
-	return v.LookupValue(e.Name, e.Path)
+	lv, err := v.LookupValue(e.Name, e.Path)
+	if err != nil {
+		return Value{}, spanErrorf(e.Span, "%v", err)
+	}
+	return lv, nil
 }
 
 func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return nil, locErrorf(e.Loc, "undefined variable: %s", e.Name)
+		return nil, spanErrorf(e.Span, "undefined variable: %s", e.Name)
 	}
 	resolved := v
 	if e.Path != "" {
 		lv, err := v.LookupValue(e.Name, e.Path)
 		if err != nil {
-			return nil, err
+			return nil, spanErrorf(e.Span, "%v", err)
 		}
 		resolved = lv
 	}
 	if resolved.IsNil() {
-		return nil, locErrorf(e.Loc, "variable %s is null", qualify(e.Name, e.Path))
+		return nil, spanErrorf(e.Span, "variable %s is null", qualify(e.Name, e.Path))
 	}
 	if resolved.IsStructured() {
-		return StructuredValueArg{Name: e.Name, Value: resolved}, nil
+		return StructuredValueArg{Name: e.Name, Value: resolved, Span: e.Span}, nil
 	}
 	s, err := resolved.Scalar()
 	if err != nil {
-		return nil, locErrorf(e.Loc, "variable %s: %v", qualify(e.Name, e.Path), err)
+		return nil, spanErrorf(e.Span, "variable %s: %v", qualify(e.Name, e.Path), err)
 	}
-	return ScalarValueArg{Text: s}, nil
+	return ScalarValueArg{Text: s, Span: e.Span}, nil
 }
 
 // qualify produces a "name.path" string for error messages, or
@@ -1026,100 +1502,86 @@ func qualify(name, path string) string {
 func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 	v, ok := env.Session.Get(e.Name)
 	if !ok {
-		return nil, locErrorf(e.Loc, "undefined variable: %s", e.Name)
+		return nil, spanErrorf(e.Span, "undefined variable: %s", e.Name)
 	}
 	resolved := v
 	if e.Path != "" {
 		lv, err := v.LookupValue(e.Name, e.Path)
 		if err != nil {
-			return nil, err
+			return nil, spanErrorf(e.Span, "%v", err)
 		}
 		resolved = lv
 	}
 	if resolved.IsNil() {
-		return nil, locErrorf(e.Loc, "adapter %s: variable %s is null", e.Adapter, e.Name)
+		return nil, spanErrorf(e.Span, "adapter %s: variable %s is null", e.Adapter, e.Name)
 	}
 	return AdapterArg{
 		Adapter: e.Adapter,
 		Name:    e.Name,
 		Path:    e.Path,
 		Value:   resolved,
+		Span:    e.Span,
 	}, nil
 }
 
-// dispatchThread evaluates a threading expression by threading the LHS's
-// Value into the command described by Args.  The LHS Value
+// dispatchThread evaluates a threading expression by threading the
+// LHS's Value into the command described by Args. The LHS Value
 // becomes the last element of the evaluated argument list so it
 // matches the convention used by jq, file temp, and most
-// shell-style "CMD ARGS VALUE" invocations.
+// shell-style "CMD ARGS VALUE" invocations. The thread errors
+// loudly when the underlying command's result is not ok; in
+// expression position there is no envelope slot to inspect, so
+// failure must propagate.
 func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
-	if env.ExecSubstitution == nil {
-		return Value{}, locErrorf(e.Loc, "thread requires a substitution runner; none configured")
+	if env.ExecBind == nil {
+		return Value{}, spanErrorf(e.Span, "'|>' is only valid where commands can run; not available in this context")
 	}
 	lhsVal, err := EvalExpr(e.LHS, env)
 	if err != nil {
 		return Value{}, err
 	}
 	if lhsVal.IsNil() {
-		return Value{}, locErrorf(e.Loc, "thread: left-hand side is null")
+		return Value{}, spanErrorf(e.Span, "thread: left-hand side is null")
 	}
 	args, err := EvalArgs(e.Args, env)
 	if err != nil {
 		return Value{}, err
 	}
-	lhsArg, err := valueToArg(lhsVal)
+	lhsArg, err := valueToArg(lhsVal, nodeSpan(e.LHS))
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "thread: %v", err)
+		return Value{}, spanErrorf(e.Span, "thread: %v", err)
 	}
-	return env.ExecSubstitution(append(args, lhsArg))
+	result, err := env.ExecBind(append(args, lhsArg), e.Span)
+	if err != nil {
+		return Value{}, frameAtSpan(e.Span, err)
+	}
+	if !result.Rc.OK {
+		if result.Rc.Stderr != "" {
+			return Value{}, spanErrorf(e.Span, "thread: command failed (exit %d): %s", result.Rc.Code, result.Rc.Stderr)
+		}
+		return Value{}, spanErrorf(e.Span, "thread: command failed (exit %d)", result.Rc.Code)
+	}
+	return result.Primary, nil
 }
 
 // valueToArg wraps a Value in the most specific Arg variant for
 // the dispatch boundary: structured values stay structured,
-// scalars become ScalarValueArg, nil is a caller problem.
-func valueToArg(v Value) (Arg, error) {
+// scalars become ScalarValueArg, nil is a caller problem. span
+// is attached to the resulting Arg so command-handler parsers
+// can frame argument-position errors at the originating
+// expression.
+func valueToArg(v Value, span Span) (Arg, error) {
 	if v.IsNil() {
 		return nil, fmt.Errorf("value is null")
 	}
 	if v.IsStructured() {
-		return StructuredValueArg{Value: v}, nil
+		return StructuredValueArg{Value: v, Span: span}, nil
 	}
 	s, err := v.Scalar()
 	if err != nil {
 		return nil, err
 	}
-	return ScalarValueArg{Text: s}, nil
-}
-
-// dispatchCmdSub evaluates a command-substitution expression and
-// returns its value.  The inner program must contain exactly one
-// statement.  An ExprStmt is a bracketed expression ("[1 == 1]",
-// "[$x == $y]") and is evaluated directly.  A CommandStmt is a
-// command invocation ("[bpfman ...]", "[jq ...]") and is dispatched
-// via env.ExecSubstitution.  Any other statement form — let, if,
-// foreach, retry, break, continue — is rejected.
-func dispatchCmdSub(e *CmdSubExpr, env *Env) (Value, error) {
-	if e.Inner == nil || len(e.Inner.Stmts) == 0 {
-		return Value{}, locErrorf(e.Loc, "empty command substitution")
-	}
-	if len(e.Inner.Stmts) != 1 {
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a single command or expression")
-	}
-	switch stmt := e.Inner.Stmts[0].(type) {
-	case *ExprStmt:
-		return EvalExpr(stmt.Expr, env)
-	case *CommandStmt:
-		if env.ExecSubstitution == nil {
-			return Value{}, locErrorf(e.Loc, "command substitution is not permitted in this context")
-		}
-		args, err := EvalArgs(stmt.Args, env)
-		if err != nil {
-			return Value{}, err
-		}
-		return env.ExecSubstitution(args)
-	default:
-		return Value{}, locErrorf(e.Loc, "command substitution must contain a command or expression, got %T", stmt)
-	}
+	return ScalarValueArg{Text: s, Span: span}, nil
 }
 
 func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
@@ -1134,19 +1596,19 @@ func evalBinary(e *BinaryExpr, env *Env) (Value, error) {
 	if isArithmeticOpText(e.Op) {
 		left, err := leftV.Scalar()
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "binary %s: left: %v", e.Op, err)
+			return Value{}, spanErrorf(e.Span, "binary %s: left: %v", e.Op, err)
 		}
 		right, err := rightV.Scalar()
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "binary %s: right: %v", e.Op, err)
+			return Value{}, spanErrorf(e.Span, "binary %s: right: %v", e.Op, err)
 		}
 		v, err := evalArithmetic(e.Op, left, right)
 		if err != nil {
-			return Value{}, locErrorf(e.Loc, "%v", err)
+			return Value{}, spanErrorf(e.Span, "%v", err)
 		}
 		return v, nil
 	}
-	return evalCompare(e.Op, leftV, rightV, e.Loc)
+	return evalCompare(e.Op, leftV, rightV, e.Span)
 }
 
 // compareKind classifies a Value for the purpose of strict comparison
@@ -1175,36 +1637,48 @@ func compareKind(v Value) string {
 // jq's strict equality and surfacing operator misuse loudly. To
 // compare stringy numeric input (e.g. exec stdout) against a
 // number, coerce explicitly via "$x |> jq tonumber" first.
-func evalCompare(op string, l, r Value, loc Loc) (Value, error) {
+func evalCompare(op string, l, r Value, span Span) (Value, error) {
 	lk := compareKind(l)
 	rk := compareKind(r)
 	if lk == "" {
-		return Value{}, locErrorf(loc, "binary %s: left operand is not a comparable scalar (got %T)", op, l.Raw())
+		return Value{}, spanErrorf(span, "%s: left side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, l.Kind(), op)
 	}
 	if rk == "" {
-		return Value{}, locErrorf(loc, "binary %s: right operand is not a comparable scalar (got %T)", op, r.Raw())
+		return Value{}, spanErrorf(span, "%s: right side is a %s; only scalars (numbers, strings, booleans) can be compared with %s", op, r.Kind(), op)
 	}
 	if lk != rk {
-		return Value{}, locErrorf(loc, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
+		return Value{}, spanErrorf(span, "binary %s: cannot compare %s to %s; coerce explicitly (e.g. \"$x |> jq tonumber\" for stringy numeric input)", op, lk, rk)
 	}
 	left, err := l.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(loc, "binary %s: left: %v", op, err)
+		return Value{}, spanErrorf(span, "binary %s: left: %v", op, err)
 	}
 	right, err := r.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(loc, "binary %s: right: %v", op, err)
+		return Value{}, spanErrorf(span, "binary %s: right: %v", op, err)
 	}
 	switch lk {
 	case "number":
-		return evalNumericComparison(op, left, right)
+		v, err := evalNumericComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	case "bool":
 		if op != "==" && op != "!=" {
-			return Value{}, locErrorf(loc, "binary %s: booleans support only == and !=", op)
+			return Value{}, spanErrorf(span, "binary %s: booleans support only == and !=", op)
 		}
-		return evalSymbolicTextComparison(op, left, right)
+		v, err := evalSymbolicTextComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	default:
-		return evalSymbolicTextComparison(op, left, right)
+		v, err := evalSymbolicTextComparison(op, left, right)
+		if err != nil {
+			return Value{}, spanErrorf(span, "%v", err)
+		}
+		return v, nil
 	}
 }
 
@@ -1306,11 +1780,11 @@ func evalNegate(e *NegateExpr, env *Env) (Value, error) {
 	}
 	s, err := v.Scalar()
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "negate: %v", err)
+		return Value{}, spanErrorf(e.Span, "negate: %v", err)
 	}
 	x, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return Value{}, locErrorf(e.Loc, "negate: operand %q is not numeric", s)
+		return Value{}, spanErrorf(e.Span, "negate: operand %q is not numeric", s)
 	}
 	return numericValue(-x), nil
 }
@@ -1324,11 +1798,11 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 	case "not-empty":
 		s, err := operand.Scalar()
 		if err != nil {
-			return Value{}, fmt.Errorf("not-empty: %w", err)
+			return Value{}, spanErrorf(e.Span, "not-empty: %v", err)
 		}
 		return BoolValue(s != ""), nil
 	default:
-		return Value{}, fmt.Errorf("unknown unary predicate %q", e.Pred)
+		return Value{}, spanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
 	}
 }
 
@@ -1391,7 +1865,7 @@ func evalNumericComparison(op, left, right string) (Value, error) {
 // list of already-evaluated arguments. The assertion layer calls
 // this to re-interpret a command's evaluated args as a comparison
 // or predicate expression and then evaluate the whole thing via
-// EvalExpr. The returned expression has zero Loc on every node
+// EvalExpr. The returned expression has zero Pos on every node
 // because the original token positions are not available at this
 // point in the pipeline.
 func ExprFromArgs(args []Arg) (Expr, error) {
@@ -1403,7 +1877,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 	case 2:
 		pred, ok := argAsUnaryPred(args[0])
 		if !ok {
-			return nil, fmt.Errorf("expected unary predicate as first operand, got %q", argDisplay(args[0]))
+			return nil, fmt.Errorf("expected a check like 'not-empty' as the first word, got %q", argDisplay(args[0]))
 		}
 		operand, err := argToPrimary(args[1])
 		if err != nil {
@@ -1413,7 +1887,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 	case 3:
 		op, ok := argAsBinaryOp(args[1])
 		if !ok {
-			return nil, fmt.Errorf("expected binary operator as middle operand, got %q", argDisplay(args[1]))
+			return nil, fmt.Errorf("expected an operator (==, !=, <, <=, >, >=) between the two values, got %q", argDisplay(args[1]))
 		}
 		left, err := argToPrimary(args[0])
 		if err != nil {
@@ -1425,7 +1899,7 @@ func ExprFromArgs(args []Arg) (Expr, error) {
 		}
 		return &BinaryExpr{Left: left, Op: op, Right: right}, nil
 	default:
-		return nil, fmt.Errorf("expression has %d operands; expected 1 (primary), 2 (unary) or 3 (binary)", len(args))
+		return nil, fmt.Errorf("got %d argument(s); expected one value, a unary check like 'not-empty $x', or a comparison like '$x == 5'", len(args))
 	}
 }
 
@@ -1489,44 +1963,40 @@ func AsBool(v Value) (bool, error) {
 	if v.Kind() == OriginBool {
 		return false, fmt.Errorf("condition has boolean origin but non-boolean value %T", v.Raw())
 	}
-	return false, fmt.Errorf("condition is not a boolean (got %s); use a comparison or unary predicate", v.Kind())
+	return false, fmt.Errorf("condition is a %s; use a comparison like '$x == 5' or a check like 'not-empty $x' to produce a boolean", v.Kind())
 }
 
-// exprLoc extracts the Loc embedded in any Expr variant. Used for
+// exprLoc extracts the Pos embedded in any Expr variant. Used for
 // error formatting where the caller has the Expr but not the
 // concrete type.
-func exprLoc(e Expr) Loc {
+func exprLoc(e Expr) Pos {
 	switch v := e.(type) {
 	case *LiteralExpr:
-		return v.Loc
+		return v.Pos
 	case *VarRefExpr:
-		return v.Loc
+		return v.Pos
 	case *AdapterExpr:
-		return v.Loc
-	case *CmdSubExpr:
-		return v.Loc
-	case *ExprSubExpr:
-		return v.Loc
+		return v.Pos
 	case *InterpStringExpr:
-		return v.Loc
+		return v.Pos
 	case *BinaryExpr:
-		return v.Loc
+		return v.Pos
 	case *UnaryExpr:
-		return v.Loc
+		return v.Pos
 	case *ThreadExpr:
-		return v.Loc
+		return v.Pos
 	case *LogicalExpr:
-		return v.Loc
+		return v.Pos
 	case *NotExpr:
-		return v.Loc
+		return v.Pos
 	case *NegateExpr:
-		return v.Loc
+		return v.Pos
 	case *TimeoutExpr:
-		return v.Loc
+		return v.Pos
 	case *IterationExpr:
-		return v.Loc
+		return v.Pos
 	case *MatchesBlockExpr:
-		return v.Loc
+		return v.Pos
 	}
-	return Loc{}
+	return Pos{}
 }

@@ -163,16 +163,12 @@ func (f *testFixture) Load(ctx context.Context, spec bpfman.LoadSpec, opts manag
 		Type:       spec.ProgramType(),
 		AttachFunc: spec.AttachFunc(),
 	})
-	var prog bpfman.Program
-	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		result, loadErr := f.Manager.Load(ctx, writeLock, source, programs, opts)
-		if loadErr != nil {
-			return loadErr
-		}
-		prog = result[0]
-		return nil
-	})
-	return prog, err
+	// Lockless after v2 (docs/PLAN-load-lockless.md): no flock acquisition.
+	result, err := f.Manager.Load(ctx, source, programs, opts)
+	if err != nil {
+		return bpfman.Program{}, err
+	}
+	return result[0], nil
 }
 
 // Unload is a convenience wrapper that acquires the lock and calls
@@ -206,29 +202,10 @@ func (f *testFixture) Detach(ctx context.Context, linkID kernel.LinkID) error {
 	})
 }
 
-// LoadDirect is a convenience wrapper that acquires the lock and calls
-// Manager.Load with raw LoadSource and ProgramSpec arguments. Use this
-// for tests that bypass LoadSpec (e.g., auto-discovery tests).
+// LoadDirect is a convenience wrapper that calls Manager.Load with
+// raw LoadSource and ProgramSpec arguments. Use this for tests that
+// bypass LoadSpec (e.g., auto-discovery tests). Lockless after v2.
 func (f *testFixture) LoadDirect(ctx context.Context, source manager.LoadSource, programs []manager.ProgramSpec, opts manager.LoadOpts) ([]bpfman.Program, error) {
 	f.t.Helper()
-	var result []bpfman.Program
-	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		var loadErr error
-		result, loadErr = f.Manager.Load(ctx, writeLock, source, programs, opts)
-		return loadErr
-	})
-	return result, err
-}
-
-// GC is a convenience wrapper that acquires the lock and calls
-// Manager.GC.
-func (f *testFixture) GC(ctx context.Context) (manager.GCResult, error) {
-	f.t.Helper()
-	var result manager.GCResult
-	err := lock.Run(ctx, f.Layout.LockPath(), func(ctx context.Context, writeLock lock.WriterScope) error {
-		var gcErr error
-		result, gcErr = f.Manager.GC(ctx, writeLock)
-		return gcErr
-	})
-	return result, err
+	return f.Manager.Load(ctx, source, programs, opts)
 }

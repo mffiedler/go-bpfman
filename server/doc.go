@@ -58,8 +58,7 @@
 //  6. Create the manager with all dependencies
 //  7. Optionally start the CSI driver for Kubernetes map exposure
 //  8. Optionally start a pprof HTTP server
-//  9. Run GC to reconcile stale state from previous runs
-//  10. Start serving on Unix socket (and optionally TCP)
+//  9. Start serving on Unix socket (and optionally TCP)
 //
 // # Graceful Shutdown
 //

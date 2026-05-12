@@ -277,11 +277,11 @@ func TestSessionExpand(t *testing.T) {
 	}
 }
 
-// evalArgsForTest mirrors the old Session.Expand surface: it turns a
-// token slice into evaluated []Arg by building a primary expression
-// per token and running them through EvalArgs. Tests use this to keep
-// their table-driven shape — the production pipeline goes
-// tokens → Parse → EvalArgs, which exercises the same helpers.
+// evalArgsForTest turns a token slice into evaluated []Arg by
+// building a primary expression per token and running them
+// through EvalArgs. Tests use this to keep their table-driven
+// shape; the production pipeline goes tokens -> Parse ->
+// EvalArgs, which exercises the same helpers.
 func evalArgsForTest(s *Session, tokens []Token) ([]Arg, error) {
 	exprs := make([]Expr, 0, len(tokens))
 	for _, tok := range tokens {
@@ -291,12 +291,7 @@ func evalArgsForTest(s *Session, tokens []Token) ([]Arg, error) {
 		}
 		exprs = append(exprs, e)
 	}
-	env := &Env{
-		Session: s,
-		ExecSubstitution: func([]Arg) (Value, error) {
-			return Value{}, nil
-		},
-	}
+	env := &Env{Session: s}
 	return EvalArgs(exprs, env)
 }
 
