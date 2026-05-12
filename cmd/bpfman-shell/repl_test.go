@@ -3540,17 +3540,23 @@ func TestReplLoop_PrintMultipleArgs(t *testing.T) {
 	assert.Equal(t, `r= {"a":1,"b":2}`, lines[2])
 }
 
-func TestReplLoop_PrintNoArgsErrors(t *testing.T) {
+func TestReplLoop_PrintNoArgsEmitsBlankLine(t *testing.T) {
 	t.Parallel()
 
+	// print with no arguments emits a single newline -- the same
+	// shape as Python's print(), JavaScript's console.log(), or
+	// shell echo. Handy for spacing output blocks apart, and
+	// avoids surfacing the empty call as a user error: the shell
+	// already knows what to do.
 	input := "print\n"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "needs at least one value")
+	assert.Empty(t, errBuf.String())
+	assert.Equal(t, "\n", outBuf.String())
 }
 
 func TestReplLoop_JQNullBinding(t *testing.T) {

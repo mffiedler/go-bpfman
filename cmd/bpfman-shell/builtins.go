@@ -333,8 +333,8 @@ func init() {
 		"print": {
 			Name: "print", Handler: handlePrint, Complete: completePrintArg,
 			Category: categoryIO,
-			Usage:    "print <value>...",
-			Summary:  "Print one or more values (one pretty, many compact space-joined).",
+			Usage:    "print [value]...",
+			Summary:  "Print zero or more values (none emits a blank line; one pretty; many compact space-joined).",
 		},
 		"reap": {
 			Name: "reap", Handler: handleReap,

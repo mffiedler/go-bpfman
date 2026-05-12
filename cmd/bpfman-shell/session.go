@@ -162,6 +162,10 @@ func handleUnset(c builtinCtx) (shell.Value, error) {
 // threading expression ($x |> jq filter). To print a variable,
 // write "print $foo".
 //
+// With no arguments a single newline is emitted, matching the
+// shape of Python's print(), JavaScript's console.log(), and
+// shell echo -- handy for spacing output blocks apart.
+//
 // With a single argument the output matches the REPL's auto-print
 // rendering -- scalars as plain text, structured values as
 // indented JSON, absent values as "null", each followed by a
@@ -173,7 +177,7 @@ func handleUnset(c builtinCtx) (shell.Value, error) {
 func handlePrint(c builtinCtx) (shell.Value, error) {
 	args := c.Args
 	if len(args) == 0 {
-		return shell.Value{}, fmt.Errorf(`print needs at least one value: a variable like $name, a quoted string, or an expression`)
+		return shell.Value{}, c.CLI.PrintOut("\n")
 	}
 	if len(args) == 1 {
 		v, err := printValue(args[0])
