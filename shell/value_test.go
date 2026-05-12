@@ -468,7 +468,7 @@ func TestValueKeys(t *testing.T) {
 	t.Run("empty map returns empty slice", func(t *testing.T) {
 		t.Parallel()
 		v := ValueFromMap(map[string]any{})
-		assert.Equal(t, []string{}, v.Keys())
+		assert.Empty(t, v.Keys())
 	})
 
 	t.Run("empty array returns empty slice", func(t *testing.T) {

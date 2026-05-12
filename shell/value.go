@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -172,12 +173,7 @@ func (v Value) Raw() any {
 func (v Value) Keys() []string {
 	switch x := v.v.(type) {
 	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		return keys
+		return slices.Sorted(maps.Keys(x))
 	case []any:
 		keys := make([]string, len(x))
 		for i := range x {

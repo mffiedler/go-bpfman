@@ -1,6 +1,9 @@
 package shell
 
-import "sort"
+import (
+	"maps"
+	"slices"
+)
 
 // Session holds variable bindings, aliases, and user-defined commands
 // (defs) for the REPL. It is the runtime state that persists across
@@ -97,12 +100,7 @@ func (s *Session) DeleteDef(name string) bool {
 
 // DefNames returns the sorted list of registered def names.
 func (s *Session) DefNames() []string {
-	names := make([]string, 0, len(s.defs))
-	for k := range s.defs {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.defs))
 }
 
 // Set binds a value to a variable name, replacing any existing binding.
@@ -124,12 +122,7 @@ func (s *Session) Delete(name string) {
 
 // Names returns the sorted list of bound variable names.
 func (s *Session) Names() []string {
-	names := make([]string, 0, len(s.vars))
-	for k := range s.vars {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.vars))
 }
 
 // SetAlias binds a first-token alias. The caller is responsible for
@@ -152,10 +145,5 @@ func (s *Session) DeleteAlias(name string) {
 
 // AliasNames returns the sorted list of defined alias names.
 func (s *Session) AliasNames() []string {
-	names := make([]string, 0, len(s.aliases))
-	for k := range s.aliases {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(s.aliases))
 }

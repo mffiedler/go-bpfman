@@ -12,8 +12,9 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -155,10 +156,5 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 // fireKindNames returns the registered kind names sorted for
 // stable diagnostic rendering.
 func fireKindNames() []string {
-	names := make([]string, 0, len(fireKinds))
-	for name := range fireKinds {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(fireKinds))
 }

@@ -3,9 +3,10 @@ package ebpf
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/cilium/ebpf"
@@ -66,11 +67,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	// Find the requested program and get its license (needed before loading)
 	progSpec, ok := collSpec.Programs[spec.ProgramName()]
 	if !ok {
-		available := make([]string, 0, len(collSpec.Programs))
-		for name := range collSpec.Programs {
-			available = append(available, name)
-		}
-		sort.Strings(available)
+		available := slices.Sorted(maps.Keys(collSpec.Programs))
 		return bpfman.LoadOutput{}, fmt.Errorf("program %q not found in collection spec; available programs: %v", spec.ProgramName(), available)
 	}
 	license := progSpec.License
@@ -351,11 +348,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	_ = ebpfMapIDs // MapIDs now accessed via kernel.Program
 
 	// Collect PinByName map names for reference counting.
-	var sharedMapNames []string
-	for name := range pinByNameMaps {
-		sharedMapNames = append(sharedMapNames, name)
-	}
-	sort.Strings(sharedMapNames)
+	sharedMapNames := slices.Sorted(maps.Keys(pinByNameMaps))
 
 	return bpfman.LoadOutput{
 		PinPath:        progPinPath,

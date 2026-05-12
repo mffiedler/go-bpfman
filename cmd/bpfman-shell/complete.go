@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
@@ -46,7 +46,7 @@ func init() {
 	for name := range builtinRegistry {
 		out = append(out, name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	replCommandNames = out
 }
 

@@ -22,7 +22,8 @@ package shell
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -707,11 +708,7 @@ func splitPathSegments(path string) []pathSegment {
 // rendering is stable; the suggestion list comes from
 // internal/strdist.
 func unknownFieldMsg(name string, kind OriginKind, seg string, fields map[string]Shape) string {
-	valid := make([]string, 0, len(fields))
-	for f := range fields {
-		valid = append(valid, f)
-	}
-	sort.Strings(valid)
+	valid := slices.Sorted(maps.Keys(fields))
 	suggestions := strdist.Nearest(seg, valid, 3)
 	var msg string
 	if kind == OriginUnknown {

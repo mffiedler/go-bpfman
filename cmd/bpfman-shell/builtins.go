@@ -18,7 +18,7 @@ package main
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
@@ -669,7 +669,7 @@ func completeHelpArg(session *shell.Session, baseDir string, tokens []string, tr
 			names = append(names, n+" ")
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, len(prefix)
 }
 

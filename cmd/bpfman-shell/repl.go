@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -1171,11 +1173,7 @@ func writeKeywordSection(b *strings.Builder) {
 	if len(keywordRegistry) == 0 {
 		return
 	}
-	names := make([]string, 0, len(keywordRegistry))
-	for n := range keywordRegistry {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(keywordRegistry))
 	b.WriteString("Keywords:\n")
 	rows := make([][2]string, 0, len(names))
 	for _, n := range names {

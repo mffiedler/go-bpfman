@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // tracingEventsPath is the base path for tracepoint events.
@@ -29,6 +29,6 @@ func (k *kernelAdapter) ListTracepoints(_ context.Context) ([]string, error) {
 		group := filepath.Base(filepath.Dir(filepath.Dir(idPath)))
 		results = append(results, group+"/"+name)
 	}
-	sort.Strings(results)
+	slices.Sort(results)
 	return results, nil
 }

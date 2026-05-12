@@ -3,7 +3,9 @@ package ebpf
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -169,12 +171,8 @@ func ValidateProgramsFromReader(rd io.ReaderAt, programNames []string) error {
 	}
 
 	if len(missing) > 0 {
-		sort.Strings(missing)
-		availableList := make([]string, 0, len(available))
-		for name := range available {
-			availableList = append(availableList, name)
-		}
-		sort.Strings(availableList)
+		slices.Sort(missing)
+		availableList := slices.Sorted(maps.Keys(available))
 		return fmt.Errorf("program(s) not found in object file: %v; available programs: %v", missing, availableList)
 	}
 
