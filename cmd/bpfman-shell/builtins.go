@@ -363,6 +363,20 @@ func init() {
 				"caller's scope. Defers in the file fire when source returns " +
 				"(file-as-cleanup-unit). Nested source is rejected.",
 		},
+		"tempdir": {
+			Name: "tempdir", Handler: handleTempdir,
+			BindShape: shell.StaticBindShape(shell.Shape{Sealed: false, Kind: shell.OriginUnknown}),
+			Category:  categoryIO,
+			Usage:     "tempdir <prefix>",
+			Summary:   "Create a private temp directory; primary carries .path (assignable).",
+			Detail: "Wraps os.MkdirTemp under the OS default temp dir. <prefix> names " +
+				"the leading component (so concurrent runs are distinguishable in " +
+				"ls /tmp); the random suffix guarantees uniqueness. Cleanup is the " +
+				"caller's responsibility -- pair with 'defer rm -rf $wd.path' for " +
+				"the canonical lifecycle. Use this in place of hard-coded /tmp " +
+				"paths whenever a script may run concurrently with itself, since " +
+				"shared paths race on rm/touch operations across instances.",
+		},
 		"start": {
 			Name: "start", Handler: handleStart,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginJob)),
@@ -543,6 +557,11 @@ func handleExec(c builtinCtx) (shell.Value, error) {
 // handleFile adapts replFile to the builtin shape.
 func handleFile(c builtinCtx) (shell.Value, error) {
 	return replFile(c.CLI, c.Args)
+}
+
+// handleTempdir adapts replTempdir to the builtin shape.
+func handleTempdir(c builtinCtx) (shell.Value, error) {
+	return replTempdir(c.Args)
 }
 
 // handleHelp adapts replHelp to the builtin shape, plumbing

@@ -212,6 +212,30 @@ func replFile(cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
 	return shell.StringValue(path), nil
 }
 
+// replTempdir creates a private temporary directory and returns a
+// structured value carrying the absolute path on its .path field.
+// PREFIX names the directory's leading component so concurrent
+// invocations can be told apart in `ls /tmp`; os.MkdirTemp appends a
+// random suffix to guarantee uniqueness. The directory is the
+// caller's to clean up -- pair the call with `defer rm -rf $wd.path`
+// for the usual lifecycle. Used by e2e fixtures that need
+// per-invocation sentinel/ack paths so parallel script instances
+// cannot collide on shared `/tmp/foo.go` paths.
+func replTempdir(args []shell.Arg) (shell.Value, error) {
+	if len(args) != 1 {
+		return shell.Value{}, fmt.Errorf("tempdir: requires exactly one PREFIX argument")
+	}
+	prefix := strings.TrimSpace(argText(args[0]))
+	if prefix == "" {
+		return shell.Value{}, fmt.Errorf("tempdir: PREFIX must not be empty")
+	}
+	dir, err := os.MkdirTemp("", prefix+".*")
+	if err != nil {
+		return shell.Value{}, fmt.Errorf("tempdir: %w", err)
+	}
+	return shell.ValueFromMap(map[string]any{"path": dir}), nil
+}
+
 // writeValueToTemp renders a shell.Value to a private temporary file
 // and returns the absolute path. The file is created with mode 0600
 // in the OS default temp directory with a recognisable prefix.
