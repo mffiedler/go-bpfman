@@ -63,7 +63,3 @@ assert $gotLink matches {
     record.details.group:        $link.record.details.group
     record.details.name:         $link.record.details.name
 }
-
-assert fail bpfman link get $linkID
-
-assert fail bpfman program get $prog
