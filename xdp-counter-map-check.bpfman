@@ -29,8 +29,10 @@ guard _ <- ip netns exec bpfman-test ip addr add 198.51.100.2/24 dev veth-ns
 guard _ <- ip netns exec bpfman-test ip link set veth-ns up
 
 # Load the XDP counter program.
-guard prog <- bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
-defer bpfman program unload $prog
+guard loaded <- bpfman program load file --path testdata/xdp_counter.o --programs xdp:xdp_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
 
 # Attach to the veth endpoint in the root namespace.
 guard link <- bpfman link attach xdp -i veth-host $prog

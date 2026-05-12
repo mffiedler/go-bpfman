@@ -10,9 +10,10 @@ defer ip link del bpfman-demo
 guard _ <- ip link set bpfman-demo up
 
 # Load the XDP pass program from the bpfman bytecode registry.
-guard prog <- bpfman program load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
-defer bpfman program unload $prog
+guard loaded <- bpfman program load image -i quay.io/bpfman-bytecode/xdp_pass:latest --programs xdp:pass
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
+defer bpfman program unload $pid
 assert not-empty $pid
 
 # Attach to the dummy interface.

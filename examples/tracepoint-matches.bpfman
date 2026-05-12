@@ -11,11 +11,12 @@
 # Run from the repo root with:
 #   sudo bpfman-shell examples/tracepoint-matches.bpfman
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder
-defer bpfman program unload $prog
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
+defer bpfman program unload $pid
 
 # One block replaces eight separate `assert path == value` /
 # `assert not-empty path` lines.

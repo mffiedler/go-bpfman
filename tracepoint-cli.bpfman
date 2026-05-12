@@ -21,9 +21,10 @@
 
 # ---- Happy path ----------------------------------------------------
 
-guard prog <- bpfman program load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
-defer bpfman program unload $prog
+guard loaded <- bpfman program load file --path e2e/testdata/bpf/tracepoint_counter.bpf.o --programs tracepoint:tracepoint_kill_recorder
+let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
+defer bpfman program unload $pid
 
 # New positional form: program-id first, tracepoint second. No flag.
 guard link <- bpfman link attach tracepoint $pid syscalls/sys_enter_kill
