@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -10,7 +11,14 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replJQ is the "jq FILTER VALUE" shell builtin.  Scalars pass
+// jqCall invokes handleJQ with the minimal builtinCtx the handler
+// reads (just Args; Ctx is set for symmetry with other handlers
+// but jq does not consult it).
+func jqCall(args []shell.Arg) (shell.Value, error) {
+	return handleJQ(builtinCtx{Ctx: context.Background(), Args: args})
+}
+
+// handleJQ is the "jq FILTER VALUE" shell builtin. Scalars pass
 // through, structured values are walked, and aggregation filters
 // (add, length, map, select, group_by) all reduce to a Value.
 
@@ -20,7 +28,7 @@ func TestReplJQ_IdentityOnJSONScalar(t *testing.T) {
 	// A bare scalar input is parsed as JSON — matching bash jq
 	// semantics — so a JSON-quoted string flows through as a
 	// string and the identity filter returns it intact.
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: "."},
 		shell.QuotedArg{Text: `"hello"`},
 	})
@@ -33,7 +41,7 @@ func TestReplJQ_IdentityOnJSONScalar(t *testing.T) {
 func TestReplJQ_IdentityOnJSONNumber(t *testing.T) {
 	t.Parallel()
 
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: "."},
 		shell.WordArg{Text: "42"},
 	})
@@ -49,7 +57,7 @@ func TestReplJQ_ScalarNotValidJSONIsError(t *testing.T) {
 	// 'hello' on its own isn't JSON — users who want a string
 	// wrap it in JSON quotes.  Matches the error the standalone
 	// jq CLI produces on non-JSON stdin.
-	_, err := replJQ([]shell.Arg{
+	_, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: "."},
 		shell.ScalarValueArg{Text: "hello"},
 	})
@@ -61,7 +69,7 @@ func TestReplJQ_PathOnStructured(t *testing.T) {
 	t.Parallel()
 
 	input := shell.ValueFromMap(map[string]any{"a": "apple", "b": "banana"})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: ".a"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -81,7 +89,7 @@ func TestReplJQ_AggregateSum(t *testing.T) {
 			map[string]any{"v": json.Number("3")},
 		},
 	})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: "[.items[].v] | add"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -97,7 +105,7 @@ func TestReplJQ_Length(t *testing.T) {
 	input := shell.ValueFromMap(map[string]any{
 		"items": []any{"a", "b", "c"},
 	})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: ".items | length"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -116,7 +124,7 @@ func TestReplJQ_Map(t *testing.T) {
 			map[string]any{"name": "bar"},
 		},
 	})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: ".items | map(.name)"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -136,7 +144,7 @@ func TestReplJQ_MultiResultCollected(t *testing.T) {
 	input := shell.ValueFromMap(map[string]any{
 		"items": []any{"a", "b", "c"},
 	})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: ".items[]"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -151,7 +159,7 @@ func TestReplJQ_BooleanResultIsOriginBool(t *testing.T) {
 	t.Parallel()
 
 	input := shell.ValueFromMap(map[string]any{"a": json.Number("5")})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: ".a > 3"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -170,7 +178,7 @@ func TestReplJQ_NullResultIsPresentNull(t *testing.T) {
 	// substitution, assignment, and interpolation all see a real
 	// value rather than tripping "produced no assignable value".
 	input := shell.ValueFromMap(map[string]any{"a": "apple"})
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: ".missing"},
 		shell.StructuredValueArg{Value: input},
 	})
@@ -185,7 +193,7 @@ func TestReplJQ_NullResultIsPresentNull(t *testing.T) {
 func TestReplJQ_InvalidFilter(t *testing.T) {
 	t.Parallel()
 
-	_, err := replJQ([]shell.Arg{
+	_, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: "{{{ not valid"},
 		shell.ScalarValueArg{Text: "x"},
 	})
@@ -196,11 +204,11 @@ func TestReplJQ_InvalidFilter(t *testing.T) {
 func TestReplJQ_WrongArgCount(t *testing.T) {
 	t.Parallel()
 
-	_, err := replJQ(nil)
+	_, err := jqCall(nil)
 	require.Error(t, err)
-	_, err = replJQ([]shell.Arg{shell.WordArg{Text: "."}})
+	_, err = jqCall([]shell.Arg{shell.WordArg{Text: "."}})
 	require.Error(t, err)
-	_, err = replJQ([]shell.Arg{
+	_, err = jqCall([]shell.Arg{
 		shell.WordArg{Text: "."},
 		shell.ScalarValueArg{Text: "x"},
 		shell.ScalarValueArg{Text: "y"},
@@ -215,7 +223,7 @@ func TestReplJQ_FlagArgGetsHint(t *testing.T) {
 	// the user with a bare "usage" message; it should explain that
 	// output formatting is a consumer concern ("${...}" for compact,
 	// auto-print for pretty, shell-out for the real thing).
-	_, err := replJQ([]shell.Arg{
+	_, err := jqCall([]shell.Arg{
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "."},
 		shell.ScalarValueArg{Text: "1"},
@@ -234,7 +242,7 @@ func TestReplJQ_NormalisesIntsToJSONNumber(t *testing.T) {
 	// not fall through to the "not a scalar" branch.
 	listValue, err := shell.ValueFromJSON([]byte(`[10,20,12]`))
 	require.NoError(t, err)
-	v, err := replJQ([]shell.Arg{
+	v, err := jqCall([]shell.Arg{
 		shell.QuotedArg{Text: "add"},
 		shell.StructuredValueArg{Value: listValue},
 	})

@@ -534,16 +534,6 @@ func handleRequire(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, true, c.Pos)
 }
 
-// handleExec adapts replExec to the builtin shape.
-func handleExec(c builtinCtx) (shell.Value, error) {
-	return replExec(c.Ctx, c.CLI, c.Args)
-}
-
-// handleFile adapts replFile to the builtin shape.
-func handleFile(c builtinCtx) (shell.Value, error) {
-	return replFile(c.CLI, c.Args)
-}
-
 // handleHelp adapts replHelp to the builtin shape, plumbing
 // the user's argument (if any) through so 'help <name>' looks
 // up the named builtin or keyword.
@@ -570,11 +560,6 @@ func handleReap(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, shell.SpanErrorf(c.Span, "reap takes no arguments")
 	}
 	return shell.Value{}, replReap(c.Env)
-}
-
-// handleJQ adapts replJQ to the builtin shape.
-func handleJQ(c builtinCtx) (shell.Value, error) {
-	return replJQ(c.Args)
 }
 
 // handleKill adapts replKill to the builtin shape, wrapping the

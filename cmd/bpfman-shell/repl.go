@@ -710,7 +710,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
 		}
 		// Fallthrough: unknown first word runs as a subprocess.
-		val, err = replExec(ctx, cli, args)
+		val, err = runExecStatement(ctx, cli, args)
 		return val, shell.FrameAt(span, err)
 	}
 }
