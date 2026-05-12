@@ -35,6 +35,38 @@ BPFMAN_PB_DIR := server/pb
 DOC_PORT ?= 6060
 
 # ---------------------------------------------------------------------------
+# Image-building tool (docker / podman). Mirrors the bpfman-operator
+# Makefile's convention: detect whichever of docker/podman is on PATH
+# (docker wins if both are present, as CI runs on docker), fall back
+# to a literal "docker" if neither is, and let the caller override
+# with `make OCI_BIN=podman ...`. Exported so helper scripts the
+# recipes shell out to (scripts/test-grpc.sh, etc.) pick the same
+# tool up.
+#
+# Differences from the operator's exact form, both forced on us by
+# the canonical multi-arch build flow: `make bpfman-compile` is
+# re-entered inside Dockerfile.bpfman's fedora-minimal builder
+# stage, which ships neither docker, podman, nor `basename`.
+#
+#   * stderr is redirected on both `which` legs. The operator only
+#     suppresses the first; in fedora-minimal that leaks "which:
+#     command not found" from the second probe on every parse.
+#   * `$(notdir ...)` rather than `$(shell basename ...)`. With
+#     both tools absent OCI_BIN_PATH is empty, and `basename` with
+#     no operand prints "missing operand" on every reference;
+#     $(notdir) is a make builtin, handles the empty case silently,
+#     and never forks a shell.
+#   * `$(or ...,docker)` guarantees a non-empty value. Recipes that
+#     would otherwise expand to `" build -t ..."` (and confuse sh
+#     with an empty argv[0]) now expand to `"docker build -t ..."`
+#     and fail with the obvious "docker: command not found" if the
+#     binary truly isn't there.
+# ---------------------------------------------------------------------------
+OCI_BIN_PATH := $(shell which docker 2>/dev/null || which podman 2>/dev/null)
+OCI_BIN ?= $(or $(notdir $(OCI_BIN_PATH)),docker)
+export OCI_BIN
+
+# ---------------------------------------------------------------------------
 # Image names and deployment knobs.
 # ---------------------------------------------------------------------------
 # BPFMAN_IMG matches the variable name used by the upstream Rust
@@ -76,7 +108,7 @@ CI_BUILDX_CACHE ?=
 # work inside the CI container. Mounts the source tree and named
 # volumes for Go's build and module caches so consecutive runs
 # benefit from incremental compile.
-CI_RUN := docker run --rm \
+CI_RUN := $(OCI_BIN) run --rm \
 	-v $(CURDIR):/src -w /src \
 	-v bpfman-ci-go-build:/root/.cache/go-build \
 	-v bpfman-ci-go-mod:/root/go/pkg/mod \
@@ -393,14 +425,20 @@ EXTRA_DOCKER_BUILD_ARGS ?=
 # dockerfile without editing the recipe.
 BPFMAN_DOCKERFILE ?= Dockerfile.bpfman
 
-# True (1) when `docker` is the podman compat shim. Buildah/podman
-# does not honor the per-Dockerfile <dockerfile>.dockerignore
+# True (1) when $(OCI_BIN) is podman (either OCI_BIN=podman, or
+# OCI_BIN=docker where docker is the podman compat shim). Buildah /
+# podman does not honor the per-Dockerfile <dockerfile>.dockerignore
 # convention that buildkit reads automatically, so when running
 # under podman the build-image-dev recipe passes --ignorefile
 # explicitly to point at the per-file dockerignore. Buildkit-
 # backed `docker` does not need this and ignores --ignorefile
 # (it is a buildah/podman flag), so detection is required.
-DOCKER_IS_PODMAN := $(shell docker --version 2>&1 | grep -ci podman)
+#
+# Safe to leave unguarded: $(OCI_BIN) is guaranteed non-empty (the
+# "|| docker" fallback above), so the worst case is `docker
+# --version 2>&1` inside a container where docker isn't installed,
+# which produces "docker: command not found" and grep -c returns 0.
+OCI_BIN_IS_PODMAN := $(shell $(OCI_BIN) --version 2>&1 | grep -ci podman)
 # Optional path for buildx --metadata-file. When set, buildx writes
 # the published index digest to this path after the push completes,
 # and the cosign-sign target reads the digest from it. Empty by
@@ -870,8 +908,8 @@ clean-bpf:
 # Build bpfman image from the host-built binary. Intended for local
 # development and operator integration testing.
 build-image-dev: bpfman-build
-	docker build \
-		$(if $(filter-out 0,$(DOCKER_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
+	$(OCI_BIN) build \
+		$(if $(filter-out 0,$(OCI_BIN_IS_PODMAN)),--ignorefile=Dockerfile.bpfman.dev.dockerignore) \
 		-t $(BPFMAN_IMG) \
 		--build-arg RUNTIME_IMAGE=$(DEV_RUNTIME_IMAGE) \
 		-f Dockerfile.bpfman.dev \
@@ -914,10 +952,10 @@ build-image-dev: bpfman-build
 # of a stray result symlink that could collide with `nix build .`.
 # See nix/image.nix for what is in the image and why.
 build-image-nix:
-	docker load < $$(nix build .#bpfman-image --print-out-paths --no-link)
+	$(OCI_BIN) load < $$(nix build .#bpfman-image --print-out-paths --no-link)
 
 build-image:
-	docker buildx build \
+	$(OCI_BIN) buildx build \
 		$(if $(PLATFORMS),--platform $(PLATFORMS)) \
 		$(BUILDX_OUTPUT) \
 		$(BUILDX_ATTEST) \
@@ -1023,10 +1061,10 @@ cosign-sign:
 
 # CSI conformance testing
 build-image-csi-sanity:
-	docker build -t $(CSI_SANITY_IMG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
+	$(OCI_BIN) build -t $(CSI_SANITY_IMG) -f Dockerfile.csi-sanity $(EXTRA_DOCKER_BUILD_ARGS) .
 
 build-image-openshift:
-	docker build \
+	$(OCI_BIN) build \
 		-f $(OPENSHIFT_CONTAINERFILE) \
 		$(if $(OPENSHIFT_BPF_BASE_IMAGE),--build-arg BPF_BASE_IMAGE=$(OPENSHIFT_BPF_BASE_IMAGE)) \
 		$(if $(OPENSHIFT_BPF_INSTALL_CMD),--build-arg BPF_INSTALL_CMD="$(OPENSHIFT_BPF_INSTALL_CMD)") \
@@ -1057,7 +1095,7 @@ build-image-openshift:
 # `--load` is required for `docker run` to find the image in the
 # local store.
 ci-image:
-	docker buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load $(CI_BUILDX_CACHE) .
+	$(OCI_BIN) buildx build --target=base -t $(CI_IMAGE) -f $(CI_DOCKERFILE) --load $(CI_BUILDX_CACHE) .
 
 # Reproduce the workflow's build job locally. Verifies that the
 # bpfman binary itself compiles -- separable from `ci-test`
@@ -1139,7 +1177,7 @@ ci-test: ci-image
 # privileges the e2e suite needs.
 ci-test-e2e:
 	$(RM) -r $(CI_E2E_BUNDLE)
-	docker buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(CI_E2E_BUNDLE)/bin/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL))
 
 # Reproduce the workflow's e2e-scripts job locally. The REPL
@@ -1162,7 +1200,7 @@ ci-test-e2e:
 ci-test-e2e-scripts:
 	$(RM) bin/bpfman bin/bpfman-shell bin/e2e.test
 	$(MAKE) clean-bpf
-	docker buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 
 # Umbrella: run every CI pipeline locally. Cheap checks first
@@ -1184,7 +1222,7 @@ ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lin
 # gRPC integration test.
 # ---------------------------------------------------------------------------
 bpfman-test-grpc: build-image-dev
-	BPFMAN_IMG=$(BPFMAN_IMG) scripts/test-grpc.sh
+	BPFMAN_IMG=$(BPFMAN_IMG) OCI_BIN=$(OCI_BIN) scripts/test-grpc.sh
 
 
 # ============================================================================

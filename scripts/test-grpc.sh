@@ -1,7 +1,9 @@
 #!/bin/bash
 #
 # Integration test for bpfman gRPC API using grpcurl.
-# Requires: docker, quay.io/bpfman/bpfman:latest image available locally
+# Requires: docker or podman (selected via $OCI_BIN, defaults to
+# docker), and the quay.io/bpfman/bpfman:latest image available
+# locally.
 #
 set -euo pipefail
 
@@ -12,15 +14,16 @@ SOCKET_PATH="$SOCKET_DIR/bpfman.sock"
 CONTAINER_NAME="bpfman-grpc-test"
 GRPCURL_IMAGE="fullstorydev/grpcurl"
 BPFMAN_IMG="${BPFMAN_IMG:-quay.io/bpfman/bpfman:latest}"
+OCI_BIN="${OCI_BIN:-docker}"
 
 cleanup() {
     echo "Cleaning up..."
-    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    "$OCI_BIN" stop "$CONTAINER_NAME" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 grpcurl_cmd() {
-    docker run --rm --user root \
+    "$OCI_BIN" run --rm --user root \
         -v "$SOCKET_DIR:$SOCKET_DIR" \
         -v "$PROTO_DIR:/proto:ro" \
         "$GRPCURL_IMAGE" -plaintext -import-path /proto -proto bpfman.proto \
@@ -40,7 +43,7 @@ fi
 BPF_GID=$(stat -c '%g' /sys/fs/bpf)
 
 echo "=== Starting bpfman server ==="
-docker run -d --name "$CONTAINER_NAME" --rm --privileged \
+"$OCI_BIN" run -d --name "$CONTAINER_NAME" --rm --privileged \
     --group-add "$BPF_GID" \
     -v /sys/fs/bpf:/sys/fs/bpf:rshared \
     -v "$SOCKET_DIR:$SOCKET_DIR" \
@@ -62,7 +65,7 @@ echo "OK"
 echo ""
 echo "=== Test: Load program ==="
 LOAD_REQUEST='{"bytecode": {"file": "/opt/bpf/stats.o"}, "info": [{"name": "count_context_switches", "program_type": "TRACEPOINT"}]}'
-LOAD_RESPONSE=$(docker run --rm --user root \
+LOAD_RESPONSE=$("$OCI_BIN" run --rm --user root \
     -v "$SOCKET_DIR:$SOCKET_DIR" \
     -v "$PROTO_DIR:/proto:ro" \
     "$GRPCURL_IMAGE" -plaintext -import-path /proto -proto bpfman.proto \
@@ -92,7 +95,7 @@ echo "OK"
 
 echo ""
 echo "=== Test: Get program ==="
-GET_RESPONSE=$(docker run --rm --user root \
+GET_RESPONSE=$("$OCI_BIN" run --rm --user root \
     -v "$SOCKET_DIR:$SOCKET_DIR" \
     -v "$PROTO_DIR:/proto:ro" \
     "$GRPCURL_IMAGE" -plaintext -import-path /proto -proto bpfman.proto \
@@ -109,7 +112,7 @@ echo "OK"
 
 echo ""
 echo "=== Test: Unload program ==="
-docker run --rm --user root \
+"$OCI_BIN" run --rm --user root \
     -v "$SOCKET_DIR:$SOCKET_DIR" \
     -v "$PROTO_DIR:/proto:ro" \
     "$GRPCURL_IMAGE" -plaintext -import-path /proto -proto bpfman.proto \

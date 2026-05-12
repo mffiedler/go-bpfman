@@ -7,11 +7,13 @@
 # Prerequisites:
 # - bpfman binary built with CGO (bin/bpfman)
 # - Root privileges
-# - A running container (docker or podman)
+# - docker or podman on PATH (override which one via $OCI_BIN;
+#   defaults to docker)
 
 set -euo pipefail
 
 BPFMAN="${BPFMAN:-./bin/bpfman}"
+OCI_BIN="${OCI_BIN:-docker}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -29,7 +31,7 @@ log_fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 cleanup() {
     if [[ -n "${CONTAINER_ID:-}" ]]; then
         log_info "Cleaning up container $CONTAINER_ID"
-        docker rm -f "$CONTAINER_ID" &>/dev/null || true
+        "$OCI_BIN" rm -f "$CONTAINER_ID" &>/dev/null || true
     fi
 }
 
@@ -50,8 +52,8 @@ main() {
         exit 1
     fi
 
-    if ! command -v docker &>/dev/null; then
-        log_error "docker not found"
+    if ! command -v "$OCI_BIN" &>/dev/null; then
+        log_error "$OCI_BIN not found on PATH (set OCI_BIN=<docker|podman> to override)"
         exit 1
     fi
 
@@ -62,11 +64,11 @@ main() {
 
     # Start a test container with a long-running process
     log_info "Starting test container..."
-    CONTAINER_ID=$(docker run -d --rm alpine:latest sleep 3600)
+    CONTAINER_ID=$("$OCI_BIN" run -d --rm alpine:latest sleep 3600)
     log_info "Container ID: $CONTAINER_ID"
 
     # Get container PID
-    CONTAINER_PID=$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_ID")
+    CONTAINER_PID=$("$OCI_BIN" inspect -f '{{.State.Pid}}' "$CONTAINER_ID")
     log_info "Container PID: $CONTAINER_PID"
 
     # Verify namespace exists
