@@ -18,9 +18,9 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replU32LE parses args[0] as a non-negative integer that fits in
-// a uint32 and returns its little-endian 4-byte hex string (8 hex
-// characters, lowercase, no 0x prefix).
+// handleU32LE parses args[0] as a non-negative integer that fits
+// in a uint32 and returns its little-endian 4-byte hex string (8
+// hex characters, lowercase, no 0x prefix).
 //
 // Examples:
 //
@@ -28,16 +28,16 @@ import (
 //	u32le 1          -> "01000000"
 //	u32le 12345      -> "39300000"
 //	u32le 4294967295 -> "ffffffff"
-func replU32LE(args []shell.Arg) (shell.Value, error) {
-	n, err := singleUintArg("u32le", args, math.MaxUint32)
+func handleU32LE(c builtinCtx) (shell.Value, error) {
+	n, err := singleUintArg("u32le", c.Args, math.MaxUint32)
 	if err != nil {
 		return shell.Value{}, err
 	}
 	return shell.ValueFromAny(formatLE(n, 4)).WithKind(shell.OriginScalar), nil
 }
 
-// replU64LE parses args[0] as a non-negative integer that fits in
-// a uint64 and returns its little-endian 8-byte hex string (16
+// handleU64LE parses args[0] as a non-negative integer that fits
+// in a uint64 and returns its little-endian 8-byte hex string (16
 // hex characters, lowercase, no 0x prefix).
 //
 // Examples:
@@ -45,8 +45,8 @@ func replU32LE(args []shell.Arg) (shell.Value, error) {
 //	u64le 0    -> "0000000000000000"
 //	u64le 1    -> "0100000000000000"
 //	u64le 42   -> "2a00000000000000"
-func replU64LE(args []shell.Arg) (shell.Value, error) {
-	n, err := singleUintArg("u64le", args, math.MaxUint64)
+func handleU64LE(c builtinCtx) (shell.Value, error) {
+	n, err := singleUintArg("u64le", c.Args, math.MaxUint64)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -98,8 +98,3 @@ func bitsForMax(max uint64) int {
 	}
 	return 64
 }
-
-// handleU32LE / handleU64LE adapt the repl* helpers to the
-// builtin dispatch shape.
-func handleU32LE(c builtinCtx) (shell.Value, error) { return replU32LE(c.Args) }
-func handleU64LE(c builtinCtx) (shell.Value, error) { return replU64LE(c.Args) }

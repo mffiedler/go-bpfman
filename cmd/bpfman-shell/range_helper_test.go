@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,6 +9,11 @@ import (
 
 	"github.com/frobware/go-bpfman/shell"
 )
+
+// rangeCall wraps args in a minimal builtinCtx for handleRange.
+func rangeCall(args []shell.Arg) (shell.Value, error) {
+	return handleRange(builtinCtx{Ctx: context.Background(), Args: args})
+}
 
 func TestReplRange_ProducesZeroIndexedSequence(t *testing.T) {
 	t.Parallel()
@@ -23,7 +29,7 @@ func TestReplRange_ProducesZeroIndexedSequence(t *testing.T) {
 	for _, c := range tests {
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
-			v, err := replRange([]shell.Arg{shell.WordArg{Text: c.in}})
+			v, err := rangeCall([]shell.Arg{shell.WordArg{Text: c.in}})
 			require.NoError(t, err)
 			raw, ok := v.Raw().([]any)
 			require.True(t, ok, "range result should be []any, got %T", v.Raw())
@@ -38,34 +44,34 @@ func TestReplRange_ProducesZeroIndexedSequence(t *testing.T) {
 
 func TestReplRange_NegativeIsError(t *testing.T) {
 	t.Parallel()
-	_, err := replRange([]shell.Arg{shell.WordArg{Text: "-3"}})
+	_, err := rangeCall([]shell.Arg{shell.WordArg{Text: "-3"}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "negative")
 }
 
 func TestReplRange_NonIntegerIsError(t *testing.T) {
 	t.Parallel()
-	_, err := replRange([]shell.Arg{shell.WordArg{Text: "x"}})
+	_, err := rangeCall([]shell.Arg{shell.WordArg{Text: "x"}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid integer")
 }
 
 func TestReplRange_ExceedingMaxIsError(t *testing.T) {
 	t.Parallel()
-	_, err := replRange([]shell.Arg{shell.WordArg{Text: "4294967295"}})
+	_, err := rangeCall([]shell.Arg{shell.WordArg{Text: "4294967295"}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds the maximum")
 }
 
 func TestReplRange_WrongArityIsError(t *testing.T) {
 	t.Parallel()
-	_, err := replRange(nil)
+	_, err := rangeCall(nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expected exactly 1")
 }
 
 // anyN constructs a json.Number-wrapped element matching what
-// replRange emits, so the test asserts against the exact runtime
+// rangeCall emits, so the test asserts against the exact runtime
 // shape foreach iterates.
 func anyN(s string) any {
 	v, err := shell.ValueFromJSON([]byte(s))

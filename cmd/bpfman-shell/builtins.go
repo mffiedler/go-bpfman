@@ -534,13 +534,6 @@ func handleRequire(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, true, c.Pos)
 }
 
-// handleHelp adapts replHelp to the builtin shape, plumbing
-// the user's argument (if any) through so 'help <name>' looks
-// up the named builtin or keyword.
-func handleHelp(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replHelp(c.CLI, argTexts(c.Args))
-}
-
 // handleJobs lists jobs registered in the active job scope.
 // Rejects extra arguments at the dispatch boundary so the
 // error message is consistent with the other arg-less builtins.
@@ -581,18 +574,6 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, shell.SpanErrorf(c.Span, "source requires an active shell environment")
 	}
 	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, argTexts(c.Args))
-}
-
-// handleStart adapts replStart to the builtin shape. Origin is
-// derived from the chunk's loc so the leak-walk diagnostic can
-// cite the start site even when the leak fires far from it.
-func handleStart(c builtinCtx) (shell.Value, error) {
-	return replStart(c.Ctx, c.Env, c.Pos.cite(), c.Args)
-}
-
-// handleVersion adapts replVersion to the builtin shape.
-func handleVersion(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replVersion(c.CLI)
 }
 
 // handleWait adapts replWait to the builtin shape, wrapping the

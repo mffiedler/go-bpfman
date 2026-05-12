@@ -12,6 +12,15 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
+// startCall wraps args in a minimal builtinCtx for handleStart.
+// Tests drive the spawn path without going through the dispatch
+// boundary, so Ctx is the only context field they need; Env is
+// left nil because none of these tests register the spawned job
+// in a scope.
+func startCall(args []shell.Arg) (shell.Value, error) {
+	return handleStart(builtinCtx{Ctx: context.Background(), Args: args})
+}
+
 // waitForJob blocks until the job exits or the timeout fires.
 // Tests use a short timeout so a hung job fails the test fast
 // rather than draining the suite's overall budget.
@@ -27,7 +36,7 @@ func waitForJob(t *testing.T, j *shell.Job) {
 func TestReplStart_SpawnsAndCapturesStdout(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "echo hello"},
@@ -52,7 +61,7 @@ func TestReplStart_SpawnsAndCapturesStdout(t *testing.T) {
 func TestReplStart_NonZeroExitCodeCaptured(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "echo boom 1>&2; exit 7"},
@@ -72,7 +81,7 @@ func TestReplStart_NonZeroExitCodeCaptured(t *testing.T) {
 func TestReplStart_NoArgsIsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := replStart(context.Background(), nil, "", nil)
+	_, err := startCall(nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "start requires at least one argument")
 }
@@ -83,7 +92,7 @@ func TestReplStart_StructuredArgRejected(t *testing.T) {
 	// A program-typed Value cannot flatten into argv text, the
 	// same constraint exec applies via runExternal.
 	prog := shell.ValueFromMap(map[string]any{"id": "42"}).WithKind(shell.OriginProgram)
-	_, err := replStart(context.Background(), nil, "", []shell.Arg{
+	_, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "echo"},
 		shell.StructuredValueArg{Name: "prog", Value: prog},
 	})
@@ -98,7 +107,7 @@ func TestReplStart_LaunchFailureIsStructuralError(t *testing.T) {
 	// process runs. The error path produces no Job: this is
 	// 'structural failure' and propagates back to halt the bind
 	// rather than landing in a not-ok envelope.
-	_, err := replStart(context.Background(), nil, "", []shell.Arg{
+	_, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "__definitely_not_a_real_command_2026__"},
 	})
 	require.Error(t, err)
@@ -108,7 +117,7 @@ func TestReplStart_LaunchFailureIsStructuralError(t *testing.T) {
 func TestReplWait_BlocksAndCapturesEnvelope(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "echo hello; sleep 0.05; echo bye"},
@@ -132,7 +141,7 @@ func TestReplWait_AfterAlreadyCompleted(t *testing.T) {
 
 	// 'start ls /run' may exit before this goroutine reaches
 	// replWait. The cached envelope must still be returned.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "echo done"},
@@ -159,7 +168,7 @@ func TestReplWait_AfterAlreadyCompleted(t *testing.T) {
 func TestReplWait_NonZeroExitProducesNotOk(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "exit 7"},
@@ -177,7 +186,7 @@ func TestReplWait_NonZeroExitProducesNotOk(t *testing.T) {
 func TestReplWait_ContextCancelReturnsNotOk(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 60"},
@@ -241,7 +250,7 @@ func TestReplWait_NoArgsIsError(t *testing.T) {
 func TestReplKill_TerminatesAndMarksManaged(t *testing.T) {
 	t.Parallel()
 
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 60"},
@@ -269,7 +278,7 @@ func TestReplKill_KilledThenWaitReportsLifecycle(t *testing.T) {
 	// not return zero reports !ok. The lifecycle facts are
 	// carried by 'killed' and 'signal', and 'code' uses the
 	// shell convention 128+signum for a SIGTERM kill.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 60"},
@@ -296,7 +305,7 @@ func TestReplKill_AlreadyExitedIsOk(t *testing.T) {
 
 	// 'kill' is best-effort: if the process exited on its
 	// own before kill landed, ESRCH is treated as success.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "exit 0"},
@@ -322,7 +331,7 @@ func TestReplKill_SignalFlag(t *testing.T) {
 	// because the signal was successfully delivered (kill
 	// itself is "did the signal go through?", not "did the
 	// target terminate cleanly?").
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "trap 'exit 42' USR1; sleep 60"},
@@ -357,7 +366,7 @@ func TestReplKill_DefaultPathBlocksUntilReaped(t *testing.T) {
 	// reaper has closed Done. Even on a process that exits
 	// immediately on SIGTERM (no escalation needed), the call
 	// must not return earlier than the Done close.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 30"},
@@ -387,7 +396,7 @@ func TestReplKill_GraceZeroSendsKillImmediately(t *testing.T) {
 	// --grace=0 skips the wait between SIGTERM and SIGKILL.
 	// The job's Signal field, set by the escalation path,
 	// reflects KILL once kill returns.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 30"},
@@ -420,7 +429,7 @@ func TestReplKill_CustomSignalSkipsEscalation(t *testing.T) {
 	// termination request. kill must deliver and return; it
 	// must not wait for grace and must not escalate to SIGKILL.
 	// The Signal field reflects the requested signal, not KILL.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "trap 'exit 17' USR1; sleep 30"},
@@ -498,7 +507,7 @@ func TestReplStart_ProcessGroupIsSet(t *testing.T) {
 	// The child runs in its own process group so 'kill' can
 	// later signal the whole group. Verify by reading
 	// /proc/<pid>/stat which exposes pgid as the fifth field.
-	val, err := replStart(context.Background(), nil, "", []shell.Arg{
+	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
 		shell.WordArg{Text: "sleep 0.1"},

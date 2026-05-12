@@ -1023,24 +1023,25 @@ func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	return execCommand(ctx, cli, mgr, cmd)
 }
 
-// replHelp renders the overview (no args) or the detail for
+// handleHelp renders the overview (no args) or the detail for
 // one named builtin or keyword (one arg). The overview composes
 // a hand-curated 'Domain commands' section with auto-rendered
 // sections derived from builtinRegistry (grouped by Category,
 // alphabetised within group) and from keywordRegistry. Adding
 // a builtin or keyword updates the help automatically.
-func replHelp(cli *bpfmancli.CLI, args []string) error {
+func handleHelp(c builtinCtx) (shell.Value, error) {
+	args := argTexts(c.Args)
 	switch len(args) {
 	case 0:
-		return cli.PrintOut(renderHelpOverview())
+		return shell.Value{}, c.CLI.PrintOut(renderHelpOverview())
 	case 1:
 		out, ok := renderHelpDetail(args[0])
 		if !ok {
-			return fmt.Errorf("no help for %q (try 'help' for the overview)", args[0])
+			return shell.Value{}, fmt.Errorf("no help for %q (try 'help' for the overview)", args[0])
 		}
-		return cli.PrintOut(out)
+		return shell.Value{}, c.CLI.PrintOut(out)
 	default:
-		return fmt.Errorf("help takes at most one argument")
+		return shell.Value{}, fmt.Errorf("help takes at most one argument")
 	}
 }
 
@@ -1241,7 +1242,7 @@ func replHistoryPath() (string, error) {
 	return filepath.Join(dir, "repl-history"), nil
 }
 
-// replVersion prints version information.
-func replVersion(cli *bpfmancli.CLI) error {
-	return cli.PrintOut(version.Get().Long())
+// handleVersion prints version information.
+func handleVersion(c builtinCtx) (shell.Value, error) {
+	return shell.Value{}, c.CLI.PrintOut(version.Get().Long())
 }

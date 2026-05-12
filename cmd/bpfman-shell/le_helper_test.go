@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/frobware/go-bpfman/shell"
@@ -10,6 +11,13 @@ import (
 // driven without going through the parser.
 func litArg(s string) shell.Arg {
 	return shell.ScalarValueArg{Text: s}
+}
+
+// leCtx wraps args in a minimal builtinCtx for the LE-hex
+// handlers. Only Args is consulted; Ctx is set for symmetry with
+// other handlers.
+func leCtx(args []shell.Arg) builtinCtx {
+	return builtinCtx{Ctx: context.Background(), Args: args}
 }
 
 func TestU32LE_FormatsLittleEndian(t *testing.T) {
@@ -30,7 +38,7 @@ func TestU32LE_FormatsLittleEndian(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
-			v, err := replU32LE([]shell.Arg{litArg(c.in)})
+			v, err := handleU32LE(leCtx([]shell.Arg{litArg(c.in)}))
 			if err != nil {
 				t.Fatalf("u32le %s: %v", c.in, err)
 			}
@@ -57,7 +65,7 @@ func TestU64LE_FormatsLittleEndian(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
 			t.Parallel()
-			v, err := replU64LE([]shell.Arg{litArg(c.in)})
+			v, err := handleU64LE(leCtx([]shell.Arg{litArg(c.in)}))
 			if err != nil {
 				t.Fatalf("u64le %s: %v", c.in, err)
 			}
@@ -85,7 +93,7 @@ func TestU32LE_Rejects(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := replU32LE(c.args); err == nil {
+			if _, err := handleU32LE(leCtx(c.args)); err == nil {
 				t.Fatalf("u32le %v: expected error, got nil", c.args)
 			}
 		})
@@ -106,7 +114,7 @@ func TestU64LE_Rejects(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := replU64LE(c.args); err == nil {
+			if _, err := handleU64LE(leCtx(c.args)); err == nil {
 				t.Fatalf("u64le %v: expected error, got nil", c.args)
 			}
 		})

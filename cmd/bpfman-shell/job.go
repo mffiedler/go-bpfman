@@ -17,7 +17,7 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replStart spawns a background subprocess and returns a Value
+// handleStart spawns a background subprocess and returns a Value
 // wrapping a *shell.Job. The command runs as a process group
 // leader so 'kill' can later signal the whole group, including
 // any descendants the child fork-execs. stdout and stderr are
@@ -34,12 +34,16 @@ import (
 // reported as a Go error and produces no Job; this is
 // 'structural failure' in the bind-result sense and propagates
 // through ExecBind to halt the script.
-func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.Arg) (shell.Value, error) {
-	if len(args) == 0 {
+//
+// Origin is derived from the chunk's loc so the leak-walk
+// diagnostic can cite the start site even when the leak fires
+// far from it.
+func handleStart(c builtinCtx) (shell.Value, error) {
+	if len(c.Args) == 0 {
 		return shell.Value{}, fmt.Errorf("start requires at least one argument")
 	}
 
-	tempFiles, resolved, err := resolveAdapterArgs("start", args)
+	tempFiles, resolved, err := resolveAdapterArgs("start", c.Args)
 	if err != nil {
 		return shell.Value{}, err
 	}
@@ -52,9 +56,9 @@ func replStart(ctx context.Context, env *shell.Env, origin string, args []shell.
 	// guarantee (stable image for kernel attachment) belongs only
 	// to fire kinds with NeedsBinary == true; here the field is
 	// just what the user asked us to launch.
-	job, err := spawnJob(ctx, env, spawnSpec{
+	job, err := spawnJob(c.Ctx, c.Env, spawnSpec{
 		Argv:         argv,
-		Origin:       origin,
+		Origin:       c.Pos.cite(),
 		TempFiles:    tempFiles,
 		TargetBinary: argv[0],
 	})
@@ -174,7 +178,7 @@ func spawnJob(ctx context.Context, env *shell.Env, spec spawnSpec) (*shell.Job, 
 // to temp files and rejecting structured-value args that cannot
 // flatten into argv text. The temp files are returned to the
 // caller so it can choose when to remove them; runExternal
-// removes immediately after the command exits, replStart hands
+// removes immediately after the command exits, handleStart hands
 // the cleanup to the wait goroutine.
 func resolveAdapterArgs(name string, args []shell.Arg) ([]string, []shell.Arg, error) {
 	var tempFiles []string

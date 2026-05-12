@@ -24,14 +24,15 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replRange produces a Value carrying [json.Number("0"), ...,
+// handleRange produces a Value carrying [json.Number("0"), ...,
 // json.Number("N-1")] so foreach reads it as a list and downstream
 // jq projections can apply tonumber without surprise.
 //
 //	range 0   -> []
 //	range 5   -> [0, 1, 2, 3, 4]
 //	range -1  -> error
-func replRange(args []shell.Arg) (shell.Value, error) {
+func handleRange(c builtinCtx) (shell.Value, error) {
+	args := c.Args
 	if len(args) != 1 {
 		return shell.Value{}, fmt.Errorf("range: expected exactly 1 argument, got %d", len(args))
 	}
@@ -59,6 +60,3 @@ func replRange(args []shell.Arg) (shell.Value, error) {
 	}
 	return shell.ValueFromAny(out), nil
 }
-
-// handleRange adapts replRange to the builtin dispatch shape.
-func handleRange(c builtinCtx) (shell.Value, error) { return replRange(c.Args) }
