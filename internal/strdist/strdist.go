@@ -6,7 +6,10 @@
 // or reach across package boundaries.
 package strdist
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 // Levenshtein returns the Levenshtein edit distance between two
 // strings, counting insertions, deletions, and substitutions each
@@ -66,11 +69,11 @@ func Nearest(target string, candidates []string, limit int) []string {
 	for _, c := range candidates {
 		scores = append(scores, scored{s: c, dist: Levenshtein(target, c)})
 	}
-	sort.Slice(scores, func(i, j int) bool {
-		if scores[i].dist != scores[j].dist {
-			return scores[i].dist < scores[j].dist
+	slices.SortFunc(scores, func(a, b scored) int {
+		if c := cmp.Compare(a.dist, b.dist); c != 0 {
+			return c
 		}
-		return scores[i].s < scores[j].s
+		return cmp.Compare(a.s, b.s)
 	})
 	maxDist := max(len([]rune(target))/2, 3)
 	if tight := 2 * scores[0].dist; tight < maxDist {

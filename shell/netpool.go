@@ -16,7 +16,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"syscall"
 	"time"
 
@@ -169,8 +169,8 @@ func AcquirePoolSlot(ctx context.Context, req PoolAcquireRequest) (*PoolLease, e
 	if err != nil {
 		return nil, err
 	}
-	sort.SliceStable(cands, func(i, j int) bool {
-		return cands[i].sortKey.Before(cands[j].sortKey)
+	slices.SortStableFunc(cands, func(a, b slotCandidate) int {
+		return a.sortKey.Compare(b.sortKey)
 	})
 
 	for _, c := range cands {

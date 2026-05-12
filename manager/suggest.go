@@ -165,7 +165,8 @@
 package manager
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/frobware/go-bpfman/internal/strdist"
@@ -232,11 +233,11 @@ func nearestTracepoints(target string, candidates []string, limit int) []string 
 		}
 		scores = append(scores, scored{s: c, dist: d})
 	}
-	sort.Slice(scores, func(i, j int) bool {
-		if scores[i].dist != scores[j].dist {
-			return scores[i].dist < scores[j].dist
+	slices.SortFunc(scores, func(a, b scored) int {
+		if c := cmp.Compare(a.dist, b.dist); c != 0 {
+			return c
 		}
-		return scores[i].s < scores[j].s
+		return cmp.Compare(a.s, b.s)
 	})
 
 	// Floor of 5 (vs 3 in nearestStrings) lets cross-group prefix

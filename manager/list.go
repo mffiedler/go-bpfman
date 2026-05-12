@@ -1,12 +1,13 @@
 package manager
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -390,15 +391,15 @@ func (m *Manager) ListPrograms(ctx context.Context, opts ...bpfman.ListOption) (
 	}
 
 	// Deterministic output ordering: by kernel ID, then by type+name for ties
-	sort.Slice(programs, func(i, j int) bool {
-		if programs[i].Record.ProgramID != programs[j].Record.ProgramID {
-			return programs[i].Record.ProgramID < programs[j].Record.ProgramID
+	slices.SortFunc(programs, func(a, b bpfman.Program) int {
+		if c := cmp.Compare(a.Record.ProgramID, b.Record.ProgramID); c != 0 {
+			return c
 		}
 		// Fallback for zero IDs: sort by type, then name
-		if programs[i].Record.Load.ProgramType() != programs[j].Record.Load.ProgramType() {
-			return programs[i].Record.Load.ProgramType().String() < programs[j].Record.Load.ProgramType().String()
+		if c := cmp.Compare(a.Record.Load.ProgramType().String(), b.Record.Load.ProgramType().String()); c != 0 {
+			return c
 		}
-		return programs[i].Record.Meta.Name < programs[j].Record.Meta.Name
+		return cmp.Compare(a.Record.Meta.Name, b.Record.Meta.Name)
 	})
 
 	return bpfman.ProgramListResult{

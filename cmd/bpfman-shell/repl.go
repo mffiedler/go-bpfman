@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -1155,7 +1155,7 @@ func writeBuiltinCategory(b *strings.Builder, cat string) {
 	if len(entries) == 0 {
 		return
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	slices.SortFunc(entries, func(a, b builtin) int { return cmp.Compare(a.Name, b.Name) })
 	fmt.Fprintf(b, "%s:\n", categoryLabels[cat])
 	rows := make([][2]string, 0, len(entries))
 	for _, bi := range entries {
