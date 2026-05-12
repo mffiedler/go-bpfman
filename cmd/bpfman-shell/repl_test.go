@@ -596,6 +596,31 @@ func TestReplLoop_SourceNestedRejected(t *testing.T) {
 	assert.Contains(t, errBuf.String(), "source cannot be used inside a sourced file")
 }
 
+func TestReplLoop_SourceFailingChunkRendersOnce(t *testing.T) {
+	t.Parallel()
+
+	// A sourced file that hits a non-zero subprocess exit must
+	// surface exactly one diagnostic: the inner citation at the
+	// sourced file's line. The outer 'source <file>' statement
+	// must not be re-framed as a syntax error -- the script-error
+	// sentinel is a 'diagnostic already rendered, halt now' signal
+	// and the caller must respect it, not double-frame.
+	tmp := filepath.Join(t.TempDir(), "boom.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("exec false\n"), 0o644))
+
+	input := "source " + tmp + "\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, tmp+":1: false: exit 1")
+	assert.NotContains(t, out, "error: script error", "the script-error sentinel must not be rendered as a frame")
+	assert.NotContains(t, out, "^^^", "the source statement must not be underlined with carets")
+}
+
 func TestReplLoop_SourceNoArgs(t *testing.T) {
 	t.Parallel()
 

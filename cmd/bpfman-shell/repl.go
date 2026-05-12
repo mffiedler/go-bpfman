@@ -312,6 +312,19 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		if errors.Is(err, errRequireFailed) {
 			return err
 		}
+		if errors.Is(err, errScriptError) {
+			// A nested evaluation (a sourced file, a def
+			// body, ...) already rendered its own
+			// diagnostic and returned the script-error
+			// sentinel to ask the caller to halt. Propagate
+			// the sentinel unchanged: re-rendering would
+			// frame the same failure a second time at the
+			// outer call site (e.g. underlining 'source
+			// foo.bpfman' with 'error: script error'),
+			// hiding the real cause that the inner level
+			// already emitted.
+			return err
+		}
 		var gf *shell.GuardFailure
 		if errors.As(err, &gf) {
 			renderEnvelopeFailure(cli, "guard", loc, gf.Pos, gf.Args, gf.Envelope)
