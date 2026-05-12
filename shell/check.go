@@ -221,21 +221,19 @@ func (c *checker) inferExprKind(e Expr) OriginKind {
 //  1. The bind-shape registry (RegisterBindShape). cmd/bpfman-shell
 //     wires every effectful builtin entry (start, fire, exec, wait,
 //     kill, file, net, tempdir, ...) through this registry at init
-//     time. The registered BindShapeFn receives the args after the
+//     time; the `bpfman` domain prefix registers itself the same
+//     way. The registered BindShapeFn receives the args after the
 //     command name so subcommand-aware shapes (net veth-pair ->
-//     NetPair, net release -> result, net start -> Job) live next
-//     to the handler.
+//     NetPair, net release -> result, net start -> Job; bpfman
+//     program get -> Program, bpfman link list -> [Link], ...)
+//     live next to the handler.
 //
 //  2. The pure-builtin registry (RegisterPureBuiltin). Pure entries
 //     declare their return Shape there; the `<-` form remains a
 //     compatibility spelling but `=` and `${...}` invoke the same
 //     handler in expression position.
 //
-//  3. The bpfman domain prefix. bpfman is not a regular builtin
-//     because its grammar is multi-level (bpfman <verb> <subverb>);
-//     inferBpfmanBindShape stays as a named case.
-//
-//  4. Everything else falls through to an external-subprocess
+//  3. Everything else falls through to an external-subprocess
 //     result envelope.
 //
 // The rc slot of a tuple bind is always result and is set by
@@ -263,13 +261,23 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 	if pb, ok := LookupPureBuiltin(headText); ok {
 		return pb.ReturnShape
 	}
-	if headText == "bpfman" {
-		return inferBpfmanBindShape(cmd.Args[1:])
-	}
 	// Default: unknown first word runs as an external
 	// subprocess via runExternalAsBind, which always returns
 	// a result.
 	return KindShape(OriginEnvelope)
+}
+
+func init() {
+	// bpfman is a domain prefix rather than a regular builtin
+	// (its grammar is multi-level: `bpfman <verb> <subverb>`),
+	// so it does not appear in cmd/bpfman-shell's builtinRegistry
+	// and is registered here against the same bind-shape registry
+	// every other typed-primary command flows through. Keeping
+	// inferBpfmanBindShape inside the shell package -- where it
+	// already lives because it references shell-package Shape /
+	// OriginKind values -- avoids creating a domain-types import
+	// cycle on cmd/bpfman-shell.
+	RegisterBindShape("bpfman", inferBpfmanBindShape)
 }
 
 // inferBpfmanBindShape recognises the bpfman subcommands whose
