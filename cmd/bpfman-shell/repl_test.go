@@ -2287,13 +2287,25 @@ func TestReplComplete_RequireVerbs(t *testing.T) {
 	assert.NotContains(t, candidates, "== ")
 }
 
-func TestReplComplete_SetIsRetired(t *testing.T) {
+func TestReplComplete_SetStaysRetired(t *testing.T) {
 	t.Parallel()
 
-	// Completion must not offer "set " — the keyword was removed;
-	// let subsumes it.
+	// The assignment-style `set` was retired in favour of `let`
+	// and stays retired. Execution tracing is exposed via a
+	// `trace` builtin, not by reviving `set -x`, so the
+	// completer must not offer `set ` here.
 	_, candidates := replComplete(context.Background(), nil, nil, "se", len("se"))
 	assert.NotContains(t, candidates, "set ")
+}
+
+func TestReplComplete_TraceBuiltinOffered(t *testing.T) {
+	t.Parallel()
+
+	// The trace toggle is `trace on` / `trace off`; completion
+	// should surface `trace ` so a user discovering the feature
+	// at the prompt can tab their way to it.
+	_, candidates := replComplete(context.Background(), nil, nil, "tra", len("tra"))
+	assert.Contains(t, candidates, "trace ")
 }
 
 func TestLookupBareVar(t *testing.T) {
@@ -3695,6 +3707,159 @@ func TestReplLoop_PrintNoArgsEmitsBlankLine(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
 	assert.Equal(t, "\n", outBuf.String())
+}
+
+func TestReplLoop_TraceLetEmitsValue(t *testing.T) {
+	t.Parallel()
+
+	// `trace on` turns on execution tracing. A subsequent `let`
+	// statement emits a trace line that shows the RESOLVED RHS
+	// value, not the source expression. That is the point of
+	// the feature: see what value got bound at the moment of
+	// binding.
+	input := "trace on\nlet x = \"hello\"\nlet y = $x\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "+ <repl>:2: let x = hello")
+	assert.Contains(t, out, "+ <repl>:3: let y = hello")
+}
+
+func TestReplLoop_TraceCommandResolvesInterpolations(t *testing.T) {
+	t.Parallel()
+
+	// A bare command at top-level gets traced with all argv
+	// values resolved. `trace on` turns it on; the subprocess
+	// fallthrough fires through the CommandNotFound pre-check
+	// (the trace happens before the fallthrough's executable
+	// lookup, so the trace fires even when the command is
+	// missing). The trace must show the interpolated value of
+	// $x, not the source `$x`.
+	input := "trace on\nlet x = \"foo\"\ndefinitelynotacmd_abc123 $x\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	_ = outBuf
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "+ <repl>:3: definitelynotacmd_abc123 foo",
+		"trace must show the resolved argv with $x substituted")
+}
+
+func TestReplLoop_TraceOffByDefault(t *testing.T) {
+	t.Parallel()
+
+	// Without `trace on` (or the --trace flag), tracing is silent:
+	// no `+ ` lines on stderr regardless of what runs.
+	input := "let x = \"hello\"\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.NotContains(t, errBuf.String(), "+ ")
+}
+
+func TestReplLoop_TraceOffMidScript(t *testing.T) {
+	t.Parallel()
+
+	// `trace off` mid-script disables tracing. Statements after
+	// the toggle do not emit trace lines; the statement that
+	// ran while tracing was on does.
+	input := "trace on\nlet x = \"on\"\ntrace off\nlet y = \"off\"\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "+ <repl>:2: let x = on")
+	assert.NotContains(t, out, "let y = off", "trace must stop after `trace off`")
+}
+
+func TestReplLoop_TraceBatchCitesFileLine(t *testing.T) {
+	t.Parallel()
+
+	// Batch mode (file != "") uses the script filename in the
+	// citation. Line numbers are absolute file lines, so a
+	// failure in a long script lands at the right spot.
+	input := "trace on\nlet x = \"v\"\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "+ test.bpfman:2: let x = v")
+}
+
+func TestReplLoop_TraceStructuredValueRendersJSON(t *testing.T) {
+	t.Parallel()
+
+	// A structured value passed as an argument renders as compact
+	// JSON in the trace, not as `$name`. This is the feature's
+	// primary motivation: when something fails, you can see the
+	// actual value that flowed in.
+	input := "trace on\nlet r = jq \".\" '{\"a\":1,\"b\":2}'\ndefinitelynotacmd_abc123 $r\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, `+ <repl>:3: definitelynotacmd_abc123 {"a":1,"b":2}`,
+		"structured arg must render as compact JSON in the trace")
+}
+
+func TestReplLoop_TraceDeferFireCitesRegistrationLine(t *testing.T) {
+	t.Parallel()
+
+	// Batch mode runs the whole script inside one outer defer
+	// scope, so defers fire at script end. The trace for a
+	// defer-fire must cite where the `defer` was *written*, not
+	// where the surrounding scope happens to be unwinding. Here
+	// the defer is on line 1; statements 2-5 follow; defers
+	// fire at scope exit (after line 5). The fire entry must
+	// say line 1, not line 5.
+	input := "trace on\ndefer echo cleanup\nlet a = 1\nlet b = 2\nlet c = 3\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "boom.bpfman", false, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "boom.bpfman:2: defer echo cleanup",
+		"registration trace must cite line 2")
+	assert.Contains(t, out, "boom.bpfman:2: defer fire: echo cleanup",
+		"fire trace must cite the registration line (2), not the unwinding line")
+	assert.NotContains(t, out, "boom.bpfman:5: defer fire",
+		"fire trace must not inherit the last chunk's shift")
+}
+
+func TestReplLoop_TraceUnknownArg(t *testing.T) {
+	t.Parallel()
+
+	// `trace` only knows on and off today. Anything else fails
+	// loudly so a typo cannot silently leave tracing in its
+	// previous state.
+	input := "trace yeah\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), `trace: unknown argument "yeah"`)
 }
 
 func TestReplLoop_JQNullBinding(t *testing.T) {

@@ -295,6 +295,19 @@ type Env struct {
 	// retry.  IterationExpr reads it.  evalRetryStmt manages
 	// the save / set / restore dance alongside retryStart.
 	retryIter int
+
+	// Trace, when non-nil, is invoked just before a statement
+	// executes (and again when a deferred command fires at scope
+	// exit). line is the statement's chunk-relative source line;
+	// rendered is a one-line summary of the statement with
+	// interpolations resolved, e.g. an argv with `$prog`
+	// substituted by its compact-JSON form, or `let x = <value>`
+	// after the RHS has evaluated. Drivers typically prepend
+	// `file:line:` and write the result to stderr. shell/ never
+	// decides whether to trace; it only emits when the callback
+	// is non-nil, so policy (a `trace on` toggle, a CLI flag)
+	// lives in the driver-side installer.
+	Trace func(line int, rendered string)
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -425,6 +438,13 @@ func evalStmt(stmt Stmt, env *Env) error {
 		}
 		if val.IsNil() {
 			return spanErrorf(s.Span, "expression produced no result to assign")
+		}
+		if env.Trace != nil {
+			rendered, rerr := RenderCompact(val)
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %s>", val.Kind())
+			}
+			env.Trace(s.Span.Pos.Line, fmt.Sprintf("let %s = %s", s.Name, rendered))
 		}
 		env.Session.Set(s.Name, val)
 		return nil
@@ -686,6 +706,13 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 iter:
 	for _, elem := range list {
 		env.Session.Set(s.Name, ValueFromAny(elem))
+		if env.Trace != nil {
+			rendered, rerr := RenderCompact(ValueFromAny(elem))
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %T>", elem)
+			}
+			env.Trace(s.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", s.Name, rendered))
+		}
 		for _, stmt := range s.Body {
 			err := evalStmt(stmt, env)
 			switch {
@@ -752,6 +779,16 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 type deferEntry struct {
 	Span
 	Args []Arg
+
+	// trace is the Env.Trace callback captured at registration
+	// time, or nil if tracing was not active when defer ran.
+	// runDefers invokes this saved callback (not the current
+	// env.Trace) so the fire trace cites the file:line of the
+	// REGISTRATION site, not whatever chunk happens to be
+	// unwinding. Without this, a script-scope defer registered
+	// in chunk 5 but fired at scope exit in chunk 152 would
+	// inherit chunk 152's shift and cite the wrong line.
+	trace func(line int, rendered string)
 }
 
 // evalDeferStmt evaluates the deferred command's arguments now
@@ -768,9 +805,13 @@ func evalDeferStmt(s *DeferStmt, env *Env) error {
 	if err != nil {
 		return err
 	}
+	if env.Trace != nil {
+		env.Trace(s.Span.Pos.Line, "defer "+renderArgvTrace(args))
+	}
 	*env.defers = append(*env.defers, deferEntry{
-		Span: s.Span,
-		Args: args,
+		Span:  s.Span,
+		Args:  args,
+		trace: env.Trace,
 	})
 	return nil
 }
@@ -788,6 +829,19 @@ func runDefers(env *Env, stack []deferEntry) {
 	}
 	for i := len(stack) - 1; i >= 0; i-- {
 		entry := stack[i]
+		// Use the trace callback captured at registration so
+		// the fire's file:line cites where defer was written,
+		// not where the surrounding scope happens to be
+		// unwinding. Fall back to the current env.Trace only
+		// when tracing was off at registration time but is on
+		// now -- still useful, even if the line is approximate.
+		traceFn := entry.trace
+		if traceFn == nil {
+			traceFn = env.Trace
+		}
+		if traceFn != nil {
+			traceFn(entry.Pos.Line, "defer fire: "+renderArgvTrace(entry.Args))
+		}
 		result, err := env.ExecBind(entry.Args, entry.Span)
 		if err != nil {
 			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
@@ -946,6 +1000,10 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	if err != nil {
 		return err
 	}
+	if env.Trace != nil {
+		header := bindTraceHeader(s)
+		env.Trace(s.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
+	}
 	result, err := env.ExecBind(args, s.Span)
 	if err != nil {
 		return frameAtSpan(s.Span, err)
@@ -993,6 +1051,9 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	args, err := EvalArgs(s.Args, env)
 	if err != nil {
 		return err
+	}
+	if env.Trace != nil {
+		env.Trace(s.Span.Pos.Line, renderArgvTrace(args))
 	}
 	if len(args) > 0 {
 		if name, ok := commandHeadName(args[0]); ok {
@@ -1248,6 +1309,84 @@ func RenderCompact(v Value) (string, error) {
 		return string(b), nil
 	}
 	return v.Scalar()
+}
+
+// argTraceText renders a single Arg as text suitable for an
+// execution trace. Scalars and word forms emit their resolved
+// text; structured values render as compact JSON so the user can
+// see the value that flowed into the call rather than the bare
+// `$name` placeholder; adapter args keep their `adapter:$var.path`
+// form because the temp-file backing path is uninteresting for
+// debugging. Mirrors the cmd-side argText spelling, with the
+// deliberate difference that StructuredValueArg yields the value
+// not the variable name.
+func argTraceText(a Arg) string {
+	switch v := a.(type) {
+	case WordArg:
+		return v.Text
+	case QuotedArg:
+		return v.Text
+	case ScalarValueArg:
+		return v.Text
+	case StructuredValueArg:
+		s, err := RenderCompact(v.Value)
+		if err != nil {
+			return "$" + v.Name
+		}
+		return s
+	case AdapterArg:
+		if v.Path != "" {
+			return fmt.Sprintf("%s:$%s.%s", v.Adapter, v.Name, v.Path)
+		}
+		return fmt.Sprintf("%s:$%s", v.Adapter, v.Name)
+	default:
+		return ""
+	}
+}
+
+// renderArgvTrace joins the resolved Arg list as a single line for
+// the trace hook. Whitespace inside a scalar is left as-is; the
+// trace is for human reading, not for re-parsing, so re-quoting
+// every value would obscure more than it clarifies.
+func renderArgvTrace(args []Arg) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = argTraceText(a)
+	}
+	return strings.Join(parts, " ")
+}
+
+// bindTraceHeader formats the left-hand side of a BindStmt for the
+// trace output: `let r`, `let (rc, v)`, `guard r`, `guard (rc, v)`,
+// or `let _` when neither slot was named. The user typed this
+// verbatim in source; reproducing it in the trace makes it easy to
+// match an entry to the binding line.
+func bindTraceHeader(s *BindStmt) string {
+	verb := "let"
+	if s.Guard {
+		verb = "guard"
+	}
+	rc := s.Rc
+	primary := s.Primary
+	switch {
+	case rc != "" && primary != "":
+		return fmt.Sprintf("%s (%s, %s)", verb, named(rc), named(primary))
+	case primary != "":
+		return fmt.Sprintf("%s %s", verb, named(primary))
+	case rc != "":
+		return fmt.Sprintf("%s %s", verb, named(rc))
+	default:
+		return verb + " _"
+	}
+}
+
+// named keeps `_` for the discard slot and adds nothing else; the
+// name is already a bare identifier in the source.
+func named(s string) string {
+	if s == "" {
+		return "_"
+	}
+	return s
 }
 
 // EvalArgs evaluates each Expr in exprs as a command argument and

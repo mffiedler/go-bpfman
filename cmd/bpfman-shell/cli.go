@@ -27,6 +27,7 @@ type CLI struct {
 	Check   bool   `name:"check" short:"c" help:"Parse input without evaluating; report syntax errors and exit."`
 	NoCheck bool   `name:"no-check" help:"Skip the static-analysis pre-flight before script evaluation. Default is to run Check first and refuse on errors."`
 	AST     bool   `name:"ast" help:"Parse input and print the AST tree of each chunk to stdout; do not evaluate."`
+	Trace   bool   `name:"trace" short:"x" help:"Trace each statement to stderr with interpolations resolved, like bash -x. Equivalent to running 'trace on' at script start; toggle with 'trace on' / 'trace off' from within a session."`
 	Version bool   `name:"version" short:"V" help:"Print version information and exit."`
 }
 

@@ -354,6 +354,21 @@ func init() {
 			Detail: "Verbs and operators are the same as assert. Use require where the " +
 				"following statements only make sense if the condition holds.",
 		},
+		"trace": {
+			Name: "trace", Handler: handleTrace,
+			Category: categorySession,
+			Usage:    "trace on  |  trace off",
+			Summary:  "Toggle execution tracing on or off.",
+			Detail: "With tracing on, each statement prints to stderr just before " +
+				"it runs, prefixed with '+ file:line:' and rendered with " +
+				"interpolations resolved -- argv with $name substituted by the " +
+				"value (compact JSON for structured values), 'let' with the bound " +
+				"value, 'defer' both at registration and at fire, foreach with the " +
+				"loop variable per iteration. Useful for understanding what a " +
+				"script actually saw at the moment a call was made. 'trace off' " +
+				"disables it again. The CLI flag -x / --trace turns tracing on at " +
+				"script startup.",
+		},
 		"source": {
 			Name: "source", Handler: handleSource, Complete: completeSourceArg,
 			Category: categoryIO,

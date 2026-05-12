@@ -125,6 +125,28 @@ func handleUndef(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, nil
 }
 
+// handleTrace toggles execution tracing. The shape is
+// deliberately `trace on` / `trace off` (typed words, not
+// bash-style flag glyphs) so the builtin reads as a sentence and
+// avoids dragging back the retired `set var = val` form's name.
+// Unknown arguments fail loudly so a typo cannot silently leave
+// tracing in its previous state.
+func handleTrace(c builtinCtx) (shell.Value, error) {
+	args := argTexts(c.Args)
+	if len(args) != 1 {
+		return shell.Value{}, fmt.Errorf("trace requires exactly one argument: on or off")
+	}
+	switch args[0] {
+	case "on":
+		c.Env.Session.SetTrace(true)
+	case "off":
+		c.Env.Session.SetTrace(false)
+	default:
+		return shell.Value{}, fmt.Errorf("trace: unknown argument %q (expected on or off)", args[0])
+	}
+	return shell.Value{}, nil
+}
+
 // handleAliases lists all defined aliases.
 func handleAliases(c builtinCtx) (shell.Value, error) {
 	session := c.Env.Session

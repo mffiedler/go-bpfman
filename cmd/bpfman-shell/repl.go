@@ -54,6 +54,9 @@ func (c *CLI) Run(ctx context.Context) error {
 	defer cleanup()
 
 	session := shell.NewSession()
+	if c.Trace {
+		session.SetTrace(true)
+	}
 
 	lr, err := c.newReader(ctx, mgr, session)
 	if err != nil {
@@ -249,6 +252,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+				env.Trace = makeTraceHook(cli, session, loc)
 				if err := evalChunkInScope(cli, env, accumulated, src, loc); err != nil {
 					return err
 				}
@@ -495,14 +499,13 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 				}
 			}
 
-			// Interactive mode has no source file; loc stays
-			// zero-valued. startLine is tracked above for
-			// the chunk-line composition that
-			// evalChunkInScope's report helper does on
-			// parser errors, even though the empty file
-			// makes the prefix render as nothing.
-			_ = startLine
-			loc := sourceLoc{}
+			// Interactive mode has no source file but does
+			// track absolute session line numbers so the
+			// trace hook can cite '<repl>:N'. loc.line carries
+			// startLine through unchanged; evalChunkInScope's
+			// report helper still keys batch-vs-interactive
+			// rendering off loc.file == "".
+			loc := sourceLoc{line: startLine}
 
 			// Per-chunk SIGINT: a ^C at the prompt or
 			// during a long-running builtin cancels just
@@ -523,6 +526,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			env.ExecCommand = makeExecCommand(chunkCtx, cli, mgr, session, env, loc)
 			env.ExecBind = makeExecBind(chunkCtx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+			env.Trace = makeTraceHook(cli, session, loc)
 
 			chunkErr := shell.WithDeferScope(env, func() error {
 				return evalChunkInScope(cli, env, accumulated, "", loc)
@@ -916,6 +920,28 @@ func runExternalAsBind(ctx context.Context, args []shell.Arg) (shell.BindResult,
 	return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 }
 
+// makeTraceHook builds the Env.Trace closure for one chunk. The
+// closure consults session.TraceEnabled() on every invocation so
+// `trace on` / `trace off` can toggle tracing mid-script without
+// rebuilding the Env. Output goes to the cli's stderr with a `+ `
+// prefix and a `file:line:` citation; interactive sessions (file
+// unset) cite as `<repl>:N` so a long session's trace still
+// resolves to a specific input chunk.
+func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) func(int, string) {
+	return func(line int, rendered string) {
+		if !session.TraceEnabled() {
+			return
+		}
+		shift := loc.line - 1
+		abs := line + shift
+		file := loc.file
+		if file == "" {
+			file = "<repl>"
+		}
+		_ = cli.PrintErrf("+ %s:%d: %s\n", file, abs, rendered)
+	}
+}
+
 // argText extracts the text from a single Arg. For text-bearing
 // variants (WordArg, QuotedArg, ScalarValueArg) this returns the
 // text directly. For StructuredValueArg this returns "$name" as a
@@ -1010,11 +1036,13 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 	savedExecBind := env.ExecBind
 	savedExecAssert := env.ExecAssertStmt
 	savedRenderDefer := env.RenderDeferFailure
+	savedTrace := env.Trace
 	defer func() {
 		env.ExecCommand = savedExecCommand
 		env.ExecBind = savedExecBind
 		env.ExecAssertStmt = savedExecAssert
 		env.RenderDeferFailure = savedRenderDefer
+		env.Trace = savedTrace
 	}()
 	env.RenderDeferFailure = func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 		renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
@@ -1067,6 +1095,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
+			env.Trace = makeTraceHook(cli, session, loc)
 			if err := evalChunkInScope(cli, env, accumulated, "", loc); err != nil {
 				return err
 			}

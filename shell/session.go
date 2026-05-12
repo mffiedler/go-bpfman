@@ -15,6 +15,7 @@ type Session struct {
 	assertFailures int
 	deferFailures  int
 	jobLeaks       int
+	traceEnabled   bool
 }
 
 // DefValue is a user-defined command registered via the `def NAME(P1,
@@ -64,6 +65,19 @@ func (s *Session) RecordJobLeak() {
 // unwound, and the script should fail.
 func (s *Session) JobLeaks() int {
 	return s.jobLeaks
+}
+
+// SetTrace enables or disables execution tracing. Drivers usually
+// install an Env.Trace callback whose body consults this so the
+// `trace on` / `trace off` builtin (and a startup CLI flag) can
+// flip the state mid-session without swapping the Env hook itself.
+func (s *Session) SetTrace(on bool) {
+	s.traceEnabled = on
+}
+
+// TraceEnabled reports whether tracing is currently enabled.
+func (s *Session) TraceEnabled() bool {
+	return s.traceEnabled
 }
 
 // NewSession returns an empty session.
