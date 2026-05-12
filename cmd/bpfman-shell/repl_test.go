@@ -622,6 +622,100 @@ func TestReplLoop_SourceFailingChunkRendersOnce(t *testing.T) {
 	assert.NotContains(t, out, "^^^", "the source statement must not be underlined with carets")
 }
 
+func TestReplLoop_SourceRelativeToScriptDirectory(t *testing.T) {
+	t.Parallel()
+
+	// A relative path in `source ../lib.bpfman` must resolve
+	// against the directory of the script that contains the
+	// `source` statement, not against the runner's cwd. The
+	// caller can therefore invoke the top-level script from any
+	// directory without -C: the layout
+	//
+	//   dir/
+	//     lib.bpfman      <- emits a side-effect we can observe
+	//     sub/
+	//       main.bpfman   <- says `source ../lib.bpfman`
+	//
+	// works regardless of `os.Getwd()`. The test confirms this
+	// by changing cwd to a third unrelated location before
+	// running the top-level script via its full path; if the
+	// resolution were still cwd-based the source would fail
+	// with "no such file or directory".
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	libPath := filepath.Join(dir, "lib.bpfman")
+	mainPath := filepath.Join(dir, "sub", "main.bpfman")
+	require.NoError(t, os.WriteFile(libPath, []byte("print loaded-lib\n"), 0o644))
+	require.NoError(t, os.WriteFile(mainPath, []byte("source ../lib.bpfman\n"), 0o644))
+
+	// cwd to an unrelated dir to prove resolution is not cwd-based.
+	oldWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(t.TempDir()))
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr, lerr := openScriptReader(mainPath)
+	require.NoError(t, lerr)
+	defer lr.Close()
+
+	err = replLoop(context.Background(), cli, nil, lr, shell.NewSession(), mainPath, false, true)
+	require.NoError(t, err, "errBuf=%s", errBuf.String())
+	assert.Contains(t, outBuf.String(), "loaded-lib")
+}
+
+func TestReplLoop_SourceAbsolutePathIgnoresScriptDirectory(t *testing.T) {
+	t.Parallel()
+
+	// An absolute path passed to `source` must not be re-anchored
+	// against the calling script's directory. The script lives in
+	// `sub/`, the lib lives at an absolute path under the test
+	// tempdir; the lib runs regardless.
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	libPath := filepath.Join(dir, "lib.bpfman")
+	mainPath := filepath.Join(dir, "sub", "main.bpfman")
+	require.NoError(t, os.WriteFile(libPath, []byte("print abs-loaded\n"), 0o644))
+	require.NoError(t, os.WriteFile(mainPath, []byte("source "+libPath+"\n"), 0o644))
+
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr, lerr := openScriptReader(mainPath)
+	require.NoError(t, lerr)
+	defer lr.Close()
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), mainPath, false, true)
+	require.NoError(t, err, "errBuf=%s", errBuf.String())
+	assert.Contains(t, outBuf.String(), "abs-loaded")
+}
+
+func TestReplLoop_SourceFromInteractiveStaysCwdRelative(t *testing.T) {
+	t.Parallel()
+
+	// A `source FOO` typed at the interactive prompt has no
+	// containing script, so the cwd-relative resolution stays in
+	// place. Verified by chdir'ing into the tempdir and typing
+	// `source lib.bpfman` -- the file is in cwd, so it loads.
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "lib.bpfman")
+	require.NoError(t, os.WriteFile(libPath, []byte("print interactive-lib\n"), 0o644))
+
+	oldWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	input := "source lib.bpfman\n"
+	var outBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err = replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Contains(t, outBuf.String(), "interactive-lib")
+}
+
 func TestReplLoop_SourceNoArgs(t *testing.T) {
 	t.Parallel()
 

@@ -17,7 +17,7 @@
 # Pull in expect_program_load / expect_program_round_trip from the
 # shared lib so the structural assertion blocks live in one place
 # across all Test*_LoadAttachDetachUnload scripts.
-source lib.bpfman
+source ../lib.bpfman
 
 # Load the tracepoint counter. The map is unpinned (LIBBPF_PIN_NONE), which uses
 # LIBBPF_PIN_NONE so the counter map is private to this program.

@@ -2,9 +2,10 @@
 # e2e/lib.bpfman
 #
 # Shared helpers for the Test*_LoadAttachDetachUnload REPL scripts.
-# Sourced from each lifecycle script via `source ../lib.bpfman`
-# (the scripts run with cwd=e2e/, so the relative path resolves to
-# this file).
+# Sourced from each lifecycle script via `source ../lib.bpfman`.
+# `source` resolves relative paths against the directory of the
+# script containing the `source` statement, so this works
+# regardless of where the runner is invoked from.
 #
 # This file is deliberately placed one level above e2e/scripts/ so
 # the test-e2e-scripts harness glob (e2e/scripts/*.bpfman) does not

@@ -31,7 +31,7 @@
 #
 # Requires root and bpftool.
 
-source lib.bpfman
+source ../lib.bpfman
 
 # Exact-event count and weight for the assertion. Fixed values rather
 # than randomly drawn ones; uniqueWeights() in the Go test exists to

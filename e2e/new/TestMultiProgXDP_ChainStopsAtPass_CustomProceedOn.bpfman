@@ -25,7 +25,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn.bpfman
 
-source lib.bpfman
+source ../lib.bpfman
 
 let n        = 5
 let weight_a = 41

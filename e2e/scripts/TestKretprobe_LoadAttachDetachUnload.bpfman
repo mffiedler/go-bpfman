@@ -19,7 +19,7 @@
 # object serves both kprobe and kretprobe; the program type at
 # load time governs whether attaches fire on entry or return.
 # Pull in the shared lifecycle assertion helpers.
-source lib.bpfman
+source ../lib.bpfman
 
 guard loaded <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kretprobe:kprobe_counter
 let prog = $loaded.programs[0]

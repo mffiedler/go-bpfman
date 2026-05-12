@@ -22,7 +22,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn.bpfman
 
-source lib.bpfman
+source ../lib.bpfman
 
 let n        = 5
 let weight_a = 41

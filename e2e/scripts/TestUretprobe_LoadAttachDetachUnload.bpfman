@@ -19,7 +19,7 @@
 # first (`make bin/e2e.test`).
 
 # Pull in the shared lifecycle assertion helpers.
-source lib.bpfman
+source ../lib.bpfman
 
 # Load the uprobe counter ELF as a uretprobe program.
 guard loaded <- bpfman program load file --path testdata/bpf/uprobe_counter.bpf.o --programs uretprobe:uprobe_counter

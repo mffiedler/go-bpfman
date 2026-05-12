@@ -33,7 +33,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestMultiProgMixed_LoadAttachDetachUnload.bpfman
 
-source lib.bpfman
+source ../lib.bpfman
 
 let n      = 5
 let waves  = 3

@@ -15,7 +15,7 @@
 # Requires root, bpftool, and kernel BTF.
 
 # Pull in the shared lifecycle assertion helpers.
-source lib.bpfman
+source ../lib.bpfman
 
 # Preconditions: BTF-enabled kernel.
 require path exists /sys/kernel/btf/vmlinux

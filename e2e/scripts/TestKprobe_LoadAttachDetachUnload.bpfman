@@ -15,7 +15,7 @@
 # Requires root and bpftool.
 
 # Pull in the shared lifecycle assertion helpers.
-source lib.bpfman
+source ../lib.bpfman
 
 # Load the kprobe counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard loaded <- bpfman program load file --path testdata/bpf/kprobe_counter.bpf.o --programs kprobe:kprobe_counter

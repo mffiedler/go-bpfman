@@ -33,7 +33,7 @@
 #
 # Requires root, bpftool.
 
-source lib.bpfman
+source ../lib.bpfman
 
 let n      = 5
 let waves  = 3

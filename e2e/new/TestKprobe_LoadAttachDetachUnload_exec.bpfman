@@ -37,7 +37,7 @@
 #   cd e2e
 #   sudo bpfman-shell new/TestKprobe_LoadAttachDetachUnload_exec.bpfman
 
-source lib.bpfman
+source ../lib.bpfman
 
 let n = 5
 let weight = 42

@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -376,7 +377,13 @@ func init() {
 			Summary:  "Execute commands from a file in the caller's session.",
 			Detail: "Variables, defs, aliases, and jobs started in the file inherit the " +
 				"caller's scope. Defers in the file fire when source returns " +
-				"(file-as-cleanup-unit). Nested source is rejected.",
+				"(file-as-cleanup-unit). Nested source is rejected. A relative " +
+				"path resolves against the directory of the script containing the " +
+				"`source` statement, matching Python's import / Ruby's " +
+				"require_relative: a script can `source lib.bpfman` and find its " +
+				"sibling regardless of where the user invoked the runner from. " +
+				"Absolute paths and paths typed at the interactive prompt resolve " +
+				"against the current working directory.",
 		},
 		"tempdir": {
 			Name: "tempdir", Handler: handleTempdir,
@@ -584,11 +591,22 @@ func handleKill(c builtinCtx) (shell.Value, error) {
 // handleSource adapts replSource to the builtin shape. The
 // nil-env guard catches embedders that forget to plumb env
 // through; the dispatcher already enforces this before calling.
+//
+// A relative path argument resolves against the directory of the
+// script that contains the `source` statement -- the same shape
+// Python `import` and Ruby `require_relative` use, and what most
+// readers expect. Absolute paths and paths typed at the
+// interactive prompt (where c.Pos.file is empty) keep cwd-relative
+// resolution.
 func handleSource(c builtinCtx) (shell.Value, error) {
 	if c.Env == nil {
 		return shell.Value{}, shell.SpanErrorf(c.Span, "source requires an active shell environment")
 	}
-	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, argTexts(c.Args))
+	args := argTexts(c.Args)
+	if len(args) == 1 && c.Pos.file != "" && !filepath.IsAbs(args[0]) {
+		args[0] = filepath.Join(filepath.Dir(c.Pos.file), args[0])
+	}
+	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, args)
 }
 
 // handleWait adapts replWait to the builtin shape, wrapping the

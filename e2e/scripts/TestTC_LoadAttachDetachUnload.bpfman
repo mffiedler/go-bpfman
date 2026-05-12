@@ -16,7 +16,7 @@
 # Requires root, bpftool, iproute2.
 
 # Pull in the shared lifecycle assertion helpers.
-source lib.bpfman
+source ../lib.bpfman
 
 # Best-effort cleanup of leftover netns/veth from a prior run.
 let _ <- ip link del veth-tc-host
