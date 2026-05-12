@@ -2012,20 +2012,38 @@ func wrapSyntaxErr(prefix string, err error) error {
 	return fmt.Errorf("%s: %w", prefix, err)
 }
 
+// SpanCarrier marks errors that already carry their own source Span
+// and so should pass through frameAtSpan unchanged. cmd-side
+// runtime-outcome errors (a subprocess exiting non-zero, future
+// launch-failure variants) implement this so they reach the renderer
+// as their concrete type instead of being re-wrapped as
+// *SyntaxError. The renderer routes them to a citation shape; the
+// rust-style frame stays reserved for parser/checker diagnostics and
+// runtime errors that identify a wrong construct.
+type SpanCarrier interface {
+	error
+	SourceSpan() Span
+}
+
 // frameAtSpan attaches span to err so the renderer can frame the
 // diagnostic at a known region. err is preserved as Cause so
 // errors.Is/errors.As reach any sentinel underneath; if err is
 // already a *SyntaxError the original Span is kept (the inner
-// site knew better). Use at every point where a runtime error
-// crosses a Span-bearing boundary -- the command and bind
-// statement evaluators, the program-level safety net, future
-// builtin/assert dispatchers.
+// site knew better), and SpanCarrier errors pass through untouched
+// so they can be rendered as their own concrete type. Use at every
+// point where a runtime error crosses a Span-bearing boundary --
+// the command and bind statement evaluators, the program-level
+// safety net, future builtin/assert dispatchers.
 func frameAtSpan(span Span, err error) error {
 	if err == nil {
 		return nil
 	}
 	var se *SyntaxError
 	if errors.As(err, &se) {
+		return err
+	}
+	var sc SpanCarrier
+	if errors.As(err, &sc) {
 		return err
 	}
 	return &SyntaxError{Span: span, Msg: err.Error(), Cause: err}

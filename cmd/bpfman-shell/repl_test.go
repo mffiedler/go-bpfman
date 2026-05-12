@@ -2496,6 +2496,11 @@ func TestReplLoop_ExecSuccess(t *testing.T) {
 func TestReplLoop_ExecFailure(t *testing.T) {
 	t.Parallel()
 
+	// Interactive mode: a bare exec that exits non-zero must not
+	// adorn the failure. The child inherits stdout/stderr and
+	// wrote whatever it had to say there; the REPL loop returning
+	// to the prompt is the only signal needed. 'false' itself
+	// writes nothing, so errBuf must be empty.
 	input := "exec false\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -2503,7 +2508,7 @@ func TestReplLoop_ExecFailure(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exit status 1")
+	assert.Empty(t, errBuf.String())
 }
 
 func TestReplLoop_ExecNoArgs(t *testing.T) {
@@ -2954,11 +2959,14 @@ func TestReplLoop_InteractiveSurvivesParentCancellation(t *testing.T) {
 		"interactive loop must keep running after parent ctx cancellation")
 }
 
-func TestReplLoop_ExecTopLevelErrorsOnNonZero(t *testing.T) {
+func TestReplLoop_ExecTopLevelSilentOnNonZeroInteractive(t *testing.T) {
 	t.Parallel()
 
-	// Top-level exec runs the command for its side effects and
-	// reports non-zero exit as an error.
+	// Top-level exec at interactive prompt position: a non-zero
+	// exit is the child's outcome, not a malformed construct.
+	// The shell prints nothing of its own; whatever the child
+	// wrote to its inherited stderr is the only diagnostic. With
+	// 'false' there is no child output, so errBuf is empty.
 	input := "exec false\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
@@ -2966,7 +2974,28 @@ func TestReplLoop_ExecTopLevelErrorsOnNonZero(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
-	assert.Contains(t, errBuf.String(), "exit status 1")
+	assert.Empty(t, errBuf.String())
+}
+
+func TestReplLoop_ExecTopLevelBatchModeCitesNonZero(t *testing.T) {
+	t.Parallel()
+
+	// Batch mode (script file set): a non-zero exit halts and
+	// emits a one-line citation (file:line: argv: exit N), no
+	// rust-style frame. The frame is reserved for parser/checker
+	// diagnostics and runtime errors that identify a wrong
+	// construct; a subprocess reporting an exit code is not one.
+	input := "exec false\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
+	require.Error(t, err, "batch mode must surface the failure as a script-level error")
+	out := errBuf.String()
+	assert.Contains(t, out, "test.bpfman:1: false: exit 1")
+	assert.NotContains(t, out, "error:", "exec failure must not render as a syntax-error frame")
+	assert.NotContains(t, out, "^^^", "exec failure must not draw a caret span")
 }
 
 func TestReplComplete_ExecInCommandNames(t *testing.T) {

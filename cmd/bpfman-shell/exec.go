@@ -29,30 +29,65 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
+// ExecFailure is the typed error returned by runExecStatement when
+// an external subprocess at top-level statement position exits
+// non-zero. It deliberately is not a *shell.SyntaxError: nothing in
+// the source is malformed, the child simply reported a non-zero exit.
+// SourceSpan satisfies shell.SpanCarrier so frameAtSpan leaves these
+// values untouched; the REPL's diagnostic renderer routes them to a
+// citation shape (file:line: argv: exit N) instead of the
+// rust-compiler frame reserved for parser/checker diagnostics.
+//
+// Stdout and Stderr exist on the struct so a future tee path can
+// surface captured output alongside the citation. The bare-statement
+// exec path uses inherited fds (runExternalInherit), so the child
+// has already streamed to the user's terminal and both fields are
+// empty in that case.
+type ExecFailure struct {
+	Argv     []string
+	ExitCode int
+	Span     shell.Span
+	Stdout   string
+	Stderr   string
+}
+
+func (e *ExecFailure) Error() string {
+	return fmt.Sprintf("%s: exit status %d", strings.Join(e.Argv, " "), e.ExitCode)
+}
+
+// SourceSpan implements shell.SpanCarrier.
+func (e *ExecFailure) SourceSpan() shell.Span { return e.Span }
+
 // handleExec runs an external command at top-level statement
 // position with stdio inherited from the parent: stdin from the
 // terminal, stdout/stderr streamed live to the user's writers.
 // Interactive programs (vi, less, ssh) get a real TTY; long-
 // running programs (make, build) stream progress instead of
-// buffering it. Non-zero exit becomes a returned error so the
-// chunk is reported as failed; launch failures (command not
-// found, permission denied) propagate too. The bind path uses
-// runExternal to capture into a BindResult.
+// buffering it. Non-zero exit becomes a returned *ExecFailure so
+// the chunk is reported as failed; launch failures (command not
+// found, permission denied) propagate as plain errors. The bind
+// path uses runExternal to capture into a BindResult.
 func handleExec(c builtinCtx) (shell.Value, error) {
-	return runExecStatement(c.Ctx, c.CLI, c.Args)
+	return runExecStatement(c.Ctx, c.CLI, c.Args, c.Span)
 }
 
 // runExecStatement is the shared exec-as-statement implementation
 // used by handleExec and by repl.go's fallthrough for unknown
 // first words (where any non-builtin, non-domain command runs as
-// an external subprocess at statement position).
-func runExecStatement(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (shell.Value, error) {
+// an external subprocess at statement position). span identifies
+// the originating statement so the failure is cited at the right
+// source location without a syntax-error frame.
+func runExecStatement(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg, span shell.Span) (shell.Value, error) {
 	argv, exitCode, err := runExternalInherit(ctx, cli, args)
 	if err != nil {
 		return shell.Value{}, err
 	}
 	if exitCode != 0 {
-		return shell.Value{}, fmt.Errorf("%s: exit status %d", strings.Join(argv, " "), exitCode)
+		return shell.Value{}, &ExecFailure{
+			Argv:     argv,
+			ExitCode: exitCode,
+			Span:     span,
+		}
 	}
 	return shell.Value{}, nil
 }

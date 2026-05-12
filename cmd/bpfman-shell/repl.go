@@ -285,6 +285,37 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}))
 	}
 	report := func(err error) error {
+		var ef *ExecFailure
+		if errors.As(err, &ef) {
+			// Subprocess exited non-zero. The child wrote its
+			// own diagnostics to the inherited stdout/stderr,
+			// so we do not repeat them; we just say where the
+			// script tripped.
+			//
+			//   Interactive (loc.file == ""): silent. The
+			//     prompt returning is the signal.
+			//   Batch: one citation line, optionally
+			//     followed by indented stdout/stderr blocks
+			//     if the executor captured any.
+			if loc.file != "" {
+				shift := loc.line - 1
+				line := ef.Span.Pos.Line + shift
+				_ = cli.PrintErrf("%s:%d: %s: exit %d\n", loc.file, line, strings.Join(ef.Argv, " "), ef.ExitCode)
+				if ef.Stdout != "" {
+					_ = cli.PrintErrf("stdout:\n")
+					for _, l := range strings.Split(strings.TrimRight(ef.Stdout, "\n"), "\n") {
+						_ = cli.PrintErrf("  %s\n", l)
+					}
+				}
+				if ef.Stderr != "" {
+					_ = cli.PrintErrf("stderr:\n")
+					for _, l := range strings.Split(strings.TrimRight(ef.Stderr, "\n"), "\n") {
+						_ = cli.PrintErrf("  %s\n", l)
+					}
+				}
+			}
+			return errScriptError
+		}
 		var se *shell.SyntaxError
 		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
 			emitFrame(se.Span, se.Msg)
@@ -723,7 +754,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
 		}
 		// Fallthrough: unknown first word runs as a subprocess.
-		val, err = runExecStatement(ctx, cli, args)
+		val, err = runExecStatement(ctx, cli, args, span)
 		return val, shell.FrameAt(span, err)
 	}
 }
