@@ -518,16 +518,6 @@ func init() {
 	}
 }
 
-// handleAlias adapts replAlias to the builtin shape.
-func handleAlias(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replAlias(c.CLI, c.Env.Session, argTexts(c.Args))
-}
-
-// handleAliases adapts replAliases to the builtin shape.
-func handleAliases(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replAliases(c.CLI, c.Env.Session)
-}
-
 // handleAssert runs replAssertRequire in non-halting mode. The
 // shared body distinguishes assert from require by an internal
 // bool; the registry keeps them as two entries pointing at
@@ -542,11 +532,6 @@ func handleAssert(c builtinCtx) (shell.Value, error) {
 // handleRequire runs replAssertRequire in halt-on-fail mode.
 func handleRequire(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, replAssertRequire(c.Ctx, c.CLI, c.Mgr, c.Env.Session, c.Args, true, c.Pos)
-}
-
-// handleDefs adapts replDefs to the builtin shape.
-func handleDefs(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replDefs(c.CLI, c.Env.Session)
 }
 
 // handleExec adapts replExec to the builtin shape.
@@ -603,11 +588,6 @@ func handleKill(c builtinCtx) (shell.Value, error) {
 	return shell.ValueFromEnvelope(env), nil
 }
 
-// handlePrint adapts replPrint to the builtin shape.
-func handlePrint(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replPrint(c.CLI, c.Args)
-}
-
 // handleSource adapts replSource to the builtin shape. The
 // nil-env guard catches embedders that forget to plumb env
 // through; the dispatcher already enforces this before calling.
@@ -623,26 +603,6 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 // cite the start site even when the leak fires far from it.
 func handleStart(c builtinCtx) (shell.Value, error) {
 	return replStart(c.Ctx, c.Env, c.Pos.cite(), c.Args)
-}
-
-// handleUnalias adapts replUnalias to the builtin shape.
-func handleUnalias(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replUnalias(c.CLI, c.Env.Session, argTexts(c.Args))
-}
-
-// handleUndef adapts replUndef to the builtin shape.
-func handleUndef(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replUndef(c.Env.Session, argTexts(c.Args))
-}
-
-// handleUnset adapts replUnset to the builtin shape.
-func handleUnset(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replUnset(c.CLI, c.Env.Session, argTexts(c.Args))
-}
-
-// handleVars adapts replVars to the builtin shape.
-func handleVars(c builtinCtx) (shell.Value, error) {
-	return shell.Value{}, replVars(c.CLI, c.Env.Session)
 }
 
 // handleVersion adapts replVersion to the builtin shape.
