@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,14 +13,21 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
-// replTempdir is the "tempdir PREFIX" shell builtin. It creates a
-// private directory under the OS default temp dir and returns a
+// handleTempdir is the "tempdir PREFIX" shell builtin. It creates
+// a private directory under the OS default temp dir and returns a
 // structured value carrying the absolute path on .path.
 
-func TestReplTempdir_CreatesUniqueDirectory(t *testing.T) {
+// tempdirCtx is a minimal builtinCtx for testing the handler.
+// Only Ctx and Args are read by handleTempdir; the other fields
+// stay at their zero values.
+func tempdirCtx(args ...shell.Arg) builtinCtx {
+	return builtinCtx{Ctx: context.Background(), Args: args}
+}
+
+func TestHandleTempdir_CreatesUniqueDirectory(t *testing.T) {
 	t.Parallel()
 
-	v, err := replTempdir([]shell.Arg{shell.WordArg{Text: "bpfman-test"}})
+	v, err := handleTempdir(tempdirCtx(shell.WordArg{Text: "bpfman-test"}))
 	require.NoError(t, err)
 
 	path, err := v.LookupValue("wd", "path")
@@ -35,10 +43,10 @@ func TestReplTempdir_CreatesUniqueDirectory(t *testing.T) {
 		"tempdir result %q must start with the requested prefix", p)
 }
 
-func TestReplTempdir_DistinctInvocationsAreUnique(t *testing.T) {
+func TestHandleTempdir_DistinctInvocationsAreUnique(t *testing.T) {
 	t.Parallel()
 
-	v1, err := replTempdir([]shell.Arg{shell.WordArg{Text: "bpfman-test"}})
+	v1, err := handleTempdir(tempdirCtx(shell.WordArg{Text: "bpfman-test"}))
 	require.NoError(t, err)
 	p1, err := v1.LookupValue("wd1", "path")
 	require.NoError(t, err)
@@ -46,7 +54,7 @@ func TestReplTempdir_DistinctInvocationsAreUnique(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(s1) })
 
-	v2, err := replTempdir([]shell.Arg{shell.WordArg{Text: "bpfman-test"}})
+	v2, err := handleTempdir(tempdirCtx(shell.WordArg{Text: "bpfman-test"}))
 	require.NoError(t, err)
 	p2, err := v2.LookupValue("wd2", "path")
 	require.NoError(t, err)
@@ -57,29 +65,29 @@ func TestReplTempdir_DistinctInvocationsAreUnique(t *testing.T) {
 	assert.NotEqual(t, s1, s2, "concurrent invocations must produce distinct paths")
 }
 
-func TestReplTempdir_RejectsMissingPrefix(t *testing.T) {
+func TestHandleTempdir_RejectsMissingPrefix(t *testing.T) {
 	t.Parallel()
 
-	_, err := replTempdir(nil)
+	_, err := handleTempdir(tempdirCtx())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "PREFIX")
 }
 
-func TestReplTempdir_RejectsEmptyPrefix(t *testing.T) {
+func TestHandleTempdir_RejectsEmptyPrefix(t *testing.T) {
 	t.Parallel()
 
-	_, err := replTempdir([]shell.Arg{shell.QuotedArg{Text: ""}})
+	_, err := handleTempdir(tempdirCtx(shell.QuotedArg{Text: ""}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must not be empty")
 }
 
-func TestReplTempdir_RejectsExtraArgs(t *testing.T) {
+func TestHandleTempdir_RejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	_, err := replTempdir([]shell.Arg{
+	_, err := handleTempdir(tempdirCtx(
 		shell.WordArg{Text: "bpfman-test"},
 		shell.WordArg{Text: "extra"},
-	})
+	))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exactly one")
 }

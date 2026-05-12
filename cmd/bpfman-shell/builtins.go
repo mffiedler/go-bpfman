@@ -559,11 +559,6 @@ func handleFile(c builtinCtx) (shell.Value, error) {
 	return replFile(c.CLI, c.Args)
 }
 
-// handleTempdir adapts replTempdir to the builtin shape.
-func handleTempdir(c builtinCtx) (shell.Value, error) {
-	return replTempdir(c.Args)
-}
-
 // handleHelp adapts replHelp to the builtin shape, plumbing
 // the user's argument (if any) through so 'help <name>' looks
 // up the named builtin or keyword.
