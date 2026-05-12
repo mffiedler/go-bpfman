@@ -118,9 +118,15 @@
             shellcheck
 
             # Load generation for chasing async-teardown lag in
-            # the e2e suite. Use alongside `bin/e2e.test
-            # -test.count N` to surface the timing races that
-            # arm64 CI hits naturally on slower runners.
+            # the e2e suite and for reproducing the timing flakes
+            # contended CI runners hit. Both are kept: stress is
+            # the simpler `--cpu N` shape from the original
+            # package, stress-ng is the richer modern superset.
+            # Use either alongside `bin/e2e.test -test.count N` or
+            # a `go test -count=N -race` loop on a specific test
+            # to surface races that arm64 CI hits naturally on
+            # slower runners.
+            stress
             stress-ng
 
             # SQLite (CLI for inspection; dev headers for -tags cgo_sqlite).
