@@ -22,13 +22,18 @@ func startCall(args []shell.Arg) (shell.Value, error) {
 }
 
 // waitForJob blocks until the job exits or the timeout fires.
-// Tests use a short timeout so a hung job fails the test fast
-// rather than draining the suite's overall budget.
+// Tests use a generous timeout: the OS-level signal-to-exit path is
+// microseconds and a healthy single-test run finishes in well under
+// a second, but under -race plus heavy CI contention the Go runtime
+// can take seconds to schedule the reaper goroutine that closes
+// Done after the child has actually exited. 15s absorbs that
+// scheduling lag while still failing fast on a genuine hang
+// (compared to a real hang's open-ended duration).
 func waitForJob(t *testing.T, j *shell.Job) {
 	t.Helper()
 	select {
 	case <-j.Done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatalf("job pid %d did not exit within timeout", j.PID)
 	}
 }
