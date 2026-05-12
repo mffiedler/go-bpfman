@@ -23,6 +23,32 @@ import (
 	"github.com/frobware/go-bpfman/shell"
 )
 
+// netBindShape resolves the primary Shape of `<- net SUB ARGS...`
+// at static-check time. The four subcommands produce different
+// kinds: veth-pair returns a NetPair handle; release and exec
+// return a captured result envelope; start returns a Job handle.
+// Unknown subcommands fall through to the unsealed Unknown wildcard
+// so a runtime-validated typo still parses cleanly against the
+// bind-target.
+func netBindShape(args []shell.Expr) shell.Shape {
+	if len(args) < 1 {
+		return shell.Shape{Sealed: false, Kind: shell.OriginUnknown}
+	}
+	sub, ok := args[0].(*shell.LiteralExpr)
+	if !ok || sub.Quoted {
+		return shell.Shape{Sealed: false, Kind: shell.OriginUnknown}
+	}
+	switch sub.Text {
+	case "veth-pair":
+		return shell.KindShape(shell.OriginNetPair)
+	case "release", "exec":
+		return shell.KindShape(shell.OriginEnvelope)
+	case "start":
+		return shell.KindShape(shell.OriginJob)
+	}
+	return shell.Shape{Sealed: false, Kind: shell.OriginUnknown}
+}
+
 // handleNet is the registry handler for `net <subcommand> ...`.
 // Subcommand dispatch is a small in-handler switch (parallel to
 // the bpfman first-noun dispatch) rather than per-subcommand

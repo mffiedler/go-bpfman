@@ -216,27 +216,27 @@ func (c *checker) inferExprKind(e Expr) OriginKind {
 // inferBindShape returns the Shape a bind RHS CommandStmt
 // produces in its primary slot.
 //
-// The shell distinguishes three families of bind-RHS commands:
+// Resolution order:
 //
-//  1. Process-shaped commands (run as a subprocess or wrap one):
-//     `exec`, `wait`, `kill`, and any unrecognised first word
-//     that falls through to the external-command runner. These
-//     capture an Envelope (rc, stdout, stderr) and the primary
-//     slot reads as a result.
+//  1. The bind-shape registry (RegisterBindShape). cmd/bpfman-shell
+//     wires every effectful builtin entry (start, fire, exec, wait,
+//     kill, file, net, tempdir, ...) through this registry at init
+//     time. The registered BindShapeFn receives the args after the
+//     command name so subcommand-aware shapes (net veth-pair ->
+//     NetPair, net release -> result, net start -> Job) live next
+//     to the handler.
 //
-//  2. Typed-payload builtins (in-process, return a domain value
-//     that is *not* a captured-result envelope): `start` returns
-//     a Job; `bpfman <verb> <subverb>` returns Program / Link /
-//     list-of via inferBpfmanBindShape.
+//  2. The pure-builtin registry (RegisterPureBuiltin). Pure entries
+//     declare their return Shape there; the `<-` form remains a
+//     compatibility spelling but `=` and `${...}` invoke the same
+//     handler in expression position.
 //
-//  3. Pure value-producing builtins (in-process, no subprocess,
-//     no stdout capture, no domain object -- just a value
-//     computation). Recognition is registry-driven via
-//     LookupPureBuiltin; cmd/bpfman-shell registers each pure
-//     entry's name, arity, and return Shape at init time. The
-//     `<-` form remains available as a compatibility spelling;
-//     `=` and `${...}` invoke the same handler in expression
-//     position (see PureCallExpr).
+//  3. The bpfman domain prefix. bpfman is not a regular builtin
+//     because its grammar is multi-level (bpfman <verb> <subverb>);
+//     inferBpfmanBindShape stays as a named case.
+//
+//  4. Everything else falls through to an external-subprocess
+//     result envelope.
 //
 // The rc slot of a tuple bind is always result and is set by
 // the caller.
@@ -257,26 +257,14 @@ func (c *checker) inferBindShape(cmd *CommandStmt) Shape {
 	if expanded, ok := c.aliases[headText]; ok {
 		headText = expanded
 	}
+	if fn, ok := LookupBindShape(headText); ok {
+		return fn(cmd.Args[1:])
+	}
 	if pb, ok := LookupPureBuiltin(headText); ok {
 		return pb.ReturnShape
 	}
-	switch headText {
-	case "start", "fire":
-		return KindShape(OriginJob)
-	case "exec", "wait", "kill":
-		return KindShape(OriginEnvelope)
-	case "file":
-		// 'file temp $var' returns a path string the caller
-		// binds and reads through string interpolation; the
-		// primary is not an envelope. file is not pure -- it
-		// writes to disk -- so it does not belong in the
-		// pure-builtin registry; the static checker carries
-		// the shape contract here as a one-off named case.
-		return Shape{Sealed: false, Kind: OriginUnknown}
-	case "bpfman":
+	if headText == "bpfman" {
 		return inferBpfmanBindShape(cmd.Args[1:])
-	case "net":
-		return inferNetBindShape(cmd.Args[1:])
 	}
 	// Default: unknown first word runs as an external
 	// subprocess via runExternalAsBind, which always returns
@@ -342,36 +330,6 @@ func inferBpfmanBindShape(args []Expr) Shape {
 			elem := KindShape(OriginLink)
 			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
 		}
-	}
-	return Shape{Sealed: false, Kind: OriginUnknown}
-}
-
-// inferNetBindShape recognises the net subcommands whose primary
-// slot has a non-default kind:
-//
-//	net veth-pair ...    -> NetPair (the constructed handle)
-//	net release ...      -> Envelope (idempotent teardown)
-//	net exec ...         -> Envelope (sync command in the netns)
-//	net start ...        -> Job (async command in the netns)
-//
-// Unknown subcommands fall through to the unsealed-Unknown
-// wildcard so a runtime-validated typo still parses cleanly
-// against the bind-target.
-func inferNetBindShape(args []Expr) Shape {
-	if len(args) < 1 {
-		return Shape{Sealed: false, Kind: OriginUnknown}
-	}
-	sub, ok := args[0].(*LiteralExpr)
-	if !ok || sub.Quoted {
-		return Shape{Sealed: false, Kind: OriginUnknown}
-	}
-	switch sub.Text {
-	case "veth-pair":
-		return KindShape(OriginNetPair)
-	case "release", "exec":
-		return KindShape(OriginEnvelope)
-	case "start":
-		return KindShape(OriginJob)
 	}
 	return Shape{Sealed: false, Kind: OriginUnknown}
 }

@@ -132,15 +132,27 @@ var categoryOrder = []string{
 }
 
 // builtin describes one entry in the registry: how to run it,
-// how to complete its arguments, and how to document itself.
-// The doc fields drive 'help' (overview) and 'help <name>'
-// (detail). Empty fields degrade gracefully -- a builtin with
-// no Detail just shows Usage+Summary on detail lookup.
-// Pointer-free because the registry is read-only at runtime.
+// how to complete its arguments, what shape its bind-RHS primary
+// produces at static-check time, and how to document itself. The
+// doc fields drive 'help' (overview) and 'help <name>' (detail).
+// Empty fields degrade gracefully -- a builtin with no Detail just
+// shows Usage+Summary on detail lookup, and a nil BindShape falls
+// through to the inferBindShape default (an external-subprocess
+// result envelope). Pointer-free because the registry is read-only
+// at runtime.
 type builtin struct {
 	Name     string
 	Handler  func(builtinCtx) (shell.Value, error)
 	Complete argCompleter // nil = generic fallthrough
+
+	// BindShape lets the static checker resolve `<- NAME ARGS...`
+	// to the correct primary Shape. The function receives the
+	// arguments after the command name so subcommand-aware shapes
+	// (`net veth-pair` -> NetPair, `net release` -> result, ...)
+	// live next to the handler that produces them. Wrap a fixed
+	// Shape with shell.StaticBindShape; nil leaves the checker on
+	// the default external-subprocess result envelope.
+	BindShape shell.BindShapeFn
 
 	Category string // categoryXxx constant; ungrouped if empty
 	Usage    string // one-line syntax (e.g. "kill [--signal=NAME] [--grace=DUR] $job")
@@ -265,15 +277,17 @@ func init() {
 		},
 		"exec": {
 			Name: "exec", Handler: handleExec,
-			Category: categoryIO,
-			Usage:    "exec <command> [args | file:$var]...",
-			Summary:  "Run a host command. Use 'file:$var' to materialise a structured value as a temp file.",
+			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
+			Category:  categoryIO,
+			Usage:     "exec <command> [args | file:$var]...",
+			Summary:   "Run a host command. Use 'file:$var' to materialise a structured value as a temp file.",
 		},
 		"file": {
 			Name: "file", Handler: handleFile,
-			Category: categoryIO,
-			Usage:    "file temp $var[.path]",
-			Summary:  "Write a value to a temp file; primary is the path (assignable).",
+			BindShape: shell.StaticBindShape(shell.Shape{Sealed: false, Kind: shell.OriginUnknown}),
+			Category:  categoryIO,
+			Usage:     "file temp $var[.path]",
+			Summary:   "Write a value to a temp file; primary is the path (assignable).",
 		},
 		"help": {
 			Name: "help", Handler: handleHelp, Complete: completeHelpArg,
@@ -302,9 +316,10 @@ func init() {
 		},
 		"kill": {
 			Name: "kill", Handler: handleKill,
-			Category: categoryJobs,
-			Usage:    "kill [--signal=NAME] [--grace=DUR] $job",
-			Summary:  "Terminate a job. Default: SIGTERM, 2s grace, SIGKILL if still alive; blocks until reaped.",
+			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
+			Category:  categoryJobs,
+			Usage:     "kill [--signal=NAME] [--grace=DUR] $job",
+			Summary:   "Terminate a job. Default: SIGTERM, 2s grace, SIGKILL if still alive; blocks until reaped.",
 			Detail: "The default path sends SIGTERM, waits up to --grace (default 2s), " +
 				"escalates to SIGKILL if the process is still alive, and blocks " +
 				"until the reaper has settled. --grace=0 sends SIGTERM and SIGKILL " +
@@ -350,9 +365,10 @@ func init() {
 		},
 		"start": {
 			Name: "start", Handler: handleStart,
-			Category: categoryJobs,
-			Usage:    "start <command> [args]",
-			Summary:  "Spawn a background process; primary is a $job handle (assignable).",
+			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginJob)),
+			Category:  categoryJobs,
+			Usage:     "start <command> [args]",
+			Summary:   "Spawn a background process; primary is a $job handle (assignable).",
 			Detail: "The job runs as a process-group leader so 'kill' reaches every " +
 				"descendant. Output is captured into the handle's Stdout/Stderr; " +
 				"the script reads them after 'wait' returns. " +
@@ -364,9 +380,10 @@ func init() {
 		},
 		"fire": {
 			Name: "fire", Handler: handleFire,
-			Category: categoryJobs,
-			Usage:    "fire <kind> <sentinel> <ack> --count=N [--waves=K]",
-			Summary:  "Spawn a deterministic kernel-stimulus worker; primary is a $job handle (assignable).",
+			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginJob)),
+			Category:  categoryJobs,
+			Usage:     "fire <kind> <sentinel> <ack> --count=N [--waves=K]",
+			Summary:   "Spawn a deterministic kernel-stimulus worker; primary is a $job handle (assignable).",
 			Detail: "fire is a typed wrapper over start for e2e fixtures. <kind> selects " +
 				"one of the registered kernel-event generators (unlinkat, kill, uprobe). " +
 				"sentinel/ack are file-path prefixes for the wave protocol: the worker " +
@@ -378,7 +395,8 @@ func init() {
 		},
 		"net": {
 			Name: "net", Handler: handleNet,
-			Category: categoryJobs,
+			BindShape: netBindShape,
+			Category:  categoryJobs,
 			Usage: "net veth-pair --ns=NS --host-link=NAME --host-addr=CIDR --peer-link=NAME --peer-addr=CIDR [--no-routes]  |  " +
 				"net release $pair  |  net exec $pair CMD ARGS...  |  net start $pair CMD ARGS...",
 			Summary: "Paired-veth single-netns topology fixture for TC / TCX / XDP dispatcher tests.",
@@ -459,9 +477,10 @@ func init() {
 		},
 		"wait": {
 			Name: "wait", Handler: handleWait,
-			Category: categoryJobs,
-			Usage:    "wait $job",
-			Summary:  "Block until the job exits; primary is the captured result (assignable).",
+			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
+			Category:  categoryJobs,
+			Usage:     "wait $job",
+			Summary:   "Block until the job exits; primary is the captured result (assignable).",
 			Detail: "The result carries ok, code, stdout, stderr, killed, signal. " +
 				"A killed job that the script asked to terminate reports killed=true " +
 				"with signal set; the script distinguishes 'I asked for this' from " +
@@ -469,6 +488,19 @@ func init() {
 				"wait marks the job as managed but leaves the entry in the ledger so " +
 				"$job stays inspectable; use 'reap' to drop completed entries.",
 		},
+	}
+
+	// Register each effectful builtin's BindShape with the shell
+	// package so the static checker (shell/check.go's inferBindShape)
+	// resolves `<- NAME ARGS...` to the correct primary Shape
+	// without a hand-maintained switch. Entries with a nil BindShape
+	// (alias, vars, help, jobs, reap, ...) bind nothing assignable
+	// and so contribute no shape; inferBindShape's default takes
+	// care of the rest (external-subprocess result).
+	for name, b := range builtinRegistry {
+		if b.BindShape != nil {
+			shell.RegisterBindShape(name, b.BindShape)
+		}
 	}
 }
 
