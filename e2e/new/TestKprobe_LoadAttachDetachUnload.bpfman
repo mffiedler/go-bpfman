@@ -41,9 +41,10 @@ let n = 5
 let weight = 42
 let want = $n * $weight
 
-let sentinel = "/tmp/bpfman-shell-kprobe.go"
-let ack      = "/tmp/bpfman-shell-kprobe.ack"
-rm -f "${sentinel}.1" "${ack}.1"
+guard workdir <- tempdir bpfman-shell-kprobe
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
 
 # Start the worker. It blocks on ${sentinel}.1; we have a known
 # PID we can pin into the BPF program before the worker fires
@@ -149,5 +150,3 @@ assert $delta == 0
 # Unload, verify clean state.
 bpfman program unload $pid
 assert fail bpfman program get $prog
-
-rm -f "${sentinel}.1" "${ack}.1"

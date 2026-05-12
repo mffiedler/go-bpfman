@@ -45,10 +45,10 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-let sentinel = "/tmp/bpfman-shell-muret.go"
-let ack      = "/tmp/bpfman-shell-muret.ack"
-
-rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+guard workdir <- tempdir bpfman-shell-muret
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
 
 # Start the uprobe-fire worker. fire uprobe resolves
 # /proc/self/exe at launch and publishes the path on the Job's
@@ -144,5 +144,3 @@ assert $count_c == $want_c
 # link_a is still attached on the happy path; detach it explicitly
 # before the deferred program-unloads fire.
 bpfman link detach $link_a
-
-rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"

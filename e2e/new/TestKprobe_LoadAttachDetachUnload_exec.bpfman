@@ -43,9 +43,10 @@ let n = 5
 let weight = 42
 let want = $n * $weight
 
-let sentinel = "/tmp/bpfman-shell-kprobe-exec.go"
-let ack      = "/tmp/bpfman-shell-kprobe-exec.ack"
-rm -f "${sentinel}.1" "${ack}.1"
+guard workdir <- tempdir bpfman-shell-kprobe-exec
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
 
 guard work <- fire unlinkat $sentinel $ack --count $n --waves 1
 defer kill --signal=KILL $work
@@ -140,5 +141,3 @@ assert $delta == 0
 exec bpfman program unload $pid
 let get_after <- exec bpfman program get $pid -o json
 assert not $get_after.ok
-
-rm -f "${sentinel}.1" "${ack}.1"

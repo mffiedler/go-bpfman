@@ -39,13 +39,10 @@ let weight_a = 41
 let weight_b = 42
 let weight_c = 43
 
-let sentinel = "/tmp/bpfman-shell-mkp.go"
-let ack      = "/tmp/bpfman-shell-mkp.ack"
-
-# Cleanup any leftover sentinels from a prior run. We know the
-# wave count statically, so listing the paths is enough -- no need
-# for a shell glob.
-rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
+guard workdir <- tempdir bpfman-shell-mkp
+defer rm -rf $workdir.path
+let sentinel = "${workdir.path}/sentinel"
+let ack      = "${workdir.path}/ack"
 
 # Start the worker. Stable PID across all 3 waves.
 guard work <- fire unlinkat $sentinel $ack --count $n --waves $waves
@@ -150,5 +147,3 @@ assert $count_c == $want_c
 # before the deferred program-unloads fire (an attached program
 # refuses to unload).
 bpfman link detach $link_a
-
-rm -f "${sentinel}.1" "${sentinel}.2" "${sentinel}.3" "${ack}.1" "${ack}.2" "${ack}.3"
