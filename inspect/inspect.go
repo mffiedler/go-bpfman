@@ -6,6 +6,7 @@ import (
 	"errors"
 	"iter"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/frobware/go-bpfman"
@@ -746,33 +747,5 @@ func GetLink(
 }
 
 func dispatcherKey(dispType string, nsid uint64, ifindex uint32) string {
-	return dispType + "/" + uitoa64(nsid) + "/" + uitoa32(ifindex)
-}
-
-func uitoa32(n uint32) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [10]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
-}
-
-func uitoa64(n uint64) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
+	return dispType + "/" + strconv.FormatUint(nsid, 10) + "/" + strconv.FormatUint(uint64(ifindex), 10)
 }
