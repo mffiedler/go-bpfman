@@ -139,7 +139,7 @@ let before = $before_dump.stdout |> jq $sumFilter
 # Brief settle for the perf-link RCU GP. The Go test polls for
 # stable-counter quiescence; sleep is the simpler shape and the
 # window is well under a kernel tick on modern systems.
-guard _ <- sleep 0.1
+sleep 0.1
 
 guard after_dump <- bpftool map dump id $mapID -j
 let after = $after_dump.stdout |> jq $sumFilter

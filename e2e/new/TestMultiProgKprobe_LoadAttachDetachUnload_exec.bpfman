@@ -83,7 +83,7 @@ require $probe.ok
 
 # Detach c via subprocess; brief settle for the perf-link RCU GP.
 exec bpfman link detach $link_c_id
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
@@ -93,7 +93,7 @@ retry {
 require $probe.ok
 
 exec bpfman link detach $link_b_id
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"

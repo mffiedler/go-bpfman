@@ -130,7 +130,7 @@ assert not $getlink_after.ok
 guard before_dump <- bpftool map dump id $mapID -j
 let before = $before_dump.stdout |> jq $sumFilter
 
-guard _ <- sleep 0.1
+sleep 0.1
 
 guard after_dump <- bpftool map dump id $mapID -j
 let after = $after_dump.stdout |> jq $sumFilter

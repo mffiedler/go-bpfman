@@ -95,7 +95,7 @@ retry {
 require $probe.ok
 
 bpfman link detach $link_c
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
@@ -105,7 +105,7 @@ retry {
 require $probe.ok
 
 bpfman link detach $link_b
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"

@@ -98,7 +98,7 @@ require $probe.ok
 # next wave fires, otherwise some of wave 2's events could still hit
 # c's program.
 bpfman link detach $link_c
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
@@ -109,7 +109,7 @@ require $probe.ok
 
 # Detach b.
 bpfman link detach $link_b
-guard _ <- sleep 0.1
+sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"
