@@ -3106,6 +3106,49 @@ func TestReplLoop_BareCommandNotFoundBatch(t *testing.T) {
 	assert.NotContains(t, out, "^^^")
 }
 
+func TestReplLoop_BpfmanDispatchErrorRendersAsCitation(t *testing.T) {
+	t.Parallel()
+
+	// A `bpfman ...` invocation that reaches the in-process
+	// dispatcher and gets an error from there (parse error in
+	// this case: missing subcommand) must render as a citation,
+	// not a rust-style frame. The construct is syntactically
+	// well-formed -- the parser accepted it and dispatch
+	// reached the bpfman pipeline -- the failure is a runtime
+	// fact about what the dispatcher could do with the
+	// arguments, which is the same shape as a non-zero
+	// subprocess exit.
+	input := "bpfman program\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "program: subcommand required")
+	assert.NotContains(t, out, "error:", "bpfman dispatch failure must not render as a syntax-error frame")
+	assert.NotContains(t, out, "^^^", "bpfman dispatch failure must not draw a caret span")
+}
+
+func TestReplLoop_BpfmanDispatchErrorBatchCitesFileLine(t *testing.T) {
+	t.Parallel()
+
+	// Same as above in batch mode: the citation gets the
+	// file:line prefix and the script halts with errScriptError.
+	input := "bpfman program\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
+	require.Error(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "test.bpfman:1: program: subcommand required")
+	assert.NotContains(t, out, "error:")
+	assert.NotContains(t, out, "^^^")
+}
+
 func TestReplLoop_BareCommandNotFoundOutranksArgFlatten(t *testing.T) {
 	t.Parallel()
 

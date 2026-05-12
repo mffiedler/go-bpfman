@@ -113,6 +113,28 @@ func (e *ExecArgError) Error() string { return e.Msg }
 // SourceSpan implements shell.SpanCarrier.
 func (e *ExecArgError) SourceSpan() shell.Span { return e.Span }
 
+// RuntimeError is the typed error a handler returns when the
+// failure is a runtime outcome on a syntactically well-formed
+// construct, not a malformed region of source. SpanCarrier keeps
+// it out of the syntax-error frame: the renderer routes it to the
+// same citation shape used for exec failures, command-not-found,
+// and argument-flatten errors, so the user sees `file:line: msg`
+// rather than a rust-style caret span that visually says "this
+// code is broken" when the code is in fact fine and only the
+// runtime fact is unwelcome. The in-process `bpfman` dispatcher
+// wraps its returned errors in this type; individual shell
+// builtins can opt in when their failure is genuinely
+// runtime-outcome rather than usage-error.
+type RuntimeError struct {
+	Msg  string
+	Span shell.Span
+}
+
+func (e *RuntimeError) Error() string { return e.Msg }
+
+// SourceSpan implements shell.SpanCarrier.
+func (e *RuntimeError) SourceSpan() shell.Span { return e.Span }
+
 // handleExec runs an external command at top-level statement
 // position with stdio inherited from the parent: stdin from the
 // terminal, stdout/stderr streamed live to the user's writers.

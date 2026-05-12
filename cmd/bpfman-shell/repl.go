@@ -289,6 +289,23 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}))
 	}
 	report := func(err error) error {
+		var re *RuntimeError
+		if errors.As(err, &re) {
+			// Runtime-outcome failure (bpfman dispatch
+			// returned an error, or a builtin that opted in).
+			// Same citation shape as the exec-failure family:
+			// `file:line: msg` in batch, `msg` only in
+			// interactive. The construct itself is fine; the
+			// runtime fact is what the user needs to see.
+			if loc.file != "" {
+				shift := loc.line - 1
+				line := re.Span.Pos.Line + shift
+				_ = cli.PrintErrf("%s:%d: %s\n", loc.file, line, re.Msg)
+			} else {
+				_ = cli.PrintErrf("%s\n", re.Msg)
+			}
+			return errScriptError
+		}
 		var ae *ExecArgError
 		if errors.As(err, &ae) {
 			// An argument cannot flatten into argv text -- a
@@ -784,7 +801,16 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		// downstream (e.g. via SpanErrorf) is preserved.
 		if first == "bpfman" {
 			val, err := replDispatch(ctx, cli, mgr, args)
-			return val, shell.FrameAt(span, err)
+			if err != nil {
+				// bpfman dispatch failures are runtime
+				// outcomes on a well-formed construct: the
+				// statement parsed and reached the manager,
+				// the manager returned a fact. Cite, do
+				// not frame -- mirrors the policy applied
+				// to bare subprocess exit failures.
+				return val, &RuntimeError{Msg: err.Error(), Span: span}
+			}
+			return val, nil
 		}
 		if domainNouns[first] {
 			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
