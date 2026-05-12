@@ -233,13 +233,14 @@ func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
 
-	// Two frames are expected, one per failing command. Each frame
-	// is several lines (header, citation, gutter, source, caret),
-	// so count "error:" headers rather than total lines.
+	// Two citations are expected, one per missing command. The
+	// shape is "name: command not found" (one line, no rust
+	// frame); count those instead of "error:" headers.
 	out := errBuf.String()
-	assert.Equal(t, 2, strings.Count(out, "error:"), "expected exactly two error frames; got %s", out)
-	assert.Contains(t, out, "bogus")
-	assert.Contains(t, out, "also-bogus")
+	assert.Equal(t, 2, strings.Count(out, "command not found"), "expected exactly two command-not-found citations; got %s", out)
+	assert.Contains(t, out, "bogus: command not found")
+	assert.Contains(t, out, "also-bogus: command not found")
+	assert.NotContains(t, out, "error:", "missing commands must not render as syntax-error frames")
 }
 
 func TestReplComplete_CommandCompletion(t *testing.T) {
@@ -2403,11 +2404,10 @@ func TestReplLoop_AssertFailWithFileIncludesLocation(t *testing.T) {
 func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 	t.Parallel()
 
-	// When the filename is "<stdin>" (piped input), errors should
-	// frame against the offending line. The runtime exec failure
-	// reaches the chunk runner as a *shell.SyntaxError after the
-	// statement-level safety net, so the rust frame's "--> file:
-	// line:col" header carries the source coordinates.
+	// When the filename is "<stdin>" (piped input), batch-mode
+	// failures cite the offending line. 'x' is not a command, so
+	// the citation comes from the CommandNotFound pre-check:
+	// "<stdin>:2: x: command not found", no rust frame.
 	input := "version\nx\nversion\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
@@ -2415,7 +2415,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>", false, true)
 	require.ErrorIs(t, err, errScriptError)
-	assert.Contains(t, errBuf.String(), "--> <stdin>:2:1")
+	assert.Contains(t, errBuf.String(), "<stdin>:2: x: command not found")
 	// The third line should not have run.
 	assert.Equal(t, 1, strings.Count(outBuf.String(), "Version:"), "expected only one version output before halt")
 }
@@ -2957,6 +2957,68 @@ func TestReplLoop_InteractiveSurvivesParentCancellation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "after-cancel",
 		"interactive loop must keep running after parent ctx cancellation")
+}
+
+func TestReplLoop_BareCommandNotFoundInteractive(t *testing.T) {
+	t.Parallel()
+
+	// A bare first word that does not resolve on $PATH must report
+	// as "name: command not found", not as a syntax-error frame
+	// and not as a downstream argument-flatten failure if the
+	// remaining arguments happen to be unflattenable. The whole
+	// point of the pre-check is that the missing-command failure
+	// outranks anything that could be wrong with the rest of argv.
+	input := "definitelynotacmd_abc123 anything\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "definitelynotacmd_abc123: command not found")
+	assert.NotContains(t, out, "error:", "missing command must not render as a syntax-error frame")
+	assert.NotContains(t, out, "^^^", "missing command must not draw a caret span")
+}
+
+func TestReplLoop_BareCommandNotFoundBatch(t *testing.T) {
+	t.Parallel()
+
+	// Batch mode: the citation gets the file:line prefix and the
+	// chunk returns an error so the script halts. Renderer shape
+	// matches the bare exec-failure citation: no frame, no carets.
+	input := "definitelynotacmd_abc123 anything\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
+	require.Error(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "test.bpfman:1: definitelynotacmd_abc123: command not found")
+	assert.NotContains(t, out, "error:")
+	assert.NotContains(t, out, "^^^")
+}
+
+func TestReplLoop_BareCommandNotFoundOutranksArgFlatten(t *testing.T) {
+	t.Parallel()
+
+	// Pre-check ordering: the unknown command name is reported
+	// even when one of the later arguments is a structured value
+	// that resolveExternalArgs would reject. This is the
+	// regression case from the user's report: 'type $prog' should
+	// say "type: command not found", not "exec: argument 2 is a
+	// unknown value".
+	input := "let r = jq \".\" '{\"a\":1}'\ndefinitelynotacmd_abc123 $r\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "definitelynotacmd_abc123: command not found")
+	assert.NotContains(t, out, "argument", "command-not-found must pre-empt the argument-flatten diagnostic")
 }
 
 func TestReplLoop_ExecTopLevelSilentOnNonZeroInteractive(t *testing.T) {

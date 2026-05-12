@@ -58,6 +58,43 @@ func (e *ExecFailure) Error() string {
 // SourceSpan implements shell.SpanCarrier.
 func (e *ExecFailure) SourceSpan() shell.Span { return e.Span }
 
+// CommandNotFound is the typed error returned at the subprocess
+// fallthrough when the first word resolves to no executable on
+// $PATH. It is detected before argument resolution so a script that
+// names a non-existent command (e.g. bash's `type` builtin, which
+// this shell does not provide) reports the missing-command failure
+// first, rather than a downstream argument-flatten error caused by
+// the later arguments. SpanCarrier keeps it out of the syntax-error
+// frame: the source is well-formed, the name just does not resolve.
+type CommandNotFound struct {
+	Name string
+	Span shell.Span
+}
+
+func (e *CommandNotFound) Error() string {
+	return fmt.Sprintf("%s: command not found", e.Name)
+}
+
+// SourceSpan implements shell.SpanCarrier.
+func (e *CommandNotFound) SourceSpan() shell.Span { return e.Span }
+
+// resolveCommandPath returns nil if name names an executable
+// reachable from the current process: an absolute path, a relative
+// path containing a slash, or a bare name that exec.LookPath finds
+// on $PATH. Otherwise it returns a *CommandNotFound carrying the
+// originating Span so the renderer can cite the source line. Used
+// from the statement-position fallthrough in makeExecCommand before
+// argument resolution, so an unknown command is reported as such
+// rather than as a downstream argument-flatten failure. No caching:
+// exec.LookPath rescans $PATH on every call, so a binary installed
+// in the middle of a session is picked up on the next invocation.
+func resolveCommandPath(name string, span shell.Span) error {
+	if _, err := exec.LookPath(name); err != nil {
+		return &CommandNotFound{Name: name, Span: span}
+	}
+	return nil
+}
+
 // handleExec runs an external command at top-level statement
 // position with stdio inherited from the parent: stdin from the
 // terminal, stdout/stderr streamed live to the user's writers.

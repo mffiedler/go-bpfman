@@ -285,6 +285,22 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}))
 	}
 	report := func(err error) error {
+		var cnf *CommandNotFound
+		if errors.As(err, &cnf) {
+			// Subprocess fallthrough hit a name that does not
+			// resolve on $PATH. The source is well-formed; the
+			// name just is not a command. Cite the line in
+			// batch, emit a single line in interactive. No
+			// frame, no carets -- the construct is fine.
+			if loc.file != "" {
+				shift := loc.line - 1
+				line := cnf.Span.Pos.Line + shift
+				_ = cli.PrintErrf("%s:%d: %s: command not found\n", loc.file, line, cnf.Name)
+			} else {
+				_ = cli.PrintErrf("%s: command not found\n", cnf.Name)
+			}
+			return errScriptError
+		}
 		var ef *ExecFailure
 		if errors.As(err, &ef) {
 			// Subprocess exited non-zero. The child wrote its
@@ -754,6 +770,14 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
 		}
 		// Fallthrough: unknown first word runs as a subprocess.
+		// Resolve the executable on $PATH first so an unknown
+		// command reports as "name: command not found" rather
+		// than producing a downstream argument-flatten failure
+		// when one of the remaining arguments cannot be turned
+		// into a shell scalar.
+		if err := resolveCommandPath(first, span); err != nil {
+			return shell.Value{}, err
+		}
 		val, err = runExecStatement(ctx, cli, args, span)
 		return val, shell.FrameAt(span, err)
 	}
