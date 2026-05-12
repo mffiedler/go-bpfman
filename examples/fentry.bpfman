@@ -10,9 +10,10 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/fentry.bpfman
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/fentry_counter.bpf.o \
     --programs fentry:test_fentry:do_unlinkat
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach fentry $prog

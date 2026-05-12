@@ -12,9 +12,10 @@ guard _ <- ip link add bpfman-xdp type dummy
 defer ip link del bpfman-xdp
 guard _ <- ip link set bpfman-xdp up
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/xdp_pass.bpf.o \
     --programs xdp:pass
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach xdp --iface bpfman-xdp $prog

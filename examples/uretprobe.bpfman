@@ -11,9 +11,10 @@
 # Run from the repo root with:
 #   sudo bpfman-shell examples/uretprobe.bpfman
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/uprobe_counter.bpf.o \
     --programs uretprobe:uprobe_counter
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach uprobe \

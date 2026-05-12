@@ -12,9 +12,10 @@ guard _ <- ip link add bpfman-tc type dummy
 defer ip link del bpfman-tc
 guard _ <- ip link set bpfman-tc up
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach tc --iface bpfman-tc --direction ingress $prog

@@ -10,9 +10,10 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/kretprobe.bpfman
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/kprobe_counter.bpf.o \
     --programs kretprobe:kprobe_counter
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach kprobe --fn-name try_to_wake_up $prog

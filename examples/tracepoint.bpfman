@@ -8,9 +8,10 @@
 # Requires root. Run from the repo root with:
 #   sudo bpfman-shell examples/tracepoint.bpfman
 
-guard prog <- bpfman program load file \
+guard loaded <- bpfman program load file \
     --path e2e/testdata/bpf/tracepoint_counter.bpf.o \
     --programs tracepoint:tracepoint_kill_recorder
+let prog = $loaded.programs[0]
 defer bpfman program unload $prog
 
 guard link <- bpfman link attach tracepoint $prog syscalls/sys_enter_kill
