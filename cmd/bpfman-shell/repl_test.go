@@ -3021,6 +3021,28 @@ func TestReplLoop_BareCommandNotFoundOutranksArgFlatten(t *testing.T) {
 	assert.NotContains(t, out, "argument", "command-not-found must pre-empt the argument-flatten diagnostic")
 }
 
+func TestReplLoop_ExecArgRejectionRendersAsCitation(t *testing.T) {
+	t.Parallel()
+
+	// The command resolves on $PATH but a structured value
+	// argument cannot flatten into argv text. The diagnostic must
+	// render as a citation, not as a rust-style frame: the source
+	// is well-formed, the runtime value just does not compose
+	// with what the executor needs.
+	input := "let r = jq \".\" '{\"a\":1}'\n/bin/echo $r\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	assert.Contains(t, out, "argument 2")
+	assert.Contains(t, out, "cannot pass")
+	assert.NotContains(t, out, "error:", "argument-flatten failure must not render as a frame")
+	assert.NotContains(t, out, "^^^", "argument-flatten failure must not draw a caret span")
+}
+
 func TestReplLoop_ExecTopLevelSilentOnNonZeroInteractive(t *testing.T) {
 	t.Parallel()
 

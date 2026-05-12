@@ -95,6 +95,24 @@ func resolveCommandPath(name string, span shell.Span) error {
 	return nil
 }
 
+// ExecArgError is the typed error returned by resolveExternalArgs
+// when an argument cannot be flattened into argv text -- a
+// structured value passed where the spawned process expects a
+// scalar, or an unrecognised adapter form. The source construct is
+// well-formed (the syntax accepts the argument); the runtime value
+// just does not compose with what the executor needs. SpanCarrier
+// keeps it out of the syntax-error frame so the renderer can cite
+// the source line and print the message verbatim, no caret span.
+type ExecArgError struct {
+	Msg  string
+	Span shell.Span
+}
+
+func (e *ExecArgError) Error() string { return e.Msg }
+
+// SourceSpan implements shell.SpanCarrier.
+func (e *ExecArgError) SourceSpan() shell.Span { return e.Span }
+
 // handleExec runs an external command at top-level statement
 // position with stdio inherited from the parent: stdin from the
 // terminal, stdout/stderr streamed live to the user's writers.
@@ -157,14 +175,20 @@ func resolveExternalArgs(args []shell.Arg) (argv []string, tempFiles []string, e
 				for _, f := range tempFiles {
 					os.Remove(f)
 				}
-				return nil, nil, fmt.Errorf("unknown adapter %q", aa.Adapter)
+				return nil, nil, &ExecArgError{
+					Msg:  fmt.Sprintf("argument %d: unknown adapter %q", i+1, aa.Adapter),
+					Span: aa.Span,
+				}
 			}
 			path, terr := writeValueToTemp(aa.Value)
 			if terr != nil {
 				for _, f := range tempFiles {
 					os.Remove(f)
 				}
-				return nil, nil, fmt.Errorf("adapter file: %w", terr)
+				return nil, nil, &ExecArgError{
+					Msg:  fmt.Sprintf("argument %d: file adapter: %v", i+1, terr),
+					Span: aa.Span,
+				}
 			}
 			tempFiles = append(tempFiles, path)
 			resolved[i] = shell.ScalarValueArg{Text: path, Span: aa.Span}
@@ -172,9 +196,12 @@ func resolveExternalArgs(args []shell.Arg) (argv []string, tempFiles []string, e
 			for _, f := range tempFiles {
 				os.Remove(f)
 			}
-			return nil, nil, fmt.Errorf(
-				"exec: argument %d is a %s value; use a scalar path (e.g. $name.field) or the file adapter (file:$name)",
-				i+1, aa.Value.Kind())
+			return nil, nil, &ExecArgError{
+				Msg: fmt.Sprintf(
+					"argument %d: cannot pass a %s value to an external command; use a scalar field (e.g. $name.field) or the file adapter (file:$name)",
+					i+1, aa.Value.Kind()),
+				Span: aa.Span,
+			}
 		default:
 			resolved[i] = a
 		}

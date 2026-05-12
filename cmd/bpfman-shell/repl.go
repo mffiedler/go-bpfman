@@ -285,6 +285,22 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}))
 	}
 	report := func(err error) error {
+		var ae *ExecArgError
+		if errors.As(err, &ae) {
+			// An argument cannot flatten into argv text -- a
+			// structured value passed where a scalar was
+			// needed, or an unknown adapter form. The source
+			// is well-formed; the runtime value just does not
+			// compose. Cite, do not frame.
+			if loc.file != "" {
+				shift := loc.line - 1
+				line := ae.Span.Pos.Line + shift
+				_ = cli.PrintErrf("%s:%d: %s\n", loc.file, line, ae.Msg)
+			} else {
+				_ = cli.PrintErrf("%s\n", ae.Msg)
+			}
+			return errScriptError
+		}
 		var cnf *CommandNotFound
 		if errors.As(err, &cnf) {
 			// Subprocess fallthrough hit a name that does not
