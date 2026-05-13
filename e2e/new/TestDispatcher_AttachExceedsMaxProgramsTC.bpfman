@@ -52,15 +52,6 @@ defer bpfman link detach $l_1000
 
 # Eleventh attach must fail. The bind's Rc carries the envelope;
 # Primary stays empty because the attach never produced a Link.
-#
-# The overflow priority is 50, deliberately distinct from the
-# ten already used and inside the CLI's 0-1000 acceptable range.
-# The Go test passes 1100 because its harness constructs the
-# AttachSpec directly and bypasses the priority bound; both the
-# library and external dispatch paths in the shell enforce the
-# CLI bound at argv parse time, so an out-of-range value would
-# trip on "--priority must be 0-1000" rather than reach the
-# slot allocator.
-let (rc, _) <- bpfman link attach tc -i $pair.host_link -d ingress -p 50 $pid
+let (rc, _) <- bpfman link attach tc -i $pair.host_link -d ingress -p 1100 $pid
 assert not $rc.ok
 assert contains $rc.stderr "no free dispatcher slots"
