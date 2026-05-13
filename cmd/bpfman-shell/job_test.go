@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -36,6 +39,26 @@ func waitForJob(t *testing.T, j *shell.Job) {
 	case <-time.After(15 * time.Second):
 		t.Fatalf("job pid %d did not exit within timeout", j.PID)
 	}
+}
+
+// waitForFile blocks until path exists or timeout elapses. Used by
+// the kill tests to synchronise with a sentinel the spawned shell
+// drops after it has fully entered its long-running sleep: without
+// the wait, kill races the shell's "trap registered but sleep child
+// not yet forked" window. In that window SIGUSR1 reaches the shell
+// (trap fires, queues `exit 17`) but the not-yet-forked sleep child
+// misses the group signal, so the shell's subsequent wait4 blocks
+// for sleep's full duration and the test times out.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("sentinel file %s not created within timeout", path)
 }
 
 func TestReplStart_SpawnsAndCapturesStdout(t *testing.T) {
@@ -434,13 +457,32 @@ func TestReplKill_CustomSignalSkipsEscalation(t *testing.T) {
 	// termination request. kill must deliver and return; it
 	// must not wait for grace and must not escalate to SIGKILL.
 	// The Signal field reflects the requested signal, not KILL.
+	//
+	// The shell signals readiness by touching `ready` after it
+	// has forked the sleep child into the background. Sending
+	// USR1 before that touch races a documented bash window: the
+	// trap is installed but sleep is not yet forked, so the
+	// group-signal reaches bash (which queues `exit 17`) but
+	// misses sleep, and bash's subsequent wait4 blocks for
+	// sleep's full duration. Synchronising on the sentinel
+	// closes that window.
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	script := fmt.Sprintf(
+		"trap 'exit 17' USR1\n"+
+			"sleep 30 &\n"+
+			"touch %s\n"+
+			"wait\n",
+		ready)
 	val, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "sh"},
 		shell.WordArg{Text: "-c"},
-		shell.WordArg{Text: "trap 'exit 17' USR1; sleep 30"},
+		shell.WordArg{Text: script},
 	})
 	require.NoError(t, err)
 	job := val.Origin().(*shell.Job)
+
+	waitForFile(t, ready)
 
 	env, err := replKill(context.Background(), []shell.Arg{
 		shell.WordArg{Text: "--signal=USR1"},
