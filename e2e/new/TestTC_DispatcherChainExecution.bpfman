@@ -15,9 +15,9 @@
 #
 # Retrofit notes: the fused load+attach inside the bind-collect
 # body keeps the program lifecycle paired with each priority.
-# mapIDs and per-program counts are computed via list literals
-# with line-continuation rather than a bind-collect because jq
-# is a pure builtin and cannot be a bind-collect producer.
+# mapIDs and per-program counts are projected via bind-collect
+# with jq as the producer; the result is the per-element jq
+# Value list, length-matched to the source list.
 #
 # Run from e2e/:
 #
@@ -54,13 +54,9 @@ guard progs <- foreach l in $links {
 }
 
 let mapFilter = "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapIDs = [ \
-    ($progs[0] |> jq $mapFilter) \
-    ($progs[1] |> jq $mapFilter) \
-    ($progs[2] |> jq $mapFilter) \
-    ($progs[3] |> jq $mapFilter) \
-    ($progs[4] |> jq $mapFilter) \
-]
+let mapIDs <- foreach p in $progs {
+    jq $mapFilter $p
+}
 
 # Drive traffic through the veth pair. 20 pings is enough that
 # every program in the chain should see at least one of them
@@ -79,13 +75,9 @@ guard dumps <- foreach m in $mapIDs {
     bpftool map dump id $m -j
 }
 
-let counts = [ \
-    ($dumps[0].stdout |> jq $sumFilter) \
-    ($dumps[1].stdout |> jq $sumFilter) \
-    ($dumps[2].stdout |> jq $sumFilter) \
-    ($dumps[3].stdout |> jq $sumFilter) \
-    ($dumps[4].stdout |> jq $sumFilter) \
-]
+let counts <- foreach d in $dumps {
+    jq $sumFilter $d.stdout
+}
 
 print "packets:" $counts
 
