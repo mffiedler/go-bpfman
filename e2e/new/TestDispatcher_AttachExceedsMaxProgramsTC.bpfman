@@ -1,0 +1,66 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_AttachExceedsMaxPrograms
+# (TC ingress subtest). The Go test parameterises across TC ingress
+# and XDP via t.Run; the DSL has no subtest primitive, so the two
+# cases live in sibling scripts. This file covers TC ingress;
+# TestDispatcher_AttachExceedsMaxProgramsXDP covers XDP.
+#
+# The TC dispatcher has ten slots. Filling all ten then attempting
+# an eleventh attach must fail with an error message that names
+# the cause -- "no free dispatcher slots" -- so callers can
+# distinguish slot-exhaustion from other attach failures.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_AttachExceedsMaxProgramsTC.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/tc_counter_pinned.bpf.o \
+    --programs tc:stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# Fill all ten slots at ascending priorities 100..1000.
+guard l_100  <- bpfman link attach tc -i $pair.host_link -d ingress -p 100  $pid
+guard l_200  <- bpfman link attach tc -i $pair.host_link -d ingress -p 200  $pid
+guard l_300  <- bpfman link attach tc -i $pair.host_link -d ingress -p 300  $pid
+guard l_400  <- bpfman link attach tc -i $pair.host_link -d ingress -p 400  $pid
+guard l_500  <- bpfman link attach tc -i $pair.host_link -d ingress -p 500  $pid
+guard l_600  <- bpfman link attach tc -i $pair.host_link -d ingress -p 600  $pid
+guard l_700  <- bpfman link attach tc -i $pair.host_link -d ingress -p 700  $pid
+guard l_800  <- bpfman link attach tc -i $pair.host_link -d ingress -p 800  $pid
+guard l_900  <- bpfman link attach tc -i $pair.host_link -d ingress -p 900  $pid
+guard l_1000 <- bpfman link attach tc -i $pair.host_link -d ingress -p 1000 $pid
+
+defer bpfman link detach $l_100
+defer bpfman link detach $l_200
+defer bpfman link detach $l_300
+defer bpfman link detach $l_400
+defer bpfman link detach $l_500
+defer bpfman link detach $l_600
+defer bpfman link detach $l_700
+defer bpfman link detach $l_800
+defer bpfman link detach $l_900
+defer bpfman link detach $l_1000
+
+# Eleventh attach must fail. The bind's Rc carries the envelope;
+# Primary stays empty because the attach never produced a Link.
+#
+# The overflow priority is 50, deliberately distinct from the
+# ten already used and inside the CLI's 0-1000 acceptable range.
+# The Go test passes 1100 because its harness constructs the
+# AttachSpec directly and bypasses the priority bound; both the
+# library and external dispatch paths in the shell enforce the
+# CLI bound at argv parse time, so an out-of-range value would
+# trip on "--priority must be 0-1000" rather than reach the
+# slot allocator.
+let (rc, _) <- bpfman link attach tc -i $pair.host_link -d ingress -p 50 $pid
+assert not $rc.ok
+assert contains $rc.stderr "no free dispatcher slots"
