@@ -310,7 +310,7 @@ func scriptLoop(ctx context.Context, cfg Config) error {
 		return ErrScriptError
 	}
 	if !cfg.NoCheck {
-		if hadIssues := PreflightCheck(cli, file, src); hadIssues {
+		if hadIssues := PreflightCheck(cli.Err, file, src); hadIssues {
 			return ErrScriptError
 		}
 	}

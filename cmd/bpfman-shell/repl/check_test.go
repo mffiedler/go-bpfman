@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"bytes"
@@ -8,17 +8,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 )
 
-// runCheckInput wraps replCheckInput over a string source so tests
+// runCheckInput wraps CheckInput over a string source so tests
 // can focus on which errors are reported and on which line.
 func runCheckInput(t *testing.T, src string) (bool, string) {
 	t.Helper()
-	r := repl.NewScannerReader(strings.NewReader(src), nil)
+	r := NewScannerReader(strings.NewReader(src), nil)
 	var buf bytes.Buffer
-	hadErrors := replCheckInput(r, &buf, "test.bpfman")
+	hadErrors := CheckInput(r, &buf, "test.bpfman")
 	return hadErrors, buf.String()
 }
 
@@ -130,18 +128,19 @@ func TestReplCheck_LinePrefixTracksParserPosition(t *testing.T) {
 }
 
 // TestReplCheck_SyntaxGallery is a smoke test that the shipped
-// emacs/syntax-gallery.bpfman example parses cleanly under --check.
-// The gallery is the reference source for the REPL's surface syntax;
-// if this regresses the refactor has lost coverage somewhere.
+// emacs/syntax-gallery.bpfman example parses cleanly under
+// CheckInput. The gallery is the reference source for the REPL's
+// surface syntax; if this regresses the refactor has lost
+// coverage somewhere.
 func TestReplCheck_SyntaxGallery(t *testing.T) {
 	t.Parallel()
 
-	path, err := filepath.Abs("../../emacs/syntax-gallery.bpfman")
+	path, err := filepath.Abs("../../../emacs/syntax-gallery.bpfman")
 	require.NoError(t, err)
-	f, err := repl.OpenScriptReader(path)
+	f, err := OpenScriptReader(path)
 	require.NoError(t, err)
 	defer f.Close()
 	var buf bytes.Buffer
-	hadErrors := replCheckInput(f, &buf, path)
+	hadErrors := CheckInput(f, &buf, path)
 	assert.False(t, hadErrors, "syntax gallery reports errors:\n%s", buf.String())
 }

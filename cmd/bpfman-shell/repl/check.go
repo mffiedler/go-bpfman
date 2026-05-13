@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
 
 // OpenScriptReader opens a file for reading commands. Use "-"
@@ -51,19 +50,19 @@ func SlurpReader(r LineReader) (string, error) {
 }
 
 // PreflightCheck tokenises and parses src, runs the static
-// checker, and writes any issues to cli.Err as rust-compiler-
+// checker, and writes any issues to errOut as rust-compiler-
 // style multi-line diagnostics with a "  --> file:line:col"
 // citation, the offending source line, and a caret span
 // underlining the region. Returns true when at least one issue
 // was emitted so the caller can refuse to evaluate.
-func PreflightCheck(cli *bpfmancli.CLI, file, src string) bool {
+func PreflightCheck(errOut io.Writer, file, src string) bool {
 	if strings.TrimSpace(src) == "" {
 		return false
 	}
 	hadIssues := false
 	emitFrame := func(span shell.Span, msg string) {
 		hadIssues = true
-		_ = cli.PrintErr(shell.RenderDiagnostic(src, file, shell.Diagnostic{
+		fmt.Fprint(errOut, shell.RenderDiagnostic(src, file, shell.Diagnostic{
 			Span: span,
 			Msg:  msg,
 		}))
@@ -97,4 +96,21 @@ func PreflightCheck(cli *bpfmancli.CLI, file, src string) bool {
 		emitFrame(issue.Span, issue.Msg)
 	}
 	return hadIssues
+}
+
+// CheckInput is the framework half of the --check pipeline:
+// slurp the whole input from r, then run PreflightCheck on the
+// concatenated source. Returns true when at least one issue was
+// emitted so the caller can signal a non-zero exit. Slurping
+// (rather than chunk-at-a-time) gives the checker the full
+// program scope: a let in the first chunk defines a name the
+// last chunk can use, and that visibility is what undefined-
+// variable detection needs.
+func CheckInput(r LineReader, errOut io.Writer, file string) bool {
+	src, err := SlurpReader(r)
+	if err != nil {
+		fmt.Fprintf(errOut, "%s: %v\n", file, err)
+		return true
+	}
+	return PreflightCheck(errOut, file, src)
 }
