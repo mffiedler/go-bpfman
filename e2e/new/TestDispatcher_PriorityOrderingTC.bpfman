@@ -59,18 +59,13 @@ guard links <- foreach prio in $priorities {
     bpfman link attach tc -i $pair.host_link -d ingress -p $prio $pid
 }
 
-# Defer + re-query reach into the link record by id rather than
-# passing the bare link value. List iteration unwraps elements
-# without their kind/origin metadata, so the structured-arg path
-# in bpfman link {detach,get} cannot recover the kernel LinkID
-# capability. The .record.id scalar route bypasses that.
 foreach l in $links {
-    defer bpfman link detach $l.record.id
+    defer bpfman link detach $l
 }
 
 # Re-query each link so positions reflect the final sorted order.
 guard refreshed <- foreach l in $links {
-    bpfman link get $l.record.id
+    bpfman link get $l
 }
 
 # Position equals the priority's rank in the sorted-ascending list.
