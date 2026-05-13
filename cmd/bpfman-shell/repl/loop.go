@@ -24,26 +24,16 @@ import (
 // refuse nested invocations.
 type sourcingKey struct{}
 
-// configKey carries the loop's Config through the context so the
-// source builtin (handler in cmd/bpfman-shell, implementation in
-// repl.Source) can rebuild Env callbacks for each chunk it
-// evaluates. Set by Loop at entry.
-type configKey struct{}
-
-// ContextWithConfig stashes cfg on the context so Source can
-// pick up the same Fallback / BindFallback / MakeAssertStmt
-// hooks the outer loop is using.
-func ContextWithConfig(ctx context.Context, cfg Config) context.Context {
-	return context.WithValue(ctx, configKey{}, cfg)
-}
-
-// ConfigFromContext returns the stashed Config and whether one
-// was present. Used by Source to rebuild the per-chunk Env
-// callbacks; ok == false means the caller invoked Source without
-// going through Loop, in which case all callbacks are nil.
-func ConfigFromContext(ctx context.Context) (Config, bool) {
-	v, ok := ctx.Value(configKey{}).(Config)
-	return v, ok
+// SourceHooks bundles the per-chunk Env callbacks Source installs
+// for each statement it evaluates from a sourced file. Source
+// callers pass the same triple the outer Loop wires through
+// Config.Fallback / BindFallback / MakeAssertStmt; the framework
+// has no use for the hooks outside the source path, so they are
+// not stored on the context.
+type SourceHooks struct {
+	Fallback       FallbackFunc
+	BindFallback   BindFallbackFunc
+	MakeAssertStmt MakeAssertStmtFunc
 }
 
 // Config bundles the call-site options Run needs. The embedding
@@ -189,7 +179,6 @@ func Run(ctx context.Context, cfg Config) error {
 // session end (Ctrl+D) by a silent leak handler.
 func Loop(ctx context.Context, cfg Config) error {
 	ctx = EnsureInteractiveBaseDir(ctx)
-	ctx = ContextWithConfig(ctx, cfg)
 	if cfg.Interactive {
 		return interactiveLoop(ctx, cfg)
 	}
@@ -658,13 +647,13 @@ func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc SourceLoc) fu
 // in the sourced file live in the caller's job scope. Nested
 // source commands are rejected to prevent unbounded recursion.
 //
-// Source picks up the Fallback / BindFallback / MakeAssertStmt
-// callbacks from the context (stashed there by the outer Loop
-// via ContextWithConfig). Callers that invoke Source directly
-// without going through Loop see nil callbacks, which means
-// non-builtin commands fall through to external execution.
-func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *shell.Env, args []string) error {
-	hooks, _ := ConfigFromContext(ctx)
+// The hooks parameter carries the same Fallback / BindFallback /
+// MakeAssertStmt triple the outer Loop received via Config; the
+// embedding binary's `source` builtin handler passes them in so
+// the sourced chunks dispatch identically to top-level chunks.
+// A zero-valued SourceHooks is fine: non-builtin commands fall
+// through to external execution.
+func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *shell.Env, hooks SourceHooks, args []string) error {
 	if ctx.Value(sourcingKey{}) != nil {
 		return fmt.Errorf("source cannot be used inside a sourced file")
 	}

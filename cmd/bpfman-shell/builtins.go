@@ -495,7 +495,11 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 			}
 		}
 	}
-	return shell.Value{}, repl.Source(c.Ctx, c.CLI, c.Mgr, c.Env, args)
+	return shell.Value{}, repl.Source(c.Ctx, c.CLI, c.Mgr, c.Env, repl.SourceHooks{
+		Fallback:       bpfmanFallback,
+		BindFallback:   bpfmanBindFallback,
+		MakeAssertStmt: makeExecAssertStmt,
+	}, args)
 }
 
 // handleWait adapts replWait to the builtin shape, wrapping the
