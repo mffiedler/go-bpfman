@@ -13,6 +13,11 @@
 # in shell/check.go), so a typo on .priority or .position fails
 # --check rather than slipping through to runtime.
 #
+# Retrofit notes: same shape as the TC sibling. List literal
+# plus foreach bind-collect replace the ten-line attach, defer,
+# and re-query blocks; the assertion loop derives the expected
+# position from each link's priority via jq sort+index.
+#
 # Run from e2e/:
 #
 #   cd e2e
@@ -30,56 +35,28 @@ let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard l_500 <- bpfman link attach xdp -i $pair.host_link -p 500 $pid
-guard l_100 <- bpfman link attach xdp -i $pair.host_link -p 100 $pid
-guard l_800 <- bpfman link attach xdp -i $pair.host_link -p 800 $pid
-guard l_300 <- bpfman link attach xdp -i $pair.host_link -p 300 $pid
-guard l_900 <- bpfman link attach xdp -i $pair.host_link -p 900 $pid
-guard l_200 <- bpfman link attach xdp -i $pair.host_link -p 200 $pid
-guard l_700 <- bpfman link attach xdp -i $pair.host_link -p 700 $pid
-guard l_400 <- bpfman link attach xdp -i $pair.host_link -p 400 $pid
-guard l_600 <- bpfman link attach xdp -i $pair.host_link -p 600 $pid
-guard l_50  <- bpfman link attach xdp -i $pair.host_link -p 50  $pid
+let priorities = [500 100 800 300 900 200 700 400 600 50]
 
-defer bpfman link detach $l_500
-defer bpfman link detach $l_100
-defer bpfman link detach $l_800
-defer bpfman link detach $l_300
-defer bpfman link detach $l_900
-defer bpfman link detach $l_200
-defer bpfman link detach $l_700
-defer bpfman link detach $l_400
-defer bpfman link detach $l_600
-defer bpfman link detach $l_50
+guard links <- foreach prio in $priorities {
+    bpfman link attach xdp -i $pair.host_link -p $prio $pid
+}
 
-guard g_50  <- bpfman link get $l_50
-guard g_100 <- bpfman link get $l_100
-guard g_200 <- bpfman link get $l_200
-guard g_300 <- bpfman link get $l_300
-guard g_400 <- bpfman link get $l_400
-guard g_500 <- bpfman link get $l_500
-guard g_600 <- bpfman link get $l_600
-guard g_700 <- bpfman link get $l_700
-guard g_800 <- bpfman link get $l_800
-guard g_900 <- bpfman link get $l_900
+foreach l in $links {
+    defer bpfman link detach $l
+}
 
-assert $g_50.record.details.priority  == 50
-assert $g_50.record.details.position  == 0
-assert $g_100.record.details.priority == 100
-assert $g_100.record.details.position == 1
-assert $g_200.record.details.priority == 200
-assert $g_200.record.details.position == 2
-assert $g_300.record.details.priority == 300
-assert $g_300.record.details.position == 3
-assert $g_400.record.details.priority == 400
-assert $g_400.record.details.position == 4
-assert $g_500.record.details.priority == 500
-assert $g_500.record.details.position == 5
-assert $g_600.record.details.priority == 600
-assert $g_600.record.details.position == 6
-assert $g_700.record.details.priority == 700
-assert $g_700.record.details.position == 7
-assert $g_800.record.details.priority == 800
-assert $g_800.record.details.position == 8
-assert $g_900.record.details.priority == 900
-assert $g_900.record.details.position == 9
+# Re-query each link so positions reflect the final sorted order.
+guard refreshed <- foreach l in $links {
+    bpfman link get $l
+}
+
+# Position equals the priority's rank in the sorted-ascending list.
+# Computed per link via jq sort+index rather than enumerated by
+# hand so the assertion expresses the contract, not the expected
+# values.
+foreach r in $refreshed {
+    let prio = $r.record.details.priority
+    let pos = $r.record.details.position
+    let want_pos = $priorities |> jq "sort | index(${prio})"
+    assert $pos == $want_pos
+}
