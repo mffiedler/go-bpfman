@@ -33,7 +33,7 @@ guard pair <- net veth-pair
 defer net release $pair
 
 guard loaded <- bpfman program load file \
-    --path testdata/bpf/tc_counter_pinned.bpf.o \
+    --path testdata/bpf/tc_counter.bpf.o \
     --programs tc:stats
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
