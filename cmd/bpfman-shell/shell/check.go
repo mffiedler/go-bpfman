@@ -332,7 +332,22 @@ func inferBpfmanBindShape(args []Expr) Shape {
 		}
 	case "link":
 		switch verb.Text {
-		case "attach", "get":
+		case "attach":
+			// args[2] is the attach kind (xdp, tc, tcx,
+			// tracepoint, kprobe, uprobe, fentry, fexit).
+			// Specialise the Link Shape by overlaying
+			// record.details with the kind-specific
+			// details Shape so deep-path typos like
+			// $l.record.details.priroity fail --check.
+			if len(args) >= 3 {
+				if kind, ok := args[2].(*LiteralExpr); ok && !kind.Quoted {
+					if details, ok := LookupLinkDetailsShape(kind.Text); ok {
+						return linkShapeWithDetails(details)
+					}
+				}
+			}
+			return KindShape(OriginLink)
+		case "get":
 			return KindShape(OriginLink)
 		case "list":
 			elem := KindShape(OriginLink)

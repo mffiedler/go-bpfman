@@ -21,4 +21,43 @@ func init() {
 	RegisterBindShape("wait", StaticBindShape(KindShape(OriginEnvelope)))
 	RegisterBindShape("exec", StaticBindShape(KindShape(OriginEnvelope)))
 	RegisterBindShape("file", StaticBindShape(Shape{Sealed: false, Kind: OriginUnknown}))
+
+	// Stub Link / details shapes for the bind-shape kind-aware
+	// composition tests. The production wiring lives in
+	// cmd/bpfman-shell/kindshapes.go where reflection over
+	// bpfman.Link and the LinkDetails implementers produces the
+	// real Shapes; the shell test binary cannot import that
+	// package without inducing a cycle, so a minimal sealed
+	// shape with just the field names the tests assert on
+	// stands in for it.
+	RegisterShape(OriginLink, Shape{
+		Sealed: true,
+		Kind:   OriginLink,
+		Fields: map[string]Shape{
+			"record": {
+				Sealed: true,
+				Kind:   OriginUnknown,
+				Fields: map[string]Shape{
+					"id":      {Sealed: true, Kind: OriginScalar},
+					"kind":    {Sealed: true, Kind: OriginScalar},
+					"details": {Sealed: false, Kind: OriginUnknown},
+				},
+			},
+			"status": {
+				Sealed: true,
+				Kind:   OriginUnknown,
+				Fields: map[string]Shape{
+					"kernel_seen": {Sealed: true, Kind: OriginBool},
+				},
+			},
+		},
+	})
+	RegisterLinkDetailsShape("tc", Shape{
+		Sealed: true,
+		Kind:   OriginUnknown,
+		Fields: map[string]Shape{
+			"priority": {Sealed: true, Kind: OriginScalar},
+			"position": {Sealed: true, Kind: OriginScalar},
+		},
+	})
 }

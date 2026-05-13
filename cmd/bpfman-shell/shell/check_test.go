@@ -661,3 +661,44 @@ print "${4 * $x}"`
 			"foreach must restore x's outer shape on exit")
 	}
 }
+
+func TestCheck_LinkAttachKindSpecialisesDetailsShape(t *testing.T) {
+	t.Parallel()
+
+	// `bpfman link attach <kind>` lets the static checker pick
+	// the concrete details Shape for record.details so deep
+	// field-typo checks no longer bail at the polymorphic
+	// interface boundary. With the test-fixture TC details
+	// shape carrying only `priority` and `position`, a typo
+	// must surface and a legitimate field must stay clean.
+	bogus := `let l <- bpfman link attach tc -i v -d ingress -p 100 1
+print $l.record.details.priroity`
+	issues := checkSource(t, bogus)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"priroity"`)
+	assert.Contains(t, issues[0].Msg, "priority")
+
+	ok := `let l <- bpfman link attach tc -i v -d ingress -p 100 1
+print $l.record.details.priority
+print $l.record.details.position`
+	assert.Empty(t, checkSource(t, ok))
+}
+
+func TestCheck_LinkAttachUnknownKindFallsBackToGenericLink(t *testing.T) {
+	t.Parallel()
+
+	// A kind not registered in linkDetailsShapes (here,
+	// "uprobe" -- the test fixture only registers "tc") leaves
+	// record.details unsealed, so a deep field access passes
+	// without complaint. The top-level Link fields still
+	// validate, so a typo on `record` or `status` is caught.
+	clean := `let l <- bpfman link attach uprobe -t /bin/sh -f main 1
+print $l.record.details.anything.goes.here`
+	assert.Empty(t, checkSource(t, clean))
+
+	bad := `let l <- bpfman link attach uprobe -t /bin/sh -f main 1
+print $l.tortoise`
+	issues := checkSource(t, bad)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, `"tortoise"`)
+}
