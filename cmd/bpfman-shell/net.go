@@ -16,12 +16,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"os/exec"
 	"strings"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
+	"github.com/frobware/go-bpfman/ns/netns"
 )
 
 // netBindShape resolves the primary Shape of `<- net SUB ARGS...`
@@ -396,13 +398,28 @@ func handleNetVethPair(ctx context.Context, origin string, args []shell.Arg) (sh
 		}
 	}
 
+	// Capture host-side identifiers needed by dispatcher-aware
+	// scripts (`bpfman dispatcher get tc-ingress $pair.host_nsid
+	// $pair.host_ifindex`). Both lookups are best-effort against
+	// the freshly-created topology: failures here leave the
+	// fields zero rather than aborting NetPair construction, so
+	// the legacy address-only call sites stay working even if a
+	// future kernel rejects the lookups for some reason.
+	var hostIfindex uint32
+	if iface, err := net.InterfaceByName(f.HostLink); err == nil {
+		hostIfindex = uint32(iface.Index)
+	}
+	hostNsid, _ := netns.CurrentNSID()
+
 	pair := &shell.NetPair{
-		Ns:       f.Ns,
-		HostLink: f.HostLink,
-		PeerLink: f.PeerLink,
-		HostAddr: hostAddr,
-		PeerAddr: peerAddr,
-		Lease:    lease,
+		Ns:          f.Ns,
+		HostLink:    f.HostLink,
+		PeerLink:    f.PeerLink,
+		HostAddr:    hostAddr,
+		PeerAddr:    peerAddr,
+		HostIfindex: hostIfindex,
+		HostNsid:    hostNsid,
+		Lease:       lease,
 	}
 	return shell.ValueFromNetPair(pair), nil
 }

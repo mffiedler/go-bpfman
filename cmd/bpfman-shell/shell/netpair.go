@@ -1,23 +1,27 @@
 package shell
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
 
 // NetPair is the user-visible handle for a paired-veth single-netns
-// topology built by `net veth-pair`. The five string fields are
-// immutable identity (set once at construction, never rewritten),
-// and Released is the lifecycle latch: net release flips it on the
-// first call; subsequent net exec / net start against the same
-// handle reject the call as "use after release". Field reads remain
-// valid after release because the strings are still a historical
-// description of what existed.
+// topology built by `net veth-pair`. The identity fields (five
+// strings naming the netns / interfaces / addresses, plus the
+// host-side ifindex and netns inode) are immutable -- set once at
+// construction, never rewritten -- and Released is the lifecycle
+// latch: net release flips it on the first call; subsequent
+// net exec / net start against the same handle reject the call
+// as "use after release". Field reads remain valid after release
+// because the identity is still a historical description of what
+// existed.
 //
-// Concurrency: Mu guards Released. The five identity fields are
+// Concurrency: Mu guards Released. The identity fields are
 // read-only after construction so they need no lock.
 type NetPair struct {
 	// Ns is the netns name the peer-side veth lives in.
@@ -40,6 +44,22 @@ type NetPair struct {
 	// PeerAddr is the peer-side IPv4 address without a /CIDR
 	// suffix.
 	PeerAddr string
+
+	// HostIfindex is the host-side veth interface index, captured
+	// at construction time so scripts that need to address the
+	// dispatcher attach point (e.g. `bpfman dispatcher get
+	// tc-ingress $pair.host_nsid $pair.host_ifindex`) do not have
+	// to round-trip through `ip link show`. Zero when the pair
+	// was constructed in a path that skipped the ifindex lookup
+	// (test fixtures); the runtime path always populates it.
+	HostIfindex uint32
+
+	// HostNsid is the inode number of the network namespace the
+	// host-side veth lives in -- always the process's own netns
+	// for a `net veth-pair` handle. Captured at construction
+	// time alongside HostIfindex; same gap rule applies for
+	// tests that omit it.
+	HostNsid uint64
 
 	// Mu guards Released.
 	Mu sync.Mutex
@@ -88,11 +108,13 @@ func (p *NetPair) IsReleased() bool {
 // the lifecycle latch directly.
 func ValueFromNetPair(p *NetPair) Value {
 	mirror := map[string]any{
-		"ns":        p.Ns,
-		"host_link": p.HostLink,
-		"peer_link": p.PeerLink,
-		"host_addr": p.HostAddr,
-		"peer_addr": p.PeerAddr,
+		"ns":           p.Ns,
+		"host_link":    p.HostLink,
+		"peer_link":    p.PeerLink,
+		"host_addr":    p.HostAddr,
+		"peer_addr":    p.PeerAddr,
+		"host_ifindex": json.Number(strconv.FormatUint(uint64(p.HostIfindex), 10)),
+		"host_nsid":    json.Number(strconv.FormatUint(p.HostNsid, 10)),
 	}
 	return Value{v: mirror, origin: p, kind: OriginNetPair}
 }

@@ -236,11 +236,13 @@ var (
 			Sealed: true,
 			Kind:   OriginNetPair,
 			Fields: map[string]Shape{
-				"ns":        {Sealed: true, Kind: OriginScalar},
-				"host_link": {Sealed: true, Kind: OriginScalar},
-				"peer_link": {Sealed: true, Kind: OriginScalar},
-				"host_addr": {Sealed: true, Kind: OriginScalar},
-				"peer_addr": {Sealed: true, Kind: OriginScalar},
+				"ns":           {Sealed: true, Kind: OriginScalar},
+				"host_link":    {Sealed: true, Kind: OriginScalar},
+				"peer_link":    {Sealed: true, Kind: OriginScalar},
+				"host_addr":    {Sealed: true, Kind: OriginScalar},
+				"peer_addr":    {Sealed: true, Kind: OriginScalar},
+				"host_ifindex": {Sealed: true, Kind: OriginScalar},
+				"host_nsid":    {Sealed: true, Kind: OriginScalar},
 			},
 		},
 		// OriginProgram, OriginLink are tagged at runtime by
