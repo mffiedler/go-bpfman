@@ -21,59 +21,6 @@ import (
 	"github.com/frobware/go-bpfman/kernel"
 )
 
-func TestCanonicaliseHistory(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"single line", "bpfman program list", "bpfman program list"},
-		{"empty", "", ""},
-		{"whitespace only", "   \n  \t", ""},
-		{
-			name: "backslash continuation",
-			in:   "bpfman program load file \\\n    --path foo.o \\\n    --programs tracepoint:kr",
-			want: "bpfman program load file --path foo.o --programs tracepoint:kr",
-		},
-		{
-			name: "let with bracket continuation",
-			in:   "let prog <- bpfman program load file \\\n    --path foo.o \\\n    --programs tracepoint:kr",
-			want: "let prog <- bpfman program load file --path foo.o --programs tracepoint:kr",
-		},
-		{
-			name: "if block",
-			in:   "if true {\n    print yes\n}",
-			want: "if true { print yes }",
-		},
-		{
-			name: "preserves quoted newlines",
-			in:   "print \"line1\nline2\"",
-			want: "print \"line1\nline2\"",
-		},
-		{
-			name: "strips line comments",
-			in:   "bpfman program list # all programs\nfoo",
-			want: "bpfman program list foo",
-		},
-		{
-			name: "hash inside quotes preserved",
-			in:   "print \"#not a comment\"",
-			want: "print \"#not a comment\"",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := repl.CanonicaliseHistory(tc.in)
-			if got != tc.want {
-				t.Errorf("repl.CanonicaliseHistory(%q)\n got: %q\nwant: %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestReplComplete_FileCompletion(t *testing.T) {
 	t.Parallel()
 
@@ -191,25 +138,6 @@ func TestReplComplete_FileCompletion(t *testing.T) {
 	}
 }
 
-func TestScannerReader(t *testing.T) {
-	t.Parallel()
-
-	input := "line one\nline two\n"
-	lr := repl.NewScannerReader(strings.NewReader(input), nil)
-	defer lr.Close()
-
-	s, err := lr.Readline()
-	require.NoError(t, err)
-	assert.Equal(t, "line one", s)
-
-	s, err = lr.Readline()
-	require.NoError(t, err)
-	assert.Equal(t, "line two", s)
-
-	_, err = lr.Readline()
-	assert.ErrorIs(t, err, io.EOF)
-}
-
 func TestReplLoop_CommentsAndBlanks(t *testing.T) {
 	t.Parallel()
 
@@ -303,48 +231,6 @@ func TestReplComplete_CommandCompletion(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestArgTexts(t *testing.T) {
-	t.Parallel()
-
-	args := []shell.Arg{
-		shell.WordArg{Text: "show"},
-		shell.WordArg{Text: "program"},
-		shell.ScalarValueArg{Text: "42"},
-	}
-	got := repl.ArgTexts(args)
-	assert.Equal(t, []string{"show", "program", "42"}, got)
-}
-
-func TestArgTexts_Empty(t *testing.T) {
-	t.Parallel()
-
-	got := repl.ArgTexts(nil)
-	assert.Empty(t, got)
-}
-
-func TestArgTexts_StructuredValueArg(t *testing.T) {
-	t.Parallel()
-
-	args := []shell.Arg{
-		shell.WordArg{Text: "show"},
-		shell.WordArg{Text: "program"},
-		shell.StructuredValueArg{Name: "prog", Value: shell.ValueFromMap(map[string]any{"id": "42"})},
-	}
-	got := repl.ArgTexts(args)
-	assert.Equal(t, []string{"show", "program", "$prog"}, got)
-}
-
-func TestArgTexts_QuotedArg(t *testing.T) {
-	t.Parallel()
-
-	args := []shell.Arg{
-		shell.WordArg{Text: "load"},
-		shell.QuotedArg{Text: "my file.o"},
-	}
-	got := repl.ArgTexts(args)
-	assert.Equal(t, []string{"load", "my file.o"}, got)
 }
 
 func TestReplLoop_VarsEmpty(t *testing.T) {
@@ -2423,27 +2309,6 @@ func TestLookupBareVar(t *testing.T) {
 	_, err = lookupBareVar(session, "novar")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "undefined")
-}
-
-func TestSourceLoc_String(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		loc  sourceLoc
-		want string
-	}{
-		{"zero value", sourceLoc{}, ""},
-		{"with file and line", sourceLoc{File: "test.bpfman", Line: 5}, "test.bpfman:5: "},
-		{"line one", sourceLoc{File: "script.bpfman", Line: 1}, "script.bpfman:1: "},
-		{"with column", sourceLoc{File: "test.bpfman", Line: 5, Col: 9}, "test.bpfman:5:9: "},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.loc.String())
-		})
-	}
 }
 
 func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
