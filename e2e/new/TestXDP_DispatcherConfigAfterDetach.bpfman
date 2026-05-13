@@ -1,0 +1,84 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestXDP_DispatcherConfigAfterDetach.
+#
+# Fill all ten XDP dispatcher slots from a single loaded program
+# (ten attaches of the same program), then detach members one at
+# a time, asserting that the dispatcher's reported member count
+# decrements by one at every step from 10 down to 1. The last
+# link is kept alive and reaped through the deferred cleanup so
+# the script never exercises the "dispatcher disappears after
+# last detach" case (TestDispatcher_LifecycleAfterLastDetach
+# covers that separately).
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestXDP_DispatcherConfigAfterDetach.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/xdp_pass_pinned.bpf.o \
+    --programs xdp:pass
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# Fill all ten slots from a single program.
+guard l_0 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_1 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_2 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_3 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_4 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_5 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_6 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_7 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_8 <- bpfman link attach xdp -i $pair.host_link $pid
+guard l_9 <- bpfman link attach xdp -i $pair.host_link $pid
+
+# l_0 .. l_8 are detached explicitly mid-script; l_9 survives
+# until the deferred unwind so the dispatcher never reaches the
+# empty state inside this script.
+defer bpfman link detach $l_9
+
+guard snap_10 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_10 |> jq ".members | length") == 10
+
+bpfman link detach $l_0
+guard snap_9 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_9 |> jq ".members | length") == 9
+
+bpfman link detach $l_1
+guard snap_8 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_8 |> jq ".members | length") == 8
+
+bpfman link detach $l_2
+guard snap_7 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_7 |> jq ".members | length") == 7
+
+bpfman link detach $l_3
+guard snap_6 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_6 |> jq ".members | length") == 6
+
+bpfman link detach $l_4
+guard snap_5 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_5 |> jq ".members | length") == 5
+
+bpfman link detach $l_5
+guard snap_4 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_4 |> jq ".members | length") == 4
+
+bpfman link detach $l_6
+guard snap_3 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_3 |> jq ".members | length") == 3
+
+bpfman link detach $l_7
+guard snap_2 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_2 |> jq ".members | length") == 2
+
+bpfman link detach $l_8
+guard snap_1 <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+assert ($snap_1 |> jq ".members | length") == 1
