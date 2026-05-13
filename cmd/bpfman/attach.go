@@ -56,7 +56,7 @@ type AttachXDPCmd struct {
 	cliformat.OutputFlags
 	Example   ExampleFlag          `name:"example" help:"Show working examples and exit."`
 	Iface     string               `short:"i" name:"iface" required:"" help:"Network interface."`
-	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
+	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 = default). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	ProceedOn []string             `name:"proceed-on" sep:"," help:"XDP actions to proceed on (comma-separated or repeated). Values: aborted, drop, pass, tx, redirect, dispatcher_return." default:"pass,dispatcher_return"`
 	Netns     string               `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
@@ -98,7 +98,7 @@ type AttachTCCmd struct {
 	Example   ExampleFlag          `name:"example" help:"Show working examples and exit."`
 	Iface     string               `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string               `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
+	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 = default). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	ProceedOn []string             `name:"proceed-on" sep:"," help:"TC actions to proceed on (comma-separated or repeated). Values: unspec, ok, reclassify, shot, pipe, stolen, queued, repeat, redirect, trap, dispatcher_return." default:"pipe,dispatcher_return"`
 	Netns     string               `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
@@ -149,7 +149,7 @@ type AttachTCXCmd struct {
 	Example   ExampleFlag          `name:"example" help:"Show working examples and exit."`
 	Iface     string               `short:"i" name:"iface" required:"" help:"Network interface."`
 	Direction string               `short:"d" name:"direction" required:"" help:"Direction (ingress or egress)."`
-	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first, 0 = default)."`
+	Priority  int                  `short:"p" name:"priority" help:"Priority in chain (lower runs first; non-negative; 0 = default). Slot exhaustion (more than 10 attachments) is reported by the dispatcher, not by this flag."`
 	Netns     string               `short:"n" name:"netns" help:"Network namespace path."`
 	Metadata  []bpfmancli.KeyValue `short:"m" name:"metadata" help:"KEY=VALUE metadata (can be repeated)."`
 	ProgramID bpfmancli.ProgramID  `arg:"" name:"program-id" help:"Program ID to attach."`
