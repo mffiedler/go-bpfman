@@ -478,7 +478,7 @@ func handleKill(c builtinCtx) (shell.Value, error) {
 // against the live process cwd at evaluation time. Indistinguishable
 // in production (the shell has no cd builtin so cwd does not change
 // during a loop), but it lets parallel tests inject a base dir via
-// withInteractiveBaseDir instead of calling os.Chdir, which would
+// repl.WithInteractiveBaseDir instead of calling os.Chdir, which would
 // race other t.Parallel tests reading the global cwd.
 func handleSource(c builtinCtx) (shell.Value, error) {
 	if c.Env == nil {
@@ -490,7 +490,7 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 		case c.Pos.File != "":
 			args[0] = filepath.Join(filepath.Dir(c.Pos.File), args[0])
 		default:
-			if base := interactiveBaseDir(c.Ctx); base != "" {
+			if base := repl.InteractiveBaseDir(c.Ctx); base != "" {
 				args[0] = filepath.Join(base, args[0])
 			}
 		}

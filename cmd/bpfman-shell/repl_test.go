@@ -638,7 +638,7 @@ func TestReplLoop_SourceRelativeToScriptDirectory(t *testing.T) {
 	//       main.bpfman   <- says `source ../lib.bpfman`
 	//
 	// works regardless of cwd. The test confirms this by passing
-	// an unrelated base directory through withInteractiveBaseDir;
+	// an unrelated base directory through repl.WithInteractiveBaseDir;
 	// if the resolution were still base-dir-based the source
 	// would fail with "no such file or directory". We inject via
 	// context rather than os.Chdir so a t.Parallel test elsewhere
@@ -656,7 +656,7 @@ func TestReplLoop_SourceRelativeToScriptDirectory(t *testing.T) {
 	require.NoError(t, lerr)
 	defer lr.Close()
 
-	ctx := withInteractiveBaseDir(context.Background(), t.TempDir())
+	ctx := repl.WithInteractiveBaseDir(context.Background(), t.TempDir())
 	err := replLoop(ctx, cli, nil, lr, shell.NewSession(), mainPath, false, true)
 	require.NoError(t, err, "errBuf=%s", errBuf.String())
 	assert.Contains(t, outBuf.String(), "loaded-lib")
@@ -693,7 +693,7 @@ func TestReplLoop_SourceFromInteractiveStaysCwdRelative(t *testing.T) {
 	// A `source FOO` typed at the interactive prompt has no
 	// containing script, so it resolves against the cwd captured
 	// at replLoop entry. Verified by injecting an explicit base
-	// directory through withInteractiveBaseDir and typing
+	// directory through repl.WithInteractiveBaseDir and typing
 	// `source lib.bpfman` -- the file is in that directory, so
 	// it loads. The injection replaces the os.Chdir an earlier
 	// version of this test used, which raced any other t.Parallel
@@ -707,7 +707,7 @@ func TestReplLoop_SourceFromInteractiveStaysCwdRelative(t *testing.T) {
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: io.Discard}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 
-	ctx := withInteractiveBaseDir(context.Background(), dir)
+	ctx := repl.WithInteractiveBaseDir(context.Background(), dir)
 	err := replLoop(ctx, cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
 	assert.Contains(t, outBuf.String(), "interactive-lib")
