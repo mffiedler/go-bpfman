@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/kernel"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 func TestCanonicaliseHistory(t *testing.T) {

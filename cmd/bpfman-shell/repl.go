@@ -17,9 +17,9 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/shell"
 	"github.com/frobware/go-bpfman/version"
 )
 

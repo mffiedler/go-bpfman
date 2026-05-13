@@ -20,7 +20,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // netBindShape resolves the primary Shape of `<- net SUB ARGS...`

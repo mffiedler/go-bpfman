@@ -21,7 +21,7 @@ import (
 
 	"encoding/json"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // handleRange produces a Value carrying [json.Number("0"), ...,

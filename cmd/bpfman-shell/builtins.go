@@ -22,9 +22,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // builtinCtx carries everything a handler might need. It is a

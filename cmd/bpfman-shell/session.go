@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // handleVars lists all session variables and their kinds. The

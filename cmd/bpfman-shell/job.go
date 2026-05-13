@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // handleStart spawns a background subprocess and returns a Value

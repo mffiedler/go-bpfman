@@ -18,7 +18,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // handleTempdir is the registry handler for `tempdir PREFIX`.

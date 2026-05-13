@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // slurpReader reads every line from r, joins them with

@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // runAST drives the --ast pipeline: slurp the whole input,

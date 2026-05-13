@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/dispatcher"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
@@ -18,7 +19,6 @@ import (
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // Command is the sealed interface for typed command nodes produced by

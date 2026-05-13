@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // fireKind describes one fire kind: the BPFMAN_SHELL_MODE value

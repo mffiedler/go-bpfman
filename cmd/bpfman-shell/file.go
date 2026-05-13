@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // handleFile implements the file shell command. The only

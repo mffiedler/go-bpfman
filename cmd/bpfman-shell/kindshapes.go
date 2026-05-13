@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman"
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // typeToOriginKind maps Go types whose Values get tagged with a

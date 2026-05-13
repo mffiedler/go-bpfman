@@ -13,7 +13,7 @@ import (
 
 	"github.com/itchyny/gojq"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // handleJQ runs a jq filter against a Value using an embedded gojq

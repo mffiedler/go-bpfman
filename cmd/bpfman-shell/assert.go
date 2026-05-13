@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // assertResult holds the outcome of evaluating an assertion verb.

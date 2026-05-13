@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/frobware/go-bpfman/shell"
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
 // litArg fabricates a literal-text Arg so the helpers can be

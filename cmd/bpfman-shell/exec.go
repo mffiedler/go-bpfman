@@ -25,8 +25,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/shell"
 )
 
 // ExecFailure is the typed error returned by runExecStatement when
