@@ -1753,6 +1753,9 @@ func (p *exprParser) parseTerm() (Expr, error) {
 		p.advance() // consume ')'
 		return inner, nil
 	}
+	if t.Kind == TokenWord && t.Text == "[" {
+		return p.parseListLiteral()
+	}
 	if isKeywordWord(t, "timeout") {
 		return p.parseTimeoutExpr()
 	}
@@ -1766,6 +1769,69 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	}
 	p.advance()
 	return parsePrimary(t)
+}
+
+// parseListLiteral consumes a '[' EXPR EXPR ... ']' list literal.
+// Elements are whitespace-separated and each element parses as a
+// primary expression via parseTerm; compound expressions wrap in
+// parens, matching every other expression context. An operator at
+// element-boundary position (binary, thread, arithmetic, logical)
+// is rejected with a hint to parenthesise the compound. Newlines
+// inside the brackets are transparent so a long list can wrap
+// across lines.
+//
+// Empty lists ([]) are deliberately not accepted: the grammar
+// addition's first cut requires at least one element, mirroring
+// the corpus's needs. Adding [] later is purely permissive and
+// can land when a use case appears.
+func (p *exprParser) parseListLiteral() (Expr, error) {
+	openTok := p.advance() // '['
+	var elems []Expr
+	for {
+		// Newlines inside the brackets are transparent.
+		for !p.eof() && p.peek().Kind == TokenSep {
+			p.advance()
+		}
+		if p.eof() {
+			return nil, spanErrorf(openTok.Span, "missing ']' to close list literal")
+		}
+		t := p.peek()
+		if t.Kind == TokenWord && t.Text == "]" {
+			if len(elems) == 0 {
+				return nil, spanErrorf(openTok.Span, "empty list literal not supported; list must have at least one element")
+			}
+			p.advance() // ']'
+			return &ListExpr{Elems: elems, Span: p.spanFrom(openTok.Pos)}, nil
+		}
+		if _, isBinOp := binaryOpFromToken(t); isBinOp {
+			return nil, spanErrorf(t.Span, "unexpected %q between list elements; wrap a compound element in parens, e.g. [($x + 1) $y]", t.Text)
+		}
+		if isArithmeticOp(t) {
+			return nil, spanErrorf(t.Span, "unexpected %q between list elements; wrap a compound element in parens, e.g. [($x + 1) $y]", t.Text)
+		}
+		if t.Kind == TokenThread {
+			return nil, spanErrorf(t.Span, "unexpected '|>' between list elements; wrap a threaded element in parens, e.g. [($x |> jq \".id\") $y]")
+		}
+		if t.Kind == TokenWord && (t.Text == "and" || t.Text == "or") {
+			return nil, spanErrorf(t.Span, "unexpected %q between list elements; wrap a compound element in parens", t.Text)
+		}
+		// Comma is not a tokeniser terminator (CLI arg payloads
+		// like '--proceed-on ok,pipe,dispatcher_return' rely on
+		// '-bearing barewords staying whole). That means a user
+		// who writes [1, 2, 3] out of muscle memory would parse
+		// silently as the bareword strings "1,", "2,", "3".
+		// Catch any unquoted comma in element position and reject
+		// it loudly; quoted strings ("a,b" as an element) escape
+		// the check because TokenQuoted is not TokenWord.
+		if t.Kind == TokenWord && strings.ContainsRune(t.Text, ',') {
+			return nil, spanErrorf(t.Span, "unquoted comma in list literal; elements are whitespace-separated (try [1 2 3] not [1, 2, 3])")
+		}
+		elem, err := p.parseTerm()
+		if err != nil {
+			return nil, err
+		}
+		elems = append(elems, elem)
+	}
 }
 
 // parsePureCall consumes a registered pure-builtin name followed

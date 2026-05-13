@@ -247,10 +247,8 @@ func tokenise(input string, strict bool) ([]Token, error) {
 			i += n
 
 		case ch == '[' || ch == ']':
-			return nil, spanErrorf(Span{
-				Pos: locAt(start, lineStarts),
-				End: locAt(start+1, lineStarts),
-			}, "unexpected %q; to capture a command's result use 'guard X <- COMMAND' or 'let X <- COMMAND'; quote a literal '[' inside a string", ch)
+			tokens = emit(tokens, start, start+1, Token{Kind: TokenWord, Text: string(ch)})
+			i++
 
 		case ch == '|' && i+1 < len(input) && input[i+1] == '>':
 			// Reaching this case means the previous byte was

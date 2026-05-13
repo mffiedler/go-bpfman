@@ -190,6 +190,23 @@ type PureCallExpr struct {
 	Span
 }
 
+// ListExpr is an inline list literal: [elem elem ...] with
+// whitespace-separated elements. Each Elem is parsed as a
+// primary expression (the parseTerm level), so a compound
+// element must wrap in parens: [10 20 ($base + 30)]. Bare
+// words become string literals via the usual literalValue
+// rules, but unquoted identifiers that are not numeric or
+// boolean still flow through as strings -- there is no
+// bareword-disallow rule at the AST level; the grammar note
+// just observes that the natural style is to quote string
+// elements. Evaluation produces a Value whose underlying
+// representation is []any, matching what the range pure
+// builtin returns.
+type ListExpr struct {
+	Elems []Expr
+	Span
+}
+
 func (*LiteralExpr) exprNode()      {}
 func (*VarRefExpr) exprNode()       {}
 func (*AdapterExpr) exprNode()      {}
@@ -203,6 +220,7 @@ func (*NegateExpr) exprNode()       {}
 func (*TimeoutExpr) exprNode()      {}
 func (*IterationExpr) exprNode()    {}
 func (*PureCallExpr) exprNode()     {}
+func (*ListExpr) exprNode()         {}
 
 // Env is the execution environment for the evaluator. Session is
 // the variable and alias store; ExecCommand dispatches top-level
@@ -1140,9 +1158,27 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalIterationExpr(e, env)
 	case *PureCallExpr:
 		return dispatchPureCall(e, env)
+	case *ListExpr:
+		return evalListExpr(e, env)
 	default:
 		return Value{}, fmt.Errorf("unhandled expression type %T", expr)
 	}
+}
+
+// evalListExpr evaluates each element of a list literal and
+// packs the resulting raw values into a []any, the same
+// underlying representation foreach iterates and the range
+// builtin produces.
+func evalListExpr(e *ListExpr, env *Env) (Value, error) {
+	out := make([]any, 0, len(e.Elems))
+	for _, elem := range e.Elems {
+		v, err := EvalExpr(elem, env)
+		if err != nil {
+			return Value{}, err
+		}
+		out = append(out, v.Raw())
+	}
+	return ValueFromAny(out), nil
 }
 
 // dispatchPureCall evaluates the pure-builtin call's arguments,
@@ -1996,6 +2032,8 @@ func exprLoc(e Expr) Pos {
 	case *IterationExpr:
 		return v.Pos
 	case *MatchesBlockExpr:
+		return v.Pos
+	case *ListExpr:
 		return v.Pos
 	}
 	return Pos{}

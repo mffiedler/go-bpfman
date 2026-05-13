@@ -116,7 +116,7 @@ The natural way to express it is iteration over a list of
 parameters with per-iteration result accumulation:
 
 ```
-let priorities = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+let priorities = [100 200 300 400 500 600 700 800 900 1000]
 let links <- foreach prio in $priorities {
     bpfman link attach tc -i $iface -d ingress -p $prio $pid
 }
@@ -129,13 +129,13 @@ foreach l in $links {
 
 Two pieces are missing.
 
-**List literal syntax.** There is no `[a, b, c]` form in the
+**List literal syntax.** There is no `[a b c]` form in the
 grammar. The only way to construct a list value in a script
-today is to invoke `range N` (which produces `[0, 1, ..., N-1]`)
-or to round-trip through `jq -n "[1, 2, 3]"`. Neither is a
-literal -- both are calls -- and neither is great for the
-mixed-shape lists scripts actually want (priorities, names,
-flags).
+today is to invoke `range N` (which produces a list of
+integers `0` to `N-1`) or to round-trip through `jq -n "[1,
+2, 3]"`. Neither is a literal -- both are calls -- and
+neither is great for the mixed-shape lists scripts actually
+want (priorities, names, flags).
 
 **foreach has no accumulator.** `foreach NAME in LIST { BODY }`
 runs BODY for each element; the loop variable holds the last
@@ -160,11 +160,28 @@ has surfaced in well over five scripts.
 
 A pair of related additions that together close the gap:
 
-1. **List literal**: `[expr, expr, ...]`. Construct a list
-   value inline. Elements can be scalars, structured values,
-   or further lists. Path traversal and `jq` piping already
-   accept lists, so once the literal exists every downstream
-   form just works.
+1. **List literal**: `[expr expr ...]`. Construct a list
+   value inline. Elements are whitespace-separated, matching
+   the rest of the shell's argument grammar; compound
+   expressions wrap in parens (`[10 20 ($base + 30)]`) the
+   same way they do in every other expression position.
+   Elements parse as expressions: variables are bare
+   (`[$x $y]`), strings need quoting (`["foo" "bar"]`),
+   barewords are not list-element strings (so a typo'd name
+   errors rather than silently becoming a literal). Path
+   traversal and `jq` piping already accept lists, so once
+   the literal exists every downstream form just works.
+
+   Comma-separation was the obvious other choice; the survey
+   splits clean along the language family line. Algol/C
+   descendants (Python, Ruby, JS, Rust, Haskell, Elixir,
+   PowerShell) use commas; shell and S-expression languages
+   (bash, fish, tcl, Lisp/Scheme/Clojure, Elvish, Nushell,
+   Janet) use whitespace. bpfman-shell is a shell, its
+   argument grammar is already whitespace-separated, and the
+   paren-wrap convention for compound expressions already
+   exists in every expression context. Commas would have
+   been the inconsistent choice.
 
 2. **`foreach` bind-collect form**: `let RESULT <- foreach
    NAME in LIST { BODY }`. The body's last bind result is
