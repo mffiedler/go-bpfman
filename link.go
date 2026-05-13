@@ -1,7 +1,10 @@
 package bpfman
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/frobware/go-bpfman/kernel"
@@ -389,6 +392,129 @@ type LinkRecord struct {
 	Details   LinkDetails `json:"details,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
+}
+
+// newLinkDetails returns a fresh pointer to the concrete
+// LinkDetails implementer associated with kind, or nil if kind is
+// unrecognised. Used by LinkRecord.UnmarshalJSON to pick the
+// json.Unmarshal target for the polymorphic Details field, and
+// indirectly by external tooling reflecting over each kind's
+// JSON schema (the bpfman-shell static checker derives its
+// per-kind details Shape registry from LinkAttachKindDetailsType,
+// which shares this dispatch).
+//
+// kprobe / kretprobe share KprobeDetails and uprobe / uretprobe
+// share UprobeDetails; the Retprobe field inside each struct
+// distinguishes the paired LinkKinds.
+func newLinkDetails(kind LinkKind) LinkDetails {
+	switch kind {
+	case LinkKindXDP:
+		return &XDPDetails{}
+	case LinkKindTC:
+		return &TCDetails{}
+	case LinkKindTCX:
+		return &TCXDetails{}
+	case LinkKindTracepoint:
+		return &TracepointDetails{}
+	case LinkKindKprobe, LinkKindKretprobe:
+		return &KprobeDetails{}
+	case LinkKindUprobe, LinkKindUretprobe:
+		return &UprobeDetails{}
+	case LinkKindFentry:
+		return &FentryDetails{}
+	case LinkKindFexit:
+		return &FexitDetails{}
+	}
+	return nil
+}
+
+// LinkAttachKinds returns the attach subcommand keywords the CLI
+// exposes (xdp, tc, tcx, tracepoint, kprobe, uprobe, fentry,
+// fexit). Eight entries, not ten -- kprobe / kretprobe and uprobe
+// / uretprobe collapse into the kprobe and uprobe attach
+// subcommands respectively, with --retprobe selecting the paired
+// LinkKind at attach time.
+func LinkAttachKinds() []string {
+	return []string{
+		"xdp",
+		"tc",
+		"tcx",
+		"tracepoint",
+		"kprobe",
+		"uprobe",
+		"fentry",
+		"fexit",
+	}
+}
+
+// LinkAttachKindDetailsType returns the reflect.Type of the
+// LinkDetails implementer for the named attach subcommand, or
+// nil if attachKind is not in LinkAttachKinds. External tooling
+// (notably the bpfman-shell static checker) reflects over the
+// returned type to derive per-subcommand JSON schemas without
+// duplicating the dispatch table.
+func LinkAttachKindDetailsType(attachKind string) reflect.Type {
+	switch attachKind {
+	case "xdp":
+		return reflect.TypeOf(XDPDetails{})
+	case "tc":
+		return reflect.TypeOf(TCDetails{})
+	case "tcx":
+		return reflect.TypeOf(TCXDetails{})
+	case "tracepoint":
+		return reflect.TypeOf(TracepointDetails{})
+	case "kprobe":
+		return reflect.TypeOf(KprobeDetails{})
+	case "uprobe":
+		return reflect.TypeOf(UprobeDetails{})
+	case "fentry":
+		return reflect.TypeOf(FentryDetails{})
+	case "fexit":
+		return reflect.TypeOf(FexitDetails{})
+	}
+	return nil
+}
+
+// UnmarshalJSON decodes a LinkRecord from JSON. The Details field
+// is a sealed interface (LinkDetails), so encoding/json's default
+// mechanism cannot pick a concrete type for it. This unmarshaler
+// reads Kind first and then dispatches to newLinkDetails for the
+// right json.Unmarshal target; every other field uses the
+// default JSON mapping. Details is stored as a value type rather
+// than as a pointer to match the rest of the package's
+// convention (existing call sites type-switch on bpfman.TCDetails,
+// not *bpfman.TCDetails).
+func (r *LinkRecord) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		ID        kernel.LinkID    `json:"id"`
+		ProgramID kernel.ProgramID `json:"program_id"`
+		Kind      LinkKind         `json:"kind"`
+		PinPath   *LinkPath        `json:"pin_path,omitempty"`
+		Details   json.RawMessage  `json:"details,omitempty"`
+		CreatedAt time.Time        `json:"created_at"`
+	}
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	r.ID = a.ID
+	r.ProgramID = a.ProgramID
+	r.Kind = a.Kind
+	r.PinPath = a.PinPath
+	r.CreatedAt = a.CreatedAt
+	r.Details = nil
+	if len(a.Details) == 0 || bytes.Equal(a.Details, []byte("null")) {
+		return nil
+	}
+	target := newLinkDetails(a.Kind)
+	if target == nil {
+		return fmt.Errorf("LinkRecord.UnmarshalJSON: no LinkDetails type registered for kind %q", a.Kind)
+	}
+	if err := json.Unmarshal(a.Details, target); err != nil {
+		return fmt.Errorf("LinkRecord.UnmarshalJSON: decode %s details: %w", a.Kind, err)
+	}
+	r.Details = reflect.ValueOf(target).Elem().Interface().(LinkDetails)
+	return nil
 }
 
 // LinkListResult wraps link list output for consistent JSON structure.
