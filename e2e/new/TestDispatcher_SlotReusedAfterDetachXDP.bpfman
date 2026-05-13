@@ -1,0 +1,81 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_SlotReusedAfterDetach
+# (XDP subtest). The Go test parameterises across TC ingress and
+# XDP via t.Run; the DSL has no subtest primitive, so the two
+# cases live in sibling scripts. This file covers XDP;
+# TestDispatcher_SlotReusedAfterDetachTC covers TC ingress.
+#
+# Asserts that a detached slot frees up for reuse and that the
+# reattach lands in the right position for its priority. The
+# member counts come from `bpfman dispatcher get`'s JSON output
+# via jq; the snapshot is now a typed Value so the path walker
+# can read .members directly.
+#
+# Sequence:
+#   1. Attach all ten slots at priorities 100, 200, ..., 1000.
+#   2. Confirm the dispatcher reports 10 members.
+#   3. Detach the member at priority 400 (position 3 in the sort).
+#   4. Confirm the dispatcher reports 9 members.
+#   5. Reattach at priority 350. Sorted positions become
+#      [100, 200, 300, 350, 500, 600, 700, 800, 900, 1000],
+#      so the new link sits at position 3.
+#   6. Confirm the dispatcher reports 10 members again and the new
+#      link's position is exactly 3.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_SlotReusedAfterDetachXDP.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/xdp_counter_pinned.bpf.o \
+    --programs xdp:xdp_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+guard l_100  <- bpfman link attach xdp -i $pair.host_link -p 100  $pid
+guard l_200  <- bpfman link attach xdp -i $pair.host_link -p 200  $pid
+guard l_300  <- bpfman link attach xdp -i $pair.host_link -p 300  $pid
+# l_400 is detached mid-script; no defer for it.
+guard l_400  <- bpfman link attach xdp -i $pair.host_link -p 400  $pid
+guard l_500  <- bpfman link attach xdp -i $pair.host_link -p 500  $pid
+guard l_600  <- bpfman link attach xdp -i $pair.host_link -p 600  $pid
+guard l_700  <- bpfman link attach xdp -i $pair.host_link -p 700  $pid
+guard l_800  <- bpfman link attach xdp -i $pair.host_link -p 800  $pid
+guard l_900  <- bpfman link attach xdp -i $pair.host_link -p 900  $pid
+guard l_1000 <- bpfman link attach xdp -i $pair.host_link -p 1000 $pid
+
+defer bpfman link detach $l_100
+defer bpfman link detach $l_200
+defer bpfman link detach $l_300
+defer bpfman link detach $l_500
+defer bpfman link detach $l_600
+defer bpfman link detach $l_700
+defer bpfman link detach $l_800
+defer bpfman link detach $l_900
+defer bpfman link detach $l_1000
+
+guard snap_full <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+let count_full = $snap_full |> jq ".members | length"
+assert $count_full == 10
+
+bpfman link detach $l_400
+
+guard snap_partial <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+let count_partial = $snap_partial |> jq ".members | length"
+assert $count_partial == 9
+
+guard l_350 <- bpfman link attach xdp -i $pair.host_link -p 350 $pid
+defer bpfman link detach $l_350
+
+guard snap_refilled <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
+let count_refilled = $snap_refilled |> jq ".members | length"
+assert $count_refilled == 10
+
+assert $l_350.record.details.position == 3
