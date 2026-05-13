@@ -12,42 +12,32 @@
 package main
 
 import (
-	"reflect"
-
 	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
-// linkDetailsTypes maps `bpfman link attach <kind>` keywords to
-// their concrete LinkDetails implementer types. Eight entries
-// matching the eight attach subcommands the CLI exposes
-// (xdp/tc/tcx/tracepoint/kprobe/uprobe/fentry/fexit). Reflection
-// over each at init time produces a sealed Shape, cached in
-// linkDetailsShapes; the bind-shape handler looks the relevant
-// Shape up by the attach-kind word from args[2] and overlays it
-// onto the generic Link Shape's record.details slot. Without
-// this kind-aware composition the polymorphic LinkDetails
-// interface field reflects as unsealed and field-typo checks
-// against record.details slip through.
-var linkDetailsTypes = map[string]reflect.Type{
-	"xdp":        reflect.TypeOf(bpfman.XDPDetails{}),
-	"tc":         reflect.TypeOf(bpfman.TCDetails{}),
-	"tcx":        reflect.TypeOf(bpfman.TCXDetails{}),
-	"tracepoint": reflect.TypeOf(bpfman.TracepointDetails{}),
-	"kprobe":     reflect.TypeOf(bpfman.KprobeDetails{}),
-	"uprobe":     reflect.TypeOf(bpfman.UprobeDetails{}),
-	"fentry":     reflect.TypeOf(bpfman.FentryDetails{}),
-	"fexit":      reflect.TypeOf(bpfman.FexitDetails{}),
-}
-
-// linkDetailsShapes is the reflected per-kind details Shape
-// cache. Populated once at init from linkDetailsTypes; read-only
-// thereafter, so unsynchronised reads from inferBpfmanBindShape
-// are safe.
+// linkDetailsShapes caches the reflection-derived Shape for each
+// attach-subcommand keyword (xdp / tc / tcx / tracepoint / kprobe
+// / uprobe / fentry / fexit). The dispatch from keyword to
+// concrete Go type lives in bpfman.LinkAttachKindDetailsType
+// alongside LinkRecord.UnmarshalJSON; mirroring it here would
+// drift. Populated once at init via that single source of truth;
+// read-only thereafter, so unsynchronised reads from
+// inferBpfmanBindShape are safe.
+//
+// The bind-shape handler overlays the cached Shape onto the
+// generic Link Shape's record.details slot so deep field-typo
+// checks against record.details fall under the concrete
+// schema instead of stopping at the polymorphic LinkDetails
+// interface.
 var linkDetailsShapes = map[string]shell.Shape{}
 
 func init() {
-	for kind, t := range linkDetailsTypes {
+	for _, kind := range bpfman.LinkAttachKinds() {
+		t := bpfman.LinkAttachKindDetailsType(kind)
+		if t == nil {
+			continue
+		}
 		linkDetailsShapes[kind] = shapeFromType(t, shell.OriginUnknown)
 	}
 	shell.RegisterBindShape("bpfman", inferBpfmanBindShape)

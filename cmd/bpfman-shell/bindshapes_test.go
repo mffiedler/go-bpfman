@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -51,12 +52,13 @@ print $l.record.details.position`
 func TestBindShape_LinkAttachAcrossEveryRegisteredKind(t *testing.T) {
 	t.Parallel()
 
-	// Every entry in linkDetailsTypes must produce a sealed
-	// details Shape after reflection so a deep typo is caught.
-	// "nonsense" is a synthetic field name no LinkDetails
-	// struct legitimately exposes, so a single check fires per
-	// kind regardless of the concrete field set.
-	for kind := range linkDetailsTypes {
+	// Every attach kind the bpfman package recognises must
+	// produce a sealed details Shape after reflection so a
+	// deep typo is caught. "nonsense_field" is a synthetic
+	// field name no LinkDetails struct legitimately exposes,
+	// so a single check fires per kind regardless of the
+	// concrete field set.
+	for _, kind := range bpfman.LinkAttachKinds() {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			src := "let l <- bpfman link attach " + kind +
