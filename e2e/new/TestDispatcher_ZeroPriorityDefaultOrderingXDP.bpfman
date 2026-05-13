@@ -1,0 +1,53 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_ZeroPriorityDefaultOrdering
+# (XDP subtest). The Go test parameterises this scenario across
+# TC ingress and XDP via t.Run; the DSL has no subtest primitive,
+# so the two cases live in sibling scripts. This file covers XDP;
+# TestDispatcher_ZeroPriorityDefaultOrderingTC covers TC ingress.
+#
+# Three programs attached at priorities 25, 0, and 75 in that
+# order. The stored priority is exactly what was requested (0
+# means 0, not "default" rewritten to 50). The effective
+# ordering, on the other hand, treats priority 0 as 50, so the
+# positions come out:
+#
+#   priority 25 -> position 0
+#   priority  0 -> position 1  (effective 50)
+#   priority 75 -> position 2
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_ZeroPriorityDefaultOrderingXDP.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/xdp_counter_pinned.bpf.o \
+    --programs xdp:xdp_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+guard l_25 <- bpfman link attach xdp -i $pair.host_link -p 25 $pid
+guard l_0  <- bpfman link attach xdp -i $pair.host_link -p 0  $pid
+guard l_75 <- bpfman link attach xdp -i $pair.host_link -p 75 $pid
+
+defer bpfman link detach $l_25
+defer bpfman link detach $l_0
+defer bpfman link detach $l_75
+
+guard g_25 <- bpfman link get $l_25.record.id
+guard g_0  <- bpfman link get $l_0.record.id
+guard g_75 <- bpfman link get $l_75.record.id
+
+assert $g_25.record.details.priority == 25
+assert $g_0.record.details.priority  == 0
+assert $g_75.record.details.priority == 75
+
+assert $g_25.record.details.position == 0
+assert $g_0.record.details.position  == 1
+assert $g_75.record.details.position == 2
