@@ -373,57 +373,40 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			Msg:  msg,
 		}))
 	}
+	cite := func(span shell.Span, body string) {
+		_ = cli.PrintErrf("%s%s\n", loc.WithSpan(span).String(), body)
+	}
 	report := func(err error) error {
 		var re *RuntimeError
 		if errors.As(err, &re) {
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := re.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, re.Msg)
-			} else {
-				_ = cli.PrintErrf("%s\n", re.Msg)
-			}
+			cite(re.Span, re.Msg)
 			return ErrScriptError
 		}
 		var ae *ExecArgError
 		if errors.As(err, &ae) {
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := ae.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, ae.Msg)
-			} else {
-				_ = cli.PrintErrf("%s\n", ae.Msg)
-			}
+			cite(ae.Span, ae.Msg)
 			return ErrScriptError
 		}
 		var cnf *CommandNotFound
 		if errors.As(err, &cnf) {
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := cnf.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: command not found\n", loc.File, line, cnf.Name)
-			} else {
-				_ = cli.PrintErrf("%s: command not found\n", cnf.Name)
-			}
+			cite(cnf.Span, cnf.Name+": command not found")
 			return ErrScriptError
 		}
 		var ef *ExecFailure
 		if errors.As(err, &ef) {
 			if loc.File != "" {
-				shift := loc.Line - 1
-				line := ef.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: exit %d\n", loc.File, line, strings.Join(ef.Argv, " "), ef.ExitCode)
+				cite(ef.Span, fmt.Sprintf("%s: exit %d", strings.Join(ef.Argv, " "), ef.ExitCode))
+				var b strings.Builder
 				if ef.Stdout != "" {
-					_ = cli.PrintErrf("stdout:\n")
-					for _, l := range strings.Split(strings.TrimRight(ef.Stdout, "\n"), "\n") {
-						_ = cli.PrintErrf("  %s\n", l)
-					}
+					b.WriteString("stdout:\n")
+					writeIndented(&b, ef.Stdout)
 				}
 				if ef.Stderr != "" {
-					_ = cli.PrintErrf("stderr:\n")
-					for _, l := range strings.Split(strings.TrimRight(ef.Stderr, "\n"), "\n") {
-						_ = cli.PrintErrf("  %s\n", l)
-					}
+					b.WriteString("stderr:\n")
+					writeIndented(&b, ef.Stderr)
+				}
+				if b.Len() > 0 {
+					_ = cli.PrintErr(b.String())
 				}
 			}
 			return ErrScriptError
