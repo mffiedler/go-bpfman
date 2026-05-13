@@ -67,16 +67,16 @@ defer bpfman link detach $l_600
 defer bpfman link detach $l_50
 
 # Re-query each link so positions reflect the final sorted order.
-guard g_50  <- bpfman link get $l_50.record.id
-guard g_100 <- bpfman link get $l_100.record.id
-guard g_200 <- bpfman link get $l_200.record.id
-guard g_300 <- bpfman link get $l_300.record.id
-guard g_400 <- bpfman link get $l_400.record.id
-guard g_500 <- bpfman link get $l_500.record.id
-guard g_600 <- bpfman link get $l_600.record.id
-guard g_700 <- bpfman link get $l_700.record.id
-guard g_800 <- bpfman link get $l_800.record.id
-guard g_900 <- bpfman link get $l_900.record.id
+guard g_50  <- bpfman link get $l_50
+guard g_100 <- bpfman link get $l_100
+guard g_200 <- bpfman link get $l_200
+guard g_300 <- bpfman link get $l_300
+guard g_400 <- bpfman link get $l_400
+guard g_500 <- bpfman link get $l_500
+guard g_600 <- bpfman link get $l_600
+guard g_700 <- bpfman link get $l_700
+guard g_800 <- bpfman link get $l_800
+guard g_900 <- bpfman link get $l_900
 
 assert $g_50.record.details.priority  == 50
 assert $g_50.record.details.position  == 0

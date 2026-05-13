@@ -45,9 +45,9 @@ defer bpfman link detach $l_25
 defer bpfman link detach $l_0
 defer bpfman link detach $l_75
 
-guard g_25 <- bpfman link get $l_25.record.id
-guard g_0  <- bpfman link get $l_0.record.id
-guard g_75 <- bpfman link get $l_75.record.id
+guard g_25 <- bpfman link get $l_25
+guard g_0  <- bpfman link get $l_0
+guard g_75 <- bpfman link get $l_75
 
 # Stored priority is verbatim: 0 is preserved, not rewritten to
 # the effective-ordering value 50.

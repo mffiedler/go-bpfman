@@ -40,9 +40,9 @@ defer bpfman link detach $l_25
 defer bpfman link detach $l_0
 defer bpfman link detach $l_75
 
-guard g_25 <- bpfman link get $l_25.record.id
-guard g_0  <- bpfman link get $l_0.record.id
-guard g_75 <- bpfman link get $l_75.record.id
+guard g_25 <- bpfman link get $l_25
+guard g_0  <- bpfman link get $l_0
+guard g_75 <- bpfman link get $l_75
 
 assert $g_25.record.details.priority == 25
 assert $g_0.record.details.priority  == 0
