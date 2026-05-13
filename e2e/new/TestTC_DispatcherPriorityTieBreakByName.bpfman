@@ -1,0 +1,50 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestTC_DispatcherPriorityTieBreakByName.
+#
+# Two TC programs attached at the same priority must be ordered
+# alphabetically by program name -- the secondary sort key the
+# dispatcher applies after the primary priority sort. The Go test
+# loads "beta" first and "alpha" second, both at priority 100,
+# then reads each link's position to confirm alpha precedes
+# beta even though beta was attached first.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestTC_DispatcherPriorityTieBreakByName.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+# Load the same bytecode twice under distinct names so the
+# tie-breaker has something to break against. Attach order
+# (beta first, alpha second) deliberately runs counter to the
+# expected position order (alpha < beta) so the assertion
+# proves the sort, not insertion order.
+guard loaded_beta <- bpfman program load file \
+    --path testdata/bpf/tc_pass.bpf.o \
+    --programs tc:beta
+guard loaded_alpha <- bpfman program load file \
+    --path testdata/bpf/tc_pass.bpf.o \
+    --programs tc:alpha
+
+let prog_beta  = $loaded_beta.programs[0]
+let prog_alpha = $loaded_alpha.programs[0]
+defer bpfman program unload $prog_beta
+defer bpfman program unload $prog_alpha
+
+guard l_beta  <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog_beta
+guard l_alpha <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $prog_alpha
+defer bpfman link detach $l_beta
+defer bpfman link detach $l_alpha
+
+# Re-query each link so position reflects the dispatcher's
+# steady-state ordering after both attaches have committed.
+guard g_alpha <- bpfman link get $l_alpha
+guard g_beta  <- bpfman link get $l_beta
+
+assert $g_alpha.record.details.priority == 100
+assert $g_beta.record.details.priority  == 100
+assert $g_alpha.record.details.position < $g_beta.record.details.position
