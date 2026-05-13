@@ -194,14 +194,66 @@ dispatcher-port scripts. Retrofit potential after the
 addition lands: every `bpfman link attach` set in
 `e2e/new/Test*.bpfman` collapses from 3N to ~5 lines.
 
-### What is out of scope even with the fix
+### How far the fix gets `TestTC_DispatcherFillDrainRefill`
 
-The harness-style `TestTC_DispatcherFillDrainRefill` test
-maintains a fixed-size mutable slot array indexed by
-position, with phases that drain ranges (`slots[3..10)`) and
-fill the first N empty slots. Even with list literals and
-foreach-collect, the slot bookkeeping does not fall out:
-list slicing, indexed mutation, and "first N where
-predicate" are separate primitives. That test is the
-canonical "stay in Go" case from the original e2e survey
-and remains so.
+The harness-style FillDrainRefill test is ported in
+`e2e/new/TestTC_DispatcherFillDrainRefill.bpfman` -- 563
+lines of unrolled program loads, attaches, defers, and
+traffic verification phases. It is the largest consumer of
+the gap this entry describes: a substantial fraction of
+those 563 lines would collapse under the proposed addition.
+
+Per-peak load + attach today (one of four peaks):
+
+```
+guard ld_0   <- bpfman program load file ... --programs tc:stats
+guard ld_100 <- bpfman program load file ... --programs tc:stats
+... eight more loads
+let p_0   = $ld_0.programs[0]
+let p_100 = $ld_100.programs[0]
+... eight more lets
+defer bpfman program unload $p_0
+... nine more defers
+let m_0 = $p_0 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+... nine more lets
+guard l_0   <- bpfman link attach tc -i $iface -d ingress -p 0   --proceed-on ok,pipe,dispatcher_return $p_0
+guard l_100 <- bpfman link attach tc -i $iface -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $p_100
+... eight more attaches
+```
+
+Roughly 50 lines per peak, four peaks plus three drains.
+
+What the proposed addition (list literal + foreach-collect)
+gives directly: collection of bind results into a list,
+iteration for the defer-each shape. What it does **not**
+give directly: paired iteration over a priority list and a
+load list, indexed lookup into a list by a foreach variable,
+or list slicing for drain ranges. Without those, the port
+would still need parallel lists named per-phase (one for
+priorities, one for programs, one for maps, one for links)
+and either a `zip` helper or a `foreach i in (range N) { use
+$prio[$i], $prog[$i], ... }` pattern.
+
+So FillDrainRefill is a real consumer of the proposed
+addition (the load/attach blocks shrink meaningfully) but
+also the test that benefits from the additional primitives
+that would naturally follow. Sequence:
+
+1. List literal + foreach-collect: simpler dispatcher ports
+   (PriorityOrdering, AttachExceedsMaxPrograms, SlotReused,
+   ConfigAfterDetach, MultipleInterfacesIndependent) shrink
+   from 3N to ~5 lines per attach set. FillDrainRefill shrinks
+   too but still carries parallel-list bookkeeping.
+2. List indexing by variable (`$xs[$i]`): drops the
+   parallel-list pattern in favour of a single foreach over
+   `(range N)` projecting into multiple slot-aligned values.
+3. List slicing (`$xs[lo:hi]`): expresses drain ranges
+   directly and replaces the run of explicit detaches in
+   each trough.
+
+(1) is the universal win; (2) and (3) are FillDrainRefill-
+specific elaborations that may or may not earn their keep
+from a single consumer. The corpus answer for now is "port
+(1) when ready and live with FillDrainRefill's residual
+verbosity"; whether to go further depends on whether other
+harness-style tests show up.
