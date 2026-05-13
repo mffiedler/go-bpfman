@@ -210,7 +210,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: strictJobLeakHandler(cli, session),
+		HandleJobLeak: repl.StrictJobLeakHandler(cli, session),
 	}
 	return shell.WithJobScope(env, func() error {
 		return shell.WithDeferScope(env, func() error {
@@ -453,7 +453,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: silentJobLeakHandler(),
+		HandleJobLeak: repl.SilentJobLeakHandler(),
 	}
 
 	// Continuation-prompt support: when the accumulated chunk

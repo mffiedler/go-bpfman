@@ -471,8 +471,8 @@ func waitForDoneIndefinitely(ctx context.Context, job *shell.Job) {
 
 // Two leak-handling policies, chosen at the call site:
 //
-//   strictJobLeakHandler   FAIL render, kill, bump counter, exit non-zero
-//   silentJobLeakHandler   kill, nothing else
+//   repl.StrictJobLeakHandler   FAIL render, kill, bump counter, exit non-zero
+//   repl.SilentJobLeakHandler   kill, nothing else
 //
 // Each is a factory returning a func(*shell.Job) so call sites
 // uniformly assign 'env.HandleJobLeak = <name>(args...)'. A
@@ -488,52 +488,8 @@ func waitForDoneIndefinitely(ctx context.Context, job *shell.Job) {
 // middle 'warn' policy because in practice the user iterating
 // on a broken script wants noise to drop, not accumulate.
 
-// strictJobLeakHandler is the script-mode policy: an unmanaged
-// job is a contract violation. Renders '[job] FAIL <origin>:
-// never waited or killed: argv', SIGKILLs the process group so
-// 'bpfman-shell script.bpfman' never leaves stray processes,
-// and bumps the session leak counter so c.Run surfaces a
-// non-zero exit. Scripts are a reproducible test contract;
-// leaking a job is a bug worth failing the run for.
-//
-// ESRCH (the process exited on its own between leak detection
-// and signal delivery) is silently fine; permission errors
-// fall through and would print, but in practice we sent the
-// job's own SIGTERM-able signal earlier or could not have
-// spawned it in the first place.
-func strictJobLeakHandler(cli *bpfmancli.CLI, session *shell.Session) func(*shell.Job) {
-	return func(j *shell.Job) {
-		origin := j.Origin
-		if origin == "" {
-			origin = "<stdin>"
-		}
-		argv := strings.Join(j.Args, " ")
-		_ = cli.PrintErrf("[job] FAIL %s: never waited or killed: %s\n", origin, argv)
-		if j.PID > 0 {
-			_ = syscall.Kill(-j.PID, syscall.SIGKILL)
-		}
-		session.RecordJobLeak()
-	}
-}
-
-// silentJobLeakHandler is the policy for the interactive
-// prompt and for 'source' invoked from a prompt. It SIGKILLs
-// the leaked process group so nothing outlives the shell, then
-// returns: no diagnostic, no counter bump, no exit-code
-// effect. The REPL is exploratory scratch space; starting
-// something and walking away is normal use, and a 'source'
-// from a prompt is part of that exploration -- the user is
-// often iterating on a broken file, and warnings would only
-// become noise. The shell quietly cleans up; if a user wants
-// strict feedback on a specific file, 'bpfman-shell FILE' is
-// the explicit gate.
-func silentJobLeakHandler() func(*shell.Job) {
-	return func(j *shell.Job) {
-		if j.PID > 0 {
-			_ = syscall.Kill(-j.PID, syscall.SIGKILL)
-		}
-	}
-}
+// The two leak-handler bodies moved to repl/jobs.go as
+// repl.StrictJobLeakHandler and repl.SilentJobLeakHandler.
 
 // replJobs lists the jobs registered in the active job scope.
 // Read-only: peeking at status does not mark any job Managed
