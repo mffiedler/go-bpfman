@@ -108,6 +108,19 @@ if [[ -z "$jobs" ]]; then
     jobs="$(nproc)"
 fi
 
+# Cap at the veth address pool size. The pool carves
+# 198.51.100.0/24 into 64 /30 subnets (PoolSize in
+# cmd/bpfman-shell/shell/netpool.go), so any -j above that runs
+# out of subnets and fails the late jobs with "more than 64
+# concurrent pairs in flight" -- not a real test failure, just a
+# resource limit. Clamping here so a 192-core arm node does not
+# trip on this unexpectedly.
+pool_cap=64
+if (( jobs > pool_cap )); then
+    echo "info: -j$jobs exceeds veth pool size ($pool_cap); clamping to -j$pool_cap" >&2
+    jobs=$pool_cap
+fi
+
 if ! [[ "$repeats" =~ ^[1-9][0-9]*$ ]]; then
     echo "error: -r/--repeats must be a positive integer (got: $repeats)" >&2
     exit 1
