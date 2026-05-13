@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
@@ -77,10 +78,10 @@ var replAttachTypes = []string{"fentry", "fexit", "kprobe", "tc", "tcx", "tracep
 // showProgramViews lists the valid sub-view names for "show program <id>".
 var showProgramViews = []string{"links", "maps", "paths"}
 
-// replCompleter returns a CompleteFunc that has access to the manager
+// replCompleter returns a repl.CompleteFunc that has access to the manager
 // and session for dynamic completions such as program IDs and
 // variable names.
-func replCompleter(ctx context.Context, mgr *manager.Manager, session *shell.Session) CompleteFunc {
+func replCompleter(ctx context.Context, mgr *manager.Manager, session *shell.Session) repl.CompleteFunc {
 	return func(line string, pos int) (replace int, candidates []string) {
 		return replComplete(ctx, mgr, session, line, pos)
 	}

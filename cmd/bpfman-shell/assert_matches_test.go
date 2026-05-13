@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
@@ -25,7 +26,7 @@ func runMatchesScript(t *testing.T, record map[string]any, script string) (out, 
 
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(script), nil)
+	lr := repl.NewScannerReader(strings.NewReader(script), nil)
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	return outBuf.String(), errBuf.String(), err
 }
@@ -137,7 +138,7 @@ func TestAssertMatches_VarPattern(t *testing.T) {
 	script := `assert $prog matches { status.kernel.id: $expected_id }` + "\n"
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(script), nil)
+	lr := repl.NewScannerReader(strings.NewReader(script), nil)
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
@@ -222,7 +223,7 @@ assert $prog matches {
 	session.Set("prog", shell.ValueFromMap(rec))
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr := NewScannerReader(strings.NewReader(script), nil)
+	lr := repl.NewScannerReader(strings.NewReader(script), nil)
 	require.NoError(t, replLoop(context.Background(), cli, nil, lr, session, "fake.bpfman", false, true))
 
 	errOut := errBuf.String()

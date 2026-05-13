@@ -2,7 +2,7 @@
 // SIGTTOU and SIGTTIN are sent to a background process that
 // attempts to write to or read from the controlling terminal.
 // While the shell hands the terminal off to a child via
-// tcsetpgrp (see fgJob.Grant), the shell itself is briefly a
+// tcsetpgrp (see FgJob.Grant), the shell itself is briefly a
 // background process relative to the TTY: TIOCSPGRP from a
 // background process is exactly the kind of operation the
 // kernel suspends with SIGTTOU. Ignoring SIGTTOU at startup
@@ -18,7 +18,7 @@
 // main.go can re-enable delivery, so we ignore them
 // explicitly here as well.
 
-package main
+package repl
 
 import (
 	"os/signal"

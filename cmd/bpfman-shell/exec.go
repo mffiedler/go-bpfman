@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
@@ -294,7 +295,7 @@ func runExternal(ctx context.Context, args []shell.Arg) (execCapture, error) {
 // need to know which exec path they are taking.
 //
 // Off-TTY callers (script mode, stdin pipe, CI) skip the
-// foreground-group dance via fgJob's disabled zero value;
+// foreground-group dance via repl.FgJob's disabled zero value;
 // behaviour there matches the no-job-control case.
 func runExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []shell.Arg) (argv []string, exitCode int, err error) {
 	_ = ctx
@@ -311,7 +312,7 @@ func runExternalInherit(ctx context.Context, cli *bpfmancli.CLI, args []shell.Ar
 		}
 	}()
 
-	fg := newFgJob()
+	fg := repl.NewFgJob()
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = fg.SysProcAttr()
 	cmd.Stdin = os.Stdin

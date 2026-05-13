@@ -8,13 +8,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 )
 
 // runCheckInput wraps replCheckInput over a string source so tests
 // can focus on which errors are reported and on which line.
 func runCheckInput(t *testing.T, src string) (bool, string) {
 	t.Helper()
-	r := NewScannerReader(strings.NewReader(src), nil)
+	r := repl.NewScannerReader(strings.NewReader(src), nil)
 	var buf bytes.Buffer
 	hadErrors := replCheckInput(r, &buf, "test.bpfman")
 	return hadErrors, buf.String()

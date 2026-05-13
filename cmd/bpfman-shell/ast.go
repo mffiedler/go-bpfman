@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -50,12 +51,12 @@ func (c *CLI) runAST() error {
 // Parse errors are written to errOut with a file:line:
 // prefix; returns true when any error was emitted. Empty
 // input produces empty output and no error.
-func replASTInput(r LineReader, out io.Writer, errOut io.Writer, file string) bool {
+func replASTInput(r repl.LineReader, out io.Writer, errOut io.Writer, file string) bool {
 	var b strings.Builder
 	for {
 		line, err := r.Readline()
 		if err != nil {
-			if err == io.EOF || err == ErrInterrupt {
+			if err == io.EOF || err == repl.ErrInterrupt {
 				break
 			}
 			fmt.Fprintf(errOut, "%s: %v\n", file, err)

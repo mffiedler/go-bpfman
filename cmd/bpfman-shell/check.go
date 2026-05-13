@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
@@ -25,12 +26,12 @@ import (
 // newlines, and returns the resulting string. Used by the
 // script-mode pre-flight (where we need the whole input
 // before parsing) and by --check when invoked on stdin.
-func slurpReader(r LineReader) (string, error) {
+func slurpReader(r repl.LineReader) (string, error) {
 	var b strings.Builder
 	for {
 		line, err := r.Readline()
 		if err != nil {
-			if err == io.EOF || err == ErrInterrupt {
+			if err == io.EOF || err == repl.ErrInterrupt {
 				return b.String(), nil
 			}
 			return "", err
@@ -125,11 +126,11 @@ func (c *CLI) runCheck() error {
 // script file, or stdin. Unlike Run's newReader it never falls back
 // to an interactive line editor because --check is a batch
 // operation.
-func (c *CLI) checkReader() (LineReader, error) {
+func (c *CLI) checkReader() (repl.LineReader, error) {
 	if c.Script != "" {
 		return openScriptReader(c.Script)
 	}
-	return NewScannerReader(os.Stdin, nil), nil
+	return repl.NewScannerReader(os.Stdin, nil), nil
 }
 
 // replCheckInput slurps the whole input from r, tokenises and
@@ -140,12 +141,12 @@ func (c *CLI) checkReader() (LineReader, error) {
 // last chunk can use, and that visibility is what
 // undefined-variable detection needs. Returns true when any
 // error was emitted so the caller signals a non-zero exit.
-func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
+func replCheckInput(r repl.LineReader, errOut io.Writer, file string) bool {
 	var b strings.Builder
 	for {
 		line, err := r.Readline()
 		if err != nil {
-			if err == io.EOF || err == ErrInterrupt {
+			if err == io.EOF || err == repl.ErrInterrupt {
 				break
 			}
 			fmt.Fprintf(errOut, "%s: %v\n", file, err)
@@ -202,15 +203,15 @@ func replCheckInput(r LineReader, errOut io.Writer, file string) bool {
 
 // openScriptReader opens a file for reading commands. Use "-" to
 // read from stdin.
-func openScriptReader(path string) (LineReader, error) {
+func openScriptReader(path string) (repl.LineReader, error) {
 	if path == "-" {
-		return NewScannerReader(os.Stdin, nil), nil
+		return repl.NewScannerReader(os.Stdin, nil), nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open script: %w", err)
 	}
-	return NewScannerReader(f, f), nil
+	return repl.NewScannerReader(f, f), nil
 }
 
 // sourceLoc identifies a position in a script file. The zero value

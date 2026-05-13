@@ -18,7 +18,7 @@
 // stdin actually being a TTY: under stdin pipes, scripts, and
 // CI we have nothing to manage and the dance is a no-op.
 
-package main
+package repl
 
 import (
 	"os"
@@ -27,31 +27,31 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// fgJob holds the state needed to give and reclaim the
+// FgJob holds the state needed to give and reclaim the
 // terminal's foreground group around a single child invocation.
 // The zero value (ttyFD == -1) means "no TTY in play"; every
 // method short-circuits and the call sites do not need to
 // special-case the non-TTY path.
-type fgJob struct {
+type FgJob struct {
 	ttyFD     int // -1 if not running on a TTY
 	shellPgid int // shell's process group, restored after the child exits
 }
 
-// newFgJob inspects stdin. If it is a TTY, returns an fgJob
+// NewFgJob inspects stdin. If it is a TTY, returns an FgJob
 // ready to grant the terminal to a child via Grant. Otherwise
-// returns the disabled zero value: every fgJob method becomes
+// returns the disabled zero value: every FgJob method becomes
 // a no-op so the caller writes the same code path for both
 // the TTY and the non-TTY case.
-func newFgJob() fgJob {
+func NewFgJob() FgJob {
 	fd := int(os.Stdin.Fd())
-	if !termIsTTY(fd) {
-		return fgJob{ttyFD: -1}
+	if !TermIsTTY(fd) {
+		return FgJob{ttyFD: -1}
 	}
 	pgid, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
 	if err != nil {
-		return fgJob{ttyFD: -1}
+		return FgJob{ttyFD: -1}
 	}
-	return fgJob{ttyFD: fd, shellPgid: pgid}
+	return FgJob{ttyFD: fd, shellPgid: pgid}
 }
 
 // SysProcAttr returns the SysProcAttr needed to launch a child
@@ -60,7 +60,7 @@ func newFgJob() fgJob {
 // atomically with fork; without it there is a race between
 // fork return and our subsequent tcsetpgrp. Off-TTY callers
 // receive nil so default exec.Cmd behaviour applies.
-func (f fgJob) SysProcAttr() *syscall.SysProcAttr {
+func (f FgJob) SysProcAttr() *syscall.SysProcAttr {
 	if f.ttyFD < 0 {
 		return nil
 	}
@@ -78,7 +78,7 @@ func (f fgJob) SysProcAttr() *syscall.SysProcAttr {
 // means the child is now the foreground group; any error
 // leaves the foreground unchanged and the caller treats the
 // child as not-job-controlled.
-func (f fgJob) Grant(childPid int) error {
+func (f FgJob) Grant(childPid int) error {
 	if f.ttyFD < 0 {
 		return nil
 	}
@@ -94,18 +94,18 @@ func (f fgJob) Grant(childPid int) error {
 // still type at the next prompt because cooked-mode line
 // discipline tends to forgive a stale foreground group when
 // the only candidate is the shell that drains stdin.
-func (f fgJob) Reclaim() error {
+func (f FgJob) Reclaim() error {
 	if f.ttyFD < 0 {
 		return nil
 	}
 	return unix.IoctlSetPointerInt(f.ttyFD, unix.TIOCSPGRP, f.shellPgid)
 }
 
-// termIsTTY reports whether fd refers to a terminal. We do
+// TermIsTTY reports whether fd refers to a terminal. We do
 // our own check rather than pulling in golang.org/x/term to
 // avoid a circular import via the line-reader; the x/sys
 // ioctl is what x/term uses internally anyway.
-func termIsTTY(fd int) bool {
+func TermIsTTY(fd int) bool {
 	_, err := unix.IoctlGetTermios(fd, unix.TCGETS)
 	return err == nil
 }

@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
@@ -108,20 +109,20 @@ func (c *CLI) Run(ctx context.Context) error {
 	return nil
 }
 
-// newReader selects the appropriate LineReader: positional script
+// newReader selects the appropriate repl.LineReader: positional script
 // file, piped stdin, or interactive readline.
-func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (LineReader, error) {
+func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (repl.LineReader, error) {
 	if c.Script != "" {
 		return openScriptReader(c.Script)
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return NewScannerReader(os.Stdin, nil), nil
+		return repl.NewScannerReader(os.Stdin, nil), nil
 	}
 	historyPath, err := replHistoryPath()
 	if err != nil {
 		return nil, fmt.Errorf("history path: %w", err)
 	}
-	return NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
+	return repl.NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
 }
 
 // replLoop reads from lr and dispatches input until EOF or
@@ -148,7 +149,7 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 //
 // Variable assignment and expansion use the shell.Session,
 // which is shared across modes.
-func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
+func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
 	ctx = ensureInteractiveBaseDir(ctx)
 	if interactive {
 		return replInteractive(ctx, cli, mgr, lr, session)
@@ -175,14 +176,14 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 // shut down with the script; children spawned via the
 // foreground inherit path receive the signal directly through
 // the TTY's foreground process group.
-func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session, file string, noCheck bool) error {
+func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session, file string, noCheck bool) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	// Slurp the whole input up-front so we can run the
 	// static checker as a pre-flight before any side
 	// effects fire. The buffered content is then re-read
-	// through a fresh scanner-backed LineReader for the
+	// through a fresh scanner-backed repl.LineReader for the
 	// existing chunk-by-chunk evaluator, preserving the
 	// per-chunk loc machinery the runtime error path relies
 	// on. Static issues from Check are reported with
@@ -199,7 +200,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			return errScriptError
 		}
 	}
-	lr = NewScannerReader(strings.NewReader(src), nil)
+	lr = repl.NewScannerReader(strings.NewReader(src), nil)
 
 	env := &shell.Env{
 		Session: session,
@@ -220,7 +221,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			for {
 				input, err := lr.Readline()
 				if err != nil {
-					if err == io.EOF || err == ErrInterrupt {
+					if err == io.EOF || err == repl.ErrInterrupt {
 						if buf.Len() > 0 {
 							loc := sourceLoc{file: file, line: startLine}
 							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
@@ -443,7 +444,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 //
 // def bodies continue to open inner defer scopes via callDef so
 // a def's own defers fire at def return.
-func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr LineReader, session *shell.Session) error {
+func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session) error {
 	env := &shell.Env{
 		Session: session,
 		PrintResult: func(v shell.Value) error {
@@ -469,7 +470,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	const promptPrimary = "bpfman> "
 	const promptContinue = "... "
 	setPrompt := func(p string) {
-		if ps, ok := lr.(PromptSetter); ok {
+		if ps, ok := lr.(repl.PromptSetter); ok {
 			ps.SetPrompt(p)
 		}
 	}
@@ -482,7 +483,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		for {
 			input, err := lr.Readline()
 			if err != nil {
-				if err == ErrInterrupt || err == io.EOF {
+				if err == repl.ErrInterrupt || err == io.EOF {
 					if buf.Len() > 0 {
 						_ = cli.PrintErrf("error: unterminated block at end of input\n")
 					}
@@ -511,7 +512,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			cs = contState{}
 			setPrompt(promptPrimary)
 
-			if hw, ok := lr.(HistoryWriter); ok {
+			if hw, ok := lr.(repl.HistoryWriter); ok {
 				if entry := canonicaliseHistory(accumulated); entry != "" {
 					_ = hw.SaveHistory(entry)
 				}
