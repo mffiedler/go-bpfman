@@ -124,6 +124,9 @@ func walk(node Node, f func(Node) bool) {
 		if n.Cmd != nil {
 			walk(n.Cmd, f)
 		}
+		if n.Collect != nil {
+			walk(n.Collect, f)
+		}
 	case *DeferStmt:
 		if n.Cmd != nil {
 			walk(n.Cmd, f)

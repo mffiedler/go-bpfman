@@ -1014,6 +1014,9 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	if env.ExecBind == nil {
 		return spanErrorf(s.Span, "'<-' bind: command execution is not configured")
 	}
+	if s.Collect != nil {
+		return evalBindCollect(s, env)
+	}
 	args, err := EvalArgs(s.Cmd.Args, env)
 	if err != nil {
 		return err
@@ -1034,6 +1037,116 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	}
 	if s.Primary != "" && s.Primary != "_" {
 		env.Session.Set(s.Primary, result.Primary)
+	}
+	return nil
+}
+
+// evalBindCollect runs the bind-collect form:
+//
+//	let RESULT <- foreach NAME in LIST { BODY ... PRODUCER }
+//
+// LIST is evaluated to a list. For each element:
+//
+//   - NAME is bound to the element in the session (body-scoped:
+//     restored after the collect finishes, matching foreach).
+//   - BODY's non-producer statements run in order.
+//   - PRODUCER (the body's last statement, validated at parse time
+//     to be a CommandStmt) is executed as a bind via ExecBind.
+//     Its primary value accumulates into a list bound to s.Primary;
+//     when s.Rc is set, the rc envelope accumulates into a parallel
+//     list bound to s.Rc.
+//
+// break inside the body terminates iteration and binds the partial
+// collection. continue skips that iteration's accumulation.
+// Guard semantics carry: when s.Guard is set, the first non-ok
+// rc halts via GuardFailure with no binding.
+func evalBindCollect(s *BindStmt, env *Env) error {
+	fe := s.Collect
+	v, err := EvalExpr(fe.List, env)
+	if err != nil {
+		return err
+	}
+	if v.IsNil() {
+		return spanErrorf(fe.Span, "bind-collect: list expression is null")
+	}
+	list, ok := v.Raw().([]any)
+	if !ok {
+		return spanErrorf(fe.Span, "bind-collect: expected a list, got %s", v.Kind())
+	}
+
+	prior, hadPrior := env.Session.Get(fe.Name)
+	defer func() {
+		if hadPrior {
+			env.Session.Set(fe.Name, prior)
+		} else {
+			env.Session.Delete(fe.Name)
+		}
+	}()
+
+	prefix := fe.Body[:len(fe.Body)-1]
+	producer := fe.Body[len(fe.Body)-1].(*CommandStmt)
+
+	var rcAcc []any
+	var priAcc []any
+
+iter:
+	for _, elem := range list {
+		env.Session.Set(fe.Name, ValueFromAny(elem))
+		if env.Trace != nil {
+			rendered, rerr := RenderCompact(ValueFromAny(elem))
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %T>", elem)
+			}
+			env.Trace(fe.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", fe.Name, rendered))
+		}
+		skip := false
+		for _, stmt := range prefix {
+			err := evalStmt(stmt, env)
+			switch {
+			case err == nil:
+				continue
+			case errors.Is(err, errBreak):
+				break iter
+			case errors.Is(err, errContinue):
+				skip = true
+			default:
+				return err
+			}
+			if skip {
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		args, err := EvalArgs(producer.Args, env)
+		if err != nil {
+			return err
+		}
+		if env.Trace != nil {
+			header := bindTraceHeader(s)
+			env.Trace(producer.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
+		}
+		result, err := env.ExecBind(args, producer.Span)
+		if err != nil {
+			return frameAtSpan(producer.Span, err)
+		}
+		if s.Guard && !result.Rc.OK {
+			return &GuardFailure{Span: producer.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
+		}
+		if s.Rc != "" && s.Rc != "_" {
+			rcAcc = append(rcAcc, ValueFromEnvelope(result.Rc).Raw())
+		}
+		if s.Primary != "" && s.Primary != "_" {
+			priAcc = append(priAcc, result.Primary.Raw())
+		}
+	}
+
+	if s.Rc != "" && s.Rc != "_" {
+		env.Session.Set(s.Rc, ValueFromAny(rcAcc))
+	}
+	if s.Primary != "" && s.Primary != "_" {
+		env.Session.Set(s.Primary, ValueFromAny(priAcc))
 	}
 	return nil
 }

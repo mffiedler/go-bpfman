@@ -57,13 +57,32 @@ type LetStmt struct {
 //	guard NAME <- CMD            => same shape, Guard=true
 //	guard (RC, NAME) <- CMD      => same shape, Guard=true
 //
-// "_" as a target name discards that slot. Single-name binding
-// always names the primary; tuple binding names rc then primary,
-// matching section 6.2 of the design.
+// A third surface form, bind-collect, sets Collect instead of Cmd:
+//
+//	let NAME <- foreach X in LIST { BODY }
+//	let (RC, NAME) <- foreach X in LIST { BODY }
+//	guard NAME <- foreach X in LIST { BODY }
+//	guard (RC, NAME) <- foreach X in LIST { BODY }
+//
+// BODY is iterated once per element of LIST; the body's last
+// statement must be a CommandStmt and is executed as the bind's
+// producer. The producer's primary value (and rc envelope, when
+// the tuple form is used) is accumulated into a list per
+// iteration. continue skips a particular iteration's
+// accumulation; break terminates iteration and binds the
+// partial collection. Guard semantics carry: if the outer bind
+// is a guard, a non-ok envelope on any iteration halts the
+// whole collect via GuardFailure with no binding.
+//
+// Exactly one of Cmd and Collect is non-nil. "_" as a target
+// name discards that slot. Single-name binding always names
+// the primary; tuple binding names rc then primary, matching
+// section 6.2 of the design.
 type BindStmt struct {
 	Primary string
 	Rc      string
 	Cmd     *CommandStmt
+	Collect *ForEachStmt
 	Guard   bool
 	Span
 }
@@ -739,6 +758,31 @@ func (p *parser) parseBindTargetName(keywordTok Token) (name string, sawComma bo
 // bindings, an identifier (or "_") for tuple bindings.
 func (p *parser) parseBindRHS(stmtLoc Pos, rc, primary string, guard bool) (Stmt, error) {
 	bindTok := p.advance() // "<-"
+	// Bind-collect form: 'let X <- foreach NAME in LIST { BODY }'.
+	// The 'foreach' keyword in RHS position triggers a separate
+	// parse path because the body is a block and the existing
+	// takeBindRHSTokens stops at '{'. Tuple bind targets and the
+	// guard prefix carry through unchanged.
+	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "foreach" {
+		feStmt, err := p.parseForEachStmt()
+		if err != nil {
+			return nil, err
+		}
+		fe := feStmt.(*ForEachStmt)
+		if len(fe.Body) == 0 {
+			return nil, spanErrorf(bindTok.Span, "bind-collect: foreach body must produce a command at its last statement")
+		}
+		last := fe.Body[len(fe.Body)-1]
+		if _, ok := last.(*CommandStmt); !ok {
+			return nil, spanErrorf(nodeSpan(last), "bind-collect: foreach body's last statement must be a command (got %s); the last statement is the iteration's producer", describeStmt(last))
+		}
+		return &BindStmt{
+			Primary: primary, Rc: rc,
+			Collect: fe,
+			Guard:   guard,
+			Span:    p.spanFrom(stmtLoc),
+		}, nil
+	}
 	cmdTokens, err := p.takeBindRHSTokens(bindTok)
 	if err != nil {
 		return nil, err
@@ -749,6 +793,37 @@ func (p *parser) parseBindRHS(stmtLoc Pos, rc, primary string, guard bool) (Stmt
 	}
 	cmd := &CommandStmt{Args: args, Span: p.spanFrom(cmdTokens[0].Pos)}
 	return &BindStmt{Primary: primary, Rc: rc, Cmd: cmd, Guard: guard, Span: p.spanFrom(stmtLoc)}, nil
+}
+
+// describeStmt returns a short human-readable name for a
+// statement kind, used in error messages so the user sees "got
+// let" rather than "got *shell.LetStmt".
+func describeStmt(s Stmt) string {
+	switch s.(type) {
+	case *LetStmt:
+		return "let"
+	case *BindStmt:
+		return "bind"
+	case *DeferStmt:
+		return "defer"
+	case *IfStmt:
+		return "if"
+	case *ForEachStmt:
+		return "foreach"
+	case *RetryStmt:
+		return "retry"
+	case *BreakStmt:
+		return "break"
+	case *ContinueStmt:
+		return "continue"
+	case *DefStmt:
+		return "def"
+	case *AssertStmt:
+		return "assert"
+	case *ExprStmt:
+		return "expression"
+	}
+	return fmt.Sprintf("%T", s)
 }
 
 // takeBindRHSTokens collects the tokens that form the command on the
