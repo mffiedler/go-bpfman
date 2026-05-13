@@ -39,27 +39,22 @@ let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
-guard l_100  <- bpfman link attach xdp -i $pair.host_link -p 100  $pid
-guard l_200  <- bpfman link attach xdp -i $pair.host_link -p 200  $pid
-guard l_300  <- bpfman link attach xdp -i $pair.host_link -p 300  $pid
-# l_400 is detached mid-script; no defer for it.
-guard l_400  <- bpfman link attach xdp -i $pair.host_link -p 400  $pid
-guard l_500  <- bpfman link attach xdp -i $pair.host_link -p 500  $pid
-guard l_600  <- bpfman link attach xdp -i $pair.host_link -p 600  $pid
-guard l_700  <- bpfman link attach xdp -i $pair.host_link -p 700  $pid
-guard l_800  <- bpfman link attach xdp -i $pair.host_link -p 800  $pid
-guard l_900  <- bpfman link attach xdp -i $pair.host_link -p 900  $pid
-guard l_1000 <- bpfman link attach xdp -i $pair.host_link -p 1000 $pid
+# Nine "permanent" slots; priority 400 is sacrificial (attached
+# below, detached mid-script, no defer). Splitting the lists
+# keeps the foreach-defer over the kept links uniform.
+let keep_priorities = [100 200 300 500 600 700 800 900 1000]
 
-defer bpfman link detach $l_100
-defer bpfman link detach $l_200
-defer bpfman link detach $l_300
-defer bpfman link detach $l_500
-defer bpfman link detach $l_600
-defer bpfman link detach $l_700
-defer bpfman link detach $l_800
-defer bpfman link detach $l_900
-defer bpfman link detach $l_1000
+guard kept <- foreach prio in $keep_priorities {
+    bpfman link attach xdp -i $pair.host_link -p $prio $pid
+}
+
+foreach l in $kept {
+    defer bpfman link detach $l
+}
+
+# Sacrificial link at priority 400. Detached explicitly below;
+# no defer.
+guard l_400 <- bpfman link attach xdp -i $pair.host_link -p 400 $pid
 
 guard snap_full <- bpfman dispatcher get xdp $pair.host_nsid $pair.host_ifindex
 let count_full = $snap_full |> jq ".members | length"
