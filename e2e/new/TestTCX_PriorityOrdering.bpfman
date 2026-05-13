@@ -21,6 +21,14 @@
 # downward. After all five attaches commit, re-fetch each link
 # so positions reflect the final sorted order.
 #
+# Retrofit notes: TCX's same-program-twice restriction means
+# load and attach are paired per priority. The bind-collect
+# body fuses load + program-unload defer + attach into one
+# foreach iteration, collecting the link record; defers
+# register against the script scope so all five unloads fire
+# at exit. The assertion loop expresses the position-rank
+# contract directly.
+#
 # Run from e2e/:
 #
 #   cd e2e
@@ -31,54 +39,29 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-# One load per priority. TCX rejects same-program-twice on the
-# same (iface, direction), so each attach needs its own program
-# instance even though the bytecode is identical.
-guard loaded_500 <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
-guard loaded_100 <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
-guard loaded_800 <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
-guard loaded_300 <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
-guard loaded_55  <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+let priorities = [500 100 800 300 55]
 
-let prog_500 = $loaded_500.programs[0]
-let prog_100 = $loaded_100.programs[0]
-let prog_800 = $loaded_800.programs[0]
-let prog_300 = $loaded_300.programs[0]
-let prog_55  = $loaded_55.programs[0]
+guard links <- foreach prio in $priorities {
+    guard loaded <- bpfman program load file --path testdata/bpf/tcx_counter.bpf.o --programs tcx:tcx_stats
+    let prog = $loaded.programs[0]
+    defer bpfman program unload $prog
+    bpfman link attach tcx -i $pair.host_link -d ingress -p $prio $prog
+}
 
-defer bpfman program unload $prog_500
-defer bpfman program unload $prog_100
-defer bpfman program unload $prog_800
-defer bpfman program unload $prog_300
-defer bpfman program unload $prog_55
-
-guard l_500 <- bpfman link attach tcx -i $pair.host_link -d ingress -p 500 $prog_500
-guard l_100 <- bpfman link attach tcx -i $pair.host_link -d ingress -p 100 $prog_100
-guard l_800 <- bpfman link attach tcx -i $pair.host_link -d ingress -p 800 $prog_800
-guard l_300 <- bpfman link attach tcx -i $pair.host_link -d ingress -p 300 $prog_300
-guard l_55  <- bpfman link attach tcx -i $pair.host_link -d ingress -p 55  $prog_55
-
-defer bpfman link detach $l_500
-defer bpfman link detach $l_100
-defer bpfman link detach $l_800
-defer bpfman link detach $l_300
-defer bpfman link detach $l_55
+foreach l in $links {
+    defer bpfman link detach $l
+}
 
 # Re-query each link so the position reflects the final sorted
 # order, not the position at attach time.
-guard g_55  <- bpfman link get $l_55
-guard g_100 <- bpfman link get $l_100
-guard g_300 <- bpfman link get $l_300
-guard g_500 <- bpfman link get $l_500
-guard g_800 <- bpfman link get $l_800
+guard refreshed <- foreach l in $links {
+    bpfman link get $l
+}
 
-assert $g_55.record.details.priority  == 55
-assert $g_55.record.details.position  == 0
-assert $g_100.record.details.priority == 100
-assert $g_100.record.details.position == 1
-assert $g_300.record.details.priority == 300
-assert $g_300.record.details.position == 2
-assert $g_500.record.details.priority == 500
-assert $g_500.record.details.position == 3
-assert $g_800.record.details.priority == 800
-assert $g_800.record.details.position == 4
+# Position equals the priority's rank in the sorted-ascending list.
+foreach r in $refreshed {
+    let prio = $r.record.details.priority
+    let pos = $r.record.details.position
+    let want_pos = $priorities |> jq "sort | index(${prio})"
+    assert $pos == $want_pos
+}
