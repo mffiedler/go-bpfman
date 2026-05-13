@@ -1,0 +1,100 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_PriorityOrderingTC.
+#
+# Attaches one TC ingress program ten times at scrambled priorities
+# and asserts that each link's stored position reflects the rank of
+# its requested priority in ascending sort order. Priority and
+# position are read straight off each link's record.details after
+# all ten attaches commit; the in-process Go test calls
+# env.GetLink and reads the same fields off TCDetails.
+#
+# A re-query is required because record.details.position observed
+# at the moment of a single attach reflects the position at that
+# moment, not the final position. Earlier links shift downward as
+# higher-priority later links insert ahead of them, so positions
+# only stabilise once all ten members are in place.
+#
+# The Go test additionally calls memberCount(10) via
+# env.GetDispatcherSnapshot. That assertion is implied here by ten
+# distinct positions 0..9 covering every slot; a separate test
+# exercises bpfman dispatcher get directly.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_PriorityOrderingTC.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/tc_counter_pinned.bpf.o \
+    --programs tc:stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# Scrambled priorities. The expected position for each link is the
+# rank of its priority in ascending sort:
+#
+#   sorted = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]
+#
+# so the rank of priority P is (P / 100) for P >= 100 and 0 for
+# P == 50, giving positions 0..9 across the ten links.
+
+guard l_500 <- bpfman link attach tc -i $pair.host_link -d ingress -p 500 $pid
+guard l_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $pid
+guard l_800 <- bpfman link attach tc -i $pair.host_link -d ingress -p 800 $pid
+guard l_300 <- bpfman link attach tc -i $pair.host_link -d ingress -p 300 $pid
+guard l_900 <- bpfman link attach tc -i $pair.host_link -d ingress -p 900 $pid
+guard l_200 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 $pid
+guard l_700 <- bpfman link attach tc -i $pair.host_link -d ingress -p 700 $pid
+guard l_400 <- bpfman link attach tc -i $pair.host_link -d ingress -p 400 $pid
+guard l_600 <- bpfman link attach tc -i $pair.host_link -d ingress -p 600 $pid
+guard l_50  <- bpfman link attach tc -i $pair.host_link -d ingress -p 50  $pid
+
+defer bpfman link detach $l_500
+defer bpfman link detach $l_100
+defer bpfman link detach $l_800
+defer bpfman link detach $l_300
+defer bpfman link detach $l_900
+defer bpfman link detach $l_200
+defer bpfman link detach $l_700
+defer bpfman link detach $l_400
+defer bpfman link detach $l_600
+defer bpfman link detach $l_50
+
+# Re-query each link so positions reflect the final sorted order.
+guard g_50  <- bpfman link get $l_50.record.id
+guard g_100 <- bpfman link get $l_100.record.id
+guard g_200 <- bpfman link get $l_200.record.id
+guard g_300 <- bpfman link get $l_300.record.id
+guard g_400 <- bpfman link get $l_400.record.id
+guard g_500 <- bpfman link get $l_500.record.id
+guard g_600 <- bpfman link get $l_600.record.id
+guard g_700 <- bpfman link get $l_700.record.id
+guard g_800 <- bpfman link get $l_800.record.id
+guard g_900 <- bpfman link get $l_900.record.id
+
+assert $g_50.record.details.priority  == 50
+assert $g_50.record.details.position  == 0
+assert $g_100.record.details.priority == 100
+assert $g_100.record.details.position == 1
+assert $g_200.record.details.priority == 200
+assert $g_200.record.details.position == 2
+assert $g_300.record.details.priority == 300
+assert $g_300.record.details.position == 3
+assert $g_400.record.details.priority == 400
+assert $g_400.record.details.position == 4
+assert $g_500.record.details.priority == 500
+assert $g_500.record.details.position == 5
+assert $g_600.record.details.priority == 600
+assert $g_600.record.details.position == 6
+assert $g_700.record.details.priority == 700
+assert $g_700.record.details.position == 7
+assert $g_800.record.details.priority == 800
+assert $g_800.record.details.position == 8
+assert $g_900.record.details.priority == 900
+assert $g_900.record.details.position == 9
