@@ -10,15 +10,15 @@ import (
 // dispatcher slot. Each member occupies a unique position in the
 // dispatcher's slot array.
 type DispatcherMember struct {
-	ProgramID   kernel.ProgramID
-	ProgramName string
-	ProgPinPath bpfman.ProgPinPath
-	LinkID      kernel.LinkID
-	LinkPinPath bpfman.LinkPath
-	Position    int
-	Priority    int
-	ProceedOn   uint32
-	Ifname      string
+	ProgramID   kernel.ProgramID   `json:"program_id"`
+	ProgramName string             `json:"program_name"`
+	ProgPinPath bpfman.ProgPinPath `json:"prog_pin_path"`
+	LinkID      kernel.LinkID      `json:"link_id"`
+	LinkPinPath bpfman.LinkPath    `json:"link_pin_path"`
+	Position    int                `json:"position"`
+	Priority    int                `json:"priority"`
+	ProceedOn   uint32             `json:"proceed_on"`
+	Ifname      string             `json:"ifname"`
 }
 
 // DispatcherRuntime holds the kernel-assigned identifiers for the
@@ -26,9 +26,9 @@ type DispatcherMember struct {
 // use netlink filters rather than BPF links. FilterPriority is the
 // TC filter priority, nil for XDP.
 type DispatcherRuntime struct {
-	ProgramID      kernel.ProgramID
-	LinkID         *kernel.LinkID
-	FilterPriority *uint16
+	ProgramID      kernel.ProgramID `json:"program_id"`
+	LinkID         *kernel.LinkID   `json:"link_id,omitempty"`
+	FilterPriority *uint16          `json:"filter_priority,omitempty"`
 }
 
 // DispatcherSnapshot is a complete point-in-time view of a dispatcher
@@ -37,10 +37,10 @@ type DispatcherRuntime struct {
 // ReplaceDispatcherSnapshot, which atomically replaces all persisted
 // state for the dispatcher's attach point.
 type DispatcherSnapshot struct {
-	Key      dispatcher.Key
-	Revision uint32
-	Runtime  DispatcherRuntime
-	Members  []DispatcherMember
+	Key      dispatcher.Key     `json:"key"`
+	Revision uint32             `json:"revision"`
+	Runtime  DispatcherRuntime  `json:"runtime"`
+	Members  []DispatcherMember `json:"members"`
 }
 
 // DispatcherSummary is a lightweight view of a dispatcher suitable
@@ -48,8 +48,8 @@ type DispatcherSnapshot struct {
 // member list, avoiding the cost of joining detail tables when only
 // aggregate information is needed.
 type DispatcherSummary struct {
-	Key         dispatcher.Key
-	Revision    uint32
-	Runtime     DispatcherRuntime
-	MemberCount int
+	Key         dispatcher.Key    `json:"key"`
+	Revision    uint32            `json:"revision"`
+	Runtime     DispatcherRuntime `json:"runtime"`
+	MemberCount int               `json:"member_count"`
 }
