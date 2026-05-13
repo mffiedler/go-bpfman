@@ -17,170 +17,43 @@
 package main
 
 import (
-	"context"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
-	"github.com/frobware/go-bpfman/manager"
 )
 
-// builtinCtx carries everything a handler might need. It is a
-// fat context by design: the dependency superset across the
-// 19 dispatched builtins is small (ctx, cli, mgr, env, args,
-// loc) and uniform plumbing keeps each handler's wrapper to a
-// few lines. Session is reachable via Env.Session; isRequire
-// and origin-style toggles are handler-internal and need no
-// dedicated field.
-type builtinCtx struct {
-	// Ctx is the cancellation/deadline context for the call.
-	// Plumbed from replShellCmd's caller; long-running
-	// builtins (start, wait, kill's escalation wait, exec)
-	// observe it.
-	Ctx context.Context
+// Local aliases keep the dispatch types short in this file and
+// in the handler files; the canonical declarations live in repl/.
+type (
+	builtinCtx = repl.Ctx
+	builtin    = repl.Builtin
+	keyword    = repl.Keyword
+)
 
-	// CLI carries the stdout/stderr writers and the
-	// PrintOut/PrintErrf helpers.
-	CLI *bpfmancli.CLI
-
-	// Mgr is the bpfman manager. Only the assertion verbs
-	// and source touch it; most builtins leave it nil-safe.
-	Mgr *manager.Manager
-
-	// Env is the active shell environment. Env.Session is
-	// the canonical handle to variable bindings, defs, and
-	// aliases; jobs and source read Env directly to register
-	// background processes and to inherit the caller's
-	// scope.
-	Env *shell.Env
-
-	// Cmd is the command name as the user typed it (args[0]
-	// before slicing). Useful for diagnostic messages that
-	// quote the command spelling.
-	Cmd string
-
-	// Args is the argument list with the command name
-	// already stripped. Most handlers use it directly; a
-	// few that take []string convert via repl.ArgTexts(c.Args).
-	Args []shell.Arg
-
-	// Pos is the source location of the chunk this builtin
-	// was dispatched from. Used by 'assert'/'require' for
-	// chunk-line composition on failure messages and by
-	// 'start' to carry the start-site origin into the Job
-	// handle.
-	Pos sourceLoc
-
-	// Span is the source extent of the originating CommandStmt
-	// or BindStmt. Handlers that emit *shell.SyntaxError use it
-	// to frame diagnostics at the failing command rather than
-	// at the chunk start. Set by replShellCmd from the value
-	// the evaluator threaded through Env.ExecCommand /
-	// Env.ExecBind.
-	Span shell.Span
-}
-
-// argCompleter is a per-builtin completion callback for tokens
-// after the command name. tokens[0] is the command itself;
-// tokens[1:] are the user-typed arguments. trailingSpace says
-// whether the cursor is positioned just after a space (so a
-// new token is starting) or in the middle of a partial token
-// (so the last entry of tokens is being typed). baseDir is
-// the working directory for filesystem completions; it is the
-// empty string in production (relative to the process cwd) and
-// a fixture path in tests, threaded through from
-// replCompleteIn.
-//
-// Returning candidates with replace == 0 means "the candidates
-// are independent of the partial token" (e.g. an empty list of
-// completions or a fixed menu). Returning replace == len(prefix)
-// signals "rewrite the last len(prefix) characters with the
-// chosen candidate".
-type argCompleter func(session *shell.Session, baseDir string, tokens []string, trailingSpace bool) (candidates []string, replace int)
-
-// Category constants group builtins in the help overview.
-// Constants rather than strings so a typo in one entry shows
-// up at compile time rather than scattering an entry into a
-// new section.
+// Category aliases for the help registry. The constants and
+// rendering maps live in repl/; the locals keep the per-entry
+// Category field readable.
 const (
-	categorySession = "session" // bindings, defs, aliases
-	categoryIO      = "io"      // external commands, file, jq, print, source
-	categoryAssert  = "assert"  // assert / require
-	categoryJobs    = "jobs"    // start / wait / kill / jobs
-	categoryMeta    = "meta"    // help / version
+	categorySession = repl.CategorySession
+	categoryIO      = repl.CategoryIO
+	categoryAssert  = repl.CategoryAssert
+	categoryJobs    = repl.CategoryJobs
+	categoryMeta    = repl.CategoryMeta
 )
 
-// categoryLabels maps a category constant to the display label
-// used in the help overview. categoryOrder fixes the rendering
-// sequence so the overview reads the same on every run; map
-// iteration order would otherwise produce arbitrary output.
-var categoryLabels = map[string]string{
-	categorySession: "Session and bindings",
-	categoryIO:      "I/O and external commands",
-	categoryJobs:    "Async jobs",
-	categoryAssert:  "Assertions",
-	categoryMeta:    "Meta",
-}
+var (
+	categoryLabels = repl.CategoryLabels
+	categoryOrder  = repl.CategoryOrder
+)
 
-var categoryOrder = []string{
-	categorySession,
-	categoryIO,
-	categoryJobs,
-	categoryAssert,
-	categoryMeta,
-}
-
-// builtin describes one entry in the registry: how to run it,
-// how to complete its arguments, what shape its bind-RHS primary
-// produces at static-check time, and how to document itself. The
-// doc fields drive 'help' (overview) and 'help <name>' (detail).
-// Empty fields degrade gracefully -- a builtin with no Detail just
-// shows Usage+Summary on detail lookup, and a nil BindShape falls
-// through to the inferBindShape default (an external-subprocess
-// result envelope). Pointer-free because the registry is read-only
-// at runtime.
-type builtin struct {
-	Name     string
-	Handler  func(builtinCtx) (shell.Value, error)
-	Complete argCompleter // nil = generic fallthrough
-
-	// BindShape lets the static checker resolve `<- NAME ARGS...`
-	// to the correct primary Shape. The function receives the
-	// arguments after the command name so subcommand-aware shapes
-	// (`net veth-pair` -> NetPair, `net release` -> result, ...)
-	// live next to the handler that produces them. Wrap a fixed
-	// Shape with shell.StaticBindShape; nil leaves the checker on
-	// the default external-subprocess result envelope.
-	BindShape shell.BindShapeFn
-
-	Category string // categoryXxx constant; ungrouped if empty
-	Usage    string // one-line syntax (e.g. "kill [--signal=NAME] [--grace=DUR] $job")
-	Summary  string // one-line description shown next to Usage
-	Detail   string // multi-paragraph long help; optional
-}
-
-// keyword describes a parser-level form (let, guard, defer,
-// def, bpfman) that participates in 'help' but is not part of
-// the dispatch table. Keywords have no handler and no per-call
-// completer because they are recognised by the parser before
-// dispatch ever runs.
-type keyword struct {
-	Name    string
-	Usage   string
-	Summary string
-	Detail  string
-}
-
-// keywordRegistry is the documentation source of truth for
-// parser-level forms. 'help' renders these in their own
-// section and 'help <name>' looks them up the same way it
-// looks up builtins. Adding a keyword: one entry here; the
-// help and completion paths pick it up automatically.
-var keywordRegistry = map[string]keyword{
-	"let": {
+// keywordRegistrations is the bpfman-shell documentation source
+// of truth for parser-level forms. The init() at the bottom of
+// this file feeds each entry into repl.RegisterKeyword.
+var keywordRegistrations = []keyword{
+	{
 		Name:    "let",
 		Usage:   "let X = EXPR  |  let X <- COMMAND  |  let (rc, X) <- COMMAND",
 		Summary: "Bind an expression result, a command's primary, or a (rc, primary) pair.",
@@ -190,7 +63,7 @@ var keywordRegistry = map[string]keyword{
 			"ok=false rather than halting the script. Use 'guard' for the " +
 			"halt-on-failure variant.",
 	},
-	"guard": {
+	{
 		Name:    "guard",
 		Usage:   "guard X <- COMMAND  |  guard (rc, X) <- COMMAND",
 		Summary: "Bind primary (and optionally rc); halt the script on a non-ok rc.",
@@ -199,7 +72,7 @@ var keywordRegistry = map[string]keyword{
 			"location, argv, and stderr. Use this when the next statement only " +
 			"makes sense if the command succeeded.",
 	},
-	"defer": {
+	{
 		Name:    "defer",
 		Usage:   "defer COMMAND ARGS",
 		Summary: "Run COMMAND when the enclosing defer scope exits.",
@@ -211,7 +84,7 @@ var keywordRegistry = map[string]keyword{
 			"'defer kill $p' is the canonical async-job cleanup idiom. The killed " +
 			"job stays in the 'jobs' ledger until an explicit 'reap'.",
 	},
-	"def": {
+	{
 		Name:    "def",
 		Usage:   "def NAME(P1, P2, ...) { BODY }",
 		Summary: "Define a user command callable as 'NAME ARG1 ARG2 ...'.",
@@ -220,7 +93,7 @@ var keywordRegistry = map[string]keyword{
 			"caller's job scope (so returning a $job handle for the caller to wait " +
 			"on does not register as a leak).",
 	},
-	"bpfman": {
+	{
 		Name:    "bpfman",
 		Usage:   "bpfman <subcommand> ...",
 		Summary: "Domain-command namespace prefix for program / link / dispatcher / audit verbs.",
@@ -230,37 +103,37 @@ var keywordRegistry = map[string]keyword{
 	},
 }
 
-// builtinRegistry is the single source of truth for the shell
-// builtin set. The dispatcher (replShellCmd) does table lookup;
-// the completer's first-token candidates derive from this map;
-// the alias check in replAlias guards against shadowing by
-// looking up the candidate name here. Adding a new builtin is
-// one entry.
+// builtinRegistrations is the bpfman-shell builtin set. The
+// init() at the bottom of this file feeds each entry into
+// repl.RegisterBuiltin so the dispatcher (replShellCmd), the
+// completer's first-token candidates, and the alias-shadow
+// check all see the same source of truth.
 //
-// Populated in init() rather than at the top level so the
+// Populated in an init() rather than at the top level so the
 // handler references do not form a compile-time initialisation
 // cycle: replAssertRequire (used by handleAssert / handleRequire)
-// transitively reaches replShellCmd via runCommand, and
-// replShellCmd reads builtinRegistry. Deferring construction
-// to init() breaks the cycle while keeping the map read-only
+// transitively reaches replShellCmd via runCommand, and the
+// dispatcher reads repl.Builtins(). Deferring registration to
+// init() breaks the cycle while keeping the registry read-only
 // at runtime.
-var builtinRegistry map[string]builtin
-
 func init() {
-	builtinRegistry = map[string]builtin{
-		"alias": {
+	for _, k := range keywordRegistrations {
+		repl.RegisterKeyword(k)
+	}
+	for _, b := range []builtin{
+		{
 			Name: "alias", Handler: handleAlias,
 			Category: categorySession,
 			Usage:    "alias <name> = <expansion>",
 			Summary:  "Define a first-token alias.",
 		},
-		"aliases": {
+		{
 			Name: "aliases", Handler: handleAliases,
 			Category: categorySession,
 			Usage:    "aliases",
 			Summary:  "List defined aliases.",
 		},
-		"assert": {
+		{
 			Name: "assert", Handler: handleAssert,
 			Category: categoryAssert,
 			Usage:    "assert <verb> [args...]  |  assert <bool-expr>  |  assert not <verb> [args...]",
@@ -271,27 +144,27 @@ func init() {
 				"'assert true'. Use 'require' for halt-on-failure semantics. Coerce " +
 				"stringy numeric input via [$x |> jq tonumber] before comparing.",
 		},
-		"defs": {
+		{
 			Name: "defs", Handler: handleDefs,
 			Category: categorySession,
 			Usage:    "defs",
 			Summary:  "List user-defined commands.",
 		},
-		"exec": {
+		{
 			Name: "exec", Handler: handleExec,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
 			Category:  categoryIO,
 			Usage:     "exec <command> [args | file:$var]...",
 			Summary:   "Run a host command. Use 'file:$var' to materialise a structured value as a temp file.",
 		},
-		"file": {
+		{
 			Name: "file", Handler: handleFile,
 			BindShape: shell.StaticBindShape(shell.Shape{Sealed: false, Kind: shell.OriginUnknown}),
 			Category:  categoryIO,
 			Usage:     "file temp $var[.path]",
 			Summary:   "Write a value to a temp file; primary is the path (assignable).",
 		},
-		"help": {
+		{
 			Name: "help", Handler: handleHelp, Complete: completeHelpArg,
 			Category: categoryMeta,
 			Usage:    "help [<name>]",
@@ -301,7 +174,7 @@ func init() {
 				"registries and print Usage, Summary, and the long-form Detail " +
 				"if any.",
 		},
-		"jobs": {
+		{
 			Name: "jobs", Handler: handleJobs,
 			Category: categoryJobs,
 			Usage:    "jobs",
@@ -310,13 +183,13 @@ func init() {
 				"buckets are running, killing (kill issued, reaper has not yet " +
 				"observed exit), exited N, killed SIG.",
 		},
-		"jq": {
+		{
 			Name: "jq", Handler: handleJQ,
 			Category: categoryIO,
 			Usage:    "jq <filter> <value>",
 			Summary:  "Apply a jq filter to a value (assignable).",
 		},
-		"kill": {
+		{
 			Name: "kill", Handler: handleKill,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
 			Category:  categoryJobs,
@@ -332,13 +205,13 @@ func init() {
 				"the killed status is observable in 'jobs' until 'reap' drops it. " +
 				"'defer kill $p' is the canonical async cleanup idiom.",
 		},
-		"print": {
+		{
 			Name: "print", Handler: handlePrint, Complete: completePrintArg,
 			Category: categoryIO,
 			Usage:    "print [value]...",
 			Summary:  "Print zero or more values (none emits a blank line; one pretty; many compact space-joined).",
 		},
-		"reap": {
+		{
 			Name: "reap", Handler: handleReap,
 			Category: categoryJobs,
 			Usage:    "reap",
@@ -348,7 +221,7 @@ func init() {
 				"the call. After 'reap', the 'jobs' listing reflects only entries " +
 				"whose process is still running.",
 		},
-		"require": {
+		{
 			Name: "require", Handler: handleRequire,
 			Category: categoryAssert,
 			Usage:    "require <verb> [args...]  |  require <bool-expr>  |  require not <verb> [args...]",
@@ -356,7 +229,7 @@ func init() {
 			Detail: "Verbs and operators are the same as assert. Use require where the " +
 				"following statements only make sense if the condition holds.",
 		},
-		"trace": {
+		{
 			Name: "trace", Handler: handleTrace,
 			Category: categorySession,
 			Usage:    "trace on  |  trace off",
@@ -371,7 +244,7 @@ func init() {
 				"disables it again. The CLI flag -x / --trace turns tracing on at " +
 				"script startup.",
 		},
-		"source": {
+		{
 			Name: "source", Handler: handleSource, Complete: completeSourceArg,
 			Category: categoryIO,
 			Usage:    "source <file>",
@@ -386,7 +259,7 @@ func init() {
 				"Absolute paths and paths typed at the interactive prompt resolve " +
 				"against the current working directory.",
 		},
-		"tempdir": {
+		{
 			Name: "tempdir", Handler: handleTempdir,
 			BindShape: shell.StaticBindShape(shell.Shape{Sealed: false, Kind: shell.OriginUnknown}),
 			Category:  categoryIO,
@@ -400,7 +273,7 @@ func init() {
 				"paths whenever a script may run concurrently with itself, since " +
 				"shared paths race on rm/touch operations across instances.",
 		},
-		"start": {
+		{
 			Name: "start", Handler: handleStart,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginJob)),
 			Category:  categoryJobs,
@@ -415,7 +288,7 @@ func init() {
 				"unwaited/unkilled job as a leak (FAIL, exit 1); interactive mode " +
 				"silently SIGKILLs on session exit.",
 		},
-		"fire": {
+		{
 			Name: "fire", Handler: handleFire,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginJob)),
 			Category:  categoryJobs,
@@ -430,7 +303,7 @@ func init() {
 				"--target $work.target_binary' attaches to the running bpfman-shell ELF. " +
 				"start env BPFMAN_SHELL_MODE=... remains valid as a debug escape hatch.",
 		},
-		"net": {
+		{
 			Name: "net", Handler: handleNet,
 			BindShape: netBindShape,
 			Category:  categoryJobs,
@@ -450,19 +323,19 @@ func init() {
 				"field reads stay valid. Raw ip(8) remains the documented escape hatch for " +
 				"topologies net does not cover (bridges, VLANs, IPv6, multiple pairs).",
 		},
-		"unalias": {
+		{
 			Name: "unalias", Handler: handleUnalias,
 			Category: categorySession,
 			Usage:    "unalias <name>...",
 			Summary:  "Remove alias bindings.",
 		},
-		"undef": {
+		{
 			Name: "undef", Handler: handleUndef,
 			Category: categorySession,
 			Usage:    "undef <name>...",
 			Summary:  "Remove user-defined commands.",
 		},
-		"range": {
+		{
 			Name: "range", Handler: handleRange,
 			Category: categoryIO,
 			Usage:    "range <integer>",
@@ -474,7 +347,7 @@ func init() {
 				"result envelope. Negative bounds are rejected; the upper limit is " +
 				"INT32_MAX to keep pathological scripts loud rather than OOM.",
 		},
-		"u32le": {
+		{
 			Name: "u32le", Handler: handleU32LE,
 			Category: categoryIO,
 			Usage:    "u32le <integer>",
@@ -484,7 +357,7 @@ func init() {
 				"where the .bpf.c declares `volatile const __u32`. " +
 				"Rejects negative inputs and values that exceed UINT32_MAX.",
 		},
-		"u64le": {
+		{
 			Name: "u64le", Handler: handleU64LE,
 			Category: categoryIO,
 			Usage:    "u64le <integer>",
@@ -494,25 +367,25 @@ func init() {
 				"where the .bpf.c declares `volatile const __u64`. " +
 				"Rejects negative inputs (Go uint64 max is the upper bound).",
 		},
-		"unset": {
+		{
 			Name: "unset", Handler: handleUnset, Complete: completeUnsetArg,
 			Category: categorySession,
 			Usage:    "unset <name>...",
 			Summary:  "Remove variable bindings.",
 		},
-		"vars": {
+		{
 			Name: "vars", Handler: handleVars,
 			Category: categorySession,
 			Usage:    "vars",
 			Summary:  "List session variables and their kinds.",
 		},
-		"version": {
+		{
 			Name: "version", Handler: handleVersion,
 			Category: categoryMeta,
 			Usage:    "version",
 			Summary:  "Print version information.",
 		},
-		"wait": {
+		{
 			Name: "wait", Handler: handleWait,
 			BindShape: shell.StaticBindShape(shell.KindShape(shell.OriginEnvelope)),
 			Category:  categoryJobs,
@@ -525,6 +398,8 @@ func init() {
 				"wait marks the job as managed but leaves the entry in the ledger so " +
 				"$job stays inspectable; use 'reap' to drop completed entries.",
 		},
+	} {
+		repl.RegisterBuiltin(b)
 	}
 
 	// Register each effectful builtin's BindShape with the shell
@@ -534,7 +409,7 @@ func init() {
 	// (alias, vars, help, jobs, reap, ...) bind nothing assignable
 	// and so contribute no shape; inferBindShape's default takes
 	// care of the rest (external-subprocess result).
-	for name, b := range builtinRegistry {
+	for name, b := range repl.Builtins() {
 		if b.BindShape != nil {
 			shell.RegisterBindShape(name, b.BindShape)
 		}
@@ -598,7 +473,7 @@ func handleKill(c builtinCtx) (shell.Value, error) {
 // Python `import` and Ruby `require_relative` use, and what most
 // readers expect. Absolute paths bypass this transform.
 //
-// Paths typed at the interactive prompt (where c.Pos.file is
+// Paths typed at the interactive prompt (where c.Pos.File is
 // empty) anchor against the cwd captured at replLoop entry, not
 // against the live process cwd at evaluation time. Indistinguishable
 // in production (the shell has no cd builtin so cwd does not change
@@ -612,8 +487,8 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 	args := repl.ArgTexts(c.Args)
 	if len(args) == 1 && !filepath.IsAbs(args[0]) {
 		switch {
-		case c.Pos.file != "":
-			args[0] = filepath.Join(filepath.Dir(c.Pos.file), args[0])
+		case c.Pos.File != "":
+			args[0] = filepath.Join(filepath.Dir(c.Pos.File), args[0])
 		default:
 			if base := interactiveBaseDir(c.Ctx); base != "" {
 				args[0] = filepath.Join(base, args[0])
@@ -678,12 +553,12 @@ func completeHelpArg(session *shell.Session, baseDir string, tokens []string, tr
 		prefix = tokens[len(tokens)-1]
 	}
 	var names []string
-	for n := range builtinRegistry {
+	for n := range repl.Builtins() {
 		if strings.HasPrefix(n, prefix) {
 			names = append(names, n+" ")
 		}
 	}
-	for n := range keywordRegistry {
+	for n := range repl.Keywords() {
 		if strings.HasPrefix(n, prefix) {
 			names = append(names, n+" ")
 		}

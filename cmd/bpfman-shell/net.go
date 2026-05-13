@@ -63,7 +63,7 @@ func handleNet(c builtinCtx) (shell.Value, error) {
 	rest := c.Args[1:]
 	switch sub {
 	case "veth-pair":
-		return handleNetVethPair(c.Ctx, c.Pos.cite(), rest)
+		return handleNetVethPair(c.Ctx, c.Pos.Cite(), rest)
 	case "release":
 		return handleNetRelease(c.Ctx, rest)
 	case "exec":
@@ -73,7 +73,7 @@ func handleNet(c builtinCtx) (shell.Value, error) {
 		}
 		return shell.ValueFromEnvelope(env), nil
 	case "start":
-		return handleNetStart(c.Ctx, c.Env, c.Pos.cite(), rest)
+		return handleNetStart(c.Ctx, c.Env, c.Pos.Cite(), rest)
 	default:
 		return shell.Value{}, fmt.Errorf("net: unknown subcommand %q (valid: exec, release, start, veth-pair)", sub)
 	}

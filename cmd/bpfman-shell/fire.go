@@ -145,7 +145,7 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 	job, err := spawnJob(c.Ctx, c.Env, spawnSpec{
 		Argv:         argv,
 		Env:          env,
-		Origin:       c.Pos.cite(),
+		Origin:       c.Pos.Cite(),
 		TargetBinary: targetBinary,
 	})
 	if err != nil {

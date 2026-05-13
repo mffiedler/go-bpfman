@@ -420,9 +420,9 @@ func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourc
 		if loc.Line == 0 {
 			return msg
 		}
-		if base.file != "" && base.line > 0 {
-			absLine := base.line + loc.Line - 1
-			return fmt.Sprintf("%s:%d:%d: %s", base.file, absLine, loc.Col, msg)
+		if base.File != "" && base.Line > 0 {
+			absLine := base.Line + loc.Line - 1
+			return fmt.Sprintf("%s:%d:%d: %s", base.File, absLine, loc.Col, msg)
 		}
 		return fmt.Sprintf("%d:%d: %s", loc.Line, loc.Col, msg)
 	}

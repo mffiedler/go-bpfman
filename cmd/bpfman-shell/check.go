@@ -214,37 +214,8 @@ func openScriptReader(path string) (repl.LineReader, error) {
 	return repl.NewScannerReader(f, f), nil
 }
 
-// sourceLoc identifies a position in a script file. The zero value
-// means "no location" and formats as the empty string, so interactive
-// and piped-stdin modes are unaffected.
-type sourceLoc struct {
-	file string
-	line int
-	col  int
-}
-
-func (l sourceLoc) String() string {
-	if l.file == "" {
-		return ""
-	}
-	if l.col > 0 {
-		return fmt.Sprintf("%s:%d:%d: ", l.file, l.line, l.col)
-	}
-	return fmt.Sprintf("%s:%d: ", l.file, l.line)
-}
-
-// cite returns the bare 'file:line[:col]' citation without
-// the trailing ': ' separator that String adds for inline
-// error prefixes. Used when the location is rendered as a
-// value in its own right (e.g. captured into Job.Origin so
-// the scope-exit leak diagnostic can show where the start
-// lived).
-func (l sourceLoc) cite() string {
-	if l.file == "" {
-		return ""
-	}
-	if l.col > 0 {
-		return fmt.Sprintf("%s:%d:%d", l.file, l.line, l.col)
-	}
-	return fmt.Sprintf("%s:%d", l.file, l.line)
-}
+// sourceLoc is now repl.SourceLoc; the alias keeps existing call
+// sites readable while the type definition lives in the repl
+// package alongside the loop machinery that threads it through
+// the dispatcher and renderer.
+type sourceLoc = repl.SourceLoc

@@ -2434,9 +2434,9 @@ func TestSourceLoc_String(t *testing.T) {
 		want string
 	}{
 		{"zero value", sourceLoc{}, ""},
-		{"with file and line", sourceLoc{file: "test.bpfman", line: 5}, "test.bpfman:5: "},
-		{"line one", sourceLoc{file: "script.bpfman", line: 1}, "script.bpfman:1: "},
-		{"with column", sourceLoc{file: "test.bpfman", line: 5, col: 9}, "test.bpfman:5:9: "},
+		{"with file and line", sourceLoc{File: "test.bpfman", Line: 5}, "test.bpfman:5: "},
+		{"line one", sourceLoc{File: "script.bpfman", Line: 1}, "script.bpfman:1: "},
+		{"with column", sourceLoc{File: "test.bpfman", Line: 5, Col: 9}, "test.bpfman:5:9: "},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

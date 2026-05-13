@@ -59,7 +59,7 @@ func handleStart(c builtinCtx) (shell.Value, error) {
 	// just what the user asked us to launch.
 	job, err := spawnJob(c.Ctx, c.Env, spawnSpec{
 		Argv:         argv,
-		Origin:       c.Pos.cite(),
+		Origin:       c.Pos.Cite(),
 		TempFiles:    tempFiles,
 		TargetBinary: argv[0],
 	})

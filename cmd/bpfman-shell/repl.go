@@ -161,7 +161,7 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 // but wraps the entire chunk loop in a single shell.WithJobScope
 // outside a single shell.WithDeferScope. Each balanced statement
 // is parsed and evaluated as its own program, so existing
-// line-tracking (loc.line tied to each chunk's startLine) keeps
+// line-tracking (loc.Line tied to each chunk's startLine) keeps
 // error diagnostics pointed at the right source line, but every
 // defer registered along the way fires when the script-wide
 // defer scope unwinds at script exit -- not at the end of the
@@ -208,7 +208,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			return writeValue(cli, v)
 		},
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-			renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
+			renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
 		},
 		HandleJobLeak: strictJobLeakHandler(cli, session),
 	}
@@ -223,7 +223,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 				if err != nil {
 					if err == io.EOF || err == repl.ErrInterrupt {
 						if buf.Len() > 0 {
-							loc := sourceLoc{file: file, line: startLine}
+							loc := sourceLoc{File: file, Line: startLine}
 							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
 							return errScriptError
 						}
@@ -250,7 +250,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 				buf.Reset()
 				cs = contState{}
 
-				loc := sourceLoc{file: file, line: startLine}
+				loc := sourceLoc{File: file, Line: startLine}
 				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
@@ -267,7 +267,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 // against an env whose defer scope was already opened by the
 // caller. Typed errors with a Span are rendered as rust-style
 // frames against frameSrc; the chunk-relative Span is shifted
-// by loc.line so frames cite the absolute file line. When
+// by loc.Line so frames cite the absolute file line. When
 // frameSrc is empty (interactive mode without a slurped buffer)
 // the chunk input itself is used as the frame source. Errors
 // without typed Span info fall back to the plain single-line
@@ -275,7 +275,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string, loc sourceLoc) error {
 	emitFrame := func(span shell.Span, msg string) {
 		src := frameSrc
-		shift := loc.line - 1
+		shift := loc.Line - 1
 		if src == "" {
 			src = input
 			shift = 0
@@ -285,7 +285,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			shifted.Pos.Line += shift
 			shifted.End.Line += shift
 		}
-		_ = cli.PrintErr(shell.RenderDiagnostic(src, loc.file, shell.Diagnostic{
+		_ = cli.PrintErr(shell.RenderDiagnostic(src, loc.File, shell.Diagnostic{
 			Span: shifted,
 			Msg:  msg,
 		}))
@@ -299,10 +299,10 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			// `file:line: msg` in batch, `msg` only in
 			// interactive. The construct itself is fine; the
 			// runtime fact is what the user needs to see.
-			if loc.file != "" {
-				shift := loc.line - 1
+			if loc.File != "" {
+				shift := loc.Line - 1
 				line := re.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.file, line, re.Msg)
+				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, re.Msg)
 			} else {
 				_ = cli.PrintErrf("%s\n", re.Msg)
 			}
@@ -315,10 +315,10 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			// needed, or an unknown adapter form. The source
 			// is well-formed; the runtime value just does not
 			// compose. Cite, do not frame.
-			if loc.file != "" {
-				shift := loc.line - 1
+			if loc.File != "" {
+				shift := loc.Line - 1
 				line := ae.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.file, line, ae.Msg)
+				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, ae.Msg)
 			} else {
 				_ = cli.PrintErrf("%s\n", ae.Msg)
 			}
@@ -331,10 +331,10 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			// name just is not a command. Cite the line in
 			// batch, emit a single line in interactive. No
 			// frame, no carets -- the construct is fine.
-			if loc.file != "" {
-				shift := loc.line - 1
+			if loc.File != "" {
+				shift := loc.Line - 1
 				line := cnf.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: command not found\n", loc.file, line, cnf.Name)
+				_ = cli.PrintErrf("%s:%d: %s: command not found\n", loc.File, line, cnf.Name)
 			} else {
 				_ = cli.PrintErrf("%s: command not found\n", cnf.Name)
 			}
@@ -347,15 +347,15 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			// so we do not repeat them; we just say where the
 			// script tripped.
 			//
-			//   Interactive (loc.file == ""): silent. The
+			//   Interactive (loc.File == ""): silent. The
 			//     prompt returning is the signal.
 			//   Batch: one citation line, optionally
 			//     followed by indented stdout/stderr blocks
 			//     if the executor captured any.
-			if loc.file != "" {
-				shift := loc.line - 1
+			if loc.File != "" {
+				shift := loc.Line - 1
 				line := ef.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: exit %d\n", loc.file, line, strings.Join(ef.Argv, " "), ef.ExitCode)
+				_ = cli.PrintErrf("%s:%d: %s: exit %d\n", loc.File, line, strings.Join(ef.Argv, " "), ef.ExitCode)
 				if ef.Stdout != "" {
 					_ = cli.PrintErrf("stdout:\n")
 					for _, l := range strings.Split(strings.TrimRight(ef.Stdout, "\n"), "\n") {
@@ -520,11 +520,11 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 
 			// Interactive mode has no source file but does
 			// track absolute session line numbers so the
-			// trace hook can cite '<repl>:N'. loc.line carries
+			// trace hook can cite '<repl>:N'. loc.Line carries
 			// startLine through unchanged; evalChunkInScope's
 			// report helper still keys batch-vs-interactive
-			// rendering off loc.file == "".
-			loc := sourceLoc{line: startLine}
+			// rendering off loc.File == "".
+			loc := sourceLoc{Line: startLine}
 
 			// Per-chunk SIGINT: a ^C at the prompt or
 			// during a long-running builtin cancels just
@@ -703,7 +703,7 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		return false, shell.Value{}, nil
 	}
 	cmd := repl.ArgText(args[0])
-	b, ok := builtinRegistry[cmd]
+	b, ok := repl.Builtins()[cmd]
 	if !ok {
 		return false, shell.Value{}, nil
 	}
@@ -734,7 +734,7 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // described in the REPL design's section on the shared failure
 // renderer.
 func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc, stmtLoc shell.Pos, args []shell.Arg, env shell.Envelope) {
-	file := scriptLoc.file
+	file := scriptLoc.File
 	if file == "" {
 		file = "<repl>"
 	}
@@ -960,9 +960,9 @@ func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) fu
 		if !session.TraceEnabled() {
 			return
 		}
-		shift := loc.line - 1
+		shift := loc.Line - 1
 		abs := line + shift
-		file := loc.file
+		file := loc.File
 		if file == "" {
 			file = "<repl>"
 		}
@@ -1079,7 +1079,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 		env.Trace = savedTrace
 	}()
 	env.RenderDeferFailure = func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-		renderEnvelopeFailure(cli, "defer", sourceLoc{file: file}, stmtLoc, args, rc)
+		renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
 	}
 
 	return shell.WithDeferScope(env, func() error {
@@ -1125,7 +1125,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 			buf.Reset()
 			cs = contState{}
 
-			loc := sourceLoc{file: file, line: startLine}
+			loc := sourceLoc{File: file, Line: startLine}
 			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
 			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
 			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
@@ -1295,7 +1295,7 @@ func newHelpTabwriter(b *strings.Builder) *tabwriter.Writer {
 // constant does not produce an empty header.
 func writeBuiltinCategory(b *strings.Builder, cat string) {
 	var entries []builtin
-	for _, bi := range builtinRegistry {
+	for _, bi := range repl.Builtins() {
 		if bi.Category == cat {
 			entries = append(entries, bi)
 		}
@@ -1318,14 +1318,14 @@ func writeBuiltinCategory(b *strings.Builder, cat string) {
 // shows multiple variants separated by '|' so the wrap path
 // fires regularly here.
 func writeKeywordSection(b *strings.Builder) {
-	if len(keywordRegistry) == 0 {
+	if len(repl.Keywords()) == 0 {
 		return
 	}
-	names := slices.Sorted(maps.Keys(keywordRegistry))
+	names := slices.Sorted(maps.Keys(repl.Keywords()))
 	b.WriteString("Keywords:\n")
 	rows := make([][2]string, 0, len(names))
 	for _, n := range names {
-		k := keywordRegistry[n]
+		k := repl.Keywords()[n]
 		rows = append(rows, [2]string{k.Usage, k.Summary})
 	}
 	writeAlignedRows(b, rows)
@@ -1337,10 +1337,10 @@ func writeKeywordSection(b *strings.Builder) {
 // Returns ok=false when the name is in neither registry so the
 // caller can produce a useful error.
 func renderHelpDetail(name string) (string, bool) {
-	if bi, ok := builtinRegistry[name]; ok {
+	if bi, ok := repl.Builtins()[name]; ok {
 		return formatDetail(bi.Name, bi.Usage, bi.Summary, bi.Detail), true
 	}
-	if kw, ok := keywordRegistry[name]; ok {
+	if kw, ok := repl.Keywords()[name]; ok {
 		return formatDetail(kw.Name, kw.Usage, kw.Summary, kw.Detail), true
 	}
 	return "", false

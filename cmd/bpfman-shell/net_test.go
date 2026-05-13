@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -408,7 +409,7 @@ func TestNetPair_FieldsRemainReadableAfterRelease(t *testing.T) {
 // a nonexistent /usr/bin/net binary.
 func TestNetBuiltin_RegisteredInRegistry(t *testing.T) {
 	t.Parallel()
-	entry, ok := builtinRegistry["net"]
+	entry, ok := repl.Builtins()["net"]
 	require.Truef(t, ok, "net is not in builtinRegistry")
 	assert.NotNil(t, entry.Handler)
 	assert.NotEmpty(t, entry.Usage)

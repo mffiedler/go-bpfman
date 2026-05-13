@@ -42,9 +42,9 @@ var replCommandNames []string
 
 func init() {
 	keywords := []string{"bpfman", "def", "defer", "guard", "let"}
-	out := make([]string, 0, len(builtinRegistry)+len(keywords))
+	out := make([]string, 0, len(repl.Builtins())+len(keywords))
 	out = append(out, keywords...)
-	for name := range builtinRegistry {
+	for name := range repl.Builtins() {
 		out = append(out, name)
 	}
 	slices.Sort(out)
@@ -158,7 +158,7 @@ func replCompleteIn(ctx context.Context, mgr *manager.Manager, session *shell.Se
 		// entry. A non-nil Complete callback for the first
 		// token wins; otherwise we fall through to the
 		// generic subcommand path below.
-		if b, ok := builtinRegistry[tokens[0]]; ok && b.Complete != nil {
+		if b, ok := repl.Builtins()[tokens[0]]; ok && b.Complete != nil {
 			candidates, replace = b.Complete(session, baseDir, tokens, trailingSpace)
 			return
 		}

@@ -73,7 +73,7 @@ func replASTInput(r repl.LineReader, out io.Writer, errOut io.Writer, file strin
 	}
 
 	reportErr := func(err error) bool {
-		loc := sourceLoc{file: file, line: 1}
+		loc := sourceLoc{File: file, Line: 1}
 		fmt.Fprintf(errOut, "%serror: %v\n", loc, err)
 		return true
 	}

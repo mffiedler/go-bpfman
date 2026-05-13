@@ -68,7 +68,7 @@ func handleAlias(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, fmt.Errorf("usage: alias <name> = <expansion>")
 	}
 	name, expansion := args[0], args[2]
-	if _, ok := builtinRegistry[name]; ok {
+	if _, ok := repl.Builtins()[name]; ok {
 		return shell.Value{}, fmt.Errorf("cannot alias %q: it is a shell command", name)
 	}
 	if name == "bpfman" {
