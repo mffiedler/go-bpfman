@@ -28,27 +28,15 @@ let pid = $prog.record.program_id
 defer bpfman program unload $pid
 
 # Fill all ten slots at ascending priorities 100..1000.
-guard l_100  <- bpfman link attach xdp -i $pair.host_link -p 100  $pid
-guard l_200  <- bpfman link attach xdp -i $pair.host_link -p 200  $pid
-guard l_300  <- bpfman link attach xdp -i $pair.host_link -p 300  $pid
-guard l_400  <- bpfman link attach xdp -i $pair.host_link -p 400  $pid
-guard l_500  <- bpfman link attach xdp -i $pair.host_link -p 500  $pid
-guard l_600  <- bpfman link attach xdp -i $pair.host_link -p 600  $pid
-guard l_700  <- bpfman link attach xdp -i $pair.host_link -p 700  $pid
-guard l_800  <- bpfman link attach xdp -i $pair.host_link -p 800  $pid
-guard l_900  <- bpfman link attach xdp -i $pair.host_link -p 900  $pid
-guard l_1000 <- bpfman link attach xdp -i $pair.host_link -p 1000 $pid
+let priorities = [100 200 300 400 500 600 700 800 900 1000]
 
-defer bpfman link detach $l_100
-defer bpfman link detach $l_200
-defer bpfman link detach $l_300
-defer bpfman link detach $l_400
-defer bpfman link detach $l_500
-defer bpfman link detach $l_600
-defer bpfman link detach $l_700
-defer bpfman link detach $l_800
-defer bpfman link detach $l_900
-defer bpfman link detach $l_1000
+guard links <- foreach prio in $priorities {
+    bpfman link attach xdp -i $pair.host_link -p $prio $pid
+}
+
+foreach l in $links {
+    defer bpfman link detach $l
+}
 
 # Eleventh attach must fail. The bind's Rc carries the envelope;
 # Primary stays empty because the attach never produced a Link.
