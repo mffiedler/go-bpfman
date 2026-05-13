@@ -107,8 +107,8 @@ type AttachTCCmd struct {
 
 func (c *AttachTCCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		if c.Priority < 0 || c.Priority > 1000 {
-			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
+		if c.Priority < 0 {
+			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
 		}
 
 		direction, err := bpfman.ParseTCDirection(c.Direction)
@@ -157,8 +157,8 @@ type AttachTCXCmd struct {
 
 func (c *AttachTCXCmd) Run(cli *bpfmancli.CLI, ctx context.Context) error {
 	return runAttach(cli, ctx, &c.OutputFlags, func(ctx context.Context, mgr *manager.Manager, writeLock lock.WriterScope) (attachResult, error) {
-		if c.Priority < 0 || c.Priority > 1000 {
-			return attachResult{}, fmt.Errorf("--priority must be 0-1000, got %d", c.Priority)
+		if c.Priority < 0 {
+			return attachResult{}, fmt.Errorf("--priority must be non-negative, got %d", c.Priority)
 		}
 
 		direction, err := bpfman.ParseTCDirection(c.Direction)

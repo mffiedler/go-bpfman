@@ -771,8 +771,8 @@ func parseLinkAttachTC(args []shell.Arg) (*LinkAttachCommand, error) {
 	if progArg == nil {
 		return nil, fmt.Errorf("link attach tc: requires a program ID")
 	}
-	if priority < 0 || priority > 1000 {
-		return nil, fmt.Errorf("link attach tc: --priority must be 0-1000, got %d", priority)
+	if priority < 0 {
+		return nil, fmt.Errorf("link attach tc: --priority must be non-negative, got %d", priority)
 	}
 
 	dir, err := bpfman.ParseTCDirection(direction)
@@ -886,8 +886,8 @@ func parseLinkAttachTCX(args []shell.Arg) (*LinkAttachCommand, error) {
 	if progArg == nil {
 		return nil, fmt.Errorf("link attach tcx: requires a program ID")
 	}
-	if priority < 0 || priority > 1000 {
-		return nil, fmt.Errorf("link attach tcx: --priority must be 0-1000, got %d", priority)
+	if priority < 0 {
+		return nil, fmt.Errorf("link attach tcx: --priority must be non-negative, got %d", priority)
 	}
 
 	dir, err := bpfman.ParseTCDirection(direction)
