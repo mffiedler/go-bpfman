@@ -1642,7 +1642,11 @@ func resolveVarRefValue(e *VarRefExpr, env *Env) (Value, error) {
 	if e.Path == "" {
 		return v, nil
 	}
-	lv, err := v.LookupValue(e.Name, e.Path)
+	path, err := resolveDynamicPath(e.Path, env, e.Span)
+	if err != nil {
+		return Value{}, err
+	}
+	lv, err := v.LookupValue(e.Name, path)
 	if err != nil {
 		return Value{}, spanErrorf(e.Span, "%v", err)
 	}
@@ -1656,7 +1660,11 @@ func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 	}
 	resolved := v
 	if e.Path != "" {
-		lv, err := v.LookupValue(e.Name, e.Path)
+		path, err := resolveDynamicPath(e.Path, env, e.Span)
+		if err != nil {
+			return nil, err
+		}
+		lv, err := v.LookupValue(e.Name, path)
 		if err != nil {
 			return nil, spanErrorf(e.Span, "%v", err)
 		}
@@ -1690,8 +1698,14 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 		return nil, spanErrorf(e.Span, "undefined variable: %s", e.Name)
 	}
 	resolved := v
-	if e.Path != "" {
-		lv, err := v.LookupValue(e.Name, e.Path)
+	path := e.Path
+	if path != "" {
+		var err error
+		path, err = resolveDynamicPath(path, env, e.Span)
+		if err != nil {
+			return nil, err
+		}
+		lv, err := v.LookupValue(e.Name, path)
 		if err != nil {
 			return nil, spanErrorf(e.Span, "%v", err)
 		}
@@ -1707,6 +1721,96 @@ func resolveAdapterArg(e *AdapterExpr, env *Env) (Arg, error) {
 		Value:   resolved,
 		Span:    e.Span,
 	}, nil
+}
+
+// resolveDynamicPath rewrites "[$ident]" segments in path to "[N]"
+// using the current session bindings. The tokeniser accepts the
+// "[$ident]" form alongside literal "[digits]", deferring the
+// integer resolution here so a single foreach can index parallel
+// lists without round-tripping through jq. Segments that are not
+// "[$ident]" pass through unchanged; downstream parsePath only ever
+// sees the digit form.
+//
+// Errors cite the host span (the VarRefExpr's `$xs[$i]`), not the
+// inner `[$i]` position, because the path text in VarRefExpr is
+// stored without per-segment offsets. The index variable must
+// resolve to a scalar integer; strings parsable as an integer are
+// accepted (jq -r round-trips produce string scalars), booleans and
+// nulls are rejected.
+func resolveDynamicPath(path string, env *Env, span Span) (string, error) {
+	if !strings.Contains(path, "[$") {
+		return path, nil
+	}
+	var b strings.Builder
+	b.Grow(len(path))
+	i := 0
+	for i < len(path) {
+		if path[i] != '[' || i+1 >= len(path) || path[i+1] != '$' {
+			b.WriteByte(path[i])
+			i++
+			continue
+		}
+		nameStart := i + 2
+		j := nameStart
+		for j < len(path) && (isIdentStart(path[j]) || (j > nameStart && isIdentContinue(path[j]))) {
+			j++
+		}
+		if j == nameStart || j >= len(path) || path[j] != ']' {
+			// Should not be reachable: lexPathIndex would have
+			// rejected this at tokenisation time. Surface the
+			// state defensively rather than silently writing
+			// out malformed text.
+			return "", spanErrorf(span, "malformed dynamic index in path %q", path)
+		}
+		name := path[nameStart:j]
+		v, ok := env.Session.Get(name)
+		if !ok {
+			return "", spanErrorf(span, "index variable $%s is not defined", name)
+		}
+		n, err := valueToIndex(v)
+		if err != nil {
+			return "", spanErrorf(span, "index variable $%s: %v", name, err)
+		}
+		b.WriteByte('[')
+		b.WriteString(strconv.Itoa(n))
+		b.WriteByte(']')
+		i = j + 1
+	}
+	return b.String(), nil
+}
+
+// valueToIndex converts a scalar Value to an int suitable for array
+// indexing. Accepts json.Number (the shape `range N` produces),
+// float64 (only if integral), and strings parseable as a base-10
+// integer. Booleans, nulls, and structured values are rejected.
+// Negative integers are returned as-is; range validation lives in
+// walkPath's indexStep handler.
+func valueToIndex(v Value) (int, error) {
+	switch x := v.Raw().(type) {
+	case json.Number:
+		n, err := x.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("index must be an integer, got %q", x)
+		}
+		return int(n), nil
+	case float64:
+		if x != math.Trunc(x) {
+			return 0, fmt.Errorf("index must be an integer, got %v", x)
+		}
+		return int(x), nil
+	case string:
+		n, err := strconv.Atoi(x)
+		if err != nil {
+			return 0, fmt.Errorf("index must be an integer, got %q", x)
+		}
+		return n, nil
+	case bool:
+		return 0, fmt.Errorf("index must be an integer, got bool")
+	case nil:
+		return 0, fmt.Errorf("index is null")
+	default:
+		return 0, fmt.Errorf("index must be a scalar integer, got %s", v.Kind())
+	}
 }
 
 // dispatchThread evaluates a threading expression by threading the

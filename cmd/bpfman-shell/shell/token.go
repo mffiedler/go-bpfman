@@ -388,8 +388,9 @@ func lexBareVarRef(input string, pos int) (Token, int, error) {
 	}
 	name := input[nameStart:i]
 
-	// Consume optional path: dots, identifiers, and [n] indexing.
-	// The path grammar is: segment+ where segment = '.' ident | '[' digits ']'.
+	// Consume optional path: dots, identifiers, and [n] / [$ident]
+	// indexing. The path grammar is: segment+ where segment =
+	// '.' ident | '[' digits ']' | '[' '$' ident ']'.
 	pathStart := i
 	for i < len(input) {
 		if input[i] == '.' {
@@ -401,18 +402,11 @@ func lexBareVarRef(input string, pos int) (Token, int, error) {
 				i++
 			}
 		} else if input[i] == '[' {
-			j := i + 1
-			digitStart := j
-			for j < len(input) && input[j] >= '0' && input[j] <= '9' {
-				j++
+			next, err := lexPathIndex(input, i, "")
+			if err != nil {
+				return Token{}, 0, fmt.Errorf("invalid variable reference %q: %w", input[pos:next], err)
 			}
-			if j == digitStart {
-				return Token{}, 0, fmt.Errorf("invalid variable reference %q: expected digits inside '[]'", input[pos:min(j+1, len(input))])
-			}
-			if j >= len(input) || input[j] != ']' {
-				return Token{}, 0, fmt.Errorf("invalid variable reference %q: expected ']' after index", input[pos:min(j+1, len(input))])
-			}
-			i = j + 1
+			i = next
 		} else {
 			break
 		}
@@ -454,7 +448,8 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 	name := input[nameStart:i]
 
 	// Validate optional path inside braces using the same grammar
-	// as bare refs: segment = '.' ident | '[' digits ']'.
+	// as bare refs: segment = '.' ident | '[' digits ']' |
+	// '[' '$' ident ']'.
 	pathStart := i
 	for i < len(input) && input[i] != '}' {
 		if input[i] == '.' {
@@ -466,18 +461,11 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 				i++
 			}
 		} else if input[i] == '[' {
-			j := i + 1
-			digitStart := j
-			for j < len(input) && input[j] >= '0' && input[j] <= '9' {
-				j++
+			next, err := lexPathIndex(input, i, " in ${...}")
+			if err != nil {
+				return Token{}, 0, fmt.Errorf("invalid variable reference: %w", err)
 			}
-			if j == digitStart {
-				return Token{}, 0, fmt.Errorf("invalid variable reference: expected digits inside '[]' in ${...}")
-			}
-			if j >= len(input) || input[j] != ']' {
-				return Token{}, 0, fmt.Errorf("invalid variable reference: expected ']' after index in ${...}")
-			}
-			i = j + 1
+			i = next
 		} else {
 			return Token{}, 0, fmt.Errorf("invalid variable reference: unexpected character %q in ${...} path", input[i])
 		}
@@ -500,6 +488,41 @@ func lexBracedVarRef(input string, pos int) (Token, int, error) {
 		VarPath: path,
 	}
 	return tok, i - pos, nil
+}
+
+// lexPathIndex consumes a "[N]" or "[$ident]" segment starting at
+// input[pos], which must be '['. Returns the position one past the
+// closing ']'. The literal-digit form yields the same shape parsePath
+// understands today; the "[$ident]" form is resolved at the use site
+// against the active session bindings (see resolveDynamicPath). The
+// where suffix lets callers tag errors with " in ${...}" for braced
+// refs so braced and bare diagnostics stay distinguishable.
+func lexPathIndex(input string, pos int, where string) (int, error) {
+	j := pos + 1
+	if j < len(input) && input[j] == '$' {
+		k := j + 1
+		if k >= len(input) || !isIdentStart(input[k]) {
+			return min(k+1, len(input)), fmt.Errorf("expected identifier after '[$'%s", where)
+		}
+		for k < len(input) && isIdentContinue(input[k]) {
+			k++
+		}
+		if k >= len(input) || input[k] != ']' {
+			return min(k+1, len(input)), fmt.Errorf("expected ']' after '[$%s'%s", input[j+1:k], where)
+		}
+		return k + 1, nil
+	}
+	digitStart := j
+	for j < len(input) && input[j] >= '0' && input[j] <= '9' {
+		j++
+	}
+	if j == digitStart {
+		return min(j+1, len(input)), fmt.Errorf("expected digits or '$ident' inside '[]'%s", where)
+	}
+	if j >= len(input) || input[j] != ']' {
+		return min(j+1, len(input)), fmt.Errorf("expected ']' after index%s", where)
+	}
+	return j + 1, nil
 }
 
 // lexQuoted lexes a single- or double-quoted string. $ is literal

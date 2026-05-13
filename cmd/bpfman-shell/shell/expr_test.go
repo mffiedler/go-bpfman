@@ -3,6 +3,7 @@ package shell
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -105,6 +106,189 @@ func TestEvalExpr_VarRef_Undefined(t *testing.T) {
 	_, err := EvalExpr(&VarRefExpr{Name: "missing"}, evalEnv(s))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `undefined variable "missing"`)
+}
+
+func TestEvalExpr_VarRef_DynamicIndex(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{json.Number("100"), json.Number("200"), json.Number("300")}))
+	s.Set("i", ValueFromAny(json.Number("1")))
+	v, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "200", got)
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_StringInteger(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
+	s.Set("i", StringValue("2"))
+	v, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "c", got)
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_NestedPath(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{
+		map[string]any{"name": "alpha"},
+		map[string]any{"name": "beta"},
+	}))
+	s.Set("i", ValueFromAny(json.Number("0")))
+	v, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i].name"}, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "alpha", got)
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_UndefinedIndex(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	_, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "index variable $i is not defined")
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_NonInteger(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	s.Set("i", StringValue("not-a-number"))
+	_, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "index variable $i:")
+	assert.Contains(t, err.Error(), "must be an integer")
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_OutOfRange(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	s.Set("i", ValueFromAny(json.Number("5")))
+	_, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "out of range")
+}
+
+func TestEvalExpr_VarRef_DynamicIndex_Negative(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	s.Set("i", ValueFromAny(json.Number("-1")))
+	_, err := EvalExpr(&VarRefExpr{Name: "xs", Path: "[$i]"}, evalEnv(s))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "out of range")
+}
+
+// TestEvalExpr_VarRef_DynamicIndex_BracedForm confirms the
+// "${xs[$i]}" form resolves identically to the bare "$xs[$i]"
+// form. Both tokeniser shapes store the path text the same way,
+// so a single eval-side check is sufficient.
+func TestEvalExpr_VarRef_DynamicIndex_BracedForm(t *testing.T) {
+	t.Parallel()
+
+	const src = "${xs[$i]}"
+	tokens, err := Tokenise(src)
+	require.NoError(t, err)
+	require.Len(t, tokens, 1)
+	require.Equal(t, TokenVarRef, tokens[0].Kind)
+	require.Equal(t, "xs", tokens[0].VarName)
+	require.Equal(t, "[$i]", tokens[0].VarPath)
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
+	s.Set("i", ValueFromAny(json.Number("2")))
+	v, err := EvalExpr(&VarRefExpr{Name: tokens[0].VarName, Path: tokens[0].VarPath}, evalEnv(s))
+	require.NoError(t, err)
+	got, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "c", got)
+}
+
+// TestEvalExpr_AdapterArg_DynamicIndex covers the adapter
+// reference path through resolveAdapterArg. The tokeniser
+// recognises file:$x with the same path grammar as $x, so the
+// dynamic-index resolution must travel through the adapter
+// arg builder identically.
+func TestEvalExpr_AdapterArg_DynamicIndex(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("paths", ValueFromAny([]any{"/a", "/b", "/c"}))
+	s.Set("i", ValueFromAny(json.Number("1")))
+
+	arg, err := resolveAdapterArg(&AdapterExpr{
+		Adapter: "file",
+		Name:    "paths",
+		Path:    "[$i]",
+	}, evalEnv(s))
+	require.NoError(t, err)
+	aa, ok := arg.(AdapterArg)
+	require.True(t, ok)
+	got, err := aa.Value.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "/b", got)
+}
+
+// TestEvalProgram_DynamicIndex_ParallelLists exercises the full
+// tokenise -> parse -> eval pipeline for the parallel-list iteration
+// shape that motivated $xs[$i]: two slot-aligned lists indexed by a
+// foreach counter, with the chosen elements appearing as command
+// args.
+func TestEvalProgram_DynamicIndex_ParallelLists(t *testing.T) {
+	t.Parallel()
+
+	const src = `
+let xs = [10 20 30]
+let ys = ["a" "b" "c"]
+foreach i in [0 1 2] {
+    record $xs[$i] $ys[$i]
+}
+`
+	tokens, err := Tokenise(src)
+	require.NoError(t, err)
+	prog, err := Parse(tokens)
+	require.NoError(t, err)
+
+	var captured [][]string
+	env := &Env{
+		Session: NewSession(),
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			row := make([]string, 0, len(args))
+			for _, a := range args {
+				switch x := a.(type) {
+				case WordArg:
+					row = append(row, x.Text)
+				case ScalarValueArg:
+					row = append(row, x.Text)
+				default:
+					return Value{}, fmt.Errorf("unexpected arg %T", a)
+				}
+			}
+			captured = append(captured, row)
+			return Value{}, nil
+		},
+	}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, [][]string{
+		{"record", "10", "a"},
+		{"record", "20", "b"},
+		{"record", "30", "c"},
+	}, captured)
 }
 
 func TestEvalExpr_Adapter_RejectedAsExpression(t *testing.T) {

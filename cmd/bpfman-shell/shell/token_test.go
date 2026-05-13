@@ -123,6 +123,34 @@ func TestTokenise(t *testing.T) {
 			},
 		},
 		{
+			name:  "bare varref with $ident index",
+			input: "$xs[$i]",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$xs[$i]", VarName: "xs", VarPath: "[$i]"},
+			},
+		},
+		{
+			name:  "bare varref with $ident index inside path",
+			input: "$xs.field[$i].name",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$xs.field[$i].name", VarName: "xs", VarPath: "field[$i].name"},
+			},
+		},
+		{
+			name:  "braced varref with $ident index",
+			input: "${xs[$i]}",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "${xs[$i]}", VarName: "xs", VarPath: "[$i]"},
+			},
+		},
+		{
+			name:  "bare varref chained $ident indices",
+			input: "$xs[$i][$j]",
+			want: []Token{
+				{Kind: TokenVarRef, Text: "$xs[$i][$j]", VarName: "xs", VarPath: "[$i][$j]"},
+			},
+		},
+		{
 			name:  "double-quoted string",
 			input: `load "hello world"`,
 			want: []Token{
@@ -264,12 +292,12 @@ func TestTokenise(t *testing.T) {
 		{
 			name:    "bare varref empty index",
 			input:   "$prog[]",
-			wantErr: "expected digits inside '[]'",
+			wantErr: "expected digits or '$ident' inside '[]'",
 		},
 		{
 			name:    "bare varref non-numeric index",
 			input:   "$prog[abc]",
-			wantErr: "expected digits inside '[]'",
+			wantErr: "expected digits or '$ident' inside '[]'",
 		},
 		{
 			name:    "bare varref unclosed index",
@@ -279,7 +307,32 @@ func TestTokenise(t *testing.T) {
 		{
 			name:    "bare varref unclosed index no digits",
 			input:   "$prog[",
-			wantErr: "expected digits inside '[]'",
+			wantErr: "expected digits or '$ident' inside '[]'",
+		},
+		{
+			name:    "bare varref $ident index empty after $",
+			input:   "$prog[$]",
+			wantErr: "expected identifier after '[$'",
+		},
+		{
+			name:    "bare varref $ident index non-letter start",
+			input:   "$prog[$1]",
+			wantErr: "expected identifier after '[$'",
+		},
+		{
+			name:    "bare varref $ident index unclosed",
+			input:   "$prog[$i",
+			wantErr: "expected ']' after '[$i'",
+		},
+		{
+			name:    "braced varref $ident index empty after $",
+			input:   "${prog[$]}",
+			wantErr: "expected identifier after '[$' in ${...}",
+		},
+		{
+			name:    "braced varref $ident index unclosed",
+			input:   "${prog[$i}",
+			wantErr: "expected ']' after '[$i' in ${...}",
 		},
 
 		// Braced form: trailing dot.
@@ -298,12 +351,12 @@ func TestTokenise(t *testing.T) {
 		{
 			name:    "braced varref non-numeric index",
 			input:   "${prog[abc]}",
-			wantErr: "expected digits inside '[]' in ${...}",
+			wantErr: "expected digits or '$ident' inside '[]' in ${...}",
 		},
 		{
 			name:    "braced varref empty index",
 			input:   "${prog[]}",
-			wantErr: "expected digits inside '[]' in ${...}",
+			wantErr: "expected digits or '$ident' inside '[]' in ${...}",
 		},
 		{
 			name:    "braced varref unclosed index",

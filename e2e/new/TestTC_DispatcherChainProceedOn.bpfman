@@ -24,11 +24,11 @@
 #
 # Retrofit notes: per-iteration proceed-on values vary, so the
 # attach foreach iterates (range 5) and pulls priority and
-# proceed-on from parallel lists via jq indexing -- there is
-# no index-by-variable in path lookup today. The expected
-# counts also vary per index (three positive, two zero), so the
-# assert phase uses a parallel expected-counts list and indexed
-# checks rather than a single uniform predicate.
+# proceed-on from parallel lists via $xs[$i] indexing. The
+# expected counts also vary per index (three positive, two
+# zero), so the assert phase uses a parallel expected-counts
+# list and indexed checks rather than a single uniform
+# predicate.
 #
 # Run from e2e/:
 #
@@ -51,9 +51,7 @@ guard links <- foreach i in (range 5) {
     guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
     let prog = $loaded.programs[0]
     defer bpfman program unload $prog
-    let prio = $priorities |> jq ".[${i}]"
-    let po = $proceed_ons |> jq ".[${i}]"
-    bpfman link attach tc -i $pair.host_link -d ingress -p $prio --proceed-on $po $prog
+    bpfman link attach tc -i $pair.host_link -d ingress -p $priorities[$i] --proceed-on $proceed_ons[$i] $prog
 }
 
 foreach l in $links {
