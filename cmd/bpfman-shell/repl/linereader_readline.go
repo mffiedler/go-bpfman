@@ -64,7 +64,7 @@ func (r *readlineReader) SaveHistory(entry string) error {
 
 // SetPrompt updates the prompt shown on the next Readline call.
 // Implements PromptSetter so interactive mode can swap between
-// 'bpfman> ' and the continuation prompt without rebuilding the
+// the primary and continuation prompts without rebuilding the
 // readline instance.
 func (r *readlineReader) SetPrompt(prompt string) {
 	r.inst.SetPrompt(prompt)

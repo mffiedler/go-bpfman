@@ -80,8 +80,19 @@ func (c *CLI) Run(ctx context.Context) error {
 		Fallback:       bpfmanFallback,
 		BindFallback:   bpfmanBindFallback,
 		MakeAssertStmt: makeExecAssertStmt,
+		PromptPrimary:  bpfmanShellPromptPrimary,
+		PromptContinue: bpfmanShellPromptContinue,
 	})
 }
+
+// bpfmanShellPromptPrimary and bpfmanShellPromptContinue are the
+// product-specific prompt strings the interactive loop displays.
+// Kept here in the binary rather than in repl/ so the framework
+// has no hardcoded product name.
+const (
+	bpfmanShellPromptPrimary  = "bpfman> "
+	bpfmanShellPromptContinue = "... "
+)
 
 // newReader selects the appropriate LineReader: positional
 // script file, piped stdin, or interactive readline.
@@ -96,7 +107,7 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 	if err != nil {
 		return nil, fmt.Errorf("history path: %w", err)
 	}
-	return repl.NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
+	return repl.NewLineReader(bpfmanShellPromptPrimary, historyPath, replCompleter(ctx, mgr, session))
 }
 
 // domainNouns is the set of top-level words that parseCommand
@@ -405,5 +416,7 @@ func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr 
 		Fallback:       bpfmanFallback,
 		BindFallback:   bpfmanBindFallback,
 		MakeAssertStmt: makeExecAssertStmt,
+		PromptPrimary:  bpfmanShellPromptPrimary,
+		PromptContinue: bpfmanShellPromptContinue,
 	})
 }

@@ -30,12 +30,11 @@ type HistoryWriter interface {
 }
 
 // PromptSetter is implemented by LineReaders that can change the
-// prompt between calls to Readline. Used by interactive mode to
-// switch between the primary prompt ('bpfman> ') and a
-// continuation prompt ('... ') so the user sees when a chunk is
-// still mid-form (an unclosed brace, paren, quote, comment, or
-// backslash continuation). Backends without a visible prompt
-// (script and pipe readers) do not implement it.
+// prompt between calls to Readline. Interactive mode switches
+// between the primary prompt and a continuation prompt to signal
+// when a chunk is still mid-form (an unclosed brace, paren,
+// quote, comment, or backslash continuation). Backends without
+// a visible prompt (script and pipe readers) do not implement it.
 type PromptSetter interface {
 	SetPrompt(prompt string)
 }

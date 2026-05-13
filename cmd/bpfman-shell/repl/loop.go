@@ -104,6 +104,15 @@ type Config struct {
 	// matches, ...) so this is a callback rather than a builtin.
 	// nil disables the assert verb at evaluation time.
 	MakeAssertStmt MakeAssertStmtFunc
+
+	// PromptPrimary is the primary interactive prompt. Empty
+	// falls back to "> "; the embedding binary supplies the
+	// product-specific string (e.g. "bpfman> ").
+	PromptPrimary string
+
+	// PromptContinue is the continuation prompt shown while a
+	// block stays open across newlines. Empty falls back to "... ".
+	PromptContinue string
 }
 
 // FallbackFunc dispatches unhandled commands (statement
@@ -416,8 +425,14 @@ func interactiveLoop(ctx context.Context, cfg Config) error {
 		HandleJobLeak: SilentJobLeakHandler(),
 	}
 
-	const promptPrimary = "bpfman> "
-	const promptContinue = "... "
+	promptPrimary := cfg.PromptPrimary
+	if promptPrimary == "" {
+		promptPrimary = "> "
+	}
+	promptContinue := cfg.PromptContinue
+	if promptContinue == "" {
+		promptContinue = "... "
+	}
 	setPrompt := func(p string) {
 		if ps, ok := lr.(PromptSetter); ok {
 			ps.SetPrompt(p)
