@@ -1,0 +1,65 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_MultipleInterfacesIndependent
+# (XDP subtest). The Go test parameterises across TC ingress and
+# XDP via t.Run; the DSL has no subtest primitive, so the two
+# cases live in sibling scripts. This file covers XDP;
+# TestDispatcher_MultipleInterfacesIndependentTC covers TC ingress.
+#
+# Two independent veth pairs (each its own host-side interface,
+# same netns), three XDP members attached to A and two to B.
+# Detaching everything from B must leave A's three members in
+# place and A's dispatcher snapshot intact. The (type, nsid,
+# ifindex) key distinguishes the two dispatchers; the test
+# confirms there is no cross-talk in the slot accounting or
+# the dispatcher-teardown logic.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_MultipleInterfacesIndependentXDP.bpfman
+#
+# Requires root.
+
+guard pair_a <- net veth-pair
+defer net release $pair_a
+
+guard pair_b <- net veth-pair
+defer net release $pair_b
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/xdp_counter_pinned.bpf.o \
+    --programs xdp:xdp_stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# Three members on A (priorities 100, 200, 300).
+guard a_100 <- bpfman link attach xdp -i $pair_a.host_link -p 100 $pid
+guard a_200 <- bpfman link attach xdp -i $pair_a.host_link -p 200 $pid
+guard a_300 <- bpfman link attach xdp -i $pair_a.host_link -p 300 $pid
+defer bpfman link detach $a_100
+defer bpfman link detach $a_200
+defer bpfman link detach $a_300
+
+# Two members on B (priorities 100, 200). No defers: the script
+# detaches them mid-test as the operation under test.
+guard b_100 <- bpfman link attach xdp -i $pair_b.host_link -p 100 $pid
+guard b_200 <- bpfman link attach xdp -i $pair_b.host_link -p 200 $pid
+
+guard snap_a <- bpfman dispatcher get xdp $pair_a.host_nsid $pair_a.host_ifindex
+let count_a = $snap_a |> jq ".members | length"
+assert $count_a == 3
+
+guard snap_b <- bpfman dispatcher get xdp $pair_b.host_nsid $pair_b.host_ifindex
+let count_b = $snap_b |> jq ".members | length"
+assert $count_b == 2
+
+# Detach everything from B. The dispatcher should disappear.
+bpfman link detach $b_100
+bpfman link detach $b_200
+assert fail bpfman dispatcher get xdp $pair_b.host_nsid $pair_b.host_ifindex
+
+# A's dispatcher must be unaffected.
+guard snap_a_after <- bpfman dispatcher get xdp $pair_a.host_nsid $pair_a.host_ifindex
+let count_a_after = $snap_a_after |> jq ".members | length"
+assert $count_a_after == 3
