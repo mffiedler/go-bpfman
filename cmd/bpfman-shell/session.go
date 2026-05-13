@@ -36,26 +36,7 @@ func handleVars(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, c.CLI.PrintOut(b.String())
 }
 
-// applyAlias rewrites the first token of an expanded arg slice if it
-// matches a session alias. Expansion is non-recursive: only one
-// rewrite is performed.
-func applyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
-	if len(args) == 0 {
-		return args
-	}
-	w, ok := args[0].(shell.WordArg)
-	if !ok {
-		return args
-	}
-	expansion, found := session.GetAlias(w.Text)
-	if !found {
-		return args
-	}
-	rewritten := make([]shell.Arg, len(args))
-	copy(rewritten, args)
-	rewritten[0] = shell.WordArg{Text: expansion, Span: shell.ArgSpan(args[0])}
-	return rewritten
-}
+// applyAlias moved to repl.ApplyAlias.
 
 // handleAlias defines a first-token alias. Syntax:
 // alias <name> = <expansion>. The name must not collide with shell

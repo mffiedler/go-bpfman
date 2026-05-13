@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"testing"
@@ -6,16 +6,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// feedLines drives a fresh contState across the given lines and
+// feedLines drives a fresh ContState across the given lines and
 // returns the final open() verdict.  The REPL feeds one line at a
 // time from its line reader, so the per-line call is the right
 // granularity to test.
 func feedLines(lines ...string) bool {
-	var cs contState
+	var cs ContState
 	for _, line := range lines {
-		cs.advance(line)
+		cs.Advance(line)
 	}
-	return cs.open()
+	return cs.Open()
 }
 
 func TestContState_SingleLine_Balanced(t *testing.T) {
@@ -83,7 +83,7 @@ func TestContState_QuotedBrace_SingleLine(t *testing.T) {
 // ---- Bug reproductions --------------------------------------------
 
 // When a double-quoted string spans multiple lines, the closing `"`
-// appears on a later line than the opening.  Current contState
+// appears on a later line than the opening.  Current ContState
 // resets inDouble at each call, so a `{` or `[` inside the string
 // on a middle line is counted as a real depth change.  We detect
 // the bug by putting an UNBALANCED `{` inside the quoted content —
@@ -123,9 +123,9 @@ func TestContState_MultiLine_QuotedString_StillOpenAtEOF(t *testing.T) {
 
 	// A genuinely unterminated multi-line double-quoted string:
 	// open() should report open because depth (bracket/brace) is
-	// zero but the string never closed.  Current contState tracks
+	// zero but the string never closed.  Current ContState tracks
 	// only brace/bracket depth, not quote depth, so open() returns
-	// false here.  We leave this as documentation: contState is
+	// false here.  We leave this as documentation: ContState is
 	// specifically a brace/bracket balancer, not a full lexer.
 	// The tokeniser catches unterminated strings when the
 	// accumulated chunk is eventually parsed.
@@ -133,5 +133,5 @@ func TestContState_MultiLine_QuotedString_StillOpenAtEOF(t *testing.T) {
 		`exec bash -c "`,
 		`  echo hi`,
 	)
-	assert.False(t, stillOpen, "contState reports only brace/bracket depth; unterminated strings surface at tokenise time")
+	assert.False(t, stillOpen, "ContState reports only brace/bracket depth; unterminated strings surface at tokenise time")
 }

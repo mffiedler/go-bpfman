@@ -66,9 +66,9 @@ func TestCanonicaliseHistory(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := canonicaliseHistory(tc.in)
+			got := repl.CanonicaliseHistory(tc.in)
 			if got != tc.want {
-				t.Errorf("canonicaliseHistory(%q)\n got: %q\nwant: %q", tc.in, got, tc.want)
+				t.Errorf("repl.CanonicaliseHistory(%q)\n got: %q\nwant: %q", tc.in, got, tc.want)
 			}
 		})
 	}

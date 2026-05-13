@@ -211,7 +211,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			var lineNo int
 			var buf strings.Builder
 			var startLine int
-			var cs contState
+			var cs repl.ContState
 			for {
 				input, err := lr.Readline()
 				if err != nil {
@@ -234,15 +234,15 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 					buf.WriteByte('\n')
 				}
 				buf.WriteString(input)
-				cs.advance(input)
+				cs.Advance(input)
 
-				if cs.open() {
+				if cs.Open() {
 					continue
 				}
 
 				accumulated := buf.String()
 				buf.Reset()
-				cs = contState{}
+				cs = repl.ContState{}
 
 				loc := sourceLoc{File: file, Line: startLine}
 				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
@@ -473,7 +473,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		var lineNo int
 		var buf strings.Builder
 		var startLine int
-		var cs contState
+		var cs repl.ContState
 		for {
 			input, err := lr.Readline()
 			if err != nil {
@@ -494,20 +494,20 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 				buf.WriteByte('\n')
 			}
 			buf.WriteString(input)
-			cs.advance(input)
+			cs.Advance(input)
 
-			if cs.open() {
+			if cs.Open() {
 				setPrompt(promptContinue)
 				continue
 			}
 
 			accumulated := buf.String()
 			buf.Reset()
-			cs = contState{}
+			cs = repl.ContState{}
 			setPrompt(promptPrimary)
 
 			if hw, ok := lr.(repl.HistoryWriter); ok {
-				if entry := canonicaliseHistory(accumulated); entry != "" {
+				if entry := repl.CanonicaliseHistory(accumulated); entry != "" {
 					_ = hw.SaveHistory(entry)
 				}
 			}
@@ -564,123 +564,8 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	})
 }
 
-// canonicaliseHistory collapses a multi-line REPL submission into
-// a single line suitable for a one-entry history record.
-// Backslash continuations and bare newlines outside quoted
-// strings become a single space, leading whitespace on
-// continuation lines is dropped, and `#` comments outside quoted
-// strings are stripped to the end of their line. Newlines inside
-// quoted strings are preserved verbatim.
-func canonicaliseHistory(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	var inSingle, inDouble bool
-	emitSpace := false
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if !inSingle && !inDouble && ch == '#' {
-			for i < len(s) && s[i] != '\n' {
-				i++
-			}
-			if i >= len(s) {
-				break
-			}
-			ch = s[i]
-		}
-		if !inSingle && !inDouble && ch == '\\' && i+1 < len(s) && s[i+1] == '\n' {
-			i++
-			emitSpace = true
-			continue
-		}
-		if !inSingle && !inDouble && ch == '\n' {
-			emitSpace = true
-			continue
-		}
-		if emitSpace {
-			if ch == ' ' || ch == '\t' || ch == '\r' {
-				continue
-			}
-			out := b.String()
-			out = strings.TrimRight(out, " \t")
-			b.Reset()
-			b.WriteString(out)
-			if b.Len() > 0 {
-				b.WriteByte(' ')
-			}
-			emitSpace = false
-		}
-		switch {
-		case ch == '\'' && !inDouble:
-			inSingle = !inSingle
-		case ch == '"' && !inSingle:
-			inDouble = !inDouble
-		}
-		b.WriteByte(ch)
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// contState tracks brace and parenthesis depth across accumulated
-// input lines so the REPL knows when a multi-line if-block or
-// parenthesised expression is complete. Quote state persists
-// across lines so multi-line quoted strings are treated as a
-// single literal span; unterminated strings themselves are
-// surfaced by the tokeniser when the accumulated chunk is
-// eventually parsed. lineCont records whether the line just
-// consumed ended with an unescaped backslash outside quotes,
-// which the tokeniser treats as a line continuation.
-type contState struct {
-	braces, parens     int
-	inSingle, inDouble bool
-	lineCont           bool
-}
-
-// advance walks one line of input, updating the brace and paren
-// counters. Comments (`#` to end of line) outside a quoted string
-// are ignored; quoted content is skipped so braces and parens
-// inside strings do not count.
-func (c *contState) advance(line string) {
-	c.lineCont = false
-	lastNonSpace := -1
-	for i := 0; i < len(line); i++ {
-		ch := line[i]
-		switch {
-		case ch == '\'' && !c.inDouble:
-			c.inSingle = !c.inSingle
-		case ch == '"' && !c.inSingle:
-			c.inDouble = !c.inDouble
-		case c.inSingle || c.inDouble:
-			// ignore content inside strings
-		case ch == '#':
-			return
-		case ch == '{':
-			c.braces++
-		case ch == '}':
-			if c.braces > 0 {
-				c.braces--
-			}
-		case ch == '(':
-			c.parens++
-		case ch == ')':
-			if c.parens > 0 {
-				c.parens--
-			}
-		}
-		if !c.inSingle && !c.inDouble && ch != ' ' && ch != '\t' && ch != '\r' {
-			lastNonSpace = i
-		}
-	}
-	if lastNonSpace >= 0 && line[lastNonSpace] == '\\' {
-		c.lineCont = true
-	}
-}
-
-// open reports whether the accumulated input is still inside an
-// open brace or parenthesised group, or the line just consumed
-// ended with a backslash continuation.
-func (c *contState) open() bool {
-	return c.braces > 0 || c.parens > 0 || c.lineCont
-}
+// canonicaliseHistory, contState, and applyAlias moved to
+// repl/contstate.go as exported names.
 
 // replShellCmd handles shell-language and session commands by
 // looking up the first token in builtinRegistry and invoking
@@ -739,7 +624,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		if len(args) == 0 {
 			return shell.Value{}, nil
 		}
-		args = applyAlias(session, args)
+		args = repl.ApplyAlias(session, args)
 		handled, val, err := replShellCmd(ctx, cli, mgr, session, env, args, loc, span)
 		if err != nil {
 			return shell.Value{}, err
@@ -808,7 +693,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 //     without an explicit 'exec' prefix.
 func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.BindResult, error) {
 	return func(args []shell.Arg, span shell.Span) (shell.BindResult, error) {
-		args = applyAlias(session, args)
+		args = repl.ApplyAlias(session, args)
 		if len(args) == 0 {
 			return shell.BindResult{}, shell.SpanErrorf(span, "empty command form on '<-' RHS")
 		}
@@ -1012,7 +897,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 		var lineNo int
 		var buf strings.Builder
 		var startLine int
-		var cs contState
+		var cs repl.ContState
 		for {
 			input, err := lr.Readline()
 			if err != nil {
@@ -1033,15 +918,15 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 				buf.WriteByte('\n')
 			}
 			buf.WriteString(input)
-			cs.advance(input)
+			cs.Advance(input)
 
-			if cs.open() {
+			if cs.Open() {
 				continue
 			}
 
 			accumulated := buf.String()
 			buf.Reset()
-			cs = contState{}
+			cs = repl.ContState{}
 
 			loc := sourceLoc{File: file, Line: startLine}
 			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
