@@ -722,12 +722,13 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 		}
 	}()
 iter:
-	for _, elem := range list {
-		env.Session.Set(s.Name, ValueFromAny(elem))
+	for i := range list {
+		elemVal := v.IndexValue(i)
+		env.Session.Set(s.Name, elemVal)
 		if env.Trace != nil {
-			rendered, rerr := RenderCompact(ValueFromAny(elem))
+			rendered, rerr := RenderCompact(elemVal)
 			if rerr != nil {
-				rendered = fmt.Sprintf("<unrenderable %T>", elem)
+				rendered = fmt.Sprintf("<unrenderable %T>", list[i])
 			}
 			env.Trace(s.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", s.Name, rendered))
 		}
@@ -1088,14 +1089,16 @@ func evalBindCollect(s *BindStmt, env *Env) error {
 
 	var rcAcc []any
 	var priAcc []any
+	var priOriginAcc []any
+	priHasOrigin := false
 
 iter:
-	for _, elem := range list {
-		env.Session.Set(fe.Name, ValueFromAny(elem))
+	for i := range list {
+		env.Session.Set(fe.Name, v.IndexValue(i))
 		if env.Trace != nil {
-			rendered, rerr := RenderCompact(ValueFromAny(elem))
+			rendered, rerr := RenderCompact(v.IndexValue(i))
 			if rerr != nil {
-				rendered = fmt.Sprintf("<unrenderable %T>", elem)
+				rendered = fmt.Sprintf("<unrenderable %T>", list[i])
 			}
 			env.Trace(fe.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", fe.Name, rendered))
 		}
@@ -1139,6 +1142,11 @@ iter:
 		}
 		if s.Primary != "" && s.Primary != "_" {
 			priAcc = append(priAcc, result.Primary.Raw())
+			origin := result.Primary.Origin()
+			priOriginAcc = append(priOriginAcc, origin)
+			if origin != nil {
+				priHasOrigin = true
+			}
 		}
 	}
 
@@ -1146,7 +1154,20 @@ iter:
 		env.Session.Set(s.Rc, ValueFromAny(rcAcc))
 	}
 	if s.Primary != "" && s.Primary != "_" {
-		env.Session.Set(s.Primary, ValueFromAny(priAcc))
+		priVal := ValueFromAny(priAcc)
+		// Attach the parallel origin slice when any element
+		// carries an origin; this lets foreach iteration and path
+		// indexing recover each element's typed Value via
+		// IndexValue / LookupValue, so bpfman link detach $l
+		// works after a bind-collect just as it does on a single
+		// guard bind. The element kind is left as OriginUnknown
+		// at the list level (lists aren't tagged per-element by
+		// kind), but the per-element IndexValue derives kind from
+		// the origin's Go type via kindForType.
+		if priHasOrigin {
+			priVal = priVal.withOrigin(priOriginAcc, OriginUnknown)
+		}
+		env.Session.Set(s.Primary, priVal)
 	}
 	return nil
 }
@@ -1281,17 +1302,32 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 // evalListExpr evaluates each element of a list literal and
 // packs the resulting raw values into a []any, the same
 // underlying representation foreach iterates and the range
-// builtin produces.
+// builtin produces. When any element carries an origin (typically
+// from a $var that itself came from a structured bind), a
+// parallel origin slice is attached to the result so foreach
+// iteration and path indexing recover each element's typed Value
+// via IndexValue / LookupValue.
 func evalListExpr(e *ListExpr, env *Env) (Value, error) {
 	out := make([]any, 0, len(e.Elems))
+	origins := make([]any, 0, len(e.Elems))
+	hasOrigin := false
 	for _, elem := range e.Elems {
 		v, err := EvalExpr(elem, env)
 		if err != nil {
 			return Value{}, err
 		}
 		out = append(out, v.Raw())
+		o := v.Origin()
+		origins = append(origins, o)
+		if o != nil {
+			hasOrigin = true
+		}
 	}
-	return ValueFromAny(out), nil
+	list := ValueFromAny(out)
+	if hasOrigin {
+		list = list.withOrigin(origins, OriginUnknown)
+	}
+	return list, nil
 }
 
 // dispatchPureCall evaluates the pure-builtin call's arguments,

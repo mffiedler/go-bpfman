@@ -99,6 +99,45 @@ func (v Value) WithKind(k OriginKind) Value {
 	return v
 }
 
+// withOrigin returns a copy of v with origin set to o and kind set
+// to k. Used internally by list-building paths (evalListExpr,
+// evalBindCollect) to attach a parallel origin slice so foreach
+// iteration and path indexing can reconstruct each element's
+// typed Value. The function is unexported because callers outside
+// the shell package should reach for ValueFromStruct + WithKind
+// instead; this constructor exists for the list-element origin
+// preservation path where origin is a parallel []any.
+func (v Value) withOrigin(o any, k OriginKind) Value {
+	v.origin = o
+	v.kind = k
+	return v
+}
+
+// IndexValue returns the i'th element of v.v (which must be []any)
+// as a Value, preserving per-element origin and kind when v carries
+// a parallel origin slice. Out-of-range i or non-list v returns an
+// empty Value.
+//
+// Used by foreach iteration and bind-collect so that a list whose
+// elements carry typed origins (e.g. a list of bpfman.Link records
+// produced by a guard bind-collect) yields per-element Values that
+// satisfy the same capability-interface dispatch in command.go as
+// the original single-bind Value did. Without this, iterating a
+// typed list strips kind/origin and downstream structured-arg
+// calls fail with "no kernel ID capability".
+func (v Value) IndexValue(i int) Value {
+	list, ok := v.v.([]any)
+	if !ok || i < 0 || i >= len(list) {
+		return Value{}
+	}
+	out := Value{v: list[i]}
+	if origin := walkOrigin(v.origin, []pathStep{indexStep{index: i}}); origin != nil {
+		out.origin = origin
+		out.kind = kindForType(reflect.TypeOf(origin))
+	}
+	return out
+}
+
 // StringValue wraps a plain string as a Value with OriginScalar.
 func StringValue(s string) Value {
 	return Value{v: s, kind: OriginScalar}
