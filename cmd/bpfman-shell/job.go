@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
@@ -25,7 +26,7 @@ import (
 // process exits.
 //
 // Adapter arguments (file:$var.path) are resolved to temp files
-// before the spawn, the same way runExternal handles them, but
+// before the spawn, the same way repl.RunExternal handles them, but
 // the temp files outlive the start call: a wait or kill
 // goroutine cleans them up when the job exits, so the script
 // can use the captured paths until the job is reaped.
@@ -48,7 +49,7 @@ func handleStart(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, err
 	}
 
-	argv := argTexts(resolved)
+	argv := repl.ArgTexts(resolved)
 
 	// Best-effort identity: plain start populates target_binary
 	// from argv[0] so a downstream `--target $job.target_binary`
@@ -177,7 +178,7 @@ func spawnJob(ctx context.Context, env *shell.Env, spec spawnSpec) (*shell.Job, 
 // resolveAdapterArgs walks args, resolving file: adapter values
 // to temp files and rejecting structured-value args that cannot
 // flatten into argv text. The temp files are returned to the
-// caller so it can choose when to remove them; runExternal
+// caller so it can choose when to remove them; repl.RunExternal
 // removes immediately after the command exits, handleStart hands
 // the cleanup to the wait goroutine.
 func resolveAdapterArgs(name string, args []shell.Arg) ([]string, []shell.Arg, error) {
@@ -190,7 +191,7 @@ func resolveAdapterArgs(name string, args []shell.Arg) ([]string, []shell.Arg, e
 				removeTempFiles(tempFiles)
 				return nil, nil, fmt.Errorf("unknown adapter %q", aa.Adapter)
 			}
-			path, err := writeValueToTemp(aa.Value)
+			path, err := repl.WriteValueToTemp(aa.Value)
 			if err != nil {
 				removeTempFiles(tempFiles)
 				return nil, nil, fmt.Errorf("adapter file: %w", err)
@@ -331,7 +332,7 @@ func replKill(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	explicitSignal := false
 	var jobArg shell.Arg
 	for _, a := range args {
-		text := argText(a)
+		text := repl.ArgText(a)
 		switch {
 		case strings.HasPrefix(text, "--signal="):
 			name := strings.TrimPrefix(text, "--signal=")

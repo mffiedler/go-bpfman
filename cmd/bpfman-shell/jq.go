@@ -13,6 +13,7 @@ import (
 
 	"github.com/itchyny/gojq"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -41,7 +42,7 @@ func handleJQ(c builtinCtx) (shell.Value, error) {
 		}
 		return shell.Value{}, fmt.Errorf("usage: jq <filter> <value>")
 	}
-	filterText := argText(args[0])
+	filterText := repl.ArgText(args[0])
 	query, err := gojq.Parse(filterText)
 	if err != nil {
 		return shell.Value{}, fmt.Errorf("jq: parse filter: %w", err)
@@ -79,7 +80,7 @@ func handleJQ(c builtinCtx) (shell.Value, error) {
 // to the filter-only handleJQ.
 func firstFlagArg(args []shell.Arg) (string, bool) {
 	for _, a := range args {
-		text := argText(a)
+		text := repl.ArgText(a)
 		if len(text) >= 2 && text[0] == '-' && text[1] != '0' && (text[1] < '0' || text[1] > '9') && text[1] != '.' {
 			return text, true
 		}

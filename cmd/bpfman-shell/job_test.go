@@ -118,7 +118,7 @@ func TestReplStart_StructuredArgRejected(t *testing.T) {
 	t.Parallel()
 
 	// A program-typed Value cannot flatten into argv text, the
-	// same constraint exec applies via runExternal.
+	// same constraint exec applies via repl.RunExternal.
 	prog := shell.ValueFromMap(map[string]any{"id": "42"}).WithKind(shell.OriginProgram)
 	_, err := startCall([]shell.Arg{
 		shell.WordArg{Text: "echo"},

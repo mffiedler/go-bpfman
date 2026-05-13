@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -60,7 +61,7 @@ func singleUintArg(verb string, args []shell.Arg, max uint64) (uint64, error) {
 	if len(args) != 1 {
 		return 0, fmt.Errorf("%s: expected exactly 1 argument, got %d", verb, len(args))
 	}
-	text := strings.TrimSpace(argText(args[0]))
+	text := strings.TrimSpace(repl.ArgText(args[0]))
 	if text == "" {
 		return 0, fmt.Errorf("%s: empty argument", verb)
 	}

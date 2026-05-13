@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
@@ -73,7 +74,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 
 	// Check for "not" negation.
 	negate := false
-	if argText(args[0]) == "not" {
+	if repl.ArgText(args[0]) == "not" {
 		negate = true
 		args = args[1:]
 		if len(args) == 0 {
@@ -136,7 +137,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 	// Prefix verb dispatch (command assertions and remaining special
 	// verbs: ok, fail, path, contains).
 	verbArg := args[0]
-	verb := argText(verbArg)
+	verb := repl.ArgText(verbArg)
 	verbArgs := args[1:]
 
 	result, err := evalAssertVerb(ctx, cli, mgr, session, verbArg, verb, verbArgs)
@@ -176,11 +177,11 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 func isExprAssertion(args []shell.Arg) bool {
 	switch len(args) {
 	case 1:
-		return !isPrefixVerbName(argText(args[0]))
+		return !isPrefixVerbName(repl.ArgText(args[0]))
 	case 2:
-		return shell.IsUnaryPred(argText(args[0]))
+		return shell.IsUnaryPred(repl.ArgText(args[0]))
 	case 3:
-		return shell.IsBinaryOp(argText(args[1]))
+		return shell.IsBinaryOp(repl.ArgText(args[1]))
 	}
 	return false
 }
@@ -277,7 +278,7 @@ func exprScalar(e shell.Expr, session *shell.Session) string {
 // (contains). Value-based comparisons and unary predicates go
 // through the expression path (see evalExprAssertion).
 func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, verbArg shell.Arg, verb string, args []shell.Arg) (assertResult, error) {
-	ss := argTexts(args)
+	ss := repl.ArgTexts(args)
 	verbSpan := shell.ArgSpan(verbArg)
 	switch verb {
 	case "ok":
@@ -401,7 +402,7 @@ func assertContains(verbSpan shell.Span, args []string) (assertResult, error) {
 func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourceLoc) (assertResult, error) {
 	sva, ok := target.(shell.StructuredValueArg)
 	if !ok {
-		return assertResult{}, fmt.Errorf("matches requires a structured value as the target (got %s)", argText(target))
+		return assertResult{}, fmt.Errorf("matches requires a structured value as the target (got %s)", repl.ArgText(target))
 	}
 	if len(block.Entries) == 0 {
 		return assertResult{}, fmt.Errorf("matches block must contain at least one entry")

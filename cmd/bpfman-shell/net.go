@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -58,7 +59,7 @@ func handleNet(c builtinCtx) (shell.Value, error) {
 	if len(c.Args) == 0 {
 		return shell.Value{}, fmt.Errorf("net: subcommand required (valid: exec, release, start, veth-pair)")
 	}
-	sub := argText(c.Args[0])
+	sub := repl.ArgText(c.Args[0])
 	rest := c.Args[1:]
 	switch sub {
 	case "veth-pair":
@@ -165,13 +166,13 @@ type vethPairFlags struct {
 func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 	var f vethPairFlags
 	for i := 0; i < len(args); {
-		text := argText(args[i])
+		text := repl.ArgText(args[i])
 		switch {
 		case text == "--ns":
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--ns requires a value")
 			}
-			f.Ns = argText(args[i+1])
+			f.Ns = repl.ArgText(args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--ns="):
 			f.Ns = strings.TrimPrefix(text, "--ns=")
@@ -180,7 +181,7 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--host-link requires a value")
 			}
-			f.HostLink = argText(args[i+1])
+			f.HostLink = repl.ArgText(args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--host-link="):
 			f.HostLink = strings.TrimPrefix(text, "--host-link=")
@@ -189,7 +190,7 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--host-addr requires a value")
 			}
-			f.HostAddrCIDR = argText(args[i+1])
+			f.HostAddrCIDR = repl.ArgText(args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--host-addr="):
 			f.HostAddrCIDR = strings.TrimPrefix(text, "--host-addr=")
@@ -198,7 +199,7 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--peer-link requires a value")
 			}
-			f.PeerLink = argText(args[i+1])
+			f.PeerLink = repl.ArgText(args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--peer-link="):
 			f.PeerLink = strings.TrimPrefix(text, "--peer-link=")
@@ -207,7 +208,7 @@ func parseVethPairFlags(args []shell.Arg) (vethPairFlags, error) {
 			if i+1 >= len(args) {
 				return f, fmt.Errorf("--peer-addr requires a value")
 			}
-			f.PeerAddrCIDR = argText(args[i+1])
+			f.PeerAddrCIDR = repl.ArgText(args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--peer-addr="):
 			f.PeerAddrCIDR = strings.TrimPrefix(text, "--peer-addr=")
@@ -456,7 +457,7 @@ func replNetExec(ctx context.Context, args []shell.Arg) (shell.Envelope, error) 
 		shell.WordArg{Text: pair.Ns},
 	}
 	full := append(prefix, args[1:]...)
-	cap, err := runExternal(ctx, full)
+	cap, err := repl.RunExternal(ctx, full)
 	if err != nil {
 		return shell.Envelope{}, fmt.Errorf("net exec: %w", err)
 	}
@@ -487,7 +488,7 @@ func handleNetStart(ctx context.Context, env *shell.Env, origin string, args []s
 	if err != nil {
 		return shell.Value{}, err
 	}
-	argv := append([]string{"ip", "netns", "exec", pair.Ns}, argTexts(resolved)...)
+	argv := append([]string{"ip", "netns", "exec", pair.Ns}, repl.ArgTexts(resolved)...)
 	job, err := spawnJob(ctx, env, spawnSpec{
 		Argv:      argv,
 		Origin:    origin,

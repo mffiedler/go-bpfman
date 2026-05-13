@@ -313,14 +313,14 @@ func TestArgTexts(t *testing.T) {
 		shell.WordArg{Text: "program"},
 		shell.ScalarValueArg{Text: "42"},
 	}
-	got := argTexts(args)
+	got := repl.ArgTexts(args)
 	assert.Equal(t, []string{"show", "program", "42"}, got)
 }
 
 func TestArgTexts_Empty(t *testing.T) {
 	t.Parallel()
 
-	got := argTexts(nil)
+	got := repl.ArgTexts(nil)
 	assert.Empty(t, got)
 }
 
@@ -332,7 +332,7 @@ func TestArgTexts_StructuredValueArg(t *testing.T) {
 		shell.WordArg{Text: "program"},
 		shell.StructuredValueArg{Name: "prog", Value: shell.ValueFromMap(map[string]any{"id": "42"})},
 	}
-	got := argTexts(args)
+	got := repl.ArgTexts(args)
 	assert.Equal(t, []string{"show", "program", "$prog"}, got)
 }
 
@@ -343,7 +343,7 @@ func TestArgTexts_QuotedArg(t *testing.T) {
 		shell.WordArg{Text: "load"},
 		shell.QuotedArg{Text: "my file.o"},
 	}
-	got := argTexts(args)
+	got := repl.ArgTexts(args)
 	assert.Equal(t, []string{"load", "my file.o"}, got)
 }
 
@@ -3151,7 +3151,7 @@ func TestReplLoop_BareCommandNotFoundOutranksArgFlatten(t *testing.T) {
 
 	// Pre-check ordering: the unknown command name is reported
 	// even when one of the later arguments is a structured value
-	// that resolveExternalArgs would reject. This is the
+	// that repl.ResolveExternalArgs would reject. This is the
 	// regression case from the user's report: 'type $prog' should
 	// say "type: command not found", not "exec: argument 2 is a
 	// unknown value".

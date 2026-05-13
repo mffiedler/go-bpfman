@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -82,13 +83,13 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 	count := ""
 	waves := "1"
 	for i := 0; i < len(c.Args); {
-		text := argText(c.Args[i])
+		text := repl.ArgText(c.Args[i])
 		switch {
 		case text == "--count":
 			if i+1 >= len(c.Args) {
 				return shell.Value{}, fmt.Errorf("fire: --count requires a value")
 			}
-			count = argText(c.Args[i+1])
+			count = repl.ArgText(c.Args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--count="):
 			count = strings.TrimPrefix(text, "--count=")
@@ -97,7 +98,7 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 			if i+1 >= len(c.Args) {
 				return shell.Value{}, fmt.Errorf("fire: --waves requires a value")
 			}
-			waves = argText(c.Args[i+1])
+			waves = repl.ArgText(c.Args[i+1])
 			i += 2
 		case strings.HasPrefix(text, "--waves="):
 			waves = strings.TrimPrefix(text, "--waves=")

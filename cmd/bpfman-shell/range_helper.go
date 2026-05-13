@@ -21,6 +21,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -36,7 +37,7 @@ func handleRange(c builtinCtx) (shell.Value, error) {
 	if len(args) != 1 {
 		return shell.Value{}, fmt.Errorf("range: expected exactly 1 argument, got %d", len(args))
 	}
-	text := strings.TrimSpace(argText(args[0]))
+	text := strings.TrimSpace(repl.ArgText(args[0]))
 	if text == "" {
 		return shell.Value{}, fmt.Errorf("range: empty argument")
 	}

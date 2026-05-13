@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/manager"
@@ -63,7 +64,7 @@ type builtinCtx struct {
 
 	// Args is the argument list with the command name
 	// already stripped. Most handlers use it directly; a
-	// few that take []string convert via argTexts(c.Args).
+	// few that take []string convert via repl.ArgTexts(c.Args).
 	Args []shell.Arg
 
 	// Pos is the source location of the chunk this builtin
@@ -608,7 +609,7 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 	if c.Env == nil {
 		return shell.Value{}, shell.SpanErrorf(c.Span, "source requires an active shell environment")
 	}
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) == 1 && !filepath.IsAbs(args[0]) {
 		switch {
 		case c.Pos.file != "":

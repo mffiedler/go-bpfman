@@ -291,7 +291,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}))
 	}
 	report := func(err error) error {
-		var re *RuntimeError
+		var re *repl.RuntimeError
 		if errors.As(err, &re) {
 			// Runtime-outcome failure (bpfman dispatch
 			// returned an error, or a builtin that opted in).
@@ -308,7 +308,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			}
 			return errScriptError
 		}
-		var ae *ExecArgError
+		var ae *repl.ExecArgError
 		if errors.As(err, &ae) {
 			// An argument cannot flatten into argv text -- a
 			// structured value passed where a scalar was
@@ -324,7 +324,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			}
 			return errScriptError
 		}
-		var cnf *CommandNotFound
+		var cnf *repl.CommandNotFound
 		if errors.As(err, &cnf) {
 			// Subprocess fallthrough hit a name that does not
 			// resolve on $PATH. The source is well-formed; the
@@ -340,7 +340,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			}
 			return errScriptError
 		}
-		var ef *ExecFailure
+		var ef *repl.ExecFailure
 		if errors.As(err, &ef) {
 			// Subprocess exited non-zero. The child wrote its
 			// own diagnostics to the inherited stdout/stderr,
@@ -702,7 +702,7 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	if len(args) == 0 {
 		return false, shell.Value{}, nil
 	}
-	cmd := argText(args[0])
+	cmd := repl.ArgText(args[0])
 	b, ok := builtinRegistry[cmd]
 	if !ok {
 		return false, shell.Value{}, nil
@@ -741,7 +741,7 @@ func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc,
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s] FAIL at %s:%d\n", verb, file, stmtLoc.Line)
 	b.WriteString("command:\n")
-	if argv := argTexts(args); len(argv) > 0 {
+	if argv := repl.ArgTexts(args); len(argv) > 0 {
 		fmt.Fprintf(&b, "  %s\n", strings.Join(argv, " "))
 	}
 	fmt.Fprintf(&b, "exit:\n  %d\n", env.Code)
@@ -777,7 +777,7 @@ func writeIndented(b *strings.Builder, s string) {
 // Dispatch order: aliases expand first; registered shell builtins
 // (replShellCmd) handle their own names; the bpfman domain
 // dispatcher handles "bpfman ..."; an unrecognised first word
-// falls through to runExternal so 'ip link add ...' spawns the
+// falls through to repl.RunExternal so 'ip link add ...' spawns the
 // system 'ip' without an explicit 'exec' prefix.
 func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.Value, error) {
 	return func(args []shell.Arg, span shell.Span) (shell.Value, error) {
@@ -792,7 +792,7 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		if handled {
 			return val, nil
 		}
-		first := argText(args[0])
+		first := repl.ArgText(args[0])
 		// Frame errors from the bpfman domain dispatcher and
 		// the subprocess fallthrough at the originating
 		// command's Span. The dispatcher and parser sites
@@ -810,12 +810,12 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 				// the manager returned a fact. Cite, do
 				// not frame -- mirrors the policy applied
 				// to bare subprocess exit failures.
-				return val, &RuntimeError{Msg: err.Error(), Span: span}
+				return val, &repl.RuntimeError{Msg: err.Error(), Span: span}
 			}
 			return val, nil
 		}
 		if domainNouns[first] {
-			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " "))
+			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " "))
 		}
 		// Fallthrough: unknown first word runs as a subprocess.
 		// Resolve the executable on $PATH first so an unknown
@@ -823,10 +823,10 @@ func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		// than producing a downstream argument-flatten failure
 		// when one of the remaining arguments cannot be turned
 		// into a shell scalar.
-		if err := resolveCommandPath(first, span); err != nil {
+		if err := repl.ResolveCommandPath(first, span); err != nil {
 			return shell.Value{}, err
 		}
-		val, err = runExecStatement(ctx, cli, args, span)
+		val, err = repl.RunExecStatement(ctx, cli, args, span)
 		return val, shell.FrameAt(span, err)
 	}
 }
@@ -858,7 +858,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			return shell.BindResult{}, shell.SpanErrorf(span, "empty command form on '<-' RHS")
 		}
 
-		if argText(args[0]) == "exec" {
+		if repl.ArgText(args[0]) == "exec" {
 			return runExternalAsBind(ctx, args[1:])
 		}
 
@@ -868,7 +868,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		// the background process exited non-zero (or fail
 		// to launch); a not-ok job is the kind of failure
 		// the script wanted to gate on.
-		if argText(args[0]) == "wait" {
+		if repl.ArgText(args[0]) == "wait" {
 			env, err := replWait(ctx, args[1:])
 			if err != nil {
 				return shell.BindResult{}, err
@@ -884,7 +884,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 		// halts on a non-zero ping exactly the way 'guard _
 		// <- ip netns exec NS ping' does in the
 		// pre-migration scripts.
-		if argText(args[0]) == "net" && len(args) >= 2 && argText(args[1]) == "exec" {
+		if repl.ArgText(args[0]) == "net" && len(args) >= 2 && repl.ArgText(args[1]) == "exec" {
 			env, err := replNetExec(ctx, args[2:])
 			if err != nil {
 				return shell.BindResult{}, err
@@ -907,7 +907,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			return shell.BindResult{Rc: rc, Primary: primary}, nil
 		}
 
-		first := argText(args[0])
+		first := repl.ArgText(args[0])
 		if first == "bpfman" {
 			val, err := replDispatch(ctx, quiet, mgr, args)
 			if err != nil {
@@ -921,7 +921,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			rc := shell.Envelope{
 				OK:     false,
 				Code:   1,
-				Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(argTexts(args), " ")),
+				Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " ")),
 			}
 			return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 		}
@@ -935,7 +935,7 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // permission denied) returns a Go error; a non-zero exit is
 // captured into the rc envelope so '<-' callers can inspect it.
 func runExternalAsBind(ctx context.Context, args []shell.Arg) (shell.BindResult, error) {
-	cap, err := runExternal(ctx, args)
+	cap, err := repl.RunExternal(ctx, args)
 	if err != nil {
 		return shell.BindResult{}, err
 	}
@@ -970,43 +970,7 @@ func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) fu
 	}
 }
 
-// argText extracts the text from a single Arg. For text-bearing
-// variants (WordArg, QuotedArg, ScalarValueArg) this returns the
-// text directly. For StructuredValueArg this returns "$name" as a
-// display form suitable for error messages.
-func argText(a shell.Arg) string {
-	switch v := a.(type) {
-	case shell.WordArg:
-		return v.Text
-	case shell.QuotedArg:
-		return v.Text
-	case shell.ScalarValueArg:
-		return v.Text
-	case shell.StructuredValueArg:
-		return "$" + v.Name
-	case shell.AdapterArg:
-		if v.Path != "" {
-			return fmt.Sprintf("%s:$%s.%s", v.Adapter, v.Name, v.Path)
-		}
-		return fmt.Sprintf("%s:$%s", v.Adapter, v.Name)
-	default:
-		return ""
-	}
-}
-
-// argTexts extracts plain strings from all Args. This is the
-// conversion boundary for passing expanded arguments to Kong parsers
-// and handlers that operate on resolved string values. Structured
-// values should already have been extracted by typed helpers before
-// this point; any remaining StructuredValueArg is rendered as
-// "$name" for display.
-func argTexts(args []shell.Arg) []string {
-	ss := make([]string, len(args))
-	for i, a := range args {
-		ss[i] = argText(a)
-	}
-	return ss
-}
+// repl.ArgText / repl.ArgTexts moved to repl.ArgText / repl.ArgTexts.
 
 type replContextKey int
 
@@ -1193,8 +1157,8 @@ var domainNouns = map[string]bool{
 // and returns a typed Command node; execCommand dispatches via a
 // type-switch.
 func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
-	if len(args) == 0 || argText(args[0]) != "bpfman" {
-		return shell.Value{}, fmt.Errorf("expected a command starting with \"bpfman\", got %v", argTexts(args))
+	if len(args) == 0 || repl.ArgText(args[0]) != "bpfman" {
+		return shell.Value{}, fmt.Errorf("expected a command starting with \"bpfman\", got %v", repl.ArgTexts(args))
 	}
 	cmd, err := parseCommand(args[1:])
 	if err != nil {
@@ -1213,7 +1177,7 @@ func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 // alphabetised within group) and from keywordRegistry. Adding
 // a builtin or keyword updates the help automatically.
 func handleHelp(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	switch len(args) {
 	case 0:
 		return shell.Value{}, c.CLI.PrintOut(renderHelpOverview())

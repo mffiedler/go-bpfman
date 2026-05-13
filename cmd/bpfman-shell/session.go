@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
@@ -62,7 +63,7 @@ func applyAlias(session *shell.Session, args []shell.Arg) []shell.Arg {
 // alias <name> = <expansion>. The name must not collide with shell
 // commands or "bpfman".
 func handleAlias(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) != 3 || args[1] != "=" {
 		return shell.Value{}, fmt.Errorf("usage: alias <name> = <expansion>")
 	}
@@ -82,7 +83,7 @@ func handleAlias(c builtinCtx) (shell.Value, error) {
 
 // handleUnalias removes one or more alias bindings.
 func handleUnalias(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("unalias requires at least one alias name")
 	}
@@ -112,7 +113,7 @@ func handleDefs(c builtinCtx) (shell.Value, error) {
 // handleUndef removes one or more user-defined commands from the
 // session.
 func handleUndef(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("undef requires at least one def name")
 	}
@@ -132,7 +133,7 @@ func handleUndef(c builtinCtx) (shell.Value, error) {
 // Unknown arguments fail loudly so a typo cannot silently leave
 // tracing in its previous state.
 func handleTrace(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) != 1 {
 		return shell.Value{}, fmt.Errorf("trace requires exactly one argument: on or off")
 	}
@@ -162,7 +163,7 @@ func handleAliases(c builtinCtx) (shell.Value, error) {
 // handleUnset removes one or more variable bindings from the
 // session.
 func handleUnset(c builtinCtx) (shell.Value, error) {
-	args := argTexts(c.Args)
+	args := repl.ArgTexts(c.Args)
 	if len(args) == 0 {
 		return shell.Value{}, fmt.Errorf("unset requires at least one variable name")
 	}

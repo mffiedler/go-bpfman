@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -30,7 +31,7 @@ func handleTempdir(c builtinCtx) (shell.Value, error) {
 	if len(c.Args) != 1 {
 		return shell.Value{}, fmt.Errorf("tempdir: requires exactly one PREFIX argument")
 	}
-	prefix := strings.TrimSpace(argText(c.Args[0]))
+	prefix := strings.TrimSpace(repl.ArgText(c.Args[0]))
 	if prefix == "" {
 		return shell.Value{}, fmt.Errorf("tempdir: PREFIX must not be empty")
 	}
