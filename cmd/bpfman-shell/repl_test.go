@@ -2457,7 +2457,7 @@ func TestReplLoop_ErrorWithFileIncludesLocation(t *testing.T) {
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
-	require.ErrorIs(t, err, errScriptError)
+	require.ErrorIs(t, err, repl.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:2:")
 }
 
@@ -2517,7 +2517,7 @@ func TestReplLoop_StdinIncludesLocation(t *testing.T) {
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "<stdin>", false, true)
-	require.ErrorIs(t, err, errScriptError)
+	require.ErrorIs(t, err, repl.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "<stdin>:2: x: command not found")
 	// The third line should not have run.
 	assert.Equal(t, 1, strings.Count(outBuf.String(), "Version:"), "expected only one version output before halt")
@@ -2534,7 +2534,7 @@ func TestReplLoop_ScriptModeHaltsOnError(t *testing.T) {
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
-	require.ErrorIs(t, err, errScriptError)
+	require.ErrorIs(t, err, repl.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:1:")
 	assert.Empty(t, outBuf.String(), "expected no output after error halted script")
 }
@@ -2549,7 +2549,7 @@ func TestReplLoop_LineCounterIncrementsCorrectly(t *testing.T) {
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "test.bpfman", false, true)
-	require.ErrorIs(t, err, errScriptError)
+	require.ErrorIs(t, err, repl.ErrScriptError)
 	assert.Contains(t, errBuf.String(), "test.bpfman:4:")
 }
 
@@ -3132,7 +3132,7 @@ func TestReplLoop_BpfmanDispatchErrorBatchCitesFileLine(t *testing.T) {
 	t.Parallel()
 
 	// Same as above in batch mode: the citation gets the
-	// file:line prefix and the script halts with errScriptError.
+	// file:line prefix and the script halts with repl.ErrScriptError.
 	input := "bpfman program\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}

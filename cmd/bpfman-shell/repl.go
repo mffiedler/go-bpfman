@@ -24,14 +24,8 @@ import (
 	"github.com/frobware/go-bpfman/version"
 )
 
-// errRequireFailed is the sentinel error used to halt script execution
-// when a require assertion fails.
-var errRequireFailed = errors.New("require failed")
-
-// errScriptError is the sentinel error used to halt script execution
-// when a command error occurs in file mode. The error message has
-// already been printed with a source location prefix.
-var errScriptError = errors.New("script error")
+// Sentinel errors moved to repl.ErrRequireFailed and
+// repl.ErrScriptError.
 
 // Run starts the read-eval-print loop. A single manager is held
 // open for the session lifetime to avoid repeated store open/close.
@@ -84,7 +78,7 @@ func (c *CLI) Run(ctx context.Context) error {
 	}
 	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive, c.NoCheck)
 
-	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
+	if errors.Is(loopErr, repl.ErrRequireFailed) || errors.Is(loopErr, repl.ErrScriptError) {
 		return repl.ErrSilent
 	}
 	if loopErr != nil {
@@ -187,17 +181,17 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 	// existing chunk-by-chunk evaluator, preserving the
 	// per-chunk loc machinery the runtime error path relies
 	// on. Static issues from Check are reported with
-	// 'file:line: error: ...' and returned as errScriptError
+	// 'file:line: error: ...' and returned as repl.ErrScriptError
 	// so the caller exits non-zero without evaluating any
 	// statement.
 	src, slurpErr := repl.SlurpReader(lr)
 	if slurpErr != nil {
 		_ = cli.PrintErrf("%s: %v\n", file, slurpErr)
-		return errScriptError
+		return repl.ErrScriptError
 	}
 	if !noCheck {
 		if hadIssues := repl.PreflightCheck(cli, file, src); hadIssues {
-			return errScriptError
+			return repl.ErrScriptError
 		}
 	}
 	lr = repl.NewScannerReader(strings.NewReader(src), nil)
@@ -208,7 +202,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 			return repl.WriteValue(cli, v)
 		},
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-			renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
+			repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
 		},
 		HandleJobLeak: repl.StrictJobLeakHandler(cli, session),
 	}
@@ -225,7 +219,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 						if buf.Len() > 0 {
 							loc := sourceLoc{File: file, Line: startLine}
 							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
-							return errScriptError
+							return repl.ErrScriptError
 						}
 						return nil
 					}
@@ -306,7 +300,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			} else {
 				_ = cli.PrintErrf("%s\n", re.Msg)
 			}
-			return errScriptError
+			return repl.ErrScriptError
 		}
 		var ae *repl.ExecArgError
 		if errors.As(err, &ae) {
@@ -322,7 +316,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			} else {
 				_ = cli.PrintErrf("%s\n", ae.Msg)
 			}
-			return errScriptError
+			return repl.ErrScriptError
 		}
 		var cnf *repl.CommandNotFound
 		if errors.As(err, &cnf) {
@@ -338,7 +332,7 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 			} else {
 				_ = cli.PrintErrf("%s: command not found\n", cnf.Name)
 			}
-			return errScriptError
+			return repl.ErrScriptError
 		}
 		var ef *repl.ExecFailure
 		if errors.As(err, &ef) {
@@ -369,19 +363,19 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 					}
 				}
 			}
-			return errScriptError
+			return repl.ErrScriptError
 		}
 		var se *shell.SyntaxError
 		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
 			emitFrame(se.Span, se.Msg)
-			return errScriptError
+			return repl.ErrScriptError
 		}
 		// Defensive: an error reached here without a Span.
 		// After G1 every parser/runtime path is typed, so
 		// this should be unreachable; if it fires, print a
 		// flat line so something still surfaces.
 		_ = cli.PrintErrf("%serror: %v\n", loc, err)
-		return errScriptError
+		return repl.ErrScriptError
 	}
 	tokens, err := shell.Tokenise(input)
 	if err != nil {
@@ -395,10 +389,10 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		return report(err)
 	}
 	if err := shell.EvalProgramInScope(prog, env); err != nil {
-		if errors.Is(err, errRequireFailed) {
+		if errors.Is(err, repl.ErrRequireFailed) {
 			return err
 		}
-		if errors.Is(err, errScriptError) {
+		if errors.Is(err, repl.ErrScriptError) {
 			// A nested evaluation (a sourced file, a def
 			// body, ...) already rendered its own
 			// diagnostic and returned the script-error
@@ -413,8 +407,8 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}
 		var gf *shell.GuardFailure
 		if errors.As(err, &gf) {
-			renderEnvelopeFailure(cli, "guard", loc, gf.Pos, gf.Args, gf.Envelope)
-			return errScriptError
+			repl.RenderEnvelopeFailure(cli, "guard", loc, gf.Pos, gf.Args, gf.Envelope)
+			return repl.ErrScriptError
 		}
 		return report(err)
 	}
@@ -451,7 +445,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			return repl.WriteValue(cli, v)
 		},
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
+			repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
 		},
 		HandleJobLeak: repl.SilentJobLeakHandler(),
 	}
@@ -555,12 +549,12 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 			if chunkErr == nil {
 				continue
 			}
-			if errors.Is(chunkErr, errRequireFailed) {
+			if errors.Is(chunkErr, repl.ErrRequireFailed) {
 				return chunkErr
 			}
 			// Chunk errors (parse, runtime, guard halt) are
 			// already rendered by evalChunkInScope; swallow
-			// the errScriptError sentinel so the next
+			// the repl.ErrScriptError sentinel so the next
 			// prompt is reached rather than tearing the
 			// session down. Context-cancellation errors
 			// from a ^C-interrupted builtin are similarly
@@ -570,12 +564,13 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	})
 }
 
-// canonicaliseHistory collapses a multi-line REPL submission into a
-// single line suitable for a one-entry history record. Backslash
-// continuations and bare newlines outside quoted strings become a
-// single space, leading whitespace on continuation lines is dropped,
-// and `#` comments outside quoted strings are stripped to the end of
-// their line. Newlines inside quoted strings are preserved verbatim.
+// canonicaliseHistory collapses a multi-line REPL submission into
+// a single line suitable for a one-entry history record.
+// Backslash continuations and bare newlines outside quoted
+// strings become a single space, leading whitespace on
+// continuation lines is dropped, and `#` comments outside quoted
+// strings are stripped to the end of their line. Newlines inside
+// quoted strings are preserved verbatim.
 func canonicaliseHistory(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -643,9 +638,7 @@ type contState struct {
 // advance walks one line of input, updating the brace and paren
 // counters. Comments (`#` to end of line) outside a quoted string
 // are ignored; quoted content is skipped so braces and parens
-// inside strings do not count. The in-string flags are fields on
-// the struct so they survive across line boundaries, matching how
-// the tokeniser actually treats multi-line quoted literals.
+// inside strings do not count.
 func (c *contState) advance(line string) {
 	c.lineCont = false
 	lastNonSpace := -1
@@ -725,47 +718,9 @@ func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 	return true, val, shell.FrameAt(span, err)
 }
 
-// renderEnvelopeFailure prints a captured-result failure as a
-// labelled block: the verb header (guard, require, assert, defer),
-// the source position of the failing statement, the resolved
-// command line, the exit code, and any captured stdout and stderr.
-// Empty stdout/stderr emit just the label; multi-line text is
-// indented two spaces per line. The format matches the shape
-// described in the REPL design's section on the shared failure
-// renderer.
-func renderEnvelopeFailure(cli *bpfmancli.CLI, verb string, scriptLoc sourceLoc, stmtLoc shell.Pos, args []shell.Arg, env shell.Envelope) {
-	file := scriptLoc.File
-	if file == "" {
-		file = "<repl>"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "[%s] FAIL at %s:%d\n", verb, file, stmtLoc.Line)
-	b.WriteString("command:\n")
-	if argv := repl.ArgTexts(args); len(argv) > 0 {
-		fmt.Fprintf(&b, "  %s\n", strings.Join(argv, " "))
-	}
-	fmt.Fprintf(&b, "exit:\n  %d\n", env.Code)
-	b.WriteString("stdout:\n")
-	writeIndented(&b, env.Stdout)
-	b.WriteString("stderr:\n")
-	writeIndented(&b, env.Stderr)
-	_ = cli.PrintErrf("%s", b.String())
-}
-
-// writeIndented appends s to b with each line prefixed by two
-// spaces. A trailing newline on s is dropped before splitting so a
-// captured stdout that already ended in '\n' does not produce a
-// blank indented line at the end.
-func writeIndented(b *strings.Builder, s string) {
-	if s == "" {
-		return
-	}
-	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
-		b.WriteString("  ")
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-}
+// renderEnvelopeFailure and writeIndented moved to
+// repl/loop_helpers.go as RenderEnvelopeFailure and an
+// unexported writeIndented helper.
 
 // makeExecCommand bridges the evaluator's top-level CommandStmt
 // dispatch into the REPL pipeline. Output is visible on the CLI.
@@ -1042,7 +997,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 		env.Trace = savedTrace
 	}()
 	env.RenderDeferFailure = func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-		renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
+		repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
 	}
 
 	return shell.WithDeferScope(env, func() error {

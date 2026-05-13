@@ -1,7 +1,7 @@
 // Assertion verbs for the REPL: "assert" and "require".  Both
 // share a single dispatch path (replAssertRequire) with an
 // isRequire flag deciding whether failure increments the session
-// counter (assert) or halts execution via errRequireFailed
+// counter (assert) or halts execution via repl.ErrRequireFailed
 // (require).  All the verbs, plus the expression-assertion path
 // for predicate/comparison forms ("$a == $b"), live here.
 package main
@@ -51,7 +51,7 @@ func makeExecAssertStmt(cli *bpfmancli.CLI, session *shell.Session, loc sourceLo
 		message := formatExprFailure(s.Expr, session)
 		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, message)
 		if s.IsRequire {
-			return errRequireFailed
+			return repl.ErrRequireFailed
 		}
 		session.RecordAssertFailure()
 		return nil
@@ -60,7 +60,7 @@ func makeExecAssertStmt(cli *bpfmancli.CLI, session *shell.Session, loc sourceLo
 
 // replAssertRequire handles both "assert" and "require" commands.
 // When isRequire is true, failure halts execution immediately via
-// errRequireFailed. When false, failure is recorded in the session
+// repl.ErrRequireFailed. When false, failure is recorded in the session
 // counter and execution continues.
 func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg, isRequire bool, loc sourceLoc) error {
 	if len(args) == 0 {
@@ -100,7 +100,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 			}
 			_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
 			if isRequire {
-				return errRequireFailed
+				return repl.ErrRequireFailed
 			}
 			session.RecordAssertFailure()
 			return nil
@@ -128,7 +128,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 		}
 		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
 		if isRequire {
-			return errRequireFailed
+			return repl.ErrRequireFailed
 		}
 		session.RecordAssertFailure()
 		return nil
@@ -158,7 +158,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 	_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
 
 	if isRequire {
-		return errRequireFailed
+		return repl.ErrRequireFailed
 	}
 
 	session.RecordAssertFailure()
