@@ -96,6 +96,40 @@ func TestParse_LineContinuation(t *testing.T) {
 	})
 }
 
+func TestParse_MultilineListLiteral(t *testing.T) {
+	t.Parallel()
+
+	t.Run("let RHS wraps across newlines without continuation", func(t *testing.T) {
+		t.Parallel()
+		src := "let priorities = [\n100\n200\n300\n]"
+		prog, err := parseSource(t, src)
+		require.NoError(t, err)
+		let, ok := firstStmt(t, prog).(*LetStmt)
+		require.True(t, ok)
+		assert.Equal(t, "priorities", let.Name)
+		list, ok := let.RHS.(*ListExpr)
+		require.True(t, ok, "RHS should be a ListExpr, got %T", let.RHS)
+		require.Len(t, list.Elems, 3)
+	})
+
+	t.Run("bind RHS wraps across newlines", func(t *testing.T) {
+		t.Parallel()
+		// foreach iteration source is an expression; a multi-line
+		// list literal there exercises the bracket-aware bind RHS
+		// collector.
+		src := "let xs <- foreach p in [\n100\n200\n] {\n  echo $p\n}"
+		_, err := parseSource(t, src)
+		require.NoError(t, err)
+	})
+
+	t.Run("nested let inside foreach body wraps across newlines", func(t *testing.T) {
+		t.Parallel()
+		src := "foreach i in [0] {\n  let xs = [\n    1\n    2\n  ]\n  echo $xs\n}"
+		_, err := parseSource(t, src)
+		require.NoError(t, err)
+	})
+}
+
 func TestParse_LetAssignment_Literal(t *testing.T) {
 	t.Parallel()
 

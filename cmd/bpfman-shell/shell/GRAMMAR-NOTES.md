@@ -465,25 +465,24 @@ the body to do.
 
 ### Workaround
 
-Compound list literal with line continuation:
+Compound list literal across lines:
 
 ```
 let mapFilter = "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapIDs = [ \
-    ($progs[0] |> jq $mapFilter) \
-    ($progs[1] |> jq $mapFilter) \
-    ($progs[2] |> jq $mapFilter) \
-    ($progs[3] |> jq $mapFilter) \
-    ($progs[4] |> jq $mapFilter) \
+let mapIDs = [
+    ($progs[0] |> jq $mapFilter)
+    ($progs[1] |> jq $mapFilter)
+    ($progs[2] |> jq $mapFilter)
+    ($progs[3] |> jq $mapFilter)
+    ($progs[4] |> jq $mapFilter)
 ]
 ```
 
 One element per line, parenthesised so the `|>` thread
 operator works inside the list-element position
 (parens-for-compound rule from the list-literal entry).
-The `\` newline continuation keeps the list literal on a
-single logical line (see the "multi-line list literals"
-entry below for why this is required).
+Bracket-aware statement-token collection lets the literal
+wrap naturally across newlines; no `\` continuation needed.
 
 Works but reads worse than a 5-line foreach body would have.
 
@@ -520,70 +519,3 @@ ChainProceedOn). The workaround is annoying but mechanical;
 the fix is worth it when a fourth site shows up or when an
 author complains about the line-continuation density.
 
-## Multi-line list literals require `\` line continuation
-
-### What was tried
-
-Wrapping a long list literal across lines for readability:
-
-```
-let priorities = [
-    100
-    200
-    300
-    400
-    500
-]
-```
-
-### What pushed back
-
-`takeStmtTokens` collects the let RHS tokens until a
-`TokenSep` (newline or `;`). The newline after `[` is a
-`TokenSep`, so the RHS truncates to `[` and the parser sees
-a malformed expression. Subsequent lines reparse as
-separate statements ("100" as a command name, etc.).
-
-### Workaround
-
-Use `\` newline continuation, which the tokeniser absorbs
-before emitting any token:
-
-```
-let priorities = [ \
-    100 \
-    200 \
-    300 \
-    400 \
-    500 \
-]
-```
-
-Each `\<newline>` is consumed as whitespace; the whole let
-RHS stays on one logical line. Inside the brackets,
-`parseListLiteral` already skips `TokenSep` tokens, so an
-alternative fix would be to push that knowledge up into
-`takeStmtTokens` -- but that requires bracket-depth tracking
-across the whole statement-token collector.
-
-### How a fix could look
-
-**Bracket-aware `takeStmtTokens` / `takeBindRHSTokens`**:
-track `[`/`]` depth (and probably `{`/`}` and `(`/`)` for
-symmetry). Newlines inside open brackets are skipped; only
-top-level newlines terminate the statement.
-
-Cost: small. The collectors already handle `{`/`}` as
-statement terminators; bracket depth-tracking is one extra
-counter. The change is localised; expression parsing already
-strips seps inside parseListLiteral so once the seps reach
-the parser the rest works.
-
-### When to revisit
-
-When a script's list literal grows past about five
-elements and the `\<newline>` continuation density starts
-making the script noisy. The chain-execution retrofits
-have 5-10 element lists with `\`-continuation; readable but
-visibly load-bearing on the backslashes. A bracket-aware
-collector would let those lists wrap naturally.

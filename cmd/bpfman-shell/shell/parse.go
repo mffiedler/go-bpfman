@@ -829,15 +829,29 @@ func describeStmt(s Stmt) string {
 // takeBindRHSTokens collects the tokens that form the command on the
 // right of a '<-' bind. The run terminates at the next separator or
 // block marker; nested '=' or '<-' on the RHS are rejected at the
-// offending token.
+// offending token. Newlines inside a '[...]' list literal are
+// transparent: while bracket depth is positive the collector treats
+// them as part of the buffer so a long list can wrap across lines
+// (parseListLiteral already skips TokenSep tokens between elements).
 func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 	var buf []Token
+	var depth int
 	for !p.atEOF() {
 		t := p.peek()
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenAssign {
@@ -845,6 +859,16 @@ func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 		}
 		if t.Kind == TokenBind {
 			return nil, spanErrorf(t.Span, "unexpected '<-' on bind RHS; chain via separate let/guard statements")
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "[":
+				depth++
+			case "]":
+				if depth > 0 {
+					depth--
+				}
+			}
 		}
 		buf = append(buf, t)
 		p.pos++
@@ -857,20 +881,44 @@ func (p *parser) takeBindRHSTokens(bindTok Token) ([]Token, error) {
 
 // takeStmtTokens collects tokens belonging to the current statement
 // up to the next separator or block marker. When rejectAssign is
-// true a stray TokenAssign inside the collected range is an error —
-// used on a let RHS to catch "let x = a = b".
+// true a stray TokenAssign inside the collected range is an error,
+// used on a let RHS to catch "let x = a = b". Newlines inside a
+// '[...]' list literal are transparent: while bracket depth is
+// positive the collector treats them as part of the buffer so a
+// long list can wrap across lines.
 func (p *parser) takeStmtTokens(rejectAssign bool) ([]Token, error) {
 	var buf []Token
+	var depth int
 	for !p.atEOF() {
 		t := p.peek()
 		if t.Kind == TokenSep {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if t.Kind == TokenWord && (t.Text == "{" || t.Text == "}") {
+			if depth > 0 {
+				buf = append(buf, t)
+				p.pos++
+				continue
+			}
 			break
 		}
 		if rejectAssign && t.Kind == TokenAssign {
 			return nil, spanErrorf(t.Span, "unexpected '=' in let RHS")
+		}
+		if t.Kind == TokenWord {
+			switch t.Text {
+			case "[":
+				depth++
+			case "]":
+				if depth > 0 {
+					depth--
+				}
+			}
 		}
 		buf = append(buf, t)
 		p.pos++
