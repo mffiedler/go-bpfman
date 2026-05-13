@@ -134,7 +134,7 @@ func execCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, 
 	case *DispatcherListCommand:
 		return shell.Value{}, execDispatcherList(ctx, cli, mgr, c)
 	case *DispatcherGetCommand:
-		return shell.Value{}, execDispatcherGet(ctx, cli, mgr, c)
+		return execDispatcherGet(ctx, cli, mgr, c)
 	case *DispatcherDeleteCommand:
 		return shell.Value{}, execDispatcherDelete(ctx, cli, mgr, c)
 	default:
@@ -2280,18 +2280,28 @@ func parseDispatcherGet(args []shell.Arg) (*DispatcherGetCommand, error) {
 }
 
 // execDispatcherGet executes a parsed DispatcherGetCommand, fetching
-// the dispatcher snapshot and rendering output.
-func execDispatcherGet(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) error {
+// the dispatcher snapshot, printing the formatted view to cli.Out
+// (suppressed when run as a bind RHS), and returning the snapshot
+// as a typed Value so callers using `guard snap <- bpfman dispatcher
+// get ...` get a structured handle they can walk.
+func execDispatcherGet(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, cmd *DispatcherGetCommand) (shell.Value, error) {
 	snap, err := mgr.GetDispatcherSnapshot(ctx, cmd.Key)
 	if err != nil {
-		return err
+		return shell.Value{}, err
 	}
 
 	output, err := cliformat.FormatDispatcherSnapshot(snap, &cmd.Output)
 	if err != nil {
-		return err
+		return shell.Value{}, err
 	}
-	return cli.PrintOut(output)
+	if err := cli.PrintOut(output); err != nil {
+		return shell.Value{}, err
+	}
+	val, err := shell.ValueFromStruct(snap)
+	if err != nil {
+		return shell.Value{}, err
+	}
+	return val, nil
 }
 
 // DispatcherDeleteCommand represents a fully parsed "dispatcher

@@ -27,6 +27,7 @@ import (
 	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
+	"github.com/frobware/go-bpfman/platform"
 )
 
 // dispatchMode selects between in-process library calls and
@@ -223,9 +224,26 @@ func decodeBpfmanResult(args []shell.Arg, stdout []byte) (shell.Value, error) {
 		case "detach", "delete":
 			return shell.Value{}, nil
 		}
+	case "dispatcher":
+		switch verb {
+		case "get":
+			var snap platform.DispatcherSnapshot
+			if err := json.Unmarshal(stdout, &snap); err != nil {
+				return shell.Value{}, fmt.Errorf("decode DispatcherSnapshot: %w", err)
+			}
+			return shell.ValueFromStruct(snap)
+		case "list":
+			var summaries []platform.DispatcherSummary
+			if err := json.Unmarshal(stdout, &summaries); err != nil {
+				return shell.Value{}, fmt.Errorf("decode DispatcherSummary list: %w", err)
+			}
+			return shell.ValueFromStruct(summaries)
+		case "delete":
+			return shell.Value{}, nil
+		}
 	}
-	// Other subcommands (dispatcher list/get/delete, audit, show)
-	// have no typed primary slot today. The envelope from the
-	// caller's bind already carries stdout/stderr/code.
+	// Anything else (audit, show, ...) has no typed primary slot
+	// today. The envelope from the caller's bind already carries
+	// stdout/stderr/code.
 	return shell.Value{}, nil
 }
