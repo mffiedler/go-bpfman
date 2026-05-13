@@ -892,7 +892,6 @@ var reservedDefNames = map[string]bool{
 	"iteration": true,
 	"true":      true,
 	"false":     true,
-	"bpfman":    true,
 }
 
 // parseDefStmt parses a `def NAME(P1, P2, ...) { BODY }` declaration.

@@ -201,11 +201,25 @@ func bpfmanBindFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 	return false, shell.BindResult{}, nil
 }
 
-// replDispatch dispatches a "bpfman ..." command into the
+// replDispatch routes a "bpfman ..." command to the active
+// backend. The library backend invokes the in-process Go API
+// against the supplied CLI and Manager; the external backend
+// forks the bpfman binary as a subprocess and decodes its JSON
+// output. The toggle is BPFMAN_DISPATCH (library | external),
+// read once at process start; cli and mgr are unused under the
+// external backend.
+func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
+	if bpfmanDispatchMode == dispatchExternal {
+		return replDispatchExternal(ctx, args)
+	}
+	return replDispatchLibrary(ctx, cli, mgr, args)
+}
+
+// replDispatchLibrary dispatches a "bpfman ..." command into the
 // in-process domain pipeline. parseCommand routes arguments to
 // the per-command parser and returns a typed Command node;
 // execCommand dispatches via a type-switch.
-func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
+func replDispatchLibrary(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 || repl.ArgText(args[0]) != "bpfman" {
 		return shell.Value{}, fmt.Errorf("expected a command starting with \"bpfman\", got %v", repl.ArgTexts(args))
 	}
