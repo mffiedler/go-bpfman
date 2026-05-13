@@ -1,0 +1,99 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestTC_DispatcherChainProceedOn.
+#
+# The Go test parameterises across nine (n, breakAt) subtests
+# exercising every meaningful combination of chain length (1, 3,
+# 5) and break position (-1, 0, 1, 2, 4). The DSL has no
+# subtest primitive, so this script captures the canonical case
+# that covers both halves of the proceed-on semantics in one
+# run: five TC ingress programs attached at ascending priorities
+# 100..500, with the middle program (priority 300) configured
+# with --proceed-on shot to exclude OK. The tc_counter program
+# always returns OK, so excluding OK from proceed-on means the
+# dispatcher stops the chain after that program.
+#
+# Expected outcome under 20 pings:
+#   - Programs at priorities 100, 200, 300 see traffic (ran).
+#   - Programs at priorities 400, 500 see zero packets (chain
+#     stopped at position 2).
+#
+# The "all proceed" no-break cases (n=1/3/5 with breakAt=-1)
+# are covered by TestTC_DispatcherChainExecution and the
+# MultiProgTC_AllProceed* ports; this script focuses on the
+# new semantics the proceed-on test introduces.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestTC_DispatcherChainProceedOn.bpfman
+#
+# Requires root and bpftool.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+# Five separate loads so each attach has its own counter map.
+guard loaded_1 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_2 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_3 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_4 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+guard loaded_5 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+
+let prog_1 = $loaded_1.programs[0]
+let prog_2 = $loaded_2.programs[0]
+let prog_3 = $loaded_3.programs[0]
+let prog_4 = $loaded_4.programs[0]
+let prog_5 = $loaded_5.programs[0]
+defer bpfman program unload $prog_1
+defer bpfman program unload $prog_2
+defer bpfman program unload $prog_3
+defer bpfman program unload $prog_4
+defer bpfman program unload $prog_5
+
+let mapID_1 = $prog_1 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_2 = $prog_2 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_3 = $prog_3 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_4 = $prog_4 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_5 = $prog_5 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+
+# Ascending priorities make attach order = execution order.
+# prog_3 (priority 300) is the breaker: proceed-on excludes OK,
+# so its return verdict (OK from tc_counter.bpf.o) stops the
+# chain.
+guard l_1 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_1
+guard l_2 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 --proceed-on ok,pipe,dispatcher_return $prog_2
+guard l_3 <- bpfman link attach tc -i $pair.host_link -d ingress -p 300 --proceed-on shot                     $prog_3
+guard l_4 <- bpfman link attach tc -i $pair.host_link -d ingress -p 400 --proceed-on ok,pipe,dispatcher_return $prog_4
+guard l_5 <- bpfman link attach tc -i $pair.host_link -d ingress -p 500 --proceed-on ok,pipe,dispatcher_return $prog_5
+defer bpfman link detach $l_1
+defer bpfman link detach $l_2
+defer bpfman link detach $l_3
+defer bpfman link detach $l_4
+defer bpfman link detach $l_5
+
+guard _ <- net exec $pair ping -c 20 -i 0.05 -W 1 $pair.host_addr
+
+let sumFilter = "[.[].formatted.values[].value.rx_packets | tonumber] | add"
+
+guard dump_1 <- bpftool map dump id $mapID_1 -j
+guard dump_2 <- bpftool map dump id $mapID_2 -j
+guard dump_3 <- bpftool map dump id $mapID_3 -j
+guard dump_4 <- bpftool map dump id $mapID_4 -j
+guard dump_5 <- bpftool map dump id $mapID_5 -j
+
+let count_1 = $dump_1.stdout |> jq $sumFilter
+let count_2 = $dump_2.stdout |> jq $sumFilter
+let count_3 = $dump_3.stdout |> jq $sumFilter
+let count_4 = $dump_4.stdout |> jq $sumFilter
+let count_5 = $dump_5.stdout |> jq $sumFilter
+
+print "packets: 1=${count_1} 2=${count_2} 3=${count_3} 4=${count_4} 5=${count_5}"
+
+# Programs at and before the break point all ran.
+assert $count_1 > 0
+assert $count_2 > 0
+assert $count_3 > 0
+
+# Programs past the break point saw nothing.
+assert $count_4 == 0
+assert $count_5 == 0
