@@ -22,6 +22,14 @@
 # MultiProgTC_AllProceed* ports; this script focuses on the
 # new semantics the proceed-on test introduces.
 #
+# Retrofit notes: per-iteration proceed-on values vary, so the
+# attach foreach iterates (range 5) and pulls priority and
+# proceed-on from parallel lists via jq indexing -- there is
+# no index-by-variable in path lookup today. The expected
+# counts also vary per index (three positive, two zero), so the
+# assert phase uses a parallel expected-counts list and indexed
+# checks rather than a single uniform predicate.
+#
 # Run from e2e/:
 #
 #   cd e2e
@@ -32,68 +40,64 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-# Five separate loads so each attach has its own counter map.
-guard loaded_1 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_2 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_3 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_4 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-guard loaded_5 <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
-
-let prog_1 = $loaded_1.programs[0]
-let prog_2 = $loaded_2.programs[0]
-let prog_3 = $loaded_3.programs[0]
-let prog_4 = $loaded_4.programs[0]
-let prog_5 = $loaded_5.programs[0]
-defer bpfman program unload $prog_1
-defer bpfman program unload $prog_2
-defer bpfman program unload $prog_3
-defer bpfman program unload $prog_4
-defer bpfman program unload $prog_5
-
-let mapID_1 = $prog_1 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_2 = $prog_2 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_3 = $prog_3 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_4 = $prog_4 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_5 = $prog_5 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-
 # Ascending priorities make attach order = execution order.
-# prog_3 (priority 300) is the breaker: proceed-on excludes OK,
-# so its return verdict (OK from tc_counter.bpf.o) stops the
-# chain.
-guard l_1 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_1
-guard l_2 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 --proceed-on ok,pipe,dispatcher_return $prog_2
-guard l_3 <- bpfman link attach tc -i $pair.host_link -d ingress -p 300 --proceed-on shot                     $prog_3
-guard l_4 <- bpfman link attach tc -i $pair.host_link -d ingress -p 400 --proceed-on ok,pipe,dispatcher_return $prog_4
-guard l_5 <- bpfman link attach tc -i $pair.host_link -d ingress -p 500 --proceed-on ok,pipe,dispatcher_return $prog_5
-defer bpfman link detach $l_1
-defer bpfman link detach $l_2
-defer bpfman link detach $l_3
-defer bpfman link detach $l_4
-defer bpfman link detach $l_5
+# Position 2 (priority 300) is the breaker: proceed-on excludes
+# OK, so its return verdict (OK from tc_counter.bpf.o) stops
+# the chain.
+let priorities  = [100 200 300 400 500]
+let proceed_ons = ["ok,pipe,dispatcher_return" "ok,pipe,dispatcher_return" "shot" "ok,pipe,dispatcher_return" "ok,pipe,dispatcher_return"]
+
+guard links <- foreach i in (range 5) {
+    guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
+    let prog = $loaded.programs[0]
+    defer bpfman program unload $prog
+    let prio = $priorities |> jq ".[${i}]"
+    let po = $proceed_ons |> jq ".[${i}]"
+    bpfman link attach tc -i $pair.host_link -d ingress -p $prio --proceed-on $po $prog
+}
+
+foreach l in $links {
+    defer bpfman link detach $l
+}
+
+# Re-query each link's program so we can pull mapIDs from the
+# program record's .status.maps.
+guard progs <- foreach l in $links {
+    bpfman program get $l.record.program_id
+}
+
+let mapFilter = "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapIDs = [ \
+    ($progs[0] |> jq $mapFilter) \
+    ($progs[1] |> jq $mapFilter) \
+    ($progs[2] |> jq $mapFilter) \
+    ($progs[3] |> jq $mapFilter) \
+    ($progs[4] |> jq $mapFilter) \
+]
 
 guard _ <- net exec $pair ping -c 20 -i 0.05 -W 1 $pair.host_addr
 
 let sumFilter = "[.[].formatted.values[].value.rx_packets | tonumber] | add"
 
-guard dump_1 <- bpftool map dump id $mapID_1 -j
-guard dump_2 <- bpftool map dump id $mapID_2 -j
-guard dump_3 <- bpftool map dump id $mapID_3 -j
-guard dump_4 <- bpftool map dump id $mapID_4 -j
-guard dump_5 <- bpftool map dump id $mapID_5 -j
+guard dumps <- foreach m in $mapIDs {
+    bpftool map dump id $m -j
+}
 
-let count_1 = $dump_1.stdout |> jq $sumFilter
-let count_2 = $dump_2.stdout |> jq $sumFilter
-let count_3 = $dump_3.stdout |> jq $sumFilter
-let count_4 = $dump_4.stdout |> jq $sumFilter
-let count_5 = $dump_5.stdout |> jq $sumFilter
+let counts = [ \
+    ($dumps[0].stdout |> jq $sumFilter) \
+    ($dumps[1].stdout |> jq $sumFilter) \
+    ($dumps[2].stdout |> jq $sumFilter) \
+    ($dumps[3].stdout |> jq $sumFilter) \
+    ($dumps[4].stdout |> jq $sumFilter) \
+]
 
-print "packets: 1=${count_1} 2=${count_2} 3=${count_3} 4=${count_4} 5=${count_5}"
+print "packets:" $counts
 
 # Programs at and before the break point all ran.
-assert $count_1 > 0
-assert $count_2 > 0
-assert $count_3 > 0
+assert $counts[0] > 0
+assert $counts[1] > 0
+assert $counts[2] > 0
 
 # Programs past the break point saw nothing.
-assert $count_4 == 0
-assert $count_5 == 0
+assert $counts[3] == 0
+assert $counts[4] == 0
