@@ -1,0 +1,68 @@
+# -*- mode: bpfman -*-
+# Translation experiment: e2e/TestDispatcher_LifecycleAfterLastDetach
+# (TC ingress subtest). The Go test parameterises across TC ingress
+# and XDP via t.Run; the DSL has no subtest primitive, so the two
+# cases live in sibling scripts. This file covers TC ingress;
+# TestDispatcher_LifecycleAfterLastDetachXDP covers XDP.
+#
+# Asserts that detaching the only member of a dispatcher tears
+# the dispatcher down entirely, and that a subsequent attach
+# brings a fresh dispatcher into being (with a different
+# dispatcher program ID -- the same attach point, but a new
+# kernel-level dispatcher BPF program).
+#
+# Three phases:
+#
+#   1. Attach a single member at priority 100. The dispatcher
+#      exists with one member; record its runtime.program_id
+#      (the dispatcher's own BPF program ID, distinct from the
+#      attached user-program's ID).
+#   2. Detach the only member. `bpfman dispatcher get` now fails
+#      because no dispatcher exists for this attach point.
+#   3. Attach again at priority 200. A fresh dispatcher exists,
+#      again with one member, and its runtime.program_id differs
+#      from the phase-1 value.
+#
+# The Go test additionally calls h.verifyAttach{Present,Absent}
+# which inspect TC filter / link pin state directly. The DSL
+# uses dispatcher get's success / failure as the proxy: a
+# dispatcher snapshot exists iff the kernel-side attach point
+# does.
+#
+# Run from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell new/TestDispatcher_LifecycleAfterLastDetachTC.bpfman
+#
+# Requires root.
+
+guard pair <- net veth-pair
+defer net release $pair
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/tc_counter_pinned.bpf.o \
+    --programs tc:stats
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+defer bpfman program unload $pid
+
+# Phase 1: attach one program; dispatcher comes into being.
+guard l1 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 $pid
+guard snap1 <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
+let members1 = $snap1 |> jq ".members | length"
+assert $members1 == 1
+let dispatcher_pid_1 = $snap1.runtime.program_id
+
+# Phase 2: detach the only member; the dispatcher goes away.
+bpfman link detach $l1
+assert fail bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
+
+# Phase 3: reattach; a fresh dispatcher is created with a new
+# kernel program ID.
+guard l2 <- bpfman link attach tc -i $pair.host_link -d ingress -p 200 $pid
+defer bpfman link detach $l2
+
+guard snap2 <- bpfman dispatcher get tc-ingress $pair.host_nsid $pair.host_ifindex
+let members2 = $snap2 |> jq ".members | length"
+assert $members2 == 1
+assert $snap2.runtime.program_id != $dispatcher_pid_1
