@@ -495,7 +495,7 @@ func handleSource(c builtinCtx) (shell.Value, error) {
 			}
 		}
 	}
-	return shell.Value{}, replSource(c.Ctx, c.CLI, c.Mgr, c.Env, args)
+	return shell.Value{}, repl.Source(c.Ctx, c.CLI, c.Mgr, c.Env, args)
 }
 
 // handleWait adapts replWait to the builtin shape, wrapping the

@@ -1,18 +1,19 @@
+// REPL entry shim and bpfman-specific pieces that the repl
+// framework hooks into: the domain-command bridge (replDispatch +
+// domainNouns), the bind-side fast paths (wait, net exec), and
+// the help / version handlers.
+
 package main
 
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 
 	"golang.org/x/term"
@@ -24,17 +25,10 @@ import (
 	"github.com/frobware/go-bpfman/version"
 )
 
-// Sentinel errors moved to repl.ErrRequireFailed and
-// repl.ErrScriptError.
-
-// Run starts the read-eval-print loop. A single manager is held
-// open for the session lifetime to avoid repeated store open/close.
-// When --check is set, Run short-circuits to a parse-only mode
-// that reads the same input, reports syntax errors, and exits
-// without touching the manager, session, or evaluator. When
-// --ast is set, Run short-circuits to a dump-only mode that
-// reads the same input, parses each chunk, and prints the AST
-// tree to stdout; nothing is evaluated.
+// Run is the CLI's top-level entry. With --check / --ast it
+// short-circuits to those parse-only pipelines; otherwise it
+// opens the manager, builds a repl.Config, and delegates to
+// repl.Run.
 func (c *CLI) Run(ctx context.Context) error {
 	if c.Check {
 		return c.runCheck()
@@ -64,8 +58,6 @@ func (c *CLI) Run(ctx context.Context) error {
 	//   stdin pipe / -       file = "<stdin>" (still a script
 	//                        contract, just from stdin).
 	//   bare TTY invocation  file = "" and interactive = true.
-	// The string is for diagnostics; the boolean is the
-	// authoritative mode flag downstream code consults.
 	file := c.Script
 	interactive := false
 	switch {
@@ -76,35 +68,23 @@ func (c *CLI) Run(ctx context.Context) error {
 	case file == "":
 		interactive = true
 	}
-	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive, c.NoCheck)
 
-	if errors.Is(loopErr, repl.ErrRequireFailed) || errors.Is(loopErr, repl.ErrScriptError) {
-		return repl.ErrSilent
-	}
-	if loopErr != nil {
-		return loopErr
-	}
-
-	if n := session.AssertFailures(); n > 0 {
-		_ = c.PrintErrf("%d assertion(s) failed\n", n)
-		return fmt.Errorf("%d assertion(s) failed", n)
-	}
-
-	if n := session.DeferFailures(); n > 0 {
-		_ = c.PrintErrf("%d defer(s) failed\n", n)
-		return fmt.Errorf("%d defer(s) failed", n)
-	}
-
-	if n := session.JobLeaks(); n > 0 {
-		_ = c.PrintErrf("%d job(s) leaked\n", n)
-		return fmt.Errorf("%d job(s) leaked", n)
-	}
-
-	return nil
+	return repl.Run(ctx, repl.Config{
+		CLI:            &c.CLI,
+		Mgr:            mgr,
+		LineReader:     lr,
+		Session:        session,
+		File:           file,
+		Interactive:    interactive,
+		NoCheck:        c.NoCheck,
+		Fallback:       bpfmanFallback,
+		BindFallback:   bpfmanBindFallback,
+		MakeAssertStmt: makeExecAssertStmt,
+	})
 }
 
-// newReader selects the appropriate repl.LineReader: positional script
-// file, piped stdin, or interactive readline.
+// newReader selects the appropriate LineReader: positional
+// script file, piped stdin, or interactive readline.
 func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (repl.LineReader, error) {
 	if c.Script != "" {
 		return repl.OpenScriptReader(c.Script)
@@ -119,831 +99,10 @@ func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shel
 	return repl.NewLineReader("bpfman> ", historyPath, replCompleter(ctx, mgr, session))
 }
 
-// replLoop reads from lr and dispatches input until EOF or
-// interrupt. Two modes with deliberately different policies:
-//
-// In script mode (file != "") the chunk loop runs inside one
-// outer WithJobScope and one outer WithDeferScope. 'defer
-// cleanup' fires at script end and the script-wide leak walk
-// reports any unmanaged job as '[job] FAIL ...', kills it,
-// and pushes the exit code non-zero. Scripts are a
-// reproducible test contract; leaking a job is a bug.
-//
-// In interactive mode (file == "") the loop opens one outer
-// WithJobScope around the whole readline session but a fresh
-// WithDeferScope per chunk. Defers fire at end of prompt
-// (typing 'defer kill $p' as part of the same chunk that
-// started the job is the canonical self-contained idiom);
-// jobs that no chunk waited or killed are cleaned up silently
-// at session end (Ctrl+D) by a leak handler that just
-// SIGKILLs the process group, prints nothing, and does not
-// affect the exit code. The REPL is exploratory scratch
-// space; starting something and then exiting is normal use,
-// not a failure to punish.
-//
-// Variable assignment and expansion use the shell.Session,
-// which is shared across modes.
-func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
-	ctx = repl.EnsureInteractiveBaseDir(ctx)
-	if interactive {
-		return replInteractive(ctx, cli, mgr, lr, session)
-	}
-	return replScript(ctx, cli, mgr, lr, session, file, noCheck)
-}
-
-// replScript drives chunk-by-chunk evaluation in script mode
-// but wraps the entire chunk loop in a single shell.WithJobScope
-// outside a single shell.WithDeferScope. Each balanced statement
-// is parsed and evaluated as its own program, so existing
-// line-tracking (loc.Line tied to each chunk's startLine) keeps
-// error diagnostics pointed at the right source line, but every
-// defer registered along the way fires when the script-wide
-// defer scope unwinds at script exit -- not at the end of the
-// chunk that registered it -- and the unmanaged-job walk runs
-// once over the whole script. Defers nest inside jobs so
-// 'defer kill $job' marks a job Managed before the leak walk
-// sees it.
-//
-// SIGINT and SIGTERM cancel the script-wide context, matching
-// the way a bash script aborts on ^C. Children spawned via
-// the bind path (capture exec) observe the same context and
-// shut down with the script; children spawned via the
-// foreground inherit path receive the signal directly through
-// the TTY's foreground process group.
-func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session, file string, noCheck bool) error {
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	// Slurp the whole input up-front so we can run the
-	// static checker as a pre-flight before any side
-	// effects fire. The buffered content is then re-read
-	// through a fresh scanner-backed repl.LineReader for the
-	// existing chunk-by-chunk evaluator, preserving the
-	// per-chunk loc machinery the runtime error path relies
-	// on. Static issues from Check are reported with
-	// 'file:line: error: ...' and returned as repl.ErrScriptError
-	// so the caller exits non-zero without evaluating any
-	// statement.
-	src, slurpErr := repl.SlurpReader(lr)
-	if slurpErr != nil {
-		_ = cli.PrintErrf("%s: %v\n", file, slurpErr)
-		return repl.ErrScriptError
-	}
-	if !noCheck {
-		if hadIssues := repl.PreflightCheck(cli, file, src); hadIssues {
-			return repl.ErrScriptError
-		}
-	}
-	lr = repl.NewScannerReader(strings.NewReader(src), nil)
-
-	env := &shell.Env{
-		Session: session,
-		PrintResult: func(v shell.Value) error {
-			return repl.WriteValue(cli, v)
-		},
-		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-			repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
-		},
-		HandleJobLeak: repl.StrictJobLeakHandler(cli, session),
-	}
-	return shell.WithJobScope(env, func() error {
-		return shell.WithDeferScope(env, func() error {
-			var lineNo int
-			var buf strings.Builder
-			var startLine int
-			var cs repl.ContState
-			for {
-				input, err := lr.Readline()
-				if err != nil {
-					if err == io.EOF || err == repl.ErrInterrupt {
-						if buf.Len() > 0 {
-							loc := sourceLoc{File: file, Line: startLine}
-							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
-							return repl.ErrScriptError
-						}
-						return nil
-					}
-					return err
-				}
-				lineNo++
-
-				if buf.Len() == 0 {
-					startLine = lineNo
-				}
-				if buf.Len() > 0 {
-					buf.WriteByte('\n')
-				}
-				buf.WriteString(input)
-				cs.Advance(input)
-
-				if cs.Open() {
-					continue
-				}
-
-				accumulated := buf.String()
-				buf.Reset()
-				cs = repl.ContState{}
-
-				loc := sourceLoc{File: file, Line: startLine}
-				env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-				env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-				env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-				env.Trace = makeTraceHook(cli, session, loc)
-				if err := evalChunkInScope(cli, env, accumulated, src, loc); err != nil {
-					return err
-				}
-			}
-		})
-	})
-}
-
-// evalChunkInScope tokenises, parses, and evaluates one chunk
-// against an env whose defer scope was already opened by the
-// caller. Typed errors with a Span are rendered as rust-style
-// frames against frameSrc; the chunk-relative Span is shifted
-// by loc.Line so frames cite the absolute file line. When
-// frameSrc is empty (interactive mode without a slurped buffer)
-// the chunk input itself is used as the frame source. Errors
-// without typed Span info fall back to the plain single-line
-// "file:line:col: error: msg" shape.
-func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string, loc sourceLoc) error {
-	emitFrame := func(span shell.Span, msg string) {
-		src := frameSrc
-		shift := loc.Line - 1
-		if src == "" {
-			src = input
-			shift = 0
-		}
-		shifted := span
-		if shift > 0 {
-			shifted.Pos.Line += shift
-			shifted.End.Line += shift
-		}
-		_ = cli.PrintErr(shell.RenderDiagnostic(src, loc.File, shell.Diagnostic{
-			Span: shifted,
-			Msg:  msg,
-		}))
-	}
-	report := func(err error) error {
-		var re *repl.RuntimeError
-		if errors.As(err, &re) {
-			// Runtime-outcome failure (bpfman dispatch
-			// returned an error, or a builtin that opted in).
-			// Same citation shape as the exec-failure family:
-			// `file:line: msg` in batch, `msg` only in
-			// interactive. The construct itself is fine; the
-			// runtime fact is what the user needs to see.
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := re.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, re.Msg)
-			} else {
-				_ = cli.PrintErrf("%s\n", re.Msg)
-			}
-			return repl.ErrScriptError
-		}
-		var ae *repl.ExecArgError
-		if errors.As(err, &ae) {
-			// An argument cannot flatten into argv text -- a
-			// structured value passed where a scalar was
-			// needed, or an unknown adapter form. The source
-			// is well-formed; the runtime value just does not
-			// compose. Cite, do not frame.
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := ae.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s\n", loc.File, line, ae.Msg)
-			} else {
-				_ = cli.PrintErrf("%s\n", ae.Msg)
-			}
-			return repl.ErrScriptError
-		}
-		var cnf *repl.CommandNotFound
-		if errors.As(err, &cnf) {
-			// Subprocess fallthrough hit a name that does not
-			// resolve on $PATH. The source is well-formed; the
-			// name just is not a command. Cite the line in
-			// batch, emit a single line in interactive. No
-			// frame, no carets -- the construct is fine.
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := cnf.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: command not found\n", loc.File, line, cnf.Name)
-			} else {
-				_ = cli.PrintErrf("%s: command not found\n", cnf.Name)
-			}
-			return repl.ErrScriptError
-		}
-		var ef *repl.ExecFailure
-		if errors.As(err, &ef) {
-			// Subprocess exited non-zero. The child wrote its
-			// own diagnostics to the inherited stdout/stderr,
-			// so we do not repeat them; we just say where the
-			// script tripped.
-			//
-			//   Interactive (loc.File == ""): silent. The
-			//     prompt returning is the signal.
-			//   Batch: one citation line, optionally
-			//     followed by indented stdout/stderr blocks
-			//     if the executor captured any.
-			if loc.File != "" {
-				shift := loc.Line - 1
-				line := ef.Span.Pos.Line + shift
-				_ = cli.PrintErrf("%s:%d: %s: exit %d\n", loc.File, line, strings.Join(ef.Argv, " "), ef.ExitCode)
-				if ef.Stdout != "" {
-					_ = cli.PrintErrf("stdout:\n")
-					for _, l := range strings.Split(strings.TrimRight(ef.Stdout, "\n"), "\n") {
-						_ = cli.PrintErrf("  %s\n", l)
-					}
-				}
-				if ef.Stderr != "" {
-					_ = cli.PrintErrf("stderr:\n")
-					for _, l := range strings.Split(strings.TrimRight(ef.Stderr, "\n"), "\n") {
-						_ = cli.PrintErrf("  %s\n", l)
-					}
-				}
-			}
-			return repl.ErrScriptError
-		}
-		var se *shell.SyntaxError
-		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
-			emitFrame(se.Span, se.Msg)
-			return repl.ErrScriptError
-		}
-		// Defensive: an error reached here without a Span.
-		// After G1 every parser/runtime path is typed, so
-		// this should be unreachable; if it fires, print a
-		// flat line so something still surfaces.
-		_ = cli.PrintErrf("%serror: %v\n", loc, err)
-		return repl.ErrScriptError
-	}
-	tokens, err := shell.Tokenise(input)
-	if err != nil {
-		return report(err)
-	}
-	if len(tokens) == 0 {
-		return nil
-	}
-	prog, err := shell.Parse(tokens)
-	if err != nil {
-		return report(err)
-	}
-	if err := shell.EvalProgramInScope(prog, env); err != nil {
-		if errors.Is(err, repl.ErrRequireFailed) {
-			return err
-		}
-		if errors.Is(err, repl.ErrScriptError) {
-			// A nested evaluation (a sourced file, a def
-			// body, ...) already rendered its own
-			// diagnostic and returned the script-error
-			// sentinel to ask the caller to halt. Propagate
-			// the sentinel unchanged: re-rendering would
-			// frame the same failure a second time at the
-			// outer call site (e.g. underlining 'source
-			// foo.bpfman' with 'error: script error'),
-			// hiding the real cause that the inner level
-			// already emitted.
-			return err
-		}
-		var gf *shell.GuardFailure
-		if errors.As(err, &gf) {
-			repl.RenderEnvelopeFailure(cli, "guard", loc, gf.Pos, gf.Args, gf.Envelope)
-			return repl.ErrScriptError
-		}
-		return report(err)
-	}
-	return nil
-}
-
-// replInteractive runs the chunk-by-chunk loop suited to a
-// readline prompt. The whole session runs inside one outer
-// WithJobScope so 'start' / 'wait' / 'kill' work across prompts
-// and unmanaged jobs surface only at session end. Each chunk
-// opens its own WithDeferScope so 'defer cleanup' fires at end
-// of prompt; the single-prompt idiom
-//
-//	bpfman> guard p <- start sleep 60; defer kill $p
-//
-// works because the chunk's defer runs before any leak check
-// would: kill marks the job Managed and the session-end walk
-// sees nothing to clean up.
-//
-// The job-leak handler is silent in interactive: jobs the user
-// never waited on are SIGKILLed at Ctrl+D with no diagnostic
-// and no exit-code effect. The REPL is exploratory scratch
-// space; starting something and exiting is normal use, not a
-// failure to punish. A future --strict-jobs flag (or a
-// 'session' opt-in for explicit lifetime) can give power
-// users the script-mode policy at the prompt.
-//
-// def bodies continue to open inner defer scopes via callDef so
-// a def's own defers fire at def return.
-func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session) error {
-	env := &shell.Env{
-		Session: session,
-		PrintResult: func(v shell.Value) error {
-			return repl.WriteValue(cli, v)
-		},
-		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-			repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
-		},
-		HandleJobLeak: repl.SilentJobLeakHandler(),
-	}
-
-	// Continuation-prompt support: when the accumulated chunk
-	// is mid-form (unclosed brace, paren, quote, or backslash
-	// line-continuation), swap the primary prompt for a
-	// continuation prompt so the user sees they are still
-	// inside an unfinished form. Without this the silent
-	// 'bpfman> ' looked identical to a fresh prompt and a
-	// stray '#' that swallowed a closing delimiter would
-	// silently buffer every subsequent line. Backends without
-	// a visible prompt (scanner-based readers used by tests
-	// and pipes) implement nothing and the prompt swap is a
-	// no-op.
-	const promptPrimary = "bpfman> "
-	const promptContinue = "... "
-	setPrompt := func(p string) {
-		if ps, ok := lr.(repl.PromptSetter); ok {
-			ps.SetPrompt(p)
-		}
-	}
-
-	return shell.WithJobScope(env, func() error {
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs repl.ContState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == repl.ErrInterrupt || err == io.EOF {
-					if buf.Len() > 0 {
-						_ = cli.PrintErrf("error: unterminated block at end of input\n")
-					}
-					return nil
-				}
-				return err
-			}
-			lineNo++
-
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.Advance(input)
-
-			if cs.Open() {
-				setPrompt(promptContinue)
-				continue
-			}
-
-			accumulated := buf.String()
-			buf.Reset()
-			cs = repl.ContState{}
-			setPrompt(promptPrimary)
-
-			if hw, ok := lr.(repl.HistoryWriter); ok {
-				if entry := repl.CanonicaliseHistory(accumulated); entry != "" {
-					_ = hw.SaveHistory(entry)
-				}
-			}
-
-			// Interactive mode has no source file but does
-			// track absolute session line numbers so the
-			// trace hook can cite '<repl>:N'. loc.Line carries
-			// startLine through unchanged; evalChunkInScope's
-			// report helper still keys batch-vs-interactive
-			// rendering off loc.File == "".
-			loc := sourceLoc{Line: startLine}
-
-			// Per-chunk SIGINT: a ^C at the prompt or
-			// during a long-running builtin cancels just
-			// this chunk's context, never the loop's.
-			// signal.NotifyContext installs a watcher
-			// scoped to chunkCtx; cancel() removes it
-			// before the next prompt so SIGINT delivered
-			// between prompts is observed by main.go's
-			// hard-exit watcher (a second ^C still kills
-			// the process). Foreground externals do not
-			// observe chunkCtx for cancellation (the
-			// inherit path uses exec.Command, not
-			// CommandContext) because ^C reaches the
-			// child directly through the TTY foreground
-			// group and the child handles it.
-			chunkCtx, cancelChunk := signal.NotifyContext(ctx, syscall.SIGINT)
-
-			env.ExecCommand = makeExecCommand(chunkCtx, cli, mgr, session, env, loc)
-			env.ExecBind = makeExecBind(chunkCtx, cli, mgr, session, env, loc)
-			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-			env.Trace = makeTraceHook(cli, session, loc)
-
-			chunkErr := shell.WithDeferScope(env, func() error {
-				return evalChunkInScope(cli, env, accumulated, "", loc)
-			})
-			cancelChunk()
-
-			if chunkErr == nil {
-				continue
-			}
-			if errors.Is(chunkErr, repl.ErrRequireFailed) {
-				return chunkErr
-			}
-			// Chunk errors (parse, runtime, guard halt) are
-			// already rendered by evalChunkInScope; swallow
-			// the repl.ErrScriptError sentinel so the next
-			// prompt is reached rather than tearing the
-			// session down. Context-cancellation errors
-			// from a ^C-interrupted builtin are similarly
-			// swallowed -- the user asked for the chunk
-			// to stop, and the next prompt is the answer.
-		}
-	})
-}
-
-// canonicaliseHistory, contState, and applyAlias moved to
-// repl/contstate.go as exported names.
-
-// replShellCmd handles shell-language and session commands by
-// looking up the first token in builtinRegistry and invoking
-// the matching handler. Returns (true, value, err) when the
-// registry has an entry for the command; (false, Value{}, nil)
-// means "not a shell builtin -- try the domain layer". The
-// value is the assignable primary for builtins that produce
-// one (exec, file, jq, kill, start, wait); it is the zero
-// Value for builtins that do not bind anything (alias, vars,
-// help, ...).
-func replShellCmd(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc sourceLoc, span shell.Span) (bool, shell.Value, error) {
-	if len(args) == 0 {
-		return false, shell.Value{}, nil
-	}
-	cmd := repl.ArgText(args[0])
-	b, ok := repl.Builtins()[cmd]
-	if !ok {
-		return false, shell.Value{}, nil
-	}
-	c := builtinCtx{
-		Ctx:  ctx,
-		CLI:  cli,
-		Mgr:  mgr,
-		Env:  env,
-		Cmd:  cmd,
-		Args: args[1:],
-		Pos:  loc,
-		Span: span,
-	}
-	val, err := b.Handler(c)
-	// Frame any non-typed error at the originating command's Span
-	// so the renderer can draw a frame regardless of which handler
-	// emitted it. Handlers that pinpoint a tighter Span themselves
-	// keep theirs (FrameAt short-circuits on existing *SyntaxError).
-	return true, val, shell.FrameAt(span, err)
-}
-
-// renderEnvelopeFailure and writeIndented moved to
-// repl/loop_helpers.go as RenderEnvelopeFailure and an
-// unexported writeIndented helper.
-
-// makeExecCommand bridges the evaluator's top-level CommandStmt
-// dispatch into the REPL pipeline. Output is visible on the CLI.
-// Alias expansion applies to the first argument before dispatch.
-// The returned Value is ignored by the evaluator for top-level
-// commands; it is still produced so shell builtins can compute
-// values that callers happen to observe in tests.
-//
-// Dispatch order: aliases expand first; registered shell builtins
-// (replShellCmd) handle their own names; the bpfman domain
-// dispatcher handles "bpfman ..."; an unrecognised first word
-// falls through to repl.RunExternal so 'ip link add ...' spawns the
-// system 'ip' without an explicit 'exec' prefix.
-func makeExecCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.Value, error) {
-	return func(args []shell.Arg, span shell.Span) (shell.Value, error) {
-		if len(args) == 0 {
-			return shell.Value{}, nil
-		}
-		args = repl.ApplyAlias(session, args)
-		handled, val, err := replShellCmd(ctx, cli, mgr, session, env, args, loc, span)
-		if err != nil {
-			return shell.Value{}, err
-		}
-		if handled {
-			return val, nil
-		}
-		first := repl.ArgText(args[0])
-		// Frame errors from the bpfman domain dispatcher and
-		// the subprocess fallthrough at the originating
-		// command's Span. The dispatcher and parser sites
-		// inside command.go return plain fmt.Errorf strings
-		// today; wrapping at the boundary covers all of them
-		// in one place. FrameAt short-circuits on existing
-		// *SyntaxError values so any tighter Span set
-		// downstream (e.g. via SpanErrorf) is preserved.
-		if first == "bpfman" {
-			val, err := replDispatch(ctx, cli, mgr, args)
-			if err != nil {
-				// bpfman dispatch failures are runtime
-				// outcomes on a well-formed construct: the
-				// statement parsed and reached the manager,
-				// the manager returned a fact. Cite, do
-				// not frame -- mirrors the policy applied
-				// to bare subprocess exit failures.
-				return val, &repl.RuntimeError{Msg: err.Error(), Span: span}
-			}
-			return val, nil
-		}
-		if domainNouns[first] {
-			return shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " "))
-		}
-		// Fallthrough: unknown first word runs as a subprocess.
-		// Resolve the executable on $PATH first so an unknown
-		// command reports as "name: command not found" rather
-		// than producing a downstream argument-flatten failure
-		// when one of the remaining arguments cannot be turned
-		// into a shell scalar.
-		if err := repl.ResolveCommandPath(first, span); err != nil {
-			return shell.Value{}, err
-		}
-		val, err = repl.RunExecStatement(ctx, cli, args, span)
-		return val, shell.FrameAt(span, err)
-	}
-}
-
-// makeExecBind bridges the evaluator's BindStmt dispatch into the
-// REPL pipeline. The hook returns a BindResult carrying the result
-// envelope (Rc) and the provider's primary result. Non-zero exit
-// and runtime errors map to Rc.OK: false; the script decides
-// whether to halt (guard) or inspect (let). Output is suppressed.
-//
-// Dispatch order on the right of '<-':
-//
-//   - 'exec NAME ARGS' is the explicit force-external escape
-//     hatch: NAME runs as a subprocess, primary is the rc
-//     envelope.
-//   - registered shell builtins (jq, file, ...) handle their own
-//     names; primary is the builtin's typed Value, or the rc
-//     envelope when the builtin produces no value.
-//   - 'bpfman ...' dispatches in-process; primary is the typed
-//     payload on success, zero Value on failure.
-//   - any other first word is treated as an unknown name and
-//     runs as a subprocess (the registry's implicit fallthrough).
-//     'ip link del foo', 'bpftool map dump id 5', etc. work
-//     without an explicit 'exec' prefix.
-func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc sourceLoc) func([]shell.Arg, shell.Span) (shell.BindResult, error) {
-	return func(args []shell.Arg, span shell.Span) (shell.BindResult, error) {
-		args = repl.ApplyAlias(session, args)
-		if len(args) == 0 {
-			return shell.BindResult{}, shell.SpanErrorf(span, "empty command form on '<-' RHS")
-		}
-
-		if repl.ArgText(args[0]) == "exec" {
-			return runExternalAsBind(ctx, args[1:])
-		}
-
-		// 'wait $job' is special-cased so the bind's Rc
-		// reflects the JOB's outcome, not merely "wait
-		// succeeded". 'guard r <- wait $job' must halt when
-		// the background process exited non-zero (or fail
-		// to launch); a not-ok job is the kind of failure
-		// the script wanted to gate on.
-		if repl.ArgText(args[0]) == "wait" {
-			env, err := replWait(ctx, args[1:])
-			if err != nil {
-				return shell.BindResult{}, err
-			}
-			return shell.BindResult{Rc: env, Primary: shell.ValueFromEnvelope(env)}, nil
-		}
-
-		// 'net exec $pair CMD...' captures into a real
-		// envelope so the bind's Rc reflects the netns
-		// command's actual outcome, not merely "the handler
-		// returned without an error". Mirrors the wait
-		// special case so 'guard _ <- net exec $pair ping'
-		// halts on a non-zero ping exactly the way 'guard _
-		// <- ip netns exec NS ping' does in the
-		// pre-migration scripts.
-		if repl.ArgText(args[0]) == "net" && len(args) >= 2 && repl.ArgText(args[1]) == "exec" {
-			env, err := replNetExec(ctx, args[2:])
-			if err != nil {
-				return shell.BindResult{}, err
-			}
-			return shell.BindResult{Rc: env, Primary: shell.ValueFromEnvelope(env)}, nil
-		}
-
-		quiet := cli.WithDiscardOutput()
-		handled, val, err := replShellCmd(ctx, quiet, mgr, session, env, args, loc, span)
-		if handled {
-			if err != nil {
-				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
-				return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
-			}
-			rc := shell.Envelope{OK: true, Code: 0}
-			primary := val
-			if primary.IsNil() {
-				primary = shell.ValueFromEnvelope(rc)
-			}
-			return shell.BindResult{Rc: rc, Primary: primary}, nil
-		}
-
-		first := repl.ArgText(args[0])
-		if first == "bpfman" {
-			val, err := replDispatch(ctx, quiet, mgr, args)
-			if err != nil {
-				rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
-				return shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
-			}
-			rc := shell.Envelope{OK: true, Code: 0}
-			return shell.BindResult{Rc: rc, Primary: val}, nil
-		}
-		if domainNouns[first] {
-			rc := shell.Envelope{
-				OK:     false,
-				Code:   1,
-				Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " ")),
-			}
-			return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
-		}
-		// Fallthrough: unknown first word runs as a subprocess.
-		return runExternalAsBind(ctx, args)
-	}
-}
-
-// runExternalAsBind runs args as a subprocess and packages the
-// outcome as a BindResult. A launch failure (command not found,
-// permission denied) returns a Go error; a non-zero exit is
-// captured into the rc envelope so '<-' callers can inspect it.
-func runExternalAsBind(ctx context.Context, args []shell.Arg) (shell.BindResult, error) {
-	cap, err := repl.RunExternal(ctx, args)
-	if err != nil {
-		return shell.BindResult{}, err
-	}
-	rc := shell.Envelope{
-		OK:     cap.ExitCode == 0,
-		Code:   cap.ExitCode,
-		Stdout: cap.Stdout,
-		Stderr: cap.Stderr,
-	}
-	return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
-}
-
-// makeTraceHook builds the Env.Trace closure for one chunk. The
-// closure consults session.TraceEnabled() on every invocation so
-// `trace on` / `trace off` can toggle tracing mid-script without
-// rebuilding the Env. Output goes to the cli's stderr with a `+ `
-// prefix and a `file:line:` citation; interactive sessions (file
-// unset) cite as `<repl>:N` so a long session's trace still
-// resolves to a specific input chunk.
-func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc sourceLoc) func(int, string) {
-	return func(line int, rendered string) {
-		if !session.TraceEnabled() {
-			return
-		}
-		shift := loc.Line - 1
-		abs := line + shift
-		file := loc.File
-		if file == "" {
-			file = "<repl>"
-		}
-		_ = cli.PrintErrf("+ %s:%d: %s\n", file, abs, rendered)
-	}
-}
-
-// repl.ArgText / repl.ArgTexts moved to repl.ArgText / repl.ArgTexts.
-
-// replSourcingKey marks contexts inside a sourced file so the
-// source builtin can refuse nested invocations.
-type replContextKey int
-
-const replSourcingKey replContextKey = iota
-
-// EnsureInteractiveBaseDir, WithInteractiveBaseDir, and
-// InteractiveBaseDir moved to repl/source_base.go.
-
-// replSource reads commands from a file and executes each line in
-// the caller's session. Source is shaped like a def body, not a
-// fresh script: it inherits the caller's session (vars, defs,
-// aliases, jobs) and opens its own defer scope so 'defer
-// cleanup' near the top of a sourced file fires when source
-// returns, but it does not open a new job scope. Jobs started
-// in the sourced file therefore live in the caller's job
-// scope: 'jobs' at the prompt sees them, 'wait $p' / 'kill $p'
-// work on $p that the file bound, and the caller's leak policy
-// applies on the caller's scope-exit. That matches the bash
-// mental model the user reaches for when they type 'source'
-// and the principle of least astonishment that anything bound
-// in the file is observable in the caller after the call
-// returns.
-//
-// Defers stay file-scoped because they are statement-level
-// cleanup ('when this completes'), and the natural completion
-// boundary for a sourced file is 'when source returns'. If
-// defers also inherited the caller's scope, a library file's
-// 'defer cleanup' would silently accumulate in the caller and
-// fire at some unknowable later moment; treating the file as
-// the cleanup boundary is the predictable answer.
-//
-// Nested source commands are rejected to prevent unbounded
-// recursion.
-func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *shell.Env, args []string) error {
-	if ctx.Value(replSourcingKey) != nil {
-		return fmt.Errorf("source cannot be used inside a sourced file")
-	}
-	if len(args) != 1 {
-		return fmt.Errorf("source requires exactly one file argument")
-	}
-
-	lr, err := repl.OpenScriptReader(args[0])
-	if err != nil {
-		return err
-	}
-	defer lr.Close()
-
-	ctx = context.WithValue(ctx, replSourcingKey, true)
-	file := args[0]
-	session := env.Session
-
-	// Borrow the caller's env. Save the per-chunk dispatch
-	// fields and the defer-failure renderer so we can restore
-	// them when source returns; everything else (Session,
-	// PrintResult, HandleJobLeak, jobs registry) flows through
-	// unchanged so the caller's policy applies.
-	savedExecCommand := env.ExecCommand
-	savedExecBind := env.ExecBind
-	savedExecAssert := env.ExecAssertStmt
-	savedRenderDefer := env.RenderDeferFailure
-	savedTrace := env.Trace
-	defer func() {
-		env.ExecCommand = savedExecCommand
-		env.ExecBind = savedExecBind
-		env.ExecAssertStmt = savedExecAssert
-		env.RenderDeferFailure = savedRenderDefer
-		env.Trace = savedTrace
-	}()
-	env.RenderDeferFailure = func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
-		repl.RenderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
-	}
-
-	return shell.WithDeferScope(env, func() error {
-		// Accumulate physical lines into logical statements,
-		// mirroring the continuation logic that replLoop uses
-		// for the interactive REPL and for 'bpfman-shell
-		// FILE'. Without this, multi-line forms in a sourced
-		// file (def / if / foreach / retry blocks, command
-		// substitutions that span lines) would each fail to
-		// parse on their first line because the open brace
-		// or bracket has not yet been closed.
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs repl.ContState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == io.EOF {
-					if buf.Len() > 0 {
-						return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
-					}
-					return nil
-				}
-				return err
-			}
-			lineNo++
-
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.Advance(input)
-
-			if cs.Open() {
-				continue
-			}
-
-			accumulated := buf.String()
-			buf.Reset()
-			cs = repl.ContState{}
-
-			loc := sourceLoc{File: file, Line: startLine}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc)
-			env.ExecAssertStmt = makeExecAssertStmt(cli, session, loc)
-			env.Trace = makeTraceHook(cli, session, loc)
-			if err := evalChunkInScope(cli, env, accumulated, "", loc); err != nil {
-				return err
-			}
-		}
-	})
-}
-
 // domainNouns is the set of top-level words that parseCommand
-// recognises after a leading "bpfman". It exists so replDispatch can
-// distinguish "forgot the bpfman prefix" (suggest prefixing) from
-// "this word is not a command at all" (just say unknown).
+// recognises after a leading "bpfman". The bpfman bridge uses it
+// to distinguish "forgot the bpfman prefix" (suggest prefixing)
+// from "this word is not a command at all" (run as external).
 var domainNouns = map[string]bool{
 	"program":    true,
 	"show":       true,
@@ -952,13 +111,89 @@ var domainNouns = map[string]bool{
 	"audit":      true,
 }
 
-// replDispatch dispatches a "bpfman ..." command into the in-process
-// domain pipeline. The caller has already verified that the first
-// argument is "bpfman" (registered-name routing happens at the
-// makeExecCommand / makeExecBind level, before this function is
-// reached). parseCommand routes arguments to the per-command parser
-// and returns a typed Command node; execCommand dispatches via a
-// type-switch.
+// bpfmanFallback is the statement-position fallback the repl
+// loop calls when no registered builtin matches the first
+// token. It owns the "bpfman ..." dispatch and the
+// "forgot the bpfman prefix" diagnostic; unknown first words
+// fall through to external execution (handled == false).
+func bpfmanFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg, loc repl.SourceLoc, span shell.Span) (bool, shell.Value, error) {
+	if len(args) == 0 {
+		return false, shell.Value{}, nil
+	}
+	first := repl.ArgText(args[0])
+	if first == "bpfman" {
+		val, err := replDispatch(ctx, cli, mgr, args)
+		if err != nil {
+			// bpfman dispatch failures are runtime outcomes
+			// on a well-formed construct: cite, do not frame.
+			return true, val, &repl.RuntimeError{Msg: err.Error(), Span: span}
+		}
+		return true, val, nil
+	}
+	if domainNouns[first] {
+		return true, shell.Value{}, shell.SpanErrorf(span, "domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " "))
+	}
+	return false, shell.Value{}, nil
+}
+
+// bpfmanBindFallback is the bind-position fallback the repl
+// loop calls when no registered builtin matches. It owns the
+// wait and net-exec fast paths (which need the bind's Rc to
+// reflect the captured inner outcome), the bpfman dispatch
+// bridge, and the "forgot the bpfman prefix" diagnostic.
+// Unknown first words fall through to external execution.
+func bpfmanBindFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, args []shell.Arg, loc repl.SourceLoc, span shell.Span) (bool, shell.BindResult, error) {
+	if len(args) == 0 {
+		return false, shell.BindResult{}, nil
+	}
+	first := repl.ArgText(args[0])
+
+	// 'wait $job' is special-cased so the bind's Rc reflects
+	// the JOB's outcome, not merely "wait succeeded".
+	if first == "wait" {
+		envEnv, err := replWait(ctx, args[1:])
+		if err != nil {
+			return true, shell.BindResult{}, err
+		}
+		return true, shell.BindResult{Rc: envEnv, Primary: shell.ValueFromEnvelope(envEnv)}, nil
+	}
+
+	// 'net exec $pair CMD...' captures into a real envelope
+	// so the bind's Rc reflects the netns command's actual
+	// outcome.
+	if first == "net" && len(args) >= 2 && repl.ArgText(args[1]) == "exec" {
+		envEnv, err := replNetExec(ctx, args[2:])
+		if err != nil {
+			return true, shell.BindResult{}, err
+		}
+		return true, shell.BindResult{Rc: envEnv, Primary: shell.ValueFromEnvelope(envEnv)}, nil
+	}
+
+	if first == "bpfman" {
+		quiet := cli.WithDiscardOutput()
+		val, err := replDispatch(ctx, quiet, mgr, args)
+		if err != nil {
+			rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			return true, shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
+		}
+		rc := shell.Envelope{OK: true, Code: 0}
+		return true, shell.BindResult{Rc: rc, Primary: val}, nil
+	}
+	if domainNouns[first] {
+		rc := shell.Envelope{
+			OK:     false,
+			Code:   1,
+			Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " ")),
+		}
+		return true, shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
+	}
+	return false, shell.BindResult{}, nil
+}
+
+// replDispatch dispatches a "bpfman ..." command into the
+// in-process domain pipeline. parseCommand routes arguments to
+// the per-command parser and returns a typed Command node;
+// execCommand dispatches via a type-switch.
 func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, args []shell.Arg) (shell.Value, error) {
 	if len(args) == 0 || repl.ArgText(args[0]) != "bpfman" {
 		return shell.Value{}, fmt.Errorf("expected a command starting with \"bpfman\", got %v", repl.ArgTexts(args))
@@ -974,11 +209,7 @@ func replDispatch(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 }
 
 // handleHelp renders the overview (no args) or the detail for
-// one named builtin or keyword (one arg). The overview composes
-// a hand-curated 'Domain commands' section with auto-rendered
-// sections derived from builtinRegistry (grouped by Category,
-// alphabetised within group) and from keywordRegistry. Adding
-// a builtin or keyword updates the help automatically.
+// one named builtin or keyword (one arg).
 func handleHelp(c builtinCtx) (shell.Value, error) {
 	args := repl.ArgTexts(c.Args)
 	switch len(args) {
@@ -1012,9 +243,7 @@ func renderHelpOverview() string {
 }
 
 // domainCommandsBlock is the hand-curated top section of the
-// help overview. Phrased so multi-id arguments use plural
-// forms (<ids>) instead of trailing ellipsis to keep the
-// column-aligned table readable as a single scan.
+// help overview.
 const domainCommandsBlock = `Domain commands (require "bpfman" prefix):
 
   Program management:
@@ -1044,28 +273,11 @@ const domainCommandsBlock = `Domain commands (require "bpfman" prefix):
 
 `
 
-// helpUsageWrapWidth is the soft cap on Usage length before we
-// stop trying to share a column with the Summary and wrap the
-// Summary onto its own indented line. Multi-form Usages like
-// 'let X = EXPR  |  let X <- COMMAND  |  let (rc, X) <- COMMAND'
-// would otherwise force a column that wastes space on every
-// short row in the section.
 const helpUsageWrapWidth = 48
-
-// helpRowIndent is the left margin for every help row, applied
-// uniformly so the section bodies share a vertical alignment
-// regardless of how wide their Usage column ends up being.
 const helpRowIndent = "  "
 
-// writeAlignedRows emits Usage / Summary rows with column-
-// aligned spacing computed dynamically by text/tabwriter so
-// adding a new entry never requires re-tuning a hand-picked
-// column width. Rows whose Usage exceeds helpUsageWrapWidth
-// wrap the Summary onto an indented continuation line so they
-// do not stretch the column for the rest of the section. The
-// tabwriter is flushed and re-created around each wrapped row
-// so subsequent narrow rows realign to their own widest
-// neighbour rather than the wide outlier.
+// writeAlignedRows emits Usage / Summary rows with column-aligned
+// spacing computed dynamically by text/tabwriter.
 func writeAlignedRows(b *strings.Builder, rows [][2]string) {
 	tw := newHelpTabwriter(b)
 	for _, row := range rows {
@@ -1081,21 +293,12 @@ func writeAlignedRows(b *strings.Builder, rows [][2]string) {
 	_ = tw.Flush()
 }
 
-// newHelpTabwriter constructs the tabwriter used by every help
-// section: zero minwidth (the column floats to the longest
-// Usage), two-space padding between Usage and Summary, no
-// special flags. Keeping this in one place means the help
-// sections render consistently and a future tweak (e.g. a
-// minimum gap) lands in one spot.
+// newHelpTabwriter constructs the tabwriter used by every help section.
 func newHelpTabwriter(b *strings.Builder) *tabwriter.Writer {
 	return tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
 }
 
-// writeBuiltinCategory emits one section of the overview. The
-// section header comes from categoryLabels; the body lists
-// every builtin with that Category, alphabetised by name. A
-// category with no entries is skipped silently so an unused
-// constant does not produce an empty header.
+// writeBuiltinCategory emits one section of the overview.
 func writeBuiltinCategory(b *strings.Builder, cat string) {
 	var entries []builtin
 	for _, bi := range repl.Builtins() {
@@ -1117,9 +320,6 @@ func writeBuiltinCategory(b *strings.Builder, cat string) {
 }
 
 // writeKeywordSection emits the parser-level keyword section.
-// Keywords are listed in alphabetical order; their Usage often
-// shows multiple variants separated by '|' so the wrap path
-// fires regularly here.
 func writeKeywordSection(b *strings.Builder) {
 	if len(repl.Keywords()) == 0 {
 		return
@@ -1137,8 +337,6 @@ func writeKeywordSection(b *strings.Builder) {
 
 // renderHelpDetail looks name up in the builtin registry, then
 // the keyword registry, and renders Usage / Summary / Detail.
-// Returns ok=false when the name is in neither registry so the
-// caller can produce a useful error.
 func renderHelpDetail(name string) (string, bool) {
 	if bi, ok := repl.Builtins()[name]; ok {
 		return formatDetail(bi.Name, bi.Usage, bi.Summary, bi.Detail), true
@@ -1149,10 +347,7 @@ func renderHelpDetail(name string) (string, bool) {
 	return "", false
 }
 
-// formatDetail renders the detail block for one entry. Empty
-// fields drop their lines so a builtin without Detail just
-// shows Usage and Summary; a keyword without Summary shows
-// only Usage and Detail.
+// formatDetail renders the detail block for one entry.
 func formatDetail(name, usage, summary, detail string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", name)
@@ -1172,10 +367,7 @@ func formatDetail(name, usage, summary, detail string) string {
 }
 
 // replHistoryPath returns the path to the REPL history file,
-// following the XDG Base Directory specification. The file is stored
-// at $XDG_STATE_HOME/bpfman/repl-history, defaulting to
-// $HOME/.local/state/bpfman/repl-history when XDG_STATE_HOME is
-// unset. The parent directory is created if it does not exist.
+// following the XDG Base Directory specification.
 func replHistoryPath() (string, error) {
 	stateHome := os.Getenv("XDG_STATE_HOME")
 	if stateHome == "" {
@@ -1195,4 +387,23 @@ func replHistoryPath() (string, error) {
 // handleVersion prints version information.
 func handleVersion(c builtinCtx) (shell.Value, error) {
 	return shell.Value{}, c.CLI.PrintOut(version.Get().Long())
+}
+
+// replLoop is a thin test seam wrapping repl.Loop with the
+// bpfman-side fallbacks pre-wired. The full bpfman-shell binary
+// goes through Run; tests that want to drive the loop directly
+// over a string source call this wrapper.
+func replLoop(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, lr repl.LineReader, session *shell.Session, file string, interactive, noCheck bool) error {
+	return repl.Loop(ctx, repl.Config{
+		CLI:            cli,
+		Mgr:            mgr,
+		LineReader:     lr,
+		Session:        session,
+		File:           file,
+		Interactive:    interactive,
+		NoCheck:        noCheck,
+		Fallback:       bpfmanFallback,
+		BindFallback:   bpfmanBindFallback,
+		MakeAssertStmt: makeExecAssertStmt,
+	})
 }

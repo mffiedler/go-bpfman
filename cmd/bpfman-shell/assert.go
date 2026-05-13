@@ -326,7 +326,7 @@ func assertNil(session *shell.Session, verbSpan shell.Span, args []string) (asse
 // and the domain dispatch layer. It is used by assertion verbs (ok,
 // fail) to test whether a sub-command succeeds or fails.
 func runCommand(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, args []shell.Arg) error {
-	handled, _, err := replShellCmd(ctx, cli, mgr, session, nil, args, sourceLoc{}, shell.Span{})
+	handled, _, err := repl.Dispatch(ctx, cli, mgr, session, nil, args, repl.SourceLoc{}, shell.Span{})
 	if err != nil {
 		return err
 	}
