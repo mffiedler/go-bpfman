@@ -185,6 +185,108 @@ func Loop(ctx context.Context, cfg Config) error {
 	return scriptLoop(ctx, cfg)
 }
 
+// chunkLoopPolicy parameterises the read-line / accumulate /
+// dispatch-balanced-chunk state machine. The shared core
+// (runChunkLoop) handles the line reading, ContState tracking,
+// and chunk-boundary detection; the policy callbacks supply the
+// mode-specific behaviour for prompt switching, chunk evaluation,
+// and end-of-input handling.
+type chunkLoopPolicy struct {
+	// onContinuation fires when the accumulated buffer is still
+	// mid-form after the latest line (an unclosed brace, paren,
+	// quote, comment, or backslash continuation). Used by the
+	// interactive mode to swap to its continuation prompt; the
+	// script mode leaves it nil.
+	onContinuation func()
+
+	// onChunk fires when a balanced chunk has been assembled.
+	// accumulated is the chunk text; startLine is the 1-based
+	// absolute line of the first line of the chunk. Returning a
+	// non-nil error aborts the loop; the script mode propagates
+	// everything while the interactive mode swallows everything
+	// except ErrRequireFailed.
+	onChunk func(accumulated string, startLine int) error
+
+	// onEOF fires when the line reader signals io.EOF or
+	// ErrInterrupt. bufLen is the size of the still-buffered
+	// (unterminated) chunk -- a non-zero value means we ran out
+	// of input mid-form. startLine is the first line of that
+	// unterminated chunk. The script mode treats unterminated
+	// input as a hard failure; the interactive mode logs and
+	// returns nil so the session exits cleanly on ^D.
+	onEOF func(startLine, bufLen int) error
+}
+
+// runChunkLoop is the shared read-line / accumulate /
+// dispatch-balanced-chunk loop. ContState tracks whether the
+// accumulated buffer still has an open block, quote, comment, or
+// backslash continuation; the policy callbacks customise what
+// happens when a line keeps the buffer open, when a balanced
+// chunk is assembled, and when the line reader signals end of
+// input.
+func runChunkLoop(lr LineReader, p chunkLoopPolicy) error {
+	var lineNo int
+	var buf strings.Builder
+	var startLine int
+	var cs ContState
+	for {
+		input, err := lr.Readline()
+		if err != nil {
+			if err == io.EOF || err == ErrInterrupt {
+				return p.onEOF(startLine, buf.Len())
+			}
+			return err
+		}
+		lineNo++
+		if buf.Len() == 0 {
+			startLine = lineNo
+		} else {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(input)
+		cs.Advance(input)
+		if cs.Open() {
+			if p.onContinuation != nil {
+				p.onContinuation()
+			}
+			continue
+		}
+		accumulated := buf.String()
+		buf.Reset()
+		cs = ContState{}
+		if err := p.onChunk(accumulated, startLine); err != nil {
+			return err
+		}
+	}
+}
+
+// wireEnvForChunk installs the per-chunk Env callbacks the
+// evaluator needs: command dispatch, bind dispatch, the
+// assert-statement evaluator, and the trace hook. The signal
+// context determines whether SIGINT delivered during the chunk
+// cancels just this chunk (interactive mode passes a per-chunk
+// context) or the whole loop (script mode passes the outer
+// context).
+func wireEnvForChunk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, session *shell.Session, env *shell.Env, loc SourceLoc, hooks SourceHooks) {
+	env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
+	env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
+	if hooks.MakeAssertStmt != nil {
+		env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session, loc)
+	}
+	env.Trace = makeTraceHook(cli, session, loc)
+}
+
+// configHooks extracts the SourceHooks triple from the loop's
+// Config so the same env-wiring helper serves both the loop and
+// the `source` builtin path.
+func configHooks(cfg Config) SourceHooks {
+	return SourceHooks{
+		Fallback:       cfg.Fallback,
+		BindFallback:   cfg.BindFallback,
+		MakeAssertStmt: cfg.MakeAssertStmt,
+	}
+}
+
 // scriptLoop drives chunk-by-chunk evaluation in script mode but
 // wraps the entire chunk loop in a single WithJobScope outside a
 // single WithDeferScope. Each balanced statement is parsed and
@@ -224,55 +326,24 @@ func scriptLoop(ctx context.Context, cfg Config) error {
 		},
 		HandleJobLeak: StrictJobLeakHandler(cli, session),
 	}
+	hooks := configHooks(cfg)
 	return shell.WithJobScope(env, func() error {
 		return shell.WithDeferScope(env, func() error {
-			var lineNo int
-			var buf strings.Builder
-			var startLine int
-			var cs ContState
-			for {
-				input, err := lr.Readline()
-				if err != nil {
-					if err == io.EOF || err == ErrInterrupt {
-						if buf.Len() > 0 {
-							loc := SourceLoc{File: file, Line: startLine}
-							_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
-							return ErrScriptError
-						}
-						return nil
+			return runChunkLoop(lr, chunkLoopPolicy{
+				onChunk: func(accumulated string, startLine int) error {
+					loc := SourceLoc{File: file, Line: startLine}
+					wireEnvForChunk(ctx, cli, cfg.Mgr, session, env, loc, hooks)
+					return evalChunkInScope(cli, env, accumulated, src, loc)
+				},
+				onEOF: func(startLine, bufLen int) error {
+					if bufLen > 0 {
+						loc := SourceLoc{File: file, Line: startLine}
+						_ = cli.PrintErrf("%serror: unterminated block at end of input\n", loc)
+						return ErrScriptError
 					}
-					return err
-				}
-				lineNo++
-
-				if buf.Len() == 0 {
-					startLine = lineNo
-				}
-				if buf.Len() > 0 {
-					buf.WriteByte('\n')
-				}
-				buf.WriteString(input)
-				cs.Advance(input)
-
-				if cs.Open() {
-					continue
-				}
-
-				accumulated := buf.String()
-				buf.Reset()
-				cs = ContState{}
-
-				loc := SourceLoc{File: file, Line: startLine}
-				env.ExecCommand = makeExecCommand(ctx, cli, cfg.Mgr, session, env, loc, cfg.Fallback)
-				env.ExecBind = makeExecBind(ctx, cli, cfg.Mgr, session, env, loc, cfg.BindFallback)
-				if cfg.MakeAssertStmt != nil {
-					env.ExecAssertStmt = cfg.MakeAssertStmt(cli, session, loc)
-				}
-				env.Trace = makeTraceHook(cli, session, loc)
-				if err := evalChunkInScope(cli, env, accumulated, src, loc); err != nil {
-					return err
-				}
-			}
+					return nil
+				},
+			})
 		})
 	})
 }
@@ -428,72 +499,36 @@ func interactiveLoop(ctx context.Context, cfg Config) error {
 		}
 	}
 
+	hooks := configHooks(cfg)
 	return shell.WithJobScope(env, func() error {
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs ContState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == ErrInterrupt || err == io.EOF {
-					if buf.Len() > 0 {
-						_ = cli.PrintErrf("error: unterminated block at end of input\n")
+		return runChunkLoop(lr, chunkLoopPolicy{
+			onContinuation: func() { setPrompt(promptContinue) },
+			onChunk: func(accumulated string, startLine int) error {
+				setPrompt(promptPrimary)
+				if hw, ok := lr.(HistoryWriter); ok {
+					if entry := CanonicaliseHistory(accumulated); entry != "" {
+						_ = hw.SaveHistory(entry)
 					}
-					return nil
 				}
-				return err
-			}
-			lineNo++
-
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.Advance(input)
-
-			if cs.Open() {
-				setPrompt(promptContinue)
-				continue
-			}
-
-			accumulated := buf.String()
-			buf.Reset()
-			cs = ContState{}
-			setPrompt(promptPrimary)
-
-			if hw, ok := lr.(HistoryWriter); ok {
-				if entry := CanonicaliseHistory(accumulated); entry != "" {
-					_ = hw.SaveHistory(entry)
+				loc := SourceLoc{Line: startLine}
+				chunkCtx, cancelChunk := signal.NotifyContext(ctx, syscall.SIGINT)
+				defer cancelChunk()
+				wireEnvForChunk(chunkCtx, cli, cfg.Mgr, session, env, loc, hooks)
+				chunkErr := shell.WithDeferScope(env, func() error {
+					return evalChunkInScope(cli, env, accumulated, "", loc)
+				})
+				if errors.Is(chunkErr, ErrRequireFailed) {
+					return chunkErr
 				}
-			}
-
-			loc := SourceLoc{Line: startLine}
-
-			chunkCtx, cancelChunk := signal.NotifyContext(ctx, syscall.SIGINT)
-
-			env.ExecCommand = makeExecCommand(chunkCtx, cli, cfg.Mgr, session, env, loc, cfg.Fallback)
-			env.ExecBind = makeExecBind(chunkCtx, cli, cfg.Mgr, session, env, loc, cfg.BindFallback)
-			if cfg.MakeAssertStmt != nil {
-				env.ExecAssertStmt = cfg.MakeAssertStmt(cli, session, loc)
-			}
-			env.Trace = makeTraceHook(cli, session, loc)
-
-			chunkErr := shell.WithDeferScope(env, func() error {
-				return evalChunkInScope(cli, env, accumulated, "", loc)
-			})
-			cancelChunk()
-
-			if chunkErr == nil {
-				continue
-			}
-			if errors.Is(chunkErr, ErrRequireFailed) {
-				return chunkErr
-			}
-		}
+				return nil
+			},
+			onEOF: func(_, bufLen int) error {
+				if bufLen > 0 {
+					_ = cli.PrintErrf("error: unterminated block at end of input\n")
+				}
+				return nil
+			},
+		})
 	})
 }
 
@@ -688,50 +723,18 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 	}
 
 	return shell.WithDeferScope(env, func() error {
-		var lineNo int
-		var buf strings.Builder
-		var startLine int
-		var cs ContState
-		for {
-			input, err := lr.Readline()
-			if err != nil {
-				if err == io.EOF {
-					if buf.Len() > 0 {
-						return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
-					}
-					return nil
+		return runChunkLoop(lr, chunkLoopPolicy{
+			onChunk: func(accumulated string, startLine int) error {
+				loc := SourceLoc{File: file, Line: startLine}
+				wireEnvForChunk(ctx, cli, mgr, session, env, loc, hooks)
+				return evalChunkInScope(cli, env, accumulated, "", loc)
+			},
+			onEOF: func(startLine, bufLen int) error {
+				if bufLen > 0 {
+					return fmt.Errorf("source %q: unterminated block at end of file (started at line %d)", file, startLine)
 				}
-				return err
-			}
-			lineNo++
-
-			if buf.Len() == 0 {
-				startLine = lineNo
-			}
-			if buf.Len() > 0 {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(input)
-			cs.Advance(input)
-
-			if cs.Open() {
-				continue
-			}
-
-			accumulated := buf.String()
-			buf.Reset()
-			cs = ContState{}
-
-			loc := SourceLoc{File: file, Line: startLine}
-			env.ExecCommand = makeExecCommand(ctx, cli, mgr, session, env, loc, hooks.Fallback)
-			env.ExecBind = makeExecBind(ctx, cli, mgr, session, env, loc, hooks.BindFallback)
-			if hooks.MakeAssertStmt != nil {
-				env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session, loc)
-			}
-			env.Trace = makeTraceHook(cli, session, loc)
-			if err := evalChunkInScope(cli, env, accumulated, "", loc); err != nil {
-				return err
-			}
-		}
+				return nil
+			},
+		})
 	})
 }
