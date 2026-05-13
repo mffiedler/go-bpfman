@@ -285,3 +285,24 @@ func KindShape(k OriginKind) Shape {
 	}
 	return Shape{Sealed: false, Kind: k}
 }
+
+// CloneShape returns a deep copy of s so that mutations to the
+// returned value's Fields map or Elem pointer do not leak back
+// into any registry entry s may have come from. Caller-side
+// composition (e.g. overlaying a discriminated subfield onto a
+// generic kind Shape) needs a fresh starting point that aliases
+// nothing.
+func CloneShape(s Shape) Shape {
+	out := Shape{Sealed: s.Sealed, Kind: s.Kind}
+	if s.Fields != nil {
+		out.Fields = make(map[string]Shape, len(s.Fields))
+		for k, v := range s.Fields {
+			out.Fields[k] = CloneShape(v)
+		}
+	}
+	if s.Elem != nil {
+		e := CloneShape(*s.Elem)
+		out.Elem = &e
+	}
+	return out
+}

@@ -40,41 +40,9 @@ var typeToOriginKind = map[reflect.Type]shell.OriginKind{
 	reflect.TypeOf(bpfman.Link{}):    shell.OriginLink,
 }
 
-// linkDetailsTypes maps `bpfman link attach <kind>` keywords to
-// their concrete LinkDetails implementer types. Eight entries
-// matching the eight attach subcommands the CLI exposes
-// (xdp/tc/tcx/tracepoint/kprobe/uprobe/fentry/fexit). The init
-// code reflects each into a Shape and registers it through
-// RegisterLinkDetailsShape so the static checker can validate
-// record.details paths in scripts that bind a link from a
-// kind-specific attach.
-var linkDetailsTypes = map[string]reflect.Type{
-	"xdp":        reflect.TypeOf(bpfman.XDPDetails{}),
-	"tc":         reflect.TypeOf(bpfman.TCDetails{}),
-	"tcx":        reflect.TypeOf(bpfman.TCXDetails{}),
-	"tracepoint": reflect.TypeOf(bpfman.TracepointDetails{}),
-	"kprobe":     reflect.TypeOf(bpfman.KprobeDetails{}),
-	"uprobe":     reflect.TypeOf(bpfman.UprobeDetails{}),
-	"fentry":     reflect.TypeOf(bpfman.FentryDetails{}),
-	"fexit":      reflect.TypeOf(bpfman.FexitDetails{}),
-}
-
 func init() {
 	shell.RegisterShape(shell.OriginProgram, shapeFromType(reflect.TypeOf(bpfman.Program{}), shell.OriginProgram))
 	shell.RegisterShape(shell.OriginLink, shapeFromType(reflect.TypeOf(bpfman.Link{}), shell.OriginLink))
-
-	// Per-kind Link details shapes. The Link type's Details
-	// field is a LinkDetails interface, so reflection on Link
-	// alone leaves record.details unsealed and field-typo
-	// checks bail there. Registering each concrete details
-	// struct against its `bpfman link attach <kind>` keyword
-	// lets the bind-shape handler in shell/check.go compose a
-	// Link Shape with record.details replaced by the
-	// reflection-derived sealed Shape, so deep typos surface
-	// at --check time.
-	for kind, t := range linkDetailsTypes {
-		shell.RegisterLinkDetailsShape(kind, shapeFromType(t, shell.OriginUnknown))
-	}
 
 	// Pure builtins whose handlers live in this command. Tag
 	// each entry with its arity (number of primary args the

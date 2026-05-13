@@ -21,43 +21,54 @@ func init() {
 	RegisterBindShape("wait", StaticBindShape(KindShape(OriginEnvelope)))
 	RegisterBindShape("exec", StaticBindShape(KindShape(OriginEnvelope)))
 	RegisterBindShape("file", StaticBindShape(Shape{Sealed: false, Kind: OriginUnknown}))
+	RegisterBindShape("bpfman", stubBpfmanBindShape)
+}
 
-	// Stub Link / details shapes for the bind-shape kind-aware
-	// composition tests. The production wiring lives in
-	// cmd/bpfman-shell/kindshapes.go where reflection over
-	// bpfman.Link and the LinkDetails implementers produces the
-	// real Shapes; the shell test binary cannot import that
-	// package without inducing a cycle, so a minimal sealed
-	// shape with just the field names the tests assert on
-	// stands in for it.
-	RegisterShape(OriginLink, Shape{
-		Sealed: true,
-		Kind:   OriginLink,
-		Fields: map[string]Shape{
-			"record": {
+// stubBpfmanBindShape mirrors the production registration in
+// cmd/bpfman-shell/bindshapes.go closely enough to keep shell-
+// package tests honest. The kind-aware specialisation for
+// `bpfman link attach <kind>` is deliberately omitted: shell-
+// package tests do not probe record.details, and the cmd-side
+// test binary covers that path with the real reflection-derived
+// shapes.
+func stubBpfmanBindShape(args []Expr) Shape {
+	if len(args) < 2 {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	noun, ok := args[0].(*LiteralExpr)
+	if !ok || noun.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	verb, ok := args[1].(*LiteralExpr)
+	if !ok || verb.Quoted {
+		return Shape{Sealed: false, Kind: OriginUnknown}
+	}
+	switch noun.Text {
+	case "program":
+		switch verb.Text {
+		case "load":
+			elem := KindShape(OriginProgram)
+			return Shape{
 				Sealed: true,
 				Kind:   OriginUnknown,
 				Fields: map[string]Shape{
-					"id":      {Sealed: true, Kind: OriginScalar},
-					"kind":    {Sealed: true, Kind: OriginScalar},
-					"details": {Sealed: false, Kind: OriginUnknown},
+					"programs": {Sealed: false, Kind: OriginUnknown, Elem: &elem},
 				},
-			},
-			"status": {
-				Sealed: true,
-				Kind:   OriginUnknown,
-				Fields: map[string]Shape{
-					"kernel_seen": {Sealed: true, Kind: OriginBool},
-				},
-			},
-		},
-	})
-	RegisterLinkDetailsShape("tc", Shape{
-		Sealed: true,
-		Kind:   OriginUnknown,
-		Fields: map[string]Shape{
-			"priority": {Sealed: true, Kind: OriginScalar},
-			"position": {Sealed: true, Kind: OriginScalar},
-		},
-	})
+			}
+		case "get":
+			return KindShape(OriginProgram)
+		case "list":
+			elem := KindShape(OriginProgram)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	case "link":
+		switch verb.Text {
+		case "attach", "get":
+			return KindShape(OriginLink)
+		case "list":
+			elem := KindShape(OriginLink)
+			return Shape{Sealed: false, Kind: OriginUnknown, Elem: &elem}
+		}
+	}
+	return Shape{Sealed: false, Kind: OriginUnknown}
 }
