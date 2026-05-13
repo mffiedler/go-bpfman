@@ -46,6 +46,34 @@ func TestCheck_LetRHSCheckedBeforeBinding(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, "undefined variable: x")
 }
 
+func TestCheck_BindCollect_TupleBindOnPureBuiltinRejected(t *testing.T) {
+	t.Parallel()
+
+	// jq is a pure builtin: it returns a value directly, with
+	// no rc envelope. A bind-collect that uses jq as its
+	// producer and asks for a tuple bind would silently
+	// accumulate synthetic OK envelopes into the rc slot. The
+	// checker rejects this shape and points at the single-bind
+	// alternative.
+	src := "let xs = [10 20 30]\nlet (rc, doubled) <- foreach n in $xs { jq \". * 2\" $n }"
+	issues := checkSource(t, src)
+	require.Len(t, issues, 1)
+	assert.Contains(t, issues[0].Msg, "jq is a pure builtin")
+	assert.Contains(t, issues[0].Msg, "tuple bind")
+	assert.Contains(t, issues[0].Msg, "single-bind")
+}
+
+func TestCheck_BindCollect_SingleBindOnPureBuiltinAccepted(t *testing.T) {
+	t.Parallel()
+
+	// The single-bind shape is correct for a pure-builtin
+	// producer: the primary slot carries the per-element
+	// value list; there is no rc list to fabricate.
+	src := "let xs = [10 20 30]\nlet doubled <- foreach n in $xs { jq \". * 2\" $n }"
+	issues := checkSource(t, src)
+	assert.Empty(t, issues)
+}
+
 func TestCheck_BindStmtDefinesPrimaryAndRc(t *testing.T) {
 	t.Parallel()
 

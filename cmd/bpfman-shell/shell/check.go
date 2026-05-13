@@ -351,6 +351,19 @@ func (c *checker) walkStmt(s Stmt) {
 		if name, ok := bindHeadPureBuiltin(n.Cmd, c.aliases); ok {
 			c.addIssue(n.Cmd.Span, "%s is a pure builtin; use 'let %s = %s ...' rather than '<-' (no result envelope is produced)", name, primaryNameForHint(n), name)
 		}
+		// Tuple-bind on a bind-collect whose producer is a pure
+		// builtin is rejected for the same reason: pure builtins
+		// have no result envelope, so the rc slot would silently
+		// collect synthetic OK envelopes. Single-bind is the
+		// correct shape because it discards the rc list and
+		// carries only the producer's value list.
+		if n.Collect != nil && n.Rc != "" && n.Rc != "_" && len(n.Collect.Body) > 0 {
+			if last, ok := n.Collect.Body[len(n.Collect.Body)-1].(*CommandStmt); ok {
+				if name, ok := bindHeadPureBuiltin(last, c.aliases); ok {
+					c.addIssue(last.Span, "%s is a pure builtin; tuple bind '(%s, %s)' is invalid in bind-collect because pure builtins produce no rc envelope; use single-bind 'let %s <- foreach ... { %s ... }' instead", name, n.Rc, primaryNameForHint(n), primaryNameForHint(n), name)
+				}
+			}
+		}
 		primaryShape := c.inferBindShape(n.Cmd)
 		if n.Primary != "" && n.Primary != "_" {
 			c.defined[n.Primary] = true
