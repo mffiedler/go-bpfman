@@ -394,15 +394,28 @@ func replKill(ctx context.Context, args []shell.Arg) (shell.Envelope, error) {
 	// closes Done. 'kill' returns only after the job is
 	// genuinely gone, so 'defer kill $p' is a real cleanup
 	// primitive rather than a hopeful suggestion.
-	if waitForDone(ctx, job, grace) {
-		return shell.Envelope{OK: true, Code: 0}, nil
-	}
-	// Race: the process might have exited at the boundary
-	// of the grace window. Re-check before escalating.
-	select {
-	case <-job.Done:
-		return shell.Envelope{OK: true, Code: 0}, nil
-	default:
+	//
+	// --grace=0 is "no waiting between TERM and KILL": always
+	// escalate to SIGKILL regardless of whether SIGTERM already
+	// reaped the process. The contract for the no-wait path is
+	// "this call ends on SIGKILL" (Signal == "KILL"). The
+	// race-check short-circuit below belongs only on the timed
+	// grace path -- a process that happened to die during the
+	// wait window legitimately ends on TERM -- but on the no-
+	// wait path, applying the same short-circuit means a fast
+	// SIGTERM kill flakes the Signal field between TERM and
+	// KILL depending on scheduler timing.
+	if grace > 0 {
+		if waitForDone(ctx, job, grace) {
+			return shell.Envelope{OK: true, Code: 0}, nil
+		}
+		// Race: the process might have exited at the boundary
+		// of the grace window. Re-check before escalating.
+		select {
+		case <-job.Done:
+			return shell.Envelope{OK: true, Code: 0}, nil
+		default:
+		}
 	}
 	job.Mu.Lock()
 	job.Signal = "KILL"
