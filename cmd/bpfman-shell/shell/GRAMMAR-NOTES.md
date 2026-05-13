@@ -360,3 +360,299 @@ the unquoted-comma check now catches inside `[...]`.
 Recording the trade-off so future grammar work picks one
 candidate deliberately rather than absorbing a sigil by
 accident.
+
+## Defer-each is the single most-repeated cleanup pattern
+
+### What keeps coming up
+
+Every dispatcher-port script that uses the list-literal + foreach
+bind-collect pair ends up with the same three-line cleanup
+block:
+
+```
+foreach l in $links {
+    defer bpfman link detach $l
+}
+```
+
+Sometimes for programs:
+
+```
+foreach p in $progs {
+    defer bpfman program unload $p
+}
+```
+
+Always the same shape: iterate a freshly-collected list,
+register one defer per element, do nothing else with the
+iteration variable. The block has appeared verbatim in nine
+out of nine retrofitted dispatcher scripts so far. It is the
+most-repeated three-line pattern in the corpus.
+
+### What pushes back
+
+There is no shorthand. `defer` registers a single command
+against the enclosing scope; there is no batch form that
+takes a list and an action template.
+
+### Workaround
+
+Write the three lines. Cost is mechanical, but the
+boilerplate is real -- six lines per script when defers are
+needed for both links and programs.
+
+### How a fix could look
+
+Two candidate shapes, both narrow:
+
+1. **`defer-each LIST CMD ...`**: a batch defer that
+   registers `CMD ... ELEM` for each element of LIST.
+
+   ```
+   defer-each $links bpfman link detach
+   defer-each $progs bpfman program unload
+   ```
+
+   The element is appended as the last arg per
+   registration. Works when the cleanup command takes one
+   trailing arg in the per-element slot. Doesn't generalise
+   to commands with positional placeholders elsewhere.
+
+2. **`foreach-defer LIST { defer ... $it }`**: a one-line
+   form with an implicit iteration variable (sigil to be
+   bikeshed; `$it` is a candidate). More general than
+   (1) -- the body is full DSL -- but it eats more syntactic
+   space (an implicit-variable name, a new keyword).
+
+(1) covers every retrofit so far. (2) is more flexible but
+adds a sigil-namespace cost. The corpus answer right now
+prefers (1).
+
+### When to revisit
+
+Threshold met. Nine retrofits, all using the same shape.
+Worth implementing when the next pass of test ports happens
+or when a new test author asks "why three lines for this".
+
+## No index-by-variable in path lookup
+
+### What was tried
+
+Parallel-list iteration:
+
+```
+let priorities = [100 200 300]
+let progs      = [$p1 $p2 $p3]
+foreach i in (range 3) {
+    bpfman link attach ... -p $priorities[$i] $progs[$i]
+}
+```
+
+### What pushed back
+
+`$priorities[$i]` is a tokenise error -- the varref grammar
+allows `[digits]` inside the path, not `[$var]`. The tokeniser
+fails before parsing reaches the access form.
+
+### Workaround
+
+Use `jq` to do the index lookup:
+
+```
+foreach i in (range 3) {
+    let prio = $priorities |> jq ".[${i}]"
+    let prog = $progs      |> jq ".[${i}]"
+    bpfman link attach ... -p $prio $prog
+}
+```
+
+Works for scalars. Loses kind/origin metadata for structured
+values, so a `$progs` of typed program records would yield
+untyped maps -- forces a fallback to `.record.program_id`
+(a scalar) for the structured-arg path. Used in
+TestTC_DispatcherChainProceedOn, where heterogeneous
+attaches force the parallel-list iteration shape.
+
+### How a fix could look
+
+Two paths, both small:
+
+1. **Allow `$var` inside the path index**: extend `lexVarRef`
+   and `lexBracedVarRef` to accept `[$ident]` in addition to
+   `[digits]`. Evaluation resolves the inner varref to a
+   scalar integer at lookup time. Localised tokeniser /
+   evaluator change.
+
+2. **Add `zip`**: combine N lists into a list of N-element
+   sub-lists, then iterate the zipped list. More functional
+   but requires a pair/sub-list convention the language
+   doesn't otherwise have, and the iteration body would do
+   literal-index access (`$pair[0]`, `$pair[1]`) anyway.
+
+(1) is the cheaper option and addresses every site where the
+jq-indexed workaround appears today. (2) only earns its keep
+if a pair representation has other uses, which it doesn't.
+
+### When to revisit
+
+When a retrofit needs parallel-list iteration with
+metadata-preserving access (i.e. when the workaround's
+metadata loss bites). TestTC_DispatcherChainProceedOn hits
+the workaround but only needs scalar arguments, so the
+metadata loss is invisible there; a future script that
+wants `$progs[$i]` to round-trip as a typed Program would
+force the fix.
+
+## `jq` is a pure builtin, not a bind-collect producer
+
+### What was tried
+
+Per-element transformation via jq inside a foreach bind-collect:
+
+```
+let mapIDs <- foreach p in $progs {
+    jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]" $p
+}
+```
+
+### What pushed back
+
+`jq` is registered as a pure builtin (see
+RegisterPureBuiltin in cmd/bpfman-shell/kindshapes.go). Pure
+builtins return Values directly; they do not produce a
+result envelope and so do not go through ExecBind. Bind-
+collect requires the body's last statement to be a
+CommandStmt whose execution flows through ExecBind --
+otherwise there is no primary slot to accumulate.
+
+When the parser sees `jq ...` as the last statement of a
+bind-collect body, it routes through the *external command*
+path (looking for a shell `jq` binary) rather than the pure-
+builtin dispatcher. The external jq then receives the
+element as stdin, which is usually not what the user wrote
+the body to do.
+
+### Workaround
+
+Compound list literal with line continuation:
+
+```
+let mapFilter = "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapIDs = [ \
+    ($progs[0] |> jq $mapFilter) \
+    ($progs[1] |> jq $mapFilter) \
+    ($progs[2] |> jq $mapFilter) \
+    ($progs[3] |> jq $mapFilter) \
+    ($progs[4] |> jq $mapFilter) \
+]
+```
+
+One element per line, parenthesised so the `|>` thread
+operator works inside the list-element position
+(parens-for-compound rule from the list-literal entry).
+The `\` newline continuation keeps the list literal on a
+single logical line (see the "multi-line list literals"
+entry below for why this is required).
+
+Works but reads worse than a 5-line foreach body would have.
+
+### How a fix could look
+
+Two candidate paths:
+
+1. **Pure builtins as bind-collect producers.** Special-case
+   the bind-collect body's last statement: if it is a
+   PureCallExpr or evaluates to one, run it directly through
+   the pure-builtin dispatcher and use its returned Value as
+   the iteration's primary. No envelope -- the bind-collect's
+   tuple-bind form would be invalid (rc slot has nothing to
+   fill). Reject `let (rc, X) <- foreach { jq ... }` at parse
+   time.
+
+2. **A wrapper command that promotes a pure-builtin call to
+   a CommandStmt result.** Something like `value $x` or
+   `return $x` whose primary slot is its argument. Plumbing
+   cost: the new command must look like an external command
+   to the parser but evaluate to its arg's Value at runtime.
+   Feels indirect.
+
+(1) is the cleaner shape. It also unblocks any pure builtin
+in this position (range, jq, anything future), not just
+the jq case.
+
+### When to revisit
+
+When a script wants per-element jq (or any pure builtin)
+collected into a list. Has appeared three times so far
+(TestTC_DispatcherChainExecution, the XDP sibling,
+ChainProceedOn). The workaround is annoying but mechanical;
+the fix is worth it when a fourth site shows up or when an
+author complains about the line-continuation density.
+
+## Multi-line list literals require `\` line continuation
+
+### What was tried
+
+Wrapping a long list literal across lines for readability:
+
+```
+let priorities = [
+    100
+    200
+    300
+    400
+    500
+]
+```
+
+### What pushed back
+
+`takeStmtTokens` collects the let RHS tokens until a
+`TokenSep` (newline or `;`). The newline after `[` is a
+`TokenSep`, so the RHS truncates to `[` and the parser sees
+a malformed expression. Subsequent lines reparse as
+separate statements ("100" as a command name, etc.).
+
+### Workaround
+
+Use `\` newline continuation, which the tokeniser absorbs
+before emitting any token:
+
+```
+let priorities = [ \
+    100 \
+    200 \
+    300 \
+    400 \
+    500 \
+]
+```
+
+Each `\<newline>` is consumed as whitespace; the whole let
+RHS stays on one logical line. Inside the brackets,
+`parseListLiteral` already skips `TokenSep` tokens, so an
+alternative fix would be to push that knowledge up into
+`takeStmtTokens` -- but that requires bracket-depth tracking
+across the whole statement-token collector.
+
+### How a fix could look
+
+**Bracket-aware `takeStmtTokens` / `takeBindRHSTokens`**:
+track `[`/`]` depth (and probably `{`/`}` and `(`/`)` for
+symmetry). Newlines inside open brackets are skipped; only
+top-level newlines terminate the statement.
+
+Cost: small. The collectors already handle `{`/`}` as
+statement terminators; bracket depth-tracking is one extra
+counter. The change is localised; expression parsing already
+strips seps inside parseListLiteral so once the seps reach
+the parser the rest works.
+
+### When to revisit
+
+When a script's list literal grows past about five
+elements and the `\<newline>` continuation density starts
+making the script noisy. The chain-execution retrofits
+have 5-10 element lists with `\`-continuation; readable but
+visibly load-bearing on the backslashes. A bracket-aware
+collector would let those lists wrap naturally.
