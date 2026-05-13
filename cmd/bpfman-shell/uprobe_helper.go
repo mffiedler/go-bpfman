@@ -31,10 +31,12 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 )
 
 func init() {
-	registerFireKind("uprobe", fireKind{
+	repl.RegisterFireKind("uprobe", fireKind{
 		Mode:        "uprobe-fire-worker",
 		Summary:     "Fire uprobe target symbol bpfman_shell_uprobe_call_malloc.",
 		NeedsBinary: true,

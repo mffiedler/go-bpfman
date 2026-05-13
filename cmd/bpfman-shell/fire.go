@@ -12,9 +12,7 @@ package main
 
 import (
 	"fmt"
-	"maps"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -36,25 +34,11 @@ import (
 // not exposed on the Job, and a script that tries to read it
 // receives a runtime field error rather than a silent empty
 // string.
-type fireKind struct {
-	Mode        string
-	Summary     string
-	NeedsBinary bool
-}
-
-// fireKinds is populated from the helper files' init functions.
-// Each helper that implements a BPFMAN_SHELL_MODE registers its
-// script-facing name and the kind metadata here. The
-// BPFMAN_SHELL_MODE switch in main.go:runMode remains the
-// authoritative dispatch; this registry is the script-facing
-// index.
-var fireKinds = map[string]fireKind{}
-
-// registerFireKind adds a kind to the registry. Called from each
-// helper file's init.
-func registerFireKind(name string, k fireKind) {
-	fireKinds[name] = k
-}
+// fireKind and the registry now live in repl/; the aliases keep
+// the local handler/lookup code short. Worker-side init blocks
+// in kill_helper.go, unlink_helper.go, and uprobe_helper.go
+// call repl.RegisterFireKind directly.
+type fireKind = repl.FireKind
 
 // handleFire is the builtin handler for `fire KIND SENTINEL ACK
 // --count N [--waves K]`. It resolves the kind from the registry,
@@ -114,9 +98,9 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, fmt.Errorf("fire: expected 3 positional arguments (KIND SENTINEL ACK), got %d", len(positional))
 	}
 	kindName, sentinel, ack := positional[0], positional[1], positional[2]
-	kind, ok := fireKinds[kindName]
+	kind, ok := repl.FireKinds()[kindName]
 	if !ok {
-		return shell.Value{}, fmt.Errorf("fire: unknown kind %q (registered: %s)", kindName, strings.Join(fireKindNames(), ", "))
+		return shell.Value{}, fmt.Errorf("fire: unknown kind %q (registered: %s)", kindName, strings.Join(repl.FireKindNames(), ", "))
 	}
 	if count == "" {
 		return shell.Value{}, fmt.Errorf("fire %s: --count is required", kindName)
@@ -152,10 +136,4 @@ func handleFire(c builtinCtx) (shell.Value, error) {
 		return shell.Value{}, fmt.Errorf("fire %s: %w", kindName, err)
 	}
 	return shell.ValueFromJob(job), nil
-}
-
-// fireKindNames returns the registered kind names sorted for
-// stable diagnostic rendering.
-func fireKindNames() []string {
-	return slices.Sorted(maps.Keys(fireKinds))
 }

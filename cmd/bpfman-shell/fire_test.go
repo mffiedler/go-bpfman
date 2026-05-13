@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
@@ -104,7 +105,7 @@ func TestFireKinds_RegisteredAtInit(t *testing.T) {
 		"uprobe":   {Mode: "uprobe-fire-worker", NeedsBinary: true},
 	}
 	for name, w := range want {
-		got, ok := fireKinds[name]
+		got, ok := repl.FireKinds()[name]
 		require.Truef(t, ok, "fire kind %q is not registered", name)
 		assert.Equal(t, w.Mode, got.Mode, "kind %s mode", name)
 		assert.Equal(t, w.NeedsBinary, got.NeedsBinary, "kind %s NeedsBinary", name)
@@ -116,8 +117,8 @@ func TestFireKinds_RegisteredAtInit(t *testing.T) {
 // names in a stable order so error messages are reproducible.
 func TestFireKindNames_Sorted(t *testing.T) {
 	t.Parallel()
-	names := fireKindNames()
+	names := repl.FireKindNames()
 	for i := 1; i < len(names); i++ {
-		assert.LessOrEqual(t, names[i-1], names[i], "fireKindNames should be sorted")
+		assert.LessOrEqual(t, names[i-1], names[i], "repl.FireKindNames should be sorted")
 	}
 }

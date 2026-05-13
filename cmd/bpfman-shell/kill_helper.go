@@ -13,10 +13,12 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 )
 
 func init() {
-	registerFireKind("kill", fireKind{
+	repl.RegisterFireKind("kill", fireKind{
 		Mode:        "kill-fire-worker",
 		Summary:     "Fire kill(2) syscalls on self for syscalls/sys_enter_kill.",
 		NeedsBinary: false,

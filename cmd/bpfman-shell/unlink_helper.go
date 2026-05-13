@@ -22,10 +22,12 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 )
 
 func init() {
-	registerFireKind("unlinkat", fireKind{
+	repl.RegisterFireKind("unlinkat", fireKind{
 		Mode:        "unlinkat-fire-worker",
 		Summary:     "Fire unlinkat(2) syscalls for do_unlinkat / sys_*_unlinkat hooks.",
 		NeedsBinary: false,
