@@ -138,7 +138,7 @@ func TestReplCheck_SyntaxGallery(t *testing.T) {
 
 	path, err := filepath.Abs("../../emacs/syntax-gallery.bpfman")
 	require.NoError(t, err)
-	f, err := openScriptReader(path)
+	f, err := repl.OpenScriptReader(path)
 	require.NoError(t, err)
 	defer f.Close()
 	var buf bytes.Buffer

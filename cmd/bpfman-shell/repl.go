@@ -85,7 +85,7 @@ func (c *CLI) Run(ctx context.Context) error {
 	loopErr := replLoop(ctx, &c.CLI, mgr, lr, session, file, interactive, c.NoCheck)
 
 	if errors.Is(loopErr, errRequireFailed) || errors.Is(loopErr, errScriptError) {
-		return ErrSilent
+		return repl.ErrSilent
 	}
 	if loopErr != nil {
 		return loopErr
@@ -113,7 +113,7 @@ func (c *CLI) Run(ctx context.Context) error {
 // file, piped stdin, or interactive readline.
 func (c *CLI) newReader(ctx context.Context, mgr *manager.Manager, session *shell.Session) (repl.LineReader, error) {
 	if c.Script != "" {
-		return openScriptReader(c.Script)
+		return repl.OpenScriptReader(c.Script)
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return repl.NewScannerReader(os.Stdin, nil), nil
@@ -190,13 +190,13 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 	// 'file:line: error: ...' and returned as errScriptError
 	// so the caller exits non-zero without evaluating any
 	// statement.
-	src, slurpErr := slurpReader(lr)
+	src, slurpErr := repl.SlurpReader(lr)
 	if slurpErr != nil {
 		_ = cli.PrintErrf("%s: %v\n", file, slurpErr)
 		return errScriptError
 	}
 	if !noCheck {
-		if hadIssues := preflightCheck(cli, file, src); hadIssues {
+		if hadIssues := repl.PreflightCheck(cli, file, src); hadIssues {
 			return errScriptError
 		}
 	}
@@ -205,7 +205,7 @@ func replScript(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, l
 	env := &shell.Env{
 		Session: session,
 		PrintResult: func(v shell.Value) error {
-			return writeValue(cli, v)
+			return repl.WriteValue(cli, v)
 		},
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{File: file}, stmtLoc, args, rc)
@@ -448,7 +448,7 @@ func replInteractive(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	env := &shell.Env{
 		Session: session,
 		PrintResult: func(v shell.Value) error {
-			return writeValue(cli, v)
+			return repl.WriteValue(cli, v)
 		},
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			renderEnvelopeFailure(cli, "defer", sourceLoc{}, stmtLoc, args, rc)
@@ -1051,7 +1051,7 @@ func replSource(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, e
 		return fmt.Errorf("source requires exactly one file argument")
 	}
 
-	lr, err := openScriptReader(args[0])
+	lr, err := repl.OpenScriptReader(args[0])
 	if err != nil {
 		return err
 	}

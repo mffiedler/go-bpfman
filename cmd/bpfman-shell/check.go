@@ -19,90 +19,17 @@ import (
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
 
-// slurpReader reads every line from r, joins them with
-// newlines, and returns the resulting string. Used by the
-// script-mode pre-flight (where we need the whole input
-// before parsing) and by --check when invoked on stdin.
-func slurpReader(r repl.LineReader) (string, error) {
-	var b strings.Builder
-	for {
-		line, err := r.Readline()
-		if err != nil {
-			if err == io.EOF || err == repl.ErrInterrupt {
-				return b.String(), nil
-			}
-			return "", err
-		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(line)
-	}
-}
-
-// preflightCheck tokenises and parses src, runs the static
-// checker, and writes any issues to cli.Err as rust-compiler-
-// style multi-line diagnostics with a "  --> file:line:col"
-// citation, the offending source line, and a caret span
-// underlining the region. Returns true when at least one
-// issue was emitted so the caller can refuse to evaluate.
-// Tokeniser, parser, and Check issues all flow as typed
-// *shell.SyntaxError values; the caller pulls Span and Msg
-// straight off and hands them to the renderer.
-func preflightCheck(cli *bpfmancli.CLI, file, src string) bool {
-	if strings.TrimSpace(src) == "" {
-		return false
-	}
-	hadIssues := false
-	emitFrame := func(span shell.Span, msg string) {
-		hadIssues = true
-		_ = cli.PrintErr(shell.RenderDiagnostic(src, file, shell.Diagnostic{
-			Span: span,
-			Msg:  msg,
-		}))
-	}
-	reportSyntaxErr := func(err error) {
-		var se *shell.SyntaxError
-		if errors.As(err, &se) {
-			emitFrame(se.Span, se.Msg)
-			return
-		}
-		// Fallback: untyped error. Cite line 1 col 1 with a
-		// degenerate single-column span so the renderer still
-		// produces a frame; this path should be unreachable
-		// once every parser/tokeniser site emits SyntaxError.
-		emitFrame(shell.Span{
-			Pos: shell.Pos{Line: 1, Col: 1},
-			End: shell.Pos{Line: 1, Col: 2},
-		}, err.Error())
-	}
-
-	tokens, tokErr := shell.Tokenise(src)
-	if tokErr != nil {
-		reportSyntaxErr(tokErr)
-		return hadIssues
-	}
-	if len(tokens) == 0 {
-		return false
-	}
-	prog, parseErr := shell.Parse(tokens)
-	if parseErr != nil {
-		reportSyntaxErr(parseErr)
-		return hadIssues
-	}
-	for _, issue := range shell.Check(prog) {
-		emitFrame(issue.Span, issue.Msg)
-	}
-	return hadIssues
-}
+// slurpReader, preflightCheck, and openScriptReader moved to
+// repl.SlurpReader / repl.PreflightCheck / repl.OpenScriptReader.
+// The CLI methods below still live here because they wire the
+// Kong CLI struct into those primitives.
 
 // runCheck drives the --check pipeline: read chunks of input, feed
 // each completed chunk through Tokenise and Parse, and report the
 // first error from each stage with a file:line: prefix. No Session,
-// Manager, or evaluator is involved. Returns ErrSilent when any
+// Manager, or evaluator is involved. Returns repl.ErrSilent when any
 // error was reported so the process exits non-zero without an extra
 // message from Kong.
 func (c *CLI) runCheck() error {
@@ -117,7 +44,7 @@ func (c *CLI) runCheck() error {
 		file = "<stdin>"
 	}
 	if replCheckInput(reader, c.Err, file) {
-		return ErrSilent
+		return repl.ErrSilent
 	}
 	return nil
 }
@@ -128,7 +55,7 @@ func (c *CLI) runCheck() error {
 // operation.
 func (c *CLI) checkReader() (repl.LineReader, error) {
 	if c.Script != "" {
-		return openScriptReader(c.Script)
+		return repl.OpenScriptReader(c.Script)
 	}
 	return repl.NewScannerReader(os.Stdin, nil), nil
 }
@@ -199,19 +126,6 @@ func replCheckInput(r repl.LineReader, errOut io.Writer, file string) bool {
 		emitFrame(issue.Span, issue.Msg)
 	}
 	return hadErrors
-}
-
-// openScriptReader opens a file for reading commands. Use "-" to
-// read from stdin.
-func openScriptReader(path string) (repl.LineReader, error) {
-	if path == "-" {
-		return repl.NewScannerReader(os.Stdin, nil), nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open script: %w", err)
-	}
-	return repl.NewScannerReader(f, f), nil
 }
 
 // sourceLoc is now repl.SourceLoc; the alias keeps existing call

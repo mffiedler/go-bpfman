@@ -9,6 +9,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/version"
@@ -69,7 +70,7 @@ func (c *CLI) Execute(ctx context.Context) error {
 		}
 	}
 	if err := c.Run(ctx); err != nil {
-		if !errors.Is(err, ErrSilent) {
+		if !errors.Is(err, repl.ErrSilent) {
 			_ = c.PrintErrf("bpfman-shell: error: %v\n", err)
 		}
 		return err

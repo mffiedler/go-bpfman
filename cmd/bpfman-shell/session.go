@@ -13,13 +13,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
-	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
 
 // handleVars lists all session variables and their kinds. The
@@ -207,7 +205,7 @@ func handlePrint(c builtinCtx) (shell.Value, error) {
 		if err != nil {
 			return shell.Value{}, err
 		}
-		return shell.Value{}, writeValue(c.CLI, v)
+		return shell.Value{}, repl.WriteValue(c.CLI, v)
 	}
 	parts := make([]string, len(args))
 	for i, a := range args {
@@ -246,27 +244,6 @@ func printValue(arg shell.Arg) (shell.Value, error) {
 	default:
 		return shell.Value{}, fmt.Errorf("print: unsupported argument kind %T", arg)
 	}
-}
-
-// writeValue renders a shell.Value onto cli: nil as "null", scalars
-// as plain text, structured values as indented JSON. Shared between
-// print and any other "print me this value" caller.
-func writeValue(cli *bpfmancli.CLI, v shell.Value) error {
-	if v.IsNil() {
-		return cli.PrintOut("null\n")
-	}
-	if v.IsScalar() {
-		s, err := v.Scalar()
-		if err != nil {
-			return err
-		}
-		return cli.PrintOut(s + "\n")
-	}
-	b, err := json.MarshalIndent(v.Raw(), "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal value: %w", err)
-	}
-	return cli.PrintOut(string(b) + "\n")
 }
 
 // lookupBareVar resolves a bare variable name (no $ prefix) with an

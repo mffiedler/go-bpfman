@@ -652,7 +652,7 @@ func TestReplLoop_SourceRelativeToScriptDirectory(t *testing.T) {
 
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr, lerr := openScriptReader(mainPath)
+	lr, lerr := repl.OpenScriptReader(mainPath)
 	require.NoError(t, lerr)
 	defer lr.Close()
 
@@ -678,7 +678,7 @@ func TestReplLoop_SourceAbsolutePathIgnoresScriptDirectory(t *testing.T) {
 
 	var outBuf, errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
-	lr, lerr := openScriptReader(mainPath)
+	lr, lerr := repl.OpenScriptReader(mainPath)
 	require.NoError(t, lerr)
 	defer lr.Close()
 

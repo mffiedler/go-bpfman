@@ -27,7 +27,7 @@ import (
 // deliberate: AST inspection wants one tree for the whole
 // file, not one tree per balanced statement. Errors are
 // reported with a file:line: prefix and the process exits
-// non-zero (via ErrSilent) when parsing fails.
+// non-zero (via repl.ErrSilent) when parsing fails.
 func (c *CLI) runAST() error {
 	reader, err := c.checkReader()
 	if err != nil {
@@ -40,7 +40,7 @@ func (c *CLI) runAST() error {
 		file = "<stdin>"
 	}
 	if replASTInput(reader, c.Out, c.Err, file) {
-		return ErrSilent
+		return repl.ErrSilent
 	}
 	return nil
 }
