@@ -274,3 +274,89 @@ from a single consumer. The corpus answer for now is "port
 (1) when ready and live with FillDrainRefill's residual
 verbosity"; whether to go further depends on whether other
 harness-style tests show up.
+
+## List-to-CLI-argument bridge: deferred design pressure
+
+### What this anticipates
+
+The whitespace-separated list literal (entry above) makes
+`[100 200 300]` a first-class language value -- structured,
+iterable, indexable. The CLIs the shell drives consume the
+opposite shape: a single comma-payload argument
+(`--proceed-on ok,pipe,dispatcher_return`) or a repeated
+flag set (`--port 80 --port 443 --port 8080`). Neither is
+reachable from a language list without explicit conversion.
+Choosing whitespace-separated structured lists over a
+textual list-of-strings defers this bridge question; it
+does not eliminate it.
+
+### Workaround today
+
+```
+let policies = ["ok" "pipe" "dispatcher_return"]
+let joined = $policies |> jq -r 'join(",")'
+bpfman link attach tc ... --proceed-on $joined ...
+```
+
+Two lines, mechanical. The dispatcher-port retrofit lists
+feed `foreach`, not CLI flags, so the workaround does not
+bite the immediate use case; the pressure shows up only
+when someone wants to build a flag value from a list.
+
+### Candidate primitives, when pressure builds
+
+Three shapes, each with a different cost in the language's
+syntactic namespace:
+
+1. **`join` pure builtin.** `let joined = join "," $policies`.
+   Adds one identifier to the pure-builtin registry. Cheap,
+   narrow, covers the comma-payload case. No sigil consumed.
+   Composable with `|>` since pure builtins already accept
+   thread input.
+
+2. **Splat sigil into command args.** `bpfman foo @$policies`
+   expands a list into N positional args. Eats `@` from the
+   sigil space. The cost is real: `@` is currently free for
+   bareword use, and a future grammar wanting `@`-prefixed
+   tokens (think `git log @{1.day.ago}` or YAML-style refs)
+   would be blocked. The benefit is real too: repeated-flag
+   CLIs become expressible without a per-call helper. Note
+   that the same silent-absorption failure mode the comma
+   check above caught would re-emerge: `@policies` lexes as
+   a bareword today, so adding splat under retrofit pressure
+   without first reserving `@` at the tokeniser would silently
+   accept the wrong shape.
+
+3. **Structured-arg pass-through.** The `evalArg` path
+   already produces `StructuredValueArg` for some shapes; a
+   list could flow through unchanged to a builtin that knows
+   how to consume it. Most ergonomic for builtins; useless
+   for external CLIs that read argv. Zero syntactic cost,
+   but invisible to script authors -- the bridging happens
+   in Go, not the shell. Only useful in combination with one
+   of the above for the external-CLI case.
+
+### When to revisit
+
+When a concrete consumer surfaces. Pick the cheapest
+candidate that fits; do not add all three speculatively. A
+`join` builtin is the lowest commitment and covers the most
+common shape (comma-payload). Splat is a sigil-namespace
+commitment that should wait until a repeated-flag CLI
+appears in the retrofit set. Structured pass-through is
+worth considering whenever a builtin (not an external CLI)
+needs to consume a list; the immediate consumer is the
+builtin's signature, not the language.
+
+### Why this lives here
+
+The whitespace choice in the entry above is sound for the
+shell language family it sits in, but it lands the
+language with a list value whose default rendering matches
+no CLI convention. Without this note, the next person
+typing `bpfman foo @$xs` would expect splat semantics and
+quietly get bareword absorption -- the same failure mode
+the unquoted-comma check now catches inside `[...]`.
+Recording the trade-off so future grammar work picks one
+candidate deliberately rather than absorbing a sigil by
+accident.
