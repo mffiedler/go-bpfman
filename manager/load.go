@@ -10,6 +10,7 @@ import (
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager/action"
 	"github.com/frobware/go-bpfman/manager/operation"
 	"github.com/frobware/go-bpfman/platform"
@@ -115,6 +116,48 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 		return nil, fmt.Errorf("build load specs: %w", err)
 	}
 
+	// Decide whether the load needs the cross-process writer
+	// lock. Loads of objects without LIBBPF_PIN_BY_NAME maps touch
+	// no shared bpffs state and remain lockless. Loads of objects
+	// with pinByName maps share a name-derived bpffs pin path
+	// across every loader, so we serialise the per-program loop +
+	// Phase B against other mutations (especially unloads of the
+	// same shared map) under the writer flock. The image-pull
+	// step above already ran lockless; the lock only wraps the
+	// post-source work.
+	needsLock := false
+	for _, spec := range specs {
+		has, err := m.kernel.HasPinByName(spec)
+		if err != nil {
+			return nil, fmt.Errorf("pre-check pinByName: %w", err)
+		}
+		if has {
+			needsLock = true
+			break
+		}
+	}
+
+	body := func() ([]bpfman.Program, error) {
+		return m.loadBody(ctx, specs, opts)
+	}
+
+	if !needsLock {
+		return body()
+	}
+
+	var loaded []bpfman.Program
+	runErr := lock.Run(ctx, m.rt.Layout().LockPath(), func(_ context.Context, _ lock.WriterScope) error {
+		var lerr error
+		loaded, lerr = body()
+		return lerr
+	})
+	return loaded, runErr
+}
+
+// loadBody runs the per-program load loop and the batched Phase B
+// store commit. Caller decides whether to wrap this in the
+// cross-process writer lock; the body itself is lock-agnostic.
+func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts LoadOpts) ([]bpfman.Program, error) {
 	rt := m.rt.Bytecode()
 	perProgOpts := loadOpts{
 		UserMetadata: opts.UserMetadata,

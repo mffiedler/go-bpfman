@@ -165,6 +165,10 @@ func (k *stubKernel) Load(ctx context.Context, spec bpfman.LoadSpec, _ fs.BPFFS)
 	panic("stubKernel.Load not implemented")
 }
 
+func (k *stubKernel) HasPinByName(spec bpfman.LoadSpec) (bool, error) {
+	return false, nil
+}
+
 // ProgramUnloader
 func (k *stubKernel) Unload(ctx context.Context, pinPath string) error {
 	panic("stubKernel.Unload not implemented")

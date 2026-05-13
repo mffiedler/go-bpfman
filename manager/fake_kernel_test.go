@@ -410,6 +410,10 @@ func (f *fakeKernel) Reset() {
 	f.loadCount = 0
 }
 
+func (f *fakeKernel) HasPinByName(spec bpfman.LoadSpec) (bool, error) {
+	return false, nil
+}
+
 func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Validate program type - mirrors real kernel behaviour
 	if !spec.ProgramType().Valid() {

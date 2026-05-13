@@ -2,6 +2,7 @@ package ebpf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
@@ -31,20 +33,27 @@ import (
 // must exist and contain the required pinned maps. This is used when loading
 // multiple programs from the same image (e.g., via the bpfman-operator) where
 // all programs should share the same map instances.
+// HasPinByName reports whether the bytecode at spec.ObjectPath()
+// declares any LIBBPF_PIN_BY_NAME maps. The manager uses this to
+// decide whether the load needs the cross-process writer lock.
+func (k *kernelAdapter) HasPinByName(spec bpfman.LoadSpec) (bool, error) {
+	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
+	if err != nil {
+		return false, fmt.Errorf("parse %s: %w", spec.ObjectPath(), err)
+	}
+	for name, mapSpec := range collSpec.Maps {
+		if mapSpec.Pinning == ebpf.PinByName && !strings.HasPrefix(name, ".") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error) {
 	// Load the collection from the object file
 	collSpec, err := ebpf.LoadCollectionSpec(spec.ObjectPath())
 	if err != nil {
 		return bpfman.LoadOutput{}, fmt.Errorf("failed to load collection spec: %w", err)
-	}
-
-	// Set global data if provided
-	for name, data := range spec.GlobalData() {
-		if v, ok := collSpec.Variables[name]; ok {
-			if err := v.Set(data); err != nil {
-				return bpfman.LoadOutput{}, fmt.Errorf("set variable %q: %w", name, err)
-			}
-		}
 	}
 
 	// Record which maps declare PinByName before clearing the flag.
@@ -54,6 +63,15 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	for name, mapSpec := range collSpec.Maps {
 		if mapSpec.Pinning == ebpf.PinByName && !strings.HasPrefix(name, ".") {
 			pinByNameMaps[name] = true
+		}
+	}
+
+	// Set global data if provided
+	for name, data := range spec.GlobalData() {
+		if v, ok := collSpec.Variables[name]; ok {
+			if err := v.Set(data); err != nil {
+				return bpfman.LoadOutput{}, fmt.Errorf("set variable %q: %w", name, err)
+			}
 		}
 	}
 
@@ -176,22 +194,73 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		}
 	}
 
-	// For PinByName maps without an explicit owner, check the shared
-	// pin directory for existing maps. If found, use them as
-	// replacements so this program shares the same kernel map
-	// instances as previous loads.
+	// For PinByName maps without an explicit owner, ensure the
+	// shared pin exists and load it into mapReplacements before
+	// NewCollection. Two loaders racing here would both miss the
+	// pre-check, both NewMap, and one fail m.Pin with EEXIST. To
+	// avoid that, take the cross-process writer flock for just
+	// this share-or-create step (two syscalls per map; no
+	// BPF_PROG_LOAD inside) and run NewCollection lockless below
+	// with the shared map already pinned and available as a
+	// replacement.
+	//
+	// Crash recovery is handled here too: an earlier process that
+	// pinned successfully then died leaves a pin pointing at a
+	// live (orphaned) kernel map; we find it in the LoadPinnedMap
+	// branch and share. The EEXIST fallback is defensive against
+	// an external pinner (raw libbpf, bpftool) racing us inside
+	// the flock; it should not fire from another bpfman.
 	if len(pinByNameMaps) > 0 && mapOwnerID == 0 {
-		for name := range pinByNameMaps {
-			sharedPath := bpffs.SharedMapPin(name)
-			m, err := ebpf.LoadPinnedMap(sharedPath.String(), nil)
-			if err != nil {
-				continue // not yet pinned; will create after load
+		if mapReplacements == nil {
+			mapReplacements = make(map[string]*ebpf.Map)
+		}
+		if err := bpffs.EnsureSharedMapPinDir(); err != nil {
+			return bpfman.LoadOutput{}, fmt.Errorf("failed to create shared map pin directory: %w", err)
+		}
+		shareErr := func() error {
+			for name := range pinByNameMaps {
+				sharedPath := bpffs.SharedMapPin(name)
+				if m, lerr := ebpf.LoadPinnedMap(sharedPath.String(), nil); lerr == nil {
+					mapReplacements[name] = m
+					k.logger.Debug("shared PinByName map: using existing pin", "name", name, "path", sharedPath)
+					continue
+				}
+				mapSpec, ok := collSpec.Maps[name]
+				if !ok {
+					return fmt.Errorf("pinByName map %q missing from collection spec", name)
+				}
+				specCopy := mapSpec.Copy()
+				specCopy.Pinning = ebpf.PinNone
+				m, nerr := ebpf.NewMap(specCopy)
+				if nerr != nil {
+					return fmt.Errorf("create shared map %q: %w", name, nerr)
+				}
+				if perr := m.Pin(sharedPath.String()); perr != nil {
+					m.Close()
+					if !errors.Is(perr, unix.EEXIST) {
+						return fmt.Errorf("pin shared map %q: %w", name, perr)
+					}
+					// EEXIST: another writer pinned the same
+					// name between our LoadPinnedMap pre-check
+					// and this Pin. Load and share.
+					fallback, lerr := ebpf.LoadPinnedMap(sharedPath.String(), nil)
+					if lerr != nil {
+						return fmt.Errorf("pin shared map %q: EEXIST but cannot load existing pin: %w", name, lerr)
+					}
+					mapReplacements[name] = fallback
+					k.logger.Debug("shared PinByName map: external pinner won; using existing", "name", name, "path", sharedPath)
+					continue
+				}
+				mapReplacements[name] = m
+				k.logger.Debug("shared PinByName map: created and pinned", "name", name, "path", sharedPath)
 			}
-			if mapReplacements == nil {
-				mapReplacements = make(map[string]*ebpf.Map)
+			return nil
+		}()
+		if shareErr != nil {
+			for _, m := range mapReplacements {
+				m.Close()
 			}
-			mapReplacements[name] = m
-			k.logger.Debug("loaded shared PinByName map", "name", name, "path", sharedPath)
+			return bpfman.LoadOutput{}, shareErr
 		}
 	}
 
@@ -264,35 +333,6 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 		if err := bpffs.EnsureMapsDir(programID); err != nil {
 			cleanup()
 			return bpfman.LoadOutput{}, fmt.Errorf("failed to create maps directory: %w", err)
-		}
-
-		// Pin PinByName maps to the shared directory (first load
-		// creates the pin; subsequent loads reused it above via
-		// mapReplacements).
-		if len(pinByNameMaps) > 0 {
-			if err := bpffs.EnsureSharedMapPinDir(); err != nil {
-				cleanup()
-				return bpfman.LoadOutput{}, fmt.Errorf("failed to create shared map pin directory: %w", err)
-			}
-			for name := range pinByNameMaps {
-				if mapReplacements[name] != nil {
-					continue // already pinned at shared location
-				}
-				m := coll.Maps[name]
-				if m == nil {
-					continue
-				}
-				sharedPath := bpffs.SharedMapPin(name)
-				if err := m.Pin(sharedPath.String()); err != nil {
-					cleanup()
-					if rmErr := bpffs.SafeRemoveAll(mapsDir.String()); rmErr != nil {
-						k.logger.Warn("failed to remove maps directory during cleanup", "path", mapsDir, "error", rmErr)
-					}
-					return bpfman.LoadOutput{}, fmt.Errorf("failed to pin shared map %q: %w", name, err)
-				}
-				pinnedPaths = append(pinnedPaths, sharedPath.String())
-				k.logger.Debug("pinned PinByName map to shared directory", "name", name, "path", sharedPath)
-			}
 		}
 
 		// Pin all maps to the per-program directory. Maps that

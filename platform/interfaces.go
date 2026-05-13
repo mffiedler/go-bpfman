@@ -173,6 +173,15 @@ type ProgramLoader interface {
 	//   - Program: bpffs.ProgPinPath(program_id)
 	//   - Maps: bpffs.MapPinDir(program_id) / <map_name>
 	Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs.BPFFS) (bpfman.LoadOutput, error)
+
+	// HasPinByName reports whether the bytecode referenced by spec
+	// declares any LIBBPF_PIN_BY_NAME maps. The manager calls this
+	// before the per-program load loop to decide whether to
+	// acquire the cross-process writer lock for the load: shared
+	// pin paths are the one resource that two concurrent loaders
+	// can race on, so loads that touch them serialise while loads
+	// without them stay lockless.
+	HasPinByName(spec bpfman.LoadSpec) (bool, error)
 }
 
 // ProgramUnloader removes BPF programs from the kernel.
