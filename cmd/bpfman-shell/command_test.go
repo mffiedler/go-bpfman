@@ -38,8 +38,11 @@ func word(s string) shell.Arg { return shell.WordArg{Text: s} }
 func TestParseShowProgram(t *testing.T) {
 	t.Parallel()
 
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromStruct(bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
+	})
 	require.NoError(t, err)
+	structuredVal = structuredVal.WithKind(shell.OriginProgram)
 
 	linkVal, err := shell.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
@@ -1000,8 +1003,11 @@ func TestParseLinkDetach(t *testing.T) {
 func TestParseGetProgram(t *testing.T) {
 	t.Parallel()
 
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":42}}`))
+	structuredVal, err := shell.ValueFromStruct(bpfman.Program{
+		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
+	})
 	require.NoError(t, err)
+	structuredVal = structuredVal.WithKind(shell.OriginProgram)
 
 	linkVal, err := shell.ValueFromStruct(bpfman.Link{
 		Record: bpfman.LinkRecord{
@@ -1114,8 +1120,11 @@ func TestParseGetProgram(t *testing.T) {
 func TestParseGetLink(t *testing.T) {
 	t.Parallel()
 
-	structuredVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":77}}`))
+	structuredVal, err := shell.ValueFromStruct(bpfman.Link{
+		Record: bpfman.LinkRecord{ID: kernel.LinkID(77)},
+	})
 	require.NoError(t, err)
+	structuredVal = structuredVal.WithKind(shell.OriginLink)
 
 	progVal, err := shell.ValueFromStruct(bpfman.Program{
 		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},

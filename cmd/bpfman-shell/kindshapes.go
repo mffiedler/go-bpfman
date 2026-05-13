@@ -44,6 +44,18 @@ func init() {
 	shell.RegisterShape(shell.OriginProgram, shapeFromType(reflect.TypeOf(bpfman.Program{}), shell.OriginProgram))
 	shell.RegisterShape(shell.OriginLink, shapeFromType(reflect.TypeOf(bpfman.Link{}), shell.OriginLink))
 
+	// Per-Go-type OriginKind. The static Shape registry above
+	// tells the checker what fields each kind has; this table
+	// tells the runtime path-walker what kind a sub-value
+	// belongs to after reflection lands on its Go type, so
+	// that $loaded.programs[0] keeps OriginProgram (and its
+	// HasKernelProgramID capability) instead of decaying to
+	// OriginUnknown.
+	shell.RegisterTypeKind(reflect.TypeOf(bpfman.Program{}), shell.OriginProgram)
+	shell.RegisterTypeKind(reflect.TypeOf(bpfman.ProgramRecord{}), shell.OriginProgram)
+	shell.RegisterTypeKind(reflect.TypeOf(bpfman.Link{}), shell.OriginLink)
+	shell.RegisterTypeKind(reflect.TypeOf(bpfman.LinkRecord{}), shell.OriginLink)
+
 	// Pure builtins whose handlers live in this command. Tag
 	// each entry with its arity (number of primary args the
 	// parser consumes in expression position) and the Shape

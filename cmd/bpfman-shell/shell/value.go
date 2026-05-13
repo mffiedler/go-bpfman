@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -271,7 +272,27 @@ func (v Value) LookupValue(varName, path string) (Value, error) {
 		return Value{}, err
 	}
 
-	return Value{v: current}, nil
+	// Walk the origin Go value in parallel through the same
+	// steps so that path-extracted sub-values keep the
+	// underlying typed object available. Capability dispatch
+	// (HasKernelLinkID, HasKernelProgramID) downstream relies
+	// on the origin being present; without this, every
+	// $loaded.programs[0] would be origin-less and the
+	// type-driven extraction would degrade to ad-hoc path
+	// lookups in the caller.
+	//
+	// origin == nil is the common case for Values constructed
+	// from JSON or maps; walkOrigin short-circuits there and
+	// the result remains origin-less, matching today's
+	// behaviour for non-struct-backed Values.
+	out := Value{v: current}
+	if v.origin != nil {
+		if origin := walkOrigin(v.origin, steps); origin != nil {
+			out.origin = origin
+			out.kind = kindForType(reflect.TypeOf(origin))
+		}
+	}
+	return out, nil
 }
 
 // Lookup walks a dotted field path (with optional [n] indexing) into

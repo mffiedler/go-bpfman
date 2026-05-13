@@ -615,19 +615,19 @@ func TestReplLoop_SourceNoArgs(t *testing.T) {
 func TestParseProgramIDArg(t *testing.T) {
 	t.Parallel()
 
-	// Origin-backed value via ValueFromStruct (exercises HasProgramID capability).
+	// Origin-backed value via ValueFromStruct: the Program origin
+	// implements HasKernelProgramID, which the parser uses to
+	// extract the ID without touching the JSON-tree mirror.
 	prog := bpfman.Program{
 		Record: bpfman.ProgramRecord{ProgramID: kernel.ProgramID(42)},
 	}
 	originVal, err := shell.ValueFromStruct(prog)
 	require.NoError(t, err)
 
-	// Origin-less structured value via ValueFromJSON (exercises path lookup fallback).
-	jsonVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":99}}`))
-	require.NoError(t, err)
-
-	// Structured variable without .record.program_id
-	noIDVal, err := shell.ValueFromJSON([]byte(`{"name":"test"}`))
+	// Origin-less structured value. There is no path-lookup
+	// fallback any more: a structured arg must carry an origin
+	// that satisfies the capability, otherwise the parser errors.
+	originLessVal, err := shell.ValueFromJSON([]byte(`{"record":{"program_id":99}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -647,14 +647,9 @@ func TestParseProgramIDArg(t *testing.T) {
 			want: 255,
 		},
 		{
-			name: "origin-backed variable uses HasProgramID",
+			name: "origin-backed variable uses HasKernelProgramID",
 			arg:  shell.StructuredValueArg{Name: "prog", Value: originVal},
 			want: 42,
-		},
-		{
-			name: "origin-less variable falls back to path lookup",
-			arg:  shell.StructuredValueArg{Name: "prog", Value: jsonVal},
-			want: 99,
 		},
 		{
 			name: "scalar variable resolves directly",
@@ -662,9 +657,9 @@ func TestParseProgramIDArg(t *testing.T) {
 			want: 99,
 		},
 		{
-			name:    "structured variable without record.program_id returns error",
-			arg:     shell.StructuredValueArg{Name: "noid", Value: noIDVal},
-			wantErr: "has no .record.program_id field",
+			name:    "origin-less structured variable is rejected",
+			arg:     shell.StructuredValueArg{Name: "raw", Value: originLessVal},
+			wantErr: "carries no kernel ID capability",
 		},
 	}
 
@@ -1086,8 +1081,10 @@ func TestParseLinkIDArg(t *testing.T) {
 	originVal, err := shell.ValueFromStruct(link)
 	require.NoError(t, err)
 
-	// Origin-less structured value via ValueFromJSON (exercises path lookup fallback).
-	jsonVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":88}}`))
+	// Origin-less structured value. The path-lookup fallback is
+	// gone; structured args that carry no capability-bearing
+	// origin are rejected.
+	originLessVal, err := shell.ValueFromJSON([]byte(`{"record":{"id":88}}`))
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -1102,19 +1099,19 @@ func TestParseLinkIDArg(t *testing.T) {
 			want: 123,
 		},
 		{
-			name: "origin-backed variable uses HasLinkID",
+			name: "origin-backed variable uses HasKernelLinkID",
 			arg:  shell.StructuredValueArg{Name: "lnk", Value: originVal},
 			want: 77,
-		},
-		{
-			name: "origin-less variable falls back to path lookup",
-			arg:  shell.StructuredValueArg{Name: "lnk", Value: jsonVal},
-			want: 88,
 		},
 		{
 			name: "scalar variable resolves directly",
 			arg:  shell.ScalarValueArg{Text: "99"},
 			want: 99,
+		},
+		{
+			name:    "origin-less structured variable is rejected",
+			arg:     shell.StructuredValueArg{Name: "raw", Value: originLessVal},
+			wantErr: "carries no kernel ID capability",
 		},
 	}
 

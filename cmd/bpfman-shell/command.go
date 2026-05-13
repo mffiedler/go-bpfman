@@ -162,21 +162,15 @@ func parseProgramIDArg(a shell.Arg) (kernel.ProgramID, error) {
 		if err := shell.ExpectOrigin(v.Value, display, shell.OriginProgram); err != nil {
 			return 0, err
 		}
-		if origin := v.Value.Origin(); origin != nil {
-			if x, ok := origin.(bpfman.HasKernelProgramID); ok {
-				return x.KernelProgramID(), nil
-			}
+		origin := v.Value.Origin()
+		if origin == nil {
+			return 0, fmt.Errorf("%s is structured but carries no kernel ID capability", display)
 		}
-		// Fallback for origin-less structured values (OriginUnknown).
-		resolved, err := v.Value.LookupValue(v.Name, "record.program_id")
-		if err != nil {
-			return 0, fmt.Errorf("%s is structured but has no .record.program_id field", display)
+		x, ok := origin.(bpfman.HasKernelProgramID)
+		if !ok {
+			return 0, fmt.Errorf("%s is structured but its origin (%T) does not satisfy HasKernelProgramID", display, origin)
 		}
-		s, err := resolved.Scalar()
-		if err != nil {
-			return 0, err
-		}
-		return parseProgramIDText(s)
+		return x.KernelProgramID(), nil
 	default:
 		return 0, fmt.Errorf("unexpected argument type %T", a)
 	}
@@ -223,21 +217,15 @@ func parseLinkIDArg(a shell.Arg) (kernel.LinkID, error) {
 		if err := shell.ExpectOrigin(v.Value, display, shell.OriginLink); err != nil {
 			return 0, err
 		}
-		if origin := v.Value.Origin(); origin != nil {
-			if x, ok := origin.(bpfman.HasKernelLinkID); ok {
-				return x.KernelLinkID(), nil
-			}
+		origin := v.Value.Origin()
+		if origin == nil {
+			return 0, fmt.Errorf("%s is structured but carries no kernel ID capability", display)
 		}
-		// Fallback for origin-less structured values (OriginUnknown).
-		resolved, err := v.Value.LookupValue(v.Name, "record.id")
-		if err != nil {
-			return 0, fmt.Errorf("%s is structured but has no .record.id field", display)
+		x, ok := origin.(bpfman.HasKernelLinkID)
+		if !ok {
+			return 0, fmt.Errorf("%s is structured but its origin (%T) does not satisfy HasKernelLinkID", display, origin)
 		}
-		s, err := resolved.Scalar()
-		if err != nil {
-			return 0, err
-		}
-		return parseLinkIDText(s)
+		return x.KernelLinkID(), nil
 	default:
 		return 0, fmt.Errorf("unexpected argument type %T", a)
 	}
