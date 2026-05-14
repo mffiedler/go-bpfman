@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/repl"
@@ -545,67 +546,28 @@ func assertContains(verbSpan shell.Span, args []string) (assertResult, error) {
 // evalAssertMatches implements `assert <target> matches { ... }`
 // with subset-match semantics: each entry is checked individually
 // and all mismatches are collected so the failure message reports
-// every diverging path in one go. Extra fields in the actual record
-// are ignored — the entry list is the entire contract.
+// every diverging path in one go. Extra fields in the actual
+// record are ignored (the entry list is the entire contract)
+// unless the block is `matches exhaustive { ... }`, in which case
+// any top-level key the actual value carries that is not claimed
+// by an entry is reported as an "unclaimed key" mismatch in the
+// same failure block. Nested `matches [exhaustive] { ... }`
+// sub-blocks recurse against the sub-value at the host entry's
+// path; the same mismatches collection threads through so
+// failures at any depth surface together.
 func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourceLoc) (assertResult, error) {
 	sva, ok := target.(shell.StructuredValueArg)
 	if !ok {
 		return assertResult{}, fmt.Errorf("matches requires a structured value as the target (got %s)", repl.ArgText(target))
 	}
-	if len(block.Entries) == 0 {
+	if len(block.Entries) == 0 && !block.Exhaustive {
 		return assertResult{}, fmt.Errorf("matches block must contain at least one entry")
 	}
 
-	// locate prefixes a path message with the entry's source
-	// location so multi-mismatch failures point at the specific
-	// offending line inside the block. The shell.Pos carried by
-	// each entry is relative to the accumulated REPL chunk; when
-	// the assert statement has a known file/start-line, translate
-	// the chunk-local line into an absolute file line so the
-	// diagnostic agrees with the rest of the REPL's "file:line:"
-	// convention.
-	locate := func(loc shell.Pos, msg string) string {
-		if loc.Line == 0 {
-			return msg
-		}
-		if base.File != "" && base.Line > 0 {
-			absLine := base.Line + loc.Line - 1
-			return fmt.Sprintf("%s:%d:%d: %s", base.File, absLine, loc.Col, msg)
-		}
-		return fmt.Sprintf("%d:%d: %s", loc.Line, loc.Col, msg)
-	}
-
+	locate := matchesLocator(base)
 	var mismatches []string
-	for _, entry := range block.Entries {
-		actual, err := sva.Value.LookupValue(sva.Name, entry.Path)
-		if err != nil {
-			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: %v", entry.Path, err)))
-			continue
-		}
-		if entry.NotEmpty {
-			s, err := actual.Scalar()
-			if err != nil {
-				mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected non-empty scalar, got %s", entry.Path, actual.Kind())))
-				continue
-			}
-			if s == "" {
-				mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected non-empty, got \"\"", entry.Path)))
-			}
-			continue
-		}
-		actualS, err := actual.Scalar()
-		if err != nil {
-			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected scalar value, got %s", entry.Path, actual.Kind())))
-			continue
-		}
-		expected, err := entry.Value.Scalar()
-		if err != nil {
-			return assertResult{}, fmt.Errorf("matches entry %q: pattern is not a scalar value", entry.Path)
-		}
-		if actualS != expected {
-			mismatches = append(mismatches, locate(entry.Pos, fmt.Sprintf("%s: expected %q, got %q", entry.Path, expected, actualS)))
-		}
-	}
+	evalMatchesAgainst(sva.Value, sva.Name, block, locate, &mismatches)
+
 	if len(mismatches) == 0 {
 		return assertResult{pass: true, message: "matches block held"}, nil
 	}
@@ -617,6 +579,190 @@ func evalAssertMatches(target shell.Arg, block shell.MatchesBlockArg, base sourc
 		pass:    false,
 		message: fmt.Sprintf("matches: %d %s\n  %s", len(mismatches), noun, strings.Join(mismatches, "\n  ")),
 	}, nil
+}
+
+// matchesLocator returns a closure that prefixes a path message
+// with the entry's source location so multi-mismatch failures
+// point at the specific offending line inside the block. The
+// shell.Pos carried by each entry is relative to the accumulated
+// REPL chunk; when the assert statement has a known
+// file/start-line, translate the chunk-local line into an
+// absolute file line so the diagnostic agrees with the rest of
+// the REPL's "file:line:" convention.
+func matchesLocator(base sourceLoc) func(shell.Pos, string) string {
+	return func(loc shell.Pos, msg string) string {
+		if loc.Line == 0 {
+			return msg
+		}
+		if base.File != "" && base.Line > 0 {
+			absLine := base.Line + loc.Line - 1
+			return fmt.Sprintf("%s:%d:%d: %s", base.File, absLine, loc.Col, msg)
+		}
+		return fmt.Sprintf("%d:%d: %s", loc.Line, loc.Col, msg)
+	}
+}
+
+// evalMatchesAgainst checks each entry of block against the
+// target value and appends any mismatches to dst. Recursive over
+// sub-blocks; honours exhaustive coverage at every block's level
+// independently.
+func evalMatchesAgainst(target shell.Value, targetName string, block shell.MatchesBlockArg, locate func(shell.Pos, string) string, dst *[]string) {
+	// Exhaustive coverage requires the target to be an object so
+	// "every top-level key" is even meaningful. A non-object
+	// target is a hard mismatch -- the block's author claimed an
+	// object shape and the actual value is a different kind.
+	var actualKeys map[string]bool
+	if block.Exhaustive {
+		m, ok := target.Raw().(map[string]any)
+		if !ok {
+			*dst = append(*dst, locate(block.Pos, fmt.Sprintf("matches exhaustive: expected object, got %s", target.Kind())))
+			// Still walk entries so individual mismatches
+			// surface in the same failure block (e.g. dotted
+			// paths that fail to resolve under the non-object
+			// shape). Exhaustive coverage check is skipped.
+			actualKeys = map[string]bool{}
+		} else {
+			actualKeys = make(map[string]bool, len(m))
+			for k := range m {
+				actualKeys[k] = true
+			}
+		}
+	}
+
+	claimed := make(map[string]bool, len(block.Entries))
+	for _, entry := range block.Entries {
+		if block.Exhaustive {
+			// In exhaustive mode the parser rejects dotted
+			// paths, so entry.Path is a single key. Claim it.
+			claimed[entry.Path] = true
+		}
+
+		actual, err := target.LookupValue(targetName, entry.Path)
+		if err != nil {
+			*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: %v", entry.Path, err)))
+			continue
+		}
+
+		switch {
+		case entry.SubBlock != nil:
+			subName := targetName + "." + entry.Path
+			evalMatchesAgainst(actual, subName, *entry.SubBlock, locate, dst)
+
+		case entry.Predicate == "not-empty":
+			if isMatchesEmpty(actual) {
+				*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: expected non-empty, got %s", entry.Path, matchesEmptyDescription(actual))))
+			}
+
+		case entry.Predicate == "nil":
+			if !actual.IsNil() {
+				*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: expected null, got %s", entry.Path, matchesValueDisplay(actual))))
+			}
+
+		case entry.Predicate == "empty":
+			if actual.IsNil() {
+				*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: expected empty (\"\" / [] / {}), got null", entry.Path)))
+			} else if !isMatchesEmpty(actual) {
+				*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: expected empty (\"\" / [] / {}), got %s", entry.Path, matchesValueDisplay(actual))))
+			}
+
+		default:
+			if !matchesValueEqual(actual, entry.Value) {
+				*dst = append(*dst, locate(entry.Pos, fmt.Sprintf("%s: expected %s, got %s", entry.Path, matchesValueDisplay(entry.Value), matchesValueDisplay(actual))))
+			}
+		}
+	}
+
+	if block.Exhaustive {
+		for key := range actualKeys {
+			if !claimed[key] {
+				*dst = append(*dst, locate(block.Pos, fmt.Sprintf("%s: present in value but unclaimed in exhaustive block", key)))
+			}
+		}
+	}
+}
+
+// isMatchesEmpty reports whether v is the matches-block notion of
+// "empty": nil (JSON null), empty string, empty list, empty map.
+// Numbers and booleans are never empty (they always carry
+// content). Mirrors the expression-form not-empty predicate's
+// shape so the inline `field: not-empty` and the standalone
+// `assert not-empty $X.field` read identically.
+func isMatchesEmpty(v shell.Value) bool {
+	if v.IsNil() {
+		return true
+	}
+	switch x := v.Raw().(type) {
+	case string:
+		return x == ""
+	case []any:
+		return len(x) == 0
+	case map[string]any:
+		return len(x) == 0
+	}
+	return false
+}
+
+// matchesEmptyDescription renders a short human-readable hint
+// for the empty kind of v, used in "expected non-empty, got X"
+// diagnostics.
+func matchesEmptyDescription(v shell.Value) string {
+	if v.IsNil() {
+		return "null"
+	}
+	switch v.Raw().(type) {
+	case string:
+		return `""`
+	case []any:
+		return "[]"
+	case map[string]any:
+		return "{}"
+	}
+	return v.Kind().String()
+}
+
+// matchesValueEqual compares an actual value at a matches entry's
+// path with the entry's evaluated pattern value. Equality is
+// kind-aware: scalars compare by their Scalar() text (the legacy
+// behaviour), and structured values (lists, maps) compare via
+// their raw representation so `field: []` and `field: {}`
+// patterns work natively. Null values compare equal only to null.
+func matchesValueEqual(actual, expected shell.Value) bool {
+	if actual.IsNil() || expected.IsNil() {
+		return actual.IsNil() && expected.IsNil()
+	}
+	if actual.IsStructured() || expected.IsStructured() {
+		return reflect.DeepEqual(actual.Raw(), expected.Raw())
+	}
+	a, errA := actual.Scalar()
+	e, errE := expected.Scalar()
+	if errA != nil || errE != nil {
+		return reflect.DeepEqual(actual.Raw(), expected.Raw())
+	}
+	return a == e
+}
+
+// matchesValueDisplay renders a value for inclusion in a
+// mismatch diagnostic. Scalars use their Scalar() text in
+// quotes; structured values fall back to their kind so the
+// message stays one line.
+func matchesValueDisplay(v shell.Value) string {
+	if v.IsNil() {
+		return "null"
+	}
+	if v.IsStructured() {
+		switch v.Raw().(type) {
+		case []any:
+			return "[...]"
+		case map[string]any:
+			return "{...}"
+		}
+		return v.Kind().String()
+	}
+	s, err := v.Scalar()
+	if err != nil {
+		return v.Kind().String()
+	}
+	return fmt.Sprintf("%q", s)
 }
 
 // negateMessage transforms an assertion message for negated assertions.

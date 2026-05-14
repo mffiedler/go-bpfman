@@ -482,8 +482,19 @@ func (p *parser) assertTakesExprForm() bool {
 			break
 		}
 		if jt.Kind == TokenWord && (jt.Text == "{" || jt.Text == "}") {
-			if jt.Text == "{" && j > 0 && p.tokens[j-1].Kind == TokenWord && p.tokens[j-1].Text == "matches" {
-				return false
+			if jt.Text == "{" && j > 0 {
+				// `matches {` or `matches exhaustive {`
+				// signals a verb-form matches tail; route the
+				// whole statement through CommandStmt so the
+				// block parser at parseCommandStmt fires.
+				prev := p.tokens[j-1]
+				if prev.Kind == TokenWord && prev.Text == "matches" {
+					return false
+				}
+				if prev.Kind == TokenWord && prev.Text == "exhaustive" &&
+					j >= 2 && p.tokens[j-2].Kind == TokenWord && p.tokens[j-2].Text == "matches" {
+					return false
+				}
 			}
 			break
 		}
@@ -1022,25 +1033,40 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 		return nil, nil
 	}
 
-	// Detect "... matches {" tail: the previous token must be the
-	// bare keyword "matches" and the next token must be "{".  When
-	// this shape fires, the "matches" word is consumed as part of
-	// the block syntax (it does not appear in the host command's
-	// argument list) and the block parses into a MatchesBlockExpr
-	// that becomes the command's last argument.
+	// Detect "... matches [exhaustive] {" tail: the trailing buf
+	// tokens before the `{` at the cursor must be either the bare
+	// keyword "matches" alone, or "matches" followed by
+	// "exhaustive". When this shape fires, the keyword(s) are
+	// consumed as part of the block syntax (they do not appear in
+	// the host command's argument list) and the block parses into
+	// a MatchesBlockExpr (with Exhaustive set when "exhaustive"
+	// was present) that becomes the command's last argument.
 	var matchesBlock *MatchesBlockExpr
-	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "{" &&
-		len(buf) > 0 && buf[len(buf)-1].Kind == TokenWord && buf[len(buf)-1].Text == "matches" {
-		matchesTok := buf[len(buf)-1]
-		buf = buf[:len(buf)-1]
-		if len(buf) == 0 {
-			return nil, spanErrorf(matchesTok.Span, "matches { ... } requires a target expression and a host command")
+	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "{" {
+		exhaustive := false
+		matchesIdx := -1
+		switch {
+		case len(buf) >= 2 &&
+			buf[len(buf)-1].Kind == TokenWord && buf[len(buf)-1].Text == "exhaustive" &&
+			buf[len(buf)-2].Kind == TokenWord && buf[len(buf)-2].Text == "matches":
+			exhaustive = true
+			matchesIdx = len(buf) - 2
+		case len(buf) >= 1 &&
+			buf[len(buf)-1].Kind == TokenWord && buf[len(buf)-1].Text == "matches":
+			matchesIdx = len(buf) - 1
 		}
-		mb, err := p.parseMatchesBlock(matchesTok.Pos)
-		if err != nil {
-			return nil, err
+		if matchesIdx >= 0 {
+			matchesTok := buf[matchesIdx]
+			buf = buf[:matchesIdx]
+			if len(buf) == 0 {
+				return nil, spanErrorf(matchesTok.Span, "matches { ... } requires a target expression and a host command")
+			}
+			mb, err := p.parseMatchesBlock(matchesTok.Pos, exhaustive)
+			if err != nil {
+				return nil, err
+			}
+			matchesBlock = mb
 		}
-		matchesBlock = mb
 	}
 
 	args, err := parseCommandArgs(buf, isAlias)

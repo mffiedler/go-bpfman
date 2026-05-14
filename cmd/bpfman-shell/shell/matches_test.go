@@ -34,7 +34,7 @@ func TestParse_MatchesBlock_SingleEntry(t *testing.T) {
 
 	require.Len(t, block.Entries, 1)
 	assert.Equal(t, "record.meta.name", block.Entries[0].Path)
-	assert.False(t, block.Entries[0].NotEmpty)
+	assert.Empty(t, block.Entries[0].Predicate)
 	lit, ok := block.Entries[0].Pattern.(*LiteralExpr)
 	require.True(t, ok)
 	assert.Equal(t, "foo", lit.Text)
@@ -58,7 +58,7 @@ func TestParse_MatchesBlock_MultiEntry_NewlineSeparated(t *testing.T) {
 	assert.Equal(t, "pid", block.Entries[1].Pattern.(*VarRefExpr).Name)
 
 	assert.Equal(t, "status.kernel.tag", block.Entries[2].Path)
-	assert.True(t, block.Entries[2].NotEmpty)
+	assert.Equal(t, "not-empty", block.Entries[2].Predicate)
 	assert.Nil(t, block.Entries[2].Pattern)
 }
 
@@ -170,7 +170,7 @@ func TestParse_MatchesBlock_BareNotEmpty_IsPredicate(t *testing.T) {
 
 	_, block := parseMatchesCmd(t, `assert $p matches { a.b: not-empty }`)
 	require.Len(t, block.Entries, 1)
-	assert.True(t, block.Entries[0].NotEmpty, "bare not-empty must register the unary predicate")
+	assert.Equal(t, "not-empty", block.Entries[0].Predicate, "bare not-empty must register the unary predicate")
 	assert.Nil(t, block.Entries[0].Pattern, "predicate entry has no expression pattern")
 }
 
@@ -183,7 +183,7 @@ func TestParse_MatchesBlock_QuotedNotEmpty_IsLiteral(t *testing.T) {
 	} {
 		_, block := parseMatchesCmd(t, src)
 		require.Len(t, block.Entries, 1)
-		assert.False(t, block.Entries[0].NotEmpty, "quoted form must NOT trigger the predicate path: %s", src)
+		assert.Empty(t, block.Entries[0].Predicate, "quoted form must NOT trigger the predicate path: %s", src)
 		lit, ok := block.Entries[0].Pattern.(*LiteralExpr)
 		require.True(t, ok, "quoted form must produce a literal expression: %s", src)
 		assert.Equal(t, "not-empty", lit.Text)

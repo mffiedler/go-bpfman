@@ -123,23 +123,34 @@ type AdapterArg struct {
 
 // MatchesBlockArg carries the entries of a parsed `matches { ... }`
 // block to the host command. Patterns are evaluated eagerly at the
-// argument-expansion boundary: NotEmpty entries set NotEmpty true
-// and leave Value zero; value-pattern entries store the resolved
-// scalar (or structured value, kept for completeness) of the
-// pattern expression. Span covers the whole `matches { ... }`
-// expression.
+// argument-expansion boundary: Predicate entries (`not-empty`,
+// `nil`, `empty`) leave Value zero and let the consumer decide
+// the assertion semantics; SubBlock entries carry a fully-
+// expanded nested matches block to evaluate against the sub-value
+// at the entry's Path; value-pattern entries store the resolved
+// value of the pattern expression. Exhaustive reflects the
+// `matches exhaustive` keyword form -- the host command (today
+// only the assert verb dispatcher) uses it to enable the
+// structural-coverage check. Span covers the whole
+// `matches { ... }` expression.
 type MatchesBlockArg struct {
-	Entries []MatchesBlockEntry
+	Entries    []MatchesBlockEntry
+	Exhaustive bool
 	Span
 }
 
 // MatchesBlockEntry is the post-expansion form of one matches row.
-// Path is verbatim from the source. Exactly one of NotEmpty / Value
-// is meaningful.
+// Path is verbatim from the source. Exactly one of Predicate /
+// SubBlock / Value is meaningful: Predicate non-empty names a
+// bareword predicate (`not-empty`, `nil`, `empty`); SubBlock
+// non-nil means the pattern is a nested matches block; otherwise
+// Value carries the resolved pattern expression's value for
+// equality comparison.
 type MatchesBlockEntry struct {
-	Path     string
-	Value    Value
-	NotEmpty bool
+	Path      string
+	Value     Value
+	SubBlock  *MatchesBlockArg
+	Predicate string
 	Span
 }
 
