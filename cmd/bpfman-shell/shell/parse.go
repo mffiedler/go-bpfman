@@ -1156,80 +1156,107 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 }
 
 // parseForEachNames reads the loop-variable name list that follows
-// the 'foreach' keyword. Accepts a single name (single-var form)
-// or a comma-separated list (multi-var form, len >= 2). The
-// tokeniser does not split on ',', so a comma may arrive glued to
-// an identifier ("a," is one TokenWord); the parser strips the
-// trailing comma exactly the way parseBindTuple does. A bare "_"
-// is allowed as a discard slot, matching the spirit of tuple-bind
-// targets; "in" is reserved as the keyword that ends the name list.
+// the 'foreach' keyword. Two surface forms:
+//
+//   - single-var: 'foreach NAME in LIST { ... }'. NAME is a bare
+//     identifier or '_' (the iterate-for-side-effects idiom).
+//   - destructure: 'foreach (NAME NAME { NAME }) in LIST { ... }'.
+//     At least two names, whitespace-separated; parens are
+//     required because a bare 'foreach a b in xs' would read as a
+//     command-shaped name list rather than a binding.
+//
+// Commas are not a separator at this site. A token whose text
+// contains ',' is rejected with an explicit error so a stray
+// 'foreach a, b in xs' fails loudly rather than silently mis-parsing.
 func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
+		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }  |  foreach (<name1> <name2> ...) in <expr> { ... }")
 	}
-	first, sawComma, err := p.parseForEachNameToken(feTok)
+	if p.peek().Text == "(" {
+		return p.parseForEachDestructureNames(feTok)
+	}
+	name, err := p.parseForEachNameToken(feTok)
 	if err != nil {
 		return nil, err
 	}
-	names := []string{first}
-	for sawComma || (!p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == ",") {
-		if !sawComma {
-			p.advance() // ","
+	return []string{name}, nil
+}
+
+// parseForEachDestructureNames consumes a parenthesised name list:
+// '(' Name Name { Name } ')'. Single-name parens and the empty
+// shape are rejected because the design refuses implicit
+// single-name parens at non-def binding sites; the single-var
+// 'foreach x in xs' is the canonical spelling for one loop
+// variable. Newlines and semicolons inside the parens are
+// transparent so a long list can wrap.
+func (p *parser) parseForEachDestructureNames(feTok Token) ([]string, error) {
+	openTok := p.advance() // "("
+	var names []string
+	seen := make(map[string]bool)
+	for {
+		for !p.atEOF() && p.peek().Kind == TokenSep {
+			p.pos++
 		}
-		next, more, err := p.parseForEachNameToken(feTok)
+		if p.atEOF() {
+			return nil, spanErrorf(openTok.Span, "foreach: unterminated name list (missing ')')")
+		}
+		t := p.peek()
+		if t.Kind == TokenWord && t.Text == ")" {
+			p.advance()
+			break
+		}
+		nameTok := t
+		name, err := p.parseForEachNameToken(feTok)
 		if err != nil {
 			return nil, err
 		}
-		names = append(names, next)
-		sawComma = more
-	}
-	// Multi-var destructure with every slot discarded is
-	// nonsensical: the user opted into destructuring but pulled
-	// out no value. Single-var 'foreach _ in LIST' is a different
-	// shape: an "iterate for side effects only" idiom that other
-	// languages (Python 'for _ in range(N)', Go 'for range xs')
-	// codify, and the e2e corpus uses for fixed-count repeat
-	// loops where the index is genuinely irrelevant. Only reject
-	// the all-discard case when there are two or more names.
-	if len(names) >= 2 {
-		allDiscard := true
-		for _, n := range names {
-			if n != "_" {
-				allDiscard = false
-				break
+		if name != "_" {
+			if seen[name] {
+				return nil, spanErrorf(nameTok.Span, "foreach: duplicate name %q", name)
 			}
+			seen[name] = true
 		}
-		if allDiscard {
-			return nil, spanErrorf(feTok.Span, "foreach: all loop variables are '_'; at least one must bind")
+		names = append(names, name)
+	}
+	if len(names) < 2 {
+		return nil, spanErrorf(openTok.Span, "foreach: parenthesised name list requires at least two names; use 'foreach x in ...' for single-var iteration")
+	}
+	allDiscard := true
+	for _, n := range names {
+		if n != "_" {
+			allDiscard = false
+			break
 		}
+	}
+	if allDiscard {
+		return nil, spanErrorf(feTok.Span, "foreach: all loop variables are '_'; at least one must bind")
 	}
 	return names, nil
 }
 
-// parseForEachNameToken consumes one loop-variable name and
-// returns whether a trailing comma was glued to the identifier.
-// The 'in' keyword is rejected here so it is reachable as the
-// terminator at the call site.
-func (p *parser) parseForEachNameToken(feTok Token) (name string, sawComma bool, err error) {
+// parseForEachNameToken consumes one loop-variable name. The 'in'
+// keyword is rejected here so it is reachable as the terminator at
+// the single-var call site. Tokens whose text contains ',' are
+// rejected explicitly so the old 'foreach a, b in xs' spelling
+// fails with a clear diagnostic.
+func (p *parser) parseForEachNameToken(feTok Token) (string, error) {
 	if p.atEOF() || p.peek().Kind != TokenWord {
-		return "", false, spanErrorf(feTok.Span, "foreach: expected variable name, got end of input")
+		return "", spanErrorf(feTok.Span, "foreach: expected variable name, got end of input")
 	}
 	t := p.advance()
-	text := t.Text
-	if strings.HasSuffix(text, ",") && len(text) > 1 {
-		text = text[:len(text)-1]
-		sawComma = true
+	if strings.ContainsRune(t.Text, ',') {
+		return "", spanErrorf(t.Span, "foreach: comma is not a separator; use whitespace and wrap multi-var lists in parens (got %q)", t.Text)
 	}
-	if text == "in" {
-		return "", false, spanErrorf(t.Span, "foreach requires a variable name before 'in'")
+	if t.Text == "in" {
+		return "", spanErrorf(t.Span, "foreach requires a variable name before 'in'")
 	}
-	if text == "_" {
-		return "_", sawComma, nil
+	if t.Text == "_" {
+		return "_", nil
 	}
-	if !IsIdent(text) {
-		return "", false, spanErrorf(t.Span, "invalid variable name: %q", text)
+	if !IsIdent(t.Text) {
+		return "", spanErrorf(t.Span, "invalid variable name: %q", t.Text)
 	}
-	return text, sawComma, nil
+	return t.Text, nil
 }
 
 // takeUntilOpenBrace collects tokens up to (but not including) the

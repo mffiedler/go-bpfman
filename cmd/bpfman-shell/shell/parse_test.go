@@ -629,7 +629,12 @@ func TestParse_ForEach_Errors(t *testing.T) {
 		{"missing expression", "foreach p in { print x }", "foreach requires"},
 		{"missing block", "foreach p in $list print x", "expected '{'"},
 		{"unterminated block", "foreach p in $list { print x", "unterminated block"},
-		{"all discard", "foreach _, _ in $list { print x }", "at least one must bind"},
+		{"all discard", "foreach (_ _) in $list { print x }", "at least one must bind"},
+		{"comma rejected", "foreach a, b in $pairs { print a }", "comma is not a separator"},
+		{"unparenthesised multi-var", "foreach a b in $pairs { print a }", "foreach requires 'in'"},
+		{"single-name parens rejected", "foreach (x) in $list { print x }", "requires at least two names"},
+		{"empty parens rejected", "foreach () in $list { print x }", "requires at least two names"},
+		{"duplicate names rejected", "foreach (a a) in $pairs { print a }", "duplicate name"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -649,11 +654,12 @@ func TestParse_ForEach_MultiVar(t *testing.T) {
 		input string
 		want  []string
 	}{
-		{"two glued comma", "foreach a, b in $pairs { print a }", []string{"a", "b"}},
-		{"two separated comma", "foreach a , b in $pairs { print a }", []string{"a", "b"}},
-		{"three names", "foreach a, b, c in $triples { print a }", []string{"a", "b", "c"}},
-		{"discard slot first", "foreach _, b in $pairs { print b }", []string{"_", "b"}},
-		{"discard slot second", "foreach a, _ in $pairs { print a }", []string{"a", "_"}},
+		{"two names", "foreach (a b) in $pairs { print a }", []string{"a", "b"}},
+		{"three names", "foreach (a b c) in $triples { print a }", []string{"a", "b", "c"}},
+		{"discard slot first", "foreach (_ b) in $pairs { print b }", []string{"_", "b"}},
+		{"discard slot second", "foreach (a _) in $pairs { print a }", []string{"a", "_"}},
+		{"discard middle", "foreach (a _ c) in $triples { print a }", []string{"a", "_", "c"}},
+		{"name list wraps over newlines", "foreach (a\n  b\n  c) in $triples { print a }", []string{"a", "b", "c"}},
 		{"single discard iterate-only", "foreach _ in $list { print hi }", []string{"_"}},
 	}
 	for _, tc := range cases {

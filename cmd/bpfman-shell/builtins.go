@@ -353,7 +353,7 @@ func init() {
 			Usage:    "zip <list> <list>",
 			Summary:  "Pair two lists element-wise into a list of 2-element pair lists.",
 			Detail: "zip is a pure builtin called from expression position: " +
-				"'foreach a, b in (zip $xs $ys) { ... }' or 'let pairs = zip $xs $ys'. " +
+				"'foreach (a b) in (zip $xs $ys) { ... }' or 'let pairs = zip $xs $ys'. " +
 				"Length mismatch is a hard error rather than silent truncation: " +
 				"parallel-list patterns carry an implicit \"these are paired\" " +
 				"invariant, so dropping the tail of the longer list would convert " +

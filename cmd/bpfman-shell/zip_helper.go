@@ -3,7 +3,7 @@
 // foreach destructure the elements back into named bindings so a
 // script expresses parallel iteration without index bookkeeping:
 //
-//	foreach prio, po in (zip $priorities $proceed_ons) {
+//	foreach (prio po) in (zip $priorities $proceed_ons) {
 //	    bpfman link attach tc ... -p $prio --proceed-on $po $prog
 //	}
 //

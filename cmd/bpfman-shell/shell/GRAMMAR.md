@@ -89,14 +89,15 @@ in command positions while treating the documented parser sites
 reinterpretations of Word tokens. Concrete consequences worth
 knowing:
 
-- `foreach a, b in xs { ... }` may lex as `Word("foreach")
-  Word("a,") Word("b") Word("in")` rather than `foreach IDENT
-  COMMA IDENT in`. The parser strips trailing commas glued to
-  identifiers at every binding site (`parseBindTargetName`,
-  `parseForEachNameToken`, `parseDefParams`). The grammar
-  productions spell the surface syntax (Name `,` Name); the
-  comma-gluing is a tokenisation detail to handle inside the
-  binding-site rules.
+- Commas are not a separator at any binding site. The grammar
+  uses whitespace between names (`def f(a b)`, `let (rc x) <-`,
+  `foreach (a b) in ...`). Because the lexer does not split on
+  `,`, an old-style `def f(a, b)` would lex as `Word("a,")
+  Word("b")`; every binding-site parser (`parseBindTargetName`,
+  `parseForEachNameToken`, `parseDefParams`) rejects any token
+  whose text contains a comma with an explicit "comma is not a
+  separator" diagnostic so the migration from the previous
+  comma-separated spelling fails loudly.
 
 - `+`, `*`, and `%` are Delimiter Words emitted as single-char
   tokens regardless of surrounding whitespace. `-` and `/` are
@@ -462,32 +463,33 @@ Examples:
 
     ForEachStmt    = 'foreach' NameList 'in' Expression Block .
     NameList       = Name
-                   | Name ',' Name { ',' Name } .
+                   | '(' Name Name { Name } ')' .
 
 The Expression between `in` and the opening `{` is collected by
 `takeUntilOpenBrace`, which skips Sep tokens and stops at the
 next `{`; the collected token stream is then parsed as an
-Expression. `_` is an accepted name at any slot. When
-`len(NameList) >= 2`, an all-underscore name list is rejected as
-"foreach: all loop variables are '_'; at least one must bind".
-The single-name form `foreach _ in xs` is accepted.
+Expression. `_` is an accepted name at any slot in either form.
 
-Tokenisation note: in the current lexer, a comma may arrive
-glued to the preceding identifier (`a,` lexes as one Word
-token). The parser normalises by stripping the trailing comma
-before validating the name. The same normalisation applies to
-`BindTarget`'s tuple form and to `ParamList`. A tree-sitter
-derivation should model the surface syntax (Name `,` Name) and
-treat the comma-gluing as a tokenisation detail. A Tree-sitter
-grammar can either split comma as punctuation globally and
-preserve command-shaped arguments via a broader
-command-argument token rule, or accept glued-comma identifiers
-in the binding-site rules and normalise them semantically.
+The single-var form `foreach NAME in LIST` carries the loop
+element through to NAME verbatim. The parenthesised multi-var
+form destructures each list element as a sub-list of length
+`len(NameList)`. Parens are required for multi-var because a
+bare `foreach a b in xs` reads as a command-shaped name list
+rather than a binding; a single-name parenthesised form `foreach
+(x) in xs` is rejected to keep the spelling unambiguous (the
+single-var form omits the parens). Duplicate real names are
+rejected; `_` is exempt. An all-underscore parenthesised list is
+rejected as "foreach: all loop variables are '_'; at least one
+must bind"; the single-var `foreach _ in xs` is the
+iterate-for-side-effects idiom and is accepted.
+
+Newlines and semicolons inside the parens are transparent so a
+long destructure list can wrap.
 
 Examples:
 
     foreach prog in $progs { print $prog.name }
-    foreach prio, po in (zip $priorities $proceed_ons) { ... }
+    foreach (prio po) in (zip $priorities $proceed_ons) { ... }
     foreach _ in (range 10) { print "tick" }
 
 ### IfStmt
@@ -1055,17 +1057,19 @@ covered by the ordinary identifier and duplicate-name rules.
     guard (rc x) <- CMD
 
     foreach x in LIST { BODY }
-    foreach a, b in LIST { BODY }
+    foreach (a b) in LIST { BODY }
 
     def f() { BODY }
     def f(a) { BODY }
     def f(a b c) { BODY }
 
 The bind tuple form (`let (rc x) <-` and `guard (rc x) <-`)
-accepts exactly two names. The foreach multi-var form accepts
-two or more names separated by commas. The def parameter list
-accepts zero or more whitespace-separated names; there is no
-comma form.
+accepts exactly two names, whitespace-separated. The foreach
+multi-var form (`foreach (a b) in xs`) accepts two or more
+whitespace-separated names; the parens are required so that
+`foreach a b in xs` does not read as a command-shaped name list.
+The def parameter list accepts zero or more whitespace-separated
+names. None of these sites accepts a comma separator.
 
 ### Discard slot
 
@@ -1077,7 +1081,7 @@ Accepted positions:
   primary value is not needed.
 - Tuple-bind slots (`let (_ x) <- cmd`, `let (a _) <- cmd`).
 - ForEach name list (single-var `foreach _ in xs` and any slot
-  in multi-var `foreach _, b in pairs`).
+  in multi-var `foreach (_ b) in pairs`).
 
 Rejected:
 

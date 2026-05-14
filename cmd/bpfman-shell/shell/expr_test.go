@@ -1093,7 +1093,7 @@ func TestEvalProgram_ForEach_MultiVarDestructures(t *testing.T) {
 			return Value{}, nil
 		},
 	}
-	// foreach k, v in $pairs { print $k $v }
+	// foreach (k v) in $pairs { print $k $v }
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
 			Names: []string{"k", "v"},
@@ -1179,7 +1179,7 @@ func TestEvalProgram_ForEach_MultiVarDiscardSlot(t *testing.T) {
 			return Value{}, nil
 		},
 	}
-	// foreach _, v in $pairs { $v }
+	// foreach (_ v) in $pairs { $v }
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
 			Names: []string{"_", "v"},
