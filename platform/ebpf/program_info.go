@@ -34,9 +34,13 @@ func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 		restricted = true
 	}
 
+	// LoadedAt is normalised to UTC second precision so it stays
+	// comparable with record.created_at (same shape) and so the
+	// Load and Get round-trip produces identical strings rather
+	// than local-tz nanosecond drift on either side of the wire.
 	var loadedAt time.Time
 	if hasLoadTime {
-		loadedAt = bootTime().Add(loadTime)
+		loadedAt = bootTime().Add(loadTime).UTC().Truncate(time.Second)
 	}
 
 	ebpfMapIDs, hasMapIDs := info.MapIDs()
