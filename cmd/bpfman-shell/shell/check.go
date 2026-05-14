@@ -337,6 +337,19 @@ func (c *checker) walkStmt(s Stmt) {
 			c.literals[n.Name] = lit
 		}
 
+	case *LetDestructureStmt:
+		c.checkExpr(n.RHS)
+		// Each non-'_' name becomes defined. Element shapes are
+		// not inferred individually because the RHS could be any
+		// list expression; only the binding existence matters
+		// for downstream name-resolution.
+		for _, name := range n.Names {
+			if name == "_" {
+				continue
+			}
+			c.defined[name] = true
+		}
+
 	case *BindStmt:
 		if n.Cmd != nil {
 			for _, a := range n.Cmd.Args {

@@ -38,18 +38,19 @@ func (*IfBranch) astNode() {}
 // any *xxxStmt that has stmtNode() also satisfies astNode()
 // because both methods sit on the same set of pointer types
 // declared in parse.go.
-func (*LetStmt) astNode()      {}
-func (*BindStmt) astNode()     {}
-func (*DeferStmt) astNode()    {}
-func (*IfStmt) astNode()       {}
-func (*CommandStmt) astNode()  {}
-func (*ExprStmt) astNode()     {}
-func (*ForEachStmt) astNode()  {}
-func (*BreakStmt) astNode()    {}
-func (*ContinueStmt) astNode() {}
-func (*RetryStmt) astNode()    {}
-func (*DefStmt) astNode()      {}
-func (*AssertStmt) astNode()   {}
+func (*LetStmt) astNode()            {}
+func (*LetDestructureStmt) astNode() {}
+func (*BindStmt) astNode()           {}
+func (*DeferStmt) astNode()          {}
+func (*IfStmt) astNode()             {}
+func (*CommandStmt) astNode()        {}
+func (*ExprStmt) astNode()           {}
+func (*ForEachStmt) astNode()        {}
+func (*BreakStmt) astNode()          {}
+func (*ContinueStmt) astNode()       {}
+func (*RetryStmt) astNode()          {}
+func (*DefStmt) astNode()            {}
+func (*AssertStmt) astNode()         {}
 
 // Exprs are Nodes via their exprNode method. Same shape as
 // Stmts above; one line per concrete type so a future variant
@@ -119,6 +120,8 @@ func walk(node Node, f func(Node) bool) {
 
 	// --- Statements ---
 	case *LetStmt:
+		walk(n.RHS, f)
+	case *LetDestructureStmt:
 		walk(n.RHS, f)
 	case *BindStmt:
 		if n.Cmd != nil {

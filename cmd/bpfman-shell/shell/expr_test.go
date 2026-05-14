@@ -1196,6 +1196,116 @@ func TestEvalProgram_ForEach_MultiVarDiscardSlot(t *testing.T) {
 	assert.False(t, ok, "underscore must not become a variable")
 }
 
+func TestEvalProgram_LetDestructure_BindsPositional(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["one","two","three"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&LetDestructureStmt{
+			Names: []string{"a", "b", "c"},
+			RHS:   &VarRefExpr{Name: "xs"},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+
+	a, ok := s.Get("a")
+	require.True(t, ok)
+	got, _ := a.Scalar()
+	assert.Equal(t, "one", got)
+
+	b, ok := s.Get("b")
+	require.True(t, ok)
+	got, _ = b.Scalar()
+	assert.Equal(t, "two", got)
+
+	c, ok := s.Get("c")
+	require.True(t, ok)
+	got, _ = c.Scalar()
+	assert.Equal(t, "three", got)
+}
+
+func TestEvalProgram_LetDestructure_DiscardSlots(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["first","second","third"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&LetDestructureStmt{
+			Names: []string{"a", "_", "c"},
+			RHS:   &VarRefExpr{Name: "xs"},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+
+	a, ok := s.Get("a")
+	require.True(t, ok)
+	got, _ := a.Scalar()
+	assert.Equal(t, "first", got)
+
+	_, ok = s.Get("_")
+	assert.False(t, ok, "underscore must not become a variable")
+
+	c, ok := s.Get("c")
+	require.True(t, ok)
+	got, _ = c.Scalar()
+	assert.Equal(t, "third", got)
+}
+
+func TestEvalProgram_LetDestructure_LengthMismatchIsError(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`["only"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&LetDestructureStmt{
+			Names: []string{"a", "b"},
+			RHS:   &VarRefExpr{Name: "xs"},
+		},
+	}}
+	evErr := EvalProgram(prog, env)
+	require.Error(t, evErr)
+	assert.Contains(t, evErr.Error(), "cannot bind 2 names")
+}
+
+func TestEvalProgram_LetDestructure_NonListIsError(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("scalar"))
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&LetDestructureStmt{
+			Names: []string{"a", "b"},
+			RHS:   &VarRefExpr{Name: "x"},
+		},
+	}}
+	evErr := EvalProgram(prog, env)
+	require.Error(t, evErr)
+	assert.Contains(t, evErr.Error(), "not a list")
+}
+
 func TestEvalProgram_CommandArg_ParenExprArithmetic(t *testing.T) {
 	t.Parallel()
 

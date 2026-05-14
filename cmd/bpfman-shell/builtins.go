@@ -55,8 +55,8 @@ var (
 var keywordRegistrations = []keyword{
 	{
 		Name:    "let",
-		Usage:   "let X = EXPR  |  let X <- COMMAND  |  let (rc X) <- COMMAND",
-		Summary: "Bind an expression result, a command's primary, or a (rc primary) pair.",
+		Usage:   "let X = EXPR  |  let (a b ...) = LIST_EXPR  |  let X <- COMMAND  |  let (rc X) <- COMMAND",
+		Summary: "Bind an expression result, a destructured list, a command's primary, or a (rc primary) pair.",
 		Detail: "let evaluates the right-hand side and binds the named variable(s) " +
 			"in the current session. The '<-' form runs a command and binds its " +
 			"primary result; failure flows into the variable as a result with " +

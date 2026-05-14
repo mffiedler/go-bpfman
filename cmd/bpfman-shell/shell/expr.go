@@ -412,6 +412,8 @@ func stmtLoc(s Stmt) Pos {
 	switch v := s.(type) {
 	case *LetStmt:
 		return v.Pos
+	case *LetDestructureStmt:
+		return v.Pos
 	case *BindStmt:
 		return v.Pos
 	case *DeferStmt:
@@ -466,6 +468,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		}
 		env.Session.Set(s.Name, val)
 		return nil
+	case *LetDestructureStmt:
+		return evalLetDestructureStmt(s, env)
 	case *BindStmt:
 		return evalBindStmt(s, env)
 	case *DeferStmt:
@@ -494,6 +498,45 @@ func evalStmt(stmt Stmt, env *Env) error {
 	default:
 		return fmt.Errorf("unknown statement type %T", stmt)
 	}
+}
+
+// evalLetDestructureStmt evaluates s.RHS, requires the value to be a
+// list of length len(s.Names), and binds each non-'_' name to its
+// positional element. Length mismatch or a non-list value is a
+// runtime error cited at the let statement.
+func evalLetDestructureStmt(s *LetDestructureStmt, env *Env) error {
+	val, err := EvalExpr(s.RHS, env)
+	if err != nil {
+		return err
+	}
+	if val.IsNil() {
+		return spanErrorf(s.Span, "let: destructure RHS produced no result")
+	}
+	sub, ok := val.Raw().([]any)
+	if !ok {
+		return spanErrorf(s.Span, "let: destructure RHS is not a list, cannot bind %d names", len(s.Names))
+	}
+	if len(sub) != len(s.Names) {
+		return spanErrorf(s.Span, "let: destructure RHS has %d elements, cannot bind %d names", len(sub), len(s.Names))
+	}
+	if env.Trace != nil {
+		parts := make([]string, 0, len(s.Names))
+		for j, name := range s.Names {
+			rendered, rerr := RenderCompact(val.IndexValue(j))
+			if rerr != nil {
+				rendered = fmt.Sprintf("<unrenderable %T>", sub[j])
+			}
+			parts = append(parts, fmt.Sprintf("%s=%s", name, rendered))
+		}
+		env.Trace(s.Span.Pos.Line, "let "+strings.Join(parts, " "))
+	}
+	for j, name := range s.Names {
+		if name == "_" {
+			continue
+		}
+		env.Session.Set(name, val.IndexValue(j))
+	}
+	return nil
 }
 
 // evalDefStmt registers s in the session's def table. Redefining an

@@ -334,8 +334,9 @@ A program is a (possibly empty) sequence of statements with
 optional Sep tokens between, before, and after them.
 
     Program        = { Sep } [ Statement { SepSeq Statement } { Sep } ] .
-    Statement      = LetStmt           (* let X = EXPR *)
-                   | BindStmt          (* let X <- CMD, guard X <- CMD *)
+    Statement      = LetStmt              (* let X = EXPR *)
+                   | LetDestructureStmt   (* let (a b) = EXPR *)
+                   | BindStmt             (* let X <- CMD, guard X <- CMD *)
                    | ForEachStmt
                    | IfStmt
                    | RetryStmt
@@ -349,9 +350,10 @@ optional Sep tokens between, before, and after them.
                    | CommandStmt
                    .
 
-`LetStmt` covers only the `let X = EXPR` form; both `let X <-
-CMD` and `guard X <- CMD` produce a `BindStmt` (distinguished by
-the `Guard` flag). `AssertStmt` and `AssertCommand` share the
+`LetStmt` covers only the single-name `let X = EXPR` form;
+`let (NAMES) = EXPR` produces a `LetDestructureStmt`. Both
+`let X <- CMD` and `guard X <- CMD` produce a `BindStmt`
+(distinguished by the `Guard` flag). `AssertStmt` and `AssertCommand` share the
 keywords `assert` / `require` and disambiguate at statement
 dispatch; `AssertCommand` is structurally a `CommandStmt` whose
 head is the keyword.
@@ -390,20 +392,36 @@ statement block; it is parsed by the matcher-entry grammar in
 
 ### LetStmt
 
-The pure-assignment form: `let X = EXPR` binds a name to an
-expression value.
+Two surface forms parse here. The single-name `let X = EXPR`
+binds a name to an expression value. The destructure form
+`let (NAMES) = EXPR` evaluates EXPR to a list and binds each
+positional element to its name in the list.
 
-    LetStmt        = 'let' Identifier '=' Expression .
+    LetStmt        = 'let' Identifier '=' Expression
+                   | 'let' DestructureTarget '=' Expression .
+    DestructureTarget
+                   = '(' Name Name { Name } ')' .
 
-Tuple targets are not legal on `=`; only `<-` accepts them. In
-this form `_` qualifies as an `Identifier` and binds an ordinary
-name `_`; it is not a discard slot. Discard semantics for `_`
-apply only at BindTarget and ForEach NameList positions.
+In the single-name form, `_` qualifies as an `Identifier` and
+binds an ordinary name `_`; it is not a discard slot. The
+destructure form requires at least two names; single-name parens
+(`let (x) = EXPR`) are rejected because the binding design
+refuses implicit single-name parens at non-def sites. Names are
+whitespace-separated; tokens whose text contains `,` are rejected
+explicitly. Duplicate real names are rejected; `_` is exempt. An
+all-underscore destructure list is rejected at parse time.
+
+Runtime behaviour of the destructure form: EXPR must evaluate to
+a list of length `len(NAMES)`. Each non-`_` name binds to the
+positional element. A list of the wrong length or a non-list
+value is a runtime error cited at the let statement.
 
 Examples:
 
     let x = 5
     let m = $prog |> jq ".maps"
+    let (a b) = [$foo.a $bar.b]
+    let (a _ c) = $triple
 
 ### BindStmt
 
@@ -1035,13 +1053,15 @@ in `parseCommandStmt`.
 
 ## Binding sites
 
-Four surface forms introduce names: `let X = EXPR` (LetStmt),
-`let X <- CMD` and `guard X <- CMD` (both BindStmt), `foreach
-NAMES in LIST` (ForEachStmt), and `def f(PARAMS)` (DefStmt).
-Each is documented in its own statement section above; this
-section summarises the shared shape and the discard-slot rule.
+Five surface forms introduce names: `let X = EXPR` (LetStmt),
+`let (NAMES) = EXPR` (LetDestructureStmt), `let X <- CMD` and
+`guard X <- CMD` (both BindStmt), `foreach NAMES in LIST`
+(ForEachStmt), and `def f(PARAMS)` (DefStmt). Each is documented
+in its own statement section above; this section summarises the
+shared shape and the discard-slot rule.
 
-The shared name production used by `BindTarget` and `NameList`:
+The shared name production used by `BindTarget`, `NameList`, and
+`DestructureTarget`:
 
     Name           = Identifier | '_' .
 
@@ -1051,6 +1071,8 @@ covered by the ordinary identifier and duplicate-name rules.
 ### Name list forms
 
     let x = EXPR
+    let (a b) = EXPR
+    let (a _ c) = EXPR
     let x <- CMD
     let (rc x) <- CMD
     guard x <- CMD
@@ -1064,12 +1086,14 @@ covered by the ordinary identifier and duplicate-name rules.
     def f(a b c) { BODY }
 
 The bind tuple form (`let (rc x) <-` and `guard (rc x) <-`)
-accepts exactly two names, whitespace-separated. The foreach
-multi-var form (`foreach (a b) in xs`) accepts two or more
-whitespace-separated names; the parens are required so that
-`foreach a b in xs` does not read as a command-shaped name list.
-The def parameter list accepts zero or more whitespace-separated
-names. None of these sites accepts a comma separator.
+accepts exactly two names, whitespace-separated. The
+let-destructure form (`let (a b ...) = EXPR`) accepts two or
+more whitespace-separated names. The foreach multi-var form
+(`foreach (a b) in xs`) accepts two or more whitespace-separated
+names; the parens are required so that `foreach a b in xs` does
+not read as a command-shaped name list. The def parameter list
+accepts zero or more whitespace-separated names. None of these
+sites accepts a comma separator.
 
 ### Discard slot
 
@@ -1080,6 +1104,7 @@ Accepted positions:
   the corpus when the command is run for its side effect and the
   primary value is not needed.
 - Tuple-bind slots (`let (_ x) <- cmd`, `let (a _) <- cmd`).
+- Let-destructure slots (`let (_ b) = $pair`, `let (a _ c) = $triple`).
 - ForEach name list (single-var `foreach _ in xs` and any slot
   in multi-var `foreach (_ b) in pairs`).
 
@@ -1087,6 +1112,9 @@ Rejected:
 
 - Tuple bind where both slots are `_`: `let (_ _) <- cmd` is
   rejected as "tuple bind cannot discard both slots".
+- Let-destructure where every slot is `_`: `let (_ _) = $pair`
+  is rejected as "all destructure slots are '_'; at least one
+  must bind".
 - Multi-var foreach where every name is `_`:
   "foreach: all loop variables are '_'; at least one must bind".
   Single-var `foreach _ in xs` is allowed (the gating is on

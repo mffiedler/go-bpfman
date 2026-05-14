@@ -262,6 +262,35 @@ func TestParse_BindTupleDiscard(t *testing.T) {
 	assert.Equal(t, "prog", bind.Primary)
 }
 
+func TestParse_LetDestructure(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"two names", "let (a b) = $xs", []string{"a", "b"}},
+		{"three names", "let (a b c) = $xs", []string{"a", "b", "c"}},
+		{"discard middle", "let (a _ c) = $xs", []string{"a", "_", "c"}},
+		{"discard first", "let (_ b) = $xs", []string{"_", "b"}},
+		{"discard last", "let (a _) = $xs", []string{"a", "_"}},
+		{"list literal rhs", "let (a b) = [1 2]", []string{"a", "b"}},
+		{"name list wraps over newlines", "let (a\n  b\n  c) = $xs", []string{"a", "b", "c"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prog, err := parseSource(t, tc.input)
+			require.NoError(t, err)
+			let, ok := firstStmt(t, prog).(*LetDestructureStmt)
+			require.True(t, ok, "expected LetDestructureStmt, got %T", firstStmt(t, prog))
+			assert.Equal(t, tc.want, let.Names)
+			assert.NotNil(t, let.RHS)
+		})
+	}
+}
+
 func TestParse_BindErrors(t *testing.T) {
 	t.Parallel()
 
@@ -276,11 +305,15 @@ func TestParse_BindErrors(t *testing.T) {
 		{"guard without name", "guard <- foo", "guard requires"},
 		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
 		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
-		{"tuple with assign rejected", "let (rc prog) = foo", "tuple bind requires '<-'"},
 		{"tuple discard both rejected", "let (_ _) <- foo", "cannot discard both slots"},
 		{"tuple comma rejected", "let (rc, prog) <- foo", "comma is not a separator"},
 		{"tuple trailing comma rejected", "let (rc prog,) <- foo", "comma is not a separator"},
-		{"tuple missing close paren", "let (rc prog <- foo", "expected ')'"},
+		{"tuple missing close paren", "let (rc prog <- foo", "expected name"},
+		{"single-name parens rejected at let", "let (x) = $foo", "requires at least two names"},
+		{"three-slot bind tuple rejected", "let (a b c) <- foo", "expects exactly two names"},
+		{"single-name parens rejected at guard", "guard (x) <- foo", "requires at least two names"},
+		{"three-slot guard tuple rejected", "guard (a b c) <- foo", "expects exactly two names"},
+		{"all-underscore destructure rejected", "let (_ _) = $xs", "at least one must bind"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
