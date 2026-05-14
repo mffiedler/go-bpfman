@@ -80,6 +80,46 @@ func TestContState_QuotedBrace_SingleLine(t *testing.T) {
 	assert.False(t, feedLines(`exec echo '{ not a block }'`), "single-quoted braces are text")
 }
 
+func TestContState_SingleLine_BracketBalanced(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, feedLines("let xs = [1 2 3]"), "balanced list literal is closed")
+	assert.False(t, feedLines("print [1 2 3]"), "balanced list literal in arg position is closed")
+	assert.False(t, feedLines("print [[1] [2 3]]"), "nested balanced brackets are closed")
+}
+
+func TestContState_SingleLine_OpenBracket(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, feedLines("let xs = [1"), "unterminated list literal is open")
+}
+
+func TestContState_MultiLine_ListLiteralBalanced(t *testing.T) {
+	t.Parallel()
+
+	// A list literal that spans lines must keep the chunk loop in
+	// continuation mode until the closing ']' arrives. Before
+	// bracket tracking, the first line dispatched as a complete
+	// chunk and the parser then erred with "missing ']'" on
+	// truncated content, even though parseListLiteral itself
+	// already accepts newlines between elements.
+	closed := !feedLines(
+		"let xs = [1",
+		"          2",
+		"          3]",
+	)
+	assert.True(t, closed, "multi-line list literal must close once matching ']' arrives")
+}
+
+func TestContState_QuotedBracket_SingleLine(t *testing.T) {
+	t.Parallel()
+
+	// Brackets inside quoted strings must not count toward depth,
+	// mirroring the quoted-brace and quoted-paren behaviour.
+	assert.False(t, feedLines(`exec echo "[ not a list ]"`), "quoted brackets are text")
+	assert.False(t, feedLines(`exec echo '[ not a list ]'`), "single-quoted brackets are text")
+}
+
 // ---- Bug reproductions --------------------------------------------
 
 // When a double-quoted string spans multiple lines, the closing `"`

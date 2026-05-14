@@ -13,28 +13,37 @@ import (
 	"github.com/frobware/go-bpfman/cmd/bpfman-shell/shell"
 )
 
-// ContState tracks brace and parenthesis depth across accumulated
-// input lines so the loop knows when a multi-line if-block or
-// parenthesised expression is complete. Quote state persists
-// across lines so multi-line quoted strings are treated as a
-// single literal span; unterminated strings themselves are
-// surfaced by the tokeniser when the accumulated chunk is
-// eventually parsed. LineCont records whether the line just
-// consumed ended with an unescaped backslash outside quotes
-// (line continuation).
+// ContState tracks brace, parenthesis, and bracket depth across
+// accumulated input lines so the loop knows when a multi-line
+// if-block, parenthesised expression, or list literal is
+// complete. Quote state persists across lines so multi-line
+// quoted strings are treated as a single literal span;
+// unterminated strings themselves are surfaced by the tokeniser
+// when the accumulated chunk is eventually parsed. LineCont
+// records whether the line just consumed ended with an unescaped
+// backslash outside quotes (line continuation).
 type ContState struct {
-	Braces, Parens     int
-	InSingle, InDouble bool
-	LineCont           bool
+	Braces, Parens, Brackets int
+	InSingle, InDouble       bool
+	LineCont                 bool
 }
 
-// Advance walks one line of input, updating the brace and paren
-// counters. Comments (`#` to end of line) outside a quoted
-// string are ignored; quoted content is skipped so braces and
-// parens inside strings do not count. The in-string flags are
-// fields on the struct so they survive across line boundaries,
-// matching how the tokeniser actually treats multi-line quoted
-// literals.
+// Advance walks one line of input, updating the brace, paren,
+// and bracket counters. Comments (`#` to end of line) outside a
+// quoted string are ignored; quoted content is skipped so braces,
+// parens, and brackets inside strings do not count. The
+// in-string flags are fields on the struct so they survive
+// across line boundaries, matching how the tokeniser actually
+// treats multi-line quoted literals.
+//
+// '[' and ']' are tracked here because the parser's list-literal
+// rule allows newlines between elements, so a script that opens
+// a list on one line and closes it on the next must keep the
+// chunk loop in continuation mode. Without bracket tracking the
+// chunk dispatched after the first line, the parser saw 'let xs
+// = [1' alone, and erred with "missing ']' to close list
+// literal" -- masking the parser's multi-line support behind a
+// REPL-level chunking limitation.
 func (c *ContState) Advance(line string) {
 	c.LineCont = false
 	lastNonSpace := -1
@@ -61,6 +70,12 @@ func (c *ContState) Advance(line string) {
 			if c.Parens > 0 {
 				c.Parens--
 			}
+		case ch == '[':
+			c.Brackets++
+		case ch == ']':
+			if c.Brackets > 0 {
+				c.Brackets--
+			}
 		}
 		if !c.InSingle && !c.InDouble && ch != ' ' && ch != '\t' && ch != '\r' {
 			lastNonSpace = i
@@ -72,10 +87,10 @@ func (c *ContState) Advance(line string) {
 }
 
 // Open reports whether the accumulated input is still inside an
-// open brace or parenthesised group, or the line just consumed
-// ended with a backslash continuation.
+// open brace, parenthesised group, or list literal, or the line
+// just consumed ended with a backslash continuation.
 func (c *ContState) Open() bool {
-	return c.Braces > 0 || c.Parens > 0 || c.LineCont
+	return c.Braces > 0 || c.Parens > 0 || c.Brackets > 0 || c.LineCont
 }
 
 // CanonicaliseHistory rewrites multi-line input into one history
