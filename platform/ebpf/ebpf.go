@@ -92,7 +92,11 @@ func (k *kernelAdapter) GetProgramByID(ctx context.Context, id kernel.ProgramID)
 		return kernel.Program{}, fmt.Errorf("get info for program %d: %w", id, err)
 	}
 
-	return infoToProgram(info, id), nil
+	kp := ToKernelProgram(info)
+	if kp == nil {
+		return kernel.Program{}, fmt.Errorf("program %d: nil ProgramInfo", id)
+	}
+	return *kp, nil
 }
 
 // GetProgramStatsByID retrieves runtime statistics for a BPF program.
@@ -177,8 +181,14 @@ func (k *kernelAdapter) Programs(ctx context.Context) iter.Seq2[kernel.Program, 
 				continue
 			}
 
-			kp := infoToProgram(info, kernel.ProgramID(id))
-			if !yield(kp, nil) {
+			kp := ToKernelProgram(info)
+			if kp == nil {
+				if !yield(kernel.Program{}, fmt.Errorf("program %d: nil ProgramInfo", id)) {
+					return
+				}
+				continue
+			}
+			if !yield(*kp, nil) {
 				return
 			}
 		}

@@ -1,6 +1,7 @@
 package ebpf
 
 import (
+	"errors"
 	"time"
 
 	"github.com/cilium/ebpf"
@@ -9,31 +10,41 @@ import (
 )
 
 // ToKernelProgram converts a cilium/ebpf ProgramInfo to a kernel.Program.
+// The Load and Get paths both call this so the wire shape stays identical
+// across a round-trip.
 func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 	if info == nil {
 		return nil
 	}
 
 	id, _ := info.ID()
-	mapIDs, hasMapIDs := info.MapIDs()
+	uid, hasUID := info.CreatedByUID()
 	btfID, hasBTFID := info.BTFID()
-	jitedSize, _ := info.JitedSize()
-	xlatedSize, _ := info.TranslatedSize()
-	verifiedInsns, _ := info.VerifiedInstructions()
 	memlock, hasMemlock := info.Memlock()
 	loadTime, hasLoadTime := info.LoadTime()
-	uid, hasUID := info.CreatedByUID()
+	verifiedInsns, _ := info.VerifiedInstructions()
+	jitedSize, _ := info.JitedSize()
+
+	// xlated size reads as ErrRestrictedKernel when kptr_restrict and
+	// bpf_jit_harden hide kernel-address information; surface that as
+	// Restricted=true rather than swallowing it like the other reads.
+	var restricted bool
+	xlatedSize, err := info.TranslatedSize()
+	if errors.Is(err, ebpf.ErrRestrictedKernel) {
+		restricted = true
+	}
 
 	var loadedAt time.Time
 	if hasLoadTime {
 		loadedAt = bootTime().Add(loadTime)
 	}
 
-	var mapIDsTyped []kernel.MapID
-	if hasMapIDs && len(mapIDs) > 0 {
-		mapIDsTyped = make([]kernel.MapID, len(mapIDs))
-		for i, mid := range mapIDs {
-			mapIDsTyped[i] = kernel.MapID(mid)
+	ebpfMapIDs, hasMapIDs := info.MapIDs()
+	var mapIDs []kernel.MapID
+	if hasMapIDs {
+		mapIDs = make([]kernel.MapID, len(ebpfMapIDs))
+		for i, mid := range ebpfMapIDs {
+			mapIDs[i] = kernel.MapID(mid)
 		}
 	}
 
@@ -47,13 +58,13 @@ func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 		HasUID:               hasUID,
 		BTFId:                uint32(btfID),
 		HasBTFId:             hasBTFID,
-		MapIDs:               mapIDsTyped,
+		MapIDs:               mapIDs,
 		HasMapIDs:            hasMapIDs,
 		JitedSize:            jitedSize,
 		XlatedSize:           uint32(xlatedSize),
 		VerifiedInstructions: verifiedInsns,
 		Memlock:              memlock,
 		HasMemlock:           hasMemlock,
-		Restricted:           false, // Not available from ProgramInfo
+		Restricted:           restricted,
 	}
 }

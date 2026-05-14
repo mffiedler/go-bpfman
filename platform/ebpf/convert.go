@@ -1,7 +1,6 @@
 package ebpf
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -85,69 +84,6 @@ func bootTime() time.Time {
 		}
 	}
 	return time.Now()
-}
-
-func infoToProgram(info *ebpf.ProgramInfo, id kernel.ProgramID) kernel.Program {
-	kp := kernel.Program{
-		ID:          id,
-		Name:        info.Name,
-		ProgramType: kernel.NewProgramType(info.Type.String()),
-		Tag:         info.Tag,
-	}
-
-	// Map IDs (available from kernel 4.15)
-	if ebpfMapIDs, ok := info.MapIDs(); ok {
-		kp.HasMapIDs = true
-		kp.MapIDs = make([]kernel.MapID, len(ebpfMapIDs))
-		for i, mid := range ebpfMapIDs {
-			kp.MapIDs[i] = kernel.MapID(mid)
-		}
-	}
-
-	// UID (available from kernel 4.15)
-	if uid, ok := info.CreatedByUID(); ok {
-		kp.UID = uid
-		kp.HasUID = true
-	}
-
-	// Load time (available from kernel 4.15)
-	if loadTime, ok := info.LoadTime(); ok {
-		// LoadTime is nanoseconds since boot, convert to wall clock time
-		kp.LoadedAt = bootTime().Add(loadTime)
-	}
-
-	// BTF ID (available from kernel 5.0)
-	if btfID, ok := info.BTFID(); ok {
-		kp.BTFId = uint32(btfID)
-		kp.HasBTFId = true
-	}
-
-	// JITed size (available from kernel 4.13)
-	// Error indicates restricted or unsupported
-	if jitedSize, err := info.JitedSize(); err == nil {
-		kp.JitedSize = jitedSize
-	}
-
-	// Translated size (available from kernel 4.13)
-	// Error indicates restricted or unsupported
-	if xlatedSize, err := info.TranslatedSize(); err == nil {
-		kp.XlatedSize = uint32(xlatedSize)
-	} else if errors.Is(err, ebpf.ErrRestrictedKernel) {
-		kp.Restricted = true
-	}
-
-	// Verified instructions (available from kernel 5.16)
-	if verifiedInsns, ok := info.VerifiedInstructions(); ok {
-		kp.VerifiedInstructions = verifiedInsns
-	}
-
-	// Memory locked (available from kernel 4.10)
-	if memlock, ok := info.Memlock(); ok {
-		kp.Memlock = memlock
-		kp.HasMemlock = true
-	}
-
-	return kp
 }
 
 func infoToMap(info *ebpf.MapInfo, id kernel.MapID) kernel.Map {
