@@ -222,6 +222,13 @@ func printValue(arg shell.Arg) (shell.Value, error) {
 		return a.Value, nil
 	case shell.AdapterArg:
 		return a.Value, nil
+	case shell.NilArg:
+		// A null value at the print boundary renders as the JSON
+		// token "null", matching what gojq and other JSON tools
+		// produce. This is intentionally lossy: print is a
+		// human-facing observation tool, not a typed value
+		// transformer.
+		return shell.Value{}, nil
 	default:
 		return shell.Value{}, fmt.Errorf("print: unsupported argument kind %T", arg)
 	}

@@ -1798,7 +1798,12 @@ func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 		resolved = lv
 	}
 	if resolved.IsNil() {
-		return nil, spanErrorf(e.Span, "variable %s is null", qualify(e.Name, e.Path))
+		// Terminal null is a value. Surface it as NilArg so
+		// downstream consumers (print, jq, the nil/present
+		// predicates) can decide how to handle it. Commands
+		// that need a non-null arg surface their own clearer
+		// diagnostic when they encounter NilArg.
+		return NilArg{Span: e.Span}, nil
 	}
 	if resolved.IsStructured() {
 		return StructuredValueArg{Name: e.Name, Value: resolved, Span: e.Span}, nil
@@ -1956,13 +1961,16 @@ func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	if lhsVal.IsNil() {
-		return Value{}, spanErrorf(e.Span, "thread: left-hand side is null")
-	}
 	args, err := EvalArgs(e.Args, env)
 	if err != nil {
 		return Value{}, err
 	}
+	// A nil LHS passes through as NilArg; downstream commands
+	// (notably jq, which accepts JSON null happily) decide whether
+	// the value is meaningful for their semantics. Previously the
+	// thread rejected null upfront which prevented shape-test
+	// pipelines like `$got.status.links |> jq "length"` from
+	// running when the source field was the JSON value null.
 	lhsArg, err := valueToArg(lhsVal, nodeSpan(e.LHS))
 	if err != nil {
 		return Value{}, spanErrorf(e.Span, "thread: %v", err)
@@ -1982,13 +1990,16 @@ func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 
 // valueToArg wraps a Value in the most specific Arg variant for
 // the dispatch boundary: structured values stay structured,
-// scalars become ScalarValueArg, nil is a caller problem. span
-// is attached to the resulting Arg so command-handler parsers
-// can frame argument-position errors at the originating
+// scalars become ScalarValueArg, nil becomes NilArg so the
+// receiving command can decide whether to accept null at its
+// own input boundary (jq, print, the strict-nil and present
+// predicates) rather than blanket-erroring at resolution time.
+// span is attached to the resulting Arg so command-handler
+// parsers can frame argument-position errors at the originating
 // expression.
 func valueToArg(v Value, span Span) (Arg, error) {
 	if v.IsNil() {
-		return nil, fmt.Errorf("value is null")
+		return NilArg{Span: span}, nil
 	}
 	if v.IsStructured() {
 		return StructuredValueArg{Value: v, Span: span}, nil
@@ -2212,11 +2223,35 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 	}
 	switch e.Pred {
 	case "not-empty":
-		s, err := operand.Scalar()
-		if err != nil {
-			return Value{}, spanErrorf(e.Span, "not-empty: %v", err)
+		// not-empty is content-presence across the natural shape
+		// hierarchy: nil is empty, "" is empty, [] / nil-slice is
+		// empty, {} / nil-map is empty. Non-empty strings, lists,
+		// and maps return true; non-collection scalars (numbers,
+		// bools) are treated as always non-empty when present.
+		// This matches the matches-block predicate semantics so
+		// `not-empty` reads the same inline (`assert not-empty
+		// $xs`) as inside a matches block (`field: not-empty`).
+		if operand.IsNil() {
+			return BoolValue(false), nil
 		}
-		return BoolValue(s != ""), nil
+		switch x := operand.Raw().(type) {
+		case string:
+			return BoolValue(x != ""), nil
+		case []any:
+			return BoolValue(len(x) > 0), nil
+		case map[string]any:
+			return BoolValue(len(x) > 0), nil
+		default:
+			// Numbers, booleans, and any other carrier-type
+			// stay non-empty when present. Fall back to the
+			// pre-existing scalar text check for consistency
+			// with how Scalar() renders these types.
+			s, err := operand.Scalar()
+			if err != nil {
+				return Value{}, spanErrorf(e.Span, "not-empty: %v", err)
+			}
+			return BoolValue(s != ""), nil
+		}
 	default:
 		return Value{}, spanErrorf(e.Span, "unknown unary predicate %q", e.Pred)
 	}

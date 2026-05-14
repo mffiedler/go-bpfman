@@ -21,6 +21,8 @@ func ArgSpan(a Arg) Span {
 	switch v := a.(type) {
 	case WordArg:
 		return v.Span
+	case NilArg:
+		return v.Span
 	case QuotedArg:
 		return v.Span
 	case ScalarValueArg:
@@ -40,6 +42,22 @@ func ArgSpan(a Arg) Span {
 // reference.
 type WordArg struct {
 	Text string
+	Span
+}
+
+// NilArg is the null value at an arg boundary. Produced by
+// valueToArg when a variable expression resolves to a nil Value:
+// `$got.status.links` where the JSON value is `null`,
+// `$prog.status.stats` where stats is `null`, and similar shape-
+// test inputs. Command handlers that meaningfully accept null
+// (jq, print, the strict-nil / present predicates) inspect this
+// variant; other handlers can either reject NilArg explicitly or
+// fall through to their default unsupported-type diagnostic.
+//
+// Span is the originating $name reference's source extent so a
+// downstream "this command can't take null" diagnostic frames at
+// the right token.
+type NilArg struct {
 	Span
 }
 
@@ -106,6 +124,7 @@ type MatchesBlockEntry struct {
 }
 
 func (WordArg) isArg()            {}
+func (NilArg) isArg()             {}
 func (QuotedArg) isArg()          {}
 func (ScalarValueArg) isArg()     {}
 func (StructuredValueArg) isArg() {}

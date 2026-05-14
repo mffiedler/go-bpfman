@@ -215,11 +215,11 @@ func TestSessionExpand(t *testing.T) {
 			wantErr: "index 5 out of range for variable prog.maps (length 2)",
 		},
 		{
-			name: "null field",
+			name: "null field surfaces as NilArg",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.extra", VarName: "prog", VarPath: "extra"},
 			},
-			wantErr: "variable prog.extra is null",
+			want: []Arg{NilArg{}},
 		},
 		{
 			name: "non-scalar leaf (object) preserved as structured arg",
@@ -431,12 +431,20 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 func TestSessionExpandNilVariable(t *testing.T) {
 	t.Parallel()
 
+	// Expanding a nil variable now produces a NilArg at the
+	// argument boundary rather than erroring out at expansion
+	// time. Downstream commands decide whether null is meaningful
+	// for their semantics (jq treats it as JSON null; print
+	// renders the JSON token "null"; predicates that care -- nil,
+	// present, not-empty -- inspect NilArg explicitly).
 	s := NewSession()
 	s.Set("n", Value{}) // nil value
 
-	_, err := evalArgsForTest(s, []Token{
+	got, err := evalArgsForTest(s, []Token{
 		{Kind: TokenVarRef, Text: "$n", VarName: "n"},
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "variable n is null")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	_, isNil := got[0].(NilArg)
+	assert.True(t, isNil, "nil variable expansion produces NilArg")
 }

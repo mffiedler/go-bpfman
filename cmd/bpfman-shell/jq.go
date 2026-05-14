@@ -107,6 +107,11 @@ func argToJQInput(a shell.Arg) (any, error) {
 		return v.Value.Raw(), nil
 	case shell.AdapterArg:
 		return v.Value.Raw(), nil
+	case shell.NilArg:
+		// JSON null at the boundary: gojq treats Go nil as null,
+		// so filters like `length` or `type` work as the user
+		// would expect from the standalone jq CLI.
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported input type %T", a)
 	}

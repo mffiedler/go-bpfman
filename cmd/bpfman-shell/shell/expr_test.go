@@ -670,24 +670,36 @@ func TestEvalExpr_Thread_AppendsStructuredValueAsLastArg(t *testing.T) {
 	assert.Equal(t, OriginProgram, sva.Value.Kind())
 }
 
-func TestEvalExpr_Thread_NilLHSIsError(t *testing.T) {
+func TestEvalExpr_Thread_NilLHSPassesAsNilArg(t *testing.T) {
 	t.Parallel()
 
+	// Threading a null value into a command no longer errors at
+	// the shell layer; the command receives NilArg and decides
+	// for itself how to interpret null at its input boundary
+	// (e.g. jq treats it as JSON null). This is the natural
+	// shape-test pattern `$got.status.links |> jq "length"`
+	// where the source field is the JSON value null.
 	s := NewSession()
 	s.Set("x", Value{}) // nil value
+	var received []Arg
 	env := &Env{
 		Session: s,
 		ExecBind: bindFromValue(func(args []Arg, _ Span) (Value, error) {
-			return StringValue("should-not-run"), nil
+			received = args
+			return StringValue("ran"), nil
 		}),
 	}
 	pipe := &ThreadExpr{
 		LHS:  &VarRefExpr{Name: "x"},
 		Args: []Expr{&LiteralExpr{Text: "jq"}},
 	}
-	_, err := EvalExpr(pipe, env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "null")
+	got, err := EvalExpr(pipe, env)
+	require.NoError(t, err)
+	s2, _ := got.Scalar()
+	assert.Equal(t, "ran", s2)
+	require.Len(t, received, 2)
+	_, isNil := received[1].(NilArg)
+	assert.True(t, isNil, "thread LHS null surfaces as NilArg")
 }
 
 func TestEvalExpr_Thread_NoSubstitutionRunnerIsError(t *testing.T) {
