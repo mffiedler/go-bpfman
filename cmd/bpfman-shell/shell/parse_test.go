@@ -1370,6 +1370,28 @@ func TestParse_EmptyParens_UniformMessage(t *testing.T) {
 	}
 }
 
+func TestParse_PureCallArg_ListLiteral(t *testing.T) {
+	t.Parallel()
+
+	// A pure-builtin call's argument grammar must accept a list
+	// literal as a primary. Before this, parsePureCallArg fell
+	// through '[' to parsePrimary, which made the call consume
+	// '[' as one arg and '1' as the next, leaving '2 3 4]' as
+	// trailing tokens the outer parser blamed on '2'.
+	//
+	// 'jq "." [1 2 3]' is the smallest exercise: jq takes 2 args,
+	// arg 0 is the filter, arg 1 should be the whole list literal.
+	prog, err := parseSource(t, `let v = jq "." [1 2 3]`)
+	require.NoError(t, err)
+	let, ok := firstStmt(t, prog).(*LetStmt)
+	require.True(t, ok)
+	call, ok := let.RHS.(*PureCallExpr)
+	require.True(t, ok, "RHS should be PureCallExpr, got %T", let.RHS)
+	require.Len(t, call.Args, 2)
+	_, ok = call.Args[1].(*ListExpr)
+	assert.True(t, ok, "arg 1 should be ListExpr, got %T", call.Args[1])
+}
+
 func TestParse_CommandArg_ParenExprThread(t *testing.T) {
 	t.Parallel()
 

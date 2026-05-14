@@ -2054,10 +2054,11 @@ func (p *exprParser) parsePureCall(pb PureBuiltin) (Expr, error) {
 
 // parsePureCallArg accepts one primary argument for a pure-builtin
 // call: a parenthesised sub-expression (full expression grammar
-// inside), a single literal / varref / adapter / interp-string
-// token, or a sigil-led varref. Operators (and / or / not / +
-// / - / * / / / % / |> / comparison) are not primaries and stop
-// the argument list, leaving the outer expression to pick them up.
+// inside), a list literal '[...]', a single literal / varref /
+// adapter / interp-string token, or a sigil-led varref. Operators
+// (and / or / not / + / - / * / / / % / |> / comparison) are not
+// primaries and stop the argument list, leaving the outer
+// expression to pick them up.
 func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 	t := p.peek()
 	if t.Kind == TokenWord && t.Text == "(" {
@@ -2074,6 +2075,9 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 		}
 		p.advance()
 		return inner, nil
+	}
+	if t.Kind == TokenWord && t.Text == "[" {
+		return p.parseListLiteral()
 	}
 	switch t.Kind {
 	case TokenWord:
