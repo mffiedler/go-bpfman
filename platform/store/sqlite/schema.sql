@@ -158,7 +158,12 @@ CREATE TABLE IF NOT EXISTS managed_programs (
     metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json)),
                                      -- User key-value metadata as JSON
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    updated_at TEXT,
+    -- updated_at is NULL when the program has never been updated
+    -- since creation, distinct from CreatedAt. The bpfman shape
+    -- contract surfaces this as JSON null so "created at T, never
+    -- updated" and "created at T, updated at T'" stay
+    -- distinguishable on the wire.
 
     -- Self-referential: when multiple programs share BPF maps, one is
     -- designated the owner. RESTRICT prevents deleting the owner

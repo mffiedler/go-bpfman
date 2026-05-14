@@ -146,7 +146,12 @@ type ProgramRecord struct {
 	Handles       ProgramHandles `json:"handles"`
 	Meta          ProgramMeta    `json:"meta"`
 	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	// UpdatedAt is nil when the record has never been updated
+	// since creation, distinct from CreatedAt. The pointer +
+	// JSON null encoding keeps "created at T, never updated" and
+	// "created at T, updated at T'" distinguishable on the wire
+	// without conflating the two timestamps.
+	UpdatedAt *time.Time `json:"updated_at"`
 }
 
 // ProgramStatus is observed state (kernel + filesystem).

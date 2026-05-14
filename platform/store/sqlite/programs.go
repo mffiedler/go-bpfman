@@ -44,7 +44,8 @@ type scannedProgram struct {
 	license, metadataJSON                            sql.NullString
 	mapOwnerID                                       sql.NullInt64
 	gplCompatible                                    int
-	createdAtStr, updatedAtStr                       string
+	createdAtStr                                     string
+	updatedAtStr                                     sql.NullString
 }
 
 // buildProgramRecord converts scanned column values into a
@@ -105,9 +106,17 @@ func buildProgramRecord(sp *scannedProgram) (bpfman.ProgramRecord, error) {
 	if err != nil {
 		return bpfman.ProgramRecord{}, fmt.Errorf("invalid created_at timestamp %q: %w", sp.createdAtStr, err)
 	}
-	updatedAt, err := time.Parse(time.RFC3339, sp.updatedAtStr)
-	if err != nil {
-		return bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp %q: %w", sp.updatedAtStr, err)
+	// updated_at is nullable in the schema and nil in the
+	// in-memory record when the program has never been updated
+	// since creation. The pointer encoding keeps "never updated"
+	// distinct from "updated at zero time."
+	var updatedAt *time.Time
+	if sp.updatedAtStr.Valid {
+		t, err := time.Parse(time.RFC3339, sp.updatedAtStr.String)
+		if err != nil {
+			return bpfman.ProgramRecord{}, fmt.Errorf("invalid updated_at timestamp %q: %w", sp.updatedAtStr.String, err)
+		}
+		updatedAt = &t
 	}
 
 	var licenseVal string
@@ -246,7 +255,16 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		license = sql.NullString{String: metadata.License, Valid: true}
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	// Persist the in-memory record's UpdatedAt when present
+	// (nil means "no update has happened yet" and the column
+	// stays NULL so Get reads the same null back).
+	var updatedAtNullable sql.NullString
+	if metadata.UpdatedAt != nil {
+		updatedAtNullable = sql.NullString{
+			String: metadata.UpdatedAt.UTC().Format(time.RFC3339),
+			Valid:  true,
+		}
+	}
 
 	// Convert bool to int for SQLite
 	var gplCompatibleInt int
@@ -271,8 +289,8 @@ func (s *sqliteStore) Save(ctx context.Context, programID kernel.ProgramID, meta
 		license,
 		gplCompatibleInt,
 		metadataJSON,
-		metadata.CreatedAt.Format(time.RFC3339),
-		now,
+		metadata.CreatedAt.UTC().Format(time.RFC3339),
+		updatedAtNullable,
 	)
 	if err != nil {
 		s.logger.Debug("sql", "stmt", "SaveProgram", "args", []any{programID, metadata.Meta.Name, "(columns)"}, "duration_ms", msec(time.Since(start)), "error", err)

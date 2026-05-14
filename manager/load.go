@@ -59,6 +59,11 @@ func buildProgramRecord(
 			Owner:    opts.Owner,
 			Metadata: opts.UserMetadata,
 		},
+		// A freshly-loaded program has not been updated;
+		// UpdatedAt stays nil at the type level so the JSON
+		// surfaces it as null, distinct from CreatedAt. Operations
+		// that legitimately mutate the record assign UpdatedAt
+		// before persisting.
 		CreatedAt: now,
 	}
 }
@@ -199,7 +204,13 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 			spec = spec.WithMapOwnerID(loaded[0].Record.ProgramID)
 		}
 
-		now := time.Now()
+		// Pin the timestamp to UTC and second precision so the
+		// in-memory record matches what the sqlite store
+		// persists (the Save path formats UTC at time.RFC3339).
+		// Without this, Load returns local-tz ns-precise time
+		// while Get reads back UTC second-precise, surfacing as
+		// a spurious Load/Get asymmetry on every script.
+		now := time.Now().UTC().Truncate(time.Second)
 		b, err := operation.Run(ctx, m.logger, m.executor, m.loadPlan(spec, perProgOpts, now))
 		if err != nil {
 			cleanupLoaded()

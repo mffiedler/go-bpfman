@@ -64,7 +64,7 @@ assert $prog matches exhaustive {
         license:        not-empty
         gpl_compatible: true
         created_at:     not-empty
-        updated_at:     not-empty
+        updated_at:     nil
         load: matches exhaustive {
             object_path:  $expect_bytecode
             program_name: pass
@@ -175,17 +175,14 @@ assert $m.btf_id > 0
 assert $m.memlock > 0
 
 # ---- Round-trip: bpfman program get returns the same record.
-# `record.created_at` is asserted not-empty rather than equal
-# because the Load response serialises at nanosecond precision
-# and the Get response at second precision.
 guard got <- bpfman program get $pid
 assert $got matches exhaustive {
     record: matches exhaustive {
         program_id:     $prog.record.program_id
         license:        $prog.record.license
         gpl_compatible: $prog.record.gpl_compatible
-        created_at:     not-empty
-        updated_at:     not-empty
+        created_at:     $prog.record.created_at
+        updated_at:     nil
         load: matches exhaustive {
             object_path:  $prog.record.load.object_path
             program_name: $prog.record.load.program_name
