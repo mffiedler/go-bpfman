@@ -108,11 +108,7 @@ assert $prog matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        stats: matches exhaustive {
-            runtime:          0
-            run_count:        0
-            recursion_misses: 0
-        }
+        stats: nil
         prog_pin: matches exhaustive {
             path:    ""
             present: false
