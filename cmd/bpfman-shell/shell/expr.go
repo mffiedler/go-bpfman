@@ -2232,14 +2232,13 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 	}
 	switch e.Pred {
 	case "not-empty":
-		// not-empty is content-presence across the natural shape
-		// hierarchy: nil is empty, "" is empty, [] / nil-slice is
-		// empty, {} / nil-map is empty. Non-empty strings, lists,
-		// and maps return true; non-collection scalars (numbers,
-		// bools) are treated as always non-empty when present.
-		// This matches the matches-block predicate semantics so
-		// `not-empty` reads the same inline (`assert not-empty
-		// $xs`) as inside a matches block (`field: not-empty`).
+		// not-empty is content-presence under the Go zero-value
+		// convention applied uniformly: nil is empty, "" is
+		// empty, [] / nil-slice is empty, {} / nil-map is empty,
+		// numeric 0 is empty, false is empty. This matches the
+		// matches-block predicate semantics so `not-empty` reads
+		// the same inline (`assert not-empty $xs`) as inside a
+		// matches block (`field: not-empty`).
 		if operand.IsNil() {
 			return BoolValue(false), nil
 		}
@@ -2250,9 +2249,18 @@ func evalUnary(e *UnaryExpr, env *Env) (Value, error) {
 			return BoolValue(len(x) > 0), nil
 		case map[string]any:
 			return BoolValue(len(x) > 0), nil
+		case json.Number:
+			f, ferr := x.Float64()
+			if ferr != nil {
+				return Value{}, spanErrorf(e.Span, "not-empty: %v", ferr)
+			}
+			return BoolValue(f != 0), nil
+		case float64:
+			return BoolValue(x != 0), nil
+		case bool:
+			return BoolValue(x), nil
 		default:
-			// Numbers, booleans, and any other carrier-type
-			// stay non-empty when present. Fall back to the
+			// Any remaining carrier-type falls back to the
 			// pre-existing scalar text check for consistency
 			// with how Scalar() renders these types.
 			s, err := operand.Scalar()

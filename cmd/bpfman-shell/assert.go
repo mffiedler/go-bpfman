@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -682,10 +683,10 @@ func evalMatchesAgainst(target shell.Value, targetName string, block shell.Match
 }
 
 // isMatchesEmpty reports whether v is the matches-block notion of
-// "empty": nil (JSON null), empty string, empty list, empty map.
-// Numbers and booleans are never empty (they always carry
-// content). Mirrors the expression-form not-empty predicate's
-// shape so the inline `field: not-empty` and the standalone
+// "empty" -- the Go zero-value convention applied uniformly: nil
+// (JSON null), empty string, empty list, empty map, numeric zero,
+// false. Mirrors the expression-form not-empty predicate's shape
+// so the inline `field: not-empty` and the standalone
 // `assert not-empty $X.field` read identically.
 func isMatchesEmpty(v shell.Value) bool {
 	if v.IsNil() {
@@ -698,6 +699,13 @@ func isMatchesEmpty(v shell.Value) bool {
 		return len(x) == 0
 	case map[string]any:
 		return len(x) == 0
+	case json.Number:
+		f, err := x.Float64()
+		return err == nil && f == 0
+	case float64:
+		return x == 0
+	case bool:
+		return !x
 	}
 	return false
 }
@@ -716,6 +724,10 @@ func matchesEmptyDescription(v shell.Value) string {
 		return "[]"
 	case map[string]any:
 		return "{}"
+	case json.Number, float64:
+		return "0"
+	case bool:
+		return "false"
 	}
 	return v.Kind().String()
 }
