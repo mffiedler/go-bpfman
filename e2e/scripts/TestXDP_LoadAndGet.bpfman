@@ -35,14 +35,23 @@ guard loaded <- bpfman program load file \
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-# Computed expectations: bpffs paths derived from pid, and the
-# kernel-reported map_ids list cross-checked against bpfman's
+# Computed expectations.
+#
+# The runtime base is whatever the daemon was configured with
+# (--runtime-dir; default /run/bpfman, but configurable and not
+# guaranteed). Derive it from the response itself by stripping a
+# known suffix from one of the paths bpfman reports: all bpfman
+# paths share the same base, so the derived value is the
+# self-reported root. Every expected path below is built
+# relative to it.
+let runtime_base        = $prog.record.handles |> jq ".pin_path | split(\"/fs/\")[0]"
+let expect_prog_pin     = "${runtime_base}/fs/prog_${pid}"
+let expect_map_dir      = "${runtime_base}/fs/maps/${pid}"
+let expect_link_dir     = "${runtime_base}/fs/links/${pid}"
+let expect_bytecode     = "${runtime_base}/programs/${pid}/bytecode.o"
+let expect_provenance   = "${runtime_base}/programs/${pid}/provenance.json"
+# Kernel-reported map_ids list cross-checked against bpfman's
 # observed status.maps[].id set.
-let expect_prog_pin     = "/run/bpfman/fs/prog_${pid}"
-let expect_map_dir      = "/run/bpfman/fs/maps/${pid}"
-let expect_link_dir     = "/run/bpfman/fs/links/${pid}"
-let expect_bytecode     = "/run/bpfman/programs/${pid}/bytecode.o"
-let expect_provenance   = "/run/bpfman/programs/${pid}/provenance.json"
 let expect_map_ids      = $prog.status.maps |> jq "[.[].id]"
 
 # ---- Core record + kernel-status sanity (shared lib helper). ----
@@ -260,7 +269,7 @@ assert $got matches exhaustive {
 
 # ---- Per-element map shape (Get).
 let gm = $got.status.maps[0]
-let expect_map_pin = "/run/bpfman/fs/maps/${pid}/xdp_pass_stats_map"
+let expect_map_pin = "${runtime_base}/fs/maps/${pid}/xdp_pass_stats_map"
 assert $gm matches exhaustive {
     id:            $m.id
     name:          $m.name
