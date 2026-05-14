@@ -542,12 +542,14 @@ because a bare `def f a { ... }` would collide with command
 syntax.
 
     DefStmt        = 'def' Identifier '(' [ ParamList ] ')' Block .
-    ParamList      = Identifier { ',' Identifier } [ ',' ]
+    ParamList      = Identifier { Identifier } .
 
-Parameters are comma-separated. Duplicate parameter names are
-rejected at parse time. A trailing comma after the last parameter
-is permitted. Newlines and semicolons between parameters are
-allowed so a long parameter list can wrap.
+Parameters are whitespace-separated identifiers; there is no
+comma form. Duplicate parameter names are rejected at parse time.
+Newlines and semicolons between parameters are allowed so a long
+parameter list can wrap. A token whose text contains `,` (which
+the lexer does not split on its own) is rejected explicitly with
+"comma is not a parameter separator".
 
 `_` qualifies as an Identifier so it may appear as a parameter
 name, but unlike bind and foreach positions it is not treated as
@@ -559,7 +561,7 @@ Examples:
     def warn() {
         print "warning"
     }
-    def attach(iface, prog) {
+    def attach(iface prog) {
         bpfman link attach xdp $iface generic 50 $prog
     }
 
@@ -1055,13 +1057,13 @@ covered by the ordinary identifier and duplicate-name rules.
 
     def f() { BODY }
     def f(a) { BODY }
-    def f(a, b, c) { BODY }
+    def f(a b c) { BODY }
 
 The bind tuple form (`let (rc, x) <-` and `guard (rc, x) <-`)
 accepts exactly two names. The foreach multi-var form accepts
 two or more names separated by commas. The def parameter list
-accepts zero or more names separated by commas with an optional
-trailing comma.
+accepts zero or more whitespace-separated names; there is no
+comma form.
 
 ### Discard slot
 
@@ -1086,7 +1088,7 @@ Rejected:
 - `def` accepts `_` as a parameter name (`_` qualifies as an
   identifier per `IsIdent`), but it is bound the same way any
   other parameter is. The duplicate-name rule applies: `def
-  f(_, _)` is rejected as "duplicate parameter name '_'".
+  f(_ _)` is rejected as "duplicate parameter name '_'".
 
 ## Interpolation
 

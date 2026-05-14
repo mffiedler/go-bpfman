@@ -86,7 +86,7 @@ var keywordRegistrations = []keyword{
 	},
 	{
 		Name:    "def",
-		Usage:   "def NAME(P1, P2, ...) { BODY }",
+		Usage:   "def NAME(P1 P2 ...) { BODY }",
 		Summary: "Define a user command callable as 'NAME ARG1 ARG2 ...'.",
 		Detail: "The body opens its own defer scope so a 'defer cleanup' inside the " +
 			"def fires when the def returns. Jobs started inside a def join the " +

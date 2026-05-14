@@ -75,11 +75,11 @@ func TestParse_Def_NoParams(t *testing.T) {
 	assert.Empty(t, d.Params)
 }
 
-func TestParse_Def_TrailingComma(t *testing.T) {
+func TestParse_Def_WhitespaceSeparatedParams(t *testing.T) {
 	t.Parallel()
-	prog := parseProgram(t, `def f(a, b,) { print $a }`)
+	prog := parseProgram(t, `def f(a b c) { print $a }`)
 	d := prog.Stmts[0].(*DefStmt)
-	assert.Equal(t, []string{"a", "b"}, d.Params)
+	assert.Equal(t, []string{"a", "b", "c"}, d.Params)
 }
 
 func TestParse_Def_Errors(t *testing.T) {
@@ -92,12 +92,14 @@ func TestParse_Def_Errors(t *testing.T) {
 		{"missing parens", `def f { print 1 }`, "'(' after the name"},
 		{"missing body", `def f()`, "expected '{'"},
 		{"unterminated body", `def f() { print 1`, "unterminated block"},
-		{"duplicate param", `def f(a, a) { print 1 }`, "duplicate parameter"},
+		{"duplicate param", `def f(a a) { print 1 }`, "duplicate parameter"},
 		{"invalid param", `def f(1) { print 1 }`, "invalid parameter name"},
 		{"invalid name", `def 1f() { print 1 }`, "invalid def name"},
 		{"reserved name", `def let() { print 1 }`, "reserved word"},
 		{"missing name", `def () { print 1 }`, "def requires"},
-		{"unterminated params", `def f(a, b`, "unterminated parameter list"},
+		{"unterminated params", `def f(a b`, "unterminated parameter list"},
+		{"comma rejected", `def f(a, b) { print 1 }`, "comma is not a parameter separator"},
+		{"trailing comma rejected", `def f(a b,) { print 1 }`, "comma is not a parameter separator"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,7 +162,7 @@ f "hi"
 func TestEvalProgram_Def_ArityMismatch(t *testing.T) {
 	t.Parallel()
 	src := `
-def f(a, b) { use $a $b }
+def f(a b) { use $a $b }
 f "only"
 `
 	prog := parseProgram(t, src)

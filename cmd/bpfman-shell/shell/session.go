@@ -18,8 +18,8 @@ type Session struct {
 	traceEnabled   bool
 }
 
-// DefValue is a user-defined command registered via the `def NAME(P1,
-// P2, ...) { BODY }` form. It holds the parameter list, the parsed
+// DefValue is a user-defined command registered via the `def NAME(P1
+// P2 ...) { BODY }` form. It holds the parameter list, the parsed
 // body, and the source location of the declaration for diagnostics.
 type DefValue struct {
 	Name   string

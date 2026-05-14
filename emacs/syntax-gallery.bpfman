@@ -498,11 +498,11 @@ assert $prog matches {
 
 # ---- 25. User-defined commands (def) ----
 
-# `def NAME(P1, P2, ...) { BODY }' registers NAME as a callable.
+# `def NAME(P1 P2 ...) { BODY }' registers NAME as a callable.
 # The keyword `def' is fontified like `let'/`foreach'; the def name
 # and each parameter name carry the variable-name face.  Inside the
 # body, statements fontify exactly as they do at the top level.
-def expect_program_load(prog, load_tp, kernel_tp, name) {
+def expect_program_load(prog load_tp kernel_tp name) {
     assert $prog matches {
         record.load.program_type:    $load_tp
         status.kernel.program_type:  $kernel_tp
@@ -518,8 +518,7 @@ def banner() {
     print "running lifecycle checks"
 }
 
-# Trailing comma in the parameter list is permitted.
-def expect_link(link, prog, kind,) {
+def expect_link(link prog kind) {
     assert $link.record.kind == $kind
     assert $link.record.program_id == $prog.record.program_id
 }

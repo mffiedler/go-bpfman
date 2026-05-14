@@ -1026,7 +1026,7 @@ var reservedDefNames = map[string]bool{
 	"false":     true,
 }
 
-// parseDefStmt parses a `def NAME(P1, P2, ...) { BODY }` declaration.
+// parseDefStmt parses a `def NAME(P1 P2 ...) { BODY }` declaration.
 // The body is parsed eagerly via parseBlock so a syntactically broken
 // body fails at declaration time and the def is never installed.
 // Parameter names must be identifiers and must be unique within the
@@ -1067,17 +1067,17 @@ func (p *parser) parseDefStmt() (Stmt, error) {
 }
 
 // parseDefParams consumes the parameter list up to and including the
-// closing ')'. Parameters are comma-separated identifiers; a trailing
-// comma is permitted; an empty list (immediately closing ')') is
-// permitted. Duplicate parameter names are rejected. The tokeniser
-// does not split on `,` so a comma may arrive glued to an identifier
-// ("a," is one TokenWord); the parser strips the trailing comma in
-// that case and treats it as a separator, mirroring how matches
-// blocks handle the same pattern.
+// closing ')'. Parameters are whitespace-separated identifiers; an
+// empty list (immediately closing ')') is permitted. Duplicate
+// parameter names are rejected. Commas are not a separator at any
+// binding site, including this one: a token whose text contains ','
+// (which can happen because the tokeniser does not split on ',') is
+// rejected with a clear error so the migration from the previous
+// comma-separated spelling fails loudly rather than silently
+// accepting `def f(a, b)` as `def f(a, b)` with a glued-comma name.
 func (p *parser) parseDefParams(defLoc Pos) ([]string, error) {
 	var params []string
 	seen := make(map[string]bool)
-	expectName := true
 	for {
 		// Allow newlines/semis inside the parameter list so a long
 		// def signature can wrap.
@@ -1092,40 +1092,21 @@ func (p *parser) parseDefParams(defLoc Pos) ([]string, error) {
 			p.advance()
 			return params, nil
 		}
-		if t.Kind == TokenWord && t.Text == "," {
-			if expectName {
-				return nil, spanErrorf(t.Span, "def: missing parameter name before ','")
-			}
-			p.advance()
-			expectName = true
-			continue
-		}
-		if !expectName {
-			return nil, spanErrorf(t.Span, "def: expected ',' or ')' in parameter list, got %q", t.Text)
-		}
 		if t.Kind != TokenWord {
 			return nil, spanErrorf(t.Span, "def: expected parameter name, got %q", t.Text)
 		}
-		// Strip a trailing comma glued to the identifier ("a," tokenises
-		// as one WORD because ',' is not a tokenisation boundary). The
-		// stripped identifier is the parameter name; the comma becomes
-		// the separator for the next iteration.
-		nameText := t.Text
-		trailingComma := false
-		if strings.HasSuffix(nameText, ",") && len(nameText) > 1 {
-			nameText = nameText[:len(nameText)-1]
-			trailingComma = true
+		if strings.ContainsRune(t.Text, ',') {
+			return nil, spanErrorf(t.Span, "def: comma is not a parameter separator; use whitespace (got %q)", t.Text)
 		}
-		if !IsIdent(nameText) {
-			return nil, spanErrorf(t.Span, "def: invalid parameter name %q", nameText)
+		if !IsIdent(t.Text) {
+			return nil, spanErrorf(t.Span, "def: invalid parameter name %q", t.Text)
 		}
-		if seen[nameText] {
-			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", nameText)
+		if seen[t.Text] {
+			return nil, spanErrorf(t.Span, "def: duplicate parameter name %q", t.Text)
 		}
-		seen[nameText] = true
-		params = append(params, nameText)
+		seen[t.Text] = true
+		params = append(params, t.Text)
 		p.advance()
-		expectName = trailingComma
 	}
 }
 
