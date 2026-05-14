@@ -1457,6 +1457,64 @@ func TestParse_CommandArg_ParenExprArithmetic(t *testing.T) {
 	assert.True(t, ok, "arg should be BinaryExpr, got %T", cmd.Args[1])
 }
 
+func TestParse_CommandArg_ListLiteral(t *testing.T) {
+	t.Parallel()
+
+	// '[' at the start of an argument run must route to
+	// parseListLiteral so 'print [1 2 3]' produces one ListExpr
+	// argument rather than five separate literal tokens for '[',
+	// '1', '2', '3', ']'.
+	prog, err := parseSource(t, `print [1 2 3]`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	list, ok := cmd.Args[1].(*ListExpr)
+	require.True(t, ok, "arg 1 should be ListExpr, got %T", cmd.Args[1])
+	assert.Len(t, list.Elems, 3)
+}
+
+func TestParse_CommandArg_NestedListLiteral(t *testing.T) {
+	t.Parallel()
+
+	// Nested brackets must balance via findMatchingBracket so the
+	// outer ']' closes the outer literal rather than the inner.
+	// '[[1] [2 3]]' parses as a two-element list of lists.
+	prog, err := parseSource(t, `print [[1] [2 3]]`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	outer, ok := cmd.Args[1].(*ListExpr)
+	require.True(t, ok)
+	assert.Len(t, outer.Elems, 2)
+	for i, e := range outer.Elems {
+		_, ok := e.(*ListExpr)
+		assert.True(t, ok, "elem %d should be ListExpr, got %T", i, e)
+	}
+}
+
+func TestParse_CommandArg_ListLiteralErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"unmatched open bracket", "print [1 2", "unmatched '['"},
+		{"stray close bracket", "print abc]", "unmatched ']'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestParse_CommandArg_ParenExprErrors(t *testing.T) {
 	t.Parallel()
 

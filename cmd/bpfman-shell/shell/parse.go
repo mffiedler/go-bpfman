@@ -2146,6 +2146,13 @@ func (p *exprParser) parseIterationExpr() (Expr, error) {
 // This is the orthogonality the wart entry on "|> in argument
 // position" called for: 'print ($snap |> jq ".x")' parses the same
 // way 'let v = $snap |> jq ".x"' does.
+//
+// A leading '[' starts a list literal arg the same way, dispatched
+// to parseListLiteral via parseExpression. 'print [1 2 3]' produces
+// one ListExpr argument rather than five separate literal tokens.
+// A bare ')' or ']' outside any opening paren / bracket is a parse
+// error; the tokeniser keeps them as their own tokens and the
+// resulting "unmatched" diagnostic mirrors the opening-side check.
 func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 	exprs := make([]Expr, 0, len(tokens))
 	i := 0
@@ -2179,6 +2186,26 @@ func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 		if t.Kind == TokenWord && t.Text == ")" {
 			return nil, spanErrorf(t.Span, "unmatched ')' in command argument")
 		}
+		if t.Kind == TokenWord && t.Text == "[" {
+			end, err := findMatchingBracket(tokens, i)
+			if err != nil {
+				return nil, err
+			}
+			// parseExpression routes a run starting with '['
+			// through parseTerm to parseListLiteral, so handing
+			// it the whole '[ ... ]' slice (brackets included)
+			// produces a ListExpr argument.
+			e, err := parseExpression(tokens[i : end+1])
+			if err != nil {
+				return nil, err
+			}
+			exprs = append(exprs, e)
+			i = end + 1
+			continue
+		}
+		if t.Kind == TokenWord && t.Text == "]" {
+			return nil, spanErrorf(t.Span, "unmatched ']' in command argument")
+		}
 		e, err := parsePrimary(t)
 		if err != nil {
 			return nil, err
@@ -2211,6 +2238,30 @@ func findMatchingParen(tokens []Token, openIdx int) (int, error) {
 		}
 	}
 	return 0, spanErrorf(tokens[openIdx].Span, "unmatched '(' in command argument")
+}
+
+// findMatchingBracket returns the index of the ']' that closes
+// the '[' at openIdx. Mirror of findMatchingParen: tracks nested
+// '[' / ']' so '[[1] [2 3]]' is returned whole. An unmatched '['
+// is a parse error cited at the opening bracket.
+func findMatchingBracket(tokens []Token, openIdx int) (int, error) {
+	depth := 1
+	for i := openIdx + 1; i < len(tokens); i++ {
+		t := tokens[i]
+		if t.Kind != TokenWord {
+			continue
+		}
+		switch t.Text {
+		case "[":
+			depth++
+		case "]":
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+		}
+	}
+	return 0, spanErrorf(tokens[openIdx].Span, "unmatched '[' in command argument")
 }
 
 // onlySeparators reports whether tokens is non-empty but contains
