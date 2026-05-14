@@ -1,6 +1,7 @@
 package bpfman
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"time"
@@ -111,8 +112,8 @@ type ProgramHandles struct {
 	// existing on-disk records.
 	MapsDir MapDir `json:"map_pin_path"`
 	// MapOwnerID nil means this program is not a shared-map consumer of another
-	// program; pointer + omitempty encodes that absence.
-	MapOwnerID *kernel.ProgramID `json:"map_owner_id,omitempty"`
+	// program; emitted as JSON null in that case so the consumer schema is stable.
+	MapOwnerID *kernel.ProgramID `json:"map_owner_id"`
 }
 
 // ProgramMeta contains operator-facing management metadata.
@@ -121,9 +122,10 @@ type ProgramMeta struct {
 	Name        string `json:"name"`        // human-readable label
 	Owner       string `json:"owner"`       // who manages this; empty means unassigned
 	Description string `json:"description"` // empty means no description
-	// Metadata nil and empty map are interchangeable; omitempty avoids emitting
-	// "metadata": null for the common unannotated case.
-	Metadata map[string]string `json:"metadata,omitempty"` // arbitrary key/value for selection
+	// Metadata is always emitted: {} when the operator supplied none, otherwise
+	// the user's key/value pairs. nil and empty map collapse to the empty map at
+	// marshal time so consumers see a stable shape.
+	Metadata map[string]string `json:"metadata"` // arbitrary key/value for selection
 }
 
 // ProgramRecord is the stored record of a loaded program (DB-backed).
@@ -151,11 +153,12 @@ type ProgramRecord struct {
 // This is "what actually exists right now".
 type ProgramStatus struct {
 	// Kernel nil means the program is not loaded in the kernel (e.g. deleted
-	// out-of-band or never loaded); pointer + omitempty encodes that absence.
-	Kernel *kernel.Program `json:"kernel,omitempty"`
+	// out-of-band or never loaded); always emitted as JSON null in that case.
+	Kernel *kernel.Program `json:"kernel"`
 	// Stats nil means kernel.bpf_stats_enabled=0 or the stats were not read;
-	// pointer + omitempty distinguishes "not collected" from zero stats.
-	Stats      *kernel.ProgramStats `json:"stats,omitempty"`
+	// always emitted as JSON null in that case, distinguishing "not collected"
+	// from zero stats at the type level rather than via field presence.
+	Stats      *kernel.ProgramStats `json:"stats"`
 	ProgPin    PathPresence         `json:"prog_pin"`   // program pin path + presence
 	MapDir     PathPresence         `json:"map_dir"`    // map pin directory + presence
 	LinkDir    PathPresence         `json:"link_dir"`   // link pin directory + presence
@@ -185,6 +188,35 @@ var (
 type Program struct {
 	Record ProgramRecord `json:"record"`
 	Status ProgramStatus `json:"status"`
+}
+
+// MarshalJSON for ProgramMeta coerces a nil Metadata map to the empty
+// map so JSON consumers always see "metadata": {} rather than null or
+// field absence. Always-emit is the contract; the construction path
+// that left Metadata nil is therefore invisible to consumers.
+func (m ProgramMeta) MarshalJSON() ([]byte, error) {
+	type alias ProgramMeta
+	a := alias(m)
+	if a.Metadata == nil {
+		a.Metadata = map[string]string{}
+	}
+	return json.Marshal(a)
+}
+
+// MarshalJSON for ProgramStatus coerces nil Links / Maps slices to the
+// empty slice so JSON consumers always see "links": [] and "maps": []
+// rather than null. The construction path is irrelevant to the wire
+// contract.
+func (s ProgramStatus) MarshalJSON() ([]byte, error) {
+	type alias ProgramStatus
+	a := alias(s)
+	if a.Links == nil {
+		a.Links = []Link{}
+	}
+	if a.Maps == nil {
+		a.Maps = []MapStatus{}
+	}
+	return json.Marshal(a)
 }
 
 // KernelProgramID returns the program's kernel-assigned ID.

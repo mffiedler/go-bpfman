@@ -192,18 +192,19 @@ type imageSourceJSON struct {
 
 // loadSpecJSON is the JSON representation of LoadSpec.
 // This allows LoadSpec to have private fields while still being serializable.
+//
+// Every field is always emitted: nullable concepts (ImageSource) marshal as
+// JSON null when unset; collections (GlobalData) marshal as {} when empty.
+// The contract is a stable schema for consumers; absence is never used to
+// encode meaning.
 type loadSpecJSON struct {
-	ObjectPath  string      `json:"object_path"`
-	ProgramName string      `json:"program_name"`
-	ProgramType ProgramType `json:"program_type"`
-	// GlobalData nil and empty map are interchangeable; omitempty hides the
-	// noisy common case where no global data was supplied.
-	GlobalData map[string][]byte `json:"global_data,omitempty"`
-	// ImageSource nil distinguishes a file-loaded program from an image-sourced
-	// one; pointer + omitempty encodes that absence.
-	ImageSource *imageSourceJSON `json:"image_source,omitempty"`
-	AttachFunc  string           `json:"attach_func"`  // empty for program types that do not use it
-	MapOwnerID  kernel.ProgramID `json:"map_owner_id"` // zero means this program does not share another's maps
+	ObjectPath  string            `json:"object_path"`
+	ProgramName string            `json:"program_name"`
+	ProgramType ProgramType       `json:"program_type"`
+	GlobalData  map[string][]byte `json:"global_data"`  // always emit; {} when no globals
+	ImageSource *imageSourceJSON  `json:"image_source"` // always emit; null when file-loaded
+	AttachFunc  string            `json:"attach_func"`  // empty for program types that do not use it
+	MapOwnerID  kernel.ProgramID  `json:"map_owner_id"` // zero means this program does not share another's maps
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -216,11 +217,15 @@ func (s LoadSpec) MarshalJSON() ([]byte, error) {
 			PullPolicy: s.imagePullPolicy,
 		}
 	}
+	gd := s.globalData
+	if gd == nil {
+		gd = map[string][]byte{}
+	}
 	return json.Marshal(loadSpecJSON{
 		ObjectPath:  s.objectPath,
 		ProgramName: s.programName,
 		ProgramType: s.programType,
-		GlobalData:  s.globalData,
+		GlobalData:  gd,
 		ImageSource: imgSrc,
 		AttachFunc:  s.attachFunc,
 		MapOwnerID:  s.mapOwnerID,

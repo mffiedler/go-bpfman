@@ -384,12 +384,12 @@ type LinkRecord struct {
 	ID        kernel.LinkID    `json:"id"`
 	ProgramID kernel.ProgramID `json:"program_id"` // program this attaches to
 	Kind      LinkKind         `json:"kind"`
-	// PinPath nil distinguishes an ephemeral link from one with a pin. Kept as a
-	// pointer so absence is representable at the type level; omitempty reflects that.
-	PinPath *LinkPath `json:"pin_path,omitempty"`
-	// Details nil means "no per-kind detail available"; omitempty mirrors the
-	// nil-interface semantics the rest of the code already relies on.
-	Details   LinkDetails `json:"details,omitempty"`
+	// PinPath nil distinguishes an ephemeral link from one with a pin. Always
+	// emitted as JSON null in the ephemeral case so the consumer schema is stable.
+	PinPath *LinkPath `json:"pin_path"`
+	// Details nil means "no per-kind detail available"; always emitted as JSON
+	// null in that case.
+	Details   LinkDetails `json:"details"`
 	CreatedAt time.Time   `json:"created_at"`
 	// Note: When Details is non-nil, Kind must equal Details.Kind(); constructors enforce this
 }
@@ -489,8 +489,8 @@ func (r *LinkRecord) UnmarshalJSON(data []byte) error {
 		ID        kernel.LinkID    `json:"id"`
 		ProgramID kernel.ProgramID `json:"program_id"`
 		Kind      LinkKind         `json:"kind"`
-		PinPath   *LinkPath        `json:"pin_path,omitempty"`
-		Details   json.RawMessage  `json:"details,omitempty"`
+		PinPath   *LinkPath        `json:"pin_path"`
+		Details   json.RawMessage  `json:"details"`
 		CreatedAt time.Time        `json:"created_at"`
 	}
 	var a alias
@@ -590,9 +590,9 @@ func (r LinkRecord) HasPin() bool { return r.PinPath != nil }
 // This is "what actually exists right now".
 type LinkStatus struct {
 	// Kernel nil means the link is not currently in the kernel's link list or is
-	// a synthetic perf_event link with no kernel link ID. Pointer + omitempty
-	// encodes that absence; a present pointer carries the kernel-reported view.
-	Kernel     *kernel.Link `json:"kernel,omitempty"`
+	// a synthetic perf_event link with no kernel link ID. Always emitted as JSON
+	// null in that case; a present pointer carries the kernel-reported view.
+	Kernel     *kernel.Link `json:"kernel"`
 	KernelSeen bool         `json:"kernel_seen"` // true if kernel enumeration succeeded (distinguishes "not found" from "unknown")
 	PinPresent bool         `json:"pin_present"` // true if pin path exists on filesystem
 }
