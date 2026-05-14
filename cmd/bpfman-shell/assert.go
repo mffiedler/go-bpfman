@@ -743,18 +743,16 @@ func matchesValueEqual(actual, expected shell.Value) bool {
 
 // matchesValueDisplay renders a value for inclusion in a
 // mismatch diagnostic. Scalars use their Scalar() text in
-// quotes; structured values fall back to their kind so the
-// message stays one line.
+// quotes; lists and maps render as compact JSON so the
+// "expected X, got Y" line shows the actual contents instead
+// of opaque "[...]"/ "{...}" placeholders that hide the drift.
 func matchesValueDisplay(v shell.Value) string {
 	if v.IsNil() {
 		return "null"
 	}
 	if v.IsStructured() {
-		switch v.Raw().(type) {
-		case []any:
-			return "[...]"
-		case map[string]any:
-			return "{...}"
+		if s, err := shell.RenderCompact(v); err == nil {
+			return s
 		}
 		return v.Kind().String()
 	}
