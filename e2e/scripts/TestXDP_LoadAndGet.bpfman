@@ -14,8 +14,7 @@
 # but always positive (btf_id, jited_size, etc.) are claimed by
 # the exhaustive walker for coverage and asserted by outside
 # `assert > 0` lines for value content. The has_X discriminators
-# are claimed at their per-response values (note the Load/Get
-# asymmetry on has_uid flagged inline).
+# are claimed at their per-response values.
 #
 # Invoke from e2e/:
 #
@@ -97,9 +96,7 @@ assert $prog matches exhaustive {
             tag:            not-empty
             loaded_at:      not-empty
             uid:            0
-            # has_uid is false on Load and true on Get -- a real
-            # Load/Get asymmetry to fix in bpfman.
-            has_uid:        false
+            has_uid:        true
             btf_id:         not-empty
             has_btf_id:     true
             map_ids:        $expect_map_ids
@@ -214,8 +211,6 @@ assert $got matches exhaustive {
             tag:            $prog.status.kernel.tag
             loaded_at:      $prog.status.kernel.loaded_at
             uid:            0
-            # has_uid is true on Get (false on Load -- bpfman
-            # asymmetry to fix).
             has_uid:        true
             btf_id:         $prog.status.kernel.btf_id
             has_btf_id:     true

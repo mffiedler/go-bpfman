@@ -22,6 +22,7 @@ func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 	verifiedInsns, _ := info.VerifiedInstructions()
 	memlock, hasMemlock := info.Memlock()
 	loadTime, hasLoadTime := info.LoadTime()
+	uid, hasUID := info.CreatedByUID()
 
 	var loadedAt time.Time
 	if hasLoadTime {
@@ -42,8 +43,8 @@ func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 		ProgramType:          kernel.NewProgramType(info.Type.String()),
 		Tag:                  info.Tag,
 		LoadedAt:             loadedAt,
-		UID:                  0,     // Not available from ProgramInfo
-		HasUID:               false, // Not available from ProgramInfo
+		UID:                  uid,
+		HasUID:               hasUID,
 		BTFId:                uint32(btfID),
 		HasBTFId:             hasBTFID,
 		MapIDs:               mapIDsTyped,
