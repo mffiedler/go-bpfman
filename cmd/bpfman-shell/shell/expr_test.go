@@ -1196,6 +1196,53 @@ func TestEvalProgram_ForEach_MultiVarDiscardSlot(t *testing.T) {
 	assert.False(t, ok, "underscore must not become a variable")
 }
 
+func TestEvalProgram_CommandArg_ParenExprArithmetic(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("5"))
+	var captured string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			require.Len(t, args, 2)
+			captured = args[1].(ScalarValueArg).Text
+			return Value{}, nil
+		},
+	}
+	// print ($x + 1) -- the BinaryExpr evaluates and wraps as
+	// ScalarValueArg via the default evalArg path.
+	prog, err := parseSource(t, `print ($x + 1)`)
+	require.NoError(t, err)
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, "6", captured)
+}
+
+func TestEvalProgram_CommandArg_ParenExprListLiteral(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	var captured Arg
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			require.Len(t, args, 2)
+			captured = args[1]
+			return Value{}, nil
+		},
+	}
+	// print ([1 2 3]) -- a list literal in argument position
+	// resolves to a StructuredValueArg via the default path.
+	prog, err := parseSource(t, `print ([1 2 3])`)
+	require.NoError(t, err)
+	require.NoError(t, EvalProgram(prog, env))
+	sv, ok := captured.(StructuredValueArg)
+	require.True(t, ok, "arg should be StructuredValueArg, got %T", captured)
+	raw, ok := sv.Value.Raw().([]any)
+	require.True(t, ok)
+	assert.Len(t, raw, 3)
+}
+
 func TestEvalProgram_Break_OutsideLoopIsError(t *testing.T) {
 	t.Parallel()
 

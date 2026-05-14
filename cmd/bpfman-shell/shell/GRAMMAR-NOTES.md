@@ -5,90 +5,83 @@ while writing scripts. Each entry records what was tried, what
 pushed back, the workaround in use, and a sketch of how the
 underlying grammar would need to change to remove the wart.
 
-## `|>` is allowed in expression position but not in argument position
+## `(EXPR)` in argument position (resolved)
 
 ### What was tried
 
 ```
 print ($prog |> jq ".status.maps")
+bpfman link attach tc ... ($snap |> jq ".id")
 ```
 
-### What pushed back
+### What pushed back originally
 
-The parser errors out at `|>` with `unexpected "|>"`. The
-underlying cause: `|>` is recognised by the **expression**
-parser (let RHS, assert operand, if condition), not by the
-**argument** parser that handles command operands. A command's
-arguments are read as argv-style tokens -- bare words, quoted
-strings, varrefs (`$name`, `$name.path`), `${...}`
-interpolation, adapter invocations -- not as general
-expressions. The parenthesised form `(EXPR)` in argument
-position is parsed as a literal `(` token rather than an
-expression group, so `|>` inside never gets its turn.
+The parser errored at `|>` with `unexpected "|>"`. `|>` is
+recognised by the **expression** parser (let RHS, assert
+operand, if condition), not by the **argument** parser that
+handles command operands. A command's arguments were read as
+argv-style tokens -- bare words, quoted strings, varrefs,
+`${...}` interpolation, adapter invocations -- with no
+parenthesised-expression form. `(` was emitted as a literal
+token, so anything inside never reached the expression parser.
 
-The grammar makes the difference visible by what does work:
+### Resolution
 
-```
-assert ($snap |> jq ".members | length") == 10    # expression
-let count = $snap |> jq ".members | length"        # expression
-print "${snap}"                                    # arg with interpolation
-```
-
-But:
-
-```
-print ($snap |> jq ".members | length")            # arg, fails
-bpfman link attach tc ... ($snap |> jq ".id")      # arg, fails
-```
-
-### Workaround
-
-Bind the piped value via `let`, reference the binding:
+`parseCommandArgs` now recognises a leading `(` token as the
+start of a parenthesised expression, parsed via the same path
+that handles let RHSes and assert operands. The whole `(EXPR)`
+group becomes one argument whose value is computed at
+command-eval time; `evalArg`'s default branch evaluates the
+expression and wraps the resulting Value as a Scalar or
+StructuredValueArg. The grammar is now orthogonal: anything
+that works in expression position works in argument position.
 
 ```
-let count = $snap |> jq ".members | length"
-print $count
+print ($snap |> jq ".members | length")            # threads
+print (range 5)                                    # pure-builtin call
+print ([1 2 3])                                    # list literal
+print ($x + 1)                                     # arithmetic
+bpfman link attach tc ... ($snap |> jq ".id")      # nested parens balance
 ```
 
-The corpus already follows this pattern broadly (`let mapID =
-$prog |> jq "..."` then `... $mapID ...`), so the workaround is
-local and reads no worse than the inline form. Often the
-intermediate name reads better, since it names what the value
-*is* rather than how it was derived.
+The motivating consumer was throwaway debug prints: one-off
+`print "members:" ($snap |> jq ".x")` no longer needs a let
+binding that imposes a name with no downstream consumer.
 
-### How a fix could look
+### Style note
 
-Two paths, both structural rather than one-line tweaks:
+For values used more than once, the let-binding form is still
+the right shape. The name documents what the value *is* rather
+than how it was derived (`let mapID = $prog |> jq "..."`), and
+the corpus already broadly follows that pattern. The
+parenthesised arg form is for the cases where naming the
+intermediate adds friction rather than clarity.
 
-1. **Promote `(EXPR)` in argument position.** Extend
-   `parseCommandArgs` to recognise a leading `(` as the start
-   of a parenthesised expression, parsed via the same path
-   that handles let RHSes and assert operands. The resulting
-   value flows through as a structured arg (Scalar /
-   StructuredValueArg as appropriate). This is the most
-   localised change: the args grammar gains one new arg-form,
-   no other grammar productions move.
+### Edge cases
 
-2. **Unify argument and expression parsing.** Drop the
-   distinction and treat all command operands as expressions
-   that happen to evaluate to scalars or structured values.
-   Larger refactor, gives `|>` everywhere by construction,
-   but risks ambiguity around argument-position constructs
-   that are not valid expressions (matches blocks, adapter
-   syntax) and inflates the parser's responsibilities.
+- `()` is rejected as "empty parenthesised expression".
+- Unmatched `(` errors at the opening token with "unmatched
+  '(' in command argument".
+- Nested parens balance via depth tracking, so a pure-builtin
+  call inside a parenthesised arg (`(zip $a (range 3))`) works
+  end-to-end.
 
-Path 1 is the surgical option if the corpus accumulates enough
-sites that the let-binding workaround feels load-bearing
-rather than aesthetic. Until then, the workaround is the right
-shape and this entry exists so the limitation is visible.
+### Known limitation
 
-### When to revisit
+`parseCommandStmt` collects tokens up to the next newline
+without tracking paren depth, so `(EXPR)` in argument position
+must stay on one line:
 
-Three or more script sites where the let-binding form
-demonstrably hurts readability or invites name-collision bugs.
-The campaign has roughly 25 dispatcher-port scripts using the
-pattern today and no complaints; the threshold has not been
-crossed.
+```
+print (long_expression
+       continuing_here)            # fails: newline ends the command
+```
+
+The let RHS / bind RHS / list-literal paths already track
+bracket depth so multi-line works there. Extending the same
+treatment to parseCommandStmt is mechanical but out of scope
+for this entry; revisit if a concrete script wants multi-line
+parens in arg position.
 
 ## No list literals; `foreach` does not accumulate bind results
 

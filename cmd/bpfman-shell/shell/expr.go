@@ -1699,10 +1699,22 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		return ScalarValueArg{Text: s, Span: e.Span}, nil
 	case *MatchesBlockExpr:
 		return evalMatchesBlockArg(e, env)
-	case *BinaryExpr, *UnaryExpr, *LogicalExpr, *NotExpr, *NegateExpr, *TimeoutExpr, *IterationExpr:
-		return nil, locErrorf(exprLoc(expr), "boolean/comparison/arithmetic expression cannot be used as a command argument")
 	default:
-		return nil, locErrorf(exprLoc(expr), "cannot use %T as command argument", expr)
+		// Any other Expr type reaches argument position only via
+		// the '(EXPR)' parenthesised arg form. Evaluate it and
+		// wrap the resulting Value via valueToArg so a thread, a
+		// pure-builtin call, a list literal, or an arithmetic /
+		// comparison expression all flow through as Scalar or
+		// StructuredValueArg, matching the wart entry's
+		// "(EXPR) in argument position" resolution.
+		v, err := EvalExpr(expr, env)
+		if err != nil {
+			return nil, err
+		}
+		if v.IsNil() {
+			return nil, spanErrorf(nodeSpan(expr), "parenthesised expression produced no value")
+		}
+		return valueToArg(v, nodeSpan(expr))
 	}
 }
 
@@ -2325,41 +2337,4 @@ func AsBool(v Value) (bool, error) {
 		return false, fmt.Errorf("condition has boolean origin but non-boolean value %T", v.Raw())
 	}
 	return false, fmt.Errorf("condition is a %s; use a comparison like '$x == 5' or a check like 'not-empty $x' to produce a boolean", v.Kind())
-}
-
-// exprLoc extracts the Pos embedded in any Expr variant. Used for
-// error formatting where the caller has the Expr but not the
-// concrete type.
-func exprLoc(e Expr) Pos {
-	switch v := e.(type) {
-	case *LiteralExpr:
-		return v.Pos
-	case *VarRefExpr:
-		return v.Pos
-	case *AdapterExpr:
-		return v.Pos
-	case *InterpStringExpr:
-		return v.Pos
-	case *BinaryExpr:
-		return v.Pos
-	case *UnaryExpr:
-		return v.Pos
-	case *ThreadExpr:
-		return v.Pos
-	case *LogicalExpr:
-		return v.Pos
-	case *NotExpr:
-		return v.Pos
-	case *NegateExpr:
-		return v.Pos
-	case *TimeoutExpr:
-		return v.Pos
-	case *IterationExpr:
-		return v.Pos
-	case *MatchesBlockExpr:
-		return v.Pos
-	case *ListExpr:
-		return v.Pos
-	}
-	return Pos{}
 }

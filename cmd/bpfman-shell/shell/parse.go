@@ -2127,14 +2127,43 @@ func (p *exprParser) parseIterationExpr() (Expr, error) {
 // expressions. Each token becomes a primary expression; a
 // TokenAssign is preserved as a literal "=" only inside the alias
 // builtin, which uses the sigil syntactically ("alias name = expansion").
+//
+// A leading '(' starts a parenthesised expression that runs through
+// the same parser used by let RHSes and assert operands. The whole
+// '(EXPR)' group becomes one argument whose value is computed at
+// command-eval time; downstream evalArg evaluates the expression
+// and wraps the resulting Value as a Scalar / StructuredValueArg.
+// This is the orthogonality the wart entry on "|> in argument
+// position" called for: 'print ($snap |> jq ".x")' parses the same
+// way 'let v = $snap |> jq ".x"' does.
 func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 	exprs := make([]Expr, 0, len(tokens))
-	for _, t := range tokens {
+	i := 0
+	for i < len(tokens) {
+		t := tokens[i]
 		if t.Kind == TokenAssign {
 			if !allowAssign {
 				return nil, spanErrorf(t.Span, "unexpected '='; use \"let <name> = <value...>\" for assignment")
 			}
 			exprs = append(exprs, &LiteralExpr{Text: "=", Span: t.Span})
+			i++
+			continue
+		}
+		if t.Kind == TokenWord && t.Text == "(" {
+			end, err := findMatchingParen(tokens, i)
+			if err != nil {
+				return nil, err
+			}
+			inner := tokens[i+1 : end]
+			if len(inner) == 0 || onlySeparators(inner) {
+				return nil, spanErrorf(t.Span, "empty parenthesised expression in argument position")
+			}
+			e, err := parseExpression(inner)
+			if err != nil {
+				return nil, err
+			}
+			exprs = append(exprs, e)
+			i = end + 1
 			continue
 		}
 		e, err := parsePrimary(t)
@@ -2142,8 +2171,48 @@ func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 			return nil, err
 		}
 		exprs = append(exprs, e)
+		i++
 	}
 	return exprs, nil
+}
+
+// findMatchingParen returns the index of the ')' that closes the
+// '(' at openIdx. Tracks nested parens so '(zip $a (range 3))' is
+// returned whole. An unmatched '(' is a parse error cited at the
+// opening paren.
+func findMatchingParen(tokens []Token, openIdx int) (int, error) {
+	depth := 1
+	for i := openIdx + 1; i < len(tokens); i++ {
+		t := tokens[i]
+		if t.Kind != TokenWord {
+			continue
+		}
+		switch t.Text {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+		}
+	}
+	return 0, spanErrorf(tokens[openIdx].Span, "unmatched '(' in command argument")
+}
+
+// onlySeparators reports whether tokens is non-empty but contains
+// only TokenSep entries (newlines, semicolons). Used by the
+// argument-position '(EXPR)' check so '(\n)' is rejected as empty
+// the same way '()' is, rather than reaching parseExpression's
+// stripSeps and erroring with "empty expression" further from the
+// user's source.
+func onlySeparators(tokens []Token) bool {
+	for _, t := range tokens {
+		if t.Kind != TokenSep {
+			return false
+		}
+	}
+	return true
 }
 
 // parsePrimary converts a single token into a primary expression.

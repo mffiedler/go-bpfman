@@ -1343,3 +1343,89 @@ func TestParseInterpBody_GarbageIsError(t *testing.T) {
 	_, err := parseInterpBody(") +", Span{})
 	require.Error(t, err)
 }
+
+func TestParse_CommandArg_ParenExprThread(t *testing.T) {
+	t.Parallel()
+
+	// 'print ($x |> jq ...)' must produce a print command whose
+	// sole argument is a ThreadExpr -- the inner '|>' reaches the
+	// expression parser via the new arg-form, rather than tokens
+	// in the run leaking out as literal '(' / ')' surrounding
+	// orphaned varref / quoted text.
+	prog, err := parseSource(t, `print ($x |> jq ".y")`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	lit, ok := cmd.Args[0].(*LiteralExpr)
+	require.True(t, ok)
+	assert.Equal(t, "print", lit.Text)
+	_, ok = cmd.Args[1].(*ThreadExpr)
+	assert.True(t, ok, "arg should be ThreadExpr, got %T", cmd.Args[1])
+}
+
+func TestParse_CommandArg_ParenExprPureCall(t *testing.T) {
+	t.Parallel()
+
+	// jq is registered by the shell package itself; range / zip
+	// are registered by cmd/bpfman-shell so cannot be exercised
+	// from a shell-package test without re-registration. jq's
+	// arity is 2, so the call form below matches the registered
+	// shape.
+	prog, err := parseSource(t, `print (jq "." 42)`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	_, ok = cmd.Args[1].(*PureCallExpr)
+	assert.True(t, ok, "arg should be PureCallExpr, got %T", cmd.Args[1])
+}
+
+func TestParse_CommandArg_ParenExprNested(t *testing.T) {
+	t.Parallel()
+
+	// Nested parens (a pure-builtin call inside the parenthesised
+	// arg) must balance correctly so the outer ')' is the matching
+	// close, not the inner one. Uses jq, the only pure builtin
+	// the shell package itself registers.
+	prog, err := parseSource(t, `print (jq "." (jq ".x" 42))`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	_, ok = cmd.Args[1].(*PureCallExpr)
+	assert.True(t, ok)
+}
+
+func TestParse_CommandArg_ParenExprArithmetic(t *testing.T) {
+	t.Parallel()
+
+	prog, err := parseSource(t, `print ($x + 1)`)
+	require.NoError(t, err)
+	cmd, ok := firstStmt(t, prog).(*CommandStmt)
+	require.True(t, ok)
+	require.Len(t, cmd.Args, 2)
+	_, ok = cmd.Args[1].(*BinaryExpr)
+	assert.True(t, ok, "arg should be BinaryExpr, got %T", cmd.Args[1])
+}
+
+func TestParse_CommandArg_ParenExprErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"empty parens", "print ()", "empty parenthesised"},
+		{"unmatched open", "print (foo", "unmatched"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
