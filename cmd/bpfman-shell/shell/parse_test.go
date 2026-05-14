@@ -1419,6 +1419,8 @@ func TestParse_CommandArg_ParenExprErrors(t *testing.T) {
 	}{
 		{"empty parens", "print ()", "empty parenthesised"},
 		{"unmatched open", "print (foo", "unmatched"},
+		{"stray close", "print abc)", "unmatched ')'"},
+		{"stray close after expr", "print (1 + 2))", "unmatched ')'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -2166,6 +2166,9 @@ func parseCommandArgs(tokens []Token, allowAssign bool) ([]Expr, error) {
 			i = end + 1
 			continue
 		}
+		if t.Kind == TokenWord && t.Text == ")" {
+			return nil, spanErrorf(t.Span, "unmatched ')' in command argument")
+		}
 		e, err := parsePrimary(t)
 		if err != nil {
 			return nil, err
