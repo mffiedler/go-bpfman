@@ -59,29 +59,48 @@ intermediate adds friction rather than clarity.
 
 ### Edge cases
 
-- `()` is rejected as "empty parenthesised expression".
+- `()` is rejected as "empty parenthesised expression" in
+  every position (arg, let RHS, pure-call arg, assert operand).
 - Unmatched `(` errors at the opening token with "unmatched
-  '(' in command argument".
+  '(' in command argument"; stray `)` outside any opening
+  paren is the mirror error.
 - Nested parens balance via depth tracking, so a pure-builtin
   call inside a parenthesised arg (`(zip $a (range 3))`) works
   end-to-end.
+- `[...]` is promoted to arg position the same way: `print
+  [1 2 3]` produces one ListExpr arg, and list literals are a
+  primary-grade argument inside a pure-call so `zip [1 2]
+  [3 4]` works without binding the operands first. Stray `]`
+  is the mirror error of stray `)`.
 
-### Known limitation
+### Known limitation: multi-line `(EXPR)` is not supported anywhere
 
-`parseCommandStmt` collects tokens up to the next newline
-without tracking paren depth, so `(EXPR)` in argument position
-must stay on one line:
+Bracket depth is tracked, paren depth is not. The token
+collectors `parseCommandStmt`, `takeStmtTokens` (let RHS),
+and `takeBindRHSTokens` (bind RHS) all watch for `[` and `]`
+so a multi-line list literal survives a newline, but none of
+them track `(` or `)`. The first newline outside a bracket
+terminates the statement, so a parenthesised expression that
+wraps across lines breaks identically in every position:
 
 ```
 print (long_expression
-       continuing_here)            # fails: newline ends the command
+       continuing_here)        # arg position: "unmatched '('"
+let x = ($n +
+         1)                    # let RHS: "expected expression"
+guard r <- ($cmd
+            "arg")             # bind RHS: same shape
 ```
 
-The let RHS / bind RHS / list-literal paths already track
-bracket depth so multi-line works there. Extending the same
-treatment to parseCommandStmt is mechanical but out of scope
-for this entry; revisit if a concrete script wants multi-line
-parens in arg position.
+`ContState` (the REPL chunk-continuation tracker) does track
+paren depth, so the chunk loop hands the parser a full
+multi-line buffer; the gap is purely in the parser-level
+collectors. Extending `[`/`]` depth tracking to also count
+`(`/`)` is mechanical, but the existing rule "one logical
+statement per line for parenthesised content" reads cleanly
+in the corpus today, so this stays an open wart rather than a
+followup. Revisit if a concrete script wants a multi-line
+`(EXPR)` in any of the three positions.
 
 ## No list literals; `foreach` does not accumulate bind results
 
