@@ -70,6 +70,14 @@ func init() {
 	// list iteration path.
 	rangeElem := shell.KindShape(shell.OriginScalar)
 	shell.RegisterPureBuiltin("range", 1, shell.Shape{Sealed: false, Kind: shell.OriginUnknown, Elem: &rangeElem})
+	// zip returns a list of 2-element pair lists; the inner
+	// elements are unknown-kind (zip is shape-agnostic over its
+	// inputs) so downstream path access falls back to the
+	// permissive wildcard. The outer Shape carries the pair-list
+	// element so foreach's element walk and multi-var
+	// destructuring see "a list of lists".
+	zipPair := shell.Shape{Sealed: false, Kind: shell.OriginUnknown}
+	shell.RegisterPureBuiltin("zip", 2, shell.Shape{Sealed: false, Kind: shell.OriginUnknown, Elem: &zipPair})
 }
 
 // shapeFromType reflects t into a Shape tree honouring JSON

@@ -434,3 +434,106 @@ Threshold met. Nine retrofits, all using the same shape.
 Worth implementing when the next pass of test ports happens
 or when a new test author asks "why three lines for this".
 
+## Parallel-list iteration wants `zip` + multi-var foreach
+
+### What kept coming up
+
+Tests that drive several variables in lock-step ended up
+iterating an index sequence and pulling each variable's value
+from a parallel list by name:
+
+```
+let priorities  = [100 200 300 400 500]
+let proceed_ons = ["ok,pipe,dispatcher_return" ... "shot" ...]
+
+foreach i in (range 5) {
+    bpfman link attach tc ... -p $priorities[$i] --proceed-on $proceed_ons[$i] $prog
+}
+```
+
+That reads as "walk an integer range and use it to index two
+other lists" -- the parallel-iteration intent is implicit and
+nothing in the language enforces that the two lists have the
+same length. A mismatched-length bug renders as an out-of-range
+error at the indexing site, not at the construction site, so
+the failure points away from the actual mistake.
+
+### What pushed back
+
+Two missing primitives:
+
+1. **A zip producer.** No way to pair two lists element-wise
+   and produce `[[a0 b0] [a1 b1] ...]`. The closest workaround
+   was the `(range N)` + `$xs[$i]` pattern above.
+2. **Multi-var foreach.** `foreach NAME in LIST { ... }` bound
+   a single name to the whole iteration element; there was no
+   destructuring form for "this element is a pair, bind each
+   half to its own name".
+
+### Resolution
+
+Two changes landed together because each is only half a feature
+on its own:
+
+1. **`zip A B` pure builtin.** Arity 2 (matches the
+   "single arity per name" precedent set by `range`). Returns
+   a list of 2-element pair lists. Length mismatch is a hard
+   error rather than silent truncation: the parallel-list
+   pattern this exists to serve carries an implicit "these are
+   paired" invariant, so dropping the longer list's tail would
+   convert a bug into wrong-shape output. Python 3.10's
+   `zip(strict=True)` made the same trade-off for the same
+   reason. Empty + empty yields an empty list. Non-list
+   arguments error citing the argument index and observed
+   kind.
+
+2. **Multi-var foreach.** `foreach N1, N2 in LIST { BODY }`.
+   Each iteration element must be a list of matching length;
+   each sub-element binds to the named slot for the body's
+   duration. A bare `_` slot discards its element. Single-var
+   form (`foreach x in LIST`) is unchanged and never
+   destructures. Mismatched-length or non-list elements under
+   multi-var error at the foreach statement so the failure
+   points at the consumer, not at the data.
+
+Together they make parallel iteration self-evident at the call
+site:
+
+```
+foreach prio, po in (zip $priorities $proceed_ons) {
+    bpfman link attach tc ... -p $prio --proceed-on $po $prog
+}
+```
+
+Reads as "walk priorities and proceed-ons in lock-step" without
+the reader having to spot the shared `$i`.
+
+### Limits left in place
+
+- **Arity-2 only.** `zip A B C` is not accepted. Variadic zip
+  would require extending the pure-builtin registry's
+  single-arity-per-name model; defer until a concrete test
+  needs more than two parallel lists. The workaround is
+  `(zip $a (zip $b $c))` and the destructuring becomes
+  `foreach a, bc in ... { foreach b, c in [$bc] ... }`, which
+  is awkward enough that the variadic form would clearly earn
+  its keep when needed.
+- **Inner-element origins are not preserved.** Each pair is a
+  freshly-built `[]any`, so a zip of typed-record lists loses
+  the record-kind tag inside the pair. The current corpus
+  zips scalar lists (priorities, proceed-on strings) where
+  this does not matter; revisit if a typed-record pairing
+  appears.
+- **No `unzip` inverse.** Symmetric to the variadic-zip
+  question: only useful when the corpus produces pair lists
+  it then wants to split, which has not happened.
+
+### When to revisit each limit
+
+Arity > 2: when the third parallel list appears in a test.
+Inner-element origins: when a script needs `$pair[0]` to
+satisfy a kind-driven capability dispatch.
+unzip: when a script ends up splitting a freshly-built pair
+list and the inverse-of-zip reading would make the intent
+clearer than a pair of `foreach pair in xs` walks.
+
