@@ -274,7 +274,7 @@ func TestCheck_PureBuiltin_RejectedInTupleBind(t *testing.T) {
 	t.Parallel()
 
 	name := registerTestPureBuiltin(t, "ud", 1)
-	src := "let (rc, x) <- " + name + " 1"
+	src := "let (rc x) <- " + name + " 1"
 	issues := checkSource(t, src)
 	require.NotEmpty(t, issues)
 	combined := joinIssues(issues)

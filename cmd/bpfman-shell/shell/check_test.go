@@ -55,7 +55,7 @@ func TestCheck_BindCollect_TupleBindOnPureBuiltinRejected(t *testing.T) {
 	// accumulate synthetic OK envelopes into the rc slot. The
 	// checker rejects this shape and points at the single-bind
 	// alternative.
-	src := "let xs = [10 20 30]\nlet (rc, doubled) <- foreach n in $xs { jq \". * 2\" $n }"
+	src := "let xs = [10 20 30]\nlet (rc doubled) <- foreach n in $xs { jq \". * 2\" $n }"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "jq is a pure builtin")
@@ -77,7 +77,7 @@ func TestCheck_BindCollect_SingleBindOnPureBuiltinAccepted(t *testing.T) {
 func TestCheck_BindStmtDefinesPrimaryAndRc(t *testing.T) {
 	t.Parallel()
 
-	issues := checkSource(t, "let (rc, p) <- bpfman program list\nprint $p $rc")
+	issues := checkSource(t, "let (rc p) <- bpfman program list\nprint $p $rc")
 	assert.Empty(t, issues)
 }
 
@@ -243,9 +243,9 @@ func TestCheck_LeakReportedAtStartSite(t *testing.T) {
 func TestCheck_TupleBindOnStartReportsPrimary(t *testing.T) {
 	t.Parallel()
 
-	// 'let (rc, p) <- start ...' creates a job named p; rc
+	// 'let (rc p) <- start ...' creates a job named p; rc
 	// is the result envelope, not the job handle.
-	src := "let (rc, p) <- start sleep 60"
+	src := "let (rc p) <- start sleep 60"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, `started job "p"`)
@@ -577,7 +577,7 @@ func TestCheck_KindFieldAccess_TupleRcIsEnvelope(t *testing.T) {
 	// The rc slot of a tuple bind is always an envelope, so
 	// $rc.exit_code (the typo) gets the same treatment as
 	// $bpftool.exit_code did.
-	src := `let (rc, prog) <- bpfman program get 42
+	src := `let (rc prog) <- bpfman program get 42
 if $rc.exit_code == 0 {
     print $prog
 }`

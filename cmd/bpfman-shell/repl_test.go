@@ -2701,7 +2701,7 @@ func TestReplLoop_LetBindTupleExec(t *testing.T) {
 	// Tuple form binds rc and primary separately. For exec the
 	// primary is also rc-shaped, so both bound values expose the
 	// envelope fields.
-	input := "let (rc, p) <- exec true\n"
+	input := "let (rc p) <- exec true\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2729,7 +2729,7 @@ func TestReplLoop_LetBindTupleDiscardRc(t *testing.T) {
 
 	// Discarding rc keeps only primary. Equivalent to single-name
 	// form for rc-primary commands.
-	input := "let (_, p) <- exec true\n"
+	input := "let (_ p) <- exec true\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -2753,7 +2753,7 @@ func TestReplLoop_GuardBindTupleNonZeroNoBindings(t *testing.T) {
 
 	// On guard failure, neither tuple slot is bound. The renderer
 	// fires; statements after the guard never run.
-	input := "guard (rc, p) <- exec false; let after = ran\n"
+	input := "guard (rc p) <- exec false; let after = ran\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()

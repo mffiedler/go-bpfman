@@ -412,7 +412,7 @@ script (`guard`) or carries through normally (`let`).
 
     BindStmt       = ('let' | 'guard') BindTarget '<-' BindRHS .
     BindTarget     = Name
-                   | '(' Name ',' Name [ ',' ] ')' .
+                   | '(' Name Name ')' .
     BindRHS        = CommandForm
                    | ForEachStmt           (* bind-collect *) .
 
@@ -421,12 +421,14 @@ definition is in the CommandStmt section. `Name` is the shared
 binding-site name production; its definition is in the Binding
 sites section.
 
-The tuple target accepts exactly two names. The first target
-receives the result envelope; the second receives the primary
-value. Arities other than two are rejected at parse time. `_` is
-an accepted name at either slot, but `(_, _)` is rejected at
-parse time as "tuple bind cannot discard both slots". A trailing
-comma after the second name is accepted.
+The tuple target accepts exactly two names, separated by
+whitespace; there is no comma form. The first target receives the
+result envelope; the second receives the primary value. Arities
+other than two are rejected at parse time. `_` is an accepted
+name at either slot, but `(_ _)` is rejected at parse time as
+"tuple bind cannot discard both slots". A token whose text
+contains `,` (which the lexer does not split on its own) is
+rejected explicitly with "comma is not a separator".
 
 The `BindRHS` has two shapes:
 
@@ -445,8 +447,8 @@ Examples:
 
     let pid <- bpfman program load file --path foo.o
     guard pid <- bpfman program load file --path foo.o
-    let (rc, p) <- bpfman program get $pid
-    let (_, p) <- bpfman program get $pid
+    let (rc p) <- bpfman program get $pid
+    let (_ p) <- bpfman program get $pid
     guard _ <- touch "${sentinel}.1"
 
     guard links <- foreach prio in $priorities {
@@ -520,7 +522,7 @@ by newlines or `;` tokens.
 Example:
 
     retry {
-        let (rc, _) <- bpfman program get $pid
+        let (rc _) <- bpfman program get $pid
     } until $rc.ok
 
 ### DeferStmt
@@ -1048,9 +1050,9 @@ covered by the ordinary identifier and duplicate-name rules.
 
     let x = EXPR
     let x <- CMD
-    let (rc, x) <- CMD
+    let (rc x) <- CMD
     guard x <- CMD
-    guard (rc, x) <- CMD
+    guard (rc x) <- CMD
 
     foreach x in LIST { BODY }
     foreach a, b in LIST { BODY }
@@ -1059,7 +1061,7 @@ covered by the ordinary identifier and duplicate-name rules.
     def f(a) { BODY }
     def f(a b c) { BODY }
 
-The bind tuple form (`let (rc, x) <-` and `guard (rc, x) <-`)
+The bind tuple form (`let (rc x) <-` and `guard (rc x) <-`)
 accepts exactly two names. The foreach multi-var form accepts
 two or more names separated by commas. The def parameter list
 accepts zero or more whitespace-separated names; there is no
@@ -1073,13 +1075,13 @@ Accepted positions:
 - Single bind target (`let _ <- cmd`, `guard _ <- cmd`). Used in
   the corpus when the command is run for its side effect and the
   primary value is not needed.
-- Tuple-bind slots (`let (_, x) <- cmd`, `let (a, _) <- cmd`).
+- Tuple-bind slots (`let (_ x) <- cmd`, `let (a _) <- cmd`).
 - ForEach name list (single-var `foreach _ in xs` and any slot
   in multi-var `foreach _, b in pairs`).
 
 Rejected:
 
-- Tuple bind where both slots are `_`: `let (_, _) <- cmd` is
+- Tuple bind where both slots are `_`: `let (_ _) <- cmd` is
   rejected as "tuple bind cannot discard both slots".
 - Multi-var foreach where every name is `_`:
   "foreach: all loop variables are '_'; at least one must bind".

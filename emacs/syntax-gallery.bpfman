@@ -122,9 +122,9 @@ guard arg_after <- diff file:$a file:$b
 # primary of a 'bpfman program load' is a {programs: [...]}
 # wrapper; downstream code reads the first (or only) program
 # through `.programs[0]`.
-guard (rc, loaded) <- bpfman program load file --path ./foo.o --programs xdp:pass
+guard (rc loaded) <- bpfman program load file --path ./foo.o --programs xdp:pass
 let prog = $loaded.programs[0]
-let (rc2, _) <- ip link del veth-host
+let (rc2 _) <- ip link del veth-host
 
 # '_' discards a slot. The single-name discard form is the
 # "run, ignore result, continue regardless" idiom for cleanup.

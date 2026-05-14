@@ -40,6 +40,6 @@ foreach l in $links {
 
 # Eleventh attach must fail. The bind's Rc carries the envelope;
 # Primary stays empty because the attach never produced a Link.
-let (rc, _) <- bpfman link attach xdp -i $pair.host_link -p 1100 $pid
+let (rc _) <- bpfman link attach xdp -i $pair.host_link -p 1100 $pid
 assert not $rc.ok
 assert contains $rc.stderr "no free dispatcher slots"

@@ -1614,7 +1614,7 @@ func renderArgvTrace(args []Arg) string {
 }
 
 // bindTraceHeader formats the left-hand side of a BindStmt for the
-// trace output: `let r`, `let (rc, v)`, `guard r`, `guard (rc, v)`,
+// trace output: `let r`, `let (rc v)`, `guard r`, `guard (rc v)`,
 // or `let _` when neither slot was named. The user typed this
 // verbatim in source; reproducing it in the trace makes it easy to
 // match an entry to the binding line.
@@ -1627,7 +1627,7 @@ func bindTraceHeader(s *BindStmt) string {
 	primary := s.Primary
 	switch {
 	case rc != "" && primary != "":
-		return fmt.Sprintf("%s (%s, %s)", verb, named(rc), named(primary))
+		return fmt.Sprintf("%s (%s %s)", verb, named(rc), named(primary))
 	case primary != "":
 		return fmt.Sprintf("%s %s", verb, named(primary))
 	case rc != "":

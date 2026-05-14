@@ -230,7 +230,7 @@ func TestParse_GuardBindSingle(t *testing.T) {
 func TestParse_LetBindTuple(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "let (rc, prog) <- bpfman program get $pid")
+	prog, err := parseSource(t, "let (rc prog) <- bpfman program get $pid")
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok, "expected BindStmt, got %T", firstStmt(t, prog))
@@ -242,7 +242,7 @@ func TestParse_LetBindTuple(t *testing.T) {
 func TestParse_GuardBindTuple(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "guard (rc, prog) <- bpfman program get $pid")
+	prog, err := parseSource(t, "guard (rc prog) <- bpfman program get $pid")
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok)
@@ -254,7 +254,7 @@ func TestParse_GuardBindTuple(t *testing.T) {
 func TestParse_BindTupleDiscard(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "let (_, prog) <- bpfman program get $pid")
+	prog, err := parseSource(t, "let (_ prog) <- bpfman program get $pid")
 	require.NoError(t, err)
 	bind, ok := firstStmt(t, prog).(*BindStmt)
 	require.True(t, ok)
@@ -276,10 +276,11 @@ func TestParse_BindErrors(t *testing.T) {
 		{"guard without name", "guard <- foo", "guard requires"},
 		{"chained bind sigils rejected", "let x <- foo <- bar", "unexpected '<-' on bind RHS"},
 		{"assign inside bind RHS rejected", "let x <- foo = bar", "unexpected '=' on bind RHS"},
-		{"tuple with assign rejected", "let (rc, prog) = foo", "tuple bind requires '<-'"},
-		{"tuple discard both rejected", "let (_, _) <- foo", "cannot discard both slots"},
-		{"tuple missing comma", "let (rc prog) <- foo", "expected ',' between targets"},
-		{"tuple missing close paren", "let (rc, prog <- foo", "expected ')'"},
+		{"tuple with assign rejected", "let (rc prog) = foo", "tuple bind requires '<-'"},
+		{"tuple discard both rejected", "let (_ _) <- foo", "cannot discard both slots"},
+		{"tuple comma rejected", "let (rc, prog) <- foo", "comma is not a separator"},
+		{"tuple trailing comma rejected", "let (rc prog,) <- foo", "comma is not a separator"},
+		{"tuple missing close paren", "let (rc prog <- foo", "expected ')'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
