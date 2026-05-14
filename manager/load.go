@@ -228,10 +228,19 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 			}
 		}
 
+		// Fetch stats best-effort so the Load response carries the
+		// same Status.Stats shape Get returns. Stays nil when
+		// kernel.bpf_stats_enabled is off, matching Get.
+		var stats *kernel.ProgramStats
+		if s, err := m.kernel.GetProgramStatsByID(ctx, lo.Program.ID); err == nil {
+			stats = s
+		}
+
 		loaded = append(loaded, bpfman.Program{
 			Record: record,
 			Status: bpfman.ProgramStatus{
 				Kernel: lo.Program,
+				Stats:  stats,
 				Maps:   bpfman.ToMapStatus(kernelMaps),
 			},
 		})

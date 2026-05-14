@@ -108,7 +108,11 @@ assert $prog matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        stats: nil
+        stats: matches exhaustive {
+            runtime:          0
+            run_count:        0
+            recursion_misses: 0
+        }
         prog_pin: matches exhaustive {
             path:    ""
             present: false
@@ -223,8 +227,8 @@ assert $got matches exhaustive {
             has_memlock:    true
             restricted:     false
         }
-        # Stats on Get is populated with zero values (the program
-        # never ran since no attach).
+        # Stats are populated with zero values; the program never
+        # ran (no attach).
         stats: matches exhaustive {
             runtime:          0
             run_count:        0
