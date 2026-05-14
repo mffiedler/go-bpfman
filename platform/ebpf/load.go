@@ -393,7 +393,7 @@ func (k *kernelAdapter) Load(ctx context.Context, spec bpfman.LoadSpec, bpffs fs
 	return bpfman.LoadOutput{
 		PinPath:        progPinPath,
 		MapsDir:        mapsDir,
-		Program:        ToKernelProgram(info, license),
+		Program:        ToKernelProgram(info),
 		License:        license,
 		InferredType:   programType,
 		SharedMapNames: sharedMapNames,

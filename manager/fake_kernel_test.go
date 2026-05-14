@@ -478,10 +478,9 @@ func (f *fakeKernel) Load(_ context.Context, spec bpfman.LoadSpec, bpffs fs.BPFF
 		License:      "GPL",
 		InferredType: fp.programType,
 		Program: &kernel.Program{
-			ID:            fp.id,
-			Name:          fp.name,
-			ProgramType:   kernel.NewProgramType(fp.programType.String()),
-			GPLCompatible: true,
+			ID:          fp.id,
+			Name:        fp.name,
+			ProgramType: kernel.NewProgramType(fp.programType.String()),
 		},
 	}, nil
 }

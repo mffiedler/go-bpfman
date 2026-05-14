@@ -9,8 +9,7 @@ import (
 )
 
 // ToKernelProgram converts a cilium/ebpf ProgramInfo to a kernel.Program.
-// The license string is used to determine GPL compatibility at load time.
-func ToKernelProgram(info *ebpf.ProgramInfo, license string) *kernel.Program {
+func ToKernelProgram(info *ebpf.ProgramInfo) *kernel.Program {
 	if info == nil {
 		return nil
 	}
@@ -55,18 +54,5 @@ func ToKernelProgram(info *ebpf.ProgramInfo, license string) *kernel.Program {
 		Memlock:              memlock,
 		HasMemlock:           hasMemlock,
 		Restricted:           false, // Not available from ProgramInfo
-		GPLCompatible:        isGPLCompatible(license),
-	}
-}
-
-// isGPLCompatible checks if a license string is GPL compatible.
-// This matches the kernel's license_is_gpl_compatible() function.
-func isGPLCompatible(license string) bool {
-	switch license {
-	case "GPL", "GPL v2", "GPL and additional rights",
-		"Dual BSD/GPL", "Dual MIT/GPL", "Dual MPL/GPL":
-		return true
-	default:
-		return false
 	}
 }

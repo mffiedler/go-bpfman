@@ -42,11 +42,6 @@ type Program struct {
 	// Restricted is true if kernel address information is restricted by
 	// kernel.kptr_restrict and/or net.core.bpf_jit_harden sysctls.
 	Restricted bool `json:"restricted"`
-
-	// GPLCompatible is true if the program was loaded with a GPL-compatible
-	// license. This is captured from the ELF at load time, not from the kernel.
-	// Only populated for programs loaded by bpfman, not for enumerated programs.
-	GPLCompatible bool `json:"gpl_compatible"`
 }
 
 // PinnedProgram represents a BPF program pinned on the filesystem.

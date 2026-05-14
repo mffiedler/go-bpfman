@@ -15,7 +15,7 @@
 # the exhaustive walker for coverage and asserted by outside
 # `assert > 0` lines for value content. The has_X discriminators
 # are claimed at their per-response values (note the Load/Get
-# asymmetry on has_uid and gpl_compatible flagged inline).
+# asymmetry on has_uid flagged inline).
 #
 # Invoke from e2e/:
 #
@@ -110,7 +110,6 @@ assert $prog matches exhaustive {
             memlock:        not-empty
             has_memlock:    true
             restricted:     false
-            gpl_compatible: true
         }
         stats: nil
         prog_pin: matches exhaustive {
@@ -228,9 +227,6 @@ assert $got matches exhaustive {
             memlock:        $prog.status.kernel.memlock
             has_memlock:    true
             restricted:     false
-            # gpl_compatible is true on Load and false on Get --
-            # bpfman asymmetry to fix.
-            gpl_compatible: false
         }
         # Stats on Get is populated with zero values (the program
         # never ran since no attach).
