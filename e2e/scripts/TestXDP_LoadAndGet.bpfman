@@ -9,25 +9,14 @@
 # The shape contract is always-emit: every field that the response
 # is supposed to carry is emitted unconditionally, with JSON null
 # for nullable concepts and `{}` / `[]` for empty collections.
-# Each field is asserted with the strongest meaningful predicate:
+# Coverage is enforced structurally via `matches exhaustive` so
+# any field a future producer adds that the test doesn't claim
+# fires "present in value but unclaimed in exhaustive block".
 #
-#   - locked at load:      exact equality
-#   - kernel-assigned:     > 0
-#   - strings / IDs / tags: not-empty
-#   - empty collections:   empty
-#   - nullable concepts:   nil
-#   - absent paths:        missing  (for the few omitempty-elided
-#                                    sub-fields the contract still
-#                                    legitimately omits, like
-#                                    record.meta.metadata.<key>
-#                                    when the operator did not
-#                                    supply -m <key>)
-#   - kernel-version gated: if has_X { assert X-shape }
-#
-# A field removed or renamed in the response shape flips a matches
-# entry to "path does not resolve" and fails the test. Adding new
-# fields is not currently caught -- that gap motivates the
-# upcoming coverage primitive (commit 5).
+# Arrays are opaque inside the exhaustive block (claimed by
+# `not-empty` / `empty` / `nil`); per-element shape is checked
+# separately via a scoped `$prog.status.maps[0] matches
+# exhaustive { ... }` assertion.
 #
 # Invoke from e2e/:
 #
@@ -47,45 +36,64 @@ guard loaded <- bpfman program load file \
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
-# ---- Core record + kernel-status shape (shared lib helper). ----
+# ---- Core record + kernel-status sanity (shared lib helper). ----
 expect_program_load $prog xdp extension pass
 
-# ---- Record: every field bpfman stored at load time. ----
-# record.load.object_path is rewritten by bpfman from the
+# ---- Exhaustive structural coverage of the Load response. ----
+# `record.load.object_path` is rewritten by bpfman from the
 # user-supplied path to an internal pin path
 # (/run/bpfman/programs/<id>/bytecode.o), so the assertion is
 # not-empty rather than equality to the load argument.
-assert $prog matches {
-    record.program_id:            $pid
-    record.license:               not-empty
-    record.gpl_compatible:        true
-    record.created_at:            not-empty
-    record.updated_at:            not-empty
-
-    record.load.object_path:      not-empty
-    record.load.program_name:     pass
-    record.load.attach_func:      ""
-    record.load.map_owner_id:     0
-
-    record.handles.pin_path:      not-empty
-    record.handles.map_pin_path:  not-empty
-
-    record.meta.name:             pass
-    record.meta.owner:            ""
-    record.meta.description:      ""
-    record.meta.metadata.owner:   e2e
-    record.meta.metadata.purpose: load-and-get
+assert $prog matches exhaustive {
+    record: matches exhaustive {
+        program_id:     $pid
+        license:        not-empty
+        gpl_compatible: true
+        created_at:     not-empty
+        updated_at:     not-empty
+        load: matches exhaustive {
+            object_path:  not-empty
+            program_name: pass
+            program_type: xdp
+            attach_func:  ""
+            map_owner_id: 0
+            global_data:  empty
+            image_source: nil
+        }
+        handles: matches exhaustive {
+            pin_path:     not-empty
+            map_pin_path: not-empty
+            map_owner_id: nil
+        }
+        meta: matches exhaustive {
+            name:        pass
+            owner:       ""
+            description: ""
+            metadata: matches exhaustive {
+                owner:   e2e
+                purpose: load-and-get
+            }
+        }
+    }
+    status: matches exhaustive {
+        kernel:     not-empty
+        stats:      nil
+        prog_pin:   not-empty
+        map_dir:    not-empty
+        link_dir:   not-empty
+        bytecode:   not-empty
+        provenance: not-empty
+        links:      empty
+        maps:       not-empty
+    }
 }
 assert $pid > 0
 
-# Always-emit JSON shape: nullable concepts surface as null;
-# empty collections surface as {} / []. Each is asserted with the
-# predicate that matches its contract.
-assert nil   $prog.record.handles.map_owner_id
-assert nil   $prog.record.load.image_source
-assert empty $prog.record.load.global_data
-
-# ---- Kernel status: every field the kernel reports. ----
+# ---- Kernel status: every field the kernel reports.
+# Opaque-claimed by `kernel: not-empty` above; the per-field
+# checks live here so the exhaustive block can read at the top
+# level as a one-liner "kernel is populated" while still nailing
+# down the kernel record's own structure.
 assert $prog.status.kernel.jited_size > 0
 assert $prog.status.kernel.xlated_size > 0
 assert $prog.status.kernel.verified_insns > 0
@@ -107,93 +115,123 @@ if $prog.status.kernel.has_memlock {
     assert $prog.status.kernel.memlock > 0
 }
 
-# Stats: nil on the Load response (the kernel-stats query is
-# performed on Get rather than at load time).
-assert nil $prog.status.stats
-
-# ---- Maps: full kernel-side shape. The MapStatus.pin_path /
-# present pair is observation-only and validated against the Get
-# response below.
-require not-empty $prog.status.maps
+# ---- Maps: full kernel-side shape per-element. The MapStatus.
+# pin_path / present pair is observation-only and validated
+# against the Get response below.
 let m = $prog.status.maps[0]
-assert $m matches {
-    name:     not-empty
-    map_type: not-empty
-    frozen:   false
+assert $m matches exhaustive {
+    id:            not-empty
+    name:          not-empty
+    map_type:      not-empty
+    key_size:      not-empty
+    value_size:    not-empty
+    max_entries:   not-empty
+    flags:         0
+    btf_id:        not-empty
+    has_btf_id:    true
+    map_extra:     0
+    has_map_extra: false
+    memlock:       not-empty
+    has_memlock:   true
+    frozen:        false
+    pin_path:      ""
+    present:       false
 }
 assert $m.id > 0
 assert $m.key_size > 0
 assert $m.value_size > 0
 assert $m.max_entries > 0
-assert $m.flags == 0
-assert $m.has_btf_id == true
 assert $m.btf_id > 0
-assert $m.has_memlock == true
 assert $m.memlock > 0
-if $m.has_map_extra {
-    assert $m.map_extra >= 0
-}
 
 # ---- Round-trip: bpfman program get returns the same record. ----
 # created_at is left to not-empty rather than equal because the
 # Load response serialises at nanosecond precision and the Get
 # response at second precision.
 guard got <- bpfman program get $pid
-assert $got matches {
-    record.program_id:            $prog.record.program_id
-    record.license:               $prog.record.license
-    record.gpl_compatible:        $prog.record.gpl_compatible
-    record.load.object_path:      $prog.record.load.object_path
-    record.load.program_name:     $prog.record.load.program_name
-    record.load.program_type:     $prog.record.load.program_type
-    record.load.attach_func:      $prog.record.load.attach_func
-    record.load.map_owner_id:     $prog.record.load.map_owner_id
-    record.handles.pin_path:      $prog.record.handles.pin_path
-    record.handles.map_pin_path:  $prog.record.handles.map_pin_path
-    record.meta.name:             $prog.record.meta.name
-    record.meta.owner:            $prog.record.meta.owner
-    record.meta.description:      $prog.record.meta.description
-    record.meta.metadata.owner:   $prog.record.meta.metadata.owner
-    record.meta.metadata.purpose: $prog.record.meta.metadata.purpose
-    record.created_at:            not-empty
-    record.updated_at:            not-empty
+assert $got matches exhaustive {
+    record: matches exhaustive {
+        program_id:     $prog.record.program_id
+        license:        $prog.record.license
+        gpl_compatible: $prog.record.gpl_compatible
+        created_at:     not-empty
+        updated_at:     not-empty
+        load: matches exhaustive {
+            object_path:  $prog.record.load.object_path
+            program_name: $prog.record.load.program_name
+            program_type: $prog.record.load.program_type
+            attach_func:  $prog.record.load.attach_func
+            map_owner_id: $prog.record.load.map_owner_id
+            global_data:  empty
+            image_source: nil
+        }
+        handles: matches exhaustive {
+            pin_path:     $prog.record.handles.pin_path
+            map_pin_path: $prog.record.handles.map_pin_path
+            map_owner_id: nil
+        }
+        meta: matches exhaustive {
+            name:        $prog.record.meta.name
+            owner:       $prog.record.meta.owner
+            description: $prog.record.meta.description
+            metadata: matches exhaustive {
+                owner:   $prog.record.meta.metadata.owner
+                purpose: $prog.record.meta.metadata.purpose
+            }
+        }
+    }
+    status: matches exhaustive {
+        kernel: not-empty
+        stats:  not-empty
+        prog_pin: matches exhaustive {
+            path:    not-empty
+            present: true
+        }
+        map_dir: matches exhaustive {
+            path:    not-empty
+            present: true
+        }
+        link_dir: matches exhaustive {
+            path:    not-empty
+            present: false
+        }
+        bytecode: matches exhaustive {
+            path:    not-empty
+            present: true
+        }
+        provenance: matches exhaustive {
+            path:    not-empty
+            present: true
+        }
+        links: empty
+        maps:  not-empty
+    }
 }
-
-# Record-level nullable / empty fields round-trip on Get too.
-assert nil   $got.record.handles.map_owner_id
-assert nil   $got.record.load.image_source
-assert empty $got.record.load.global_data
 
 # Kernel-locked status fields round-trip.
 assert $got.status.kernel.id        == $prog.status.kernel.id
 assert $got.status.kernel.tag       == $prog.status.kernel.tag
 assert $got.status.kernel.loaded_at == $prog.status.kernel.loaded_at
 
-# ---- Filesystem presence (Get-only observation). ----
-# link_dir.present is false because no link has been attached;
-# the directory is created lazily at first attach.
-assert $got matches {
-    status.prog_pin.path:      not-empty
-    status.prog_pin.present:   true
-    status.map_dir.path:       not-empty
-    status.map_dir.present:    true
-    status.link_dir.path:      not-empty
-    status.link_dir.present:   false
-    status.bytecode.path:      not-empty
-    status.bytecode.present:   true
-    status.provenance.path:    not-empty
-    status.provenance.present: true
-}
-
-# ---- Status.links on Get: empty list, no attach has happened. ----
-assert empty $got.status.links
-
 # ---- Map observation fields on Get. ----
-require not-empty $got.status.maps
 let gm = $got.status.maps[0]
-assert $gm matches {
-    pin_path: not-empty
-    present:  true
+assert $gm matches exhaustive {
+    id:            $m.id
+    name:          $m.name
+    map_type:      $m.map_type
+    key_size:      $m.key_size
+    value_size:    $m.value_size
+    max_entries:   $m.max_entries
+    flags:         $m.flags
+    btf_id:        $m.btf_id
+    has_btf_id:    $m.has_btf_id
+    map_extra:     $m.map_extra
+    has_map_extra: $m.has_map_extra
+    memlock:       $m.memlock
+    has_memlock:   $m.has_memlock
+    frozen:        $m.frozen
+    pin_path:      not-empty
+    present:       true
 }
 
 # ---- Round-trip: list filters back to our program. ----
