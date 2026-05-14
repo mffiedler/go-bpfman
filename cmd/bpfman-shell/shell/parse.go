@@ -1935,6 +1935,9 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	t := p.peek()
 	if t.Kind == TokenWord && t.Text == "(" {
 		openTok := p.advance()
+		if !p.eof() && p.peek().Kind == TokenWord && p.peek().Text == ")" {
+			return nil, spanErrorf(openTok.Span, "empty parenthesised expression")
+		}
 		inner, err := p.parseOr()
 		if err != nil {
 			return nil, err
@@ -2059,6 +2062,9 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 	t := p.peek()
 	if t.Kind == TokenWord && t.Text == "(" {
 		openTok := p.advance()
+		if !p.eof() && p.peek().Kind == TokenWord && p.peek().Text == ")" {
+			return nil, spanErrorf(openTok.Span, "empty parenthesised expression")
+		}
 		inner, err := p.parseOr()
 		if err != nil {
 			return nil, err

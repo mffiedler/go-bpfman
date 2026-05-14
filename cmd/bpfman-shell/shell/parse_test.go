@@ -1344,6 +1344,32 @@ func TestParseInterpBody_GarbageIsError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParse_EmptyParens_UniformMessage(t *testing.T) {
+	t.Parallel()
+
+	// '()' in any expression position (let RHS, paren arg, inside a
+	// pure-call arg, assert operand) must surface the same
+	// "empty parenthesised expression" message rather than the
+	// misleading "missing ')'" that the older path emitted when
+	// the closing paren was right there.
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"let RHS", "let n = ()"},
+		{"pure-call arg", `let n = jq "." ()`},
+		{"assert operand", "assert () == 1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := parseSource(t, tc.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "empty parenthesised expression")
+		})
+	}
+}
+
 func TestParse_CommandArg_ParenExprThread(t *testing.T) {
 	t.Parallel()
 
