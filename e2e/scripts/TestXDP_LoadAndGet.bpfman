@@ -69,7 +69,7 @@ assert $prog matches exhaustive {
             program_name: pass
             program_type: xdp
             attach_func:  ""
-            map_owner_id: 0
+            map_owner_id: nil
             global_data:  empty
             image_source: nil
         }
