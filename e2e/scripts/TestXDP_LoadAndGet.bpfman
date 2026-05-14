@@ -1,0 +1,145 @@
+# -*- mode: bpfman -*-
+# Shape-only round-trip test for XDP program load.
+#
+# Loads an XDP pass program with user metadata and exercises the
+# full Program record/status field set returned by load and Get,
+# without any attach, traffic, or detach activity. Every field
+# that is supposed to be kernel- or load-time-locked is asserted,
+# either by exact equality or by `not-empty`; kernel-version-gated
+# fields sit behind their `has_X` availability discriminator so
+# the script works across kernel versions.
+#
+# Invoke from e2e/:
+#
+#   cd e2e
+#   sudo bpfman-shell scripts/TestXDP_LoadAndGet.bpfman
+#
+# Requires root.
+
+source ../lib.bpfman
+
+guard loaded <- bpfman program load file \
+    --path testdata/bpf/xdp_pass.bpf.o \
+    --programs xdp:pass \
+    -m owner=e2e \
+    -m purpose=load-and-get
+
+let prog = $loaded.programs[0]
+let pid = $prog.record.program_id
+
+# Core record + kernel-status shape (shared helper).
+expect_program_load $prog xdp extension pass
+
+# Record fields the lib helper does not cover.
+assert $prog matches {
+    record.program_id:            $pid
+    record.license:               not-empty
+    record.gpl_compatible:        true
+    record.meta.metadata.owner:   e2e
+    record.meta.metadata.purpose: load-and-get
+    record.created_at:            not-empty
+    record.updated_at:            not-empty
+}
+assert $pid > 0
+
+# Kernel size fields are positive after a successful load.
+assert $prog.status.kernel.jited_size > 0
+assert $prog.status.kernel.xlated_size > 0
+assert $prog.status.kernel.verified_insns > 0
+
+# Kernel-version-gated fields. has_X is the availability
+# discriminator; the underlying value is only trustworthy when
+# the flag is true.
+if $prog.status.kernel.has_btf_id {
+    assert $prog.status.kernel.btf_id > 0
+}
+if $prog.status.kernel.has_map_ids {
+    let nmapids = $prog.status.kernel.map_ids |> jq "length"
+    assert $nmapids > 0
+}
+if $prog.status.kernel.has_memlock {
+    assert $prog.status.kernel.memlock > 0
+}
+
+# Maps: xdp_pass.bpf.o declares one per-CPU array
+# (xdp_stats_map). The kernel-side fields are populated on Load;
+# pin_path and present are observation-only and validated against
+# the Get response below.
+let nmaps = $prog.status.maps |> jq "length"
+require $nmaps > 0
+let m = $prog.status.maps[0]
+assert $m matches {
+    name:     not-empty
+    map_type: not-empty
+}
+assert $m.id > 0
+assert $m.key_size > 0
+assert $m.value_size > 0
+assert $m.max_entries > 0
+
+# Round-trip: Get returns the same record. Record fields are
+# locked at load time so every record field must be equal.
+# created_at is left out: the Load response serialises it at
+# nanosecond precision and the Get response at second precision,
+# so equality fails even though the underlying value is the
+# same. The lib helper already asserted not-empty on Load; do the
+# same on Get and stop there.
+guard got <- bpfman program get $pid
+assert $got matches {
+    record.program_id:            $prog.record.program_id
+    record.license:               $prog.record.license
+    record.gpl_compatible:        $prog.record.gpl_compatible
+    record.load.program_type:     $prog.record.load.program_type
+    record.meta.name:             $prog.record.meta.name
+    record.meta.metadata.owner:   $prog.record.meta.metadata.owner
+    record.meta.metadata.purpose: $prog.record.meta.metadata.purpose
+    record.handles.pin_path:      $prog.record.handles.pin_path
+    record.created_at:            not-empty
+    record.updated_at:            not-empty
+}
+# Kernel-locked status fields round-trip too.
+assert $got.status.kernel.id        == $prog.status.kernel.id
+assert $got.status.kernel.tag       == $prog.status.kernel.tag
+assert $got.status.kernel.loaded_at == $prog.status.kernel.loaded_at
+
+# Filesystem-presence fields are observed-state and populated on
+# Get. Three caveats from the actual response shape:
+#   - link_dir is created lazily at first attach, so its path is
+#     known but present=false until a link is attached.
+#   - status.links is the literal value null when empty (not []),
+#     so a thread-into-jq on it fails; the assertion is skipped
+#     here and re-introduced in attach-bearing tests.
+#   - Map pin_path is a bare string (MapPinPath newtype), not a
+#     PathPresence object; the sibling `present` bool sits on
+#     MapStatus alongside it.
+assert $got matches {
+    status.prog_pin.path:      not-empty
+    status.prog_pin.present:   true
+    status.map_dir.path:       not-empty
+    status.map_dir.present:    true
+    status.link_dir.path:      not-empty
+    status.bytecode.path:      not-empty
+    status.bytecode.present:   true
+    status.provenance.path:    not-empty
+    status.provenance.present: true
+}
+
+let gnmaps = $got.status.maps |> jq "length"
+require $gnmaps > 0
+let gm = $got.status.maps[0]
+assert $gm matches {
+    pin_path: not-empty
+    present:  true
+}
+
+# Round-trip: list filters back to our program with the same
+# meta and kernel identity.
+guard listed <- bpfman program list -o json
+let ours = $listed |> jq ".programs[] | select(.record.program_id == ${pid})"
+require not nil ours
+assert $ours.record.meta.name == $prog.record.meta.name
+assert $ours.status.kernel.id == $prog.status.kernel.id
+
+# Unload and verify the program is gone.
+bpfman program unload $pid
+assert fail bpfman program get $pid
