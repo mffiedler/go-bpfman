@@ -203,7 +203,7 @@ type loadSpecJSON struct {
 	ProgramType ProgramType       `json:"program_type"`
 	GlobalData  map[string][]byte `json:"global_data"`  // always emit; {} when no globals
 	ImageSource *imageSourceJSON  `json:"image_source"` // always emit; null when file-loaded
-	AttachFunc  string            `json:"attach_func"`  // empty for program types that do not use it
+	AttachFunc  *string           `json:"attach_func"`  // null for program types that do not use it; the attach symbol name (e.g. fentry/fexit) when applicable
 	MapOwnerID  *kernel.ProgramID `json:"map_owner_id"` // null when this program does not share another's maps; mirrors ProgramHandles.MapOwnerID
 }
 
@@ -226,13 +226,18 @@ func (s LoadSpec) MarshalJSON() ([]byte, error) {
 		moid := s.mapOwnerID
 		mapOwnerID = &moid
 	}
+	var attachFunc *string
+	if s.attachFunc != "" {
+		af := s.attachFunc
+		attachFunc = &af
+	}
 	return json.Marshal(loadSpecJSON{
 		ObjectPath:  s.objectPath,
 		ProgramName: s.programName,
 		ProgramType: s.programType,
 		GlobalData:  gd,
 		ImageSource: imgSrc,
-		AttachFunc:  s.attachFunc,
+		AttachFunc:  attachFunc,
 		MapOwnerID:  mapOwnerID,
 	})
 }
@@ -254,7 +259,9 @@ func (s *LoadSpec) UnmarshalJSON(data []byte) error {
 		s.imageDigest = js.ImageSource.Digest
 		s.imagePullPolicy = js.ImageSource.PullPolicy
 	}
-	s.attachFunc = js.AttachFunc
+	if js.AttachFunc != nil {
+		s.attachFunc = *js.AttachFunc
+	}
 	if js.MapOwnerID != nil {
 		s.mapOwnerID = *js.MapOwnerID
 	}

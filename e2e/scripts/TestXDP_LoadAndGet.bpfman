@@ -68,7 +68,7 @@ assert $prog matches exhaustive {
             object_path:  $expect_bytecode
             program_name: pass
             program_type: xdp
-            attach_func:  ""
+            attach_func:  nil
             map_owner_id: nil
             global_data:  empty
             image_source: nil
