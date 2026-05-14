@@ -48,9 +48,7 @@ guard loaded <- bpfman program load file \
     -g verdict_b=0x02000000 \
     -g verdict_c=0x01000000
 
-let prog_a = $loaded.programs[0]
-let prog_b = $loaded.programs[1]
-let prog_c = $loaded.programs[2]
+let (prog_a prog_b prog_c) = $loaded.programs
 let pid_a = $prog_a.record.program_id
 let pid_b = $prog_b.record.program_id
 let pid_c = $prog_c.record.program_id

@@ -61,9 +61,7 @@ guard loaded <- bpfman program load file \
     -g "weight_kp=0x${u64le $weight_kp}" \
     -g "weight_krp=0x${u64le $weight_krp}"
 
-let prog_tp  = $loaded.programs[0]
-let prog_kp  = $loaded.programs[1]
-let prog_krp = $loaded.programs[2]
+let (prog_tp prog_kp prog_krp) = $loaded.programs
 let pid_tp  = $prog_tp.record.program_id
 let pid_kp  = $prog_kp.record.program_id
 let pid_krp = $prog_krp.record.program_id
