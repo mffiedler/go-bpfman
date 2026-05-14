@@ -164,6 +164,7 @@ func (m *Manager) Load(ctx context.Context, source LoadSource, programs []Progra
 // cross-process writer lock; the body itself is lock-agnostic.
 func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts LoadOpts) ([]bpfman.Program, error) {
 	rt := m.rt.Bytecode()
+	bpffs := m.rt.BPFFS()
 	perProgOpts := loadOpts{
 		UserMetadata: opts.UserMetadata,
 		Owner:        opts.Owner,
@@ -228,11 +229,26 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 			}
 		}
 
+		// Derive the path strings the wire shape exposes. Pure
+		// construction from the program ID and runtime layout
+		// helpers, no syscalls: the values are the canonical
+		// locations bpfman would write to or read from. Callers
+		// that want "does this currently exist" stat themselves.
+		programID := lo.Program.ID
+		mapOwner := programID
+		if record.Handles.MapOwnerID != nil {
+			mapOwner = *record.Handles.MapOwnerID
+		}
+
 		loaded = append(loaded, bpfman.Program{
 			Record: record,
 			Status: bpfman.ProgramStatus{
-				Kernel: lo.Program,
-				Maps:   bpfman.ToMapStatus(kernelMaps),
+				Kernel:   lo.Program,
+				ProgPin:  bpffs.ProgPinPath(programID),
+				MapDir:   bpffs.MapPinDir(mapOwner),
+				LinkDir:  bpffs.LinkPinDir(programID),
+				Bytecode: rt.ProgramBytecodePath(programID),
+				Maps:     bpfman.ToMapStatus(kernelMaps),
 			},
 		})
 		items = append(items, loadedItem{out: lo, spec: spec, record: record, now: now})

@@ -154,23 +154,29 @@ type ProgramRecord struct {
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
-// ProgramStatus is observed state (kernel + filesystem).
-// This is "what actually exists right now".
+// ProgramStatus is observed state (kernel + filesystem-derived paths).
+//
+// Path fields (ProgPin, MapDir, LinkDir, Bytecode) carry the
+// canonical filesystem locations bpfman would write to or read
+// from for this program. They are derived from the program ID and
+// runtime layout, not stat'd: a populated path is a claim about
+// where the file would live, not a claim that it currently does.
+// Callers that need "does this path actually exist" do their own
+// stat -- the wire shape does not encode presence.
+//
+// Kernel and Stats are the kernel-observation half. Kernel is nil
+// when the program is not loaded; Stats is nil when stats were
+// not collected (kernel.bpf_stats_enabled=0, observation skipped,
+// or fetch failed).
 type ProgramStatus struct {
-	// Kernel nil means the program is not loaded in the kernel (e.g. deleted
-	// out-of-band or never loaded); always emitted as JSON null in that case.
-	Kernel *kernel.Program `json:"kernel"`
-	// Stats nil means kernel.bpf_stats_enabled=0 or the stats were not read;
-	// always emitted as JSON null in that case, distinguishing "not collected"
-	// from zero stats at the type level rather than via field presence.
-	Stats      *kernel.ProgramStats `json:"stats"`
-	ProgPin    PathPresence         `json:"prog_pin"`   // program pin path + presence
-	MapDir     PathPresence         `json:"map_dir"`    // map pin directory + presence
-	LinkDir    PathPresence         `json:"link_dir"`   // link pin directory + presence
-	Bytecode   PathPresence         `json:"bytecode"`   // bytecode.o file + presence
-	Provenance PathPresence         `json:"provenance"` // provenance.json file + presence
-	Links      []Link               `json:"links"`      // links with spec + status; [] when none
-	Maps       []MapStatus          `json:"maps"`       // kernel maps with pin correlation; [] when none
+	Kernel   *kernel.Program      `json:"kernel"`
+	Stats    *kernel.ProgramStats `json:"stats"`
+	ProgPin  ProgPinPath          `json:"prog_pin"`
+	MapDir   MapDir               `json:"map_dir"`
+	LinkDir  LinkDir              `json:"link_dir"`
+	Bytecode string               `json:"bytecode"`
+	Links    []Link               `json:"links"` // [] when none
+	Maps     []MapStatus          `json:"maps"`  // [] when none
 }
 
 // HasKernelProgramID is a capability interface for domain objects
@@ -229,12 +235,6 @@ func (p Program) KernelProgramID() kernel.ProgramID { return p.Record.ProgramID 
 
 // KernelProgramID returns the record's kernel-assigned program ID.
 func (r ProgramRecord) KernelProgramID() kernel.ProgramID { return r.ProgramID }
-
-// PathPresence pairs a filesystem path with its presence status.
-type PathPresence struct {
-	Path    string `json:"path"`
-	Present bool   `json:"present"`
-}
 
 // MapStatus represents observed map state: kernel info plus
 // filesystem pin path and presence.

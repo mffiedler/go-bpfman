@@ -187,30 +187,14 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	return bpfman.Program{
 		Record: metadata,
 		Status: bpfman.ProgramStatus{
-			Kernel: &kp,
-			Stats:  stats,
-			ProgPin: bpfman.PathPresence{
-				Path:    bpffs.ProgPinPath(programID).String(),
-				Present: scanner.PathExists(bpffs.ProgPinPath(programID).String()),
-			},
-			MapDir: bpfman.PathPresence{
-				Path:    bpffs.MapPinDir(mapOwner).String(),
-				Present: scanner.PathExists(bpffs.MapPinDir(mapOwner).String()),
-			},
-			LinkDir: bpfman.PathPresence{
-				Path:    bpffs.LinkPinDir(programID).String(),
-				Present: scanner.PathExists(bpffs.LinkPinDir(programID).String()),
-			},
-			Bytecode: bpfman.PathPresence{
-				Path:    bc.ProgramBytecodePath(programID),
-				Present: scanner.PathExists(bc.ProgramBytecodePath(programID)),
-			},
-			Provenance: bpfman.PathPresence{
-				Path:    bc.ProgramProvenancePath(programID),
-				Present: scanner.PathExists(bc.ProgramProvenancePath(programID)),
-			},
-			Links: links,
-			Maps:  mapStatuses,
+			Kernel:   &kp,
+			Stats:    stats,
+			ProgPin:  bpffs.ProgPinPath(programID),
+			MapDir:   bpffs.MapPinDir(mapOwner),
+			LinkDir:  bpffs.LinkPinDir(programID),
+			Bytecode: bc.ProgramBytecodePath(programID),
+			Links:    links,
+			Maps:     mapStatuses,
 		},
 	}, nil
 }

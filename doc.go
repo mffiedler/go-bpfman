@@ -12,13 +12,12 @@
 //	│   ├── License/GPLCompatible - Discovered from ELF at load time
 //	│   ├── Handles     - Filesystem paths (pin, maps)
 //	│   └── Meta        - User-facing metadata (name, owner, labels)
-//	└── ProgramStatus   - Observed runtime state (kernel + filesystem)
+//	└── ProgramStatus   - Observed runtime state (kernel + filesystem-derived paths)
 //	    ├── Kernel      - Live kernel program info (nil if not present)
-//	    ├── ProgPin     - Program pin path + presence
-//	    ├── MapDir      - Map pin directory + presence
-//	    ├── LinkDir     - Link pin directory + presence
-//	    ├── Bytecode    - Bytecode file (bytecode.o) + presence
-//	    ├── Provenance  - Provenance file (provenance.json) + presence
+//	    ├── ProgPin     - Program pin path (derived from program ID)
+//	    ├── MapDir      - Map pin directory (derived)
+//	    ├── LinkDir     - Link pin directory (derived)
+//	    ├── Bytecode    - Bytecode file path (derived)
 //	    ├── Links       - Attached links with their own record/status
 //	    └── Maps        - Associated kernel maps with pin correlation
 //

@@ -68,13 +68,13 @@ func FormatShowPaths(prog bpfman.Program) string {
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 
 	// Program pin
-	fmt.Fprintf(w, "%s\t%s\n", prog.Status.ProgPin.Path, presenceStatus(prog.Status.ProgPin.Present))
+	fmt.Fprintln(w, prog.Status.ProgPin)
 
 	// Map directory
 	if len(prog.Status.Maps) > 0 {
-		fmt.Fprintf(w, "%s\t%s\n", prog.Status.MapDir.Path, presenceStatusCount(prog.Status.MapDir.Present, len(prog.Status.Maps), "pin"))
+		fmt.Fprintf(w, "%s\t(%d pin)\n", prog.Status.MapDir, len(prog.Status.Maps))
 	} else {
-		fmt.Fprintf(w, "%s\t%s\n", prog.Status.MapDir.Path, presenceStatus(prog.Status.MapDir.Present))
+		fmt.Fprintln(w, prog.Status.MapDir)
 	}
 
 	// Individual map pins
@@ -84,9 +84,9 @@ func FormatShowPaths(prog bpfman.Program) string {
 
 	// Link directory
 	if len(prog.Status.Links) > 0 {
-		fmt.Fprintf(w, "%s\t%s\n", prog.Status.LinkDir.Path, presenceStatusCount(prog.Status.LinkDir.Present, len(prog.Status.Links), "pin"))
+		fmt.Fprintf(w, "%s\t(%d pin)\n", prog.Status.LinkDir, len(prog.Status.Links))
 	} else {
-		fmt.Fprintf(w, "%s\t%s\n", prog.Status.LinkDir.Path, presenceStatus(prog.Status.LinkDir.Present))
+		fmt.Fprintln(w, prog.Status.LinkDir)
 	}
 
 	// Individual link pins
@@ -97,10 +97,7 @@ func FormatShowPaths(prog bpfman.Program) string {
 	}
 
 	// Bytecode file
-	fmt.Fprintf(w, "%s\t%s\n", prog.Status.Bytecode.Path, presenceStatus(prog.Status.Bytecode.Present))
-
-	// Provenance file
-	fmt.Fprintf(w, "%s\t%s\n", prog.Status.Provenance.Path, presenceStatus(prog.Status.Provenance.Present))
+	fmt.Fprintln(w, prog.Status.Bytecode)
 
 	w.Flush()
 	return b.String()
@@ -146,15 +143,4 @@ func mapDisplayName(m bpfman.MapStatus) string {
 		return filepath.Base(m.PinPath.String())
 	}
 	return m.Name
-}
-
-func presenceStatusCount(present bool, count int, unit string) string {
-	if !present {
-		return "absent"
-	}
-	suffix := "s"
-	if count == 1 {
-		suffix = ""
-	}
-	return fmt.Sprintf("present (%d %s%s)", count, unit, suffix)
 }
