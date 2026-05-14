@@ -6,17 +6,16 @@
 # load` and `bpfman program get`, without any attach, traffic, or
 # detach activity.
 #
-# The shape contract is always-emit: every field that the response
-# is supposed to carry is emitted unconditionally, with JSON null
-# for nullable concepts and `{}` / `[]` for empty collections.
-# Coverage is enforced structurally via `matches exhaustive` so
-# any field a future producer adds that the test doesn't claim
-# fires "present in value but unclaimed in exhaustive block".
-#
-# Arrays are opaque inside the exhaustive block (claimed by
-# `not-empty` / `empty` / `nil`); per-element shape is checked
-# separately via a scoped `$prog.status.maps[0] matches
-# exhaustive { ... }` assertion.
+# Shape claims are tightened where the field's value is
+# deterministic enough to assert exactly: bytecode-derived names
+# (kernel.name, maps[0].name, maps[0].map_type), bpffs paths
+# computed from the program ID, the set of map IDs, zero-shaped
+# stats on Get. Numeric fields whose value is kernel-dependent
+# but always positive (btf_id, jited_size, etc.) are claimed by
+# the exhaustive walker for coverage and asserted by outside
+# `assert > 0` lines for value content. The has_X discriminators
+# are claimed at their per-response values (note the Load/Get
+# asymmetry on has_uid and gpl_compatible flagged inline).
 #
 # Invoke from e2e/:
 #
@@ -36,14 +35,20 @@ guard loaded <- bpfman program load file \
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
+# Computed expectations: bpffs paths derived from pid, and the
+# kernel-reported map_ids list cross-checked against bpfman's
+# observed status.maps[].id set.
+let expect_prog_pin     = "/run/bpfman/fs/prog_${pid}"
+let expect_map_dir      = "/run/bpfman/fs/maps/${pid}"
+let expect_link_dir     = "/run/bpfman/fs/links/${pid}"
+let expect_bytecode     = "/run/bpfman/programs/${pid}/bytecode.o"
+let expect_provenance   = "/run/bpfman/programs/${pid}/provenance.json"
+let expect_map_ids      = $prog.status.maps |> jq "[.[].id]"
+
 # ---- Core record + kernel-status sanity (shared lib helper). ----
 expect_program_load $prog xdp extension pass
 
 # ---- Exhaustive structural coverage of the Load response. ----
-# `record.load.object_path` is rewritten by bpfman from the
-# user-supplied path to an internal pin path
-# (/run/bpfman/programs/<id>/bytecode.o), so the assertion is
-# not-empty rather than equality to the load argument.
 assert $prog matches exhaustive {
     record: matches exhaustive {
         program_id:     $pid
@@ -52,7 +57,7 @@ assert $prog matches exhaustive {
         created_at:     not-empty
         updated_at:     not-empty
         load: matches exhaustive {
-            object_path:  not-empty
+            object_path:  $expect_bytecode
             program_name: pass
             program_type: xdp
             attach_func:  ""
@@ -61,8 +66,8 @@ assert $prog matches exhaustive {
             image_source: nil
         }
         handles: matches exhaustive {
-            pin_path:     not-empty
-            map_pin_path: not-empty
+            pin_path:     $expect_prog_pin
+            map_pin_path: $expect_map_dir
             map_owner_id: nil
         }
         meta: matches exhaustive {
@@ -76,56 +81,75 @@ assert $prog matches exhaustive {
         }
     }
     status: matches exhaustive {
-        kernel:     not-empty
-        stats:      nil
-        prog_pin:   not-empty
-        map_dir:    not-empty
-        link_dir:   not-empty
-        bytecode:   not-empty
-        provenance: not-empty
-        links:      empty
-        maps:       not-empty
+        kernel: matches exhaustive {
+            id:             $pid
+            name:           pass
+            program_type:   extension
+            tag:            not-empty
+            loaded_at:      not-empty
+            uid:            0
+            # has_uid is false on Load and true on Get -- a real
+            # Load/Get asymmetry to fix in bpfman.
+            has_uid:        false
+            btf_id:         not-empty
+            has_btf_id:     true
+            map_ids:        $expect_map_ids
+            has_map_ids:    true
+            jited_size:     not-empty
+            xlated_size:    not-empty
+            verified_insns: not-empty
+            memlock:        not-empty
+            has_memlock:    true
+            restricted:     false
+            gpl_compatible: true
+        }
+        stats: nil
+        prog_pin: matches exhaustive {
+            path:    ""
+            present: false
+        }
+        map_dir: matches exhaustive {
+            path:    ""
+            present: false
+        }
+        link_dir: matches exhaustive {
+            path:    ""
+            present: false
+        }
+        bytecode: matches exhaustive {
+            path:    ""
+            present: false
+        }
+        provenance: matches exhaustive {
+            path:    ""
+            present: false
+        }
+        links: empty
+        maps:  not-empty
     }
 }
 assert $pid > 0
 
-# ---- Kernel status: every field the kernel reports.
-# Opaque-claimed by `kernel: not-empty` above; the per-field
-# checks live here so the exhaustive block can read at the top
-# level as a one-liner "kernel is populated" while still nailing
-# down the kernel record's own structure.
+# Numeric content checks for kernel fields the matches block
+# could only claim for coverage (not-empty on numbers is vacuous
+# today; outside `assert > 0` validates the actual values).
 assert $prog.status.kernel.jited_size > 0
 assert $prog.status.kernel.xlated_size > 0
 assert $prog.status.kernel.verified_insns > 0
-assert $prog.status.kernel.gpl_compatible == true
-assert $prog.status.kernel.restricted == false
+assert $prog.status.kernel.btf_id > 0
+assert $prog.status.kernel.memlock > 0
 
-# Kernel-version-gated values. has_X is the availability
-# discriminator (kernel-version + program-type dependent); the
-# value is only trustworthy when the flag is true. uid may
-# legitimately be zero (root-loaded); btf_id, memlock, and
-# map_ids carry positive content when present.
-if $prog.status.kernel.has_btf_id {
-    assert $prog.status.kernel.btf_id > 0
-}
-if $prog.status.kernel.has_map_ids {
-    assert not-empty $prog.status.kernel.map_ids
-}
-if $prog.status.kernel.has_memlock {
-    assert $prog.status.kernel.memlock > 0
-}
-
-# ---- Maps: full kernel-side shape per-element. The MapStatus.
-# pin_path / present pair is observation-only and validated
-# against the Get response below.
+# ---- Per-element map shape (Load).
+# The MapStatus.pin_path / present pair is observation-only and
+# validated against the Get response below.
 let m = $prog.status.maps[0]
 assert $m matches exhaustive {
     id:            not-empty
-    name:          not-empty
-    map_type:      not-empty
-    key_size:      not-empty
-    value_size:    not-empty
-    max_entries:   not-empty
+    name:          xdp_pass_stats_
+    map_type:      percpuarray
+    key_size:      4
+    value_size:    8
+    max_entries:   1
     flags:         0
     btf_id:        not-empty
     has_btf_id:    true
@@ -138,16 +162,13 @@ assert $m matches exhaustive {
     present:       false
 }
 assert $m.id > 0
-assert $m.key_size > 0
-assert $m.value_size > 0
-assert $m.max_entries > 0
 assert $m.btf_id > 0
 assert $m.memlock > 0
 
-# ---- Round-trip: bpfman program get returns the same record. ----
-# created_at is left to not-empty rather than equal because the
-# Load response serialises at nanosecond precision and the Get
-# response at second precision.
+# ---- Round-trip: bpfman program get returns the same record.
+# `record.created_at` is asserted not-empty rather than equal
+# because the Load response serialises at nanosecond precision
+# and the Get response at second precision.
 guard got <- bpfman program get $pid
 assert $got matches exhaustive {
     record: matches exhaustive {
@@ -181,26 +202,55 @@ assert $got matches exhaustive {
         }
     }
     status: matches exhaustive {
-        kernel: not-empty
-        stats:  not-empty
+        kernel: matches exhaustive {
+            id:             $prog.status.kernel.id
+            name:           pass
+            program_type:   extension
+            tag:            $prog.status.kernel.tag
+            loaded_at:      $prog.status.kernel.loaded_at
+            uid:            0
+            # has_uid is true on Get (false on Load -- bpfman
+            # asymmetry to fix).
+            has_uid:        true
+            btf_id:         $prog.status.kernel.btf_id
+            has_btf_id:     true
+            map_ids:        $expect_map_ids
+            has_map_ids:    true
+            jited_size:     $prog.status.kernel.jited_size
+            xlated_size:    $prog.status.kernel.xlated_size
+            verified_insns: $prog.status.kernel.verified_insns
+            memlock:        $prog.status.kernel.memlock
+            has_memlock:    true
+            restricted:     false
+            # gpl_compatible is true on Load and false on Get --
+            # bpfman asymmetry to fix.
+            gpl_compatible: false
+        }
+        # Stats on Get is populated with zero values (the program
+        # never ran since no attach).
+        stats: matches exhaustive {
+            runtime:          0
+            run_count:        0
+            recursion_misses: 0
+        }
         prog_pin: matches exhaustive {
-            path:    not-empty
+            path:    $expect_prog_pin
             present: true
         }
         map_dir: matches exhaustive {
-            path:    not-empty
+            path:    $expect_map_dir
             present: true
         }
         link_dir: matches exhaustive {
-            path:    not-empty
+            path:    $expect_link_dir
             present: false
         }
         bytecode: matches exhaustive {
-            path:    not-empty
+            path:    $expect_bytecode
             present: true
         }
         provenance: matches exhaustive {
-            path:    not-empty
+            path:    $expect_provenance
             present: true
         }
         links: empty
@@ -208,13 +258,9 @@ assert $got matches exhaustive {
     }
 }
 
-# Kernel-locked status fields round-trip.
-assert $got.status.kernel.id        == $prog.status.kernel.id
-assert $got.status.kernel.tag       == $prog.status.kernel.tag
-assert $got.status.kernel.loaded_at == $prog.status.kernel.loaded_at
-
-# ---- Map observation fields on Get. ----
+# ---- Per-element map shape (Get).
 let gm = $got.status.maps[0]
+let expect_map_pin = "/run/bpfman/fs/maps/${pid}/xdp_pass_stats_map"
 assert $gm matches exhaustive {
     id:            $m.id
     name:          $m.name
@@ -230,17 +276,17 @@ assert $gm matches exhaustive {
     memlock:       $m.memlock
     has_memlock:   $m.has_memlock
     frozen:        $m.frozen
-    pin_path:      not-empty
+    pin_path:      $expect_map_pin
     present:       true
 }
 
-# ---- Round-trip: list filters back to our program. ----
+# ---- Round-trip: list filters back to our program.
 guard listed <- bpfman program list -o json
 let ours = $listed |> jq ".programs[] | select(.record.program_id == ${pid})"
 assert present $ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
-# ---- Unload and verify the program is gone. ----
+# ---- Unload and verify the program is gone.
 bpfman program unload $pid
 assert fail bpfman program get $pid
