@@ -2,18 +2,32 @@
 # Shape-only round-trip test for XDP program load.
 #
 # Loads an XDP pass program with user metadata and exercises the
-# full Program record/status field set returned by load and Get,
-# without any attach, traffic, or detach activity. Every field
-# the response is supposed to carry is asserted: locked values
-# by exact equality, kernel-assigned positives by > 0, strings
-# and timestamps by not-empty, optional/omitempty fields by nil.
-# A field removed or renamed in the response shape flips the
-# matches block to "path does not resolve" and fails the test.
+# full Program record/status field set returned by `bpfman program
+# load` and `bpfman program get`, without any attach, traffic, or
+# detach activity.
 #
-# Kernel-version-gated fields (has_uid, has_btf_id, has_map_ids,
-# has_memlock, has_map_extra) are asserted true at the discriminator
-# and the underlying value validated. The test therefore requires
-# a reasonably modern kernel (>= 5.0 for full coverage).
+# The shape contract is always-emit: every field that the response
+# is supposed to carry is emitted unconditionally, with JSON null
+# for nullable concepts and `{}` / `[]` for empty collections.
+# Each field is asserted with the strongest meaningful predicate:
+#
+#   - locked at load:      exact equality
+#   - kernel-assigned:     > 0
+#   - strings / IDs / tags: not-empty
+#   - empty collections:   empty
+#   - nullable concepts:   nil
+#   - absent paths:        missing  (for the few omitempty-elided
+#                                    sub-fields the contract still
+#                                    legitimately omits, like
+#                                    record.meta.metadata.<key>
+#                                    when the operator did not
+#                                    supply -m <key>)
+#   - kernel-version gated: if has_X { assert X-shape }
+#
+# A field removed or renamed in the response shape flips a matches
+# entry to "path does not resolve" and fails the test. Adding new
+# fields is not currently caught -- that gap motivates the
+# upcoming coverage primitive (commit 5).
 #
 # Invoke from e2e/:
 #
@@ -37,6 +51,10 @@ let pid = $prog.record.program_id
 expect_program_load $prog xdp extension pass
 
 # ---- Record: every field bpfman stored at load time. ----
+# record.load.object_path is rewritten by bpfman from the
+# user-supplied path to an internal pin path
+# (/run/bpfman/programs/<id>/bytecode.o), so the assertion is
+# not-empty rather than equality to the load argument.
 assert $prog matches {
     record.program_id:            $pid
     record.license:               not-empty
@@ -60,20 +78,12 @@ assert $prog matches {
 }
 assert $pid > 0
 
-# Note: record.load.object_path is rewritten by bpfman from the
-# user-supplied path to an internal pin path
-# (/run/bpfman/programs/<id>/bytecode.o), so the assertion is
-# not-empty rather than equality to the load argument.
-#
-# Note: omitempty fields (record.load.global_data,
-# record.load.image_source, record.handles.map_owner_id,
-# record.meta.metadata when no -m is given) are genuinely absent
-# from the JSON when their underlying Go value is the zero of its
-# type. The walker errors out on a missing field rather than
-# returning nil, so absence cannot currently be asserted with
-# `assert nil $X.field`; we rely on positive assertions of
-# present fields and accept that new omitempty fields would not
-# be flagged by this test.
+# Always-emit JSON shape: nullable concepts surface as null;
+# empty collections surface as {} / []. Each is asserted with the
+# predicate that matches its contract.
+assert nil   $prog.record.handles.map_owner_id
+assert nil   $prog.record.load.image_source
+assert empty $prog.record.load.global_data
 
 # ---- Kernel status: every field the kernel reports. ----
 assert $prog.status.kernel.jited_size > 0
@@ -85,27 +95,26 @@ assert $prog.status.kernel.restricted == false
 # Kernel-version-gated values. has_X is the availability
 # discriminator (kernel-version + program-type dependent); the
 # value is only trustworthy when the flag is true. uid may
-# legitimately be zero (root-loaded); btf_id, memlock, and the
-# map_ids list carry positive content when present.
+# legitimately be zero (root-loaded); btf_id, memlock, and
+# map_ids carry positive content when present.
 if $prog.status.kernel.has_btf_id {
     assert $prog.status.kernel.btf_id > 0
 }
 if $prog.status.kernel.has_map_ids {
-    let nmapids = $prog.status.kernel.map_ids |> jq "length"
-    assert $nmapids > 0
+    assert not-empty $prog.status.kernel.map_ids
 }
 if $prog.status.kernel.has_memlock {
     assert $prog.status.kernel.memlock > 0
 }
 
-# status.stats is *kernel.ProgramStats with omitempty: when nil
-# (the common case where kernel.bpf_stats_enabled=0) the field is
-# absent from the JSON entirely. Not asserted here.
+# Stats: nil on the Load response (the kernel-stats query is
+# performed on Get rather than at load time).
+assert nil $prog.status.stats
 
-# ---- Maps: full kernel-side shape (pin_path, present are
-# observation-only and checked on Get below). ----
-let nmaps = $prog.status.maps |> jq "length"
-require $nmaps > 0
+# ---- Maps: full kernel-side shape. The MapStatus.pin_path /
+# present pair is observation-only and validated against the Get
+# response below.
+require not-empty $prog.status.maps
 let m = $prog.status.maps[0]
 assert $m matches {
     name:     not-empty
@@ -122,11 +131,11 @@ assert $m.btf_id > 0
 assert $m.has_memlock == true
 assert $m.memlock > 0
 if $m.has_map_extra {
-    print "has_map_extra: ${m.map_extra}"
+    assert $m.map_extra >= 0
 }
 
 # ---- Round-trip: bpfman program get returns the same record. ----
-# created_at is asserted not-empty rather than equal because the
+# created_at is left to not-empty rather than equal because the
 # Load response serialises at nanosecond precision and the Get
 # response at second precision.
 guard got <- bpfman program get $pid
@@ -150,7 +159,12 @@ assert $got matches {
     record.updated_at:            not-empty
 }
 
-# Kernel-locked status fields round-trip too.
+# Record-level nullable / empty fields round-trip on Get too.
+assert nil   $got.record.handles.map_owner_id
+assert nil   $got.record.load.image_source
+assert empty $got.record.load.global_data
+
+# Kernel-locked status fields round-trip.
 assert $got.status.kernel.id        == $prog.status.kernel.id
 assert $got.status.kernel.tag       == $prog.status.kernel.tag
 assert $got.status.kernel.loaded_at == $prog.status.kernel.loaded_at
@@ -171,26 +185,21 @@ assert $got matches {
     status.provenance.present: true
 }
 
-# Map observation fields on Get.
-let gnmaps = $got.status.maps |> jq "length"
-require $gnmaps > 0
+# ---- Status.links on Get: empty list, no attach has happened. ----
+assert empty $got.status.links
+
+# ---- Map observation fields on Get. ----
+require not-empty $got.status.maps
 let gm = $got.status.maps[0]
 assert $gm matches {
     pin_path: not-empty
     present:  true
 }
 
-# Links: no attach was performed, so status.links is the literal
-# value null on Get (not []). The shell evaluator currently
-# errors when a path expression resolves to null, so the negative
-# assertion (`assert nil $got.status.links`) is not expressible
-# inline. Coverage of links round-trip lives in attach-bearing
-# tests where links is a populated list.
-
 # ---- Round-trip: list filters back to our program. ----
 guard listed <- bpfman program list -o json
 let ours = $listed |> jq ".programs[] | select(.record.program_id == ${pid})"
-require not nil ours
+assert present $ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
