@@ -63,7 +63,7 @@ assert $ourLink.kind == $link.record.kind
 # fexit. This program writes to key 0. do_unlinkat() fires on any
 # process's unlink(2), so the assertion is a lower bound.
 let mapID     = $prog.status.maps[0].id
-let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value | tonumber] | add"
+let sumFilter = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.values[].value | tonumber] | add"
 
 guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter

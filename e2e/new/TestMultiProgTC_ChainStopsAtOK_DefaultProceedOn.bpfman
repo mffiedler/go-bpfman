@@ -59,7 +59,7 @@ guard link_a <- bpfman link attach tc -i $pair.host_link -d ingress -p 50 $pid_a
 guard link_b <- bpfman link attach tc -i $pair.host_link -d ingress -p 60 $pid_b
 guard link_c <- bpfman link attach tc -i $pair.host_link -d ingress -p 70 $pid_c
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # b's OK becomes the dispatcher's final verdict, so the kernel
 # delivers the packet and ICMP replies arrive. ping guards on

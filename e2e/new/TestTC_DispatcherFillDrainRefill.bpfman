@@ -55,7 +55,7 @@
 guard pair <- net veth-pair
 defer net release $pair
 
-let sumFilter = "[.[].formatted.values[].value.rx_packets | tonumber] | add"
+let sumFilter = "fromjson | [.[].formatted.values[].value.rx_packets | tonumber] | add"
 
 # ============================================================
 # Peak 0: load + attach ten programs at priorities 0..900.

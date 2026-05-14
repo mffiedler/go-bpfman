@@ -121,7 +121,7 @@ let mapID = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][
 # kp_count is BPF_MAP_TYPE_ARRAY (single value), not PERCPU_ARRAY,
 # so the dump shape is .[0].formatted.value (scalar), not
 # .[0].formatted.values[].value (per-CPU list).
-let sumFilter = ".[0].formatted.value | tonumber"
+let sumFilter = "fromjson | .[0].formatted.value | tonumber"
 guard dump <- bpftool map dump id $mapID -j
 let got_counter = $dump.stdout |> jq $sumFilter
 print "got=${got_counter} want=${want}"

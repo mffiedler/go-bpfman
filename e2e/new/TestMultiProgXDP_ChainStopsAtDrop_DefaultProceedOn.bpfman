@@ -67,7 +67,7 @@ guard link_a <- bpfman link attach xdp -i $pair.host_link -p 50 $pid_a
 guard link_b <- bpfman link attach xdp -i $pair.host_link -p 60 $pid_b
 guard link_c <- bpfman link attach xdp -i $pair.host_link -p 70 $pid_c
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # Send N pings and discard the rc; b returns XDP_DROP so the
 # kernel never replies and ping reports 100% loss. The XDP

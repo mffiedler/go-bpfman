@@ -85,7 +85,7 @@ guard link_a <- bpfman link attach tracepoint $pid_a syscalls/sys_enter_kill
 guard link_b <- bpfman link attach tracepoint $pid_b syscalls/sys_enter_kill
 guard link_c <- bpfman link attach tracepoint $pid_c syscalls/sys_enter_kill
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"

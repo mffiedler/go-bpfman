@@ -90,7 +90,7 @@ guard link_a <- bpfman link attach fexit $pid_a
 guard link_b <- bpfman link attach fexit $pid_b
 guard link_c <- bpfman link attach fexit $pid_c
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"

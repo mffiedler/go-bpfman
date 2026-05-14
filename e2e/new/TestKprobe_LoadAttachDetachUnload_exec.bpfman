@@ -25,7 +25,7 @@
 # Patterns:
 #   `guard X <- bpfman A B C`
 #       -> guard r <- exec bpfman A B C -o json
-#          let X = $r.stdout |> jq "."
+#          let X = $r.stdout |> jq "fromjson"
 #   `bpfman A B C` (no bind)
 #       -> exec bpfman A B C -o json
 #   `assert fail bpfman ...`
@@ -60,18 +60,18 @@ guard load_r <- exec bpfman program load file \
     -g "expected_pid=0x${u32le $work.pid}" \
     -g "weight=0x${u64le $weight}" \
     -o json
-let loaded = $load_r.stdout |> jq "."
+let loaded = $load_r.stdout |> jq "fromjson"
 let prog = $loaded.programs[0]
 let pid = $prog.record.program_id
 
 expect_program_load $prog kprobe kprobe kprobe_counter
 
 guard get_r <- exec bpfman program get $pid -o json
-let got = $get_r.stdout |> jq "."
+let got = $get_r.stdout |> jq "fromjson"
 expect_program_round_trip $got $prog
 
 guard list_r <- exec bpfman program list -o json
-let listed = $list_r.stdout |> jq "."
+let listed = $list_r.stdout |> jq "fromjson"
 let progFilter = ".programs[] | select(.record.program_id == ${pid})"
 let ours = $listed |> jq $progFilter
 require not nil ours
@@ -81,7 +81,7 @@ assert $ours.status.kernel.id == $prog.status.kernel.id
 # Attach via subprocess. The CLI takes a program-id text argument;
 # the in-process form accepted a $prog struct via parseProgramIDArg.
 guard attach_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid -o json
-let link = $attach_r.stdout |> jq "."
+let link = $attach_r.stdout |> jq "fromjson"
 let linkID = $link.record.id
 
 assert $link.record.kind == kprobe
@@ -92,14 +92,14 @@ assert not $link.record.details.retprobe
 assert $link.status.kernel_seen
 
 guard getlink_r <- exec bpfman link get $linkID -o json
-let gotLink = $getlink_r.stdout |> jq "."
+let gotLink = $getlink_r.stdout |> jq "fromjson"
 assert $gotLink.record.id == $linkID
 assert $gotLink.record.kind == $link.record.kind
 assert $gotLink.record.details.fn_name == $link.record.details.fn_name
 assert $gotLink.record.details.retprobe == $link.record.details.retprobe
 
 guard listlinks_r <- exec bpfman link list -o json
-let listedLinks = $listlinks_r.stdout |> jq "."
+let listedLinks = $listlinks_r.stdout |> jq "fromjson"
 let linkFilter = ".links[] | select(.id == ${linkID})"
 let ourLink = $listedLinks |> jq $linkFilter
 require not nil ourLink
@@ -115,7 +115,7 @@ assert $work_r.ok
 assert $work_r.code == 0
 
 let mapID = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
-let sumFilter = ".[0].formatted.value | tonumber"
+let sumFilter = "fromjson | .[0].formatted.value | tonumber"
 guard dump <- bpftool map dump id $mapID -j
 let got_counter = $dump.stdout |> jq $sumFilter
 print "got=${got_counter} want=${want}"

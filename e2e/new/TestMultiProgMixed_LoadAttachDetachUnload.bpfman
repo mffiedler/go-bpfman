@@ -82,7 +82,7 @@ guard link_tp  <- bpfman link attach tracepoint $pid_tp  syscalls/sys_enter_unli
 guard link_kp  <- bpfman link attach kprobe --fn-name do_unlinkat $pid_kp
 guard link_krp <- bpfman link attach kprobe --fn-name do_unlinkat $pid_krp
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: tp, kp, krp all attached ---
 guard _ <- touch "${sentinel}.1"

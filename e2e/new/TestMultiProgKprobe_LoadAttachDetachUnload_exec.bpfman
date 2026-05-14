@@ -41,7 +41,7 @@ guard load_r <- exec bpfman program load file \
     -g "weight_b=0x${u64le $weight_b}" \
     -g "weight_c=0x${u64le $weight_c}" \
     -o json
-let loaded = $load_r.stdout |> jq "."
+let loaded = $load_r.stdout |> jq "fromjson"
 
 let (prog_a pid_a) = [$loaded.programs[0] $loaded.programs[0].record.program_id]
 let (prog_b pid_b) = [$loaded.programs[1] $loaded.programs[1].record.program_id]
@@ -62,14 +62,14 @@ print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
 guard attach_a_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_a -o json
 guard attach_b_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_b -o json
 guard attach_c_r <- exec bpfman link attach kprobe --fn-name do_unlinkat $pid_c -o json
-let link_a = $attach_a_r.stdout |> jq "."
-let link_b = $attach_b_r.stdout |> jq "."
-let link_c = $attach_c_r.stdout |> jq "."
+let link_a = $attach_a_r.stdout |> jq "fromjson"
+let link_b = $attach_b_r.stdout |> jq "fromjson"
+let link_c = $attach_c_r.stdout |> jq "fromjson"
 let link_a_id = $link_a.record.id
 let link_b_id = $link_b.record.id
 let link_c_id = $link_c.record.id
 
-let counter_filter = ".[0].formatted.value | tonumber"
+let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"

@@ -76,7 +76,7 @@ assert $ourLink.kind == $link.record.kind
 # activity, so the assertion is a lower bound rather than an
 # equality — only that the probe fired at least once.
 let mapID     = $prog.status.maps[0].id
-let sumFilter = "[.[0].formatted.values[].value | tonumber] | add"
+let sumFilter = "fromjson | [.[0].formatted.values[].value | tonumber] | add"
 
 guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter

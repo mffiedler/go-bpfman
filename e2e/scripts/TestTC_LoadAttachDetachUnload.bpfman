@@ -96,7 +96,7 @@ assert $ourLink.kind == $link.record.kind
 # datarec struct carries both rx_packets and rx_bytes; BTF lets
 # bpftool decode them into a nested object.
 let mapID     = $prog.status.maps[0].id
-let sumFilter = "[.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
+let sumFilter = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.values[].value.rx_packets] | add"
 
 guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
