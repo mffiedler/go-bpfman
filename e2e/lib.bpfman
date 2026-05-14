@@ -23,7 +23,7 @@
 #   load_tp:   expected record.load.program_type (the user-declared type)
 #   kernel_tp: expected status.kernel.program_type (what the kernel reports)
 #   name:      expected record.meta.name (the user-supplied program name)
-def expect_program_load(prog, load_tp, kernel_tp, name) {
+def expect_program_load(prog load_tp kernel_tp name) {
     assert $prog matches {
         record.load.program_type:    $load_tp
         status.kernel.program_type:  $kernel_tp
@@ -42,7 +42,7 @@ def expect_program_load(prog, load_tp, kernel_tp, name) {
 #
 #   got:  result of `bpfman program get $pid`
 #   prog: the original load response
-def expect_program_round_trip(got, prog) {
+def expect_program_round_trip(got prog) {
     assert $got matches {
         status.kernel.id:            $prog.status.kernel.id
         status.kernel.program_type:  $prog.status.kernel.program_type
