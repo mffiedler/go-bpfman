@@ -3230,9 +3230,13 @@ func TestReplLoop_JQ_NestedAccess(t *testing.T) {
 func TestReplLoop_JQ_WithExec(t *testing.T) {
 	t.Parallel()
 
-	// End-to-end: exec produces JSON text, jq on JSON text makes it
-	// structured.
-	input := `let raw <- exec echo '{"status":"ok","count":3}'` + "\nlet data = jq \".\" $raw.stdout\nassert $data.status == ok\nassert $data.count == 3\n"
+	// End-to-end: exec produces JSON text on stdout, the operator
+	// opts into JSON parsing via the `fromjson` filter. The
+	// previous spelling relied on the shell auto-decoding scalar
+	// text as JSON; under the type-preserving boundary, a
+	// resolved string Value reaches jq as a string, so the parse
+	// step is explicit at the call site.
+	input := `let raw <- exec echo '{"status":"ok","count":3}'` + "\nlet data = jq \"fromjson\" $raw.stdout\nassert $data.status == ok\nassert $data.count == 3\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	session := shell.NewSession()
@@ -3856,6 +3860,99 @@ func TestReplLoop_TraceUnknownArg(t *testing.T) {
 	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), `trace: unknown argument "yeah"`)
+}
+
+// TestReplLoop_JQ_ShellResolvedStringRoundTrip pins the boundary
+// invariant for shell-resolved scalar Values entering jq.
+//
+// Before the fix this exercised, a $var holding a string Value
+// (e.g. a path like "/run/bpfman/foo") would reach jq's input
+// adapter as ScalarValueArg.Text and be re-parsed as JSON, which
+// fails because raw paths are not valid JSON tokens. The
+// argToJQInput adapter now honours ScalarValueArg.HasValue and
+// passes the source Value through directly.
+func TestReplLoop_JQ_ShellResolvedStringRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`let s = "/run/bpfman/foo"`,
+		`let got = $s |> jq "."`,
+		`assert $got == "/run/bpfman/foo"`,
+		``,
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+// TestReplLoop_JQ_UserBarewordStillRejected pins the other half
+// of the boundary invariant: a user-written bareword that is not
+// valid JSON still errors. Tightening shell-resolved scalars to
+// pass typed values through must not weaken the
+// fail-fast-on-malformed-input property for user-written tokens.
+func TestReplLoop_JQ_UserBarewordStillRejected(t *testing.T) {
+	t.Parallel()
+
+	input := "jq \".\" hello\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "input is not valid JSON")
+}
+
+// TestReplLoop_JQ_StringContentsAreNotImplicitlyDecoded is the
+// design in miniature: a shell-resolved string that *looks* like
+// JSON stays a string at the jq boundary. The operator opts in
+// to JSON parsing explicitly with `fromjson` -- there is no
+// silent auto-decode, which would conflate the "string text"
+// and "JSON-text-from-producer" cases.
+func TestReplLoop_JQ_StringContentsAreNotImplicitlyDecoded(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`let s = "{\"a\":1}"`,
+		`let got = $s |> jq "."`,
+		`assert $got == "{\"a\":1}"`,
+		`let parsed = $s |> jq "fromjson | .a"`,
+		`assert $parsed == 1`,
+		``,
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
+}
+
+// TestReplLoop_JQ_ShellResolvedStructuredRoundTrip pins the
+// boundary invariant for structured shell values too: a list
+// or object resolved from a variable reaches jq with its type
+// preserved, no JSON text round-trip.
+func TestReplLoop_JQ_ShellResolvedStructuredRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	input := strings.Join([]string{
+		`let obj = [1 2 3]`,
+		`let got = $obj |> jq ".[1]"`,
+		`assert $got == 2`,
+		``,
+	}, "\n")
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Empty(t, errBuf.String())
 }
 
 func TestReplLoop_JQNullBinding(t *testing.T) {

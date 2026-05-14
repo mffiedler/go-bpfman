@@ -143,9 +143,16 @@ func TestEvalExpr_PureCall_DispatchesThroughExecBind(t *testing.T) {
 	assert.Equal(t, "primary-result", s)
 	require.Len(t, captured, 2, "name prepended as first arg")
 	assert.Equal(t, name, captured[0].(WordArg).Text)
-	scalar, ok := captured[1].(ScalarValueArg)
+	// Bareword literal args reach the pure-builtin handler as
+	// WordArg (preserving the user-typed distinction) rather than
+	// ScalarValueArg. Handlers that need the rendered text use
+	// repl.ArgText which is variant-agnostic; handlers that care
+	// about provenance (jq's JSON decoder) get the right
+	// distinction at the WordArg / QuotedArg / ScalarValueArg
+	// boundary.
+	word, ok := captured[1].(WordArg)
 	require.True(t, ok)
-	assert.Equal(t, "42", scalar.Text)
+	assert.Equal(t, "42", word.Text)
 }
 
 func TestEvalExpr_PureCall_NoExecBindIsError(t *testing.T) {

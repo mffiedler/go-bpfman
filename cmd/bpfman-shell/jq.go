@@ -95,6 +95,22 @@ func firstFlagArg(args []shell.Arg) (string, bool) {
 // A scalar that isn't valid JSON is an error -- users who want
 // to pass a literal string wrap it in JSON quotes ('"hello"'
 // rather than 'hello').
+// argToJQInput honours the boundary invariant on ScalarValueArg:
+//
+//	User-written input is decoded from source text.
+//	Shell-resolved input is passed as its original Value.
+//
+// WordArg and QuotedArg are user-typed tokens, so their text is
+// parsed as JSON (a bareword `42` becomes the number 42, a
+// quoted '"hello"' becomes the string "hello", and a bareword
+// `hello` errors -- the user is telling jq it's JSON-shaped
+// input). ScalarValueArg comes from variable expansion or
+// thread/interp resolution; when it carries the originating
+// Value (HasValue=true) we pass Value.Raw() through directly so
+// strings, numbers, booleans, and structured-as-scalar values
+// preserve their type without round-tripping through JSON text.
+// Synthesised scalars without a backing Value (HasValue=false)
+// fall back to the user-input path.
 func argToJQInput(a shell.Arg) (any, error) {
 	switch v := a.(type) {
 	case shell.WordArg:
@@ -102,6 +118,9 @@ func argToJQInput(a shell.Arg) (any, error) {
 	case shell.QuotedArg:
 		return decodeJQScalar(v.Text)
 	case shell.ScalarValueArg:
+		if v.HasValue {
+			return v.Value.Raw(), nil
+		}
 		return decodeJQScalar(v.Text)
 	case shell.StructuredValueArg:
 		return v.Value.Raw(), nil

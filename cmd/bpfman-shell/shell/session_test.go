@@ -272,9 +272,35 @@ func TestSessionExpand(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			// These cases assert Arg shape and Text; the
+			// ScalarValueArg.Value / HasValue provenance fields
+			// (populated by resolveVarRefArg, asserted directly
+			// by the jq-input regression tests) are stripped
+			// here so each expected literal can stay concise.
+			assert.Equal(t, tt.want, stripScalarValueProvenance(got))
 		})
 	}
+}
+
+// stripScalarValueProvenance zeroes ScalarValueArg's typed-Value
+// fields so table-driven Arg shape tests can compare against
+// minimal `ScalarValueArg{Text: ...}` literals. The provenance
+// fields exist for adapters that re-interpret scalars (notably
+// jq) and are exercised by dedicated tests; checking them on
+// every Arg-shape comparison would clutter the expected lists
+// without adding distinct coverage.
+func stripScalarValueProvenance(args []Arg) []Arg {
+	out := make([]Arg, len(args))
+	for i, a := range args {
+		if sva, ok := a.(ScalarValueArg); ok {
+			sva.Value = Value{}
+			sva.HasValue = false
+			out[i] = sva
+			continue
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // evalArgsForTest turns a token slice into evaluated []Arg by

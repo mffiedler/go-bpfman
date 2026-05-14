@@ -1457,12 +1457,17 @@ func dispatchPureCall(e *PureCallExpr, env *Env) (Value, error) {
 	}
 	args := make([]Arg, 0, len(e.Args)+1)
 	args = append(args, WordArg{Text: e.Name, Span: e.Span})
+	// Route through evalArg rather than EvalExpr+valueToArg so the
+	// literal-vs-resolved distinction reaches the handler. Literal
+	// quoted/word args stay as QuotedArg/WordArg (jq treats them
+	// as user-typed JSON-shaped input), variable references become
+	// ScalarValueArg with HasValue=true carrying the source Value
+	// (jq passes the typed value through), and structured args
+	// remain structured. Going through EvalExpr+valueToArg would
+	// flatten literals into untyped scalars and break the boundary
+	// invariant the jq adapter relies on.
 	for _, a := range e.Args {
-		v, err := EvalExpr(a, env)
-		if err != nil {
-			return Value{}, err
-		}
-		arg, err := valueToArg(v, nodeSpan(a))
+		arg, err := evalArg(a, env)
 		if err != nil {
 			return Value{}, spanErrorf(nodeSpan(a), "%s: %v", e.Name, err)
 		}
@@ -1723,7 +1728,7 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		if err != nil {
 			return nil, spanErrorf(e.Span, "interpolated string: %v", err)
 		}
-		return ScalarValueArg{Text: s, Span: e.Span}, nil
+		return ScalarValueArg{Text: s, Value: val, HasValue: true, Span: e.Span}, nil
 	case *ThreadExpr:
 		val, err := dispatchThread(e, env)
 		if err != nil {
@@ -1739,7 +1744,7 @@ func evalArg(expr Expr, env *Env) (Arg, error) {
 		if err != nil {
 			return nil, spanErrorf(e.Span, "thread: %v", err)
 		}
-		return ScalarValueArg{Text: s, Span: e.Span}, nil
+		return ScalarValueArg{Text: s, Value: val, HasValue: true, Span: e.Span}, nil
 	case *MatchesBlockExpr:
 		return evalMatchesBlockArg(e, env)
 	default:
@@ -1821,7 +1826,7 @@ func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 	if err != nil {
 		return nil, spanErrorf(e.Span, "variable %s: %v", qualify(e.Name, e.Path), err)
 	}
-	return ScalarValueArg{Text: s, Span: e.Span}, nil
+	return ScalarValueArg{Text: s, Value: resolved, HasValue: true, Span: e.Span}, nil
 }
 
 // qualify produces a "name.path" string for error messages, or
@@ -1966,21 +1971,16 @@ func dispatchThread(e *ThreadExpr, env *Env) (Value, error) {
 	if env.ExecBind == nil {
 		return Value{}, spanErrorf(e.Span, "'|>' is only valid where commands can run; not available in this context")
 	}
-	lhsVal, err := EvalExpr(e.LHS, env)
-	if err != nil {
-		return Value{}, err
-	}
 	args, err := EvalArgs(e.Args, env)
 	if err != nil {
 		return Value{}, err
 	}
-	// A nil LHS passes through as NilArg; downstream commands
-	// (notably jq, which accepts JSON null happily) decide whether
-	// the value is meaningful for their semantics. Previously the
-	// thread rejected null upfront which prevented shape-test
-	// pipelines like `$got.status.links |> jq "length"` from
-	// running when the source field was the JSON value null.
-	lhsArg, err := valueToArg(lhsVal, nodeSpan(e.LHS))
+	// Route the LHS through evalArg rather than EvalExpr+valueToArg
+	// so the literal-vs-resolved distinction reaches the receiving
+	// command (same rationale as dispatchPureCall). A nil LHS
+	// passes through as NilArg; jq treats it as JSON null and
+	// filters like `length` work as expected.
+	lhsArg, err := evalArg(e.LHS, env)
 	if err != nil {
 		return Value{}, spanErrorf(e.Span, "thread: %v", err)
 	}
@@ -2017,7 +2017,7 @@ func valueToArg(v Value, span Span) (Arg, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ScalarValueArg{Text: s, Span: span}, nil
+	return ScalarValueArg{Text: s, Value: v, HasValue: true, Span: span}, nil
 }
 
 func evalBinary(e *BinaryExpr, env *Env) (Value, error) {

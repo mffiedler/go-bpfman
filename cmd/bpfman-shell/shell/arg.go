@@ -89,12 +89,28 @@ type QuotedArg struct {
 }
 
 // ScalarValueArg is a value produced by variable expansion. The
-// original variable reference has been resolved to a string. It is
-// semantically distinct from WordArg because it came from a
+// original variable reference has been resolved to a string in
+// Text (for consumers that need argv-style text), and the source
+// Value is preserved in Value with HasValue set true so consumers
+// that care about the originating type (jq, future typed
+// adapters) can recover it without re-parsing the rendered text.
+// It is semantically distinct from WordArg because it came from a
 // variable, not from user-typed literal text. Span is the
 // originating $name reference's source extent.
+//
+// Boundary invariant for adapters that re-interpret scalars:
+//
+//	// User-written input is decoded from source text.
+//	// Shell-resolved input is passed as its original Value.
+//
+// jq is the canonical example: `jq "." 42` decodes the literal
+// 42 from text, but `let p = $prog.x.y; $p |> jq "."` passes the
+// resolved string Value through untouched even if its text form
+// is not valid JSON. Adapters check HasValue first.
 type ScalarValueArg struct {
-	Text string
+	Text     string
+	Value    Value
+	HasValue bool
 	Span
 }
 
