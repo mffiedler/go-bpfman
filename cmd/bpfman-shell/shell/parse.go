@@ -1213,15 +1213,25 @@ func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
 		names = append(names, next)
 		sawComma = more
 	}
-	allDiscard := true
-	for _, n := range names {
-		if n != "_" {
-			allDiscard = false
-			break
+	// Multi-var destructure with every slot discarded is
+	// nonsensical: the user opted into destructuring but pulled
+	// out no value. Single-var 'foreach _ in LIST' is a different
+	// shape: an "iterate for side effects only" idiom that other
+	// languages (Python 'for _ in range(N)', Go 'for range xs')
+	// codify, and the e2e corpus uses for fixed-count repeat
+	// loops where the index is genuinely irrelevant. Only reject
+	// the all-discard case when there are two or more names.
+	if len(names) >= 2 {
+		allDiscard := true
+		for _, n := range names {
+			if n != "_" {
+				allDiscard = false
+				break
+			}
 		}
-	}
-	if allDiscard {
-		return nil, spanErrorf(feTok.Span, "foreach: all loop variables are '_'; at least one must bind")
+		if allDiscard {
+			return nil, spanErrorf(feTok.Span, "foreach: all loop variables are '_'; at least one must bind")
+		}
 	}
 	return names, nil
 }

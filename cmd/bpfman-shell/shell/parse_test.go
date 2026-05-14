@@ -653,6 +653,7 @@ func TestParse_ForEach_MultiVar(t *testing.T) {
 		{"three names", "foreach a, b, c in $triples { print a }", []string{"a", "b", "c"}},
 		{"discard slot first", "foreach _, b in $pairs { print b }", []string{"_", "b"}},
 		{"discard slot second", "foreach a, _ in $pairs { print a }", []string{"a", "_"}},
+		{"single discard iterate-only", "foreach _ in $list { print hi }", []string{"_"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
