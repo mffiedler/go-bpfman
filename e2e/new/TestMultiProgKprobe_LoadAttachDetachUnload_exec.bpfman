@@ -43,10 +43,9 @@ guard load_r <- exec bpfman program load file \
     -o json
 let loaded = $load_r.stdout |> jq "."
 
-let (prog_a prog_b prog_c) = $loaded.programs
-let pid_a = $prog_a.record.program_id
-let pid_b = $prog_b.record.program_id
-let pid_c = $prog_c.record.program_id
+let (prog_a pid_a) = [$loaded.programs[0] $loaded.programs[0].record.program_id]
+let (prog_b pid_b) = [$loaded.programs[1] $loaded.programs[1].record.program_id]
+let (prog_c pid_c) = [$loaded.programs[2] $loaded.programs[2].record.program_id]
 print "pids: a=${pid_a} b=${pid_b} c=${pid_c}"
 
 # defer cleanup against the captured IDs.
