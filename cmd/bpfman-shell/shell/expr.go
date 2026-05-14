@@ -707,30 +707,22 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	if !ok {
 		return spanErrorf(s.Span, "foreach: expected a list, got %s", v.Kind())
 	}
-	// The loop variable is body-scoped: any prior binding of the
+	// Loop variables are body-scoped: any prior binding of the
 	// same name is restored after the loop ends, and a name that
 	// did not exist before the loop disappears again. This drops
 	// shell-style "loop variable persists" semantics, which is the
 	// only place the language was copying bash without a reason --
 	// the rest of the DSL deliberately avoids shell foot-guns.
-	prior, hadPrior := env.Session.Get(s.Name)
-	defer func() {
-		if hadPrior {
-			env.Session.Set(s.Name, prior)
-		} else {
-			env.Session.Delete(s.Name)
-		}
-	}()
+	restore := saveForEachNames(env, s.Names)
+	defer restore()
 iter:
 	for i := range list {
 		elemVal := v.IndexValue(i)
-		env.Session.Set(s.Name, elemVal)
+		if err := bindForEachElement(env, s, elemVal, i); err != nil {
+			return err
+		}
 		if env.Trace != nil {
-			rendered, rerr := RenderCompact(elemVal)
-			if rerr != nil {
-				rendered = fmt.Sprintf("<unrenderable %T>", list[i])
-			}
-			env.Trace(s.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", s.Name, rendered))
+			emitForEachTrace(env, s, elemVal, list[i])
 		}
 		for _, stmt := range s.Body {
 			err := evalStmt(stmt, env)
@@ -747,6 +739,93 @@ iter:
 		}
 	}
 	return nil
+}
+
+// saveForEachNames snapshots the session bindings for every loop
+// variable in names and returns a restorer that re-establishes
+// them (or deletes the binding when the name was absent before).
+// "_" entries are skipped: a discard slot has no observable
+// binding to save or restore.
+func saveForEachNames(env *Env, names []string) func() {
+	type snap struct {
+		name     string
+		prior    Value
+		hadPrior bool
+	}
+	saves := make([]snap, 0, len(names))
+	for _, n := range names {
+		if n == "_" {
+			continue
+		}
+		prior, had := env.Session.Get(n)
+		saves = append(saves, snap{name: n, prior: prior, hadPrior: had})
+	}
+	return func() {
+		for _, s := range saves {
+			if s.hadPrior {
+				env.Session.Set(s.name, s.prior)
+			} else {
+				env.Session.Delete(s.name)
+			}
+		}
+	}
+}
+
+// bindForEachElement installs the current iteration's element
+// into the loop variable bindings. Single-var form binds the
+// element verbatim; multi-var form destructures the element as a
+// list of matching length and binds each sub-element to its
+// position. A "_" name discards its slot. Mismatched length or a
+// non-list element under multi-var is a runtime error cited at
+// the foreach statement, so the script sees the failure in
+// context.
+func bindForEachElement(env *Env, s *ForEachStmt, elem Value, idx int) error {
+	if len(s.Names) == 1 {
+		if s.Names[0] != "_" {
+			env.Session.Set(s.Names[0], elem)
+		}
+		return nil
+	}
+	sub, ok := elem.Raw().([]any)
+	if !ok {
+		return spanErrorf(s.Span, "foreach: element %d is not a list, cannot destructure into %d names", idx, len(s.Names))
+	}
+	if len(sub) != len(s.Names) {
+		return spanErrorf(s.Span, "foreach: element %d has %d sub-elements, cannot destructure into %d names", idx, len(sub), len(s.Names))
+	}
+	for j, name := range s.Names {
+		if name == "_" {
+			continue
+		}
+		env.Session.Set(name, elem.IndexValue(j))
+	}
+	return nil
+}
+
+// emitForEachTrace renders the iteration's binding(s) and feeds
+// the trace callback the one-line summary it expects. Single-var
+// renders the element directly; multi-var renders the
+// "name1=val1 name2=val2" shape so the trace stays compact even
+// when the body destructures.
+func emitForEachTrace(env *Env, s *ForEachStmt, elem Value, raw any) {
+	if len(s.Names) == 1 {
+		rendered, err := RenderCompact(elem)
+		if err != nil {
+			rendered = fmt.Sprintf("<unrenderable %T>", raw)
+		}
+		env.Trace(s.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", s.Names[0], rendered))
+		return
+	}
+	parts := make([]string, 0, len(s.Names))
+	for j, name := range s.Names {
+		sub := elem.IndexValue(j)
+		rendered, err := RenderCompact(sub)
+		if err != nil {
+			rendered = fmt.Sprintf("<unrenderable %T>", sub.Raw())
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", name, rendered))
+	}
+	env.Trace(s.Span.Pos.Line, "foreach "+strings.Join(parts, " "))
 }
 
 func evalIfStmt(s *IfStmt, env *Env) error {
@@ -1075,14 +1154,8 @@ func evalBindCollect(s *BindStmt, env *Env) error {
 		return spanErrorf(fe.Span, "bind-collect: expected a list, got %s", v.Kind())
 	}
 
-	prior, hadPrior := env.Session.Get(fe.Name)
-	defer func() {
-		if hadPrior {
-			env.Session.Set(fe.Name, prior)
-		} else {
-			env.Session.Delete(fe.Name)
-		}
-	}()
+	restore := saveForEachNames(env, fe.Names)
+	defer restore()
 
 	prefix := fe.Body[:len(fe.Body)-1]
 	producer := fe.Body[len(fe.Body)-1].(*CommandStmt)
@@ -1094,13 +1167,12 @@ func evalBindCollect(s *BindStmt, env *Env) error {
 
 iter:
 	for i := range list {
-		env.Session.Set(fe.Name, v.IndexValue(i))
+		elemVal := v.IndexValue(i)
+		if err := bindForEachElement(env, fe, elemVal, i); err != nil {
+			return err
+		}
 		if env.Trace != nil {
-			rendered, rerr := RenderCompact(v.IndexValue(i))
-			if rerr != nil {
-				rendered = fmt.Sprintf("<unrenderable %T>", list[i])
-			}
-			env.Trace(fe.Span.Pos.Line, fmt.Sprintf("foreach %s = %s", fe.Name, rendered))
+			emitForEachTrace(env, fe, elemVal, list[i])
 		}
 		skip := false
 		for _, stmt := range prefix {

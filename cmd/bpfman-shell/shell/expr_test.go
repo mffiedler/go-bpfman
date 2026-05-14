@@ -791,8 +791,8 @@ func TestEvalProgram_ForEach_IteratesList(t *testing.T) {
 	// runner captures each element's text.
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "p",
-			List: &VarRefExpr{Name: "xs"},
+			Names: []string{"p"},
+			List:  &VarRefExpr{Name: "xs"},
 			Body: []Stmt{
 				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "p"}}},
 			},
@@ -815,9 +815,9 @@ func TestEvalProgram_ForEach_LoopVarBodyScoped(t *testing.T) {
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "i",
-			List: &VarRefExpr{Name: "xs"},
-			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
+			Names: []string{"i"},
+			List:  &VarRefExpr{Name: "xs"},
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
@@ -840,9 +840,9 @@ func TestEvalProgram_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "i",
-			List: &VarRefExpr{Name: "xs"},
-			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
+			Names: []string{"i"},
+			List:  &VarRefExpr{Name: "xs"},
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "i"}}}},
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
@@ -871,9 +871,9 @@ func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "x",
-			List: &VarRefExpr{Name: "xs"},
-			Body: []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "body"}}}},
+			Names: []string{"x"},
+			List:  &VarRefExpr{Name: "xs"},
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "body"}}}},
 		},
 	}}
 	require.NoError(t, EvalProgram(prog, env))
@@ -893,9 +893,9 @@ func TestEvalProgram_ForEach_NonListIsError(t *testing.T) {
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "x",
-			List: &VarRefExpr{Name: "notalist"},
-			Body: []Stmt{},
+			Names: []string{"x"},
+			List:  &VarRefExpr{Name: "notalist"},
+			Body:  []Stmt{},
 		},
 	}}
 	err := EvalProgram(prog, env)
@@ -924,9 +924,9 @@ func TestEvalProgram_ForEach_BodyErrorHaltsLoop(t *testing.T) {
 	}
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "x",
-			List: &VarRefExpr{Name: "xs"},
-			Body: []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "x"}}}},
+			Names: []string{"x"},
+			List:  &VarRefExpr{Name: "xs"},
+			Body:  []Stmt{&CommandStmt{Args: []Expr{&VarRefExpr{Name: "x"}}}},
 		},
 	}}
 	evErr := EvalProgram(prog, env)
@@ -957,8 +957,8 @@ func TestEvalProgram_ForEach_BreakStopsIteration(t *testing.T) {
 	// }
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "x",
-			List: &VarRefExpr{Name: "xs"},
+			Names: []string{"x"},
+			List:  &VarRefExpr{Name: "xs"},
 			Body: []Stmt{
 				&IfStmt{
 					Cond: &BinaryExpr{
@@ -998,8 +998,8 @@ func TestEvalProgram_ForEach_ContinueSkipsIteration(t *testing.T) {
 	// }
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "x",
-			List: &VarRefExpr{Name: "xs"},
+			Names: []string{"x"},
+			List:  &VarRefExpr{Name: "xs"},
 			Body: []Stmt{
 				&IfStmt{
 					Cond: &BinaryExpr{
@@ -1047,12 +1047,12 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 	// }
 	prog := &Program{Stmts: []Stmt{
 		&ForEachStmt{
-			Name: "a",
-			List: &VarRefExpr{Name: "outer"},
+			Names: []string{"a"},
+			List:  &VarRefExpr{Name: "outer"},
 			Body: []Stmt{
 				&ForEachStmt{
-					Name: "b",
-					List: &VarRefExpr{Name: "inner"},
+					Names: []string{"b"},
+					List:  &VarRefExpr{Name: "inner"},
 					Body: []Stmt{
 						&IfStmt{
 							Cond: &BinaryExpr{
@@ -1073,6 +1073,127 @@ func TestEvalProgram_ForEach_BreakInnerOnly(t *testing.T) {
 	// For each outer iteration: inner emits "x", breaks on "y",
 	// then the outer body emits the outer value.
 	assert.Equal(t, []string{"x", "1", "x", "2", "x", "3"}, captured)
+}
+
+func TestEvalProgram_ForEach_MultiVarDestructures(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	// Two pairs: ["a","1"] and ["b","2"].
+	listValue, err := ValueFromJSON([]byte(`[["a","1"],["b","2"]]`))
+	require.NoError(t, err)
+	s.Set("pairs", listValue)
+	var firsts, seconds []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			require.Len(t, args, 2)
+			firsts = append(firsts, args[0].(ScalarValueArg).Text)
+			seconds = append(seconds, args[1].(ScalarValueArg).Text)
+			return Value{}, nil
+		},
+	}
+	// foreach k, v in $pairs { print $k $v }
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Names: []string{"k", "v"},
+			List:  &VarRefExpr{Name: "pairs"},
+			Body: []Stmt{
+				&CommandStmt{Args: []Expr{
+					&VarRefExpr{Name: "k"},
+					&VarRefExpr{Name: "v"},
+				}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, []string{"a", "b"}, firsts)
+	assert.Equal(t, []string{"1", "2"}, seconds)
+
+	_, kOk := s.Get("k")
+	_, vOk := s.Get("v")
+	assert.False(t, kOk, "loop var $k must not persist after the loop")
+	assert.False(t, vOk, "loop var $v must not persist after the loop")
+}
+
+func TestEvalProgram_ForEach_MultiVarLengthMismatchIsError(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	// One element is a 3-tuple but the foreach asks for two names.
+	listValue, err := ValueFromJSON([]byte(`[["a","1"],["b","2","extra"]]`))
+	require.NoError(t, err)
+	s.Set("pairs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Names: []string{"a", "b"},
+			List:  &VarRefExpr{Name: "pairs"},
+			Body:  []Stmt{},
+		},
+	}}
+	evErr := EvalProgram(prog, env)
+	require.Error(t, evErr)
+	assert.Contains(t, evErr.Error(), "cannot destructure")
+}
+
+func TestEvalProgram_ForEach_MultiVarNonListElementIsError(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	// An element is a scalar, not a list.
+	listValue, err := ValueFromJSON([]byte(`["scalar"]`))
+	require.NoError(t, err)
+	s.Set("xs", listValue)
+	env := &Env{
+		Session:     s,
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Names: []string{"a", "b"},
+			List:  &VarRefExpr{Name: "xs"},
+			Body:  []Stmt{},
+		},
+	}}
+	evErr := EvalProgram(prog, env)
+	require.Error(t, evErr)
+	assert.Contains(t, evErr.Error(), "not a list")
+}
+
+func TestEvalProgram_ForEach_MultiVarDiscardSlot(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	listValue, err := ValueFromJSON([]byte(`[["a","1"],["b","2"]]`))
+	require.NoError(t, err)
+	s.Set("pairs", listValue)
+	var seen []string
+	env := &Env{
+		Session: s,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			seen = append(seen, args[0].(ScalarValueArg).Text)
+			return Value{}, nil
+		},
+	}
+	// foreach _, v in $pairs { $v }
+	prog := &Program{Stmts: []Stmt{
+		&ForEachStmt{
+			Names: []string{"_", "v"},
+			List:  &VarRefExpr{Name: "pairs"},
+			Body: []Stmt{
+				&CommandStmt{Args: []Expr{&VarRefExpr{Name: "v"}}},
+			},
+		},
+	}}
+	require.NoError(t, EvalProgram(prog, env))
+	assert.Equal(t, []string{"1", "2"}, seen)
+	// The discard slot must not leak as a real binding.
+	_, ok := s.Get("_")
+	assert.False(t, ok, "underscore must not become a variable")
 }
 
 func TestEvalProgram_Break_OutsideLoopIsError(t *testing.T) {

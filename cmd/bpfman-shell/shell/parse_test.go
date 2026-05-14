@@ -563,7 +563,7 @@ func TestParse_ForEach_Basic(t *testing.T) {
 	require.NoError(t, err)
 	fe, ok := firstStmt(t, prog).(*ForEachStmt)
 	require.True(t, ok, "expected ForEachStmt, got %T", prog.Stmts[0])
-	assert.Equal(t, "p", fe.Name)
+	assert.Equal(t, []string{"p"}, fe.Names)
 	ref, ok := fe.List.(*VarRefExpr)
 	require.True(t, ok)
 	assert.Equal(t, "list", ref.Name)
@@ -611,7 +611,7 @@ func TestParse_ForEach_Nested(t *testing.T) {
 	require.Len(t, outer.Body, 1)
 	inner, ok := outer.Body[0].(*ForEachStmt)
 	require.True(t, ok)
-	assert.Equal(t, "b", inner.Name)
+	assert.Equal(t, []string{"b"}, inner.Names)
 }
 
 func TestParse_ForEach_Errors(t *testing.T) {
@@ -628,6 +628,7 @@ func TestParse_ForEach_Errors(t *testing.T) {
 		{"missing expression", "foreach p in { print x }", "foreach requires"},
 		{"missing block", "foreach p in $list print x", "expected '{'"},
 		{"unterminated block", "foreach p in $list { print x", "unterminated block"},
+		{"all discard", "foreach _, _ in $list { print x }", "at least one must bind"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -635,6 +636,31 @@ func TestParse_ForEach_Errors(t *testing.T) {
 			_, err := parseSource(t, tc.input)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParse_ForEach_MultiVar(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"two glued comma", "foreach a, b in $pairs { print a }", []string{"a", "b"}},
+		{"two separated comma", "foreach a , b in $pairs { print a }", []string{"a", "b"}},
+		{"three names", "foreach a, b, c in $triples { print a }", []string{"a", "b", "c"}},
+		{"discard slot first", "foreach _, b in $pairs { print b }", []string{"_", "b"}},
+		{"discard slot second", "foreach a, _ in $pairs { print a }", []string{"a", "_"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prog, err := parseSource(t, tc.input)
+			require.NoError(t, err)
+			fe := firstStmt(t, prog).(*ForEachStmt)
+			assert.Equal(t, tc.want, fe.Names)
 		})
 	}
 }

@@ -376,16 +376,26 @@ func (c *checker) walkStmt(s Stmt) {
 
 	case *ForEachStmt:
 		c.checkExpr(n.List)
-		// Loop variable is in scope inside the body only.
-		// Save and restore the previous binding (if any)
-		// across all per-variable maps so outer scope is
-		// preserved on exit. Without restoring c.shapes and
-		// c.literals, a body that reassigns the loop var to
-		// a new shape would leak that shape past the loop.
-		restore := c.snapshotVar(n.Name)
-		c.defined[n.Name] = true
+		// Loop variables are in scope inside the body only.
+		// Save and restore the previous binding (if any) for
+		// each name across all per-variable maps so outer
+		// scope is preserved on exit. Without restoring
+		// c.shapes and c.literals, a body that reassigns a
+		// loop var to a new shape would leak that shape past
+		// the loop. Discard slots ("_") contribute no binding
+		// and are skipped.
+		restores := make([]func(), 0, len(n.Names))
+		for _, name := range n.Names {
+			if name == "_" {
+				continue
+			}
+			restores = append(restores, c.snapshotVar(name))
+			c.defined[name] = true
+		}
 		c.walkStmts(n.Body)
-		restore()
+		for _, r := range restores {
+			r()
+		}
 
 	case *DefStmt:
 		// Parameters are visible inside the body. Save and

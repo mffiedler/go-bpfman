@@ -124,15 +124,24 @@ type ExprStmt struct {
 	Span
 }
 
-// ForEachStmt iterates a block over the elements of a list.  At
+// ForEachStmt iterates a block over the elements of a list. At
 // eval time List is evaluated to a Value; it must be a structured
-// list, and each element is bound to Name in the Session for the
-// duration of its iteration.  The binding persists after the loop
-// ends, matching shell-style for-each semantics.
+// list, and each element is bound across Names in the Session for
+// the duration of its iteration. The bindings are body-scoped:
+// any prior binding of a name is restored on exit and a name that
+// did not exist before the loop disappears again.
+//
+// Single-var form is the common case: Names is a single-element
+// slice and the element is bound to Names[0] verbatim. Multi-var
+// form (len(Names) >= 2) destructures each element as a list of
+// length len(Names), binding the i'th sub-element to Names[i]. A
+// "_" entry is a discard slot; the corresponding sub-element is
+// dropped. Single-var binding never destructures: the loop
+// variable carries the whole element through, list or not.
 type ForEachStmt struct {
-	Name string
-	List Expr
-	Body []Stmt
+	Names []string
+	List  Expr
+	Body  []Stmt
 	Span
 }
 
@@ -1150,16 +1159,9 @@ func (p *parser) parseRetryStmt() (Stmt, error) {
 
 func (p *parser) parseForEachStmt() (Stmt, error) {
 	feTok := p.advance() // "foreach"
-	if p.atEOF() || p.peek().Kind != TokenWord {
-		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
-	}
-	nameTok := p.advance()
-	name := nameTok.Text
-	if name == "in" {
-		return nil, spanErrorf(nameTok.Span, "foreach requires a variable name before 'in'")
-	}
-	if !IsIdent(name) {
-		return nil, spanErrorf(nameTok.Span, "invalid variable name: %q", name)
+	names, err := p.parseForEachNames(feTok)
+	if err != nil {
+		return nil, err
 	}
 	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "in" {
 		return nil, spanErrorf(feTok.Span, "foreach requires 'in' after the loop variable")
@@ -1180,7 +1182,74 @@ func (p *parser) parseForEachStmt() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ForEachStmt{Name: name, List: list, Body: body, Span: p.spanFrom(feTok.Pos)}, nil
+	return &ForEachStmt{Names: names, List: list, Body: body, Span: p.spanFrom(feTok.Pos)}, nil
+}
+
+// parseForEachNames reads the loop-variable name list that follows
+// the 'foreach' keyword. Accepts a single name (single-var form)
+// or a comma-separated list (multi-var form, len >= 2). The
+// tokeniser does not split on ',', so a comma may arrive glued to
+// an identifier ("a," is one TokenWord); the parser strips the
+// trailing comma exactly the way parseBindTuple does. A bare "_"
+// is allowed as a discard slot, matching the spirit of tuple-bind
+// targets; "in" is reserved as the keyword that ends the name list.
+func (p *parser) parseForEachNames(feTok Token) ([]string, error) {
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return nil, spanErrorf(feTok.Span, "foreach requires: foreach <name> in <expr> { ... }")
+	}
+	first, sawComma, err := p.parseForEachNameToken(feTok)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{first}
+	for sawComma || (!p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == ",") {
+		if !sawComma {
+			p.advance() // ","
+		}
+		next, more, err := p.parseForEachNameToken(feTok)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, next)
+		sawComma = more
+	}
+	allDiscard := true
+	for _, n := range names {
+		if n != "_" {
+			allDiscard = false
+			break
+		}
+	}
+	if allDiscard {
+		return nil, spanErrorf(feTok.Span, "foreach: all loop variables are '_'; at least one must bind")
+	}
+	return names, nil
+}
+
+// parseForEachNameToken consumes one loop-variable name and
+// returns whether a trailing comma was glued to the identifier.
+// The 'in' keyword is rejected here so it is reachable as the
+// terminator at the call site.
+func (p *parser) parseForEachNameToken(feTok Token) (name string, sawComma bool, err error) {
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return "", false, spanErrorf(feTok.Span, "foreach: expected variable name, got end of input")
+	}
+	t := p.advance()
+	text := t.Text
+	if strings.HasSuffix(text, ",") && len(text) > 1 {
+		text = text[:len(text)-1]
+		sawComma = true
+	}
+	if text == "in" {
+		return "", false, spanErrorf(t.Span, "foreach requires a variable name before 'in'")
+	}
+	if text == "_" {
+		return "_", sawComma, nil
+	}
+	if !IsIdent(text) {
+		return "", false, spanErrorf(t.Span, "invalid variable name: %q", text)
+	}
+	return text, sawComma, nil
 }
 
 // takeUntilOpenBrace collects tokens up to (but not including) the
