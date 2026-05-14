@@ -96,6 +96,32 @@ func TestParse_LineContinuation(t *testing.T) {
 	})
 }
 
+func TestParse_EmptyListLiteral(t *testing.T) {
+	t.Parallel()
+
+	t.Run("let RHS accepts an empty list", func(t *testing.T) {
+		t.Parallel()
+		prog, err := parseSource(t, "let empty = []")
+		require.NoError(t, err)
+		let, ok := firstStmt(t, prog).(*LetStmt)
+		require.True(t, ok)
+		list, ok := let.RHS.(*ListExpr)
+		require.True(t, ok, "RHS should be a ListExpr, got %T", let.RHS)
+		assert.Empty(t, list.Elems)
+	})
+
+	t.Run("empty list with internal whitespace", func(t *testing.T) {
+		t.Parallel()
+		prog, err := parseSource(t, "let empty = [  ]")
+		require.NoError(t, err)
+		let, ok := firstStmt(t, prog).(*LetStmt)
+		require.True(t, ok)
+		list, ok := let.RHS.(*ListExpr)
+		require.True(t, ok)
+		assert.Empty(t, list.Elems)
+	})
+}
+
 func TestParse_MultilineListLiteral(t *testing.T) {
 	t.Parallel()
 

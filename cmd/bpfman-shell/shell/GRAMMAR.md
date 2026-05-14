@@ -971,13 +971,13 @@ So these are all valid:
     [(range 10) [1 2] (1 + 2)]
     ["a" $x file:$path]
 
-Empty lists `[]` are rejected at parse time. A Word element
-containing an unquoted comma is rejected with a hint pointing at
-the whitespace-separated form. A bare binary, arithmetic,
-thread, or logical operator between elements is rejected with a
-hint to wrap the compound element in parens (`[($x + 1) $y]`).
-Newlines between elements are transparent so a long list can
-wrap across lines.
+An empty list `[]` is accepted; it evaluates to a list Value of
+length zero. A Word element containing an unquoted comma is
+rejected with a hint pointing at the whitespace-separated form.
+A bare binary, arithmetic, thread, or logical operator between
+elements is rejected with a hint to wrap the compound element in
+parens (`[($x + 1) $y]`). Newlines between elements are
+transparent so a long list can wrap across lines.
 
 ### PureCallExpr
 
@@ -1175,4 +1175,3 @@ output into a name is the bind form `let x <- CMD`.
 - VarRef index keys (`$x[K]`) accept only an integer literal or
   a `$ident` token; arbitrary expressions inside `[...]` in
   index position are not accepted by the path tokeniser.
-- Empty list literal `[]` is rejected at parse time.

@@ -2048,10 +2048,10 @@ func (p *exprParser) parseTerm() (Expr, error) {
 // inside the brackets are transparent so a long list can wrap
 // across lines.
 //
-// Empty lists ([]) are deliberately not accepted: the grammar
-// addition's first cut requires at least one element, mirroring
-// the corpus's needs. Adding [] later is purely permissive and
-// can land when a use case appears.
+// Empty lists `[]` are accepted; they evaluate to a list Value of
+// length zero. Used in shape-test contexts to compare against a
+// known-empty collection (`assert $got.status.links == []`) where
+// otherwise an alternative spelling via jq length would be needed.
 func (p *exprParser) parseListLiteral() (Expr, error) {
 	openTok := p.advance() // '['
 	var elems []Expr
@@ -2065,9 +2065,6 @@ func (p *exprParser) parseListLiteral() (Expr, error) {
 		}
 		t := p.peek()
 		if t.Kind == TokenWord && t.Text == "]" {
-			if len(elems) == 0 {
-				return nil, spanErrorf(openTok.Span, "empty list literal not supported; list must have at least one element")
-			}
 			p.advance() // ']'
 			return &ListExpr{Elems: elems, Span: p.spanFrom(openTok.Pos)}, nil
 		}
