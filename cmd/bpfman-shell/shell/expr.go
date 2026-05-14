@@ -1791,9 +1791,18 @@ func resolveVarRefArg(e *VarRefExpr, env *Env) (Arg, error) {
 		if err != nil {
 			return nil, err
 		}
-		lv, err := v.LookupValue(e.Name, path)
+		// Soft lookup at the arg boundary: absent paths surface
+		// as MissingArg so the shape-test predicates
+		// (present / missing / strict nil) can distinguish
+		// "field not in the value tree" from "field present and
+		// null". Hard errors from the walker (malformed path,
+		// non-traversable intermediate) still propagate.
+		lv, class, err := v.LookupSoft(e.Name, path)
 		if err != nil {
 			return nil, spanErrorf(e.Span, "%v", err)
+		}
+		if class == LookupAbsent {
+			return MissingArg{Name: e.Name, Path: path, Span: e.Span}, nil
 		}
 		resolved = lv
 	}

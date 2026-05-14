@@ -18,7 +18,7 @@
 source ../lib.bpfman
 
 # Preconditions: BTF-enabled kernel.
-require path exists /sys/kernel/btf/vmlinux
+require path-exists /sys/kernel/btf/vmlinux
 
 # Load the fentry counter. The --programs spec is TYPE:NAME:ATTACH_FUNC;
 # fentry/fexit encode the target function at load time.

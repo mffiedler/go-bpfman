@@ -472,7 +472,7 @@ func (p *parser) assertTakesExprForm() bool {
 	t := p.tokens[pos]
 	if t.Kind == TokenWord {
 		switch t.Text {
-		case "ok", "fail", "path", "contains", "nil":
+		case "ok", "fail", "path-exists", "contains", "nil", "present", "missing", "empty":
 			return false
 		}
 	}

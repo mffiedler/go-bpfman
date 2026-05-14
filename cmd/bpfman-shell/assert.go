@@ -193,7 +193,7 @@ func isExprAssertion(args []shell.Arg) bool {
 // user sees the verb's own arity error.
 func isPrefixVerbName(s string) bool {
 	switch s {
-	case "ok", "fail", "path", "contains", "nil":
+	case "ok", "fail", "path-exists", "contains", "nil", "present", "missing", "empty":
 		return true
 	}
 	return false
@@ -285,12 +285,18 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 		return assertOk(ctx, cli, mgr, session, verbSpan, args)
 	case "fail":
 		return assertFail(ctx, cli, mgr, session, verbSpan, args)
-	case "path":
-		return assertPath(verbSpan, ss)
+	case "path-exists":
+		return assertPathExists(verbSpan, ss)
 	case "contains":
 		return assertContains(verbSpan, ss)
 	case "nil":
-		return assertNil(session, verbSpan, ss)
+		return assertNil(session, verbSpan, args)
+	case "present":
+		return assertPresent(session, verbSpan, args)
+	case "missing":
+		return assertMissing(session, verbSpan, args)
+	case "empty":
+		return assertEmpty(session, verbSpan, args)
 	case "==", "!=", "<", "<=", ">", ">=":
 		return assertResult{}, shell.SpanErrorf(verbSpan,
 			"%q goes between two values: try 'assert <left> %s <right>'", verb, verb)
@@ -303,22 +309,159 @@ func evalAssertVerb(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manage
 	}
 }
 
-// assertNil checks whether a variable holds a nil Value. The operand
-// is a bare variable name, not a value expression: the runtime
-// Session can hold nil values but variable expansion refuses to
-// carry them through, so the only way to inspect nil-ness is by
-// name.
-func assertNil(session *shell.Session, verbSpan shell.Span, args []string) (assertResult, error) {
-	if len(args) != 1 {
-		return assertResult{}, shell.SpanErrorf(verbSpan, "nil requires exactly 1 argument (bare variable name, no $)")
+// classifyAssertOperand walks the single value operand of the
+// present / missing / nil / empty predicates and returns the
+// classification needed by each. Three input shapes are accepted:
+//
+//   - WordArg: a bareword variable name with optional dotted path
+//     (e.g. `prog.status.stats`). Soft-looked up against the
+//     session.
+//   - NilArg: a $-prefixed variable expression that resolved to
+//     JSON null at the arg boundary. The classification is
+//     LookupNull.
+//   - MissingArg: a $-prefixed variable expression whose path is
+//     absent from the value tree. The classification is
+//     LookupAbsent.
+//   - Any other resolved Arg variant: the path resolved to a
+//     non-null value. The classification is LookupPresent and
+//     the underlying value is recovered when meaningful.
+//
+// The returned displayName is a human-readable rendition of the
+// operand for diagnostic messages ("prog.status.stats",
+// "$got.status.links").
+func classifyAssertOperand(session *shell.Session, a shell.Arg) (shell.Value, shell.LookupClass, string, error) {
+	switch v := a.(type) {
+	case shell.WordArg:
+		val, class, err := lookupBareVarSoft(session, v.Text)
+		if err != nil {
+			return shell.Value{}, shell.LookupAbsent, v.Text, err
+		}
+		return val, class, v.Text, nil
+	case shell.NilArg:
+		return shell.Value{}, shell.LookupNull, "<null>", nil
+	case shell.MissingArg:
+		display := "$" + v.Name
+		if v.Path != "" {
+			display += "." + v.Path
+		}
+		return shell.Value{}, shell.LookupAbsent, display, nil
+	case shell.ScalarValueArg:
+		return shell.StringValue(v.Text), shell.LookupPresent, v.Text, nil
+	case shell.StructuredValueArg:
+		display := "$" + v.Name
+		return v.Value, shell.LookupPresent, display, nil
+	case shell.QuotedArg:
+		return shell.StringValue(v.Text), shell.LookupPresent, "\"" + v.Text + "\"", nil
+	case shell.AdapterArg:
+		display := v.Adapter + ":$" + v.Name
+		if v.Path != "" {
+			display += "." + v.Path
+		}
+		return v.Value, shell.LookupPresent, display, nil
+	default:
+		return shell.Value{}, shell.LookupAbsent, "", fmt.Errorf("unsupported argument %T", a)
 	}
-	v, err := lookupBareVar(session, args[0])
+}
+
+// lookupBareVarSoft is the soft-lookup variant of lookupBareVar.
+// Returns a LookupClass alongside the value so the predicate
+// handlers can give precise answers for missing / null / present.
+func lookupBareVarSoft(session *shell.Session, arg string) (shell.Value, shell.LookupClass, error) {
+	varName := arg
+	path := ""
+	if i := strings.IndexAny(arg, ".["); i >= 0 {
+		varName = arg[:i]
+		path = arg[i:]
+		path = strings.TrimPrefix(path, ".")
+	}
+	v, ok := session.Get(varName)
+	if !ok {
+		return shell.Value{}, shell.LookupAbsent, nil
+	}
+	return v.LookupSoft(varName, path)
+}
+
+// assertNil checks whether the operand resolves to JSON null
+// (strict). An operand that is absent from the value tree fails;
+// use `missing` to assert absence explicitly.
+func assertNil(session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, shell.SpanErrorf(verbSpan, "nil requires exactly 1 argument (a value expression or bare variable name)")
+	}
+	_, class, display, err := classifyAssertOperand(session, args[0])
 	if err != nil {
 		return assertResult{}, err
 	}
 	return assertResult{
-		pass:    v.IsNil(),
-		message: fmt.Sprintf("expected %s to be nil", args[0]),
+		pass:    class == shell.LookupNull,
+		message: fmt.Sprintf("expected %s to be null", display),
+	}, nil
+}
+
+// assertPresent succeeds when the operand resolves to a value or
+// JSON null. Fails only when the path is absent from the value
+// tree.
+func assertPresent(session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, shell.SpanErrorf(verbSpan, "present requires exactly 1 argument (a value expression or bare variable name)")
+	}
+	_, class, display, err := classifyAssertOperand(session, args[0])
+	if err != nil {
+		return assertResult{}, err
+	}
+	return assertResult{
+		pass:    class != shell.LookupAbsent,
+		message: fmt.Sprintf("expected %s to be present", display),
+	}, nil
+}
+
+// assertMissing is the inverse of assertPresent: succeeds only
+// when the operand's path is absent from the value tree. A null
+// terminal value fails because the field exists in the shape.
+func assertMissing(session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, shell.SpanErrorf(verbSpan, "missing requires exactly 1 argument (a value expression or bare variable name)")
+	}
+	_, class, display, err := classifyAssertOperand(session, args[0])
+	if err != nil {
+		return assertResult{}, err
+	}
+	return assertResult{
+		pass:    class == shell.LookupAbsent,
+		message: fmt.Sprintf("expected %s to be missing from the shape", display),
+	}, nil
+}
+
+// assertEmpty succeeds when the operand resolves to an empty
+// string, empty list, or empty map. Absent paths and null
+// terminals fail: emptiness is a positive shape claim and is
+// distinct from the field not existing or being explicitly null.
+func assertEmpty(session *shell.Session, verbSpan shell.Span, args []shell.Arg) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, shell.SpanErrorf(verbSpan, "empty requires exactly 1 argument (a value expression or bare variable name)")
+	}
+	val, class, display, err := classifyAssertOperand(session, args[0])
+	if err != nil {
+		return assertResult{}, err
+	}
+	if class != shell.LookupPresent {
+		return assertResult{
+			pass:    false,
+			message: fmt.Sprintf("expected %s to be empty (\"\" / [] / {})", display),
+		}, nil
+	}
+	pass := false
+	switch x := val.Raw().(type) {
+	case string:
+		pass = x == ""
+	case []any:
+		pass = len(x) == 0
+	case map[string]any:
+		pass = len(x) == 0
+	}
+	return assertResult{
+		pass:    pass,
+		message: fmt.Sprintf("expected %s to be empty (\"\" / [] / {})", display),
 	}, nil
 }
 
@@ -371,15 +514,20 @@ func assertFail(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, s
 	}, nil
 }
 
-func assertPath(verbSpan shell.Span, args []string) (assertResult, error) {
-	if len(args) != 2 || args[0] != "exists" {
-		return assertResult{}, shell.SpanErrorf(verbSpan, "path requires: path exists <filepath>")
+// assertPathExists tests filesystem-path existence (the
+// previous `assert path exists FILE` two-arg form, renamed and
+// collapsed to a single argument). Reserves the `path` word for
+// object-path semantics if we ever revive it; the two notions of
+// path (filesystem vs value-tree) deserve distinct vocabulary.
+func assertPathExists(verbSpan shell.Span, args []string) (assertResult, error) {
+	if len(args) != 1 {
+		return assertResult{}, shell.SpanErrorf(verbSpan, "path-exists requires exactly 1 argument: <filepath>")
 	}
-	_, err := os.Stat(args[1])
+	_, err := os.Stat(args[0])
 	pass := err == nil
 	return assertResult{
 		pass:    pass,
-		message: fmt.Sprintf("expected path %q to exist", args[1]),
+		message: fmt.Sprintf("expected path %q to exist", args[0]),
 	}, nil
 }
 

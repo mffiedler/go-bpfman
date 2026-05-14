@@ -23,6 +23,8 @@ func ArgSpan(a Arg) Span {
 		return v.Span
 	case NilArg:
 		return v.Span
+	case MissingArg:
+		return v.Span
 	case QuotedArg:
 		return v.Span
 	case ScalarValueArg:
@@ -58,6 +60,24 @@ type WordArg struct {
 // downstream "this command can't take null" diagnostic frames at
 // the right token.
 type NilArg struct {
+	Span
+}
+
+// MissingArg is the "field absent from the value tree" outcome at
+// an arg boundary. Produced when a variable expression's path
+// names a field that does not exist (typically because an
+// omitempty-elided producer chose not to emit it). Distinct from
+// NilArg, which is the explicit-null outcome.
+//
+// The two variants exist so the shape-test predicates can
+// distinguish "the field is missing from the shape" (a contract
+// regression) from "the field is present and null" (the producer's
+// way of saying the concept does not apply). Command handlers
+// that do not meaningfully accept missing fields surface their
+// own diagnostic when they encounter MissingArg.
+type MissingArg struct {
+	Name string // bare variable name without "$"
+	Path string // dotted/indexed path expression after the name
 	Span
 }
 
@@ -125,6 +145,7 @@ type MatchesBlockEntry struct {
 
 func (WordArg) isArg()            {}
 func (NilArg) isArg()             {}
+func (MissingArg) isArg()         {}
 func (QuotedArg) isArg()          {}
 func (ScalarValueArg) isArg()     {}
 func (StructuredValueArg) isArg() {}

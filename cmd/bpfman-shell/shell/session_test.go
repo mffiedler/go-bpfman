@@ -201,11 +201,11 @@ func TestSessionExpand(t *testing.T) {
 			},
 		},
 		{
-			name: "missing field",
+			name: "missing field surfaces as MissingArg",
 			tokens: []Token{
 				{Kind: TokenVarRef, Text: "$prog.nonexistent", VarName: "prog", VarPath: "nonexistent"},
 			},
-			wantErr: "field nonexistent not found in variable prog",
+			want: []Arg{MissingArg{Name: "prog", Path: "nonexistent"}},
 		},
 		{
 			name: "index out of range",

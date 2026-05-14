@@ -176,14 +176,14 @@ assert not $flag
 assert nil maybe
 assert ok       bpfman show program 42
 assert fail     bpfman link get 9999
-assert path     exists /sys/fs/bpf/bpfman
+assert path-exists /sys/fs/bpf/bpfman
 assert contains "hello world" world
 
 # Negation with `not'.
 assert not nil               maybe
 assert not not-empty         $dry_run
 assert not ok                exec false
-assert not path exists       /does/not/exist
+assert not path-exists /does/not/exist
 assert not contains $haystack needle
 
 # `require' is the fatal counterpart; same grammar otherwise.

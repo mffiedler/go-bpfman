@@ -1548,28 +1548,28 @@ func TestAssertContains(t *testing.T) {
 	assert.False(t, r.pass)
 }
 
-func TestAssertPath(t *testing.T) {
+func TestAssertPathExists(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "exists.txt")
 	require.NoError(t, os.WriteFile(existing, nil, 0o644))
 
-	r, err := assertPath(shell.Span{}, []string{"exists", existing})
+	r, err := assertPathExists(shell.Span{}, []string{existing})
 	require.NoError(t, err)
 	assert.True(t, r.pass)
 
-	r, err = assertPath(shell.Span{}, []string{"exists", filepath.Join(dir, "nope")})
+	r, err = assertPathExists(shell.Span{}, []string{filepath.Join(dir, "nope")})
 	require.NoError(t, err)
 	assert.False(t, r.pass)
 }
 
-func TestAssertPath_BadArgs(t *testing.T) {
+func TestAssertPathExists_BadArgs(t *testing.T) {
 	t.Parallel()
 
-	_, err := assertPath(shell.Span{}, []string{"nope"})
+	_, err := assertPathExists(shell.Span{}, []string{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "path requires")
+	assert.Contains(t, err.Error(), "path-exists requires")
 }
 
 // wordArgs converts string slices to []shell.Arg for test convenience.
@@ -2073,7 +2073,7 @@ func TestReplLoop_AssertPathExists(t *testing.T) {
 	f := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(f, nil, 0o644))
 
-	input := "assert path exists " + f + "\n"
+	input := "assert path-exists " + f + "\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
@@ -2086,7 +2086,7 @@ func TestReplLoop_AssertPathExists(t *testing.T) {
 func TestReplLoop_AssertPathNotExists(t *testing.T) {
 	t.Parallel()
 
-	input := "assert not path exists /nonexistent/path/xyz\n"
+	input := "assert not path-exists /nonexistent/path/xyz\n"
 	var errBuf bytes.Buffer
 	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)

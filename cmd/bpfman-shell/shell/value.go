@@ -3,12 +3,40 @@ package shell
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
+)
+
+// ErrFieldMissing is a sentinel returned by the path walker when a
+// dotted-path lookup names a field that is not present in the value
+// tree. It is distinct from "the field exists but its value is JSON
+// null", which the walker reports by returning a nil leaf with no
+// error. Predicates that distinguish missing-from-the-shape from
+// present-and-null (the verb-form present / missing / strict-nil
+// predicates) inspect this sentinel via errors.Is.
+var ErrFieldMissing = errors.New("field not found")
+
+// LookupClass classifies a path-lookup outcome at the predicate
+// boundary. It mirrors the missing/null/value distinction the
+// shape-test predicates need to give precise answers without
+// requiring callers to decode error sentinels themselves.
+type LookupClass int
+
+const (
+	// LookupAbsent means the path does not resolve in the value
+	// tree (an intermediate field or terminal field is missing).
+	LookupAbsent LookupClass = iota
+	// LookupNull means the path resolves and the terminal value
+	// is JSON null.
+	LookupNull
+	// LookupPresent means the path resolves and the terminal
+	// value is non-null.
+	LookupPresent
 )
 
 // Value wraps a JSON-compatible dynamic value for use as a shell
@@ -267,7 +295,7 @@ func walkPath(raw any, varName string, steps []pathStep) (any, string, error) {
 			}
 			val, exists := m[s.name]
 			if !exists {
-				return nil, traversed, fmt.Errorf("field %s not found in variable %s", s.name, traversed)
+				return nil, traversed, fmt.Errorf("field %s not found in variable %s: %w", s.name, traversed, ErrFieldMissing)
 			}
 			current = val
 			if traversed == varName {
@@ -332,6 +360,47 @@ func (v Value) LookupValue(varName, path string) (Value, error) {
 		}
 	}
 	return out, nil
+}
+
+// LookupSoft walks a dotted field path the same way LookupValue
+// does but does not error on a missing field or a null terminal:
+// the caller inspects the returned LookupClass to decide. Errors
+// are reserved for problems the predicate boundary cannot
+// meaningfully recover from (malformed path syntax,
+// non-traversable intermediate such as indexing into a non-array,
+// or an out-of-range list index). Used by the assert-verb
+// predicates (present / missing / strict nil / empty) to give
+// each predicate a precise answer without leaking
+// "field not found"-shaped errors into assertion output.
+func (v Value) LookupSoft(varName, path string) (Value, LookupClass, error) {
+	if path == "" {
+		if v.IsNil() {
+			return v, LookupNull, nil
+		}
+		return v, LookupPresent, nil
+	}
+	steps, err := parsePath(path)
+	if err != nil {
+		return Value{}, LookupPresent, err
+	}
+	current, _, err := walkPath(v.v, varName, steps)
+	if err != nil {
+		if errors.Is(err, ErrFieldMissing) {
+			return Value{}, LookupAbsent, nil
+		}
+		return Value{}, LookupPresent, err
+	}
+	if current == nil {
+		return Value{v: nil}, LookupNull, nil
+	}
+	out := Value{v: current}
+	if v.origin != nil {
+		if origin := walkOrigin(v.origin, steps); origin != nil {
+			out.origin = origin
+			out.kind = kindForType(reflect.TypeOf(origin))
+		}
+	}
+	return out, LookupPresent, nil
 }
 
 // Lookup walks a dotted field path (with optional [n] indexing) into

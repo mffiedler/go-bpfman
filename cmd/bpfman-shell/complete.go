@@ -52,7 +52,7 @@ func init() {
 }
 
 // replAssertVerbs lists the valid assertion verbs for completion.
-var replAssertVerbs = []string{"contains", "fail", "false", "nil", "not", "not-empty", "ok", "path", "true"}
+var replAssertVerbs = []string{"contains", "empty", "fail", "false", "missing", "nil", "not", "not-empty", "ok", "path-exists", "present", "true"}
 
 // replSubcommands maps a top-level token to its valid subcommands for completion.
 var replSubcommands = map[string][]string{

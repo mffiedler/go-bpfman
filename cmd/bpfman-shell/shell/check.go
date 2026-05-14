@@ -452,13 +452,64 @@ func (c *checker) walkStmt(s Stmt) {
 
 	case *CommandStmt:
 		c.recordAlias(n)
-		for _, a := range n.Args {
+		// `assert present $X.field` and `assert missing $X.field`
+		// (and the `require` forms) test for the presence /
+		// absence of a path in the value tree. The path is
+		// allowed to name a field that the checker's inferred
+		// shape says does not exist: that is precisely the
+		// contract the missing predicate verifies. Skip
+		// path-validity for the operand of those predicates.
+		skipIdx := c.shapeProbeOperandIndex(n)
+		for i, a := range n.Args {
+			if i == skipIdx {
+				continue
+			}
 			c.checkExpr(a)
 		}
 
 	case *BreakStmt, *ContinueStmt:
 		// Leaves; nothing to check today.
 	}
+}
+
+// shapeProbeOperandIndex returns the index of the operand for an
+// `assert present`, `assert missing` (or `require` variant),
+// and `not`-prefixed forms, or -1 when the command is not one of
+// these shape-probe predicates. The operand is intentionally
+// excluded from VarRef path-validity checking because the
+// predicate's contract is to test the very thing the checker
+// would reject as unknown -- the absence of a field path from
+// the value tree.
+func (c *checker) shapeProbeOperandIndex(n *CommandStmt) int {
+	if len(n.Args) < 2 {
+		return -1
+	}
+	head, ok := n.Args[0].(*LiteralExpr)
+	if !ok {
+		return -1
+	}
+	if head.Text != "assert" && head.Text != "require" {
+		return -1
+	}
+	verbIdx := 1
+	verb, ok := n.Args[verbIdx].(*LiteralExpr)
+	if !ok {
+		return -1
+	}
+	if verb.Text == "not" && len(n.Args) >= 3 {
+		verbIdx = 2
+		verb, ok = n.Args[verbIdx].(*LiteralExpr)
+		if !ok {
+			return -1
+		}
+	}
+	switch verb.Text {
+	case "present", "missing":
+		if verbIdx+1 < len(n.Args) {
+			return verbIdx + 1
+		}
+	}
+	return -1
 }
 
 // recordAlias detects an `alias NAME = VALUE` command and

@@ -290,7 +290,36 @@ Expression primary words (tested in `parseTerm` and
 Assert-command predicate words (tested in `assertTakesExprForm`
 to route into the command-form path):
 
-    ok fail path contains nil
+    ok fail path-exists contains nil present missing empty
+
+Predicate semantics:
+
+  - `ok COMMAND`             command exits with ok envelope
+  - `fail COMMAND`           command exits with non-ok envelope
+  - `path-exists FILE`       filesystem path exists (renamed from
+                             the previous `path exists FILE`
+                             two-arg form; reserves the word
+                             "path" so it never carries both
+                             filesystem and object-path meaning)
+  - `contains HAYSTACK NEEDLE`
+                             HAYSTACK string contains NEEDLE
+  - `nil $X.field`           path resolves and terminal value is
+                             JSON null (strict; a missing path
+                             fails)
+  - `present $X.field`       path resolves; terminal value may
+                             be anything including JSON null
+  - `missing $X.field`       path does not resolve in the value
+                             tree
+  - `empty $X.field`         path resolves and terminal value is
+                             "" / [] / {} (an empty string, list,
+                             or map; a missing or null terminal
+                             fails)
+
+`present`, `missing`, `nil`, and `empty` all accept either a
+$-prefixed variable expression or a bareword variable-name with
+optional dotted path; the verb dispatch reads the underlying
+LookupClass from the runtime path walker so the three states
+(absent / null / value) are distinguishable.
 
 Match-tail word (tested by `parseCommandStmt`):
 
@@ -610,8 +639,9 @@ structure.
                               AssertCommandPredicate { CommandArg } .
     AssertCommandMatchesForm
                             = AssertKeyword { CommandArg } MatchesBlock .
-    AssertCommandPredicate  = 'ok' | 'fail' | 'path'
-                            | 'contains' | 'nil' .
+    AssertCommandPredicate  = 'ok' | 'fail' | 'path-exists'
+                            | 'contains' | 'nil' | 'present'
+                            | 'missing' | 'empty' .
     AssertKeyword           = 'assert' | 'require' .
 
 Disambiguation at statement dispatch: a statement that begins
