@@ -41,9 +41,9 @@ defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
 defer bpfman program unload $pid_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxdp_a_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxdp_b_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxdp_c_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mxdp_a_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mxdp_b_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mxdp_c_count") | .id][0]'
 
 # Attach each at a distinct dispatcher priority. Default proceed-on
 # is XDP_PASS, which composes the chain naturally for observers.

@@ -33,9 +33,9 @@ defer bpfman program unload $prog_a
 defer bpfman program unload $prog_b
 defer bpfman program unload $prog_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 guard l_a <- bpfman link attach tc -i $pair.host_link -d egress -p 100 --proceed-on ok,pipe,dispatcher_return $prog_a
 guard l_b <- bpfman link attach tc -i $pair.host_link -d egress -p 200 --proceed-on ok,pipe,dispatcher_return $prog_b

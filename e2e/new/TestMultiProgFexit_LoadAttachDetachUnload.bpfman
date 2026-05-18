@@ -79,9 +79,9 @@ defer bpfman program unload $pid_c
 
 # Map IDs come straight off each program's load result; no extra
 # `bpfman program get` round-trips needed.
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mfx_a_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mfx_b_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mfx_c_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mfx_a_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mfx_b_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mfx_c_count") | .id][0]'
 print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
 
 # Attach each program. Fexit attaches need no extra args -- the

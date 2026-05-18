@@ -49,9 +49,9 @@ defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
 defer bpfman program unload $pid_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mca_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mcb_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mcc_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mca_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mcb_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mcc_count") | .id][0]'
 
 # Default proceed-on (`pipe, dispatcher_return`); the script does
 # not pass --proceed-on so the dispatcher uses defaults.

@@ -50,9 +50,9 @@ defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
 defer bpfman program unload $pid_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mxca_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mxcb_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mxcc_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mxca_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mxcb_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mxcc_count") | .id][0]'
 
 guard link_a <- bpfman link attach tcx -i $pair.host_link -d ingress -p 50 $pid_a
 guard link_b <- bpfman link attach tcx -i $pair.host_link -d ingress -p 60 $pid_b

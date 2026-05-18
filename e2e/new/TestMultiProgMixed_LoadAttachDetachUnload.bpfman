@@ -70,9 +70,9 @@ defer bpfman program unload $pid_tp
 defer bpfman program unload $pid_kp
 defer bpfman program unload $pid_krp
 
-let mapID_tp  = $prog_tp  |> jq "[.status.maps[] | select(.name == \"mtp_count\")  | .id][0]"
-let mapID_kp  = $prog_kp  |> jq "[.status.maps[] | select(.name == \"mkp_count\")  | .id][0]"
-let mapID_krp = $prog_krp |> jq "[.status.maps[] | select(.name == \"mkrp_count\") | .id][0]"
+let mapID_tp  = $prog_tp  |> jq '[.status.maps[] | select(.name == "mtp_count")  | .id][0]'
+let mapID_kp  = $prog_kp  |> jq '[.status.maps[] | select(.name == "mkp_count")  | .id][0]'
+let mapID_krp = $prog_krp |> jq '[.status.maps[] | select(.name == "mkrp_count") | .id][0]'
 print "maps: tp=${mapID_tp} kp=${mapID_kp} krp=${mapID_krp}"
 
 # Three different attach verbs, one per program type. Same

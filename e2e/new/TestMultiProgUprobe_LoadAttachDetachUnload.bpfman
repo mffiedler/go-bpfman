@@ -71,9 +71,9 @@ defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
 defer bpfman program unload $pid_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mup_a_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mup_b_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mup_c_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mup_a_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mup_b_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mup_c_count") | .id][0]'
 print "maps: a=${mapID_a} b=${mapID_b} c=${mapID_c}"
 
 # Attach each program at bpfman_shell_uprobe_call_malloc inside

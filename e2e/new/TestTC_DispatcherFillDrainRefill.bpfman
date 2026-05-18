@@ -94,16 +94,16 @@ defer bpfman program unload $p_700
 defer bpfman program unload $p_800
 defer bpfman program unload $p_900
 
-let m_0   = $p_0   |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_100 = $p_100 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_200 = $p_200 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_300 = $p_300 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_400 = $p_400 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_500 = $p_500 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_600 = $p_600 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_700 = $p_700 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_800 = $p_800 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_900 = $p_900 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let m_0   = $p_0   |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_100 = $p_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_200 = $p_200 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_300 = $p_300 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_400 = $p_400 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_500 = $p_500 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_600 = $p_600 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_700 = $p_700 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_800 = $p_800 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_900 = $p_900 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 guard l_0   <- bpfman link attach tc -i $pair.host_link -d ingress -p 0   --proceed-on ok,pipe,dispatcher_return $p_0
 guard l_100 <- bpfman link attach tc -i $pair.host_link -d ingress -p 100 --proceed-on ok,pipe,dispatcher_return $p_100
@@ -221,12 +221,12 @@ defer bpfman program unload $p_650
 defer bpfman program unload $p_550
 defer bpfman program unload $p_450
 
-let m_950 = $p_950 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_850 = $p_850 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_750 = $p_750 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_650 = $p_650 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_550 = $p_550 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_450 = $p_450 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let m_950 = $p_950 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_850 = $p_850 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_750 = $p_750 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_650 = $p_650 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_550 = $p_550 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_450 = $p_450 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 guard l_950 <- bpfman link attach tc -i $pair.host_link -d ingress -p 950 --proceed-on ok,pipe,dispatcher_return $p_950
 guard l_850 <- bpfman link attach tc -i $pair.host_link -d ingress -p 850 --proceed-on ok,pipe,dispatcher_return $p_850
@@ -345,13 +345,13 @@ defer bpfman program unload $p_425
 defer bpfman program unload $p_525
 defer bpfman program unload $p_625
 
-let m_25  = $p_25  |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_125 = $p_125 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_225 = $p_225 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_325 = $p_325 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_425 = $p_425 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_525 = $p_525 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_625 = $p_625 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let m_25  = $p_25  |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_125 = $p_125 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_225 = $p_225 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_325 = $p_325 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_425 = $p_425 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_525 = $p_525 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_625 = $p_625 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 guard l_25  <- bpfman link attach tc -i $pair.host_link -d ingress -p 25  --proceed-on ok,pipe,dispatcher_return $p_25
 guard l_125 <- bpfman link attach tc -i $pair.host_link -d ingress -p 125 --proceed-on ok,pipe,dispatcher_return $p_125
@@ -475,14 +475,14 @@ defer bpfman program unload $p_562
 defer bpfman program unload $p_662
 defer bpfman program unload $p_762
 
-let m_62  = $p_62  |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_162 = $p_162 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_262 = $p_262 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_362 = $p_362 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_462 = $p_462 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_562 = $p_562 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_662 = $p_662 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let m_762 = $p_762 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let m_62  = $p_62  |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_162 = $p_162 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_262 = $p_262 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_362 = $p_362 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_462 = $p_462 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_562 = $p_562 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_662 = $p_662 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let m_762 = $p_762 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 guard l_62  <- bpfman link attach tc -i $pair.host_link -d ingress -p 62  --proceed-on ok,pipe,dispatcher_return $p_62
 guard l_162 <- bpfman link attach tc -i $pair.host_link -d ingress -p 162 --proceed-on ok,pipe,dispatcher_return $p_162

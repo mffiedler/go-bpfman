@@ -58,9 +58,9 @@ defer bpfman program unload $pid_a
 defer bpfman program unload $pid_b
 defer bpfman program unload $pid_c
 
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"mtcv_a_count\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"mtcv_b_count\") | .id][0]"
-let mapID_c = $prog_c |> jq "[.status.maps[] | select(.name == \"mtcv_c_count\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "mtcv_a_count") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "mtcv_b_count") | .id][0]'
+let mapID_c = $prog_c |> jq '[.status.maps[] | select(.name == "mtcv_c_count") | .id][0]'
 
 # Custom proceed-on: includes OK (so a's verdict continues the
 # chain) and excludes PIPE (so b's verdict stops it).

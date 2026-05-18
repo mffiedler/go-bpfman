@@ -53,7 +53,7 @@ guard progs <- foreach l in $links {
     bpfman program get $l.record.program_id
 }
 
-let mapFilter = "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapFilter = '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 let mapIDs <- foreach p in $progs {
     jq $mapFilter $p
 }

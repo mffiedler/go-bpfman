@@ -33,9 +33,9 @@ defer bpfman program unload $prog_0
 defer bpfman program unload $prog_55
 defer bpfman program unload $prog_100
 
-let mapID_0   = $prog_0   |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_55  = $prog_55  |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_100 = $prog_100 |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_0   = $prog_0   |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_55  = $prog_55  |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_100 = $prog_100 |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 # Attach without --proceed-on; the CLI default is (pipe,
 # dispatcher_return) which excludes TC_ACT_OK.

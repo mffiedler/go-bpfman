@@ -32,8 +32,8 @@ let pid_incoming = $prog_incoming.record.program_id
 defer bpfman program unload $prog_existing
 defer bpfman program unload $prog_incoming
 
-let mapID_existing = $prog_existing |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_incoming = $prog_incoming |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_existing = $prog_existing |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_incoming = $prog_incoming |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 
 # Attach existing first, then incoming at the same priority. No
 # explicit --proceed-on; the default (pipe, dispatcher_return)

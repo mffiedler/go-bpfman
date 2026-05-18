@@ -114,7 +114,7 @@ guard work_r <- wait $work
 assert $work_r.ok
 assert $work_r.code == 0
 
-let mapID = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+let mapID = $prog |> jq '[.status.maps[] | select(.name == "kp_count") | .id][0]'
 let sumFilter = "fromjson | .[0].formatted.value | tonumber"
 guard dump <- bpftool map dump id $mapID -j
 let got_counter = $dump.stdout |> jq $sumFilter

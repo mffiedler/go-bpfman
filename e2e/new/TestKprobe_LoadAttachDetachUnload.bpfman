@@ -117,7 +117,7 @@ assert $work_r.ok
 assert $work_r.code == 0
 
 # Counter == events * weight, exact.
-let mapID = $prog |> jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+let mapID = $prog |> jq '[.status.maps[] | select(.name == "kp_count") | .id][0]'
 # kp_count is BPF_MAP_TYPE_ARRAY (single value), not PERCPU_ARRAY,
 # so the dump shape is .[0].formatted.value (scalar), not
 # .[0].formatted.values[].value (per-CPU list).

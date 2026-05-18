@@ -54,8 +54,8 @@ assert $pid_a != $pid_b
 
 # tc_stats_map kernel map ID: same value for both programs
 # proves the map is shared, not duplicated.
-let mapID_a = $prog_a |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
-let mapID_b = $prog_b |> jq "[.status.maps[] | select(.name == \"tc_stats_map\") | .id][0]"
+let mapID_a = $prog_a |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
+let mapID_b = $prog_b |> jq '[.status.maps[] | select(.name == "tc_stats_map") | .id][0]'
 print "tc_stats_map: prog_a=${mapID_a} prog_b=${mapID_b}"
 assert $mapID_a == $mapID_b
 

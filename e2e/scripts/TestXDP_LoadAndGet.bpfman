@@ -43,7 +43,7 @@ let pid = $prog.record.program_id
 # paths share the same base, so the derived value is the
 # self-reported root. Every expected path below is built
 # relative to it.
-let runtime_base        = $prog.record.handles.pin_path |> jq "split(\"/fs/\")[0]"
+let runtime_base        = $prog.record.handles.pin_path |> jq 'split("/fs/")[0]'
 let expect_prog_pin     = "${runtime_base}/fs/prog_${pid}"
 let expect_map_dir      = "${runtime_base}/fs/maps/${pid}"
 let expect_link_dir     = "${runtime_base}/fs/links/${pid}"
