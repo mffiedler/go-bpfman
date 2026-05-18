@@ -113,13 +113,21 @@ jobs:
       - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} ISOLATED_RUNTIME=0 EXTRA_TAGS=cgo_sqlite
 
   test-e2e-scripts:
-    name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }})
+    name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         race: [1, 0]
+        # Run every script under both bpfman-shell dispatch
+        # backends: library exercises the in-process Go API,
+        # external exercises the fork+exec path through the
+        # bpfman CLI binary (see
+        # cmd/bpfman-shell/bpfman_external.go). The two backends
+        # are required to produce byte-identical responses; a
+        # divergence on either lane is a real failure.
+        dispatch: [library, external]
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -153,3 +161,5 @@ jobs:
           bpftool version
 
       - run: make ci-test-e2e-scripts RACE=${{ matrix.race }}
+        env:
+          BPFMAN_DISPATCH: ${{ matrix.dispatch }}

@@ -21,6 +21,14 @@ filter=${1:-}
 bin_dir=${BIN_DIR:-bin}
 abs_bin_dir=$(cd "$bin_dir" && pwd)
 
+# Propagate the dispatch-backend selector across the sudo
+# boundary. Unset is equivalent to the in-process library backend
+# (see cmd/bpfman-shell/bpfman_external.go), so the loop below
+# always forwards BPFMAN_DISPATCH=<value> -- an unset caller
+# environment passes the empty string, which bpfman-shell treats
+# as the library default.
+sudo_env=("PATH=$abs_bin_dir:$PATH" "BPFMAN_DISPATCH=${BPFMAN_DISPATCH:-}")
+
 fail=0
 failed=""
 for sub in scripts new; do
@@ -32,7 +40,7 @@ for sub in scripts new; do
         fi
         rel="$sub/$name"
         printf "=== %s ===\n" "$rel"
-        if (cd e2e && sudo env "PATH=$abs_bin_dir:$PATH" "$abs_bin_dir/bpfman-shell" "$rel"); then
+        if (cd e2e && sudo env "${sudo_env[@]}" "$abs_bin_dir/bpfman-shell" "$rel"); then
             echo "    pass: $rel"
         else
             echo "    FAIL: $rel"
