@@ -1154,6 +1154,35 @@ Rejected:
   other parameter is. The duplicate-name rule applies: `def
   f(_ _)` is rejected as "duplicate parameter name '_'".
 
+## Quoting
+
+Single-quoted strings are fully literal: no `${...}` interpolation,
+no escape decoding (`\n`, `\t`, `\r`, `\\`, `\"`, `\$` are
+preserved verbatim), and no way to embed a literal `'` because
+the closing delimiter cannot be escaped.
+
+Double-quoted strings recognise `${...}` interpolation and
+decode the escape set `\n`, `\t`, `\r`, `\\`, `\"`, `\$`. A bare
+`$` not followed by `{...}` is a lex-time error rather than a
+literal `$`.
+
+When the embedded content already uses double quotes -- jq
+filters, JSON fragments, regular expressions with character
+classes -- prefer single quotes for the outer string so the
+interior reads as written:
+
+    jq 'split("/fs/")[0]'
+    jq '[.status.maps[] | select(.name == "kp_count") | .id][0]'
+
+rather than backslash-escaping each interior `"`:
+
+    jq "split(\"/fs/\")[0]"
+    jq "[.status.maps[] | select(.name == \"kp_count\") | .id][0]"
+
+Single quotes also disable `${...}` interpolation, so reach for
+double quotes whenever you need to splice a variable into the
+string.
+
 ## Interpolation
 
 A double-quoted string with no `${...}` content tokenises as
