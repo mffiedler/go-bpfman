@@ -341,7 +341,6 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 // context for handlers that need it (container uprobes).
 func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	mutatingMethods := map[string]bool{
-		"/bpfman.v1.Bpfman/Load":   true,
 		"/bpfman.v1.Bpfman/Unload": true,
 		"/bpfman.v1.Bpfman/Attach": true,
 		"/bpfman.v1.Bpfman/Detach": true,
