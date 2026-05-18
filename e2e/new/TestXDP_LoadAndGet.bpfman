@@ -51,6 +51,7 @@ let expect_bytecode     = "${runtime_base}/programs/${pid}/bytecode.o"
 # Kernel-reported map_ids list cross-checked against bpfman's
 # observed status.maps[].id set.
 let expect_map_ids      = $prog.status.maps |> jq "[.[].id]"
+let expect_map_id       = $prog.status.kernel.map_ids[0]
 
 # ---- Core record + kernel-status sanity (shared lib helper). ----
 expect_program_load $prog xdp extension pass
@@ -59,7 +60,7 @@ expect_program_load $prog xdp extension pass
 assert $prog matches exhaustive {
     record: matches exhaustive {
         program_id:     $pid
-        license:        not-empty
+        license:        "Dual BSD/GPL"
         gpl_compatible: true
         created_at:     not-empty
         updated_at:     nil
@@ -132,7 +133,7 @@ assert $prog.status.kernel.memlock > 0
 # validated against the Get response below.
 let m = $prog.status.maps[0]
 assert $m matches exhaustive {
-    id:            not-empty
+    id:            $expect_map_id
     name:          xdp_pass_stats_
     map_type:      percpuarray
     key_size:      4
