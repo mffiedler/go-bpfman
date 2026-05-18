@@ -33,6 +33,7 @@ type CLI struct {
 	Image      ImageCmd      `cmd:"" group:"infra" help:"Image operations (verify signatures)."`
 	Serve      ServeCmd      `cmd:"" group:"infra" help:"Start the gRPC daemon."`
 	Version    VersionCmd    `cmd:"" group:"infra" help:"Print version information."`
+	Get        GetCmd        `cmd:"" hidden:"" help:"Verb-noun compatibility alias (Rust bpfman style)."`
 }
 
 // NewCLI creates and initialises a CLI instance by parsing command-line arguments.
