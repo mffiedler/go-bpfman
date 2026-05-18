@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/frobware/go-bpfman/fs"
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 	"github.com/frobware/go-bpfman/internal/cliformat"
-	"github.com/frobware/go-bpfman/ns/nsenter"
 )
 
 // CLI is the root command structure for bpfman. It embeds the
@@ -36,19 +34,39 @@ type CLI struct {
 	Get        GetCmd        `cmd:"" hidden:"" help:"Verb-noun compatibility alias (Rust bpfman style)."`
 }
 
+// daemonMarkerFlag identifies the bpfman-operator's daemonset
+// invocation shape. The operator passes args [--csi-support, ...]
+// to a container whose entrypoint is "/bpfman"; we recognise that
+// argv leading with --csi-support and inject the "serve" command so
+// Kong dispatches to the daemon. Any other argv shape passes
+// through unchanged, including kubectl-exec invocations like
+// "bpfman get link 5" or "bpfman version".
+const daemonMarkerFlag = "--csi-support"
+
+// maybeInjectServe returns argv with the "serve" subcommand inserted
+// before the flags when the post-program argv leads with the
+// daemon marker flag. Other argv shapes are returned unchanged.
+func maybeInjectServe(args []string) []string {
+	if len(args) >= 2 && args[1] == daemonMarkerFlag {
+		out := make([]string, 0, len(args)+1)
+		out = append(out, args[0], "serve")
+		out = append(out, args[1:]...)
+		return out
+	}
+	return args
+}
+
 // NewCLI creates and initialises a CLI instance by parsing command-line arguments.
 //
-// Mode detection for bpfman-rpc (daemon compatibility with bpfman-operator):
-//   - BPFMAN_MODE=bpfman-rpc or argv[0] basename "bpfman-rpc" injects "serve" command
+// When invoked as the bpfman-operator daemonset's bpfman container
+// (entrypoint "/bpfman", args leading with --csi-support) the
+// "serve" subcommand is inserted before the flags so the gRPC
+// daemon starts; see maybeInjectServe.
 //
 // Note: Namespace helper mode (bpfman-ns) must be checked before calling NewCLI
 // via RunNamespaceHelper(), as it uses a completely separate CLI structure.
 func NewCLI() (*CLI, error) {
-	// Check for bpfman-rpc mode (daemon compatibility with bpfman-operator).
-	modeEnv := os.Getenv(nsenter.ModeEnvVar)
-	if modeEnv == "bpfman-rpc" || filepath.Base(os.Args[0]) == "bpfman-rpc" {
-		os.Args = append([]string{os.Args[0], "serve"}, os.Args[1:]...)
-	}
+	os.Args = maybeInjectServe(os.Args)
 
 	// Rewrite "help [cmd...]" to "[cmd...] --help" so that
 	// "bpfman help link attach xdp" works like most CLI tools.
