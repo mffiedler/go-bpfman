@@ -9,6 +9,5 @@ FROM ${RUNTIME_IMAGE}
 
 COPY --link --chmod=0755 bin/bpfman /bpfman
 
-ENV BPFMAN_MODE=bpfman-rpc
 ENV BPFMAN_PPROF_ADDRESS=localhost:6060
 ENTRYPOINT ["/bpfman"]
