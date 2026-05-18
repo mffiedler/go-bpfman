@@ -19,7 +19,7 @@
 # Invoke from e2e/:
 #
 #   cd e2e
-#   sudo bpfman-shell scripts/TestXDP_LoadAndGet.bpfman
+#   sudo bpfman-shell new/TestXDP_LoadAndGet.bpfman
 #
 # Requires root.
 
