@@ -123,12 +123,16 @@
 //
 // # Concurrency
 //
-// The manager itself is not safe for concurrent use. Callers must
-// serialise access, typically via the lock package (lock/) which
-// provides writer-exclusive locking at the server level. Load is
-// the one exception: it is purely additive and runs lockless; see
-// the package-level comments on Manager.Load for the safety
-// argument.
+// Mutating manager methods (Unload, Attach*, Detach*) require the
+// caller to hold the cross-process writer flock provided by the
+// lock package (lock/); the server takes the flock per request and
+// passes the writer scope into the manager call. Read-only methods
+// (Get, ListPrograms, GetLink, ListLinks) are not gated by the
+// flock and may be called concurrently with mutators. Load is the
+// other lockless path at the caller level: it manages its own
+// conditional flock acquisition for LIBBPF_PIN_BY_NAME maps and
+// otherwise runs without the flock; see the package-level comments
+// on Manager.Load for the safety argument.
 //
 // # Dependencies
 //
