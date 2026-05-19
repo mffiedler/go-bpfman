@@ -86,6 +86,9 @@
             go_1_25
             pkg-config
 
+
+            parallel
+
             # BPF build toolchain. Use clang-unwrapped: the cc-
             # wrapper warns "supplying --target bpfel != x86_64-
             # unknown-linux-gnu may not work correctly" because it
