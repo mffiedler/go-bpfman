@@ -91,7 +91,9 @@ func TestParallel_GRPC(t *testing.T) {
 	// per-failure t.Error lines already make that visible.
 	n := envInt("BPFMAN_GRPC_GOROUTINES", defaultGoroutines)
 	iters := envInt("BPFMAN_GRPC_ITERATIONS", defaultIterations)
+	started := time.Now()
 	t.Cleanup(func() {
+		elapsed := time.Since(started)
 		var totalLifecycles int64
 		t.Logf("gRPC parallel summary (N=%d, iters=%d, ~%d RPCs per lifecycle):",
 			n, iters, rpcsPerLifecycle)
@@ -101,8 +103,14 @@ func TestParallel_GRPC(t *testing.T) {
 			t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
 				spec.name, count, count*int64(rpcsPerLifecycle))
 		}
-		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
-			"total", totalLifecycles, totalLifecycles*int64(rpcsPerLifecycle))
+		totalRPCs := totalLifecycles * int64(rpcsPerLifecycle)
+		rate := 0.0
+		if elapsed > 0 {
+			rate = float64(totalRPCs) / elapsed.Seconds()
+		}
+		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs  (%s wall, ~%.1f rpcs/s)",
+			"total", totalLifecycles, totalRPCs,
+			elapsed.Round(time.Millisecond), rate)
 	})
 
 	for _, spec := range specs {
