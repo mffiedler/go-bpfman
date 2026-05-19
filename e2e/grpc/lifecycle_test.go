@@ -337,24 +337,19 @@ func uprobeSpec() typeSpec {
 	}
 }
 
-// Network types: each goroutine owns its own veth via
-// testnet.NewTestVethPair. Per-goroutine (rather than
-// per-iteration) keeps the kernel netif state stable across the
-// goroutine's iterations and avoids contention on the XDP/TC
-// dispatcher slot limit (MaxPrograms = 10) when many goroutines
-// attach concurrently to the same interface. TCX doesn't have a
-// dispatcher slot limit, but reuses the same shape for
-// consistency.
-
-// newGoroutineVeth allocates a per-goroutine veth pair and
-// returns the host-side interface name. Used by the network
-// type specs; WithoutConnectivityWarmup is required because the
-// gRPC lifecycle test never puts a packet on the wire and the
+// Network types: each spec's attachBuilder allocates its own
+// veth pair via testnet.NewTestVethPair and captures the
+// host-side interface name in the returned closure. The veth
+// thus has goroutine lifetime, which keeps the kernel netif
+// state stable across the goroutine's iterations and avoids
+// contention on the XDP/TC dispatcher slot limit
+// (MaxPrograms = 10) when many goroutines attach concurrently
+// to the same interface. TCX doesn't have a dispatcher slot
+// limit, but reuses the same shape for consistency.
+// WithoutConnectivityWarmup is required at every callsite: the
+// gRPC lifecycle test never puts a packet on the wire, and the
 // default warmup ping does not scale to the goroutine counts
 // the test targets.
-func newGoroutineVeth(t *testing.T) string {
-	return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup()).A.Name
-}
 
 func xdpSpec() typeSpec {
 	return typeSpec{
@@ -363,7 +358,7 @@ func xdpSpec() typeSpec {
 		progName: "pass",
 		enumType: pb.BpfmanProgramType_XDP,
 		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
-			iface := newGoroutineVeth(t)
+			iface := testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup()).A.Name
 			return func() *pb.AttachInfo {
 				return &pb.AttachInfo{Info: &pb.AttachInfo_XdpAttachInfo{
 					XdpAttachInfo: &pb.XDPAttachInfo{
@@ -383,7 +378,7 @@ func tcSpec() typeSpec {
 		progName: "stats",
 		enumType: pb.BpfmanProgramType_TC,
 		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
-			iface := newGoroutineVeth(t)
+			iface := testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup()).A.Name
 			return func() *pb.AttachInfo {
 				return &pb.AttachInfo{Info: &pb.AttachInfo_TcAttachInfo{
 					TcAttachInfo: &pb.TCAttachInfo{
@@ -404,7 +399,7 @@ func tcxSpec() typeSpec {
 		progName: "tcx_stats",
 		enumType: pb.BpfmanProgramType_TCX,
 		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
-			iface := newGoroutineVeth(t)
+			iface := testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup()).A.Name
 			return func() *pb.AttachInfo {
 				return &pb.AttachInfo{Info: &pb.AttachInfo_TcxAttachInfo{
 					TcxAttachInfo: &pb.TCXAttachInfo{
