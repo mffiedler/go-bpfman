@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,35 @@ import (
 	"github.com/frobware/go-bpfman/e2e/uprobetarget"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
+
+// rpcsPerLifecycle is the count of gRPC calls runOneLifecycle
+// issues per successful iteration: Load, Get, Attach, GetLink,
+// ListLinks, Detach, GetLink (negative), Unload, Get (negative).
+// The summary multiplies completed lifecycles by this constant
+// to derive an approximate RPC total. Bump if runOneLifecycle's
+// call list changes.
+const rpcsPerLifecycle = 9
+
+// lifecycleCounts tallies successful lifecycles per spec name.
+// sync.Map handles concurrent inserts and lookups; the value
+// behind each key is an *atomic.Int64 because many goroutines
+// within one sub-test bump the same counter. The cleanup reader
+// runs after all sub-tests finish, so there is no read/write
+// race on the counter itself.
+var lifecycleCounts sync.Map // string -> *atomic.Int64
+
+func bumpLifecycleCount(specName string) {
+	v, _ := lifecycleCounts.LoadOrStore(specName, new(atomic.Int64))
+	v.(*atomic.Int64).Add(1)
+}
+
+func loadLifecycleCount(specName string) int64 {
+	v, ok := lifecycleCounts.Load(specName)
+	if !ok {
+		return 0
+	}
+	return v.(*atomic.Int64).Load()
+}
 
 // typeSpec captures the per-program-type knobs the shared
 // lifecycle helper needs: where the bytecode lives, the program
@@ -62,6 +92,27 @@ func TestParallel_GRPC(t *testing.T) {
 		tcxSpec(),
 	}
 
+	// t.Cleanup on the parent runs after every t.Parallel()
+	// sub-test has finished, so this is the natural place to
+	// summarise the work the daemon has actually serviced. The
+	// numbers exclude any lifecycle that failed mid-flight; the
+	// per-failure t.Error lines already make that visible.
+	n := envInt("BPFMAN_GRPC_GOROUTINES", defaultGoroutines)
+	iters := envInt("BPFMAN_GRPC_ITERATIONS", defaultIterations)
+	t.Cleanup(func() {
+		var totalLifecycles int64
+		t.Logf("gRPC parallel summary (N=%d, iters=%d, ~%d RPCs per lifecycle):",
+			n, iters, rpcsPerLifecycle)
+		for _, spec := range specs {
+			count := loadLifecycleCount(spec.name)
+			totalLifecycles += count
+			t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
+				spec.name, count, count*int64(rpcsPerLifecycle))
+		}
+		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
+			"total", totalLifecycles, totalLifecycles*int64(rpcsPerLifecycle))
+	})
+
 	for _, spec := range specs {
 		spec := spec
 		t.Run(spec.name, func(t *testing.T) {
@@ -70,6 +121,16 @@ func TestParallel_GRPC(t *testing.T) {
 		})
 	}
 }
+
+// Defaults for the per-sub-test goroutine fan-out and per-goroutine
+// iteration count. Picked to give the daemon a meaningful concurrent
+// workload while keeping the matrix wall time tolerable on the
+// developer loop. Override via BPFMAN_GRPC_GOROUTINES and
+// BPFMAN_GRPC_ITERATIONS.
+const (
+	defaultGoroutines = 32
+	defaultIterations = 4
+)
 
 // runParallelLifecycles fans BPFMAN_GRPC_GOROUTINES goroutines,
 // each running BPFMAN_GRPC_ITERATIONS independent lifecycles
@@ -82,8 +143,8 @@ func runParallelLifecycles(t *testing.T, spec typeSpec) {
 	// serialise on the daemon's writer flock for mutating RPCs,
 	// so total wall time scales linearly with
 	// N x ITERS x sub-tests.
-	n := envInt("BPFMAN_GRPC_GOROUTINES", 32)
-	iters := envInt("BPFMAN_GRPC_ITERATIONS", 4)
+	n := envInt("BPFMAN_GRPC_GOROUTINES", defaultGoroutines)
+	iters := envInt("BPFMAN_GRPC_ITERATIONS", defaultIterations)
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, n*iters)
@@ -210,6 +271,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 		return fmt.Errorf("post-Unload: Get %d still succeeds", progID)
 	}
 
+	bumpLifecycleCount(spec.name)
 	return nil
 }
 
