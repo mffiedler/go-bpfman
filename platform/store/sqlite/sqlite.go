@@ -8,11 +8,100 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/frobware/go-bpfman/platform"
 )
+
+// Tuning knob env vars. Both apply to every process that opens
+// the store (the bpfman daemon AND every bpfman CLI invocation
+// against the same DB), which keeps behaviour symmetric across
+// the daemon/CLI split without each having its own config path.
+// Set on the daemon's container env in Kubernetes; inherited by
+// CLI invocations from inside the same container.
+const (
+	// envBusyTimeout overrides the SQLite busy_timeout pragma,
+	// i.e. the wait budget for BeginTx(IMMEDIATE). Parsed as a
+	// Go time.Duration ("5s", "30s", "500ms"). Default is
+	// defaultBusyTimeout.
+	envBusyTimeout = "BPFMAN_SQLITE_BUSY_TIMEOUT"
+	// envTxRetryBackoffs overrides the Go-level retry schedule
+	// applied on top of busy_timeout. Comma-separated durations,
+	// e.g. "50ms,200ms,800ms". An empty value (the env var is
+	// set but has no value) disables retry entirely. Unset uses
+	// defaultTxRetryBackoffs.
+	envTxRetryBackoffs = "BPFMAN_SQLITE_TX_RETRY_BACKOFFS"
+
+	defaultBusyTimeout = 5 * time.Second
+)
+
+// defaultTxRetryBackoffs is the bounded exponential-backoff
+// schedule applied on top of SQLite's own busy_timeout. Three
+// extra attempts after the initial try, ~1.05s of sleep across
+// the three pauses; combined with busy_timeout the worst-case
+// per-tx latency is roughly busy_timeout * 4 + 1.05s.
+var defaultTxRetryBackoffs = []time.Duration{
+	50 * time.Millisecond,
+	200 * time.Millisecond,
+	800 * time.Millisecond,
+}
+
+// resolveTuning consults the env vars and returns the effective
+// busy_timeout / retry backoffs for one store. Invalid values
+// are logged at WARN and the default is used instead -- starting
+// with degraded settings beats refusing to open the store.
+func resolveTuning(logger *slog.Logger) (time.Duration, []time.Duration) {
+	busy := defaultBusyTimeout
+	if s, ok := os.LookupEnv(envBusyTimeout); ok {
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			busy = d
+		} else {
+			logger.Warn("invalid env, using default",
+				"env", envBusyTimeout, "value", s, "default", defaultBusyTimeout)
+		}
+	}
+
+	backoffs := defaultTxRetryBackoffs
+	if s, ok := os.LookupEnv(envTxRetryBackoffs); ok {
+		parsed, err := parseDurationList(s)
+		if err != nil {
+			logger.Warn("invalid env, using default",
+				"env", envTxRetryBackoffs, "value", s, "error", err,
+				"default", defaultTxRetryBackoffs)
+		} else {
+			backoffs = parsed
+		}
+	}
+	return busy, backoffs
+}
+
+// parseDurationList parses a comma-separated list of Go
+// durations. An empty (but set) string returns an empty
+// (non-nil) slice, which the retry loop treats as "disabled".
+// Whitespace around each entry is tolerated so the env value
+// reads cleanly in YAML, where "50ms, 200ms" is more natural
+// than the no-space form.
+func parseDurationList(s string) ([]time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []time.Duration{}, nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]time.Duration, len(parts))
+	for i, p := range parts {
+		d, err := time.ParseDuration(strings.TrimSpace(p))
+		if err != nil {
+			return nil, fmt.Errorf("entry %d %q: %w", i, p, err)
+		}
+		if d < 0 {
+			return nil, fmt.Errorf("entry %d %q: negative duration", i, p)
+		}
+		out[i] = d
+	}
+	return out, nil
+}
 
 // msec formats a duration as milliseconds with 3 decimal places.
 func msec(d time.Duration) string {
@@ -34,6 +123,14 @@ type sqliteStore struct {
 	db     *sql.DB // original connection, used for BeginTx
 	conn   dbConn  // active connection (db or tx)
 	logger *slog.Logger
+
+	// txRetryBackoffs is the Go-level retry schedule for
+	// SQLITE_BUSY surfaced past SQLite's own busy_timeout. Pinned
+	// to the store at New time (resolved from
+	// BPFMAN_SQLITE_TX_RETRY_BACKOFFS or the package default) so
+	// every transaction shares one consistent schedule and a
+	// per-process override does not race a package-level var.
+	txRetryBackoffs []time.Duration
 
 	// Prepared statements for program operations
 	stmtGetProgram             *sql.Stmt
@@ -124,26 +221,33 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	// bypassing busy_timeout. With IMMEDIATE the wait happens at
 	// BeginTx where busy_timeout applies cleanly.
 	//
-	// busy_timeout=5000 gives sqlite's internal busy handler a
-	// 5-second retry budget per BeginTx before it surfaces
-	// SQLITE_BUSY to the caller. RunInTransaction wraps each
-	// call in a Go-level retry loop (see txRetryBackoffs) that
-	// catches any SQLITE_BUSY the inner budget could not absorb;
-	// the worst-case latency for a single transaction is bounded
-	// by busy_timeout * (len(txRetryBackoffs)+1) plus the sum
-	// of the outer pauses, i.e. roughly 5s * 4 + ~1s = ~21s.
+	// busy_timeout gives sqlite's internal busy handler a wait
+	// budget per BeginTx before it surfaces SQLITE_BUSY to the
+	// caller. RunInTransaction wraps each call in a Go-level
+	// retry loop (see txRetryBackoffs on the store) that catches
+	// any SQLITE_BUSY the inner budget could not absorb. Both
+	// knobs are tunable through BPFMAN_SQLITE_BUSY_TIMEOUT and
+	// BPFMAN_SQLITE_TX_RETRY_BACKOFFS; the worst-case latency
+	// for a single transaction is bounded by busy_timeout *
+	// (len(txRetryBackoffs)+1) plus the sum of the outer pauses.
 	//
 	// The two layers stack rather than compete: the inner
 	// budget handles short bursts where the writer lock is
 	// released within a few seconds; the outer retry handles
 	// the long-tail outlier where a single slow flock holder
 	// in the bpfman daemon pins the writer for longer.
-	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}})+"&_txlock=immediate")
+	busyTimeout, txRetryBackoffs := resolveTuning(logger)
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{
+		{"journal_mode", "WAL"},
+		{"synchronous", "NORMAL"},
+		{"foreign_keys", "1"},
+		{"busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10)},
+	})+"&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	s := &sqliteStore{db: db, conn: db, logger: logger}
+	s := &sqliteStore{db: db, conn: db, logger: logger, txRetryBackoffs: txRetryBackoffs}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		// Schema version mismatch - delete and recreate
@@ -161,7 +265,10 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 		return nil, fmt.Errorf("failed to prepare statements for %s: %w", dbPath, err)
 	}
 
-	logger.Info("opened database", "path", dbPath)
+	logger.Info("opened database",
+		"path", dbPath,
+		"busy_timeout", busyTimeout,
+		"tx_retry_backoffs", txRetryBackoffs)
 	return s, nil
 }
 
@@ -194,7 +301,12 @@ func NewInMemory(ctx context.Context, logger *slog.Logger) (platform.Store, erro
 		return nil, fmt.Errorf("failed to open in-memory database: %w", err)
 	}
 
-	s := &sqliteStore{db: db, conn: db, logger: logger}
+	// In-memory stores don't observe writer contention from
+	// other processes (no shared file) but still honour the
+	// env-driven retry budget so tests can exercise the retry
+	// code path under the same configuration shape.
+	_, txRetryBackoffs := resolveTuning(logger)
+	s := &sqliteStore{db: db, conn: db, logger: logger, txRetryBackoffs: txRetryBackoffs}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -402,20 +514,6 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // txStore goes out of scope and subsequent RunInTransaction calls create fresh
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
-// txRetryBackoffs is the bounded exponential-backoff schedule
-// the Go-level SQLITE_BUSY retry loop uses on top of sqlite's
-// internal busy_timeout. Sqlite's busy handler is the inner
-// retry budget (~30s as configured in New); if that's exhausted
-// the outer loop here adds three more attempts with these
-// pauses between them, layering a transient-error recovery on
-// top of the driver-internal one. Past the fourth attempt the
-// error surfaces to the caller as a genuine failure.
-var txRetryBackoffs = []time.Duration{
-	50 * time.Millisecond,
-	200 * time.Millisecond,
-	800 * time.Millisecond,
-}
-
 func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
 	// Timing instrumentation mirrors lock.RunWithTiming's shape.
 	// wait_ms is how long BeginTx blocked waiting for sqlite's
@@ -452,12 +550,12 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func
 			}
 			return nil
 		}
-		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
+		if !isBusyError(err) || attempt >= len(s.txRetryBackoffs) {
 			return err
 		}
-		wait := txRetryBackoffs[attempt]
+		wait := s.txRetryBackoffs[attempt]
 		logger.WarnContext(ctx, "tx busy, retrying",
-			"attempt", attempt+1, "max_attempts", len(txRetryBackoffs)+1,
+			"attempt", attempt+1, "max_attempts", len(s.txRetryBackoffs)+1,
 			"backoff_ms", wait.Milliseconds(), "error", err)
 		select {
 		case <-ctx.Done():

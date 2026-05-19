@@ -132,6 +132,29 @@
 // happens at BeginTx where busy_timeout applies cleanly. There is
 // no application-level mutex to fall back on.
 //
+// # Tuning
+//
+// Two env vars override the contention-recovery knobs. Both are
+// consulted at New / NewInMemory time, so they apply to every
+// process that opens the store -- the bpfman daemon and every
+// bpfman CLI invocation alike, which keeps behaviour symmetric
+// across the daemon/CLI split.
+//
+//   - BPFMAN_SQLITE_BUSY_TIMEOUT: SQLite busy_timeout, the wait
+//     budget BeginTx(IMMEDIATE) gives the writer-lock queue
+//     before surfacing SQLITE_BUSY. Parsed as a Go duration
+//     ("5s", "30s", "500ms"). Default 5s.
+//   - BPFMAN_SQLITE_TX_RETRY_BACKOFFS: comma-separated durations
+//     ("50ms,200ms,800ms") naming the Go-level retry schedule
+//     applied on top of busy_timeout when a transaction still
+//     fails with SQLITE_BUSY. Setting the env var to the empty
+//     string disables retry entirely. Default
+//     "50ms,200ms,800ms".
+//
+// Invalid values are logged at WARN and the package default is
+// used so a misconfigured env never prevents the store from
+// opening.
+//
 // # Prepared Statements
 //
 // All SQL queries use prepared statements rather than inline SQL
