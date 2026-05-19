@@ -32,19 +32,21 @@
 //
 // # Interceptors
 //
-// Two gRPC unary interceptors are chained on every request:
+// A single gRPC unary interceptor runs on every request: it assigns
+// a monotonic operation ID, stores it in context for structured log
+// correlation, and logs handler errors centrally.
 //
-//  1. Logging interceptor: assigns a monotonic operation ID to each
-//     request and stores it in context for structured log correlation.
+// # Locking
 //
-//  2. Lock interceptor: acquires the global file-based writer lock
-//     (lock/) for mutating methods (Load, Unload, Attach, Detach).
-//     Read-only methods (List, Get, PullBytecode) bypass the lock.
-//     The writer lock is stashed in context so handlers can pass it to
-//     manager methods that need it.
-//
-// Handlers also hold a sync.RWMutex (mu) for in-process serialisation
-// of manager access.
+// Mutating handlers (Unload, Attach, Detach) acquire the global
+// file-based writer lock (lock/) per request via withWriterLock and
+// pass the resulting writer scope into the manager call. Read-only
+// handlers (List, Get, ListLinks, PullBytecode) run lockless and
+// rely on the store and kernel adapter for safe concurrent access.
+// Load also runs without a server-level lock; the manager
+// conditionally acquires the writer flock when an object shares
+// LIBBPF_PIN_BY_NAME maps (see Manager.Load). There is no
+// in-process mutex serialising manager access.
 //
 // # Startup Sequence
 //

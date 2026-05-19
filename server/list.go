@@ -17,93 +17,30 @@ import (
 
 // List implements the List RPC method.
 func (s *Server) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-	return withReaderLock(ctx, s, func(ctx context.Context) (*pb.ListResponse, error) {
-		var opts []bpfman.ListOption
-		if req.ProgramType != nil {
-			pt, err := protoToBpfmanType(pb.BpfmanProgramType(*req.ProgramType))
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "invalid program type: %v", err)
-			}
-			opts = append(opts, bpfman.WithTypes(pt))
-		}
-		if len(req.MatchMetadata) > 0 {
-			opts = append(opts, bpfman.MatchingLabels(req.MatchMetadata))
-		}
-
-		result, err := s.mgr.ListPrograms(ctx, opts...)
+	var opts []bpfman.ListOption
+	if req.ProgramType != nil {
+		pt, err := protoToBpfmanType(pb.BpfmanProgramType(*req.ProgramType))
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to list programs: %v", err)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid program type: %v", err)
 		}
+		opts = append(opts, bpfman.WithTypes(pt))
+	}
+	if len(req.MatchMetadata) > 0 {
+		opts = append(opts, bpfman.MatchingLabels(req.MatchMetadata))
+	}
 
-		var results []*pb.ListResponse_ListResult
-		for _, prog := range result.Programs {
-			// Only include programs that are also in kernel
-			if prog.Status.Kernel == nil {
-				continue
-			}
-			kp := prog.Status.Kernel
+	result, err := s.mgr.ListPrograms(ctx, opts...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list programs: %v", err)
+	}
 
-			info := &pb.ProgramInfo{
-				Name:       prog.Record.Meta.Name,
-				Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
-				Metadata:   prog.Record.Meta.Metadata,
-				GlobalData: prog.Record.Load.GlobalData(),
-				MapPinPath: prog.Record.Handles.MapsDir.String(),
-			}
-			if prog.Record.Handles.MapOwnerID != nil {
-				v := uint32(*prog.Record.Handles.MapOwnerID)
-				info.MapOwnerId = &v
-			}
-
-			mapIDs := make([]uint32, len(kp.MapIDs))
-			for i, id := range kp.MapIDs {
-				mapIDs[i] = uint32(id)
-			}
-
-			results = append(results, &pb.ListResponse_ListResult{
-				Info: info,
-				KernelInfo: &pb.KernelProgramInfo{
-					Id:          uint32(prog.Record.ProgramID),
-					Name:        kp.Name,
-					ProgramType: bpfmanTypeToProto(prog.Record.Load.ProgramType()),
-					Tag:         kp.Tag,
-					LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
-					MapIds:      mapIDs,
-					BtfId:       kp.BTFId,
-					BytesXlated: kp.XlatedSize,
-					BytesJited:  kp.JitedSize,
-				},
-			})
+	var results []*pb.ListResponse_ListResult
+	for _, prog := range result.Programs {
+		// Only include programs that are also in kernel
+		if prog.Status.Kernel == nil {
+			continue
 		}
-
-		s.logger.InfoContext(ctx, "List", "programs", len(results))
-		return &pb.ListResponse{Results: results}, nil
-	})
-}
-
-// Get implements the Get RPC method.
-func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	return withReaderLock(ctx, s, func(ctx context.Context) (*pb.GetResponse, error) {
-		prog, err := s.mgr.Get(ctx, kernel.ProgramID(req.Id))
-		if errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
-		}
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get program: %v", err)
-		}
-
 		kp := prog.Status.Kernel
-		if kp == nil {
-			return nil, status.Errorf(codes.Internal, "program %d exists in store but not in kernel (requires reconciliation)", req.Id)
-		}
-
-		// Link IDs from the program's status
-		linkIDs := make([]uint32, 0, len(prog.Status.Links))
-		for _, link := range prog.Status.Links {
-			linkIDs = append(linkIDs, uint32(link.Record.ID))
-		}
-
-		s.logger.InfoContext(ctx, "Get", "program_id", req.Id, "program_name", prog.Record.Meta.Name, "links", len(linkIDs))
 
 		info := &pb.ProgramInfo{
 			Name:       prog.Record.Meta.Name,
@@ -111,7 +48,6 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 			Metadata:   prog.Record.Meta.Metadata,
 			GlobalData: prog.Record.Load.GlobalData(),
 			MapPinPath: prog.Record.Handles.MapsDir.String(),
-			Links:      linkIDs,
 		}
 		if prog.Record.Handles.MapOwnerID != nil {
 			v := uint32(*prog.Record.Handles.MapOwnerID)
@@ -123,96 +59,152 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 			mapIDs[i] = uint32(id)
 		}
 
-		return &pb.GetResponse{
+		results = append(results, &pb.ListResponse_ListResult{
 			Info: info,
 			KernelInfo: &pb.KernelProgramInfo{
-				Id:            req.Id,
-				Name:          kp.Name,
-				ProgramType:   bpfmanTypeToProto(prog.Record.Load.ProgramType()),
-				Tag:           kp.Tag,
-				LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
-				GplCompatible: prog.Record.GPLCompatible,
-				MapIds:        mapIDs,
-				BtfId:         kp.BTFId,
-				BytesXlated:   kp.XlatedSize,
-				BytesJited:    kp.JitedSize,
+				Id:          uint32(prog.Record.ProgramID),
+				Name:        kp.Name,
+				ProgramType: bpfmanTypeToProto(prog.Record.Load.ProgramType()),
+				Tag:         kp.Tag,
+				LoadedAt:    kp.LoadedAt.Format(time.RFC3339),
+				MapIds:      mapIDs,
+				BtfId:       kp.BTFId,
+				BytesXlated: kp.XlatedSize,
+				BytesJited:  kp.JitedSize,
 			},
-		}, nil
-	})
+		})
+	}
+
+	s.logger.InfoContext(ctx, "List", "programs", len(results))
+	return &pb.ListResponse{Results: results}, nil
+}
+
+// Get implements the Get RPC method.
+func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	prog, err := s.mgr.Get(ctx, kernel.ProgramID(req.Id))
+	if errors.Is(err, platform.ErrRecordNotFound) {
+		return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get program: %v", err)
+	}
+
+	kp := prog.Status.Kernel
+	if kp == nil {
+		return nil, status.Errorf(codes.Internal, "program %d exists in store but not in kernel (requires reconciliation)", req.Id)
+	}
+
+	// Link IDs from the program's status
+	linkIDs := make([]uint32, 0, len(prog.Status.Links))
+	for _, link := range prog.Status.Links {
+		linkIDs = append(linkIDs, uint32(link.Record.ID))
+	}
+
+	s.logger.InfoContext(ctx, "Get", "program_id", req.Id, "program_name", prog.Record.Meta.Name, "links", len(linkIDs))
+
+	info := &pb.ProgramInfo{
+		Name:       prog.Record.Meta.Name,
+		Bytecode:   &pb.BytecodeLocation{Location: &pb.BytecodeLocation_File{File: prog.Record.Load.ObjectPath()}},
+		Metadata:   prog.Record.Meta.Metadata,
+		GlobalData: prog.Record.Load.GlobalData(),
+		MapPinPath: prog.Record.Handles.MapsDir.String(),
+		Links:      linkIDs,
+	}
+	if prog.Record.Handles.MapOwnerID != nil {
+		v := uint32(*prog.Record.Handles.MapOwnerID)
+		info.MapOwnerId = &v
+	}
+
+	mapIDs := make([]uint32, len(kp.MapIDs))
+	for i, id := range kp.MapIDs {
+		mapIDs[i] = uint32(id)
+	}
+
+	return &pb.GetResponse{
+		Info: info,
+		KernelInfo: &pb.KernelProgramInfo{
+			Id:            req.Id,
+			Name:          kp.Name,
+			ProgramType:   bpfmanTypeToProto(prog.Record.Load.ProgramType()),
+			Tag:           kp.Tag,
+			LoadedAt:      kp.LoadedAt.Format(time.RFC3339),
+			GplCompatible: prog.Record.GPLCompatible,
+			MapIds:        mapIDs,
+			BtfId:         kp.BTFId,
+			BytesXlated:   kp.XlatedSize,
+			BytesJited:    kp.JitedSize,
+		},
+	}, nil
 }
 
 // ListLinks implements the ListLinks RPC method.
 func (s *Server) ListLinks(ctx context.Context, req *pb.ListLinksRequest) (*pb.ListLinksResponse, error) {
-	return withReaderLock(ctx, s, func(ctx context.Context) (*pb.ListLinksResponse, error) {
-		var opts []bpfman.LinkListOption
-		if req.ProgramId != nil {
-			opts = append(opts, bpfman.WithProgramID(kernel.ProgramID(*req.ProgramId)))
+	var opts []bpfman.LinkListOption
+	if req.ProgramId != nil {
+		opts = append(opts, bpfman.WithProgramID(kernel.ProgramID(*req.ProgramId)))
+	}
+
+	records, err := s.mgr.ListLinks(ctx, opts...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list links: %v", err)
+	}
+
+	resp := &pb.ListLinksResponse{
+		Links: make([]*pb.LinkInfo, 0, len(records)),
+	}
+
+	for _, record := range records {
+		var kernelLinkID uint32
+		if !record.IsSynthetic() {
+			kernelLinkID = uint32(record.ID)
 		}
 
-		records, err := s.mgr.ListLinks(ctx, opts...)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to list links: %v", err)
-		}
+		resp.Links = append(resp.Links, &pb.LinkInfo{
+			Summary: &pb.LinkSummary{
+				KernelLinkId:    kernelLinkID,
+				LinkType:        linkKindToProto(record.Kind),
+				KernelProgramId: uint32(record.ProgramID),
+			},
+		})
+	}
 
-		resp := &pb.ListLinksResponse{
-			Links: make([]*pb.LinkInfo, 0, len(records)),
-		}
-
-		for _, record := range records {
-			var kernelLinkID uint32
-			if !record.IsSynthetic() {
-				kernelLinkID = uint32(record.ID)
-			}
-
-			resp.Links = append(resp.Links, &pb.LinkInfo{
-				Summary: &pb.LinkSummary{
-					KernelLinkId:    kernelLinkID,
-					LinkType:        linkKindToProto(record.Kind),
-					KernelProgramId: uint32(record.ProgramID),
-				},
-			})
-		}
-
-		s.logger.InfoContext(ctx, "ListLinks", "links", len(resp.Links))
-		return resp, nil
-	})
+	s.logger.InfoContext(ctx, "ListLinks", "links", len(resp.Links))
+	return resp, nil
 }
 
 // GetLink implements the GetLink RPC method.
 func (s *Server) GetLink(ctx context.Context, req *pb.GetLinkRequest) (*pb.GetLinkResponse, error) {
-	return withReaderLock(ctx, s, func(ctx context.Context) (*pb.GetLinkResponse, error) {
-		linkID := kernel.LinkID(req.KernelLinkId)
-		info, err := s.mgr.GetLinkInfo(ctx, linkID)
-		if errors.Is(err, inspect.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
-		}
-		if errors.Is(err, platform.ErrRecordNotFound) {
-			return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
-		}
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get link: %v", err)
-		}
+	linkID := kernel.LinkID(req.KernelLinkId)
+	info, err := s.mgr.GetLinkInfo(ctx, linkID)
+	if errors.Is(err, inspect.ErrNotFound) {
+		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
+	}
+	if errors.Is(err, platform.ErrRecordNotFound) {
+		return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.KernelLinkId)
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get link: %v", err)
+	}
 
-		// Require link to be managed (in store)
-		if !info.Presence.InStore {
-			return nil, status.Errorf(codes.NotFound, "link %d not managed by bpfman", req.KernelLinkId)
-		}
+	// Require link to be managed (in store)
+	if !info.Presence.InStore {
+		return nil, status.Errorf(codes.NotFound, "link %d not managed by bpfman", req.KernelLinkId)
+	}
 
-		// Get kernel program ID if available
-		var kernelProgramID uint32
-		if info.Kernel != nil {
-			kernelProgramID = uint32(info.Kernel.ProgramID)
-		}
+	// Get kernel program ID if available
+	var kernelProgramID uint32
+	if info.Kernel != nil {
+		kernelProgramID = uint32(info.Kernel.ProgramID)
+	}
 
-		s.logger.InfoContext(ctx, "GetLink", "link_id", req.KernelLinkId, "type", info.Record.Kind, "program_id", kernelProgramID)
+	s.logger.InfoContext(ctx, "GetLink", "link_id", req.KernelLinkId, "type", info.Record.Kind, "program_id", kernelProgramID)
 
-		return &pb.GetLinkResponse{
-			Link: &pb.LinkInfo{
-				Summary: linkRecordToProtoSummary(info.Record, info.Kernel),
-				Details: linkDetailsToProto(info.Record.Details),
-			},
-		}, nil
-	})
+	return &pb.GetLinkResponse{
+		Link: &pb.LinkInfo{
+			Summary: linkRecordToProtoSummary(info.Record, info.Kernel),
+			Details: linkDetailsToProto(info.Record.Details),
+		},
+	}, nil
 }
 
 // linkRecordToProtoSummary converts a bpfman.LinkRecord to protobuf LinkSummary.

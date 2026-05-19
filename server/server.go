@@ -9,7 +9,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"google.golang.org/grpc"
@@ -227,21 +226,21 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 // Server implements the bpfman gRPC service.
 //
-// The server uses a single-writer/multi-reader model. Mutating
-// handlers wrap their body in withWriterLock (cross-process flock
-// plus the in-process write mutex); read handlers wrap in
-// withReaderLock (in-process read mutex). The Load handler takes
-// no server-level lock so it runs concurrently with everything at
-// the gRPC layer; routing Load through withWriterLock would
-// self-deadlock against the manager's own conditional flock
-// acquisition for LIBBPF_PIN_BY_NAME loads. Cross-process
-// serialisation for shared-map loads is the manager's
-// responsibility (see Manager.Load and
+// The server runs on the cross-process writer flock alone, with no
+// in-process serialisation. Mutating handlers (Unload, Attach,
+// Detach) wrap their body in withWriterLock to acquire the
+// file-based writer lock from the lock package; read handlers
+// (List, Get, ListLinks, PullBytecode) run lockless and rely on
+// the store and kernel adapter for safe concurrent access. The
+// Load handler also takes no server-level lock; routing Load
+// through withWriterLock would self-deadlock against the manager's
+// own conditional flock acquisition for LIBBPF_PIN_BY_NAME loads.
+// Cross-process serialisation for shared-map loads is the
+// manager's responsibility (see Manager.Load and
 // docs/PLAN-load-lockless.md).
 type Server struct {
 	pb.UnimplementedBpfmanServer
 
-	mu        sync.RWMutex
 	layout    fs.Layout
 	netIface  NetIfaceResolver
 	mgr       *manager.Manager
@@ -340,7 +339,7 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 // rpcInterceptor returns a gRPC unary interceptor that assigns an
 // operation ID to each request and logs handler errors centrally.
 // Per-request locking is the handler's own responsibility -- see
-// withWriterLock and withReaderLock.
+// withWriterLock.
 func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (any, error) {
@@ -355,16 +354,14 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// withWriterLock runs fn under the cross-process writer flock and
-// the in-process write mutex. The acquired writer scope is passed
-// to fn so handlers that need to forward it (container uprobes
-// passing the lock fd to the bpfman-ns helper) can do so directly,
-// without a context round-trip.
+// withWriterLock runs fn under the cross-process writer flock.
+// The acquired writer scope is passed to fn so handlers that need
+// to forward it (container uprobes passing the lock fd to the
+// bpfman-ns helper) can do so directly, without a context
+// round-trip.
 func withWriterLock[T any](ctx context.Context, s *Server, fn func(context.Context, lock.WriterScope) (T, error)) (T, error) {
 	var resp T
 	err := lock.RunWithTiming(ctx, s.layout.LockPath(), s.logger, func(ctx context.Context, writeLock lock.WriterScope) error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
 		var fnErr error
 		resp, fnErr = fn(ctx, writeLock)
 		return fnErr
@@ -374,11 +371,4 @@ func withWriterLock[T any](ctx context.Context, s *Server, fn func(context.Conte
 		return zero, err
 	}
 	return resp, nil
-}
-
-// withReaderLock runs fn under the in-process read mutex.
-func withReaderLock[T any](ctx context.Context, s *Server, fn func(context.Context) (T, error)) (T, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return fn(ctx)
 }
