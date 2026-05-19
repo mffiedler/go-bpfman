@@ -138,7 +138,7 @@ STRESS_COUNT ?= 1
 # by default) so checkmake's --warn-undefined-variables lane
 # doesn't trip on the $(if $(VAR),VAR=$(VAR)) idiom that forwards
 # them through sudo in run-e2e-grpc. The test binary itself
-# carries the actual defaults (N=16, ITERS=2); leaving them empty
+# carries the actual defaults; leaving them empty
 # at the make layer means run-e2e-grpc forwards nothing and the
 # binary uses its own defaults.
 BPFMAN_GRPC_GOROUTINES ?=

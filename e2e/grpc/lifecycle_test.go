@@ -78,14 +78,12 @@ func TestParallel_GRPC(t *testing.T) {
 // keep running and we see the full failure set rather than just
 // the first one.
 func runParallelLifecycles(t *testing.T, spec typeSpec) {
-	// Defaults are sized so the full multi-type matrix
-	// (per-sub-test N x ITERS x number-of-sub-tests) completes
-	// in roughly 15-20s under typical contention. Crank either
-	// knob via env for stress runs; lifecycles serialise on the
-	// daemon's writer flock for mutating RPCs, so total wall
-	// time scales linearly with N x ITERS x sub-tests.
-	n := envInt("BPFMAN_GRPC_GOROUTINES", 16)
-	iters := envInt("BPFMAN_GRPC_ITERATIONS", 2)
+	// Crank either knob via env for stress runs; lifecycles
+	// serialise on the daemon's writer flock for mutating RPCs,
+	// so total wall time scales linearly with
+	// N x ITERS x sub-tests.
+	n := envInt("BPFMAN_GRPC_GOROUTINES", 32)
+	iters := envInt("BPFMAN_GRPC_ITERATIONS", 4)
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, n*iters)
