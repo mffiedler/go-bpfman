@@ -10,6 +10,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/kernel"
+	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
 	pb "github.com/frobware/go-bpfman/server/pb"
@@ -179,21 +180,21 @@ func (s *Server) Load(ctx context.Context, req *pb.LoadRequest) (*pb.LoadRespons
 
 // Unload implements the Unload RPC method.
 func (s *Server) Unload(ctx context.Context, req *pb.UnloadRequest) (*pb.UnloadResponse, error) {
-	writeLock := WriteLockFromContext(ctx)
-
-	if err := s.mgr.Unload(ctx, writeLock, kernel.ProgramID(req.Id)); err != nil {
-		var notManaged bpfman.ErrProgramNotManaged
-		var notFound bpfman.ErrProgramNotFound
-		switch {
-		case errors.As(err, &notManaged), errors.As(err, &notFound):
-			return nil, status.Errorf(codes.NotFound, "%v", err)
-		case errors.Is(err, platform.ErrRecordNotFound):
-			return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
-		default:
-			return nil, status.Errorf(codes.Internal, "failed to unload program: %v", err)
+	return withWriterLock(ctx, s, func(ctx context.Context, writeLock lock.WriterScope) (*pb.UnloadResponse, error) {
+		if err := s.mgr.Unload(ctx, writeLock, kernel.ProgramID(req.Id)); err != nil {
+			var notManaged bpfman.ErrProgramNotManaged
+			var notFound bpfman.ErrProgramNotFound
+			switch {
+			case errors.As(err, &notManaged), errors.As(err, &notFound):
+				return nil, status.Errorf(codes.NotFound, "%v", err)
+			case errors.Is(err, platform.ErrRecordNotFound):
+				return nil, status.Errorf(codes.NotFound, "program with ID %d not found", req.Id)
+			default:
+				return nil, status.Errorf(codes.Internal, "failed to unload program: %v", err)
+			}
 		}
-	}
 
-	s.logger.InfoContext(ctx, "Unload", "program_id", req.Id)
-	return &pb.UnloadResponse{}, nil
+		s.logger.InfoContext(ctx, "Unload", "program_id", req.Id)
+		return &pb.UnloadResponse{}, nil
+	})
 }

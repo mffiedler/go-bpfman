@@ -21,52 +21,49 @@ func (s *Server) Attach(ctx context.Context, req *pb.AttachRequest) (*pb.AttachR
 		return nil, status.Error(codes.InvalidArgument, "attach info is required")
 	}
 
-	// Extract lock writeLock once from context (set by rpcInterceptor
-	// for all mutating RPCs). Required for container uprobes;
-	// harmlessly ignored by all other attach types.
-	writeLock := WriteLockFromContext(ctx)
+	return withWriterLock(ctx, s, func(ctx context.Context, writeLock lock.WriterScope) (*pb.AttachResponse, error) {
+		var attachType string
+		var resp *pb.AttachResponse
+		var err error
 
-	var attachType string
-	var resp *pb.AttachResponse
-	var err error
+		programID := kernel.ProgramID(req.Id)
 
-	programID := kernel.ProgramID(req.Id)
+		switch info := req.Attach.Info.(type) {
+		case *pb.AttachInfo_TracepointAttachInfo:
+			attachType = "tracepoint"
+			resp, err = s.attachTracepoint(ctx, writeLock, programID, info.TracepointAttachInfo)
+		case *pb.AttachInfo_XdpAttachInfo:
+			attachType = "xdp"
+			resp, err = s.attachXDP(ctx, writeLock, programID, info.XdpAttachInfo)
+		case *pb.AttachInfo_TcAttachInfo:
+			attachType = "tc"
+			resp, err = s.attachTC(ctx, writeLock, programID, info.TcAttachInfo)
+		case *pb.AttachInfo_TcxAttachInfo:
+			attachType = "tcx"
+			resp, err = s.attachTCX(ctx, writeLock, programID, info.TcxAttachInfo)
+		case *pb.AttachInfo_KprobeAttachInfo:
+			attachType = "kprobe"
+			resp, err = s.attachKprobe(ctx, writeLock, programID, info.KprobeAttachInfo)
+		case *pb.AttachInfo_UprobeAttachInfo:
+			attachType = "uprobe"
+			resp, err = s.attachUprobe(ctx, writeLock, programID, info.UprobeAttachInfo)
+		case *pb.AttachInfo_FentryAttachInfo:
+			attachType = "fentry"
+			resp, err = s.attachFentry(ctx, writeLock, programID, info.FentryAttachInfo)
+		case *pb.AttachInfo_FexitAttachInfo:
+			attachType = "fexit"
+			resp, err = s.attachFexit(ctx, writeLock, programID, info.FexitAttachInfo)
+		default:
+			return nil, status.Errorf(codes.Unimplemented, "attach type %T not yet implemented", req.Attach.Info)
+		}
 
-	switch info := req.Attach.Info.(type) {
-	case *pb.AttachInfo_TracepointAttachInfo:
-		attachType = "tracepoint"
-		resp, err = s.attachTracepoint(ctx, writeLock, programID, info.TracepointAttachInfo)
-	case *pb.AttachInfo_XdpAttachInfo:
-		attachType = "xdp"
-		resp, err = s.attachXDP(ctx, writeLock, programID, info.XdpAttachInfo)
-	case *pb.AttachInfo_TcAttachInfo:
-		attachType = "tc"
-		resp, err = s.attachTC(ctx, writeLock, programID, info.TcAttachInfo)
-	case *pb.AttachInfo_TcxAttachInfo:
-		attachType = "tcx"
-		resp, err = s.attachTCX(ctx, writeLock, programID, info.TcxAttachInfo)
-	case *pb.AttachInfo_KprobeAttachInfo:
-		attachType = "kprobe"
-		resp, err = s.attachKprobe(ctx, writeLock, programID, info.KprobeAttachInfo)
-	case *pb.AttachInfo_UprobeAttachInfo:
-		attachType = "uprobe"
-		resp, err = s.attachUprobe(ctx, writeLock, programID, info.UprobeAttachInfo)
-	case *pb.AttachInfo_FentryAttachInfo:
-		attachType = "fentry"
-		resp, err = s.attachFentry(ctx, writeLock, programID, info.FentryAttachInfo)
-	case *pb.AttachInfo_FexitAttachInfo:
-		attachType = "fexit"
-		resp, err = s.attachFexit(ctx, writeLock, programID, info.FexitAttachInfo)
-	default:
-		return nil, status.Errorf(codes.Unimplemented, "attach type %T not yet implemented", req.Attach.Info)
-	}
+		if err != nil {
+			return nil, err
+		}
 
-	if err != nil {
-		return nil, err
-	}
-
-	s.logger.InfoContext(ctx, "Attach", "type", attachType, "program_id", req.Id, "link_id", resp.LinkId)
-	return resp, nil
+		s.logger.InfoContext(ctx, "Attach", "type", attachType, "program_id", req.Id, "link_id", resp.LinkId)
+		return resp, nil
+	})
 }
 
 // attachTracepoint handles tracepoint attachment via the manager.
@@ -360,21 +357,21 @@ func (s *Server) attachFexit(ctx context.Context, writeLock lock.WriterScope, pr
 
 // Detach implements the Detach RPC method.
 func (s *Server) Detach(ctx context.Context, req *pb.DetachRequest) (*pb.DetachResponse, error) {
-	writeLock := WriteLockFromContext(ctx)
-
-	if err := s.mgr.Detach(ctx, writeLock, kernel.LinkID(req.LinkId)); err != nil {
-		var notManaged bpfman.ErrLinkNotManaged
-		var notFound bpfman.ErrLinkNotFound
-		switch {
-		case errors.As(err, &notManaged), errors.As(err, &notFound):
-			return nil, status.Errorf(codes.NotFound, "%v", err)
-		case errors.Is(err, platform.ErrRecordNotFound):
-			return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.LinkId)
-		default:
-			return nil, status.Errorf(codes.Internal, "detach link: %v", err)
+	return withWriterLock(ctx, s, func(ctx context.Context, writeLock lock.WriterScope) (*pb.DetachResponse, error) {
+		if err := s.mgr.Detach(ctx, writeLock, kernel.LinkID(req.LinkId)); err != nil {
+			var notManaged bpfman.ErrLinkNotManaged
+			var notFound bpfman.ErrLinkNotFound
+			switch {
+			case errors.As(err, &notManaged), errors.As(err, &notFound):
+				return nil, status.Errorf(codes.NotFound, "%v", err)
+			case errors.Is(err, platform.ErrRecordNotFound):
+				return nil, status.Errorf(codes.NotFound, "link with ID %d not found", req.LinkId)
+			default:
+				return nil, status.Errorf(codes.Internal, "detach link: %v", err)
+			}
 		}
-	}
 
-	s.logger.InfoContext(ctx, "Detach", "link_id", req.LinkId)
-	return &pb.DetachResponse{}, nil
+		s.logger.InfoContext(ctx, "Detach", "link_id", req.LinkId)
+		return &pb.DetachResponse{}, nil
+	})
 }
