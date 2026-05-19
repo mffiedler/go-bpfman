@@ -91,9 +91,9 @@ func RunWithTiming(ctx context.Context, lockPath string, logger *slog.Logger, fn
 	start := time.Now()
 	return Run(ctx, lockPath, func(ctx context.Context, scope WriterScope) error {
 		acquired := time.Now()
-		logger.Debug("lock acquired", "path", lockPath, "wait_ms", acquired.Sub(start).Milliseconds())
+		logger.DebugContext(ctx, "lock acquired", "path", lockPath, "wait_ms", acquired.Sub(start).Milliseconds())
 		defer func() {
-			logger.Debug("lock released", "path", lockPath, "held_ms", time.Since(acquired).Milliseconds())
+			logger.DebugContext(ctx, "lock released", "path", lockPath, "held_ms", time.Since(acquired).Milliseconds())
 		}()
 		return fn(ctx, scope)
 	})
