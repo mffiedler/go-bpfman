@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/frobware/go-bpfman/config"
 	driver "github.com/frobware/go-bpfman/csi"
@@ -337,6 +339,12 @@ func (s *Server) serve(ctx context.Context, socketPath, tcpAddr string) error {
 // operation ID to each request and logs handler errors centrally.
 // Per-request locking is the handler's own responsibility -- see
 // withWriterLock.
+//
+// Error logging is split by gRPC status code so operators only see
+// genuine server faults at ERROR. Client-induced statuses (NotFound,
+// InvalidArgument, etc.) and transport statuses (Canceled when a
+// caller hangs up) drop to DEBUG so they remain visible when needed
+// but do not pollute the default INFO-level stream.
 func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler) (any, error) {
@@ -345,7 +353,15 @@ func (s *Server) rpcInterceptor() grpc.UnaryServerInterceptor {
 
 		resp, err := handler(ctx, req)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "grpc error", "op_id", opID, "method", info.FullMethod, "error", err)
+			code := status.Code(err)
+			switch code {
+			case codes.Internal, codes.Unknown, codes.DataLoss:
+				s.logger.ErrorContext(ctx, "rpc handler failed",
+					"method", info.FullMethod, "code", code, "error", err)
+			default:
+				s.logger.DebugContext(ctx, "rpc returned non-ok",
+					"method", info.FullMethod, "code", code, "error", err)
+			}
 		}
 		return resp, err
 	}
