@@ -133,15 +133,11 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	// by busy_timeout * (len(txRetryBackoffs)+1) plus the sum
 	// of the outer pauses, i.e. roughly 5s * 4 + ~1s = ~21s.
 	//
-	// The two layers stack rather than compete. The inner
+	// The two layers stack rather than compete: the inner
 	// budget handles short bursts where the writer lock is
 	// released within a few seconds; the outer retry handles
 	// the long-tail outlier where a single slow flock holder
-	// in the bpfman daemon pins the writer for longer. An
-	// earlier branch took busy_timeout to 30s as
-	// defence-in-depth before the Go-level retry existed; with
-	// retry now wired up, 5s keeps the worst-case bounded and
-	// surfaces a genuine wedge faster.
+	// in the bpfman daemon pins the writer for longer.
 	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}})+"&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
