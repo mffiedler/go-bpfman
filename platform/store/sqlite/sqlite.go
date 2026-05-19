@@ -123,7 +123,16 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	// deadlock by returning SQLITE_BUSY_SNAPSHOT immediately,
 	// bypassing busy_timeout. With IMMEDIATE the wait happens at
 	// BeginTx where busy_timeout applies cleanly.
-	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}})+"&_txlock=immediate")
+	//
+	// busy_timeout=30000 gives sqlite's internal busy handler a
+	// 30-second retry budget before it surfaces SQLITE_BUSY to
+	// the caller. The previous 5s was tight: with N goroutines
+	// queueing on the writer lock and each transaction taking
+	// even a few ms, worst-case wait at the tail of the queue
+	// pushed past 5s under the parallel-gRPC load. 30s leaves
+	// headroom for the kind of bursts that test induces while
+	// still bounded if something genuinely wedges.
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "30000"}})+"&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
