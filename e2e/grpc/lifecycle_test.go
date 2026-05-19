@@ -19,23 +19,23 @@ import (
 // typeSpec captures the per-program-type knobs the shared
 // lifecycle helper needs: where the bytecode lives, the program
 // name inside it, the enum value, optional load-time
-// ProgSpecificInfo (FentryLoadInfo / FexitLoadInfo / ...), an
-// optional per-goroutine setup hook (used by the network types
-// to acquire their own veth), and a builder that constructs the
-// type-specific AttachInfo for each iteration.
+// ProgSpecificInfo (FentryLoadInfo / FexitLoadInfo / ...), and a
+// per-goroutine attach builder.
+//
+// attachBuilder runs once per goroutine to produce a per-iteration
+// AttachInfo closure. Any state the goroutine needs across its
+// iterations (e.g. the host-side netif name for the XDP/TC/TCX
+// types, which create their own veth at goroutine setup time) is
+// captured in the returned closure. That keeps per-goroutine
+// state out of typeSpec's signature and away from
+// interface{}-typed plumbing.
 type typeSpec struct {
-	name     string
-	object   string // basename under testdataDir
-	progName string
-	enumType pb.BpfmanProgramType
-	loadInfo *pb.ProgSpecificInfo
-	// setupGoroutine, if non-nil, runs once per goroutine
-	// before any iteration. Its return value is passed to
-	// buildAttach for every iteration of that goroutine. Used
-	// by XDP/TC/TCX to own their own veth, keeping the
-	// dispatcher slot count and netif state per goroutine.
-	setupGoroutine func(t *testing.T, gid int) any
-	buildAttach    func(t *testing.T, state any) *pb.AttachInfo
+	name          string
+	object        string // basename under testdataDir
+	progName      string
+	enumType      pb.BpfmanProgramType
+	loadInfo      *pb.ProgSpecificInfo
+	attachBuilder func(t *testing.T, gid int) func() *pb.AttachInfo
 }
 
 // TestParallel_GRPC runs each program type's lifecycle as a
@@ -94,12 +94,9 @@ func runParallelLifecycles(t *testing.T, spec typeSpec) {
 		wg.Add(1)
 		go func(gid int) {
 			defer wg.Done()
-			var state any
-			if spec.setupGoroutine != nil {
-				state = spec.setupGoroutine(t, gid)
-			}
+			buildAttach := spec.attachBuilder(t, gid)
 			for i := 0; i < iters; i++ {
-				if err := runOneLifecycle(t, spec, state, gid, i); err != nil {
+				if err := runOneLifecycle(t, spec, buildAttach, gid, i); err != nil {
 					errCh <- fmt.Errorf("%s g%d iter%d: %w", spec.name, gid, i, err)
 					return
 				}
@@ -120,7 +117,7 @@ func runParallelLifecycles(t *testing.T, spec typeSpec) {
 // counter-delta or shape assertions: those live in the .bpfman
 // scripts under e2e/new/. We only verify that the daemon's gRPC
 // surface behaves correctly under concurrency.
-func runOneLifecycle(t *testing.T, spec typeSpec, state any, gid, iter int) error {
+func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachInfo, gid, iter int) error {
 	// 60s per-iteration safety net. With 5 sub-tests fanning in
 	// parallel, a goroutine can wait up to (N x sub-tests) flock
 	// acquisitions x ~50ms ≈ tens of seconds in the worst case
@@ -170,7 +167,7 @@ func runOneLifecycle(t *testing.T, spec typeSpec, state any, gid, iter int) erro
 
 	attachResp, err := client.Attach(ctx, &pb.AttachRequest{
 		Id:     progID,
-		Attach: spec.buildAttach(t, state),
+		Attach: buildAttach(),
 	})
 	if err != nil {
 		return fmt.Errorf("Attach %d: %w", progID, err)
@@ -222,17 +219,29 @@ func runOneLifecycle(t *testing.T, spec typeSpec, state any, gid, iter int) erro
 // Per-type specs.
 // ---------------------------------------------------------------
 
+// constantAttachBuilder lifts a per-iteration AttachInfo into
+// the typeSpec.attachBuilder signature. Use for types whose
+// AttachInfo never varies across goroutines or iterations
+// (kprobe / tracepoint / fentry / fexit) -- the per-goroutine
+// setup is a no-op and the same value is returned for every
+// iteration.
+func constantAttachBuilder(info *pb.AttachInfo) func(*testing.T, int) func() *pb.AttachInfo {
+	return func(_ *testing.T, _ int) func() *pb.AttachInfo {
+		return func() *pb.AttachInfo { return info }
+	}
+}
+
 func kprobeSpec() typeSpec {
 	return typeSpec{
 		name:     "kprobe",
 		object:   "kprobe_counter.bpf.o",
 		progName: "kprobe_counter",
 		enumType: pb.BpfmanProgramType_KPROBE,
-		buildAttach: func(_ *testing.T, _ any) *pb.AttachInfo {
-			return &pb.AttachInfo{Info: &pb.AttachInfo_KprobeAttachInfo{
+		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
+			Info: &pb.AttachInfo_KprobeAttachInfo{
 				KprobeAttachInfo: &pb.KprobeAttachInfo{FnName: "do_unlinkat"},
-			}}
-		},
+			},
+		}),
 	}
 }
 
@@ -242,13 +251,13 @@ func tracepointSpec() typeSpec {
 		object:   "tracepoint_counter.bpf.o",
 		progName: "tracepoint_kill_recorder",
 		enumType: pb.BpfmanProgramType_TRACEPOINT,
-		buildAttach: func(_ *testing.T, _ any) *pb.AttachInfo {
-			return &pb.AttachInfo{Info: &pb.AttachInfo_TracepointAttachInfo{
+		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
+			Info: &pb.AttachInfo_TracepointAttachInfo{
 				TracepointAttachInfo: &pb.TracepointAttachInfo{
 					Tracepoint: "syscalls/sys_enter_kill",
 				},
-			}}
-		},
+			},
+		}),
 	}
 }
 
@@ -263,11 +272,11 @@ func fentrySpec() typeSpec {
 				FentryLoadInfo: &pb.FentryLoadInfo{FnName: "do_unlinkat"},
 			},
 		},
-		buildAttach: func(_ *testing.T, _ any) *pb.AttachInfo {
-			return &pb.AttachInfo{Info: &pb.AttachInfo_FentryAttachInfo{
+		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
+			Info: &pb.AttachInfo_FentryAttachInfo{
 				FentryAttachInfo: &pb.FentryAttachInfo{},
-			}}
-		},
+			},
+		}),
 	}
 }
 
@@ -282,11 +291,11 @@ func fexitSpec() typeSpec {
 				FexitLoadInfo: &pb.FexitLoadInfo{FnName: "do_unlinkat"},
 			},
 		},
-		buildAttach: func(_ *testing.T, _ any) *pb.AttachInfo {
-			return &pb.AttachInfo{Info: &pb.AttachInfo_FexitAttachInfo{
+		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
+			Info: &pb.AttachInfo_FexitAttachInfo{
 				FexitAttachInfo: &pb.FexitAttachInfo{},
-			}}
-		},
+			},
+		}),
 	}
 }
 
@@ -317,14 +326,14 @@ func uprobeSpec() typeSpec {
 		object:   "uprobe_counter.bpf.o",
 		progName: "uprobe_counter",
 		enumType: pb.BpfmanProgramType_UPROBE,
-		buildAttach: func(_ *testing.T, _ any) *pb.AttachInfo {
-			return &pb.AttachInfo{Info: &pb.AttachInfo_UprobeAttachInfo{
+		attachBuilder: constantAttachBuilder(&pb.AttachInfo{
+			Info: &pb.AttachInfo_UprobeAttachInfo{
 				UprobeAttachInfo: &pb.UprobeAttachInfo{
 					Target: target,
 					FnName: &fnName,
 				},
-			}}
-		},
+			},
+		}),
 	}
 }
 
@@ -337,28 +346,32 @@ func uprobeSpec() typeSpec {
 // dispatcher slot limit, but reuses the same shape for
 // consistency.
 
+// newGoroutineVeth allocates a per-goroutine veth pair and
+// returns the host-side interface name. Used by the network
+// type specs; WithoutConnectivityWarmup is required because the
+// gRPC lifecycle test never puts a packet on the wire and the
+// default warmup ping does not scale to the goroutine counts
+// the test targets.
+func newGoroutineVeth(t *testing.T) string {
+	return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup()).A.Name
+}
+
 func xdpSpec() typeSpec {
 	return typeSpec{
 		name:     "xdp",
 		object:   "xdp_pass.bpf.o",
 		progName: "pass",
 		enumType: pb.BpfmanProgramType_XDP,
-		setupGoroutine: func(t *testing.T, _ int) any {
-			// The lifecycle test only attaches a program to
-			// the host-side netif; it never puts a packet on
-			// the wire. Skip the ARP warmup and ip-monitor so
-			// the fixture scales to the goroutine counts this
-			// test targets.
-			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
-		},
-		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(testnet.TestVethPair).A.Name
-			return &pb.AttachInfo{Info: &pb.AttachInfo_XdpAttachInfo{
-				XdpAttachInfo: &pb.XDPAttachInfo{
-					Iface:    iface,
-					Priority: 100,
-				},
-			}}
+		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
+			iface := newGoroutineVeth(t)
+			return func() *pb.AttachInfo {
+				return &pb.AttachInfo{Info: &pb.AttachInfo_XdpAttachInfo{
+					XdpAttachInfo: &pb.XDPAttachInfo{
+						Iface:    iface,
+						Priority: 100,
+					},
+				}}
+			}
 		},
 	}
 }
@@ -369,23 +382,17 @@ func tcSpec() typeSpec {
 		object:   "tc_counter.bpf.o",
 		progName: "stats",
 		enumType: pb.BpfmanProgramType_TC,
-		setupGoroutine: func(t *testing.T, _ int) any {
-			// The lifecycle test only attaches a program to
-			// the host-side netif; it never puts a packet on
-			// the wire. Skip the ARP warmup and ip-monitor so
-			// the fixture scales to the goroutine counts this
-			// test targets.
-			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
-		},
-		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(testnet.TestVethPair).A.Name
-			return &pb.AttachInfo{Info: &pb.AttachInfo_TcAttachInfo{
-				TcAttachInfo: &pb.TCAttachInfo{
-					Iface:     iface,
-					Direction: "ingress",
-					Priority:  100,
-				},
-			}}
+		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
+			iface := newGoroutineVeth(t)
+			return func() *pb.AttachInfo {
+				return &pb.AttachInfo{Info: &pb.AttachInfo_TcAttachInfo{
+					TcAttachInfo: &pb.TCAttachInfo{
+						Iface:     iface,
+						Direction: "ingress",
+						Priority:  100,
+					},
+				}}
+			}
 		},
 	}
 }
@@ -396,23 +403,17 @@ func tcxSpec() typeSpec {
 		object:   "tcx_counter.bpf.o",
 		progName: "tcx_stats",
 		enumType: pb.BpfmanProgramType_TCX,
-		setupGoroutine: func(t *testing.T, _ int) any {
-			// The lifecycle test only attaches a program to
-			// the host-side netif; it never puts a packet on
-			// the wire. Skip the ARP warmup and ip-monitor so
-			// the fixture scales to the goroutine counts this
-			// test targets.
-			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
-		},
-		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(testnet.TestVethPair).A.Name
-			return &pb.AttachInfo{Info: &pb.AttachInfo_TcxAttachInfo{
-				TcxAttachInfo: &pb.TCXAttachInfo{
-					Iface:     iface,
-					Direction: "ingress",
-					Priority:  100,
-				},
-			}}
+		attachBuilder: func(t *testing.T, _ int) func() *pb.AttachInfo {
+			iface := newGoroutineVeth(t)
+			return func() *pb.AttachInfo {
+				return &pb.AttachInfo{Info: &pb.AttachInfo_TcxAttachInfo{
+					TcxAttachInfo: &pb.TCXAttachInfo{
+						Iface:     iface,
+						Direction: "ingress",
+						Priority:  100,
+					},
+				}}
+			}
 		},
 	}
 }
