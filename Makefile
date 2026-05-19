@@ -143,7 +143,8 @@ STRESS_COUNT ?= 1
 # binary uses its own defaults.
 BPFMAN_GRPC_GOROUTINES ?=
 BPFMAN_GRPC_ITERATIONS ?=
-# Forwarded to the daemon subprocess; see logging package's
+# Forwarded to the e2e test binary (test-e2e) and to the daemon
+# subprocess spawned by test-e2e-grpc. See the logging package's
 # component-level spec format (e.g. info,lock=debug,store=debug).
 BPFMAN_LOG ?=
 # SQLite tuning knobs forwarded to the daemon. See
@@ -734,7 +735,7 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # stress run when bumped (CI pins it to 5 so every PR gets a small
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
-	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
 
 # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
 # fans goroutines through load/get/attach/detach/unload over the
