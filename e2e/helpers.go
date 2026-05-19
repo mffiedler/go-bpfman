@@ -11,7 +11,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	iofs "io/fs"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/e2e/testbpf"
 	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
@@ -336,28 +336,14 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 	return result, err
 }
 
-// materialiseBPFFS writes every file in the embedded BPF filesystem
-// out under root, preserving the embed.FS layout (testdata/bpf/...).
-// Called once per TestEnv so the Manager.Load file-path machinery
-// can open real files even though the binary ships its own copy.
+// materialiseBPFFS writes every file in the embedded BPF
+// filesystem out under root, preserving the embed.FS layout
+// (testdata/bpf/...). Called once per TestEnv so the
+// Manager.Load file-path machinery can open real files even
+// though the binary ships its own copy. Thin wrapper around
+// the shared helper in e2e/testbpf.
 func materialiseBPFFS(root string) error {
-	return iofs.WalkDir(bpfFS, ".", func(name string, d iofs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		dest := filepath.Join(root, name)
-		if d.IsDir() {
-			return os.MkdirAll(dest, 0o755)
-		}
-		data, err := bpfFS.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("read embedded %s: %w", name, err)
-		}
-		if err := os.WriteFile(dest, data, 0o600); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
-		}
-		return nil
-	})
+	return testbpf.Materialise(bpfFS, root)
 }
 
 // Unload unloads a BPF program.

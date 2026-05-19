@@ -32,14 +32,12 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	iofs "io/fs"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -48,6 +46,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/frobware/go-bpfman/e2e/testbpf"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -126,11 +125,14 @@ func bootstrap() (func(), error) {
 	}
 	cleanupRoot := func() { _ = os.RemoveAll(tmpRoot) }
 
-	testdataDir = filepath.Join(tmpRoot, "testdata")
-	if err := materialiseBPFFS(testdataDir); err != nil {
+	// Materialise mirrors the embed.FS layout: bpfFS contains
+	// "testdata/bpf/<name>.bpf.o" entries, so the daemon-visible
+	// files land at $tmpRoot/testdata/bpf/<name>.bpf.o.
+	if err := testbpf.Materialise(bpfFS, tmpRoot); err != nil {
 		cleanupRoot()
 		return nil, fmt.Errorf("materialise embedded testdata: %w", err)
 	}
+	testdataDir = filepath.Join(tmpRoot, "testdata", "bpf")
 
 	runtimeDir := filepath.Join(tmpRoot, "runtime")
 	cacheDir := filepath.Join(tmpRoot, "cache")
@@ -223,39 +225,6 @@ func resolveBpfmanBinary() (string, error) {
 		return "", fmt.Errorf("bpfman not found on PATH (override via BPFMAN_BIN): %w", err)
 	}
 	return p, nil
-}
-
-// materialiseBPFFS writes every embedded .bpf.o into dir so the
-// daemon (a separate process) can open them as ordinary files
-// via the Load RPC's file:// bytecode location. Mirrors
-// e2e.helpers.materialiseBPFFS in shape; the difference is the
-// flatter layout -- the embed.FS root holds testdata/bpf/X.o
-// and we strip the prefix so the on-disk layout is just dir/X.o.
-func materialiseBPFFS(dir string) error {
-	const prefix = "testdata/bpf/"
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-	return iofs.WalkDir(bpfFS, ".", func(name string, d iofs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasPrefix(name, prefix) {
-			return nil
-		}
-		data, err := bpfFS.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("read embedded %s: %w", name, err)
-		}
-		dest := filepath.Join(dir, name[len(prefix):])
-		if err := os.WriteFile(dest, data, 0o600); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
-		}
-		return nil
-	})
 }
 
 // testdataPath joins testdataDir with name. Used by per-type
