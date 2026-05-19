@@ -402,27 +402,15 @@ DISPATCHER_BPF_SOURCES := $(filter-out dispatcher/bpf/xdp_dispatcher_v1.bpf.c,$(
 DISPATCHER_BPF_EMBEDS  := $(addprefix dispatcher/,$(notdir $(DISPATCHER_BPF_SOURCES:.bpf.c=.bpf.o)))
 DISPATCHER_BPF_DEPS    := $(DISPATCHER_BPF_EMBEDS:.bpf.o=.bpf.d)
 
-# E2E testdata BPF: sources and outputs all live in
-# e2e/testdata/bpf/.
+# E2E testdata BPF: sources, headers, and compiled outputs all
+# live in e2e/testdata/bpf/. The embed declaration in the e2e
+# package picks up the .bpf.o tree at compile time and both
+# e2e.test and e2e-grpc.test consume it through that one path
+# (e2e/grpc imports the e2e package for BpfFS), so there is no
+# separate per-package mirror to keep in sync.
 E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
-
-# E2E BPF objects the gRPC parallel test embeds via go:embed.
-# Go's embed forbids paths containing "..", so the package owns
-# its own testdata/bpf/ tree populated from the canonical
-# e2e/testdata/bpf/ tree by the pattern rule below. The full
-# set is mirrored rather than a hand-picked subset: adding a new
-# program type to the gRPC test does not require editing the
-# Makefile, and the binary-size cost of carrying the unused
-# objects is negligible (~50KB-200KB across the whole tree).
-# All copies are generated; *.bpf.o is excluded from git
-# globally.
-E2E_GRPC_BPF_OBJECTS := $(patsubst e2e/testdata/bpf/%,e2e/grpc/testdata/bpf/%,$(E2E_BPF_OBJECTS))
-
-e2e/grpc/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.o
-	@mkdir -p $(dir $@)
-	cp $< $@
 
 # platform/ebpf BPF: the package's discover_test.go embeds
 # xdp_pass.bpf.o via go:embed, so the compile rule emits the
@@ -772,7 +760,7 @@ GRPC_TEST_LOG ?= /tmp/bpfman-test-e2e-grpc.log
 E2E_GRPC_TEST_BIN     ?= $(BIN_DIR)/e2e-grpc.test
 E2E_GRPC_BPFMAN_BIN   ?= $(BIN_DIR)/bpfman
 
-$(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) $(E2E_GRPC_BPF_OBJECTS) | $(BIN_DIR)
+$(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
 
 build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
@@ -892,7 +880,7 @@ bpfman-goimports: $(BIN_DIR)/golangci-lint
 #   - !cgo_sqlite pass: modernc.org/sqlite branch (the default).
 #   - cgo_sqlite pass: mattn/go-sqlite3 alternate, mutually
 #     exclusive with the !cgo_sqlite branch.
-bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS) $(E2E_GRPC_BPF_OBJECTS)
+bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS)
 	go vet -tags 'e2e,nsenter' ./...
 	go vet -tags 'cgo_sqlite,e2e,nsenter' ./...
 
@@ -983,7 +971,6 @@ platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 clean-bpf:
 	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
 	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS) \
-	      $(E2E_GRPC_BPF_OBJECTS) \
 	      $(PLATFORM_EBPF_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_DEPS)
 
 -include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS) $(PLATFORM_EBPF_BPF_DEPS)

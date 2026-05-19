@@ -30,7 +30,6 @@ package grpcparallel
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"net"
 	"os"
@@ -46,21 +45,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/frobware/go-bpfman/e2e"
 	"github.com/frobware/go-bpfman/e2e/testbpf"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
-
-// bpfFS embeds the BPF objects the per-type specs load. The
-// files live under testdata/bpf/ relative to this source file;
-// the Makefile rule for $(BIN_DIR)/e2e-grpc.test populates that
-// directory by copying from the canonical e2e/testdata/bpf/ tree
-// so we never have two source-of-truth copies in git. Embedding
-// makes the test binary hermetic in the same way e2e.test is --
-// the .o files travel with the binary instead of being resolved
-// from a path on the runner.
-//
-//go:embed testdata/bpf/*.bpf.o
-var bpfFS embed.FS
 
 var (
 	// client is the shared gRPC client. pb.BpfmanClient is
@@ -125,10 +113,10 @@ func bootstrap() (func(), error) {
 	}
 	cleanupRoot := func() { _ = os.RemoveAll(tmpRoot) }
 
-	// Materialise mirrors the embed.FS layout: bpfFS contains
-	// "testdata/bpf/<name>.bpf.o" entries, so the daemon-visible
-	// files land at $tmpRoot/testdata/bpf/<name>.bpf.o.
-	if err := testbpf.Materialise(bpfFS, tmpRoot); err != nil {
+	// Materialise mirrors the embed.FS layout: e2e.BpfFS
+	// contains "testdata/bpf/<name>.bpf.o" entries, so the
+	// daemon-visible files land at $tmpRoot/testdata/bpf/<name>.bpf.o.
+	if err := testbpf.Materialise(e2e.BpfFS, tmpRoot); err != nil {
 		cleanupRoot()
 		return nil, fmt.Errorf("materialise embedded testdata: %w", err)
 	}

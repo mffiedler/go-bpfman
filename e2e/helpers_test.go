@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	cryptorand "crypto/rand"
-	"embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -44,17 +43,6 @@ import (
 	"github.com/frobware/go-bpfman/platform/image/verify"
 	"github.com/frobware/go-bpfman/platform/store/sqlite"
 )
-
-// bpfFS embeds the compiled BPF objects under testdata/bpf/ so the
-// e2e.test binary is self-contained: at runtime the bytes are
-// materialised under each test's baseDir (see materialiseBPFFS),
-// and LoadFile resolves relative paths against that directory.
-// The embed pattern resolves at `go test -c` time, so the Makefile
-// rule for $(E2E_BPF_OBJECTS) is still a real build prereq for
-// e2e.test.
-//
-//go:embed testdata/bpf/*.bpf.o
-var bpfFS embed.FS
 
 // TestEnv provides a test environment for e2e tests.
 //
@@ -343,7 +331,7 @@ func (e *TestEnv) LoadFile(ctx context.Context, filePath string, programs []mana
 // though the binary ships its own copy. Thin wrapper around
 // the shared helper in e2e/testbpf.
 func materialiseBPFFS(root string) error {
-	return testbpf.Materialise(bpfFS, root)
+	return testbpf.Materialise(BpfFS, root)
 }
 
 // Unload unloads a BPF program.
