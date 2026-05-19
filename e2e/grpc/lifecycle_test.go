@@ -25,27 +25,6 @@ import (
 // call list changes.
 const rpcsPerLifecycle = 9
 
-// lifecycleCounts tallies successful lifecycles per spec name.
-// sync.Map handles concurrent inserts and lookups; the value
-// behind each key is an *atomic.Int64 because many goroutines
-// within one sub-test bump the same counter. The cleanup reader
-// runs after all sub-tests finish, so there is no read/write
-// race on the counter itself.
-var lifecycleCounts sync.Map // string -> *atomic.Int64
-
-func bumpLifecycleCount(specName string) {
-	v, _ := lifecycleCounts.LoadOrStore(specName, new(atomic.Int64))
-	v.(*atomic.Int64).Add(1)
-}
-
-func loadLifecycleCount(specName string) int64 {
-	v, ok := lifecycleCounts.Load(specName)
-	if !ok {
-		return 0
-	}
-	return v.(*atomic.Int64).Load()
-}
-
 // typeSpec captures the per-program-type knobs the shared
 // lifecycle helper needs: where the bytecode lives, the program
 // name inside it, the enum value, optional load-time
@@ -92,6 +71,19 @@ func TestParallel_GRPC(t *testing.T) {
 		tcxSpec(),
 	}
 
+	// counts is populated entirely here, before any sub-test
+	// goroutine starts, then read only inside t.Cleanup after
+	// every sub-test has finished. No goroutine ever writes a
+	// new key, so a plain map (rather than sync.Map) suffices.
+	// The values are *atomic.Int64 because the per-sub-test
+	// goroutine pool bumps the same counter concurrently. The
+	// whole table lives for one TestParallel_GRPC invocation,
+	// so -test.count > 1 sees fresh counts each iteration.
+	counts := make(map[string]*atomic.Int64, len(specs))
+	for _, spec := range specs {
+		counts[spec.name] = new(atomic.Int64)
+	}
+
 	// t.Cleanup on the parent runs after every t.Parallel()
 	// sub-test has finished, so this is the natural place to
 	// summarise the work the daemon has actually serviced. The
@@ -104,7 +96,7 @@ func TestParallel_GRPC(t *testing.T) {
 		t.Logf("gRPC parallel summary (N=%d, iters=%d, ~%d RPCs per lifecycle):",
 			n, iters, rpcsPerLifecycle)
 		for _, spec := range specs {
-			count := loadLifecycleCount(spec.name)
+			count := counts[spec.name].Load()
 			totalLifecycles += count
 			t.Logf("  %-10s %4d lifecycles  ~%6d rpcs",
 				spec.name, count, count*int64(rpcsPerLifecycle))
@@ -115,9 +107,10 @@ func TestParallel_GRPC(t *testing.T) {
 
 	for _, spec := range specs {
 		spec := spec
+		counter := counts[spec.name]
 		t.Run(spec.name, func(t *testing.T) {
 			t.Parallel()
-			runParallelLifecycles(t, spec)
+			runParallelLifecycles(t, spec, counter)
 		})
 	}
 }
@@ -137,8 +130,9 @@ const (
 // of the given type. Failures inside a goroutine stop that
 // goroutine and surface as t.Error after wg.Wait, so siblings
 // keep running and we see the full failure set rather than just
-// the first one.
-func runParallelLifecycles(t *testing.T, spec typeSpec) {
+// the first one. counter accumulates successful lifecycles for
+// the cleanup summary; runOneLifecycle itself is counter-agnostic.
+func runParallelLifecycles(t *testing.T, spec typeSpec, counter *atomic.Int64) {
 	// Crank either knob via env for stress runs; lifecycles
 	// serialise on the daemon's writer flock for mutating RPCs,
 	// so total wall time scales linearly with
@@ -159,6 +153,7 @@ func runParallelLifecycles(t *testing.T, spec typeSpec) {
 					errCh <- fmt.Errorf("%s g%d iter%d: %w", spec.name, gid, i, err)
 					return
 				}
+				counter.Add(1)
 			}
 		}(g)
 	}
@@ -271,7 +266,6 @@ func runOneLifecycle(t *testing.T, spec typeSpec, buildAttach func() *pb.AttachI
 		return fmt.Errorf("post-Unload: Get %d still succeeds", progID)
 	}
 
-	bumpLifecycleCount(spec.name)
 	return nil
 }
 
