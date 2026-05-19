@@ -26,6 +26,11 @@
 //	BPFMAN_GRPC_GOROUTINES   goroutines per sub-test (default 32)
 //	BPFMAN_GRPC_ITERATIONS   iterations per goroutine (default 4)
 //	BPFMAN_BIN               path to bpfman binary (default: looked up on $PATH)
+//
+// The spawned daemon's stdout and stderr are redirected to
+// /tmp/bpfman-grpc-daemon.log (truncated each run) so the test
+// process's own stderr only carries the Go test framework's
+// output. The path is printed at startup.
 package grpcparallel
 
 import (
@@ -49,6 +54,14 @@ import (
 	"github.com/frobware/go-bpfman/e2e/testbpf"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
+
+// daemonLogPath is where the spawned bpfman daemon's stdout
+// and stderr are written. Fixed location outside the per-run
+// tmp root so RemoveAll(tmpRoot) on cleanup does not take the
+// log with it; the file is overwritten on each test invocation
+// rather than appended, so the contents always reflect the
+// most recent run.
+const daemonLogPath = "/tmp/bpfman-grpc-daemon.log"
 
 var (
 	// client is the shared gRPC client. pb.BpfmanClient is
@@ -132,6 +145,20 @@ func bootstrap() (func(), error) {
 		}
 	}
 
+	// Route the daemon's stdout/stderr to a fixed file outside
+	// tmpRoot so it survives RemoveAll(tmpRoot) and can be
+	// inspected after the test exits. Keeping it out of the
+	// test binary's own stderr is what stops the daemon log
+	// from interleaving with the test framework's PASS/FAIL
+	// lines and from competing with another concurrent run's
+	// tee for ownership of /tmp/bpfman-test-e2e-grpc.log.
+	logFile, err := os.OpenFile(daemonLogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		cleanupRoot()
+		return nil, fmt.Errorf("open daemon log %s: %w", daemonLogPath, err)
+	}
+	fmt.Fprintf(os.Stderr, "daemon log: %s\n", daemonLogPath)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	serverCmd := exec.CommandContext(ctx, binary, "serve",
 		"--runtime-dir", runtimeDir,
@@ -144,8 +171,8 @@ func bootstrap() (func(), error) {
 		// run.
 		"--tcp-address=",
 	)
-	serverCmd.Stdout = os.Stderr
-	serverCmd.Stderr = os.Stderr
+	serverCmd.Stdout = logFile
+	serverCmd.Stderr = logFile
 	serverCmd.SysProcAttr = &syscall.SysProcAttr{
 		// Own process group so a stray ctx-cancel SIGKILL
 		// does not also reach this test binary.
@@ -160,6 +187,7 @@ func bootstrap() (func(), error) {
 
 	if err := serverCmd.Start(); err != nil {
 		cancel()
+		_ = logFile.Close()
 		cleanupRoot()
 		return nil, fmt.Errorf("start daemon: %w", err)
 	}
@@ -175,6 +203,7 @@ func bootstrap() (func(), error) {
 			<-done
 		}
 		cancel()
+		_ = logFile.Close()
 		cleanupRoot()
 	}
 

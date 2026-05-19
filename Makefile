@@ -737,20 +737,11 @@ test-e2e: $(BIN_DIR)/e2e.test
 # (e.g. info,lock=debug,store=debug). All three are forwarded into
 # the sudo'd test process.
 #
-# Test output is split: the full daemon + test transcript goes to
-# $(GRPC_TEST_LOG) (override on the command line if you need a
-# different path), and only the test framework's PASS/FAIL lines
-# and any SQLite BUSY signals are streamed to the terminal.
-# That keeps the terminal readable when the daemon is running with
-# the verbose component logging the investigation paths need, while
-# preserving the full trace for post-mortem analysis.
-#
-# Exit code preservation: `set -o pipefail` in a bash sub-shell
-# ensures the test binary's non-zero exit propagates through the
-# `tee | awk` pipeline. awk-not-grep is deliberate: grep returns 1
-# when nothing matches, which would mask a passing test as a
-# failure.
-GRPC_TEST_LOG ?= /tmp/bpfman-test-e2e-grpc.log
+# Output: the spawned bpfman daemon writes its stdout/stderr to
+# /tmp/bpfman-grpc-daemon.log (truncated each run), so the test
+# binary's own stdout/stderr only carries the Go test framework's
+# output -- short enough to read on the terminal, no tee/awk
+# pipeline required.
 
 # Where to look for the artefacts at runtime. Defaults point at
 # the in-tree build outputs; ci-test-e2e-grpc overrides them to
@@ -772,8 +763,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # pass an absolute path through sudo rather than relying on PATH
 # munging.
 run-e2e-grpc:
-	@echo "Full log: $(GRPC_TEST_LOG)"
-	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed|gRPC parallel summary|lifecycles| ops /"'
+	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
