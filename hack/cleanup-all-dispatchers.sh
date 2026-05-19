@@ -1,28 +1,36 @@
 #!/usr/bin/env bash
 #
-# Drain every bpfman dispatcher attached anywhere on the host. Walks
-# the root netns plus every netns under /run/netns, looks up each
-# interface's XDP and TC attachments via `bpftool net show`, and for
-# every attachment whose backing program is `xdp_dispatcher` or
-# `tc_dispatcher` detaches it (XDP via `ip link set ... xdp off`, TC
+# Emit ip(8) / tc(8) commands that drain every bpfman dispatcher
+# attached anywhere on the host. Walks the root netns plus every
+# netns under /run/netns, looks up each interface's XDP and TC
+# attachments via `bpftool net show`, and for every attachment whose
+# backing program is `xdp_dispatcher` or `tc_dispatcher` emits the
+# command that detaches it (XDP via `ip link set ... xdp off`, TC
 # via `tc qdisc del ... clsact`). The kernel then garbage-collects
 # the program once its last reference drops, unless something else
 # (a pinned file, an open fd) keeps it alive.
+#
+# The script does not mutate anything itself. It writes the commands
+# it would run to stdout so you can read them before deciding to
+# execute. Audit, then pipe to `sudo sh`:
+#
+#   sudo hack/cleanup-all-dispatchers.sh             # audit
+#   sudo hack/cleanup-all-dispatchers.sh | sudo sh   # execute
 #
 # When and why to use:
 #   - You killed the bpfman daemon or wiped its DB, and the kernel
 #     still carries dispatcher programs whose owning links you no
 #     longer have any handle on. `bpfman dispatcher list` shows
 #     nothing (the DB is empty) but `bpftool prog show | grep
-#     dispatcher` still shows them. This script is the blunt
-#     instrument that drains them.
+#     dispatcher` still shows them. This script lets you drain them.
 #   - You want a known-clean kernel state before re-running a test
-#     suite, even if some residue is unrelated to the parallel-scripts
-#     harness (e.g. left over from a manual `bpfman link attach`).
+#     suite, even if some residue is unrelated to the parallel-
+#     scripts harness (e.g. left over from a manual
+#     `bpfman link attach`).
 #
 # Why this and not cleanup-test-dispatchers.sh:
 #   - cleanup-test-dispatchers.sh only touches interfaces inside the
-#     harness's `B<hex>N` namespace and removes XDP / clsact
+#     harness's `B<hex>N` namespace and emits XDP / clsact drains
 #     unconditionally, accepting that anything in that scope is the
 #     harness's. It is the right tool when you only want to clear
 #     test residue and might have a real bpfman daemon running on
@@ -33,10 +41,8 @@
 #     The cost is that it depends on bpftool and on those exact
 #     program names; a renamed dispatcher would be missed.
 #
-# Safe to run on a quiescent system. Idempotent: a second invocation
-# with nothing to drain prints "done" with no output above it.
-#
-# Usage: sudo hack/cleanup-all-dispatchers.sh
+# Idempotent: re-running emits nothing once no dispatcher
+# attachments remain.
 
 set -euo pipefail
 
@@ -64,20 +70,20 @@ prog_name_is() {
     [[ "$got" == "$want" ]]
 }
 
-# drain_netns walks every interface in one netns and detaches any
-# attached bpfman dispatcher. The netns argument is empty for the
-# root netns; an explicit name routes bpftool / ip / tc through
-# `ip netns exec`.
-drain_netns() {
+# emit_drains walks every interface in one netns and emits the
+# command that detaches any bpfman dispatcher attached to it. The
+# netns argument is empty for the root netns; an explicit name
+# prefixes the emitted commands with `ip -n NS` / `ip netns exec
+# NS tc`.
+emit_drains() {
     local ns="${1:-}"
-    local label="${ns:-host}"
     local nsenter=()
-    local ip_cmd=(ip)
-    local tc_cmd=(tc)
+    local ip_prefix='ip'
+    local tc_prefix='tc'
     if [[ -n "$ns" ]]; then
         nsenter=(ip netns exec "$ns")
-        ip_cmd=(ip -n "$ns")
-        tc_cmd=("${nsenter[@]}" tc)
+        ip_prefix="ip -n $ns"
+        tc_prefix="ip netns exec $ns tc"
     fi
 
     local net_json
@@ -87,21 +93,19 @@ drain_netns() {
     fi
 
     # XDP entries carry the prog id but not the name; look the name
-    # up per id so we only drain interfaces whose XDP is actually a
-    # bpfman dispatcher.
+    # up per id so we only emit drains for interfaces whose XDP is
+    # actually a bpfman dispatcher.
     while read -r ifname id; do
         [[ -z "$ifname" || -z "$id" ]] && continue
         if prog_name_is "$id" "xdp_dispatcher"; then
-            if "${ip_cmd[@]}" link set dev "$ifname" xdp off 2>/dev/null; then
-                echo "drained xdp_dispatcher on $ifname ($label)"
-            fi
+            printf '%s link set dev %s xdp off\n' "$ip_prefix" "$ifname"
         fi
     done < <(echo "$net_json" | jq -r '.[0].xdp[]? | "\(.devname) \(.id)"')
 
     # TC entries already include the program name, so the name check
     # is local. A single clsact qdisc carries both ingress and egress
-    # filters; removing it cascades both, so we deduplicate by ifname
-    # to avoid a redundant second `tc qdisc del`.
+    # filters; removing it cascades both, so we deduplicate by
+    # ifname to avoid a redundant second `tc qdisc del`.
     local seen=()
     while read -r ifname name; do
         [[ -z "$ifname" || -z "$name" ]] && continue
@@ -119,17 +123,13 @@ drain_netns() {
             continue
         fi
         seen+=("$ifname")
-        if "${tc_cmd[@]}" qdisc del dev "$ifname" clsact 2>/dev/null; then
-            echo "drained tc_dispatcher on $ifname ($label)"
-        fi
+        printf '%s qdisc del dev %s clsact\n' "$tc_prefix" "$ifname"
     done < <(echo "$net_json" | jq -r '.[0].tc[]? | "\(.devname) \(.name)"')
 }
 
-drain_netns ""
+emit_drains ""
 
 shopt -s nullglob
 for path in /run/netns/*; do
-    drain_netns "$(basename "$path")"
+    emit_drains "$(basename "$path")"
 done
-
-echo "done"
