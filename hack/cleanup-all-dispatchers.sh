@@ -28,18 +28,30 @@
 #     scripts harness (e.g. left over from a manual
 #     `bpfman link attach`).
 #
-# Why this and not cleanup-test-dispatchers.sh:
-#   - cleanup-test-dispatchers.sh only touches interfaces inside the
-#     harness's `B<hex>N` namespace and emits XDP / clsact drains
-#     unconditionally, accepting that anything in that scope is the
-#     harness's. It is the right tool when you only want to clear
-#     test residue and might have a real bpfman daemon running on
-#     production interfaces you must not touch.
+# Relationship to cleanup-e2e-test-resources.sh:
+#   - cleanup-e2e-test-resources.sh handles residue inside the e2e
+#     harness's `B<hex>N` namespace: it drains XDP / clsact off
+#     every interface in that scope unconditionally and then
+#     deletes the interfaces and netns themselves. It is enough on
+#     its own when all leaked attachments are on test interfaces
+#     and you do not care about residue elsewhere.
 #   - This script is name-filtered (only programs literally named
 #     xdp_dispatcher / tc_dispatcher are drained) so it can safely
 #     run on a host where other XDP / TC programs are also present.
 #     The cost is that it depends on bpftool and on those exact
 #     program names; a renamed dispatcher would be missed.
+#
+# Two-step usage when both kinds of residue may be present (e.g.
+# the daemon was running against production interfaces before it
+# was killed). Run this script first so it only drains, then the
+# e2e script to finish the test-namespace cleanup. Doing the
+# host-wide drain after the e2e script would find nothing to drain
+# on the test interfaces because they would already be gone:
+#
+#   sudo hack/cleanup-all-dispatchers.sh           # audit (first)
+#   sudo hack/cleanup-e2e-test-resources.sh        # audit (second)
+#   { sudo hack/cleanup-all-dispatchers.sh; \
+#     sudo hack/cleanup-e2e-test-resources.sh; } | sudo sh   # execute
 #
 # Idempotent: re-running emits nothing once no dispatcher
 # attachments remain.

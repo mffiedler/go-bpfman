@@ -17,12 +17,31 @@
 #   sudo hack/cleanup-e2e-test-resources.sh             # audit
 #   sudo hack/cleanup-e2e-test-resources.sh | sudo sh   # execute
 #
-# Use cleanup-all-dispatchers.sh instead when the residue is broader
-# than the test namespace -- e.g. you killed the bpfman daemon
-# itself and want every xdp_dispatcher / tc_dispatcher gone,
-# regardless of which interface it lives on.
+# Relationship to cleanup-all-dispatchers.sh:
+#   - This script is shotgun within the test namespace: anything
+#     attached to a `B<hex>N` interface is detached and the
+#     interface deleted. Enough on its own for ordinary e2e
+#     residue.
+#   - cleanup-all-dispatchers.sh is name-filtered (only programs
+#     literally named xdp_dispatcher / tc_dispatcher) and walks
+#     every netns. Use it when residue can be outside the e2e
+#     namespace -- e.g. a leaked dispatcher on lo, on a production
+#     NIC, or in a non-test netns.
 #
-# Order of the emitted command stream is load-bearing:
+# Two-step usage when both kinds of residue may be present. Run
+# cleanup-all-dispatchers.sh first because it only drains; this
+# script then drains again (no-op) and deletes the test interfaces
+# and netns. Reversing the order would mean the all-dispatchers
+# pass finds nothing on the test interfaces because they have
+# already been deleted, which is harmless but pointless:
+#
+#   sudo hack/cleanup-all-dispatchers.sh           # audit (first)
+#   sudo hack/cleanup-e2e-test-resources.sh        # audit (second)
+#   { sudo hack/cleanup-all-dispatchers.sh; \
+#     sudo hack/cleanup-e2e-test-resources.sh; } | sudo sh   # execute
+#
+# Order of the emitted command stream within this script is also
+# load-bearing:
 #
 #   1. Drain XDP and clsact off every interface in each test netns.
 #   2. Drain XDP and clsact off every host-side test interface.
