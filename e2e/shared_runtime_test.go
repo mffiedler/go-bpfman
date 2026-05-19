@@ -71,6 +71,19 @@ type suiteRuntime struct {
 	logger      *slog.Logger
 	baseDir     string
 	closeStore  func() error
+
+	// baselinePrograms / baselineLinks record the program and link
+	// IDs that were already in the store when the suite opened the
+	// DB. The end-of-suite leak detector excludes these so residue
+	// inherited from a prior crashed run is not misreported as a
+	// this-run leak: the production manager (post-d11ccb81) hands
+	// crash recovery back to the operator and so legitimately keeps
+	// rows around across runs in shared mode. The leak detector's
+	// real job is to catch programs and links this run created and
+	// did not clean up before TestMain returned -- exactly the
+	// delta these baselines let us compute.
+	baselinePrograms map[kernel.ProgramID]struct{}
+	baselineLinks    map[kernel.LinkID]struct{}
 }
 
 var (
@@ -156,17 +169,56 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 		return nil, fmt.Errorf("create suite manager: %w", err)
 	}
 
-	logger.Info("shared e2e runtime ready", "base", baseDir, "bpffs", layout.BPFFSMountPoint())
+	baselinePrograms, baselineLinks, err := snapshotBaseline(ctx, mgr)
+	if err != nil {
+		store.Close()
+		return nil, fmt.Errorf("snapshot suite baseline: %w", err)
+	}
+
+	logger.Info("shared e2e runtime ready",
+		"base", baseDir,
+		"bpffs", layout.BPFFSMountPoint(),
+		"baseline_programs", len(baselinePrograms),
+		"baseline_links", len(baselineLinks))
 
 	return &suiteRuntime{
-		layout:      layout,
-		manager:     mgr,
-		kernel:      kernel,
-		imagePuller: puller,
-		logger:      logger,
-		baseDir:     baseDir,
-		closeStore:  store.Close,
+		layout:           layout,
+		manager:          mgr,
+		kernel:           kernel,
+		imagePuller:      puller,
+		logger:           logger,
+		baseDir:          baseDir,
+		closeStore:       store.Close,
+		baselinePrograms: baselinePrograms,
+		baselineLinks:    baselineLinks,
 	}, nil
+}
+
+// snapshotBaseline records the program and link IDs currently in the
+// store so assertSuiteCleanState can subtract them at suite end. See
+// the suiteRuntime baseline fields for the rationale. Returns an
+// error if either listing fails; partial baselines would risk
+// flagging inherited residue as a this-run leak.
+func snapshotBaseline(ctx context.Context, mgr *manager.Manager) (map[kernel.ProgramID]struct{}, map[kernel.LinkID]struct{}, error) {
+	progs, err := mgr.ListPrograms(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list programs: %w", err)
+	}
+	progIDs := make(map[kernel.ProgramID]struct{}, len(progs.Programs))
+	for _, p := range progs.Programs {
+		progIDs[p.Record.ProgramID] = struct{}{}
+	}
+
+	links, err := mgr.ListLinks(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list links: %w", err)
+	}
+	linkIDs := make(map[kernel.LinkID]struct{}, len(links))
+	for _, l := range links {
+		linkIDs[l.ID] = struct{}{}
+	}
+
+	return progIDs, linkIDs, nil
 }
 
 // teardownSharedRuntime asserts the suite finished clean, closes
@@ -209,6 +261,13 @@ func teardownSharedRuntime(rt *suiteRuntime) (leaked bool) {
 // missing t.Cleanup, a Detach/Unload that didn't actually persist,
 // or a manager-side leak.
 //
+// Records that were already in the store when the suite opened the
+// DB are excluded: in shared mode the production manager hands
+// crash recovery back to the operator (see d11ccb81), so a row
+// inherited from a prior crashed run is not this run's leak. The
+// suiteRuntime baseline maps capture that starting state, and the
+// check below diffs the end-of-suite listing against them.
+//
 // For each leaked record the report also notes whether the kernel
 // still has the corresponding object. "store ghost" means the row
 // is in the manager's store but the kernel has already reclaimed
@@ -223,28 +282,46 @@ func assertSuiteCleanState(rt *suiteRuntime) bool {
 	progResult, err := rt.manager.ListPrograms(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: list programs: %v\n", err)
-	} else if len(progResult.Programs) > 0 {
-		leaked = true
-		fmt.Fprintf(os.Stderr, "e2e suite teardown: %d program(s) leaked at suite end:\n", len(progResult.Programs))
+	} else {
+		var newProgs []bpfman.Program
 		for _, p := range progResult.Programs {
-			id := kernel.ProgramID(0)
-			if p.Status.Kernel != nil {
-				id = p.Status.Kernel.ID
+			if _, inherited := rt.baselinePrograms[p.Record.ProgramID]; inherited {
+				continue
 			}
-			fmt.Fprintf(os.Stderr, "  prog id=%d name=%q metadata=%v kernel=%s\n",
-				id, p.Record.Meta.Name, p.Record.Meta.Metadata, kernelProgramPresence(ctx, rt, id))
+			newProgs = append(newProgs, p)
+		}
+		if len(newProgs) > 0 {
+			leaked = true
+			fmt.Fprintf(os.Stderr, "e2e suite teardown: %d program(s) leaked at suite end:\n", len(newProgs))
+			for _, p := range newProgs {
+				id := kernel.ProgramID(0)
+				if p.Status.Kernel != nil {
+					id = p.Status.Kernel.ID
+				}
+				fmt.Fprintf(os.Stderr, "  prog id=%d name=%q metadata=%v kernel=%s\n",
+					id, p.Record.Meta.Name, p.Record.Meta.Metadata, kernelProgramPresence(ctx, rt, id))
+			}
 		}
 	}
 
 	links, err := rt.manager.ListLinks(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: list links: %v\n", err)
-	} else if len(links) > 0 {
-		leaked = true
-		fmt.Fprintf(os.Stderr, "e2e suite teardown: %d link(s) leaked at suite end:\n", len(links))
+	} else {
+		var newLinks []bpfman.LinkRecord
 		for _, l := range links {
-			fmt.Fprintf(os.Stderr, "  link id=%d kind=%s prog=%d kernel=%s\n",
-				l.ID, l.Kind, l.ProgramID, kernelLinkPresence(ctx, rt, l))
+			if _, inherited := rt.baselineLinks[l.ID]; inherited {
+				continue
+			}
+			newLinks = append(newLinks, l)
+		}
+		if len(newLinks) > 0 {
+			leaked = true
+			fmt.Fprintf(os.Stderr, "e2e suite teardown: %d link(s) leaked at suite end:\n", len(newLinks))
+			for _, l := range newLinks {
+				fmt.Fprintf(os.Stderr, "  link id=%d kind=%s prog=%d kernel=%s\n",
+					l.ID, l.Kind, l.ProgramID, kernelLinkPresence(ctx, rt, l))
+			}
 		}
 	}
 
