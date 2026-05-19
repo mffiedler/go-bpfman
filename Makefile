@@ -528,6 +528,7 @@ help:
 	@echo "Testing:"
 	@echo "  test                        Run all tests"
 	@echo "  test-e2e                    Run e2e tests (requires root)"
+	@echo "  test-e2e-grpc               Run the parallel gRPC e2e test against a real bpfman serve daemon (requires root)"
 	@echo "  test-e2e-scripts            Run REPL e2e scripts under e2e/scripts/ and e2e/new/ (requires root)"
 	@echo "  test-examples               Run REPL scripts under examples/ (requires root)"
 	@echo "  test-nsenter                Run nsenter tests (native amd64)"
@@ -700,6 +701,19 @@ $(BIN_DIR)/e2e.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 # count loop on top of the deterministic gate).
 test-e2e: $(BIN_DIR)/e2e.test
 	sudo $(if $(ISOLATED_RUNTIME),BPFMAN_E2E_ISOLATED_RUNTIME=$(ISOLATED_RUNTIME)) $(BIN_DIR)/e2e.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(PARALLEL),-test.parallel $(PARALLEL)) $(if $(TEST),-test.run $(TEST))
+
+# Parallel gRPC e2e: stands up a real `bpfman serve` subprocess and
+# fans goroutines through load/get/attach/detach/unload over the
+# socket. The test resolves bin/bpfman via the source tree, so the
+# daemon binary must be built; bpfman-compile is a hard prereq.
+# BPFMAN_GRPC_PARALLEL_N and BPFMAN_GRPC_PARALLEL_ITERS are the
+# concurrency knobs; pass them on the make command line and they
+# are forwarded into the sudo'd test process.
+$(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
+	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
+
+test-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
+	sudo $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(BIN_DIR)/e2e-grpc.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
 # Run every REPL script under e2e/scripts/ and e2e/new/ against
 # the built bpfman binary. Each script executes from e2e/ so
@@ -1240,5 +1254,5 @@ bpfman-test-grpc: build-image-dev
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-scripts $(BIN_DIR)/e2e.test run-e2e-scripts test test-e2e test-e2e-scripts test-examples
+.PHONY: build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-scripts test test-e2e test-e2e-grpc test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x
