@@ -397,10 +397,28 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
 func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
+	// Timing instrumentation mirrors lock.RunWithTiming's shape.
+	// wait_ms is how long BeginTx blocked waiting for sqlite's
+	// writer lock; with _txlock=immediate the IMMEDIATE acquire
+	// happens up-front so this is the queue depth indicator.
+	// held_ms is how long the transaction was open from BeginTx
+	// to Commit/Rollback, including the caller's fn body.
+	// Tagged component=store; enable with BPFMAN_LOG=info,store=debug.
+	logger := s.logger.With("component", "store")
+	start := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		logger.DebugContext(ctx, "tx begin failed",
+			"wait_ms", time.Since(start).Milliseconds(), "error", err)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
+	acquired := time.Now()
+	logger.DebugContext(ctx, "tx acquired",
+		"wait_ms", acquired.Sub(start).Milliseconds())
+	defer func() {
+		logger.DebugContext(ctx, "tx closed",
+			"held_ms", time.Since(acquired).Milliseconds())
+	}()
 	defer tx.Rollback()
 
 	txStore := &sqliteStore{
