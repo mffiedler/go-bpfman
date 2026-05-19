@@ -17,13 +17,25 @@ import (
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
-// rpcsPerLifecycle is the count of gRPC calls runOneLifecycle
-// issues per successful iteration: Load, Get, Attach, GetLink,
-// ListLinks, Detach, GetLink (negative), Unload, Get (negative).
-// The summary multiplies completed lifecycles by this constant
-// to derive an approximate RPC total. Bump if runOneLifecycle's
-// call list changes.
-const rpcsPerLifecycle = 9
+// Per-lifecycle RPC accounting, grouped by daemon-side
+// serialisation behaviour so the summary can report each path's
+// rate separately. Bump these if runOneLifecycle's call list
+// changes; the sum must equal rpcsPerLifecycle, otherwise the
+// summary numbers stop adding up.
+//
+//   - loadsPerLifecycle: Load -- lockless at the daemon, queues
+//     only on SQLite's internal writer.
+//   - flockWritesPerLifecycle: Attach + Detach + Unload --
+//     serialised on the cross-process writer flock.
+//   - readsPerLifecycle: Get + GetLink + ListLinks +
+//     post-Detach GetLink (negative) + post-Unload Get (negative)
+//     -- lockless on both fronts.
+const (
+	loadsPerLifecycle       = 1
+	flockWritesPerLifecycle = 3
+	readsPerLifecycle       = 5
+	rpcsPerLifecycle        = loadsPerLifecycle + flockWritesPerLifecycle + readsPerLifecycle
+)
 
 // typeSpec captures the per-program-type knobs the shared
 // lifecycle helper needs: where the bytecode lives, the program
@@ -104,13 +116,26 @@ func TestParallel_GRPC(t *testing.T) {
 				spec.name, count, count*int64(rpcsPerLifecycle))
 		}
 		totalRPCs := totalLifecycles * int64(rpcsPerLifecycle)
-		rate := 0.0
+		totalFlockWrites := totalLifecycles * int64(flockWritesPerLifecycle)
+		totalLoads := totalLifecycles * int64(loadsPerLifecycle)
+		totalReads := totalLifecycles * int64(readsPerLifecycle)
+		rate, flockRate, loadRate, readRate := 0.0, 0.0, 0.0, 0.0
 		if elapsed > 0 {
-			rate = float64(totalRPCs) / elapsed.Seconds()
+			secs := elapsed.Seconds()
+			rate = float64(totalRPCs) / secs
+			flockRate = float64(totalFlockWrites) / secs
+			loadRate = float64(totalLoads) / secs
+			readRate = float64(totalReads) / secs
 		}
 		t.Logf("  %-10s %4d lifecycles  ~%6d rpcs  (%s wall, ~%.1f rpcs/s)",
 			"total", totalLifecycles, totalRPCs,
 			elapsed.Round(time.Millisecond), rate)
+		t.Logf("    flock writes (Attach/Detach/Unload):  %6d ops  ~%6.1f/s",
+			totalFlockWrites, flockRate)
+		t.Logf("    Loads (lockless, SQL writer):         %6d ops  ~%6.1f/s",
+			totalLoads, loadRate)
+		t.Logf("    reads (Get/GetLink/ListLinks):        %6d ops  ~%6.1f/s",
+			totalReads, readRate)
 	})
 
 	for _, spec := range specs {

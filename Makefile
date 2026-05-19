@@ -773,7 +773,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # munging.
 run-e2e-grpc:
 	@echo "Full log: $(GRPC_TEST_LOG)"
-	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed|gRPC parallel summary|lifecycles/"'
+	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed|gRPC parallel summary|lifecycles| ops /"'
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
