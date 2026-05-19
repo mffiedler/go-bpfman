@@ -134,6 +134,19 @@ TEST ?=
 # runs a small count loop on top of the deterministic gate.
 STRESS_COUNT ?= 1
 
+# Knobs the parallel gRPC e2e test honours. Declared here (empty
+# by default) so checkmake's --warn-undefined-variables lane
+# doesn't trip on the $(if $(VAR),VAR=$(VAR)) idiom that forwards
+# them through sudo in run-e2e-grpc. The test binary itself
+# carries the actual defaults (N=16, ITERS=2); leaving them empty
+# at the make layer means run-e2e-grpc forwards nothing and the
+# binary uses its own defaults.
+BPFMAN_GRPC_PARALLEL_N     ?=
+BPFMAN_GRPC_PARALLEL_ITERS ?=
+# Forwarded to the daemon subprocess; see logging package's
+# component-level spec format (e.g. info,lock=debug,store=debug).
+BPFMAN_LOG ?=
+
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
 # convention. Quiet by default (one short tag per recipe, e.g.
