@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/frobware/go-bpfman"
+	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -2088,7 +2089,7 @@ func TestMultiProgTC_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2175,7 +2176,7 @@ func TestMultiProgTC_AllProceed_CustomProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2257,7 +2258,7 @@ func TestMultiProgTC_ChainStopsAtPipe_CustomProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2334,7 +2335,7 @@ func TestMultiProgTC_AllProceed_DefaultProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2424,7 +2425,7 @@ func TestTC_LoadAttachDetachUnload(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state
@@ -2595,7 +2596,7 @@ func TestMultiProgTCX_ChainStopsAtOK_DefaultProceedOn(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2680,7 +2681,7 @@ func TestMultiProgTCX_AllProceed_DefaultProceedOn(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2770,7 +2771,7 @@ func TestTCX_LoadAttachDetachUnload(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state
@@ -2908,7 +2909,7 @@ func TestMultiProgXDP_ChainStopsAtDrop_DefaultProceedOn(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -2997,7 +2998,7 @@ func TestMultiProgXDP_AllProceed_CustomProceedOn(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -3074,7 +3075,7 @@ func TestMultiProgXDP_ChainStopsAtPass_CustomProceedOn(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -3150,7 +3151,7 @@ func TestMultiProgXDP_AllProceed_DefaultProceedOn(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 	env.AssertCleanState()
 
@@ -3239,7 +3240,7 @@ func TestXDP_LoadAttachDetachUnload(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	// Given: clean state

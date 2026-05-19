@@ -13,6 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -25,7 +26,7 @@ type dispatcherTestHarness struct {
 	name     string
 	env      *TestEnv
 	dispType dispatcher.DispatcherType
-	iface    TestInterface
+	iface    testnet.TestInterface
 
 	// loadProg loads the BPF object file and returns the kernel
 	// program ID. The program is automatically unloaded on test
@@ -34,7 +35,7 @@ type dispatcherTestHarness struct {
 
 	// makeAttachSpec creates an attach spec for the given program,
 	// interface, and priority. For XDP the priority is ignored.
-	makeAttachSpec func(t *testing.T, progID kernel.ProgramID, iface TestInterface, priority int) bpfman.AttachSpec
+	makeAttachSpec func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec
 
 	// verifyAttachPresent asserts the dispatcher's kernel-level
 	// attachment exists (TC: tc filter present; XDP: link pin exists).
@@ -52,7 +53,7 @@ func (h *dispatcherTestHarness) attach(t *testing.T, progID kernel.ProgramID, pr
 }
 
 // attachTo creates an attachment on a specific interface.
-func (h *dispatcherTestHarness) attachTo(t *testing.T, progID kernel.ProgramID, iface TestInterface, priority int) bpfman.LinkRecord {
+func (h *dispatcherTestHarness) attachTo(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.LinkRecord {
 	t.Helper()
 	spec := h.makeAttachSpec(t, progID, iface, priority)
 	link, err := h.env.Attach(context.Background(), spec)
@@ -114,13 +115,13 @@ func (h *dispatcherTestHarness) linkPriority(t *testing.T, linkID kernel.LinkID)
 }
 
 // newTCIngressHarness creates a harness for TC ingress dispatcher
-// tests. It creates its own TestEnv and TestInterface for isolation.
+// tests. It creates its own TestEnv and testnet.TestInterface for isolation.
 func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 	t.Helper()
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 
 	return dispatcherTestHarness{
 		name:     "tc-ingress",
@@ -142,7 +143,7 @@ func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 			return programs[0].Status.Kernel.ID
 		},
 
-		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface TestInterface, priority int) bpfman.AttachSpec {
+		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec {
 			t.Helper()
 			tcSpec, err := bpfman.NewTCAttachSpec(
 				progID, iface.Name, iface.Ifindex,
@@ -167,12 +168,12 @@ func newTCIngressHarness(t *testing.T) dispatcherTestHarness {
 }
 
 // newXDPHarness creates a harness for XDP dispatcher tests. It
-// creates its own TestEnv and TestInterface for isolation.
+// creates its own TestEnv and testnet.TestInterface for isolation.
 func newXDPHarness(t *testing.T) dispatcherTestHarness {
 	t.Helper()
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 
 	return dispatcherTestHarness{
 		name:     "xdp",
@@ -194,7 +195,7 @@ func newXDPHarness(t *testing.T) dispatcherTestHarness {
 			return programs[0].Status.Kernel.ID
 		},
 
-		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface TestInterface, priority int) bpfman.AttachSpec {
+		makeAttachSpec: func(t *testing.T, progID kernel.ProgramID, iface testnet.TestInterface, priority int) bpfman.AttachSpec {
 			t.Helper()
 			xdpSpec, err := bpfman.NewXDPAttachSpec(progID, iface.Name, iface.Ifindex)
 			require.NoError(t, err)
@@ -307,7 +308,7 @@ func TestTCX_PriorityOrdering(t *testing.T) {
 	RequireKernelVersion(t, 6, 6)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 	ctx := context.Background()
 
 	// Scrambled priorities matching the operator test pattern.
@@ -626,7 +627,7 @@ func TestDispatcher_MultipleInterfacesIndependent(t *testing.T) {
 func testMultipleInterfacesIndependent(t *testing.T, h dispatcherTestHarness) {
 	progID := h.loadProg(t)
 
-	ifaceB := NewTestInterface(t)
+	ifaceB := testnet.NewTestInterface(t)
 
 	// Attach 3 programs to default interface (A).
 	var linksA []bpfman.LinkRecord

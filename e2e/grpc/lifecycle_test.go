@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/frobware/go-bpfman/e2e/testnet"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -318,13 +319,14 @@ func uprobeSpec() typeSpec {
 	}
 }
 
-// Network types: each goroutine owns its own veth. Per-goroutine
-// (rather than per-iteration) keeps the kernel netif state
-// stable across the goroutine's iterations and avoids contention
-// on the XDP/TC dispatcher slot limit (MaxPrograms = 10) when
-// many goroutines attach concurrently to the same interface. TCX
-// doesn't have a dispatcher slot limit, but reuses the same shape
-// for consistency.
+// Network types: each goroutine owns its own veth via
+// testnet.NewTestVethPair. Per-goroutine (rather than
+// per-iteration) keeps the kernel netif state stable across the
+// goroutine's iterations and avoids contention on the XDP/TC
+// dispatcher slot limit (MaxPrograms = 10) when many goroutines
+// attach concurrently to the same interface. TCX doesn't have a
+// dispatcher slot limit, but reuses the same shape for
+// consistency.
 
 func xdpSpec() typeSpec {
 	return typeSpec{
@@ -333,10 +335,10 @@ func xdpSpec() typeSpec {
 		progName: "pass",
 		enumType: pb.BpfmanProgramType_XDP,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return createTestVeth(t)
+			return testnet.NewTestVethPair(t)
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(string)
+			iface := state.(testnet.TestVethPair).A.Name
 			return &pb.AttachInfo{Info: &pb.AttachInfo_XdpAttachInfo{
 				XdpAttachInfo: &pb.XDPAttachInfo{
 					Iface:    iface,
@@ -354,10 +356,10 @@ func tcSpec() typeSpec {
 		progName: "stats",
 		enumType: pb.BpfmanProgramType_TC,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return createTestVeth(t)
+			return testnet.NewTestVethPair(t)
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(string)
+			iface := state.(testnet.TestVethPair).A.Name
 			return &pb.AttachInfo{Info: &pb.AttachInfo_TcAttachInfo{
 				TcAttachInfo: &pb.TCAttachInfo{
 					Iface:     iface,
@@ -376,10 +378,10 @@ func tcxSpec() typeSpec {
 		progName: "tcx_stats",
 		enumType: pb.BpfmanProgramType_TCX,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return createTestVeth(t)
+			return testnet.NewTestVethPair(t)
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
-			iface := state.(string)
+			iface := state.(testnet.TestVethPair).A.Name
 			return &pb.AttachInfo{Info: &pb.AttachInfo_TcxAttachInfo{
 				TcxAttachInfo: &pb.TCXAttachInfo{
 					Iface:     iface,

@@ -15,6 +15,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -31,7 +32,7 @@ func TestTC_IngressEgressIndependence(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 	ctx := context.Background()
 
 	programs, err := env.LoadFile(ctx, "testdata/bpf/tc_counter_pinned.bpf.o", []manager.ProgramSpec{
@@ -124,7 +125,7 @@ func TestTC_DispatcherPriorityTieBreakByName(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 	ctx := context.Background()
 
 	// Load "beta" and "alpha" as separate programs so they have
@@ -225,7 +226,7 @@ func TestTC_DispatcherFillDrainRefill(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -440,7 +441,7 @@ func TestTC_DispatcherChainExecution(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -545,7 +546,7 @@ func TestTC_DispatcherChainProceedOn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := NewTestEnv(t)
-			veth := NewTestVethPair(t)
+			veth := testnet.NewTestVethPair(t)
 			ctx := context.Background()
 
 			objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -633,7 +634,7 @@ func TestTC_EgressTrafficCounting(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -714,7 +715,7 @@ func TestTC_DefaultProceedOnRebuild(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -809,7 +810,7 @@ func TestTC_MultiPriorityChainDefaultProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -882,7 +883,7 @@ func TestTC_MultiPriorityChainWithOKProceedOn(t *testing.T) {
 	RequireTC(t)
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter.bpf.o"
@@ -965,7 +966,7 @@ func TestTC_PinByNameMapSharing(t *testing.T) {
 			"legitimately keep the same shared map alive")
 
 	env := NewTestEnv(t)
-	veth := NewTestVethPair(t)
+	veth := testnet.NewTestVethPair(t)
 	ctx := context.Background()
 
 	objFile := "testdata/bpf/tc_counter_pinned.bpf.o"

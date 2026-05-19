@@ -1,6 +1,6 @@
 //go:build e2e
 
-package e2e
+package testnet
 
 import (
 	"testing"
@@ -56,7 +56,7 @@ func TestStaleTestIfaceRe(t *testing.T) {
 	}
 	for _, tt := range shouldMatch {
 		t.Run("match/"+tt.name, func(t *testing.T) {
-			assert.True(t, staleTestIfaceRe.MatchString(tt.input),
+			assert.True(t, StaleTestIfaceRe.MatchString(tt.input),
 				"%q should match", tt.input)
 		})
 	}
@@ -79,7 +79,7 @@ func TestStaleTestIfaceRe(t *testing.T) {
 	}
 	for _, tt := range shouldNotMatch {
 		t.Run("reject/"+tt.name, func(t *testing.T) {
-			assert.False(t, staleTestIfaceRe.MatchString(tt.input),
+			assert.False(t, StaleTestIfaceRe.MatchString(tt.input),
 				"%q should not match", tt.input)
 		})
 	}

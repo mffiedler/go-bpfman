@@ -8,28 +8,28 @@ import (
 	"os/exec"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/frobware/go-bpfman/e2e/testnet"
 )
 
-// rootNetnsName is the name under /run/netns/ that we bind-mount
-// the test process's own network namespace at, so command-line
-// tools that take a netns name can target root via
-// `ip netns exec root <cmd>`. Wrapping every netns-sensitive
-// shell-out in `ip netns exec <ns>` makes the child explicitly
-// setns into the named netns regardless of which Go OS thread
-// performed the fork; that decouples test reliability from
-// thread-state contamination upstream.
-const rootNetnsName = "root"
+// The bind-mount target is /run/netns/<testnet.RootNetns>, so
+// command-line tools that take a netns name can target root via
+// `ip netns exec <RootNetns> <cmd>`. Wrapping every
+// netns-sensitive shell-out in `ip netns exec <ns>` makes the
+// child explicitly setns into the named netns regardless of which
+// Go OS thread performed the fork; that decouples test
+// reliability from thread-state contamination upstream.
 
 // setupRootNetnsMount bind-mounts /proc/self/ns/net at
-// /run/netns/<rootNetnsName>. Idempotent: a previous run that
-// crashed before unmounting just gets re-bind-mounted in place.
-// Returns an error rather than panicking so TestMain can decide
-// how to react.
+// /run/netns/<testnet.RootNetns>. Idempotent: a previous run
+// that crashed before unmounting just gets re-bind-mounted in
+// place. Returns an error rather than panicking so TestMain can
+// decide how to react.
 func setupRootNetnsMount() error {
 	if err := os.MkdirAll("/run/netns", 0o755); err != nil {
 		return fmt.Errorf("mkdir /run/netns: %w", err)
 	}
-	target := "/run/netns/" + rootNetnsName
+	target := "/run/netns/" + testnet.RootNetns
 	// Match iproute2's `ip netns add` behaviour: create the
 	// target with mode 0 and O_RDONLY. SELinux on Fedora can
 	// reject other modes for bind-mount targets under
@@ -57,7 +57,7 @@ func setupRootNetnsMount() error {
 // created by setupRootNetnsMount. Best-effort: any error is
 // returned but TestMain may choose to log and continue.
 func teardownRootNetnsMount() error {
-	target := "/run/netns/" + rootNetnsName
+	target := "/run/netns/" + testnet.RootNetns
 	if err := unix.Unmount(target, 0); err != nil && !os.IsNotExist(err) {
 		// Non-fatal; just continue to remove the file.
 	}
@@ -72,7 +72,7 @@ func teardownRootNetnsMount() error {
 // process explicitly setns'es into /run/netns/<ns> before
 // exec'ing the inner command, so the netns the child runs in
 // is determined entirely by ns -- not by the calling Go
-// thread's current netns. Use rootNetnsName for "in this
+// thread's current netns. Use testnet.RootNetns for "in this
 // process's root netns".
 //
 // Returns the combined stdout+stderr and any error from

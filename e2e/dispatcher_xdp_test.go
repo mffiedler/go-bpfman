@@ -13,6 +13,7 @@ import (
 
 	"github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/dispatcher"
+	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/manager"
 )
@@ -25,7 +26,7 @@ func TestXDP_DispatcherConfigAfterDetach(t *testing.T) {
 	RequireRoot(t)
 
 	env := NewTestEnv(t)
-	iface := NewTestInterface(t)
+	iface := testnet.NewTestInterface(t)
 	ctx := context.Background()
 
 	programs, err := env.LoadFile(ctx, "testdata/bpf/xdp_pass_pinned.bpf.o", []manager.ProgramSpec{
@@ -125,7 +126,7 @@ func TestXDP_DispatcherChainExecution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := NewTestEnv(t)
-			veth := NewTestVethPair(t)
+			veth := testnet.NewTestVethPair(t)
 			ctx := context.Background()
 
 			objFile := "testdata/bpf/xdp_counter.bpf.o"
