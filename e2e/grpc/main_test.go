@@ -23,9 +23,9 @@
 //
 // Knobs:
 //
-//	BPFMAN_GRPC_PARALLEL_N      goroutines per sub-test (default 16)
-//	BPFMAN_GRPC_PARALLEL_ITERS  iterations per goroutine (default 2)
-//	BPFMAN_BIN                  path to bpfman binary (default: looked up on $PATH)
+//	BPFMAN_GRPC_GOROUTINES   goroutines per sub-test (default 16)
+//	BPFMAN_GRPC_ITERATIONS   iterations per goroutine (default 2)
+//	BPFMAN_BIN               path to bpfman binary (default: looked up on $PATH)
 package grpcparallel
 
 import (

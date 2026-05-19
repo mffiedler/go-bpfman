@@ -141,8 +141,8 @@ STRESS_COUNT ?= 1
 # carries the actual defaults (N=16, ITERS=2); leaving them empty
 # at the make layer means run-e2e-grpc forwards nothing and the
 # binary uses its own defaults.
-BPFMAN_GRPC_PARALLEL_N     ?=
-BPFMAN_GRPC_PARALLEL_ITERS ?=
+BPFMAN_GRPC_GOROUTINES ?=
+BPFMAN_GRPC_ITERATIONS ?=
 # Forwarded to the daemon subprocess; see logging package's
 # component-level spec format (e.g. info,lock=debug,store=debug).
 BPFMAN_LOG ?=
@@ -744,7 +744,7 @@ test-e2e: $(BIN_DIR)/e2e.test
 # fans goroutines through load/get/attach/detach/unload over the
 # socket. The test resolves bin/bpfman via the source tree, so the
 # daemon binary must be built; bpfman-compile is a hard prereq.
-# BPFMAN_GRPC_PARALLEL_N and BPFMAN_GRPC_PARALLEL_ITERS are the
+# BPFMAN_GRPC_GOROUTINES and BPFMAN_GRPC_ITERATIONS are the
 # concurrency knobs; BPFMAN_LOG controls the daemon-side log spec
 # (e.g. info,lock=debug,store=debug). All three are forwarded into
 # the sudo'd test process.
@@ -785,7 +785,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # munging.
 run-e2e-grpc:
 	@echo "Full log: $(GRPC_TEST_LOG)"
-	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed/"'
+	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed/"'
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 

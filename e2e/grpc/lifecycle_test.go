@@ -71,8 +71,8 @@ func TestParallel_GRPC(t *testing.T) {
 	}
 }
 
-// runParallelLifecycles fans BPFMAN_GRPC_PARALLEL_N goroutines,
-// each running BPFMAN_GRPC_PARALLEL_ITERS independent lifecycles
+// runParallelLifecycles fans BPFMAN_GRPC_GOROUTINES goroutines,
+// each running BPFMAN_GRPC_ITERATIONS independent lifecycles
 // of the given type. Failures inside a goroutine stop that
 // goroutine and surface as t.Error after wg.Wait, so siblings
 // keep running and we see the full failure set rather than just
@@ -84,8 +84,8 @@ func runParallelLifecycles(t *testing.T, spec typeSpec) {
 	// knob via env for stress runs; lifecycles serialise on the
 	// daemon's writer flock for mutating RPCs, so total wall
 	// time scales linearly with N x ITERS x sub-tests.
-	n := envInt("BPFMAN_GRPC_PARALLEL_N", 16)
-	iters := envInt("BPFMAN_GRPC_PARALLEL_ITERS", 2)
+	n := envInt("BPFMAN_GRPC_GOROUTINES", 16)
+	iters := envInt("BPFMAN_GRPC_ITERATIONS", 2)
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, n*iters)
