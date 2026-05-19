@@ -335,7 +335,12 @@ func xdpSpec() typeSpec {
 		progName: "pass",
 		enumType: pb.BpfmanProgramType_XDP,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return testnet.NewTestVethPair(t)
+			// The lifecycle test only attaches a program to
+			// the host-side netif; it never puts a packet on
+			// the wire. Skip the ARP warmup and ip-monitor so
+			// the fixture scales to the goroutine counts this
+			// test targets.
+			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
 			iface := state.(testnet.TestVethPair).A.Name
@@ -356,7 +361,12 @@ func tcSpec() typeSpec {
 		progName: "stats",
 		enumType: pb.BpfmanProgramType_TC,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return testnet.NewTestVethPair(t)
+			// The lifecycle test only attaches a program to
+			// the host-side netif; it never puts a packet on
+			// the wire. Skip the ARP warmup and ip-monitor so
+			// the fixture scales to the goroutine counts this
+			// test targets.
+			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
 			iface := state.(testnet.TestVethPair).A.Name
@@ -378,7 +388,12 @@ func tcxSpec() typeSpec {
 		progName: "tcx_stats",
 		enumType: pb.BpfmanProgramType_TCX,
 		setupGoroutine: func(t *testing.T, _ int) any {
-			return testnet.NewTestVethPair(t)
+			// The lifecycle test only attaches a program to
+			// the host-side netif; it never puts a packet on
+			// the wire. Skip the ARP warmup and ip-monitor so
+			// the fixture scales to the goroutine counts this
+			// test targets.
+			return testnet.NewTestVethPair(t, testnet.WithoutConnectivityWarmup())
 		},
 		buildAttach: func(_ *testing.T, state any) *pb.AttachInfo {
 			iface := state.(testnet.TestVethPair).A.Name

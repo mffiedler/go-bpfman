@@ -314,6 +314,48 @@ type TestVethPair struct {
 	PingTarget string        // A's IP address (ping destination from B)
 }
 
+// vethConfig captures NewTestVethPair's tunable behaviour.
+// Fields default to the values most callers want (warmup on,
+// ip monitor on), matching the helper's historical behaviour.
+type vethConfig struct {
+	waitForConnectivity bool
+	startIPMonitor      bool
+}
+
+// VethOption tunes NewTestVethPair. Pass zero or more of these
+// to opt out of work the caller does not need.
+type VethOption func(*vethConfig)
+
+// WithoutConnectivityWarmup skips the ARP warmup ping (and the
+// associated ip-monitor diagnostic stream, since it exists to
+// debug traffic-flow failures the caller is no longer asking
+// about). Use when the caller only needs a netif handle to
+// attach a BPF program to and does not generate traffic through
+// the veth path -- e.g. an XDP/TC/TCX program-attach
+// correctness test whose subsequent assertions never put a
+// packet on the wire.
+//
+// The warmup is what makes Ping / PingExact / PingExpectDrop
+// deterministic: it proves end-to-end ARP has resolved before
+// the test's real packet burst starts, so a single lost packet
+// from an unresolved-ARP race never fails an exact-count
+// assertion. Callers that DO ping (the in-process e2e suite's
+// dispatcher / multi-prog / chain-stops tests) must leave the
+// warmup on. The default is on; this option is the explicit
+// opt-out.
+//
+// Skipping the warmup is also the only way to push concurrent
+// veth setup past N ~= 40 on a busy machine: the warmup ping's
+// 30-second budget is the dominant per-veth setup cost and is
+// the first thing that fails when the kernel cannot service
+// concurrent namespace creation + ping warmup fast enough.
+func WithoutConnectivityWarmup() VethOption {
+	return func(c *vethConfig) {
+		c.waitForConnectivity = false
+		c.startIPMonitor = false
+	}
+}
+
 // NewTestVethPair creates a veth pair with one end in a dedicated
 // network namespace for generating real traffic through TC hooks.
 //
@@ -326,8 +368,18 @@ type TestVethPair struct {
 //
 // Both interfaces and the namespace are cleaned up via
 // t.Cleanup().
-func NewTestVethPair(t *testing.T) TestVethPair {
+//
+// By default the helper warms ARP with a ping and starts an
+// ip-monitor for diagnostic logging. Callers that do not generate
+// traffic through the pair can opt out with
+// WithoutConnectivityWarmup.
+func NewTestVethPair(t *testing.T, opts ...VethOption) TestVethPair {
 	t.Helper()
+
+	cfg := vethConfig{waitForConnectivity: true, startIPMonitor: true}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	base := uniqueTestName()
 	nameA := base + "a"
@@ -584,46 +636,52 @@ func NewTestVethPair(t *testing.T) TestVethPair {
 	waitLinkOperUp(t, nil, nameA, 5*time.Second)
 	waitLinkOperUp(t, nlh, nameB, 5*time.Second)
 
-	// Verify end-to-end connectivity with a warmup ping. Under
-	// heavy parallel load ARP resolution can lag behind link-up.
-	waitConnectivity(t, nsName, pingTarget, 30*time.Second)
+	if cfg.waitForConnectivity {
+		// Verify end-to-end connectivity with a warmup ping.
+		// Under heavy parallel load ARP resolution can lag
+		// behind link-up.
+		waitConnectivity(t, nsName, pingTarget, 30*time.Second)
 
-	// Verify ARP consistency: B's cached MAC for A must match
-	// A's actual MAC. Log both for debugging intermittent
-	// failures.
-	linkARefresh, _ := netlink.LinkByName(nameA)
-	aMac := linkARefresh.Attrs().HardwareAddr.String()
-	aIdx := linkARefresh.Attrs().Index
-	arpOut, _ := exec.Command("ip", "netns", "exec", nsName,
-		"ip", "neigh", "show", "dev", nameB, pingTarget).CombinedOutput()
-	t.Logf("post-warmup: A=%s ifindex=%d MAC=%s, B's ARP: %s",
-		nameA, aIdx, aMac, strings.TrimSpace(string(arpOut)))
+		// Verify ARP consistency: B's cached MAC for A must
+		// match A's actual MAC. Log both for debugging
+		// intermittent failures.
+		linkARefresh, _ := netlink.LinkByName(nameA)
+		aMac := linkARefresh.Attrs().HardwareAddr.String()
+		aIdx := linkARefresh.Attrs().Index
+		arpOut, _ := exec.Command("ip", "netns", "exec", nsName,
+			"ip", "neigh", "show", "dev", nameB, pingTarget).CombinedOutput()
+		t.Logf("post-warmup: A=%s ifindex=%d MAC=%s, B's ARP: %s",
+			nameA, aIdx, aMac, strings.TrimSpace(string(arpOut)))
+	}
 
-	// Start ip monitor to capture link state events for this
-	// veth pair. Output is logged on test completion.
-	var monBuf bytes.Buffer
-	// Wrapped via `ip netns exec <RootNetns>` so monitor is
-	// bound to the bind-mounted root netns regardless of caller
-	// thread state. If the root-netns mount isn't present
-	// (e.g. the gRPC parallel test which doesn't set it up),
-	// the command fails to start and we log instead of
-	// fataling -- the monitor is best-effort diagnostic only.
-	monCmd := exec.Command("ip", "netns", "exec", RootNetns, "ip", "monitor", "link", "address", "route", "neigh")
-	monCmd.Stdout = &monBuf
-	monCmd.Stderr = &monBuf
-	if err := monCmd.Start(); err != nil {
-		t.Logf("ip monitor failed to start: %v", err)
-	} else {
-		t.Cleanup(func() {
-			monCmd.Process.Kill()
-			monCmd.Wait()
-			// Filter output to only show events for our interfaces.
-			for _, line := range strings.Split(monBuf.String(), "\n") {
-				if strings.Contains(line, nameA) || strings.Contains(line, nameB) || strings.Contains(line, nsName) {
-					t.Logf("[ip-monitor %s] %s", base, line)
+	if cfg.startIPMonitor {
+		// Start ip monitor to capture link state events for
+		// this veth pair. Output is logged on test
+		// completion. Wrapped via `ip netns exec <RootNetns>`
+		// so monitor is bound to the bind-mounted root netns
+		// regardless of caller thread state. If the root-netns
+		// mount isn't present (e.g. the gRPC parallel test
+		// which doesn't set it up), the command fails to start
+		// and we log instead of fataling -- the monitor is
+		// best-effort diagnostic only.
+		var monBuf bytes.Buffer
+		monCmd := exec.Command("ip", "netns", "exec", RootNetns, "ip", "monitor", "link", "address", "route", "neigh")
+		monCmd.Stdout = &monBuf
+		monCmd.Stderr = &monBuf
+		if err := monCmd.Start(); err != nil {
+			t.Logf("ip monitor failed to start: %v", err)
+		} else {
+			t.Cleanup(func() {
+				monCmd.Process.Kill()
+				monCmd.Wait()
+				// Filter output to only show events for our interfaces.
+				for _, line := range strings.Split(monBuf.String(), "\n") {
+					if strings.Contains(line, nameA) || strings.Contains(line, nameB) || strings.Contains(line, nsName) {
+						t.Logf("[ip-monitor %s] %s", base, line)
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 
 	rootNsid, err := bpfnetns.CurrentNSID()
