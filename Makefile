@@ -883,18 +883,16 @@ bpfman-goimports: $(BIN_DIR)/golangci-lint
 	$(BIN_DIR)/golangci-lint fmt
 
 # Run go vet over every build-tag combination present in the tree.
-# `go vet ./...` honours the active tag set; a single pass under the
-# default tags would skip files behind //go:build e2e (entire e2e/
-# package), //go:build nsenter (CGO-namespaced helper), and the
-# cgo_sqlite alternate driver path. Cover them in three passes:
-#   - Default pass: most code plus the modernc.org/sqlite branch
-#     (!cgo_sqlite).
-#   - e2e+nsenter pass: adds the build-tagged files; supersets the
-#     default pass for everything not gated by cgo_sqlite.
-#   - cgo_sqlite pass: covers the mattn/go-sqlite3 alternate, which
-#     is mutually exclusive with !cgo_sqlite.
+# `go vet ./...` honours the active tag set; cover the tree with
+# two passes, one per SQLite driver, both with e2e+nsenter set so
+# the build-tagged files (entire e2e/ package, CGO-namespaced
+# nsenter helper) are vetted alongside the rest. No file in the
+# tree uses negative tags like !e2e, so the e2e+nsenter pass
+# supersets a tag-less pass and a third pass would be redundant.
+#   - !cgo_sqlite pass: modernc.org/sqlite branch (the default).
+#   - cgo_sqlite pass: mattn/go-sqlite3 alternate, mutually
+#     exclusive with the !cgo_sqlite branch.
 bpfman-vet: $(DISPATCHER_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_EMBEDS) $(E2E_BPF_OBJECTS) $(E2E_GRPC_BPF_OBJECTS)
-	go vet ./...
 	go vet -tags 'e2e,nsenter' ./...
 	go vet -tags 'cgo_sqlite,e2e,nsenter' ./...
 
