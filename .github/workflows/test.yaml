@@ -112,6 +112,33 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - run: make ci-test-e2e PARALLEL=1 STRESS_COUNT=5 RACE=${{ matrix.race }} ISOLATED_RUNTIME=0 EXTRA_TAGS=cgo_sqlite
 
+  # Parallel gRPC e2e: stands up a real `bpfman serve` subprocess
+  # and fans goroutines through the full
+  # load/get/attach/detach/unload cycle for every program type
+  # concurrently against the daemon. The matrix covers both
+  # architectures and both race-detector states, mirroring the
+  # other e2e lanes. ISOLATED_RUNTIME doesn't apply -- the test
+  # spawns its own daemon with its own tmp suite root regardless.
+  # STRESS_COUNT=5 catches flakes that don't repro on a single
+  # run.
+  test-e2e-grpc:
+    name: E2E tests gRPC (${{ matrix.arch }}, RACE=${{ matrix.race }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        race: [1, 0]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - run: make ci-test-e2e-grpc STRESS_COUNT=5 RACE=${{ matrix.race }}
+
   test-e2e-scripts:
     name: E2E REPL scripts (${{ matrix.arch }}, RACE=${{ matrix.race }}, DISPATCH=${{ matrix.dispatch }})
     runs-on: ${{ matrix.runner }}

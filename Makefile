@@ -387,6 +387,26 @@ E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 
+# Subset of E2E BPF objects the gRPC parallel test embeds via
+# go:embed. Go's embed forbids paths containing "..", so the
+# package owns its own testdata/bpf/ tree populated from the
+# canonical e2e/testdata/bpf/ tree by the pattern rule below.
+# Generated; excluded from git via e2e/grpc/testdata/.gitignore.
+E2E_GRPC_BPF_OBJECTS := \
+	e2e/grpc/testdata/bpf/fentry_counter.bpf.o \
+	e2e/grpc/testdata/bpf/kprobe_counter.bpf.o \
+	e2e/grpc/testdata/bpf/tc_counter.bpf.o \
+	e2e/grpc/testdata/bpf/tcx_counter.bpf.o \
+	e2e/grpc/testdata/bpf/tracepoint_counter.bpf.o \
+	e2e/grpc/testdata/bpf/uprobe_counter.bpf.o \
+	e2e/grpc/testdata/bpf/xdp_pass.bpf.o
+
+e2e/grpc/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.o | e2e/grpc/testdata/bpf
+	cp $< $@
+
+e2e/grpc/testdata/bpf:
+	@mkdir -p $@
+
 # platform/ebpf BPF: the package's discover_test.go embeds
 # xdp_pass.bpf.o via go:embed, so the compile rule emits the
 # object straight into platform/ebpf/ alongside the test source.
@@ -491,7 +511,7 @@ LINT_MAKE_TARGETS := \
 	bpfman-compile \
 	build-image build-image-amd64 build-image-dev \
 	build-image-csi-sanity build-image-openshift \
-	ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts \
+	ci-build ci-check-fmt ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts \
 	cosign-sign coverage clean
 
 # Lint every Dockerfile / Containerfile with hadolint. The existing
@@ -552,6 +572,7 @@ help:
 	@echo "  ci-lint                     Run \`make lint\` inside the CI container"
 	@echo "  ci-test                     Run unit tests inside the CI container"
 	@echo "  ci-test-e2e                 Extract e2e test bundle and run it on the host (sudo)"
+	@echo "  ci-test-e2e-grpc            Extract bundle to source tree and run the parallel gRPC test (sudo)"
 	@echo "  ci-test-e2e-scripts         Extract bundle to source tree and run REPL scripts (sudo)"
 	@echo ""
 	@echo "bpfman (with integrated CSI):"
@@ -726,12 +747,30 @@ test-e2e: $(BIN_DIR)/e2e.test
 # failure.
 GRPC_TEST_LOG ?= /tmp/bpfman-test-e2e-grpc.log
 
-$(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
+# Where to look for the artefacts at runtime. Defaults point at
+# the in-tree build outputs; ci-test-e2e-grpc overrides them to
+# the docker-buildx extraction location. The test binary embeds
+# its testdata, so the daemon's bpfman path is the only thing
+# the build system needs to tell it about.
+E2E_GRPC_TEST_BIN     ?= $(BIN_DIR)/e2e-grpc.test
+E2E_GRPC_BPFMAN_BIN   ?= $(BIN_DIR)/bpfman
+
+$(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) $(E2E_GRPC_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
 
-test-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
+build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
+
+# Tell the test binary where bpfman lives explicitly. The test
+# falls back to a PATH lookup if BPFMAN_BIN is unset, but the
+# build system is the layer that knows the answer for sure --
+# it just produced the binary at $(E2E_GRPC_BPFMAN_BIN) -- so we
+# pass an absolute path through sudo rather than relying on PATH
+# munging.
+run-e2e-grpc:
 	@echo "Full log: $(GRPC_TEST_LOG)"
-	@bash -c 'set -o pipefail; sudo $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(BIN_DIR)/e2e-grpc.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed/"'
+	@bash -c 'set -o pipefail; sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed/"'
+
+test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
 # Run every REPL script under e2e/scripts/ and e2e/new/ against
 # the built bpfman binary. Each script executes from e2e/ so
@@ -929,6 +968,7 @@ platform/ebpf/%.bpf.o: e2e/testdata/bpf/%.bpf.c Makefile
 clean-bpf:
 	$(RM) $(DISPATCHER_BPF_EMBEDS) $(DISPATCHER_BPF_DEPS) \
 	      $(E2E_BPF_OBJECTS) $(E2E_BPF_DEPS) \
+	      $(E2E_GRPC_BPF_OBJECTS) \
 	      $(PLATFORM_EBPF_BPF_EMBEDS) $(PLATFORM_EBPF_BPF_DEPS)
 
 -include $(DISPATCHER_BPF_DEPS) $(E2E_BPF_DEPS) $(PLATFORM_EBPF_BPF_DEPS)
@@ -1235,6 +1275,20 @@ ci-test-e2e-scripts:
 	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=. -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
 	$(MAKE) run-e2e-scripts
 
+# Reproduce the workflow's gRPC parallel e2e job locally. The
+# bundle's e2e-grpc.test embeds its BPF objects, so we don't
+# need to extract anything back into the source tree -- the test
+# binary and bpfman live in the bundle path and we tell
+# run-e2e-grpc where to find them via the E2E_GRPC_*_BIN make
+# variables. Mirrors ci-test-e2e (which also runs e2e.test
+# directly from the bundle) rather than ci-test-e2e-scripts
+# (which has to extract because the .bpfman scripts reference
+# testdata via relative paths on disk).
+ci-test-e2e-grpc:
+	$(RM) -r $(CI_E2E_BUNDLE)
+	$(OCI_BIN) buildx build --target=e2e-export --output type=local,dest=$(CI_E2E_BUNDLE) -f $(CI_DOCKERFILE) --build-arg RACE=$(RACE) --build-arg EXTRA_TAGS=$(EXTRA_TAGS) $(CI_BUILDX_CACHE) .
+	$(MAKE) run-e2e-grpc E2E_GRPC_TEST_BIN=$(CI_E2E_BUNDLE)/bin/e2e-grpc.test E2E_GRPC_BPFMAN_BIN=$(CI_E2E_BUNDLE)/bin/bpfman
+
 # Umbrella: run every CI pipeline locally. Cheap checks first
 # (vendor/fmt) so failures surface fast; build before tests so
 # the test job's container has a populated Go cache; e2e last.
@@ -1248,7 +1302,7 @@ ci-test-e2e-scripts:
 # attach failures to REPL counter assertions seeing the other
 # suite's events. Don't `make -j ci-test-e2e ci-test-e2e-scripts`
 # locally, and don't run them in two shells at once.
-ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+ci: ci-check-vendor ci-check-fmt ci-check-goimports ci-check-vet ci-build ci-lint ci-test ci-test-e2e ci-test-e2e-scripts ci-test-e2e-grpc
 
 # ---------------------------------------------------------------------------
 # gRPC integration test.
@@ -1268,9 +1322,9 @@ bpfman-test-grpc: build-image-dev
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
-.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-scripts
+.PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
 .PHONY: doc doc-text
 .PHONY: print-fedora-version print-go-version print-golangci-lint-version
-.PHONY: build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-scripts test test-e2e test-e2e-grpc test-e2e-scripts test-examples
+.PHONY: build-e2e-grpc build-e2e-scripts $(BIN_DIR)/e2e.test $(BIN_DIR)/e2e-grpc.test run-e2e-grpc run-e2e-scripts test test-e2e test-e2e-grpc test-e2e-scripts test-examples
 .PHONY: test-nsenter test-nsenter-amd64 test-nsenter-arm64 test-nsenter-cross test-nsenter-ppc64le test-nsenter-s390x

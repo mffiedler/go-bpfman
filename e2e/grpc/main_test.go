@@ -25,20 +25,21 @@
 //
 //	BPFMAN_GRPC_PARALLEL_N      goroutines per sub-test (default 16)
 //	BPFMAN_GRPC_PARALLEL_ITERS  iterations per goroutine (default 2)
-//	BPFMAN_BIN                  path to bpfman binary (default <repo>/bin/bpfman)
+//	BPFMAN_BIN                  path to bpfman binary (default: looked up on $PATH)
 package grpcparallel
 
 import (
 	"context"
-	"errors"
+	"embed"
 	"fmt"
+	iofs "io/fs"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -50,6 +51,18 @@ import (
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
+// bpfFS embeds the BPF objects the per-type specs load. The
+// files live under testdata/bpf/ relative to this source file;
+// the Makefile rule for $(BIN_DIR)/e2e-grpc.test populates that
+// directory by copying from the canonical e2e/testdata/bpf/ tree
+// so we never have two source-of-truth copies in git. Embedding
+// makes the test binary hermetic in the same way e2e.test is --
+// the .o files travel with the binary instead of being resolved
+// from a path on the runner.
+//
+//go:embed testdata/bpf/*.bpf.o
+var bpfFS embed.FS
+
 var (
 	// client is the shared gRPC client. pb.BpfmanClient is
 	// goroutine-safe; one connection serves every sub-test's
@@ -57,9 +70,10 @@ var (
 	// caller fanning RPCs into the daemon.
 	client pb.BpfmanClient
 
-	// testdataDir is the absolute path to e2e/testdata/bpf/ under
-	// the repo root, used by specs to resolve their .bpf.o
-	// filename. Set during bootstrap.
+	// testdataDir is the absolute path of the directory the
+	// embedded bpfFS was materialised into during bootstrap.
+	// Per-type specs join their .bpf.o filename to this path to
+	// produce the absolute path the daemon's Load RPC opens.
 	testdataDir string
 )
 
@@ -105,17 +119,18 @@ func bootstrap() (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve binary: %w", err)
 	}
-	dir, err := resolveTestdataDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve testdata: %w", err)
-	}
-	testdataDir = dir
 
 	tmpRoot, err := os.MkdirTemp("", "bpfman-grpc-parallel-")
 	if err != nil {
 		return nil, fmt.Errorf("tmp root: %w", err)
 	}
 	cleanupRoot := func() { _ = os.RemoveAll(tmpRoot) }
+
+	testdataDir = filepath.Join(tmpRoot, "testdata")
+	if err := materialiseBPFFS(testdataDir); err != nil {
+		cleanupRoot()
+		return nil, fmt.Errorf("materialise embedded testdata: %w", err)
+	}
 
 	runtimeDir := filepath.Join(tmpRoot, "runtime")
 	cacheDir := filepath.Join(tmpRoot, "cache")
@@ -193,39 +208,54 @@ func bootstrap() (func(), error) {
 	}, nil
 }
 
-// resolveBpfmanBinary returns the path to the bpfman binary,
-// honouring $BPFMAN_BIN first then defaulting to <repo>/bin/bpfman.
+// resolveBpfmanBinary returns the path to the bpfman binary.
+// BPFMAN_BIN overrides everything; otherwise the binary must be
+// on $PATH. The test does not try to locate the binary by
+// walking the source tree: the build system (Makefile recipe,
+// CI workflow) is the right place to decide where the binary
+// lives, not the test.
 func resolveBpfmanBinary() (string, error) {
 	if env := os.Getenv("BPFMAN_BIN"); env != "" {
 		return env, nil
 	}
-	root, err := repoRoot()
+	p, err := exec.LookPath("bpfman")
 	if err != nil {
-		return "", err
-	}
-	p := filepath.Join(root, "bin", "bpfman")
-	if _, err := os.Stat(p); err != nil {
-		return "", fmt.Errorf("%s: %w (build it with `make`)", p, err)
+		return "", fmt.Errorf("bpfman not found on PATH (override via BPFMAN_BIN): %w", err)
 	}
 	return p, nil
 }
 
-// resolveTestdataDir returns the absolute path to
-// e2e/testdata/bpf/ under the repo root.
-func resolveTestdataDir() (string, error) {
-	root, err := repoRoot()
-	if err != nil {
-		return "", err
+// materialiseBPFFS writes every embedded .bpf.o into dir so the
+// daemon (a separate process) can open them as ordinary files
+// via the Load RPC's file:// bytecode location. Mirrors
+// e2e.helpers.materialiseBPFFS in shape; the difference is the
+// flatter layout -- the embed.FS root holds testdata/bpf/X.o
+// and we strip the prefix so the on-disk layout is just dir/X.o.
+func materialiseBPFFS(dir string) error {
+	const prefix = "testdata/bpf/"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	dir := filepath.Join(root, "e2e", "testdata", "bpf")
-	info, err := os.Stat(dir)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w (build with `make`)", dir, err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s is not a directory", dir)
-	}
-	return dir, nil
+	return iofs.WalkDir(bpfFS, ".", func(name string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasPrefix(name, prefix) {
+			return nil
+		}
+		data, err := bpfFS.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		dest := filepath.Join(dir, name[len(prefix):])
+		if err := os.WriteFile(dest, data, 0o600); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
+		}
+		return nil
+	})
 }
 
 // testdataPath joins testdataDir with name. Used by per-type
@@ -233,26 +263,6 @@ func resolveTestdataDir() (string, error) {
 // daemon can open.
 func testdataPath(name string) string {
 	return filepath.Join(testdataDir, name)
-}
-
-// repoRoot walks up from this source file's directory until it
-// finds a go.mod.
-func repoRoot() (string, error) {
-	_, this, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", errors.New("runtime.Caller failed")
-	}
-	dir := filepath.Dir(this)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found above %s", filepath.Dir(this))
-		}
-		dir = parent
-	}
 }
 
 // waitForSocket polls until the daemon socket accepts a connect
