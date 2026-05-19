@@ -146,6 +146,14 @@ BPFMAN_GRPC_ITERATIONS ?=
 # Forwarded to the daemon subprocess; see logging package's
 # component-level spec format (e.g. info,lock=debug,store=debug).
 BPFMAN_LOG ?=
+# SQLite tuning knobs forwarded to the daemon. See
+# platform/store/sqlite/doc.go for the full descriptions. Empty
+# leaves the daemon on its package-level defaults; CI uses these
+# to widen tolerance on the RACE=1 grpc lane where the race
+# detector roughly doubles per-tx wall time and the default 5s
+# busy_timeout becomes too tight.
+BPFMAN_SQLITE_BUSY_TIMEOUT ?=
+BPFMAN_SQLITE_TX_RETRY_BACKOFFS ?=
 
 # ---------------------------------------------------------------------------
 # Verbose-build switch, modelled on the Linux kernel tree's V=
@@ -763,7 +771,7 @@ build-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
 # pass an absolute path through sudo rather than relying on PATH
 # munging.
 run-e2e-grpc:
-	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
+	sudo BPFMAN_BIN=$(abspath $(E2E_GRPC_BPFMAN_BIN)) $(if $(BPFMAN_GRPC_GOROUTINES),BPFMAN_GRPC_GOROUTINES=$(BPFMAN_GRPC_GOROUTINES)) $(if $(BPFMAN_GRPC_ITERATIONS),BPFMAN_GRPC_ITERATIONS=$(BPFMAN_GRPC_ITERATIONS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(if $(BPFMAN_SQLITE_BUSY_TIMEOUT),BPFMAN_SQLITE_BUSY_TIMEOUT=$(BPFMAN_SQLITE_BUSY_TIMEOUT)) $(if $(BPFMAN_SQLITE_TX_RETRY_BACKOFFS),BPFMAN_SQLITE_TX_RETRY_BACKOFFS=$(BPFMAN_SQLITE_TX_RETRY_BACKOFFS)) $(E2E_GRPC_TEST_BIN) -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
 
 test-e2e-grpc: build-e2e-grpc run-e2e-grpc
 
