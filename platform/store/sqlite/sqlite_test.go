@@ -788,7 +788,7 @@ func TestStoreGC_DependentBeforeOwnerDeletion(t *testing.T) {
 	require.NoError(t, store.Save(ctx, kernel.ProgramID(102), dep2))
 
 	// Correct order: dependents first, then owner.
-	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+	err = store.RunInTransaction(ctx, "test", func(tx platform.Store) error {
 		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
 			return err
 		}
@@ -972,7 +972,7 @@ func TestStoreGC_TransactionalAtomicity(t *testing.T) {
 	spec := bpfman.NewEphemeralLinkRecord(kernel.LinkID(400), kernel.ProgramID(100), details, time.Now())
 	require.NoError(t, store.SaveLink(ctx, spec))
 
-	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+	err = store.RunInTransaction(ctx, "test", func(tx platform.Store) error {
 		if err := tx.Delete(ctx, kernel.ProgramID(101)); err != nil {
 			return err
 		}
@@ -1065,7 +1065,7 @@ func TestStoreGC_ComprehensiveFourPhaseTransaction(t *testing.T) {
 	require.NoError(t, store.SaveLink(ctx, staleLink))
 
 	// Execute all four phases in a single transaction.
-	err = store.RunInTransaction(ctx, func(tx platform.Store) error {
+	err = store.RunInTransaction(ctx, "test", func(tx platform.Store) error {
 		// Phase 1: delete dependent then owner.
 		if err := tx.Delete(ctx, kernel.ProgramID(102)); err != nil {
 			return err

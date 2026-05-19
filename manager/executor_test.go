@@ -121,7 +121,7 @@ func (s *stubStore) ListReferencedSharedMaps(ctx context.Context) ([]string, err
 }
 
 // Transactional
-func (s *stubStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
+func (s *stubStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
 	return fn(s)
 }
 

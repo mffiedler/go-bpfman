@@ -279,7 +279,7 @@ func TestSnapshotStore_TransactionRollback(t *testing.T) {
 
 	// Attempt a replacement inside a transaction that rolls back.
 	deliberateErr := errors.New("deliberate rollback")
-	err = store.RunInTransaction(ctx, func(txStore platform.Store) error {
+	err = store.RunInTransaction(ctx, "test", func(txStore platform.Store) error {
 		snap2 := snap
 		snap2.Revision = 99
 		snap2.Members = nil // empty members

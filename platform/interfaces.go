@@ -112,8 +112,17 @@ type Store interface {
 // The callback receives a Store that participates in the transaction.
 // If the callback returns nil, the transaction commits.
 // If the callback returns an error, the transaction rolls back.
+//
+// name identifies the transaction class for instrumentation: the
+// store-side timing logs (wait_ms, held_ms) carry it as the tx
+// field so log queries can group throughput and tail latency by
+// transaction kind ("load", "cleanup_shared_map_pins", etc.)
+// rather than seeing every transaction as a single anonymous
+// workload. Use snake_case names that describe what the
+// transaction does, not the calling context's internal phase
+// organisation.
 type Transactional interface {
-	RunInTransaction(ctx context.Context, fn func(Store) error) error
+	RunInTransaction(ctx context.Context, name string, fn func(Store) error) error
 }
 
 // ProgramReader reads program metadata from the store.

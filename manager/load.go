@@ -266,7 +266,7 @@ func (m *Manager) loadBody(ctx context.Context, specs []bpfman.LoadSpec, opts Lo
 	// through the executor because the executor's SaveProgram and
 	// SaveSharedMapPins handlers each open their own internal
 	// transaction, which would nest here.
-	if err := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := m.store.RunInTransaction(ctx, "load", func(tx platform.Store) error {
 		for _, it := range items {
 			if _, err := tx.Get(ctx, it.out.Program.ID); err == nil {
 				return fmt.Errorf("program %d already exists in database", it.out.Program.ID)

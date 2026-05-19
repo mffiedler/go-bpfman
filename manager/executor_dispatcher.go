@@ -280,7 +280,7 @@ func (e *executor) rebuildXDPDispatcher(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
 		return tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back XDP dispatcher",
@@ -601,7 +601,7 @@ func (e *executor) rebuildTCDispatcher(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
 		return tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 	}); err != nil {
 		e.logger.ErrorContext(ctx, "persist failed, rolling back TC dispatcher",
@@ -847,7 +847,7 @@ func (e *executor) rebuildXDPForDetach(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
 		return tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 	}); err != nil {
 		return err
@@ -995,7 +995,7 @@ func (e *executor) rebuildTCForDetach(
 		})
 	}
 
-	if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := e.store.RunInTransaction(ctx, "dispatcher_replace_snapshot", func(tx platform.Store) error {
 		return tx.ReplaceDispatcherSnapshot(ctx, newSnap)
 	}); err != nil {
 		return err

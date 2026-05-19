@@ -174,7 +174,7 @@ func (m *Manager) removeProgramMapsPins(ctx context.Context, mapsDir bpfman.MapD
 // store row no longer claims the pin.
 func (m *Manager) cleanupSharedMapPins(ctx context.Context, programID kernel.ProgramID) error {
 	var orphaned []string
-	if err := m.store.RunInTransaction(ctx, func(tx platform.Store) error {
+	if err := m.store.RunInTransaction(ctx, "cleanup_shared_map_pins", func(tx platform.Store) error {
 		var txErr error
 		orphaned, txErr = tx.DeleteSharedMapPins(ctx, programID)
 		return txErr

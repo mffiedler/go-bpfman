@@ -396,15 +396,17 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // txStore goes out of scope and subsequent RunInTransaction calls create fresh
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
-func (s *sqliteStore) RunInTransaction(ctx context.Context, fn func(platform.Store) error) error {
+func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
 	// Timing instrumentation mirrors lock.RunWithTiming's shape.
 	// wait_ms is how long BeginTx blocked waiting for sqlite's
 	// writer lock; with _txlock=immediate the IMMEDIATE acquire
 	// happens up-front so this is the queue depth indicator.
 	// held_ms is how long the transaction was open from BeginTx
 	// to Commit/Rollback, including the caller's fn body.
-	// Tagged component=store; enable with BPFMAN_LOG=info,store=debug.
-	logger := s.logger.With("component", "store")
+	// The tx field carries the caller-supplied classifier so log
+	// queries can group by transaction kind. Tagged
+	// component=store; enable with BPFMAN_LOG=info,store=debug.
+	logger := s.logger.With("component", "store", "tx", name)
 	start := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

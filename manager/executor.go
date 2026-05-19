@@ -65,7 +65,7 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return e.kernel.Load(ctx, a.Spec, a.BPFFS)
 
 	case action.SaveProgram:
-		return nil, e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		return nil, e.store.RunInTransaction(ctx, "save_program", func(tx platform.Store) error {
 			return tx.Save(ctx, a.ProgramID, a.Metadata)
 		})
 
@@ -144,13 +144,13 @@ func (e *executor) ExecuteResult(ctx context.Context, a action.Action) (any, err
 		return nil, e.bcfs.RemoveStagingDir(a.Path)
 
 	case action.SaveSharedMapPins:
-		return nil, e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		return nil, e.store.RunInTransaction(ctx, "save_shared_map_pins", func(tx platform.Store) error {
 			return tx.SaveSharedMapPins(ctx, a.ProgramID, a.MapNames)
 		})
 
 	case action.CleanupSharedMapPins:
 		var orphaned []string
-		if err := e.store.RunInTransaction(ctx, func(tx platform.Store) error {
+		if err := e.store.RunInTransaction(ctx, "cleanup_shared_map_pins", func(tx platform.Store) error {
 			var txErr error
 			orphaned, txErr = tx.DeleteSharedMapPins(ctx, a.ProgramID)
 			return txErr
