@@ -408,19 +408,17 @@ E2E_BPF_SOURCES := $(wildcard e2e/testdata/bpf/*.bpf.c)
 E2E_BPF_OBJECTS := $(E2E_BPF_SOURCES:.bpf.c=.bpf.o)
 E2E_BPF_DEPS    := $(E2E_BPF_SOURCES:.bpf.c=.bpf.d)
 
-# Subset of E2E BPF objects the gRPC parallel test embeds via
-# go:embed. Go's embed forbids paths containing "..", so the
-# package owns its own testdata/bpf/ tree populated from the
-# canonical e2e/testdata/bpf/ tree by the pattern rule below.
-# Generated; excluded from git via e2e/grpc/testdata/.gitignore.
-E2E_GRPC_BPF_OBJECTS := \
-	e2e/grpc/testdata/bpf/fentry_counter.bpf.o \
-	e2e/grpc/testdata/bpf/kprobe_counter.bpf.o \
-	e2e/grpc/testdata/bpf/tc_counter.bpf.o \
-	e2e/grpc/testdata/bpf/tcx_counter.bpf.o \
-	e2e/grpc/testdata/bpf/tracepoint_counter.bpf.o \
-	e2e/grpc/testdata/bpf/uprobe_counter.bpf.o \
-	e2e/grpc/testdata/bpf/xdp_pass.bpf.o
+# E2E BPF objects the gRPC parallel test embeds via go:embed.
+# Go's embed forbids paths containing "..", so the package owns
+# its own testdata/bpf/ tree populated from the canonical
+# e2e/testdata/bpf/ tree by the pattern rule below. The full
+# set is mirrored rather than a hand-picked subset: adding a new
+# program type to the gRPC test does not require editing the
+# Makefile, and the binary-size cost of carrying the unused
+# objects is negligible (~50KB-200KB across the whole tree).
+# All copies are generated; *.bpf.o is excluded from git
+# globally.
+E2E_GRPC_BPF_OBJECTS := $(patsubst e2e/testdata/bpf/%,e2e/grpc/testdata/bpf/%,$(E2E_BPF_OBJECTS))
 
 e2e/grpc/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.o
 	@mkdir -p $(dir $@)
