@@ -1,39 +1,23 @@
 //go:build e2e
 
+// This file is the e2e suite's edge of the shared
+// uprobetarget package. The cgo'd C function and its symbol
+// live in e2e/uprobetarget so the parallel-gRPC test binary
+// (e2e-grpc.test) can import the same fixture without
+// duplicating it. The wrapper here exists because
+// invokeUprobeCallMalloc is the name TestMain's helper-mode
+// dispatch wires up via BPFMAN_E2E_MODE=uprobe-trigger-call-malloc;
+// keeping it as a Go function in the e2e package preserves
+// that dispatch surface unchanged.
+
 package e2e
 
-// This file holds cgo'd symbols that the uprobe / uretprobe e2e
-// tests attach to. Each symbol is named for what it does, so a
-// future sibling (e.g. one that calls read() instead of malloc())
-// can be added without retrofitting a "target" / "_2" suffix
-// onto the existing name.
-//
-// All such functions:
-//   - are declared with __attribute__((noinline, optimize("O0")))
-//     so the optimiser doesn't reduce the body to nothing and
-//     then inline away every caller;
-//   - have an unelidable side-effecting body (a syscall, a
-//     malloc/free pair, an atomic store) so the function has
-//     real instructions for the kernel uprobe to fire on;
-//   - resolve to real symbols in the e2e.test binary's symbol
-//     table (the binary is not built with -s -w).
-//
-// Lives in a non-_test.go file because go test -c forbids cgo
-// in test files; this file is gated by the e2e build tag and
-// only compiles into e2e.test.
+import "github.com/frobware/go-bpfman/e2e/uprobetarget"
 
-// #include <stdlib.h>
-// __attribute__((noinline, optimize("O0")))
-// void e2e_uprobe_call_malloc(void) {
-//     volatile void *p = malloc(1);
-//     free((void *)p);
-// }
-import "C"
-
-// invokeUprobeCallMalloc calls the cgo'd e2e_uprobe_call_malloc
-// function, firing whichever kernel uprobe (or uretprobe) is
-// attached to the symbol. Used by TestMain's helper-mode dispatch
-// (see BPFMAN_E2E_MODE=uprobe-trigger-call-malloc).
+// invokeUprobeCallMalloc calls the shared cgo'd target,
+// firing whichever kernel uprobe (or uretprobe) is attached to
+// uprobetarget.Symbol. Used by TestMain's helper-mode dispatch
+// and by the unit-level workload driver.
 func invokeUprobeCallMalloc() {
-	C.e2e_uprobe_call_malloc()
+	uprobetarget.Invoke()
 }

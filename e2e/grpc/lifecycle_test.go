@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/frobware/go-bpfman/e2e/testnet"
+	"github.com/frobware/go-bpfman/e2e/uprobetarget"
 	pb "github.com/frobware/go-bpfman/server/pb"
 )
 
@@ -289,8 +290,16 @@ func fexitSpec() typeSpec {
 	}
 }
 
+// keepUprobeTargetLive pins uprobetarget.Invoke into the
+// binary's reachable-symbol set so the Go linker does not
+// dead-code-eliminate the cgo wrapper and, with it, the C
+// symbol the uprobe sub-test attaches to. The test never calls
+// Invoke at runtime -- it only attaches a uprobe to the symbol's
+// ELF address.
+var keepUprobeTargetLive = uprobetarget.Invoke
+
 func uprobeSpec() typeSpec {
-	fnName := uprobeTargetSymbol
+	fnName := uprobetarget.Symbol
 	// The uprobe attaches to a cgo'd C symbol in *this* test
 	// binary, not in the daemon. /proc/self/exe is daemon-relative
 	// once the request reaches bpfman, so resolve the test
