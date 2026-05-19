@@ -11,8 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	bpfman "github.com/frobware/go-bpfman"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/logging"
 	"github.com/frobware/go-bpfman/manager"
 	"github.com/frobware/go-bpfman/platform"
@@ -64,6 +66,7 @@ func sharedRuntimeMode() bool {
 type suiteRuntime struct {
 	layout      fs.Layout
 	manager     *manager.Manager
+	kernel      platform.KernelOperations
 	imagePuller platform.ImagePuller
 	logger      *slog.Logger
 	baseDir     string
@@ -158,6 +161,7 @@ func buildSuiteRuntime() (*suiteRuntime, error) {
 	return &suiteRuntime{
 		layout:      layout,
 		manager:     mgr,
+		kernel:      kernel,
 		imagePuller: puller,
 		logger:      logger,
 		baseDir:     baseDir,
@@ -204,6 +208,14 @@ func teardownSharedRuntime(rt *suiteRuntime) (leaked bool) {
 // manager should be empty. Anything left over is a bug -- either a
 // missing t.Cleanup, a Detach/Unload that didn't actually persist,
 // or a manager-side leak.
+//
+// For each leaked record the report also notes whether the kernel
+// still has the corresponding object. "store ghost" means the row
+// is in the manager's store but the kernel has already reclaimed
+// the program/link, so the residue is purely a store-cleanup miss.
+// "kernel residue too" means the kernel still has it, so teardown
+// didn't reach the kernel detach/unload at all. The distinction
+// narrows the search the next time this fires.
 func assertSuiteCleanState(rt *suiteRuntime) bool {
 	ctx := context.Background()
 	leaked := false
@@ -215,12 +227,12 @@ func assertSuiteCleanState(rt *suiteRuntime) bool {
 		leaked = true
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: %d program(s) leaked at suite end:\n", len(progResult.Programs))
 		for _, p := range progResult.Programs {
-			id := uint32(0)
+			id := kernel.ProgramID(0)
 			if p.Status.Kernel != nil {
-				id = uint32(p.Status.Kernel.ID)
+				id = p.Status.Kernel.ID
 			}
-			fmt.Fprintf(os.Stderr, "  prog id=%d name=%q metadata=%v\n",
-				id, p.Record.Meta.Name, p.Record.Meta.Metadata)
+			fmt.Fprintf(os.Stderr, "  prog id=%d name=%q metadata=%v kernel=%s\n",
+				id, p.Record.Meta.Name, p.Record.Meta.Metadata, kernelProgramPresence(ctx, rt, id))
 		}
 	}
 
@@ -231,12 +243,47 @@ func assertSuiteCleanState(rt *suiteRuntime) bool {
 		leaked = true
 		fmt.Fprintf(os.Stderr, "e2e suite teardown: %d link(s) leaked at suite end:\n", len(links))
 		for _, l := range links {
-			fmt.Fprintf(os.Stderr, "  link id=%d kind=%s prog=%d\n",
-				l.ID, l.Kind, l.ProgramID)
+			fmt.Fprintf(os.Stderr, "  link id=%d kind=%s prog=%d kernel=%s\n",
+				l.ID, l.Kind, l.ProgramID, kernelLinkPresence(ctx, rt, l))
 		}
 	}
 
 	return leaked
+}
+
+// kernelProgramPresence reports whether the given program ID still
+// exists in the kernel. "kernel residue too" means the kernel still
+// has it, so teardown never reached the program unload. "store
+// ghost" means the kernel has reclaimed it but the manager's store
+// row stuck around. Any query error is treated as "kernel has
+// reclaimed it" so we don't lose the leak report to a transient
+// kernel lookup failure -- matches the existing inspect.GetProgram
+// convention (inspect/inspect.go:672).
+func kernelProgramPresence(ctx context.Context, rt *suiteRuntime, id kernel.ProgramID) string {
+	if rt.kernel == nil || id == 0 {
+		return "?"
+	}
+	if _, err := rt.kernel.GetProgramByID(ctx, id); err == nil {
+		return "kernel residue too"
+	}
+	return "store ghost"
+}
+
+// kernelLinkPresence reports whether the given link is still in the
+// kernel. Synthetic links never had a kernel object so we tag them
+// explicitly. See kernelProgramPresence for the shape of the
+// returned values.
+func kernelLinkPresence(ctx context.Context, rt *suiteRuntime, l bpfman.LinkRecord) string {
+	if rt.kernel == nil {
+		return "?"
+	}
+	if l.IsSynthetic() {
+		return "synthetic"
+	}
+	if _, err := rt.kernel.GetLinkByID(ctx, l.ID); err == nil {
+		return "kernel residue too"
+	}
+	return "store ghost"
 }
 
 // buildLogger composes the slog handler the same way NewTestEnv
