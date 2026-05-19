@@ -124,15 +124,25 @@ func New(ctx context.Context, dbPath string, logger *slog.Logger) (platform.Stor
 	// bypassing busy_timeout. With IMMEDIATE the wait happens at
 	// BeginTx where busy_timeout applies cleanly.
 	//
-	// busy_timeout=30000 gives sqlite's internal busy handler a
-	// 30-second retry budget before it surfaces SQLITE_BUSY to
-	// the caller. The previous 5s was tight: with N goroutines
-	// queueing on the writer lock and each transaction taking
-	// even a few ms, worst-case wait at the tail of the queue
-	// pushed past 5s under the parallel-gRPC load. 30s leaves
-	// headroom for the kind of bursts that test induces while
-	// still bounded if something genuinely wedges.
-	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "30000"}})+"&_txlock=immediate")
+	// busy_timeout=5000 gives sqlite's internal busy handler a
+	// 5-second retry budget per BeginTx before it surfaces
+	// SQLITE_BUSY to the caller. RunInTransaction wraps each
+	// call in a Go-level retry loop (see txRetryBackoffs) that
+	// catches any SQLITE_BUSY the inner budget could not absorb;
+	// the worst-case latency for a single transaction is bounded
+	// by busy_timeout * (len(txRetryBackoffs)+1) plus the sum
+	// of the outer pauses, i.e. roughly 5s * 4 + ~1s = ~21s.
+	//
+	// The two layers stack rather than compete. The inner
+	// budget handles short bursts where the writer lock is
+	// released within a few seconds; the outer retry handles
+	// the long-tail outlier where a single slow flock holder
+	// in the bpfman daemon pins the writer for longer. An
+	// earlier branch took busy_timeout to 30s as
+	// defence-in-depth before the Go-level retry existed; with
+	// retry now wired up, 5s keeps the worst-case bounded and
+	// surfaces a genuine wedge faster.
+	db, err := sql.Open(driverName, dsn(dbPath, [][2]string{{"journal_mode", "WAL"}, {"synchronous", "NORMAL"}, {"foreign_keys", "1"}, {"busy_timeout", "5000"}})+"&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
