@@ -1,3 +1,11 @@
+# Pin the default goal explicitly. Without this, GNU Make uses
+# the first target it encounters as the default, which makes
+# the build's entry point dependent on file ordering: dropping
+# a pattern rule or generated-file target above `all:` silently
+# changes what `make` (no args) builds. Stating it once at the
+# top removes that hazard.
+.DEFAULT_GOAL := all
+
 # ============================================================================
 # Variables
 # ============================================================================
@@ -401,11 +409,9 @@ E2E_GRPC_BPF_OBJECTS := \
 	e2e/grpc/testdata/bpf/uprobe_counter.bpf.o \
 	e2e/grpc/testdata/bpf/xdp_pass.bpf.o
 
-e2e/grpc/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.o | e2e/grpc/testdata/bpf
+e2e/grpc/testdata/bpf/%.bpf.o: e2e/testdata/bpf/%.bpf.o
+	@mkdir -p $(dir $@)
 	cp $< $@
-
-e2e/grpc/testdata/bpf:
-	@mkdir -p $@
 
 # platform/ebpf BPF: the package's discover_test.go embeds
 # xdp_pass.bpf.o via go:embed, so the compile rule emits the
