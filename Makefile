@@ -707,13 +707,31 @@ test-e2e: $(BIN_DIR)/e2e.test
 # socket. The test resolves bin/bpfman via the source tree, so the
 # daemon binary must be built; bpfman-compile is a hard prereq.
 # BPFMAN_GRPC_PARALLEL_N and BPFMAN_GRPC_PARALLEL_ITERS are the
-# concurrency knobs; pass them on the make command line and they
-# are forwarded into the sudo'd test process.
+# concurrency knobs; BPFMAN_LOG controls the daemon-side log spec
+# (e.g. info,lock=debug,store=debug). All three are forwarded into
+# the sudo'd test process.
+#
+# Test output is split: the full daemon + test transcript goes to
+# $(GRPC_TEST_LOG) (override on the command line if you need a
+# different path), and only the test framework's PASS/FAIL lines
+# and any SQLite BUSY signals are streamed to the terminal.
+# That keeps the terminal readable when the daemon is running with
+# the verbose component logging the investigation paths need, while
+# preserving the full trace for post-mortem analysis.
+#
+# Exit code preservation: `set -o pipefail` in a bash sub-shell
+# ensures the test binary's non-zero exit propagates through the
+# `tee | awk` pipeline. awk-not-grep is deliberate: grep returns 1
+# when nothing matches, which would mask a passing test as a
+# failure.
+GRPC_TEST_LOG ?= /tmp/bpfman-test-e2e-grpc.log
+
 $(BIN_DIR)/e2e-grpc.test: $(DISPATCHER_BPF_EMBEDS) $(E2E_BPF_OBJECTS) | $(BIN_DIR)
 	$(strip go test -c $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(E2E_TAGS),-tags=$(E2E_TAGS)) $(if $(STATIC),-ldflags "$(TEST_LDFLAGS)") -o $(BIN_DIR)/e2e-grpc.test ./e2e/grpc)
 
 test-e2e-grpc: $(BIN_DIR)/e2e-grpc.test bpfman-compile
-	sudo $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(BIN_DIR)/e2e-grpc.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST))
+	@echo "Full log: $(GRPC_TEST_LOG)"
+	@bash -c 'set -o pipefail; sudo $(if $(BPFMAN_GRPC_PARALLEL_N),BPFMAN_GRPC_PARALLEL_N=$(BPFMAN_GRPC_PARALLEL_N)) $(if $(BPFMAN_GRPC_PARALLEL_ITERS),BPFMAN_GRPC_PARALLEL_ITERS=$(BPFMAN_GRPC_PARALLEL_ITERS)) $(if $(BPFMAN_LOG),BPFMAN_LOG=$(BPFMAN_LOG)) $(BIN_DIR)/e2e-grpc.test -test.v -test.failfast -test.count=$(STRESS_COUNT) $(if $(TEST),-test.run $(TEST)) 2>&1 | tee $(GRPC_TEST_LOG) | awk "/--- PASS:|--- FAIL:|^PASS\$$|^FAIL\$$|SQLITE_BUSY|tx begin failed/"'
 
 # Run every REPL script under e2e/scripts/ and e2e/new/ against
 # the built bpfman binary. Each script executes from e2e/ so
