@@ -396,6 +396,20 @@ func (s *sqliteStore) prepareStatements(ctx context.Context) error {
 // txStore goes out of scope and subsequent RunInTransaction calls create fresh
 // handles from the still-valid masters. The masters are never invalidated by
 // transaction lifecycle events.
+// txRetryBackoffs is the bounded exponential-backoff schedule
+// the Go-level SQLITE_BUSY retry loop uses on top of sqlite's
+// internal busy_timeout. Sqlite's busy handler is the inner
+// retry budget (~30s as configured in New); if that's exhausted
+// the outer loop here adds three more attempts with these
+// pauses between them, layering a transient-error recovery on
+// top of the driver-internal one. Past the fourth attempt the
+// error surfaces to the caller as a genuine failure.
+var txRetryBackoffs = []time.Duration{
+	50 * time.Millisecond,
+	200 * time.Millisecond,
+	800 * time.Millisecond,
+}
+
 func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func(platform.Store) error) error {
 	// Timing instrumentation mirrors lock.RunWithTiming's shape.
 	// wait_ms is how long BeginTx blocked waiting for sqlite's
@@ -406,20 +420,49 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func
 	// The tx field carries the caller-supplied classifier so log
 	// queries can group by transaction kind. Tagged
 	// component=store; enable with BPFMAN_LOG=info,store=debug.
+	//
+	// SQLITE_BUSY handling: the call is retried with bounded
+	// exponential backoff up to len(txRetryBackoffs) extra
+	// attempts. The caller's fn is re-run from scratch on each
+	// attempt, so fn must be idempotent against transactions
+	// that succeeded part-way and rolled back -- every
+	// RunInTransaction site in this tree is (snapshot-based
+	// dispatcher rebuilds, idempotent inserts, deletes).
 	logger := s.logger.With("component", "store", "tx", name)
+	for attempt := 0; ; attempt++ {
+		err := s.runTransactionAttempt(ctx, logger, attempt, fn)
+		if err == nil {
+			return nil
+		}
+		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
+			return err
+		}
+		wait := txRetryBackoffs[attempt]
+		logger.WarnContext(ctx, "tx busy, retrying",
+			"attempt", attempt+1, "max_attempts", len(txRetryBackoffs)+1,
+			"backoff_ms", wait.Milliseconds(), "error", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+}
+
+func (s *sqliteStore) runTransactionAttempt(ctx context.Context, logger *slog.Logger, attempt int, fn func(platform.Store) error) error {
 	start := time.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		logger.DebugContext(ctx, "tx begin failed",
-			"wait_ms", time.Since(start).Milliseconds(), "error", err)
+			"attempt", attempt, "wait_ms", time.Since(start).Milliseconds(), "error", err)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	acquired := time.Now()
 	logger.DebugContext(ctx, "tx acquired",
-		"wait_ms", acquired.Sub(start).Milliseconds())
+		"attempt", attempt, "wait_ms", acquired.Sub(start).Milliseconds())
 	defer func() {
 		logger.DebugContext(ctx, "tx closed",
-			"held_ms", time.Since(acquired).Milliseconds())
+			"attempt", attempt, "held_ms", time.Since(acquired).Milliseconds())
 	}()
 	defer tx.Rollback()
 

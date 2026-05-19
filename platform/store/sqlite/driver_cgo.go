@@ -3,10 +3,26 @@
 package sqlite
 
 import (
-	_ "github.com/mattn/go-sqlite3"
+	"errors"
+
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 const driverName = "sqlite3"
+
+// isBusyError reports whether err carries a SQLite SQLITE_BUSY
+// condition (any primary or extended code that shares the
+// SQLITE_BUSY primary). mattn's Error.Code is the primary code,
+// so a direct comparison covers SQLITE_BUSY_RECOVERY and
+// SQLITE_BUSY_SNAPSHOT too. The retry layer in RunInTransaction
+// treats all of these as transient.
+func isBusyError(err error) bool {
+	var sqliteErr sqlite3.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	return sqliteErr.Code == sqlite3.ErrBusy
+}
 
 // dsn builds a mattn/go-sqlite3 DSN from a path and pragma key-value
 // pairs. Each pair is formatted as _key=value in the query string.
