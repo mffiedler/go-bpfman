@@ -432,6 +432,18 @@ func (s *sqliteStore) RunInTransaction(ctx context.Context, name string, fn func
 	for attempt := 0; ; attempt++ {
 		err := s.runTransactionAttempt(ctx, logger, attempt, fn)
 		if err == nil {
+			if attempt > 0 {
+				// We entered the outer retry loop and
+				// eventually succeeded. Surface the
+				// recovery (and how deep we had to go)
+				// at INFO so the operator can correlate
+				// it to the WARN "tx busy, retrying"
+				// records and gauge how often retries
+				// actually save the caller from a
+				// surfaced SQLITE_BUSY.
+				logger.InfoContext(ctx, "tx recovered after retry",
+					"attempts", attempt+1)
+			}
 			return nil
 		}
 		if !isBusyError(err) || attempt >= len(txRetryBackoffs) {
