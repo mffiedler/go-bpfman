@@ -139,10 +139,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
 
-	// Track CSI driver for graceful shutdown
-	var csiDriver *driver.Driver
-
-	// Start CSI driver if enabled
+	// Start CSI driver if enabled, and arrange for it to stop on
+	// root context cancellation. When CSI is disabled we spawn no
+	// shutdown goroutine; the gRPC server's own ctx.Done handler
+	// drives gRPC shutdown directly.
 	if cfg.CSISupport {
 		for _, dir := range layout.CSIDirs() {
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -156,7 +156,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		}
 
 		csiSocketPath := layout.CSISocketPath()
-		csiDriver = driver.New(
+		csiDriver := driver.New(
 			DefaultCSIDriverName,
 			DefaultCSIVersion,
 			nodeID,
@@ -175,16 +175,13 @@ func Run(ctx context.Context, cfg RunConfig) error {
 				logger.Error("CSI driver failed", "error", err)
 			}
 		}()
-	}
 
-	// Handle context cancellation
-	go func() {
-		<-ctx.Done()
-		logger.Info("context cancelled, shutting down")
-		if csiDriver != nil {
+		go func() {
+			<-ctx.Done()
+			logger.Info("stopping CSI driver")
 			csiDriver.Stop()
-		}
-	}()
+		}()
+	}
 
 	// Start pprof HTTP server if configured.
 	if cfg.PprofAddress != "" {
