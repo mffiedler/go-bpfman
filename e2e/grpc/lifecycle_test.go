@@ -95,7 +95,7 @@ func TestParallel_GRPC(t *testing.T) {
 	t.Cleanup(func() {
 		elapsed := time.Since(started)
 		var totalLifecycles int64
-		t.Logf("gRPC parallel summary (N=%d, iters=%d, ~%d RPCs per lifecycle):",
+		t.Logf("gRPC parallel summary (N=%d, iters=%d; one lifecycle = Load->Attach->Detach->Unload round-trip, ~%d RPCs):",
 			n, iters, rpcsPerLifecycle)
 		for _, spec := range specs {
 			count := counts[spec.name].Load()
