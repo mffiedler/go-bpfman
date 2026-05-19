@@ -18,18 +18,11 @@
 # Pull in the shared lifecycle assertion helpers.
 source ../lib.bpfman
 
-# Best-effort cleanup of leftover netns/veth from a prior run.
-let _ <- ip link del veth-tc-host
-let _ <- ip netns del bpfman-tc
-
-# Set up a veth pair.
-guard _ <- ip netns add bpfman-tc
-guard _ <- ip link add veth-tc-host type veth peer name veth-tc-ns
-guard _ <- ip link set veth-tc-ns netns bpfman-tc
-guard _ <- ip addr add 198.51.100.1/24 dev veth-tc-host
-guard _ <- ip link set veth-tc-host up
-guard _ <- ip netns exec bpfman-tc ip addr add 198.51.100.2/24 dev veth-tc-ns
-guard _ <- ip netns exec bpfman-tc ip link set veth-tc-ns up
+# Build the veth pair via the bpfman-shell builtin so each run gets
+# uniquely-named interfaces and a leased /30 address slot: no
+# pre-clean stanza, no cross-test subnet collisions.
+guard pair <- net veth-pair
+defer net release $pair
 
 # Load the TC counter. The map is unpinned (LIBBPF_PIN_NONE) so each load gets a private map.
 guard loaded <- bpfman program load file --path testdata/bpf/tc_counter.bpf.o --programs tc:stats
@@ -54,16 +47,16 @@ require not nil ours
 assert $ours.record.meta.name == $prog.record.meta.name
 assert $ours.status.kernel.id == $prog.status.kernel.id
 
-# Attach to veth-tc-host ingress, priority 50. TC uses a
+# Attach to the host-side veth ingress, priority 50. TC uses a
 # dispatcher program; the link records the dispatcher's
 # program_id rather than the user extension's, so we verify
 # details against the dispatcher-facing fields.
-guard link <- bpfman link attach tc --iface veth-tc-host --direction ingress --priority 50 $prog
+guard link <- bpfman link attach tc --iface $pair.host_link --direction ingress --priority 50 $prog
 let linkID = $link.record.id
 
 # Structural assertions on the attach response.
 assert $link.record.kind == tc
-assert $link.record.details.interface == veth-tc-host
+assert $link.record.details.interface == $pair.host_link
 assert $link.record.details.direction == ingress
 assert $link.record.details.priority == 50
 assert $link.record.details.dispatcher_id > 0
@@ -71,7 +64,7 @@ assert $link.record.details.revision > 0
 assert $link.status.kernel_seen
 
 # Verify the dispatcher is visible to tc(8).
-guard _ <- tc filter show dev veth-tc-host ingress
+guard _ <- tc filter show dev $pair.host_link ingress
 
 # Round-trip: GetLink returns the same link record.
 guard gotLink <- bpfman link get $linkID
@@ -101,7 +94,7 @@ let sumFilter = "fromjson | [.[] | select(.formatted.key == 0) | .formatted.valu
 guard dumpBefore <- bpftool map dump id $mapID -j
 let before     = $dumpBefore.stdout |> jq $sumFilter
 
-guard _ <- ip netns exec bpfman-tc ping -c 5 -i 0.05 198.51.100.1
+guard _ <- net exec $pair ping -c 5 -i 0.05 -W 1 $pair.host_addr
 
 guard dumpAfter <- bpftool map dump id $mapID -j
 let after     = $dumpAfter.stdout |> jq $sumFilter
@@ -109,12 +102,10 @@ let delta     = $after - $before
 print $delta
 assert $delta >= 5
 
-# Clean up: detach, unload, remove network resources.
+# Clean up: detach, unload. The veth pair is torn down by the
+# `defer net release $pair` at the top of the script.
 bpfman link detach $link
 assert fail bpfman link get $linkID
 
 bpfman program unload $pid
 assert fail bpfman program get $prog
-
-ip link del veth-tc-host
-ip netns del bpfman-tc
