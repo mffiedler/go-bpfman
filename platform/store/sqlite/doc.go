@@ -70,9 +70,10 @@
 //     changes from concurrent writers between reads. Use
 //     RunInTransaction for consistent multi-read operations.
 //
-// WAL mode is enabled for better crash recovery and write
-// performance, though its concurrency benefits are secondary given
-// the application-level RWMutex already coordinates access.
+// WAL is load-bearing in this deployment: there is no
+// application-level mutex coordinating concurrent access, so the
+// server's read RPCs can hit the database while a write transaction
+// is in flight. WAL is what keeps readers off the writer's path.
 //
 // # When to Use RunInTransaction
 //
@@ -87,15 +88,18 @@
 //
 // # Concurrency Model
 //
-// The application layer (manager) serialises access via an RWMutex:
-// multiple readers can proceed concurrently, but writers get exclusive
-// access. This means there is no concurrent writer contention at the
-// database level.
-//
-// SQLite transactions use the default DEFERRED type, which is
-// sufficient given the application-level serialisation. The
-// transaction provides atomicity and rollback semantics, not
-// concurrent writer coordination.
+// There is no in-process application-level mutex coordinating
+// store access. Writers are serialised by the cross-process writer
+// flock from the lock package (lock/), which the bpfman daemon
+// takes for mutating RPCs and which mutating CLI invocations take
+// directly. Within a process, concurrent transactions are
+// coordinated by SQLite itself: BeginTx uses the IMMEDIATE
+// transaction type (via the _txlock=immediate DSN parameter, see
+// New), so any transaction that may write acquires the writer lock
+// at BeginTx and contention waits at a single well-defined point
+// with busy_timeout applying cleanly. Read RPCs in the server
+// proceed lockless and rely on WAL mode to observe a consistent
+// snapshot without blocking writers.
 //
 // # SQLite Transaction Types
 //
@@ -119,10 +123,14 @@
 //     useful when you need to guarantee no other connection accesses
 //     the database at all.
 //
-// This implementation uses DEFERRED because: (1) Go's database/sql
-// does not expose SQLite-specific transaction types, and (2) the
-// application-level RWMutex already prevents concurrent writers,
-// making IMMEDIATE unnecessary.
+// This implementation uses IMMEDIATE, requested via the
+// _txlock=immediate DSN parameter that both supported drivers
+// accept. The DEFERRED default would expose a read-then-write
+// transaction to a deadlock at the read-to-write upgrade -- sqlite
+// breaks the deadlock by returning SQLITE_BUSY_SNAPSHOT
+// immediately, bypassing busy_timeout. With IMMEDIATE the wait
+// happens at BeginTx where busy_timeout applies cleanly. There is
+// no application-level mutex to fall back on.
 //
 // # Prepared Statements
 //
