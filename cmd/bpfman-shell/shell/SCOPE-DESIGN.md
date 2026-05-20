@@ -1365,6 +1365,59 @@ Deferred items, not in this change:
   the same rule that already applies to bindable commands;
   value-returning defs do not get a special exemption.
 
+- **Record literals.** Defer until value-returning defs
+  create real pressure for named multi-field returns.
+  Records should be values like any other value, not a
+  special return-only form: they should be valid anywhere an
+  `Expression` is valid. Candidate syntax:
+
+      record(prog: $prog link: $link)
+      record(
+          prog: $prog
+          link: $link
+          iface: $iface
+      )
+
+  The field-key syntax mirrors `matches` entries. The lexer
+  does not need a new token kind: inside `record(...)`, a
+  field key is a `Word` whose text is a valid identifier
+  followed by `:`. The parser strips the trailing colon,
+  just as the matcher parser already peels `.path:` into a
+  path plus separator. This keeps `:` as a normal
+  command-word constituent outside the record grammar.
+
+  Records compose normally:
+
+      let x = record(foo: $bar baz: $qux)
+      print (record(prog: $prog link: $link))
+      let nested = record(
+          loaded: record(prog: $prog link: $link)
+          iface: $iface
+      )
+
+  Do not introduce commas, optional or otherwise. The
+  language already uses whitespace-separated forms for
+  binding lists, parameter lists, destructures, foreach
+  variables, and list literals. Records should follow the
+  same convention.
+
+  Staging:
+
+  1. land value-returning defs;
+  2. use existing list literals and destructuring for
+     pair-shaped returns;
+  3. add records only when positional returns stop reading
+     well;
+  4. if records land, make them ordinary expression values.
+
+  The earlier `r#{...}` candidate was rejected because it
+  would have required a new multi-character prefix-literal
+  rule in the lexer (the `#` comment introducer prevents
+  reading `r#` as a single token without a contextual
+  exception). `record(...)` reuses the existing
+  contextual-keyword parsing pattern (`range`, `zip`,
+  `not-empty`, `matches`) and needs no lexer changes.
+
 - **Library-published constants or aliases.** Today
   libraries contribute defs only. If a real
   constant-sharing case emerges, design then. Once

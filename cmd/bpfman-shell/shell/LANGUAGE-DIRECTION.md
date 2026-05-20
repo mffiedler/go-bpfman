@@ -19,19 +19,15 @@ ten-commit SCOPE-DESIGN sequence.
 
 ## Design discipline
 
-The language has stayed small without staying weak by
-applying three rules to every proposed addition:
+Prefer features that compose with existing parser and value
+primitives before adding new syntax. Parser-context novelty
+is acceptable when it keeps command syntax boring; lexer
+novelty is expensive and should need a stronger
+justification. The language should grow by making existing
+values, bindings, blocks, and command forms compose better,
+not by adding unrelated sigils.
 
-**Compose before adding.** Ask whether the new thing can be
-expressed as a composition of primitives already in the
-language. If it can, leave it as a library def or an
-idiomatic shape and document it; if it cannot, the gap is
-what is actually missing and worth filling. Block scope was
-added because no composition of existing parts gave lexical
-frames; value-returning defs are worth adding because
-helper-library composition genuinely needs them; record
-literals are not (yet) worth adding because lists plus
-destructuring cover the cases the corpus has surfaced.
+Two corollaries follow.
 
 **Capabilities first, sugar later.** A new evaluator
 capability (frames, typed errors, `return`) earns its place
@@ -42,21 +38,6 @@ chosen from real call sites rather than guessed. Bundling
 capability with sugar in the same PR stretches the design
 surface for the sugar before anything has shown it is needed.
 
-**Lexer novelty costs more than parser novelty.** A new
-parser production is a local thing: it lives at one site,
-the rest of the grammar is undisturbed, and the
-contextual-keyword pattern is already established at every
-expression-leading word (`not`, `not-empty`, `range`,
-`zip`, the assertion verbs). A new lexer rule is global:
-it changes how every script is read, sets a precedent that
-other features will want copies of, and is harder to roll
-back once any script depends on it. Prefer parser-level
-solutions; reach for the lexer only when no parser-level
-solution works. The `r#{...}` record-literal proposal was
-rejected on this rule because it required a new
-multi-character prefix-literal rule in the lexer; the
-`record(...)` shape needs none.
-
 **The corpus is the trigger.** Features earn their place
 when a real script has worked around their absence in a way
 the author would not have to. Speculative features are
@@ -65,6 +46,17 @@ call sites. This is why value-returning defs are next (the
 corpus is full of helpers that would compose better with a
 real `return`), and why structured assertions, table-driven
 tests, and per-test scopes are not yet on the roadmap.
+
+The recent record-literal discussion illustrates the rule:
+`r#{...}` was rejected because it required a new
+multi-character prefix-literal rule in the lexer (`#` is
+already the comment introducer); `record(...)` reuses the
+existing contextual-keyword parsing pattern (`range`,
+`zip`, `not-empty`, `matches`) and needs no lexer changes
+at all. Both shapes were syntactically plausible; the one
+that fits the existing token stream is the one that wins.
+See `SCOPE-DESIGN.md` Section 9 for the full record-literal
+note.
 
 ## Two levels of "Lisp-like"
 
