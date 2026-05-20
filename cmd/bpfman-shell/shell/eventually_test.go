@@ -267,18 +267,19 @@ func TestEventually_AttemptDeferRunsOnFailedAttempt(t *testing.T) {
 		"per-attempt defer must fire on every failed attempt")
 }
 
-func TestEventually_RetryableViaErrorsAs_DetectsBodyError(t *testing.T) {
+func TestEventually_BindForm_GuardFailureExposesEnvelope(t *testing.T) {
 	t.Parallel()
 
-	// A body that returns a typed retryable error (here, a
-	// GuardFailure produced by the bind path) gets classified
-	// via errors.As. The construct timing out preserves the
-	// last failure as last_error.
+	// A body that fails its guard surfaces the last command
+	// envelope in r.last_command while r.error holds the
+	// rendered message. The envelope fields are taken from the
+	// driver-supplied Rc -- code, stdout, stderr -- not
+	// synthesised by the eventually evaluator.
 	s := NewSession()
 	env := eventuallyEnv(s,
 		func([]Arg, Span) (Value, error) { return Value{}, nil },
 		func([]Arg, Span) (BindResult, error) {
-			return BindResult{Rc: Envelope{OK: false, Code: 1, Stderr: "nope"}}, nil
+			return BindResult{Rc: Envelope{OK: false, Code: 7, Stdout: "drained", Stderr: "nope"}}, nil
 		},
 	)
 	src := "let r <- eventually timeout 30ms interval 1ms {\n" +
@@ -289,7 +290,13 @@ func TestEventually_RetryableViaErrorsAs_DetectsBodyError(t *testing.T) {
 	require.True(t, ok)
 	raw := v.Raw().(map[string]any)
 	assert.Equal(t, false, raw["ok"])
-	assert.NotNil(t, raw["last_error"])
+	assert.NotNil(t, raw["error"], "error carries the rendered message")
+	last, ok := raw["last_command"].(map[string]any)
+	require.True(t, ok, "command-shaped failure populates the last_command envelope, got %T", raw["last_command"])
+	assert.Equal(t, false, last["ok"])
+	assert.Equal(t, 7, last["code"])
+	assert.Equal(t, "drained", last["stdout"])
+	assert.Equal(t, "nope", last["stderr"])
 
 	// Sanity: confirm the underlying error type is retryable
 	// via the same errors.As call shape eventually uses.
@@ -297,6 +304,46 @@ func TestEventually_RetryableViaErrorsAs_DetectsBodyError(t *testing.T) {
 	var re RetryableError
 	require.True(t, errors.As(error(gf), &re))
 	assert.True(t, re.Retryable())
+}
+
+func TestEventually_BindForm_AssertFailureLeavesLastCommandNil(t *testing.T) {
+	t.Parallel()
+
+	// Assertion-shaped failures have no real envelope -- the
+	// bind result keeps r.last_command nil rather than
+	// manufacturing a synthetic command envelope. r.error
+	// still carries the rendered failure for diagnostics.
+	s := NewSession()
+	env := eventuallyEnv(s,
+		func([]Arg, Span) (Value, error) { return Value{}, nil },
+		func([]Arg, Span) (BindResult, error) { return BindResult{Rc: Envelope{OK: true}}, nil },
+	)
+	src := "let r <- eventually timeout 30ms interval 1ms {\n  assert 1 == 2\n}\n"
+	require.NoError(t, runEventuallySrc(t, src, env))
+	v, ok := s.Get("r")
+	require.True(t, ok)
+	raw := v.Raw().(map[string]any)
+	assert.Equal(t, false, raw["ok"])
+	assert.NotNil(t, raw["error"], "error carries the rendered message")
+	assert.Nil(t, raw["last_command"], "assert failures leave last_command nil")
+}
+
+func TestEventually_BindForm_SuccessLeavesErrorAndLastCommandNil(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := eventuallyEnv(s,
+		func([]Arg, Span) (Value, error) { return Value{}, nil },
+		func([]Arg, Span) (BindResult, error) { return BindResult{Rc: Envelope{OK: true}}, nil },
+	)
+	src := "let r <- eventually timeout 1s {\n  assert true == true\n}\n"
+	require.NoError(t, runEventuallySrc(t, src, env))
+	v, ok := s.Get("r")
+	require.True(t, ok)
+	raw := v.Raw().(map[string]any)
+	assert.Equal(t, true, raw["ok"])
+	assert.Nil(t, raw["error"])
+	assert.Nil(t, raw["last_command"])
 }
 
 // intStr is a tiny base-10 int -> string helper used to avoid

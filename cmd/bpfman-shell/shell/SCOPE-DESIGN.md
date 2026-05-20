@@ -460,7 +460,8 @@ Bind form for non-fatal probing:
     let r <- eventually timeout 1s interval 50ms {
         test -f "${ack}.1"
     }
-    # r is { ok, timed_out, attempts, elapsed_ms, last_error }
+    # r is { ok, timed_out, attempts, elapsed_ms, error,
+    #        last_command }
 
 `eventually` is both a statement form and a bindable
 command form. Internally, both reduce to one operation; the
@@ -519,25 +520,58 @@ Semantics:
     the construct's failure, halting the enclosing scope
     like `require`.
   - Bound form: `r.ok = false`, `r.timed_out = true`,
-    `r.last_error` carries the last retryable failure;
-    the script continues.
+    `r.error` carries the rendered failure message, and
+    `r.last_command` carries the captured command envelope
+    when the last retryable failure was command-shaped; the
+    script continues.
 
 The result shape:
 
     {
-      ok:         bool
-      timed_out:  bool
-      attempts:   int
-      elapsed_ms: int
-      last_error: envelope-or-error-or-nil
+      ok:           bool
+      timed_out:    bool
+      attempts:     int
+      elapsed_ms:   int
+      error:        string-or-nil
+      last_command: envelope-or-nil
     }
 
-`last_error` is nil on overall success. On timeout it
-carries the last retryable failure value, using the same
-envelope/error shape the failing statement would have
-produced outside `eventually` (so callers can branch on
-the same fields they would inspect from a guard or a
-bound command).
+Typed errors classify evaluator failures; the result value
+does not expose evaluator error types. `error` is nil on
+overall success; on timeout it is the rendered message for
+the last retryable failure, suitable for printing or
+log-style diagnostics. `last_command` is nil unless the last
+retryable failure came from a command-shaped operation
+(ordinary command, guard, or subprocess exit), in which case
+it carries the captured command envelope:
+
+    {
+      ok:     bool
+      code:   int
+      stdout: string
+      stderr: string
+    }
+
+Assertion-shaped failures (`assert`, `require`) do not
+manufacture a synthetic envelope; they set `error` and leave
+`last_command` nil. Callers that need to branch on the
+captured envelope first probe its presence:
+
+    let r <- eventually timeout 5s {
+        guard p <- bpfman program get $pid
+    }
+    if not $r.ok {
+        print $r.error
+        if present $r.last_command.code {
+            if $r.last_command.code == 2 {
+                print "program not found"
+            }
+        }
+    }
+
+The field name carries the meaning: `last_command` is the
+last command envelope or nil, never a different shape, never
+an internal error type.
 
 `timed_out` is derivable from `ok == false` today
 (timeout is the only terminal mode), but is named
@@ -1123,10 +1157,11 @@ type.
   multi-count. Mark this in a code comment as bridge debt
   pending the cleanup noted in Section 3.4.1.
 - The bind form returns a structured value
-  `{ ok, timed_out, attempts, elapsed_ms, last_error }`.
-  The unbound form propagates the last retryable error on
-  overall failure. Fatal errors halt regardless of bind:
-  the bind form catches timeout, not programmer mistakes.
+  `{ ok, timed_out, attempts, elapsed_ms, error,
+  last_command }`. The unbound form propagates the last
+  retryable error on overall failure. Fatal errors halt
+  regardless of bind: the bind form catches timeout, not
+  programmer mistakes.
 
 Contract tests:
 

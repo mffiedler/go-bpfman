@@ -53,6 +53,15 @@ func (e *ExecFailure) SourceSpan() shell.Span { return e.Span }
 // that flips the result).
 func (e *ExecFailure) Retryable() bool { return true }
 
+// FailureCode / FailureStdout / FailureStderr satisfy
+// shell.FailureEnvelope so the eventually bind form can project
+// a subprocess exit into the public `last_command` envelope
+// without the shell evaluator having to know about repl-side
+// error types.
+func (e *ExecFailure) FailureCode() int      { return e.ExitCode }
+func (e *ExecFailure) FailureStdout() string { return e.Stdout }
+func (e *ExecFailure) FailureStderr() string { return e.Stderr }
+
 // CommandNotFound is the typed error returned at the subprocess
 // fallthrough when the first word resolves to no executable on
 // $PATH. Detected before argument resolution so a script that

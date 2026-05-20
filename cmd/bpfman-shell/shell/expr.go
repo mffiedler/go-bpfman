@@ -799,12 +799,11 @@ const defaultEventuallyInterval = 100 * time.Millisecond
 // form consumes it directly and propagates the last retryable
 // error on failure.
 type eventuallyResult struct {
-	ok         bool
-	timedOut   bool
-	attempts   int
-	elapsedMs  int64
-	lastError  error
-	lastErrMsg string
+	ok        bool
+	timedOut  bool
+	attempts  int
+	elapsedMs int64
+	lastError error
 }
 
 // runEventually drives the retry loop for both the statement
@@ -878,15 +877,12 @@ func runEventually(s *EventuallyStmt, env *Env) (eventuallyResult, error) {
 				return eventuallyResult{}, bodyErr
 			}
 			result.lastError = bodyErr
-			result.lastErrMsg = bodyErr.Error()
 		} else {
 			// Body returned nil but an assertion failed.
 			// Record a synthetic last-error so the bind form
 			// has something to surface and the statement form
 			// has a reason to cite on overall timeout.
-			af := &AssertFailure{Span: s.Span, Expr: "attempt assertion(s) failed"}
-			result.lastError = af
-			result.lastErrMsg = af.Error()
+			result.lastError = &AssertFailure{Span: s.Span, Expr: "attempt assertion(s) failed"}
 		}
 		// Have we run out of budget?
 		if !time.Now().Before(deadline) {
@@ -965,20 +961,66 @@ func evalEventuallyBind(s *BindStmt, env *Env) error {
 
 // buildEventuallyResultValue packages an eventually outcome as a
 // structured Value so the bind form's consumer can branch on
-// .ok / .timed_out and inspect .last_error verbatim.
+// .ok / .timed_out, read the human-readable .error message, and
+// inspect the optional command envelope in .last_command. The
+// result shape is deliberately small and stable:
+//
+//	{
+//	  ok:           bool,
+//	  timed_out:    bool,
+//	  attempts:     int,
+//	  elapsed_ms:   int,
+//	  error:        string-or-nil,
+//	  last_command: envelope-or-nil,
+//	}
+//
+// `error` carries the rendered failure message for diagnostic
+// printing; `last_command` is the captured command envelope
+// when (and only when) the last retryable failure was
+// command-shaped. The public value never names the internal
+// RetryableError types -- assertion-shaped failures simply
+// leave `last_command` nil rather than having a synthetic
+// envelope manufactured for them. The field name carries its
+// meaning so the sometimes-nil shape is stable rather than
+// variant.
 func buildEventuallyResultValue(res eventuallyResult) Value {
+	errField, lastCommand := projectEventuallyLast(res.lastError)
 	m := map[string]any{
-		"ok":         res.ok,
-		"timed_out":  res.timedOut,
-		"attempts":   res.attempts,
-		"elapsed_ms": res.elapsedMs,
-	}
-	if res.lastError == nil {
-		m["last_error"] = nil
-	} else {
-		m["last_error"] = res.lastErrMsg
+		"ok":           res.ok,
+		"timed_out":    res.timedOut,
+		"attempts":     res.attempts,
+		"elapsed_ms":   res.elapsedMs,
+		"error":        errField,
+		"last_command": lastCommand,
 	}
 	return ValueFromMap(m)
+}
+
+// projectEventuallyLast turns the last retryable failure into
+// the (error, last_command) pair surfaced by the eventually
+// bind result. A nil err -- the successful-attempt case --
+// produces (nil, nil). For command-shaped failures (anything
+// that implements FailureEnvelope: GuardFailure,
+// CommandFailure, and the driver-side ExecFailure) the
+// last_command field carries the captured envelope. For
+// assertion-shaped failures and any other RetryableError we
+// leave last_command nil and let `error` carry the rendered
+// message.
+func projectEventuallyLast(err error) (errMsg any, lastCommand any) {
+	if err == nil {
+		return nil, nil
+	}
+	msg := err.Error()
+	var fe FailureEnvelope
+	if errors.As(err, &fe) {
+		return msg, map[string]any{
+			"ok":     false,
+			"code":   fe.FailureCode(),
+			"stdout": fe.FailureStdout(),
+			"stderr": fe.FailureStderr(),
+		}
+	}
+	return msg, nil
 }
 
 // deferEntry is one captured invocation in a defer scope. Args
@@ -1384,6 +1426,23 @@ type RetryableError interface {
 	Retryable() bool
 }
 
+// FailureEnvelope marks errors that carry a command-result
+// shape: an exit code plus captured stdout / stderr. The
+// `eventually` bind form's last_command projection uses this
+// interface to coalesce GuardFailure, CommandFailure, and the
+// driver-side ExecFailure (a subprocess non-zero exit) into a
+// single user-facing { ok, code, stdout, stderr } shape without
+// leaking the internal error class hierarchy. AssertFailure
+// and RequireFailure deliberately do not implement this
+// interface -- their failure mode has no envelope -- so the
+// projection leaves last_command nil for them.
+type FailureEnvelope interface {
+	error
+	FailureCode() int
+	FailureStdout() string
+	FailureStderr() string
+}
+
 // ErrRequireFailed is the sentinel error chained under a
 // *RequireFailure so existing `errors.Is(err, ErrRequireFailed)`
 // checks at script-loop boundaries continue to recognise a
@@ -1425,6 +1484,15 @@ func (e *GuardFailure) Error() string {
 // world might satisfy the guard on a later attempt.
 func (e *GuardFailure) Retryable() bool { return true }
 
+// FailureCode / FailureStdout / FailureStderr satisfy
+// FailureEnvelope so the eventually bind form can project the
+// guard's captured envelope into its `last_command` field
+// without reaching into the typed error from outside the
+// package.
+func (e *GuardFailure) FailureCode() int      { return e.Envelope.Code }
+func (e *GuardFailure) FailureStdout() string { return e.Envelope.Stdout }
+func (e *GuardFailure) FailureStderr() string { return e.Envelope.Stderr }
+
 // CommandFailure is the error type a CommandStmt produces when a
 // command is successfully resolved and executed and returns a
 // non-ok envelope. It explicitly does not cover unknown commands,
@@ -1449,6 +1517,13 @@ func (e *CommandFailure) Error() string {
 // candidate for retry: the command itself ran, and the world
 // might change in a way that flips the result.
 func (e *CommandFailure) Retryable() bool { return true }
+
+// FailureCode / FailureStdout / FailureStderr satisfy
+// FailureEnvelope so the eventually bind form can surface the
+// envelope in its `last_command` field.
+func (e *CommandFailure) FailureCode() int      { return e.Envelope.Code }
+func (e *CommandFailure) FailureStdout() string { return e.Envelope.Stdout }
+func (e *CommandFailure) FailureStderr() string { return e.Envelope.Stderr }
 
 // AssertFailure is the typed-error form of an `assert` predicate
 // that did not hold. The dispatcher still records the failure
