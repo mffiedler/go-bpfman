@@ -200,17 +200,357 @@ primitives that compose, accept the loss of macro-level
 expressiveness, and keep the evaluator simple enough that
 script behaviour is predictable from primitives alone.
 
+## On the keyword `def`
+
+Is `def` the right word? Defensible, but it carries
+baggage worth naming.
+
+`def` is good if the construct should feel like "define a
+shell command or helper" rather than "declare a function
+in an expression language". It fits the current shape
+
+    def expect_program_load(path kind) {
+        ...
+    }
+
+and avoids overpromising expression-language semantics.
+Today these are not closures, not values, not
+expression-position callables, and not block-local
+declarations. `def` is neutral enough to cover what is
+here without committing to what is not.
+
+If value-returning defs land later (`SCOPE-DESIGN.md`
+Section 9), `def` still works. Python, Ruby, and
+Clojure-ish languages all use `def` / `defn` for forms
+that return values. Return values do not make the word
+wrong.
+
+The alternatives each imply something stronger:
+
+- `function f(...) { ... }` -- shell/JavaScript-like, but
+  longer and a bit too grand. Suggests function scope,
+  expression-position calls, or first-class-ness.
+- `fn f(...) { ... }` -- modern, but nudges towards
+  Rust/Go-style "real function" semantics. If these are
+  command helpers called in command position, `fn` may
+  mislead.
+- `proc f(...) { ... }` -- Tcl-ish and arguably accurate:
+  a procedure with side effects. Less familiar; "proc"
+  can feel old-fashioned.
+- `command f(...) { ... }` -- very explicit, but verbose,
+  and awkward once it returns values.
+- `alias f(...) { ... }` -- wrong, because aliases already
+  exist and are textually shallower than these.
+
+Keep `def`. It says "bind this name to a user-defined
+thing" without committing to whether that thing is a
+command, a procedure, a function, or eventually a
+value-returning helper. That flexibility matches where
+the language is heading.
+
+The tweak worth applying is terminology in the docs: call
+them **user-defined commands** rather than "functions"
+until `return` lands. So:
+
+    def declares a user-defined command. A def runs in
+    its own call frame; parameters and locals do not leak
+    to the caller. Defs are session-level declarations
+    and do not capture variable frames.
+
+And later, if value-returning defs arrive:
+
+    A def may optionally return EXPR when called in bind
+    position.
+
+That keeps the keyword stable and the semantics honest.
+
+## Making tests easy to write
+
+The biggest forward-looking move is to make the language
+good at expressing test intent, not just shell
+choreography. The pieces are already forming:
+
+    guard p <- load_prog ./xdp.o xdp
+    defer unload_prog $p
+    eventually timeout 5s {
+        require (ack_exists $ack 1)
+    }
+
+The directions worth biasing towards.
+
+### Value-returning defs
+
+Probably the biggest practical win. Instead of every test
+spelling
+
+    guard loaded <- bpfman program load file \
+        --path $path --type xdp
+    let pid = $loaded.record.id
+    defer bpfman program unload $pid
+
+the test eventually reads
+
+    guard prog <- load_prog $path xdp
+    defer unload_prog $prog
+
+`SCOPE-DESIGN.md` Section 9 already pins the shape. The
+important property is that returned values let helpers
+become real test vocabulary: a script reads as
+`load_prog` / `attach_xdp` / `send_ping` / `require
+counter_equals` rather than as raw `bpfman ... |> jq ...`
+plumbing.
+
+### User-defined predicates for assert / require
+
+Built-in predicate forms work today. The next step is for
+defs to participate naturally:
+
+    def program_loaded(pid) {
+        guard got <- bpfman program get $pid
+        return $got.ok
+    }
+    require (program_loaded $pid)
+
+This falls out of value-returning defs plus bindable
+commands; the happy path is already obvious. The bareword
+form
+
+    require program_loaded $pid
+
+is tempting and should not be rushed -- it overlaps with
+command-position resolution rules. Letting user-defined
+helpers become assertion vocabulary is the goal
+regardless.
+
+### Better failure rendering
+
+`eventually` as a test primitive is already the right
+move. The forward-looking enhancement is observation, not
+more retry syntax. A failed `eventually` should report:
+
+- number of attempts;
+- elapsed time;
+- last failure value;
+- source span of the failing assertion;
+- last observed value, where applicable.
+
+A failed test should say
+
+    counter_equals failed after 51 attempts over 5.02s
+        expected: 1
+        actual:   0
+        source:   TestXDP_LoadAttachDetachUnload.bpfman:42
+
+not merely
+
+    require failed
+
+The same applies to plain `require` and `assert`.
+Evidence beats pass/fail.
+
+### Structured helper results
+
+A Lisp-friendly and test-friendly pattern: helpers return
+structured success/failure values rather than booleans:
+
+    def counter_equals(prog name want) {
+        guard got <- read_counter $prog $name
+        if $got == $want {
+            return { ok: true }
+        }
+        return {
+            ok: false
+            message: "counter mismatch"
+            expected: $want
+            actual: $got
+        }
+    }
+
+    require (counter_equals $prog xdp_pass 1)
+
+The renderer above then has structured evidence to
+display, not just a name and a verdict. Depends on object
+literals.
+
+### Expand `matches { ... }` before general expression syntax
+
+`matches { ... }` is already a major asset. Keep
+investing there rather than growing arbitrary expression
+complexity. Tests often want
+
+    require $prog matches {
+        .status.type == "xdp"
+        .status.kernel.id present
+        .status.maps contains {
+            .name == "xdp_stats"
+        }
+    }
+
+Worth considering: `contains-one`, `contains-all`, `not {
+... }`, `where .field == value`. The sweet spot is jq
+remains available, but common test assertions do not need
+it.
+
+### Object / record literals
+
+Lists plus jq go a long way, but test ergonomics
+eventually want small object literals:
+
+    let expected = {
+        id: $pid
+        type: "xdp"
+        attached: true
+    }
+
+or a constructor builtin:
+
+    let expected = (object id $pid type xdp attached true)
+
+Useful for golden-ish tests, table-driven tests, and
+structured assertion output. Not urgent. Object literals
+expand the expression language; add them only when
+structured helper results become painful without them.
+
+### Scoped resource helpers (`with`)
+
+`def` plus `defer` already covers most of this. A future
+primitive could make scope explicit:
+
+    with prog <- load_prog ./xdp.o xdp {
+        with link <- attach_xdp $iface $prog {
+            drive_traffic
+            require counter_equals $prog packets 1
+        }
+    }
+
+Semantics:
+
+- `with x <- CMD { BODY }` binds `x` inside the block.
+- If the command publishes a cleanup action, the block
+  registers it automatically.
+- Cleanup runs at block exit, even on failure.
+- Nested resources unwind in reverse order.
+
+Tests would read as resource lifetimes rather than
+imperative cleanup recipes. This is the test-DSL face of
+block-as-value (the same primitive the control-flow
+section holds back). Same bar: do not add until the
+`guard` + `defer` pair becomes repetitive enough to
+justify a new primitive.
+
+### Table-driven tests
+
+Once lexical scope and value-returning defs land, table
+tests fall out:
+
+    foreach (kind path attach) in [
+        [xdp ./xdp.o attach_xdp]
+        [tc  ./tc.o  attach_tc]
+    ] {
+        guard prog <- load_prog $path $kind
+        defer unload_prog $prog
+        guard link <- $attach $iface $prog
+        defer detach_link $link
+        require program_running $prog
+    }
+
+The `$attach` slot needs command values, which are not on
+the roadmap. A pragmatic version dispatches through a
+helper:
+
+    foreach (kind path) in [
+        [xdp ./xdp.o]
+        [tc  ./tc.o]
+    ] {
+        run_attach_detach_case $kind $path
+    }
+
+Already good.
+
+### `test "..." { ... }` blocks
+
+If `.bpfman` files grow, a test-level structure may
+become useful:
+
+    test "xdp attach/detach unloads cleanly" {
+        ...
+    }
+
+Potential benefits: named failure reports, per-test defer
+scope, isolated variable root frame, table-driven
+subtests later. Do not add until scripts are genuinely
+large enough. The harness already treats each file as a
+test; file-as-test is simple and good.
+
+A lighter form might be `section "load program" { ... }`
+purely for diagnostics, with no semantic weight. Same
+rule: defer.
+
+### Keep command-position boring
+
+The most important negative recommendation. Do not make
+command syntax clever. The best property of the language
+is still
+
+    guard p <- bpfman program load file \
+        --path foo.o --type xdp
+
+remaining pasteable and unsurprising. Put power at the
+binding site, block site, matcher site, and assertion
+site. Argv mode stays boring.
+
+### North star
+
+A test that reads like
+
+    source ../lib.bpfman
+    test "xdp program counts packets" {
+        with prog <- load_prog ./xdp.o xdp {
+            with link <- attach_xdp $iface $prog {
+                ping_once $ns $target
+                eventually timeout 5s {
+                    require counter_equals $prog packets 1
+                }
+            }
+        }
+    }
+
+is the kind of surface where bpfman-shell has become a
+test DSL rather than a shell script with nicer variables.
+The exact mix of primitives in that snippet is
+aspirational -- `with` and `test "..."` blocks are both
+held back until the corpus demands them -- but the shape
+is the destination.
+
 ## What to build, in order
+
+The merged priority across the compositional spine and
+the test-DSL items:
 
 1. Finish SCOPE-DESIGN. Lexical frames are the gate
    everything else passes through.
 2. Land value-returning defs (SCOPE-DESIGN Section 9).
    The single biggest compositional unlock; the
-   `load_xdp` example above becomes idiomatic.
-3. Wait for block-as-value to be asked for. Until a
-   concrete `with_X` shape is missed by the corpus, do
-   not build it speculatively.
-4. Do not add macros, `quote`, or `eval`. The language
+   `load_xdp` helper becomes idiomatic and tests gain a
+   real vocabulary.
+3. Let user-defined defs become assertion vocabulary
+   (`require (program_loaded $pid)`). Falls out of step
+   2 plus bindable commands; mostly a documentation and
+   ergonomics pass.
+4. Improve failure rendering for `require`, `assert`,
+   and `eventually`. Evidence-bearing diagnostics, not
+   more retry syntax.
+5. Expand `matches { ... }` before growing general
+   expression syntax. Structured assertions live in the
+   matcher.
+6. Add object / record literals when structured helper
+   results become painful without them.
+7. Add `with x <- CMD { BODY }` only after `guard` +
+   `defer` patterns become repetitive enough to justify
+   a new primitive. Same bar block-as-value is held to.
+8. Add `test "..." { ... }` only when scripts grow large
+   enough to need named test blocks.
+9. Do not add macros, `quote`, or `eval`. The language
    does not need them and gains little from them.
 
 The discipline is "deep but few". Every addition above
