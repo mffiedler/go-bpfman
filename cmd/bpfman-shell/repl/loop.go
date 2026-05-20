@@ -275,6 +275,8 @@ func wireEnvForChunk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	}
 	env.Trace = makeTraceHook(cli, session, loc)
 	env.RenderEventuallyFailure = makeRenderEventuallyFailure(cli, loc)
+	env.ChunkFile = loc.File
+	env.ChunkStartLine = loc.Line
 }
 
 // makeRenderEventuallyFailure builds the callback the shell
@@ -432,6 +434,20 @@ func evalChunkInScope(cli *bpfmancli.CLI, env *shell.Env, input, frameSrc string
 		}
 		var se *shell.SyntaxError
 		if errors.As(err, &se) && se.Span.Pos.Line > 0 {
+			// A *SyntaxError that escaped through callDef has
+			// already been decorated with its def's registration
+			// File and an absolute Span; the chunk we are
+			// currently rendering is the caller's, not the def's,
+			// so the rust-style frame source-text would be the
+			// wrong file. Cite by location alone for cross-file
+			// errors; the rust-style frame is reserved for
+			// same-file diagnostics where the chunk source still
+			// lines up.
+			if se.File != "" {
+				absLoc := SourceLoc{File: se.File, Line: se.Span.Pos.Line, Col: se.Span.Pos.Col}
+				_ = cli.PrintErrf("%s%s\n", absLoc.String(), se.Msg)
+				return ErrScriptError
+			}
 			emitFrame(se.Span, se.Msg)
 			return ErrScriptError
 		}

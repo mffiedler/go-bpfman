@@ -2466,8 +2466,19 @@ func stripSeps(tokens []Token) []Token {
 // errors.As and pull the Span directly so the rust-frame caret
 // underlines the actual region.
 type SyntaxError struct {
-	Span  Span
-	Msg   string
+	Span Span
+	Msg  string
+	// File, when non-empty, names the source file the Span
+	// addresses. Errors that originate inside the same chunk
+	// the renderer is currently processing leave it blank; the
+	// renderer derives the file from its own loc. Errors that
+	// escape across a chunk boundary -- a def registered in a
+	// sourced library, an eventually attempt parsed against a
+	// different chunk -- carry the registration site's file
+	// explicitly so the diagnostic does not mis-localise to
+	// whatever chunk is now running. Span.Pos.Line is then
+	// absolute file line, not chunk-relative.
+	File  string
 	Cause error
 }
 

@@ -288,6 +288,19 @@ type Env struct {
 	// to stderr. A nil callback discards the rendering; the
 	// failure still propagates as an error.
 	RenderEventuallyFailure func(span Span, attempts int, elapsedMs int64, lastErr error)
+
+	// ChunkFile and ChunkStartLine identify the source file
+	// and start line of the chunk currently being parsed and
+	// evaluated. The chunk loop sets them from its loc; the
+	// evaluator captures them when a construct (def) is
+	// registered so a later error escaping its body can be
+	// decorated with the correct absolute file+line, even when
+	// the call happens from a different chunk or after a
+	// sourced library has finished. An empty ChunkFile means
+	// the caller did not install loc-aware framing; downstream
+	// decoration paths skip the decoration in that case.
+	ChunkFile      string
+	ChunkStartLine int
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -503,12 +516,17 @@ func evalLetDestructureStmt(s *LetDestructureStmt, env *Env) error {
 
 // evalDefStmt registers s in the session's def table. Redefining an
 // existing def replaces it silently; this matches let and alias.
+// The current chunk's file and start line are captured on the
+// DefValue so a later body error escaping the call frame can be
+// decorated with the registration site's absolute file+line.
 func evalDefStmt(s *DefStmt, env *Env) error {
 	env.Session.SetDef(&DefValue{
-		Name:   s.Name,
-		Params: s.Params,
-		Body:   s.Body,
-		Span:   s.Span,
+		Name:         s.Name,
+		Params:       s.Params,
+		Body:         s.Body,
+		RegFile:      env.ChunkFile,
+		RegStartLine: env.ChunkStartLine,
+		Span:         s.Span,
 	})
 	return nil
 }
@@ -532,7 +550,7 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
-	return env.Session.WithFrame(func() error {
+	err := env.Session.WithFrame(func() error {
 		for i, p := range def.Params {
 			env.Session.Set(p, argToValue(args[i]))
 		}
@@ -545,6 +563,36 @@ func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 			return nil
 		})
 	})
+	return decorateDefError(err, def)
+}
+
+// decorateDefError attaches the def's registration site (file
+// and absolute line offset) to a *SyntaxError escaping the body,
+// so the diagnostic localises against the file the def was
+// declared in rather than whatever chunk is currently running.
+// Errors that already carry a File are left alone (an inner
+// callDef has already decorated them with the inner def's
+// registration site).
+func decorateDefError(err error, def *DefValue) error {
+	if err == nil || def.RegFile == "" {
+		return err
+	}
+	var se *SyntaxError
+	if !errors.As(err, &se) {
+		return err
+	}
+	if se.File != "" {
+		return err
+	}
+	se.File = def.RegFile
+	if def.RegStartLine > 0 {
+		shift := def.RegStartLine - 1
+		se.Span.Pos.Line += shift
+		if se.Span.End.Line > 0 {
+			se.Span.End.Line += shift
+		}
+	}
+	return err
 }
 
 // argToValue converts a post-expansion Arg into a Value suitable for

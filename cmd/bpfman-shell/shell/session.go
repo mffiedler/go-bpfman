@@ -33,10 +33,19 @@ type Session struct {
 // DefValue is a user-defined command registered via the `def NAME(P1
 // P2 ...) { BODY }` form. It holds the parameter list, the parsed
 // body, and the source location of the declaration for diagnostics.
+//
+// RegFile / RegStartLine remember the chunk's source location at
+// registration. A def registered in a sourced library and later
+// called from the importer would otherwise have a body whose Spans
+// are chunk-relative to a chunk that no longer exists; this pair
+// lets callDef decorate any *SyntaxError escaping the body with the
+// absolute library file + line.
 type DefValue struct {
-	Name   string
-	Params []string
-	Body   []Stmt
+	Name         string
+	Params       []string
+	Body         []Stmt
+	RegFile      string
+	RegStartLine int
 	Span
 }
 
