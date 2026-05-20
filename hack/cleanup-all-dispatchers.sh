@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 #
-# Emit ip(8) / tc(8) commands that drain every bpfman dispatcher
-# attached anywhere on the host. Walks the root netns plus every
-# netns under /run/netns, looks up each interface's XDP and TC
-# attachments via `bpftool net show`, and for every attachment whose
-# backing program is `xdp_dispatcher` or `tc_dispatcher` emits the
-# command that detaches it (XDP via `ip link set ... xdp off`, TC
-# via `tc qdisc del ... clsact`). The kernel then garbage-collects
-# the program once its last reference drops, unless something else
-# (a pinned file, an open fd) keeps it alive.
+# Emit ip(8) / tc(8) / bpftool(8) commands that drain every bpfman
+# dispatcher attached anywhere on the host. Walks the root netns
+# plus every netns under /run/netns, looks up each interface's XDP
+# and TC attachments via `bpftool net show`, and for every
+# attachment whose backing program is `xdp_dispatcher` or
+# `tc_dispatcher` emits the command that detaches it. The kernel
+# then garbage-collects the program once its last reference drops,
+# unless something else keeps it alive.
+#
+# XDP: bpfman attaches dispatchers via the bpf_link API and pins
+# the link under /sys/fs/bpf, so `ip link set ... xdp off` is the
+# wrong primitive -- the kernel rejects it with "Can't replace
+# active BPF XDP link". The right move is to drop the last
+# reference: `rm` the link pin (the kernel detaches and GCs the
+# link), or `bpftool link detach id N` if the link is unpinned.
+# This script joins `bpftool net show -j` with
+# `bpftool -f link show -j` by prog_id to find the pin paths.
+#
+# TC: a single clsact qdisc carries both ingress and egress
+# filters; `tc qdisc del ... clsact` cascades both. bpfman's TC
+# attachment still goes through clsact, so the qdisc delete is
+# enough.
 #
 # The script does not mutate anything itself. It writes the commands
 # it would run to stdout so you can read them before deciding to
@@ -82,6 +95,42 @@ prog_name_is() {
     [[ "$got" == "$want" ]]
 }
 
+# emit_xdp_link_drain emits the command(s) needed to evict every
+# XDP bpf_link backed by the given prog_id. Prefers `rm` on the
+# link's pin file (dropping the last reference makes the kernel
+# detach and GC the link); falls back to `bpftool link detach id N`
+# for an unpinned link. The first argument is an empty string for
+# the root netns, otherwise `ip netns exec NS ` (note trailing
+# space) so the emitted command runs inside that netns.
+emit_xdp_link_drain() {
+    local prefix="$1"
+    local prog_id="$2"
+    local link_json="$3"
+
+    local matches
+    matches=$(echo "$link_json" | jq -c --argjson pid "$prog_id" \
+        '.[] | select(.type=="xdp" and .prog_id==$pid)')
+    if [[ -z "$matches" ]]; then
+        return
+    fi
+
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        local pins
+        pins=$(echo "$entry" | jq -r '.pinned[]? // empty')
+        if [[ -n "$pins" ]]; then
+            while IFS= read -r pin; do
+                [[ -z "$pin" ]] && continue
+                printf 'rm -f -- %s\n' "$pin"
+            done <<< "$pins"
+            continue
+        fi
+        local link_id
+        link_id=$(echo "$entry" | jq -r '.id')
+        printf '%sbpftool link detach id %s\n' "$prefix" "$link_id"
+    done <<< "$matches"
+}
+
 # emit_drains walks every interface in one netns and emits the
 # command that detaches any bpfman dispatcher attached to it. The
 # netns argument is empty for the root netns; an explicit name
@@ -90,11 +139,11 @@ prog_name_is() {
 emit_drains() {
     local ns="${1:-}"
     local nsenter=()
-    local ip_prefix='ip'
+    local link_prefix=''
     local tc_prefix='tc'
     if [[ -n "$ns" ]]; then
         nsenter=(ip netns exec "$ns")
-        ip_prefix="ip -n $ns"
+        link_prefix="ip netns exec $ns "
         tc_prefix="ip netns exec $ns tc"
     fi
 
@@ -104,14 +153,23 @@ emit_drains() {
         return
     fi
 
+    # bpftool -f scans the bpf fs so each link entry carries a
+    # `pinned` array. We need that to know which file to remove to
+    # drop the last reference on a dispatcher link.
+    local link_json
+    link_json=$("${nsenter[@]}" bpftool -f link show -j 2>/dev/null || echo '[]')
+
     # XDP entries carry the prog id but not the name; look the name
     # up per id so we only emit drains for interfaces whose XDP is
-    # actually a bpfman dispatcher.
+    # actually a bpfman dispatcher. The kernel attaches via the
+    # bpf_link API, so for each matching prog we find its bpf_link
+    # in link_json and either rm the pin file or detach by id.
     while read -r ifname id; do
         [[ -z "$ifname" || -z "$id" ]] && continue
-        if prog_name_is "$id" "xdp_dispatcher"; then
-            printf '%s link set dev %s xdp off\n' "$ip_prefix" "$ifname"
+        if ! prog_name_is "$id" "xdp_dispatcher"; then
+            continue
         fi
+        emit_xdp_link_drain "$link_prefix" "$id" "$link_json"
     done < <(echo "$net_json" | jq -r '.[0].xdp[]? | "\(.devname) \(.id)"')
 
     # TC entries already include the program name, so the name check

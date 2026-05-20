@@ -49,6 +49,16 @@
 #      of a veth cascades the peer wherever it lives).
 #   4. Delete the test netns.
 #
+# XDP drains go through the bpf_link API: bpfman pins its links
+# under /sys/fs/bpf, so `ip link set ... xdp off` cannot evict
+# them (the kernel rejects with "Can't replace active BPF XDP
+# link"). Instead this script joins `bpftool -f link show -j` per
+# netns and emits `rm <pin>` (drop the last reference so the
+# kernel detaches and GCs the link) or `bpftool link detach id N`
+# for unpinned links. Doing this before phase 3/4 is what stops
+# the kernel from leaving "detached" link objects pinned in the
+# bpf fs after the netdev or netns disappears.
+#
 # Each emitted command is independent -- a flat list, no `set -e`.
 # A failure when the pipeline executes (e.g. "no such qdisc") does
 # not abort the rest, which matches the harness's idempotent intent.
@@ -80,24 +90,74 @@ ifaces_in() {
         | grep -vx 'lo' || true
 }
 
+# emit_xdp_link_drains_in_ns emits `rm <pin>` (preferred) or
+# `bpftool link detach id N` (fallback) for every XDP bpf_link
+# attached in the given netns whose devname matches the supplied
+# bash regex. The netns argument is empty for the host; a name
+# routes the bpftool lookups and the emitted detach command
+# through `ip netns exec NS`.
+emit_xdp_link_drains_in_ns() {
+    local ns="${1:-}"
+    local iface_re="${2:-}"
+    local nsenter=()
+    local prefix=''
+    if [[ -n "$ns" ]]; then
+        nsenter=(ip netns exec "$ns")
+        prefix="ip netns exec $ns "
+    fi
+    local link_json
+    link_json=$("${nsenter[@]}" bpftool -f link show -j 2>/dev/null || echo '[]')
+    if [[ -z "$link_json" || "$link_json" == '[]' ]]; then
+        return
+    fi
+    local matches
+    matches=$(echo "$link_json" | jq -c '.[] | select(.type=="xdp")')
+    if [[ -z "$matches" ]]; then
+        return
+    fi
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        local devname
+        devname=$(echo "$entry" | jq -r '.devname // ""')
+        if [[ -n "$iface_re" ]] && ! [[ "$devname" =~ $iface_re ]]; then
+            continue
+        fi
+        local pins
+        pins=$(echo "$entry" | jq -r '.pinned[]? // empty')
+        if [[ -n "$pins" ]]; then
+            while IFS= read -r pin; do
+                [[ -z "$pin" ]] && continue
+                printf 'rm -f -- %s\n' "$pin"
+            done <<< "$pins"
+            continue
+        fi
+        local link_id
+        link_id=$(echo "$entry" | jq -r '.id')
+        printf '%sbpftool link detach id %s\n' "$prefix" "$link_id"
+    done <<< "$matches"
+}
+
 # Phase 1: drain attachments off every interface in each test netns.
+# Every iface in a `B<hex>N` netns is in scope, so no name filter is
+# needed for the XDP drain; the tc qdisc del is per-iface as before
+# and harmless when no clsact exists.
 shopt -s nullglob
 for path in /run/netns/B*N; do
     ns=$(basename "$path")
     if [[ ! "$ns" =~ ^B[0-9a-f]{12}N$ ]]; then
         continue
     fi
+    emit_xdp_link_drains_in_ns "$ns" ""
     while read -r iface; do
-        printf 'ip -n %s link set dev %s xdp off\n' "$ns" "$iface"
         printf 'ip netns exec %s tc qdisc del dev %s clsact\n' "$ns" "$iface"
     done < <(ifaces_in "$ns")
 done
 
 # Phase 2: drain attachments off every host-side test interface.
 # Both bare-`N` dummies and `Na` / `Nb` veth ends are in scope.
+emit_xdp_link_drains_in_ns "" '^B[0-9a-f]{12}N[ab]?$'
 while read -r iface; do
     if [[ "$iface" =~ ^B[0-9a-f]{12}N[ab]?$ ]]; then
-        printf 'ip link set dev %s xdp off\n' "$iface"
         printf 'tc qdisc del dev %s clsact\n' "$iface"
     fi
 done < <(ifaces_in "")
