@@ -164,6 +164,14 @@ type LinkRow struct {
 	// Pointer + omitempty encodes that absence.
 	Kernel *kernel.Link `json:"kernel,omitempty"`
 
+	// FSPinPath is the bpf fs pin file backing this link, when one
+	// is found. Populated from a walk of bpfman's bpf fs subtree
+	// that loads each file as a bpf_link to read its ID, so
+	// kernel-only links pinned under dispatcher or TCX subtrees
+	// (which the per-program LinkDirs scan does not enter) still
+	// surface their pin here. Empty when no pin was located.
+	FSPinPath string `json:"fs_pin_path,omitempty"`
+
 	Presence Presence `json:"presence"`
 }
 
@@ -360,6 +368,16 @@ func Snapshot(
 	fsDispDirs := make(map[string]*fs.DispatcherDir) // "type/nsid/ifindex" -> dir
 	fsDispLinks := make(map[string]string)           // "type/nsid/ifindex" -> path
 
+	// Comprehensive link-pin index built by walking the entire
+	// bpf fs subtree and loading each candidate as a bpf_link.
+	// Used to set FSPinPath on every LinkRow below, including
+	// kernel-only links whose pin lives outside {fs}/links/
+	// (extension link slots, TCX, dispatcher stable links).
+	fsLinkPins, err := scanLinkPins(ctx, scanner)
+	if err != nil {
+		obs.Meta.Errors = append(obs.Meta.Errors, err)
+	}
+
 	for pin, err := range scanner.ProgPins(ctx) {
 		if err != nil {
 			obs.Meta.Errors = append(obs.Meta.Errors, err)
@@ -494,13 +512,29 @@ func Snapshot(
 			}
 		}
 
+		// Resolve the pin path: prefer the bpf-fs walk index
+		// (covers extension links and TCX pins), then fall
+		// back to the store's recorded PinPath. The InFS flag
+		// tracks whether either source confirmed a live pin.
+		var fsPinPath string
 		var inFS bool
-		if link.PinPath != nil {
-			inFS = scanner.PathExists(link.PinPath.String())
+		if !link.IsSynthetic() {
+			if pin, ok := fsLinkPins[link.ID]; ok {
+				fsPinPath = pin
+				inFS = true
+			}
+		}
+		if fsPinPath == "" && link.PinPath != nil {
+			storePath := link.PinPath.String()
+			if scanner.PathExists(storePath) {
+				fsPinPath = storePath
+				inFS = true
+			}
 		}
 		row := LinkRow{
-			Managed: &link,
-			Kernel:  kernelLink,
+			Managed:   &link,
+			Kernel:    kernelLink,
+			FSPinPath: fsPinPath,
 			Presence: Presence{
 				InStore:  true,
 				InKernel: kernelLink != nil,
@@ -510,17 +544,19 @@ func Snapshot(
 		obs.Links = append(obs.Links, row)
 	}
 
-	// Add kernel-only links (not in store)
+	// Add kernel-only links (not in store).
 	for kernelLinkID, kl := range kernelLinks {
 		if seenKernelLinkIDs[kernelLinkID] {
 			continue
 		}
+		pin, inFS := fsLinkPins[kernelLinkID]
 		row := LinkRow{
-			Kernel: &kl,
+			Kernel:    &kl,
+			FSPinPath: pin,
 			Presence: Presence{
 				InStore:  false,
 				InKernel: true,
-				InFS:     false,
+				InFS:     inFS,
 			},
 		}
 		obs.Links = append(obs.Links, row)

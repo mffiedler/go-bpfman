@@ -102,6 +102,14 @@ func (s *Scanner) fs() string {
 	return s.b.mountPoint()
 }
 
+// MountPoint returns the bpffs mount point this scanner is
+// rooted at. Exposed so callers that need to walk the whole
+// tree (e.g. inspect's link-pin indexer) can do so without
+// re-encoding the layout's path conventions.
+func (s *Scanner) MountPoint() string {
+	return s.b.MountPoint()
+}
+
 // xdpDir returns the XDP dispatcher directory.
 func (s *Scanner) xdpDir() string {
 	return s.b.xdpDir()
