@@ -660,6 +660,15 @@ func (p *parser) parseLetStmt() (Stmt, error) {
 	switch p.peek().Kind {
 	case TokenAssign:
 		p.advance() // "="
+		// `_` is consistently a discard slot at every binding
+		// site (bind, destructure, foreach); the single-name
+		// let was historically the only site that bound `_`
+		// as an ordinary name. Reject it so the asymmetry is
+		// gone: force-evaluation for side effects belongs in
+		// bind / guard / a bare command, not `let _ = ...`.
+		if name == "_" {
+			return nil, spanErrorf(nameTok.Span, "single-name let cannot bind '_'; use a real name")
+		}
 		rhsTokens, err := p.takeStmtTokens(true)
 		if err != nil {
 			return nil, err

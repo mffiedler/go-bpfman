@@ -208,6 +208,7 @@ func TestParse_LetErrors(t *testing.T) {
 		{"non-identifier LHS", "let $x = foo", "let requires an identifier"},
 		{"invalid identifier", "let 0bad = foo", "invalid variable name"},
 		{"second assign in RHS", "let x = a = b", "unexpected '='"},
+		{"single-name underscore", "let _ = something", "single-name let cannot bind '_'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
