@@ -33,6 +33,7 @@ import (
 	"github.com/frobware/go-bpfman/e2e/testnet"
 	"github.com/frobware/go-bpfman/fs"
 	fsruntime "github.com/frobware/go-bpfman/fs/runtime"
+	"github.com/frobware/go-bpfman/internal/bpfresidue"
 	"github.com/frobware/go-bpfman/kernel"
 	"github.com/frobware/go-bpfman/lock"
 	"github.com/frobware/go-bpfman/logging"
@@ -778,10 +779,24 @@ func tcFilterCount(t *testing.T, iface, direction string) int {
 const staleTestDirPrefix = "bpfman-e2e-"
 
 // cleanupStaleTestArtifacts removes leftover test interfaces,
-// namespaces, and directories from previous runs.
+// namespaces, and directories from previous runs. When the
+// interface / netns sweep finds anything, the per-step action
+// list is written to stderr so an interrupted prior run is
+// announced rather than silently swept.
 func cleanupStaleTestDirs() error {
-	if err := testnet.CleanupStaleInterfaces(); err != nil {
+	plan, failures, err := bpfresidue.CleanupStaleInterfaces(bpfresidue.DefaultBPFFS, bpfresidue.DefaultNetnsDir)
+	if err != nil {
 		return err
+	}
+	if !plan.Empty() {
+		fmt.Fprintln(os.Stderr, "e2e pre-flight removed residue from a prior run:")
+		plan.Describe(os.Stderr)
+	}
+	for _, f := range failures {
+		fmt.Fprintf(os.Stderr, "e2e pre-flight FAIL: %s: %v\n", f.Action.Describe(), f.Err)
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("e2e pre-flight: %d action(s) failed", len(failures))
 	}
 
 	tempDir := os.TempDir()
