@@ -199,6 +199,17 @@ func (m *Manager) Get(ctx context.Context, programID kernel.ProgramID) (bpfman.P
 	}, nil
 }
 
+// Snapshot returns a point-in-time correlated view of every
+// managed program, link, and dispatcher across the store,
+// kernel, and bpf fs. Each row's Presence flags expose where
+// the object is currently observable, so callers can detect
+// orphans (InFS without InStore, etc.) without re-running the
+// three enumerations themselves.
+func (m *Manager) Snapshot(ctx context.Context) (*inspect.Observation, error) {
+	scanner := m.rt.BPFFS().Scanner()
+	return inspect.Snapshot(ctx, m.store, m.kernel, scanner)
+}
+
 // ListLinks returns all managed links (records only).
 // Optional LinkListOption arguments filter the results.
 func (m *Manager) ListLinks(ctx context.Context, opts ...bpfman.LinkListOption) ([]bpfman.LinkRecord, error) {
