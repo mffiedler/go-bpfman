@@ -135,41 +135,6 @@ type NegateExpr struct {
 	Span
 }
 
-// TimeoutExpr is a retry-scoped primary expression that evaluates
-// to true when the enclosing retry loop has been running for at
-// least the duration produced by Arg.  Arg is a sub-expression
-// evaluated at check time, so the duration can be a literal
-// ("timeout 60s"), a variable ("timeout $max_wait"), an
-// interpolated string ('timeout "${n}s"'), or any other primary
-// that reduces to a scalar string acceptable to
-// time.ParseDuration.  Outside a retry context evaluation is a
-// runtime error, cited at the 'timeout' token.
-//
-//	until $phase == ready or timeout 60s
-//	until not timeout 5s and $converged
-//	until $ready or timeout $max_wait
-type TimeoutExpr struct {
-	Arg Expr
-	Span
-}
-
-// IterationExpr is a retry-scoped primary expression that
-// evaluates to true when the enclosing retry loop has executed
-// at least the count produced by Arg.  Arg is a sub-expression
-// evaluated at check time, so the count can be a literal
-// ("iteration 10"), a variable ("iteration $max"), or any other
-// primary that reduces to a non-negative integer scalar.
-// Outside a retry context evaluation is a runtime error, cited at
-// the 'iteration' token.
-//
-//	until iteration 10                 -- cap at ten attempts
-//	until $done or iteration 100       -- success or give up
-//	until $done or iteration $max      -- configurable cap
-type IterationExpr struct {
-	Arg Expr
-	Span
-}
-
 // PureCallExpr is an expression-position invocation of a pure
 // builtin: a name registered in the pure-builtin registry plus
 // exactly Arity primary expressions as arguments. The parser
@@ -217,8 +182,6 @@ func (*ThreadExpr) exprNode()       {}
 func (*LogicalExpr) exprNode()      {}
 func (*NotExpr) exprNode()          {}
 func (*NegateExpr) exprNode()       {}
-func (*TimeoutExpr) exprNode()      {}
-func (*IterationExpr) exprNode()    {}
 func (*PureCallExpr) exprNode()     {}
 func (*ListExpr) exprNode()         {}
 
@@ -300,19 +263,6 @@ type Env struct {
 	// unmanaged entries. Saved/restored alongside defers so
 	// nested scopes compose.
 	jobs *[]*Job
-
-	// retryStart is the time when the current retry loop began,
-	// or the zero value when no retry is active.  TimeoutExpr
-	// reads it to decide whether a duration has elapsed.
-	// evalRetryStmt owns the save / set / restore dance so
-	// nested retries behave sensibly.
-	retryStart time.Time
-
-	// retryIter is the current retry iteration (1-based,
-	// incremented before each body run), or zero outside a
-	// retry.  IterationExpr reads it.  evalRetryStmt manages
-	// the save / set / restore dance alongside retryStart.
-	retryIter int
 
 	// Trace, when non-nil, is invoked just before a statement
 	// executes (and again when a deferred command fires at scope
@@ -426,7 +376,7 @@ func stmtLoc(s Stmt) Pos {
 		return v.Pos
 	case *ForEachStmt:
 		return v.Pos
-	case *RetryStmt:
+	case *EventuallyStmt:
 		return v.Pos
 	case *BreakStmt:
 		return v.Pos
@@ -482,8 +432,8 @@ func evalStmt(stmt Stmt, env *Env) error {
 		return evalExprStmt(s, env)
 	case *ForEachStmt:
 		return evalForEachStmt(s, env)
-	case *RetryStmt:
-		return evalRetryStmt(s, env)
+	case *EventuallyStmt:
+		return evalEventuallyStmt(s, env)
 	case *BreakStmt:
 		return errBreak
 	case *ContinueStmt:
@@ -551,48 +501,37 @@ func evalDefStmt(s *DefStmt, env *Env) error {
 	return nil
 }
 
-// callDef binds def parameters from args, runs def.Body in env, and
-// restores the prior session bindings on return. Arity is checked
-// against len(def.Params) and a mismatch yields a runtime error
-// citing both the call site and the def's declaration site.
+// callDef binds def parameters from args and runs def.Body in
+// env. Each call runs in its own session frame: parameters bind
+// into the call frame, body-level `let` lives there too, and
+// everything disappears when the call returns. Recursion works
+// naturally because each call gets its own frame. Arity is
+// checked against len(def.Params) and a mismatch yields a
+// runtime error citing both the call site and the def's
+// declaration site.
 //
-// The shadow-and-restore is implemented over the existing flat
-// session map: each parameter's prior value is captured (or noted as
-// absent) before the body runs and reinstated afterwards. Recursion
-// works naturally because each call's saves slice is local to its
-// invocation.
+// Defs do not capture variable frames: the body resolves
+// references against the caller's frame stack at call time plus
+// its own call frame. Definition-time bindings are not part of
+// the closure. If lexical capture becomes a need, that is a
+// separate design.
 func callDef(def *DefValue, args []Arg, callLoc Pos, env *Env) error {
 	if len(args) != len(def.Params) {
 		return locErrorf(callLoc, "%s: expected %d argument(s), got %d (def declared at %d:%d)",
 			def.Name, len(def.Params), len(args), def.Pos.Line, def.Pos.Col)
 	}
-	type saved struct {
-		name string
-		val  Value
-		had  bool
-	}
-	saves := make([]saved, len(def.Params))
-	for i, p := range def.Params {
-		v, ok := env.Session.Get(p)
-		saves[i] = saved{name: p, val: v, had: ok}
-		env.Session.Set(p, argToValue(args[i]))
-	}
-	defer func() {
-		for _, s := range saves {
-			if s.had {
-				env.Session.Set(s.name, s.val)
-			} else {
-				env.Session.Delete(s.name)
-			}
+	return env.Session.WithFrame(func() error {
+		for i, p := range def.Params {
+			env.Session.Set(p, argToValue(args[i]))
 		}
-	}()
-	return runWithDeferScope(env, func() error {
-		for _, stmt := range def.Body {
-			if err := evalStmt(stmt, env); err != nil {
-				return err
+		return runWithDeferScope(env, func() error {
+			for _, stmt := range def.Body {
+				if err := evalStmt(stmt, env); err != nil {
+					return err
+				}
 			}
-		}
-		return nil
+			return nil
+		})
 	})
 }
 
@@ -628,116 +567,6 @@ func argToValue(a Arg) Value {
 // retryBackoff is the fixed sleep between retry iterations.
 // Small enough to keep short condition windows responsive, large
 // enough to avoid pegging the CPU for long-running checks.
-const retryBackoff = 100 * time.Millisecond
-
-// evalRetryStmt runs s.Body repeatedly until s.Until evaluates
-// to true.  Each iteration rebinds $iter (1-based iteration
-// count) in the session so Until expressions can cap by
-// iteration count.  Elapsed-time checks go through the
-// TimeoutExpr primary ("timeout 30s") rather than a magic
-// variable; Env.retryStart carries the clock.
-//
-// A failing body does not halt the retry; the body's error is
-// carried across iterations and returned only when Until
-// finally becomes true.  That way a timeout-style exit
-// surfaces the reason the body was failing at the moment the
-// budget ran out.  Until runs after each body regardless of
-// whether the body errored, so a time cap fires even when
-// every attempt is failing.
-//
-// Nested retries are supported: Env.retryStart is saved and
-// restored, so an inner retry's 'timeout' evaluates against
-// the inner's clock.
-//
-// Ctrl-C interrupts the process; there is no context plumbing
-// through the evaluator yet, so a retry with a never-satisfied
-// Until loops until the process is killed.  Users writing
-// long-running retries are expected to include a cap in their
-// Until expression ("$x == done or timeout 60s").
-func evalRetryStmt(s *RetryStmt, env *Env) error {
-	prevStart := env.retryStart
-	prevIter := env.retryIter
-	env.retryStart = time.Now()
-	env.retryIter = 0
-	defer func() {
-		env.retryStart = prevStart
-		env.retryIter = prevIter
-	}()
-
-	var bodyErr error
-	for {
-		env.retryIter++
-		bodyErr = nil
-		for _, stmt := range s.Body {
-			if err := evalStmt(stmt, env); err != nil {
-				bodyErr = err
-				break
-			}
-		}
-
-		untilV, err := EvalExpr(s.Until, env)
-		if err != nil {
-			return err
-		}
-		untilB, err := AsBool(untilV)
-		if err != nil {
-			return spanErrorf(s.Span, "retry: until expression: %v", err)
-		}
-		if untilB {
-			return bodyErr
-		}
-		time.Sleep(retryBackoff)
-	}
-}
-
-// evalTimeoutExpr returns true when the current retry has been
-// running for at least e.Duration.  Outside a retry context
-// (Env.retryStart zero) it errors, since there is no clock to
-// measure against.
-func evalTimeoutExpr(e *TimeoutExpr, env *Env) (Value, error) {
-	if env.retryStart.IsZero() {
-		return Value{}, spanErrorf(e.Span, "timeout expression is only valid inside a retry body or its until clause")
-	}
-	v, err := EvalExpr(e.Arg, env)
-	if err != nil {
-		return Value{}, err
-	}
-	s, err := v.Scalar()
-	if err != nil {
-		return Value{}, spanErrorf(e.Span, "timeout: argument must be a scalar duration: %v", err)
-	}
-	d, err := parseDurationLiteral(s)
-	if err != nil {
-		return Value{}, spanErrorf(e.Span, "timeout: %v", err)
-	}
-	return BoolValue(time.Since(env.retryStart) >= d), nil
-}
-
-// evalIterationExpr returns true when the current retry has
-// executed at least the iteration count produced by e.Arg.
-// Outside a retry context (Env.retryIter zero) it errors.
-func evalIterationExpr(e *IterationExpr, env *Env) (Value, error) {
-	if env.retryIter == 0 {
-		return Value{}, spanErrorf(e.Span, "iteration expression is only valid inside a retry body or its until clause")
-	}
-	v, err := EvalExpr(e.Arg, env)
-	if err != nil {
-		return Value{}, err
-	}
-	s, err := v.Scalar()
-	if err != nil {
-		return Value{}, spanErrorf(e.Span, "iteration: argument must be a scalar count: %v", err)
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return Value{}, spanErrorf(e.Span, "iteration: %q is not a valid integer count", s)
-	}
-	if n < 0 {
-		return Value{}, spanErrorf(e.Span, "iteration: count %d is negative", n)
-	}
-	return BoolValue(env.retryIter >= n), nil
-}
-
 func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	v, err := EvalExpr(s.List, env)
 	if err != nil {
@@ -750,68 +579,41 @@ func evalForEachStmt(s *ForEachStmt, env *Env) error {
 	if !ok {
 		return spanErrorf(s.Span, "foreach: expected a list, got %s", v.Kind())
 	}
-	// Loop variables are body-scoped: any prior binding of the
-	// same name is restored after the loop ends, and a name that
-	// did not exist before the loop disappears again. This drops
-	// shell-style "loop variable persists" semantics, which is the
-	// only place the language was copying bash without a reason --
-	// the rest of the DSL deliberately avoids shell foot-guns.
-	restore := saveForEachNames(env, s.Names)
-	defer restore()
+	// Each iteration runs in a fresh frame: the loop variables
+	// and any body-level `let` live in that frame and disappear
+	// at iteration end. State that needs to cross an iteration
+	// boundary travels through bind-collect results, command
+	// side effects, or defers captured while the frame was live;
+	// the language has no outward-write primitive.
 iter:
 	for i := range list {
 		elemVal := v.IndexValue(i)
-		if err := bindForEachElement(env, s, elemVal, i); err != nil {
-			return err
-		}
-		if env.Trace != nil {
-			emitForEachTrace(env, s, elemVal, list[i])
-		}
-		for _, stmt := range s.Body {
-			err := evalStmt(stmt, env)
-			switch {
-			case err == nil:
-				continue
-			case errors.Is(err, errBreak):
-				break iter
-			case errors.Is(err, errContinue):
-				continue iter
-			default:
+		iterErr := env.Session.WithFrame(func() error {
+			if err := bindForEachElement(env, s, elemVal, i); err != nil {
 				return err
 			}
+			if env.Trace != nil {
+				emitForEachTrace(env, s, elemVal, list[i])
+			}
+			for _, stmt := range s.Body {
+				if err := evalStmt(stmt, env); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		switch {
+		case iterErr == nil:
+			continue
+		case errors.Is(iterErr, errBreak):
+			break iter
+		case errors.Is(iterErr, errContinue):
+			continue iter
+		default:
+			return iterErr
 		}
 	}
 	return nil
-}
-
-// saveForEachNames snapshots the session bindings for every loop
-// variable in names and returns a restorer that re-establishes
-// them (or deletes the binding when the name was absent before).
-// "_" entries are skipped: a discard slot has no observable
-// binding to save or restore.
-func saveForEachNames(env *Env, names []string) func() {
-	type snap struct {
-		name     string
-		prior    Value
-		hadPrior bool
-	}
-	saves := make([]snap, 0, len(names))
-	for _, n := range names {
-		if n == "_" {
-			continue
-		}
-		prior, had := env.Session.Get(n)
-		saves = append(saves, snap{name: n, prior: prior, hadPrior: had})
-	}
-	return func() {
-		for _, s := range saves {
-			if s.hadPrior {
-				env.Session.Set(s.name, s.prior)
-			} else {
-				env.Session.Delete(s.name)
-			}
-		}
-	}
 }
 
 // bindForEachElement installs the current iteration's element
@@ -873,6 +675,12 @@ func emitForEachTrace(env *Env, s *ForEachStmt, elem Value, raw any) {
 
 func evalIfStmt(s *IfStmt, env *Env) error {
 	check := func(cond Expr) (bool, error) {
+		// Conditions evaluate in the outer frame so let
+		// bindings produced by a condition expression -- if any
+		// future form ever introduces one -- would live where
+		// the if statement does, not in a branch frame that is
+		// already disappearing by the time we look at its
+		// result.
 		v, err := EvalExpr(cond, env)
 		if err != nil {
 			return false, err
@@ -883,13 +691,20 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		}
 		return b, nil
 	}
+	// Each branch body runs inside a fresh frame: a `let` in the
+	// chosen branch lives there and disappears when the branch
+	// ends. Sibling branches do not see each other's bindings
+	// because each one runs in its own frame, and only the
+	// selected branch runs at all.
 	runBody := func(body []Stmt) error {
-		for _, stmt := range body {
-			if err := evalStmt(stmt, env); err != nil {
-				return err
+		return env.Session.WithFrame(func() error {
+			for _, stmt := range body {
+				if err := evalStmt(stmt, env); err != nil {
+					return err
+				}
 			}
-		}
-		return nil
+			return nil
+		})
 	}
 	ok, err := check(s.Cond)
 	if err != nil {
@@ -911,6 +726,192 @@ func evalIfStmt(s *IfStmt, env *Env) error {
 		return runBody(s.Else)
 	}
 	return nil
+}
+
+// defaultEventuallyInterval is the cadence between attempts
+// when the user did not name an explicit `interval DUR`. Small
+// enough to be responsive for sub-second polling, large enough
+// not to peg the CPU on long retries.
+const defaultEventuallyInterval = 100 * time.Millisecond
+
+// eventuallyResult is the outcome of an eventually run. The
+// bind form returns this packaged as a Value; the statement
+// form consumes it directly and propagates the last retryable
+// error on failure.
+type eventuallyResult struct {
+	ok         bool
+	timedOut   bool
+	attempts   int
+	elapsedMs  int64
+	lastError  error
+	lastErrMsg string
+}
+
+// runEventually drives the retry loop for both the statement
+// form and the bind form. Each attempt runs inside its own
+// session frame and its own defer scope, snapshots the session
+// assertion counter, executes the body, and classifies the
+// outcome:
+//
+//   - Body completed cleanly AND no new assertion was recorded:
+//     success.
+//   - Body returned a retryable error, or recorded an assertion
+//     failure: attempt failed; if Timeout has not elapsed, sleep
+//     Interval and retry.
+//   - Body returned a fatal error: propagate immediately, no
+//     retry. The bind form does not catch fatal errors; only
+//     retry timeout is caught.
+//
+// The assertion-counter snapshot/reset protocol compensates for
+// the fact that the assert dispatcher mutates the counter as a
+// side effect. After every attempt we reset to the snapshot so
+// retries do not multi-count, and on overall failure we
+// increment by one so the construct reports its outcome exactly
+// once.
+func runEventually(s *EventuallyStmt, env *Env) (eventuallyResult, error) {
+	interval := s.Interval
+	if interval == 0 {
+		interval = defaultEventuallyInterval
+	}
+	startCounter := env.Session.AssertFailures()
+	start := time.Now()
+	result := eventuallyResult{}
+	deadline := start.Add(s.Timeout)
+	for {
+		result.attempts++
+		attemptCounter := env.Session.AssertFailures()
+		env.Session.EnterEventuallyAttempt()
+		bodyErr := env.Session.WithFrame(func() error {
+			return WithDeferScope(env, func() error {
+				for _, stmt := range s.Body {
+					if err := evalStmt(stmt, env); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		})
+		env.Session.ExitEventuallyAttempt()
+		// Did this attempt record a new assert failure? Reset
+		// the counter to the pre-attempt snapshot so retries do
+		// not accumulate; the overall outcome decides whether
+		// to charge one failure at the end.
+		assertDelta := env.Session.AssertFailures() - attemptCounter
+		if assertDelta > 0 {
+			resetAssertCounter(env.Session, attemptCounter)
+		}
+		// Success: no error and no new assertion failure.
+		if bodyErr == nil && assertDelta == 0 {
+			result.ok = true
+			result.elapsedMs = time.Since(start).Milliseconds()
+			// Counter has already been restored to the pre-
+			// attempt value (which equals the pre-construct
+			// value since earlier attempts also reset).
+			_ = startCounter
+			return result, nil
+		}
+		// Fatal: any non-retryable error halts immediately,
+		// regardless of bind form.
+		if bodyErr != nil {
+			var re RetryableError
+			if !errors.As(bodyErr, &re) || !re.Retryable() {
+				return eventuallyResult{}, bodyErr
+			}
+			result.lastError = bodyErr
+			result.lastErrMsg = bodyErr.Error()
+		} else {
+			// Body returned nil but an assertion failed.
+			// Record a synthetic last-error so the bind form
+			// has something to surface and the statement form
+			// has a reason to cite on overall timeout.
+			af := &AssertFailure{Span: s.Span, Expr: "attempt assertion(s) failed"}
+			result.lastError = af
+			result.lastErrMsg = af.Error()
+		}
+		// Have we run out of budget?
+		if !time.Now().Before(deadline) {
+			result.timedOut = true
+			result.elapsedMs = time.Since(start).Milliseconds()
+			// Charge the construct's failure as exactly one
+			// assertion against the session counter so the
+			// run's exit code reflects the timeout outcome.
+			env.Session.RecordAssertFailure()
+			return result, nil
+		}
+		time.Sleep(interval)
+	}
+}
+
+// resetAssertCounter rewinds the session's assertion failure
+// counter to target by decrementing one at a time. The counter
+// has no Set primitive on purpose -- mutation is meant to be
+// monotonic; eventually's snapshot/reset is the documented
+// exception bridge while the assert dispatcher still owns the
+// counter mutation.
+func resetAssertCounter(s *Session, target int) {
+	for s.AssertFailures() > target {
+		s.assertFailures--
+	}
+}
+
+// evalEventuallyStmt runs the statement form: a successful run
+// returns nil; an overall timeout propagates the last retryable
+// failure so the script halts with the same shape the failing
+// statement would have produced on its own.
+func evalEventuallyStmt(s *EventuallyStmt, env *Env) error {
+	res, err := runEventually(s, env)
+	if err != nil {
+		return err
+	}
+	if res.ok {
+		return nil
+	}
+	if res.lastError != nil {
+		return res.lastError
+	}
+	return spanErrorf(s.Span, "eventually: timed out after %s without satisfying the body", s.Timeout)
+}
+
+// evalEventuallyBind runs the bind form. Fatal errors still
+// halt; overall retry timeout returns ok:false on the bound
+// value rather than propagating. The result shape is the one
+// SCOPE-DESIGN.md Section 3.4 documents:
+//
+//	{ ok, timed_out, attempts, elapsed_ms, last_error }
+func evalEventuallyBind(s *BindStmt, env *Env) error {
+	res, err := runEventually(s.Eventually, env)
+	if err != nil {
+		// Fatal: the bind catches retry timeout, not
+		// programmer mistakes. No bindings happen.
+		return err
+	}
+	value := buildEventuallyResultValue(res)
+	rc := Envelope{OK: res.ok}
+	if s.Rc != "" && s.Rc != "_" {
+		env.Session.Set(s.Rc, ValueFromEnvelope(rc))
+	}
+	if s.Primary != "" && s.Primary != "_" {
+		env.Session.Set(s.Primary, value)
+	}
+	return nil
+}
+
+// buildEventuallyResultValue packages an eventually outcome as a
+// structured Value so the bind form's consumer can branch on
+// .ok / .timed_out and inspect .last_error verbatim.
+func buildEventuallyResultValue(res eventuallyResult) Value {
+	m := map[string]any{
+		"ok":         res.ok,
+		"timed_out":  res.timedOut,
+		"attempts":   res.attempts,
+		"elapsed_ms": res.elapsedMs,
+	}
+	if res.lastError == nil {
+		m["last_error"] = nil
+	} else {
+		m["last_error"] = res.lastErrMsg
+	}
+	return ValueFromMap(m)
 }
 
 // deferEntry is one captured invocation in a defer scope. Args
@@ -1140,6 +1141,9 @@ func evalBindStmt(s *BindStmt, env *Env) error {
 	if s.Collect != nil {
 		return evalBindCollect(s, env)
 	}
+	if s.Eventually != nil {
+		return evalEventuallyBind(s, env)
+	}
 	args, err := EvalArgs(s.Cmd.Args, env)
 	if err != nil {
 		return err
@@ -1197,9 +1201,6 @@ func evalBindCollect(s *BindStmt, env *Env) error {
 		return spanErrorf(fe.Span, "bind-collect: expected a list, got %s", v.Kind())
 	}
 
-	restore := saveForEachNames(env, fe.Names)
-	defer restore()
-
 	prefix := fe.Body[:len(fe.Body)-1]
 	producer := fe.Body[len(fe.Body)-1].(*CommandStmt)
 
@@ -1211,57 +1212,60 @@ func evalBindCollect(s *BindStmt, env *Env) error {
 iter:
 	for i := range list {
 		elemVal := v.IndexValue(i)
-		if err := bindForEachElement(env, fe, elemVal, i); err != nil {
-			return err
-		}
-		if env.Trace != nil {
-			emitForEachTrace(env, fe, elemVal, list[i])
-		}
-		skip := false
-		for _, stmt := range prefix {
-			err := evalStmt(stmt, env)
-			switch {
-			case err == nil:
-				continue
-			case errors.Is(err, errBreak):
-				break iter
-			case errors.Is(err, errContinue):
-				skip = true
-			default:
+		iterErr := env.Session.WithFrame(func() error {
+			if err := bindForEachElement(env, fe, elemVal, i); err != nil {
 				return err
 			}
-			if skip {
-				break
+			if env.Trace != nil {
+				emitForEachTrace(env, fe, elemVal, list[i])
 			}
-		}
-		if skip {
+			// Prefix statements may break or continue; both
+			// propagate as errors so the outer loop can decide
+			// whether to drop the producer (continue) or stop
+			// iterating entirely (break). Either way, the
+			// frame pops cleanly before the next iteration.
+			for _, stmt := range prefix {
+				if err := evalStmt(stmt, env); err != nil {
+					return err
+				}
+			}
+			args, err := EvalArgs(producer.Args, env)
+			if err != nil {
+				return err
+			}
+			if env.Trace != nil {
+				header := bindTraceHeader(s)
+				env.Trace(producer.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
+			}
+			result, err := env.ExecBind(args, producer.Span)
+			if err != nil {
+				return frameAtSpan(producer.Span, err)
+			}
+			if s.Guard && !result.Rc.OK {
+				return &GuardFailure{Span: producer.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
+			}
+			if s.Rc != "" && s.Rc != "_" {
+				rcAcc = append(rcAcc, ValueFromEnvelope(result.Rc).Raw())
+			}
+			if s.Primary != "" && s.Primary != "_" {
+				priAcc = append(priAcc, result.Primary.Raw())
+				origin := result.Primary.Origin()
+				priOriginAcc = append(priOriginAcc, origin)
+				if origin != nil {
+					priHasOrigin = true
+				}
+			}
+			return nil
+		})
+		switch {
+		case iterErr == nil:
 			continue
-		}
-		args, err := EvalArgs(producer.Args, env)
-		if err != nil {
-			return err
-		}
-		if env.Trace != nil {
-			header := bindTraceHeader(s)
-			env.Trace(producer.Span.Pos.Line, fmt.Sprintf("%s <- %s", header, renderArgvTrace(args)))
-		}
-		result, err := env.ExecBind(args, producer.Span)
-		if err != nil {
-			return frameAtSpan(producer.Span, err)
-		}
-		if s.Guard && !result.Rc.OK {
-			return &GuardFailure{Span: producer.Span, Primary: s.Primary, Args: args, Envelope: result.Rc}
-		}
-		if s.Rc != "" && s.Rc != "_" {
-			rcAcc = append(rcAcc, ValueFromEnvelope(result.Rc).Raw())
-		}
-		if s.Primary != "" && s.Primary != "_" {
-			priAcc = append(priAcc, result.Primary.Raw())
-			origin := result.Primary.Origin()
-			priOriginAcc = append(priOriginAcc, origin)
-			if origin != nil {
-				priHasOrigin = true
-			}
+		case errors.Is(iterErr, errBreak):
+			break iter
+		case errors.Is(iterErr, errContinue):
+			continue iter
+		default:
+			return iterErr
 		}
 	}
 
@@ -1286,6 +1290,40 @@ iter:
 	}
 	return nil
 }
+
+// RetryableError is the interface a retrying construct (today,
+// `eventually`) uses to classify a failed evaluator result.
+// Concrete error types implement Retryable() to declare whether
+// the construct should treat the failure as a candidate for
+// retry (the world might change) or surface it as fatal (the
+// programmer made a mistake; retrying delays diagnosis without
+// changing the outcome).
+//
+// Retrying constructs consume the layer via `errors.As`:
+//
+//	var r RetryableError
+//	if errors.As(err, &r) && r.Retryable() {
+//	    lastError = err
+//	    continue
+//	}
+//	return err  // fatal
+//
+// Wrappers in the evaluator (frameAtSpan, SyntaxError, and
+// other SpanCarriers) preserve the chain via Unwrap so
+// errors.As locates the typed value regardless of intermediate
+// framing.
+type RetryableError interface {
+	error
+	Retryable() bool
+}
+
+// ErrRequireFailed is the sentinel error chained under a
+// *RequireFailure so existing `errors.Is(err, ErrRequireFailed)`
+// checks at script-loop boundaries continue to recognise a
+// failed `require` after the typed-error layer landed. The
+// driver layer re-exports this value so callers reading repl
+// import paths see the same sentinel.
+var ErrRequireFailed = errors.New("require failed")
 
 // GuardFailure is the error type a 'guard ... <- CMD' statement
 // returns when the captured rc is not ok. The driver formats the
@@ -1313,6 +1351,78 @@ func (e *GuardFailure) Error() string {
 	}
 	return fmt.Sprintf("guard %s: command failed (exit %d)", target, e.Envelope.Code)
 }
+
+// Retryable reports that a guard failure is a candidate for
+// retry under `eventually`: the command was successfully
+// resolved and executed but produced a non-ok envelope, and the
+// world might satisfy the guard on a later attempt.
+func (e *GuardFailure) Retryable() bool { return true }
+
+// CommandFailure is the error type a CommandStmt produces when a
+// command is successfully resolved and executed and returns a
+// non-ok envelope. It explicitly does not cover unknown commands,
+// launch failures, or argument resolution rejections -- those are
+// environment-or-programmer mistakes that propagate as untyped
+// errors and remain fatal under retrying constructs.
+type CommandFailure struct {
+	Span
+	Args     []Arg
+	Envelope Envelope
+}
+
+func (e *CommandFailure) Error() string {
+	if e.Envelope.Stderr != "" {
+		return fmt.Sprintf("command failed (exit %d): %s",
+			e.Envelope.Code, e.Envelope.Stderr)
+	}
+	return fmt.Sprintf("command failed (exit %d)", e.Envelope.Code)
+}
+
+// Retryable reports that an ordinary non-ok envelope is a
+// candidate for retry: the command itself ran, and the world
+// might change in a way that flips the result.
+func (e *CommandFailure) Retryable() bool { return true }
+
+// AssertFailure is the typed-error form of an `assert` predicate
+// that did not hold. The dispatcher still records the failure
+// into the session counter for the usual reporting path; the
+// typed shape exists so retrying constructs can classify
+// uniformly via `errors.As`. Expr is the rendered failure
+// message produced by the dispatcher.
+type AssertFailure struct {
+	Span
+	Expr string
+}
+
+func (e *AssertFailure) Error() string {
+	if e.Expr == "" {
+		return "assert failed"
+	}
+	return "assert failed: " + e.Expr
+}
+
+func (e *AssertFailure) Retryable() bool { return true }
+
+// RequireFailure is the typed-error form of a `require`
+// predicate that did not hold. Unwrapping yields
+// ErrRequireFailed so existing `errors.Is(err, ErrRequireFailed)`
+// halts at the same script-loop boundaries that already check
+// for the sentinel.
+type RequireFailure struct {
+	Span
+	Expr string
+}
+
+func (e *RequireFailure) Error() string {
+	if e.Expr == "" {
+		return "require failed"
+	}
+	return "require failed: " + e.Expr
+}
+
+func (e *RequireFailure) Retryable() bool { return true }
+
+func (e *RequireFailure) Unwrap() error { return ErrRequireFailed }
 
 func evalCommandStmt(s *CommandStmt, env *Env) error {
 	args, err := EvalArgs(s.Args, env)
@@ -1401,10 +1511,6 @@ func EvalExpr(expr Expr, env *Env) (Value, error) {
 		return evalNot(e, env)
 	case *NegateExpr:
 		return evalNegate(e, env)
-	case *TimeoutExpr:
-		return evalTimeoutExpr(e, env)
-	case *IterationExpr:
-		return evalIterationExpr(e, env)
 	case *PureCallExpr:
 		return dispatchPureCall(e, env)
 	case *ListExpr:

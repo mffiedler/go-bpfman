@@ -943,140 +943,38 @@ func TestParse_Logical_StrayCloseParen(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- retry / timeout -----------------------------------------------
+// --- retry tombstones ----------------------------------------------
 
-func TestParse_Retry_Basic(t *testing.T) {
+func TestParse_Retry_IsTombstoneKeyword(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "retry { help } until $done == true")
-	require.NoError(t, err)
-	rs, ok := firstStmt(t, prog).(*RetryStmt)
-	require.True(t, ok, "expected RetryStmt, got %T", prog.Stmts[0])
-	require.Len(t, rs.Body, 1)
-	_, ok = rs.Until.(*BinaryExpr)
-	assert.True(t, ok, "expected BinaryExpr for until, got %T", rs.Until)
-}
-
-func TestParse_Retry_MissingUntil(t *testing.T) {
-	t.Parallel()
-
-	_, err := parseSource(t, "retry { help }")
+	// retry is removed; the parser emits a targeted diagnostic
+	// rather than letting the word reach the command dispatcher
+	// where it would surface as "command not found".
+	_, err := parseSource(t, "retry { print x } until $done")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "retry requires 'until'")
+	assert.Contains(t, err.Error(), "retry is removed")
+	assert.Contains(t, err.Error(), "eventually")
 }
 
-func TestParse_Retry_MissingExpression(t *testing.T) {
+func TestParse_Until_IsTombstoneKeyword(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseSource(t, "retry { help } until")
+	_, err := parseSource(t, "until $done")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires an expression")
+	assert.Contains(t, err.Error(), "until is no longer a keyword")
 }
 
-func TestParse_Retry_TimeoutExpr(t *testing.T) {
+func TestParse_Return_IsTombstoneKeyword(t *testing.T) {
 	t.Parallel()
 
-	prog, err := parseSource(t, "retry { help } until timeout 30s")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	to, ok := rs.Until.(*TimeoutExpr)
-	require.True(t, ok, "expected TimeoutExpr, got %T", rs.Until)
-	lit, ok := to.Arg.(*LiteralExpr)
-	require.True(t, ok, "expected literal Arg, got %T", to.Arg)
-	assert.Equal(t, "30s", lit.Text)
-}
-
-func TestParse_Retry_CombinedUntilOrTimeout(t *testing.T) {
-	t.Parallel()
-
-	prog, err := parseSource(t, "retry { help } until $done == true or timeout 60s")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	or, ok := rs.Until.(*LogicalExpr)
-	require.True(t, ok, "top of until should be 'or', got %T", rs.Until)
-	assert.Equal(t, "or", or.Op)
-	_, ok = or.Right.(*TimeoutExpr)
-	assert.True(t, ok, "or's right operand should be a TimeoutExpr, got %T", or.Right)
-}
-
-func TestParse_Timeout_BadDuration_ParsesButFailsAtEval(t *testing.T) {
-	t.Parallel()
-
-	// Under the relaxed grammar the argument is an arbitrary
-	// expression evaluated at check time.  The parse itself
-	// succeeds; the "banana is not a duration" complaint lands
-	// when the retry loop evaluates the until clause.
-	prog, err := parseSource(t, "retry { help } until timeout banana")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	_, ok := rs.Until.(*TimeoutExpr)
-	require.True(t, ok, "expected TimeoutExpr, got %T", rs.Until)
-}
-
-func TestParse_Timeout_MissingDuration(t *testing.T) {
-	t.Parallel()
-
-	_, err := parseSource(t, "retry { help } until timeout")
+	// return is reserved for the future value-returning def
+	// form (SCOPE-DESIGN Section 9); using it today is a parse
+	// error so a script cannot accidentally bind it as a
+	// command name and become ambiguous when the form lands.
+	_, err := parseSource(t, "return 1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "timeout requires a duration")
-}
-
-func TestParse_Timeout_NotTimeoutFlips(t *testing.T) {
-	t.Parallel()
-
-	// Ensure precedence: "not timeout 1s" is NotExpr(TimeoutExpr).
-	prog, err := parseSource(t, "retry { help } until not timeout 1s")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	notExpr, ok := rs.Until.(*NotExpr)
-	require.True(t, ok, "top should be NotExpr, got %T", rs.Until)
-	_, ok = notExpr.Operand.(*TimeoutExpr)
-	assert.True(t, ok)
-}
-
-func TestParse_Iteration_Basic(t *testing.T) {
-	t.Parallel()
-
-	prog, err := parseSource(t, "retry { help } until iteration 10")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	it, ok := rs.Until.(*IterationExpr)
-	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
-	lit, ok := it.Arg.(*LiteralExpr)
-	require.True(t, ok, "expected literal Arg, got %T", it.Arg)
-	assert.Equal(t, "10", lit.Text)
-}
-
-func TestParse_Iteration_MissingCount(t *testing.T) {
-	t.Parallel()
-
-	_, err := parseSource(t, "retry { help } until iteration")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "iteration requires")
-}
-
-func TestParse_Iteration_NegativeCount_ParsesButFailsAtEval(t *testing.T) {
-	t.Parallel()
-
-	// Relaxed grammar: negative counts reach the evaluator,
-	// which errors.  Parse itself accepts the token run.
-	prog, err := parseSource(t, "retry { help } until iteration -3")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	_, ok := rs.Until.(*IterationExpr)
-	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
-}
-
-func TestParse_Iteration_NonInteger_ParsesButFailsAtEval(t *testing.T) {
-	t.Parallel()
-
-	// Same story for a non-numeric argument: the parse succeeds,
-	// the eval-time coercion fails.
-	prog, err := parseSource(t, "retry { help } until iteration banana")
-	require.NoError(t, err)
-	rs := firstStmt(t, prog).(*RetryStmt)
-	_, ok := rs.Until.(*IterationExpr)
-	require.True(t, ok, "expected IterationExpr, got %T", rs.Until)
+	assert.Contains(t, err.Error(), "return is reserved")
 }
 
 // --- arithmetic ----------------------------------------------------
@@ -1264,7 +1162,7 @@ func TestParse_AllNodesHaveSourcePosition(t *testing.T) {
 		"let p <- start sleep 60\nwait $p",
 		"foreach x in $xs { print $x }",
 		"if $x { let r = 1 } elif $y { let r = 2 } else { let r = 3 }",
-		"retry { let r <- foo } until iteration 5 or timeout 30s",
+		"eventually timeout 30s interval 250ms { let r <- foo\nrequire $r.ok }",
 		"def greet(name) { print $name }\ngreet alice",
 		"defer kill $p",
 		"assert $a == $b",

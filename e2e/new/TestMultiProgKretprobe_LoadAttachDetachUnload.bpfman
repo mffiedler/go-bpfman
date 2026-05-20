@@ -88,10 +88,9 @@ let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"
-retry {
-    let probe <- test -f "${ack}.1"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.1"
+}
 
 # Detach c. Sleep briefly so the perf-link RCU GP completes before the
 # next wave fires, otherwise some of wave 2's events could still hit
@@ -101,10 +100,9 @@ sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
-retry {
-    let probe <- test -f "${ack}.2"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.2"
+}
 
 # Detach b.
 bpfman link detach $link_b
@@ -112,10 +110,9 @@ sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"
-retry {
-    let probe <- test -f "${ack}.3"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.3"
+}
 
 # Worker has fired all 3 waves and exited.
 guard work_r <- wait $work

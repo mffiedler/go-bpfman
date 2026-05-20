@@ -48,7 +48,7 @@ func (*ExprStmt) astNode()           {}
 func (*ForEachStmt) astNode()        {}
 func (*BreakStmt) astNode()          {}
 func (*ContinueStmt) astNode()       {}
-func (*RetryStmt) astNode()          {}
+func (*EventuallyStmt) astNode()     {}
 func (*DefStmt) astNode()            {}
 func (*AssertStmt) astNode()         {}
 
@@ -66,8 +66,6 @@ func (*ThreadExpr) astNode()       {}
 func (*LogicalExpr) astNode()      {}
 func (*NotExpr) astNode()          {}
 func (*NegateExpr) astNode()       {}
-func (*TimeoutExpr) astNode()      {}
-func (*IterationExpr) astNode()    {}
 func (*PureCallExpr) astNode()     {}
 func (*ListExpr) astNode()         {}
 func (*MatchesBlockExpr) astNode() {}
@@ -130,6 +128,9 @@ func walk(node Node, f func(Node) bool) {
 		if n.Collect != nil {
 			walk(n.Collect, f)
 		}
+		if n.Eventually != nil {
+			walk(n.Eventually, f)
+		}
 	case *DeferStmt:
 		if n.Cmd != nil {
 			walk(n.Cmd, f)
@@ -158,11 +159,10 @@ func walk(node Node, f func(Node) bool) {
 		}
 	case *BreakStmt, *ContinueStmt:
 		// Leaf statements with no children.
-	case *RetryStmt:
+	case *EventuallyStmt:
 		for _, s := range n.Body {
 			walk(s, f)
 		}
-		walk(n.Until, f)
 	case *DefStmt:
 		for _, s := range n.Body {
 			walk(s, f)
@@ -196,10 +196,6 @@ func walk(node Node, f func(Node) bool) {
 		walk(n.Operand, f)
 	case *NegateExpr:
 		walk(n.Operand, f)
-	case *TimeoutExpr:
-		walk(n.Arg, f)
-	case *IterationExpr:
-		walk(n.Arg, f)
 	case *PureCallExpr:
 		for _, a := range n.Args {
 			walk(a, f)

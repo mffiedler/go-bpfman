@@ -285,6 +285,129 @@ func TestEvalProgram_Defer_ForEachRegistersInEnclosing(t *testing.T) {
 	assert.Equal(t, "cleanup a", joinArgTexts(r.calls[2]))
 }
 
+// Tests below pin defer-capture-at-registration behaviour as a
+// load-bearing contract for the upcoming scope rework. Block
+// frames pop at body exit, so a deferred command registered
+// inside a foreach body, an if branch, or a def call survives
+// the frame disappearing. The deferred argument vector was
+// resolved when the defer ran -- not at unwind -- so the call
+// fires with the values the body saw, even after the frame is
+// gone.
+//
+// These tests pass against today's evaluator (capture-at-
+// registration is already implemented in evalDeferStmt) and
+// must keep passing after commits 4-6 land the if / foreach /
+// def frame wiring. Any regression there trips one of these
+// before reaching the corpus.
+
+func TestEvalProgram_Defer_InsideForEach_CapturesIterationVariable(t *testing.T) {
+	t.Parallel()
+
+	// Each iteration registers a defer that mentions $x. The
+	// defer's args are resolved at registration time, so the
+	// frozen vector encodes the iteration's value rather than
+	// referring to $x by name. Defers unwind LIFO at script
+	// exit, after the loop has finished, by which time the
+	// iteration frame is long gone -- but the captured value
+	// is independent of the frame.
+	r := &recorder{}
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
+	env := &Env{Session: s, ExecBind: r.execBind}
+	src := "foreach x in $xs {\n  defer cleanup $x\n}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	require.Len(t, r.calls, 3)
+	assert.Equal(t, "cleanup c", joinArgTexts(r.calls[0]))
+	assert.Equal(t, "cleanup b", joinArgTexts(r.calls[1]))
+	assert.Equal(t, "cleanup a", joinArgTexts(r.calls[2]))
+}
+
+func TestEvalProgram_Defer_InsideDef_CapturesCallParameter(t *testing.T) {
+	t.Parallel()
+
+	// A defer registered in a def body must survive the call
+	// frame's disappearance and fire with the value the call
+	// saw. Without capture-at-registration, the deferred
+	// resolution would look up $prog in the post-call session
+	// state and either find a stale value or an unbound name.
+	r := &recorder{}
+	env := &Env{Session: NewSession(), ExecBind: r.execBind}
+	src := "def use(prog) {\n" +
+		"  defer cleanup $prog\n" +
+		"}\n" +
+		"use first\n" +
+		"use second\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	// Each def call opens its own defer scope, so the cleanup
+	// fires at end-of-def with the frozen parameter value
+	// rather than being deferred to script exit. Two calls
+	// produce two cleanups in call order.
+	require.Len(t, r.calls, 2)
+	assert.Equal(t, "cleanup first", joinArgTexts(r.calls[0]))
+	assert.Equal(t, "cleanup second", joinArgTexts(r.calls[1]))
+}
+
+func TestEvalProgram_Defer_RebindSnapshot_InsideForEach(t *testing.T) {
+	t.Parallel()
+
+	// Rebinding the loop variable between defer registrations
+	// must not retroactively change earlier deferred calls.
+	// Three defers in the body each see the iteration's
+	// rebound value; unwind fires them in the order they were
+	// registered (LIFO across the whole loop).
+	r := &recorder{}
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	env := &Env{Session: s, ExecBind: r.execBind}
+	src := "foreach x in $xs {\n" +
+		"  defer cleanup $x\n" +
+		"  let x = rebound\n" +
+		"  defer cleanup $x\n" +
+		"}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	// Defers fire LIFO across both iterations. Each iteration
+	// registers two defers: one with the original loop value,
+	// one with the rebound value. So the unwind order is:
+	//   iter b: rebound, b
+	//   iter a: rebound, a
+	// reversed to:
+	//   rebound (b's), b, rebound (a's), a
+	require.Len(t, r.calls, 4)
+	assert.Equal(t, "cleanup rebound", joinArgTexts(r.calls[0]))
+	assert.Equal(t, "cleanup b", joinArgTexts(r.calls[1]))
+	assert.Equal(t, "cleanup rebound", joinArgTexts(r.calls[2]))
+	assert.Equal(t, "cleanup a", joinArgTexts(r.calls[3]))
+}
+
+func TestEvalProgram_Defer_RebindSnapshot_InsideIf(t *testing.T) {
+	t.Parallel()
+
+	// An if-branch let rebinds $x within the branch. The defer
+	// in the branch captures the inner value; the defer
+	// outside the if captures the outer value. Both must fire
+	// against their own frozen values, regardless of what
+	// $x resolves to at script exit.
+	r := &recorder{}
+	env := &Env{Session: NewSession(), ExecBind: r.execBind}
+	src := "let x = outer\n" +
+		"defer cleanup outer-defer $x\n" +
+		"if true {\n" +
+		"  let x = inner\n" +
+		"  defer cleanup inner-defer $x\n" +
+		"}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	require.Len(t, r.calls, 2)
+	// LIFO: the if-branch defer was registered last, so it
+	// fires first, holding "inner".
+	assert.Equal(t, "cleanup inner-defer inner", joinArgTexts(r.calls[0]))
+	// The script-scope defer was registered first, holds "outer".
+	assert.Equal(t, "cleanup outer-defer outer", joinArgTexts(r.calls[1]))
+}
+
 func TestParse_Defer_RequiresCommand(t *testing.T) {
 	t.Parallel()
 

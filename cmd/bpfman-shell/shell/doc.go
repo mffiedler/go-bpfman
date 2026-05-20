@@ -88,7 +88,13 @@
 //
 // [Session] holds variable bindings and first-token aliases for the
 // REPL. Values are stored as [Value], which may be scalar or
-// structured. The session provides Set, Get, Delete, and Names for
-// variables, plus SetAlias, GetAlias, DeleteAlias, and AliasNames
-// for aliases.
+// structured. Variables live on a stack of frames: Set writes to
+// the innermost frame, Get walks outward. DeleteLocal removes a
+// binding from the innermost frame only; DeleteVisible walks
+// outward and removes the first hit (the operation the
+// user-facing `unset` builtin uses). PushFrame, PopFrame, and
+// WithFrame manage block-shaped frame lifetimes. Names returns
+// the visible variable set, deduplicated. Aliases are
+// session-level and are managed via SetAlias, GetAlias,
+// DeleteAlias, and AliasNames.
 package shell

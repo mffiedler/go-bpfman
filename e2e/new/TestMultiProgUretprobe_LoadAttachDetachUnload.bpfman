@@ -90,30 +90,27 @@ let counter_filter = "fromjson | .[0].formatted.value | tonumber"
 
 # --- Wave 1: a, b, c all attached ---
 guard _ <- touch "${sentinel}.1"
-retry {
-    let probe <- test -f "${ack}.1"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.1"
+}
 
 bpfman link detach $link_c
 sleep 0.1
 
 # --- Wave 2: a, b attached; c detached ---
 guard _ <- touch "${sentinel}.2"
-retry {
-    let probe <- test -f "${ack}.2"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.2"
+}
 
 bpfman link detach $link_b
 sleep 0.1
 
 # --- Wave 3: only a attached ---
 guard _ <- touch "${sentinel}.3"
-retry {
-    let probe <- test -f "${ack}.3"
-} until $probe.ok or timeout 5s
-require $probe.ok
+eventually timeout 5s {
+    require path-exists "${ack}.3"
+}
 
 guard work_r <- wait $work
 assert $work_r.ok

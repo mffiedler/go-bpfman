@@ -866,6 +866,115 @@ func TestEvalProgram_ForEach_LoopVarRestoresPriorBinding(t *testing.T) {
 	assert.Equal(t, "outer", str)
 }
 
+// TestEvalProgram_ForEach_BodyLet_* and TestEvalProgram_If_*
+// pin the block-scope contract introduced by the SCOPE-DESIGN
+// rework: bodies run in fresh frames, body-level `let` does
+// not leak past the block, and iteration frames are independent
+// of one another.
+
+func TestEvalProgram_ForEach_BodyLet_DoesNotLeakAfterLoop(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b", "c"}))
+	env := &Env{Session: s, ExecBind: nil}
+	src := "foreach x in $xs {\n  let scratch = $x\n}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	// The body-level let lived in the iteration frame and is
+	// gone now that the loop has finished.
+	_, ok := s.Get("scratch")
+	assert.False(t, ok, "body-level let must not leak out of foreach")
+}
+
+func TestEvalProgram_ForEach_BodyLet_DoesNotBleedAcrossIterations(t *testing.T) {
+	t.Parallel()
+
+	// On the first iteration, scratch is unbound, so reading
+	// $scratch would error if the body-level let from the
+	// previous iteration leaked into the next. We exercise that
+	// by ordering the read before the assignment in each body.
+	// If iteration frames bled into one another, iteration 1
+	// would see iteration 0's scratch; with per-iteration
+	// frames, iteration 1 starts clean and the script halts at
+	// the very first read.
+	r := &recorder{}
+	s := NewSession()
+	s.Set("xs", ValueFromAny([]any{"a", "b"}))
+	env := &Env{Session: s, ExecBind: r.execBind}
+	src := "foreach x in $xs {\n" +
+		"  print $scratch\n" +
+		"  let scratch = leaked\n" +
+		"}\n"
+	err := runProgramWithEnv(t, src, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable: scratch")
+}
+
+func TestEvalProgram_If_BranchLet_StaysLocal(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := &Env{Session: s, ExecBind: nil}
+	src := "if true {\n  let scratch = hello\n}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	_, ok := s.Get("scratch")
+	assert.False(t, ok, "if-branch let must not leak past the branch")
+}
+
+func TestEvalProgram_If_BranchLet_RebindsOuterShadowing(t *testing.T) {
+	t.Parallel()
+
+	// `let x = inner` inside the branch writes to the branch
+	// frame and shadows the outer x for the branch's lifetime.
+	// When the branch exits, the outer x is intact.
+	s := NewSession()
+	env := &Env{Session: s, ExecBind: nil}
+	src := "let x = outer\n" +
+		"if true {\n  let x = inner\n}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+}
+
+func TestEvalProgram_If_SiblingBranches_DoNotShareLocals(t *testing.T) {
+	t.Parallel()
+
+	// The Then branch is the one that runs (cond true); the
+	// Else branch's let is never evaluated. Neither branch's
+	// binding survives the if statement -- the post-if read
+	// must fail with undefined-variable.
+	s := NewSession()
+	env := &Env{Session: s, ExecBind: nil}
+	src := "if true {\n  let from_then = 1\n} else {\n  let from_else = 2\n}\n" +
+		"print $from_then\n"
+	err := runProgramWithEnv(t, src, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable: from_then")
+}
+
+func TestEvalProgram_If_ElifBranch_HasIndependentFrame(t *testing.T) {
+	t.Parallel()
+
+	// elif body runs when cond is false; its let does not
+	// survive the construct.
+	s := NewSession()
+	env := &Env{Session: s, ExecBind: nil}
+	src := "let cond = false\n" +
+		"if $cond {\n  let from_then = t\n} elif true {\n  let from_elif = e\n}\n"
+	require.NoError(t, runProgramWithEnv(t, src, env))
+
+	_, ok := s.Get("from_elif")
+	assert.False(t, ok, "elif-branch let must not leak past the branch")
+	_, ok = s.Get("from_then")
+	assert.False(t, ok, "unreached then-branch contributes nothing")
+}
+
 func TestEvalProgram_ForEach_EmptyList(t *testing.T) {
 	t.Parallel()
 
@@ -1489,217 +1598,11 @@ func TestEvalExpr_And_RejectsNonBoolLeft(t *testing.T) {
 	assert.Contains(t, err.Error(), "and")
 }
 
-// --- retry / timeout / iteration -----------------------------------
-
-func TestEvalProgram_Retry_ExitsOnUntilTrue(t *testing.T) {
-	t.Parallel()
-
-	// Body succeeds every iteration; until becomes true when
-	// iteration count reaches 3.
-	s := NewSession()
-	callCount := 0
-	env := &Env{
-		Session: s,
-		ExecCommand: func([]Arg, Span) (Value, error) {
-			callCount++
-			return Value{}, nil
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Arg: &LiteralExpr{Text: "3"}},
-		},
-	}}
-	require.NoError(t, EvalProgram(prog, env))
-	assert.Equal(t, 3, callCount)
-}
-
-func TestEvalProgram_Retry_IterationCap_ReturnsLastError(t *testing.T) {
-	t.Parallel()
-
-	// Body always errors; until iteration 5 fires; the body's
-	// last error propagates out.
-	s := NewSession()
-	sentinel := errors.New("not yet")
-	env := &Env{
-		Session: s,
-		ExecCommand: func([]Arg, Span) (Value, error) {
-			return Value{}, sentinel
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Arg: &LiteralExpr{Text: "5"}},
-		},
-	}}
-	err := EvalProgram(prog, env)
-	require.Error(t, err)
-	require.ErrorIs(t, err, sentinel, "the last body error must remain reachable via errors.Is")
-}
-
-func TestEvalProgram_Retry_Timeout_Fires(t *testing.T) {
-	t.Parallel()
-
-	// Body always errors; timeout is tiny so we exit in a few
-	// iterations.  Verify the last body error propagates.
-	s := NewSession()
-	sentinel := errors.New("not yet")
-	env := &Env{
-		Session: s,
-		ExecCommand: func([]Arg, Span) (Value, error) {
-			return Value{}, sentinel
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &TimeoutExpr{Arg: &LiteralExpr{Text: "50ms"}},
-		},
-	}}
-	err := EvalProgram(prog, env)
-	require.Error(t, err)
-	require.ErrorIs(t, err, sentinel)
-}
-
-func TestEvalProgram_Retry_Success_ReturnsNil(t *testing.T) {
-	t.Parallel()
-
-	// Body succeeds on first iteration; until iteration 1 fires.
-	s := NewSession()
-	env := &Env{
-		Session:     s,
-		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Arg: &LiteralExpr{Text: "1"}},
-		},
-	}}
-	assert.NoError(t, EvalProgram(prog, env))
-}
-
-func TestEvalProgram_Retry_IterationCap_FromVar(t *testing.T) {
-	t.Parallel()
-
-	// The iteration count comes from a session variable, not a
-	// literal.  This is the whole point of the relaxed grammar:
-	// retry caps are configurable at run time.
-	s := NewSession()
-	s.Set("max", StringValue("3"))
-	callCount := 0
-	env := &Env{
-		Session: s,
-		ExecCommand: func([]Arg, Span) (Value, error) {
-			callCount++
-			return Value{}, nil
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Arg: &VarRefExpr{Name: "max"}},
-		},
-	}}
-	require.NoError(t, EvalProgram(prog, env))
-	assert.Equal(t, 3, callCount)
-}
-
-func TestEvalProgram_Retry_Timeout_FromVar(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	s.Set("max_wait", StringValue("50ms"))
-	sentinel := errors.New("not yet")
-	env := &Env{
-		Session: s,
-		ExecCommand: func([]Arg, Span) (Value, error) {
-			return Value{}, sentinel
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &TimeoutExpr{Arg: &VarRefExpr{Name: "max_wait"}},
-		},
-	}}
-	err := EvalProgram(prog, env)
-	require.Error(t, err)
-	require.ErrorIs(t, err, sentinel)
-}
-
-func TestEvalProgram_Retry_Iteration_NegativeVarErrors(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	s.Set("max", StringValue("-3"))
-	env := &Env{
-		Session:     s,
-		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "probe"}}}},
-			Until: &IterationExpr{Arg: &VarRefExpr{Name: "max"}},
-		},
-	}}
-	err := EvalProgram(prog, env)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "negative")
-}
-
-func TestEvalExpr_Timeout_OutsideRetryIsError(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	_, err := EvalExpr(&TimeoutExpr{Arg: &LiteralExpr{Text: "1s"}}, evalEnv(s))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "timeout")
-}
-
-func TestEvalExpr_Iteration_OutsideRetryIsError(t *testing.T) {
-	t.Parallel()
-
-	s := NewSession()
-	_, err := EvalExpr(&IterationExpr{Arg: &LiteralExpr{Text: "3"}}, evalEnv(s))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "iteration")
-}
-
-func TestEvalProgram_Retry_NestedRetryScopes(t *testing.T) {
-	t.Parallel()
-
-	// Nested retry: inner's timeout / iteration tracks the
-	// inner clock, not the outer.  We set both with very
-	// different thresholds and ensure the inner exits first.
-	s := NewSession()
-	seq := []string{}
-	env := &Env{
-		Session: s,
-		ExecCommand: func(args []Arg, _ Span) (Value, error) {
-			seq = append(seq, args[0].(WordArg).Text)
-			return Value{}, nil
-		},
-	}
-	prog := &Program{Stmts: []Stmt{
-		&RetryStmt{
-			Body: []Stmt{
-				&CommandStmt{Args: []Expr{&LiteralExpr{Text: "outer"}}},
-				&RetryStmt{
-					Body:  []Stmt{&CommandStmt{Args: []Expr{&LiteralExpr{Text: "inner"}}}},
-					Until: &IterationExpr{Arg: &LiteralExpr{Text: "2"}},
-				},
-			},
-			Until: &IterationExpr{Arg: &LiteralExpr{Text: "2"}},
-		},
-	}}
-	require.NoError(t, EvalProgram(prog, env))
-	// Outer runs twice.  Each outer iteration runs two inner
-	// iterations.  Expected: outer inner inner outer inner inner.
-	assert.Equal(t, []string{"outer", "inner", "inner", "outer", "inner", "inner"}, seq)
-}
+// retry / timeout / iteration tests removed: SCOPE-DESIGN
+// retired the construct in commit 9; see TestEventually_* in
+// eventually_test.go for the replacement, and
+// TestParse_Retry_IsTombstoneKeyword in parse_test.go for the
+// tombstone parse error.
 
 // --- arithmetic ----------------------------------------------------
 

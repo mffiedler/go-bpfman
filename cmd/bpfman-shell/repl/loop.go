@@ -687,7 +687,19 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 
 	ctx = context.WithValue(ctx, sourcingKey{}, true)
 	file := args[0]
-	session := env.Session
+
+	// Module-scoped evaluation: the file evaluates against a
+	// fresh sub-session whose vars and aliases are private,
+	// whose defs are seeded from a shallow clone of the
+	// parent's, and whose failure counters start at zero.
+	// On successful completion the child's defs merge back
+	// into the parent and the counter deltas accumulate; on
+	// failure the defs are discarded but the deltas still
+	// accumulate so the parent's exit code reflects every
+	// failure that happened. See SCOPE-DESIGN.md Section 5.
+	parent := env.Session
+	child := parent.ChildForSource()
+	env.Session = child
 
 	savedExecCommand := env.ExecCommand
 	savedExecBind := env.ExecBind
@@ -695,6 +707,7 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 	savedRenderDefer := env.RenderDeferFailure
 	savedTrace := env.Trace
 	defer func() {
+		env.Session = parent
 		env.ExecCommand = savedExecCommand
 		env.ExecBind = savedExecBind
 		env.ExecAssertStmt = savedExecAssert
@@ -705,11 +718,16 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 		RenderEnvelopeFailure(cli, "defer", SourceLoc{File: file}, stmtLoc, args, rc)
 	}
 
-	return shell.WithDeferScope(env, func() error {
+	// The source defer scope unwinds on both success and
+	// failure (a library that registers a top-level defer
+	// runs that cleanup at end-of-source regardless of how
+	// evaluation ends). The transactional rule applies to
+	// exported defs, not to cleanup.
+	err = shell.WithDeferScope(env, func() error {
 		return runChunkLoop(lr, chunkLoopPolicy{
 			onChunk: func(accumulated string, startLine int) error {
 				loc := SourceLoc{File: file, Line: startLine}
-				wireEnvForChunk(ctx, cli, mgr, session, env, loc, hooks)
+				wireEnvForChunk(ctx, cli, mgr, child, env, loc, hooks)
 				return evalChunkInScope(cli, env, accumulated, "", loc)
 			},
 			onEOF: func(startLine, bufLen int) error {
@@ -720,4 +738,6 @@ func Source(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager, env *
 			},
 		})
 	})
+	parent.MergeChildSource(child, err == nil)
+	return err
 }

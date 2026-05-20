@@ -5,16 +5,16 @@ This document is the reference grammar for the language driven by
 `expr.go`, and `matches.go` is the load-bearing ground truth; this
 document is the human-readable shape of what that code accepts.
 
-**Forward-looking sections.** Some productions track the
-post-`SCOPE-DESIGN.md` target state and are temporarily ahead of
-the parser. The four affected areas are flagged inline: the
-`EventuallyStmt` / `EventuallyCommand` productions replace
-`retry ... until` (which becomes a tombstone), `BreakStmt` /
-`ContinueStmt` are restricted to `foreach`, the single-name
-`let _ = EXPR` form is rejected, and `return` is reserved.
-Commits 4 through 9 of the SCOPE-DESIGN plan bring the parser
-into sync; until they land, the parser still accepts `retry`
-and `let _ = EXPR`.
+**Implementation status.** The SCOPE-DESIGN.md ten-commit plan
+has landed: `EventuallyStmt` / `EventuallyCommand` are live,
+`retry` / `until` / `return` are reserved tombstone keywords
+that emit targeted diagnostics, the runtime and the checker
+both push a fresh frame on each block-shaped construct, and
+the typed retryable/fatal error layer classifies attempt
+failures uniformly via `errors.As`. The single-name
+`let _ = EXPR` rejection and the restriction of `break` /
+`continue` to `foreach` bodies are still tracked in
+`GRAMMAR-FOLLOW-UP.md` as small follow-on items.
 
 ## Scope
 

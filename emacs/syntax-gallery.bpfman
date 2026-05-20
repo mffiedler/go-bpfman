@@ -75,6 +75,8 @@ let healthy    = true
 let booting    = false
 let failing    = false
 let unbounded  = false
+let a          = 1
+let b          = 2
 
 # ---- 3. Variable references (every form) ----
 
@@ -441,22 +443,26 @@ foreach item in $progs {
     print $item
 }
 
-# ---- 22. retry / until with timeout and iteration ----
+# ---- 22. eventually timeout / interval ----
 
-# The until-expression is a normal boolean expression.  `timeout
-# DURATION' and `iteration N' are retry-scoped primaries that let
-# polling terminate on wall-clock or attempt count.
-retry {
+# The body either succeeds as a whole or fails as a whole; a
+# mandatory `timeout DUR' bounds the retry budget and the
+# optional `interval DUR' sets the cadence (default 100ms). See
+# SCOPE-DESIGN.md Section 3.4 for the full semantics.
+eventually timeout 60s {
     guard status <- bpfman program get 42 -o json
-} until $status.record.gpl_compatible or timeout 60s
+    require $status.record.gpl_compatible
+}
 
-retry {
+eventually timeout 30s interval 250ms {
     guard status <- bpfman program get 42 -o json
-} until $status.record.gpl_compatible or iteration 10
+    require $status.record.gpl_compatible
+}
 
-retry {
+eventually timeout 2m {
     guard link <- bpfman link get 8801 -o json
-} until ($link.record.kind == xdp) or timeout 2m or iteration 20
+    require $link.record.kind == xdp
+}
 
 # ---- 23. jq as a higher-order operator over structured data ----
 
@@ -528,6 +534,7 @@ def expect_link(link prog kind) {
 # because the fontifier sees it as an unknown command word.
 expect_program_load $prog tracepoint tracepoint tp_a
 banner
+let link = $link2
 expect_link $link $prog tracepoint
 
 # `defs' lists registered defs; `undef' removes them.  Both are

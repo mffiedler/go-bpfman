@@ -599,6 +599,139 @@ func TestReplLoop_SourceFromInteractiveStaysCwdRelative(t *testing.T) {
 	assert.Contains(t, outBuf.String(), "interactive-lib")
 }
 
+// TestReplLoop_SourceModule_* pin the SCOPE-DESIGN Section 5
+// module-scope contract: vars and aliases stay private to the
+// sourced file, defs merge back to the importer on success,
+// counters always accumulate, and a failed source does not
+// publish partial defs.
+
+func TestReplLoop_SourceModule_DefsExportToImporter(t *testing.T) {
+	t.Parallel()
+
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("def hello() { print from-lib }\n"), 0o644))
+
+	input := "source " + tmp + "\nhello\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err, "errBuf=%s", errBuf.String())
+	assert.Contains(t, outBuf.String(), "from-lib")
+}
+
+func TestReplLoop_SourceModule_VarsStayPrivate(t *testing.T) {
+	t.Parallel()
+
+	// A `let` at the top of the sourced file binds into the
+	// child sub-session and is invisible to the importer; a
+	// subsequent `print $libvar` from the importer must fail
+	// with undefined-variable.
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("let libvar = 1\n"), 0o644))
+
+	input := "source " + tmp + "\nprint $libvar\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	assert.Contains(t, errBuf.String(), "undefined variable: libvar")
+}
+
+func TestReplLoop_SourceModule_AliasesStayPrivate(t *testing.T) {
+	t.Parallel()
+
+	// An alias declared in the library does not propagate to
+	// the importer. Invoking it from the importer falls
+	// through to external-command resolution.
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("alias bye = print\n"), 0o644))
+
+	input := "source " + tmp + "\nbye\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	// bye is not registered in the importer's session, so it
+	// reaches the external-command fallback and is reported as
+	// not found rather than running as `print`.
+	assert.Contains(t, errBuf.String(), "bye")
+	assert.NotContains(t, errBuf.String(), "print")
+}
+
+func TestReplLoop_SourceModule_RedefinitionExports(t *testing.T) {
+	t.Parallel()
+
+	// The library inherits the importer's `greet`, redefines
+	// it, and the new definition is what the importer sees
+	// after source completes successfully.
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("def greet() { print from-lib }\n"), 0o644))
+
+	input := "def greet() { print original }\nsource " + tmp + "\ngreet\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err, "errBuf=%s", errBuf.String())
+	assert.Contains(t, outBuf.String(), "from-lib")
+	assert.NotContains(t, outBuf.String(), "original")
+}
+
+func TestReplLoop_SourceModule_FailureDoesNotMergeDefs(t *testing.T) {
+	t.Parallel()
+
+	// A library that registers a def and then fails mid-file
+	// must not publish the def to the importer: source is
+	// transactional at the module boundary. The error from
+	// the failing command surfaces, but the importer cannot
+	// call the def afterwards.
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp,
+		[]byte("def maybe() { print from-lib }\nrequire fail\n"), 0o644))
+
+	input := "source " + tmp + "\nmaybe\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	// The failing `require fail` was rendered.
+	assert.Contains(t, errBuf.String(), "require")
+	// The def did not merge: calling `maybe` falls through
+	// to external resolution, which prints nothing.
+	assert.NotContains(t, outBuf.String(), "from-lib")
+}
+
+func TestReplLoop_SourceModule_AssertFailureCountsAgainstParent(t *testing.T) {
+	t.Parallel()
+
+	// An assert that records a failure inside the sourced file
+	// must accumulate into the parent's session counter so the
+	// run's exit code reflects every failure, even those in a
+	// sub-session.
+	tmp := filepath.Join(t.TempDir(), "lib.bpfman")
+	require.NoError(t, os.WriteFile(tmp, []byte("assert 1 == 2\n"), 0o644))
+
+	input := "source " + tmp + "\n"
+	var errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+	session := shell.NewSession()
+
+	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, session.AssertFailures(),
+		"library's assert failure must be visible to the parent")
+}
+
 func TestReplLoop_SourceNoArgs(t *testing.T) {
 	t.Parallel()
 
@@ -1749,109 +1882,101 @@ func TestReplLoop_MultipleAssertFailures(t *testing.T) {
 func TestReplLoop_IfThenBranch(t *testing.T) {
 	t.Parallel()
 
-	input := "let x = 5\nif $x > 3 {\n  let out = took-then\n}"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	// Block-scope rules mean a `let` inside the branch lives
+	// only for the branch's lifetime; the test observes which
+	// branch ran by printing a sentinel rather than leaking a
+	// binding out.
+	input := "let x = 5\nif $x > 3 {\n  print took-then\n}"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	v, ok := session.Get("out")
-	require.True(t, ok)
-	s, _ := v.Scalar()
-	assert.Equal(t, "took-then", s)
+	assert.Contains(t, outBuf.String(), "took-then")
 }
 
 func TestReplLoop_IfElseBranch(t *testing.T) {
 	t.Parallel()
 
-	input := "let x = 1\nif $x > 3 {\n  let out = took-then\n} else {\n  let out = took-else\n}"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	input := "let x = 1\nif $x > 3 {\n  print took-then\n} else {\n  print took-else\n}"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	v, _ := session.Get("out")
-	s, _ := v.Scalar()
-	assert.Equal(t, "took-else", s)
+	assert.Contains(t, outBuf.String(), "took-else")
+	assert.NotContains(t, outBuf.String(), "took-then")
 }
 
 func TestReplLoop_IfElifChain(t *testing.T) {
 	t.Parallel()
 
-	input := "let x = 2\nif $x == 1 { let out = one } elif $x == 2 { let out = two } elif $x == 3 { let out = three } else { let out = other }"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	input := "let x = 2\nif $x == 1 { print one } elif $x == 2 { print two } elif $x == 3 { print three } else { print other }"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	v, _ := session.Get("out")
-	s, _ := v.Scalar()
-	assert.Equal(t, "two", s)
+	assert.Contains(t, outBuf.String(), "two")
 }
 
 func TestReplLoop_IfConditionMustBeBool(t *testing.T) {
 	t.Parallel()
 
-	input := "let x = 5\nif $x { let out = wrong }"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	// The body is observed via stdout because block scope means
+	// a body-level `let` is invisible after the branch anyway --
+	// the test needs a side effect that survives the branch
+	// boundary to prove the body was (or was not) entered.
+	input := "let x = 5\nif $x { print wrong }"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Contains(t, errBuf.String(), "use a comparison")
-	_, ok := session.Get("out")
-	assert.False(t, ok, "body should not run when condition errors")
+	assert.NotContains(t, outBuf.String(), "wrong", "body must not run when condition errors")
 }
 
 func TestReplLoop_IfNested(t *testing.T) {
 	t.Parallel()
 
-	input := "let a = 1\nlet b = 2\nif $a == 1 {\n  if $b == 2 {\n    let out = both\n  } else {\n    let out = only-a\n  }\n}"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	input := "let a = 1\nlet b = 2\nif $a == 1 {\n  if $b == 2 {\n    print both\n  } else {\n    print only-a\n  }\n}"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	v, _ := session.Get("out")
-	s, _ := v.Scalar()
-	assert.Equal(t, "both", s)
+	assert.Contains(t, outBuf.String(), "both")
 }
 
 func TestReplLoop_IfWithCmdSubCondition(t *testing.T) {
 	t.Parallel()
 
 	// Unary predicates inside if work.
-	input := "let x = hello\nif not-empty $x {\n  let out = ok\n}"
-	var errBuf bytes.Buffer
-	cli := &bpfmancli.CLI{Out: io.Discard, Err: &errBuf}
+	input := "let x = hello\nif not-empty $x {\n  print ok\n}"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
 	lr := repl.NewScannerReader(strings.NewReader(input), nil)
 	session := shell.NewSession()
 
 	err := replLoop(context.Background(), cli, nil, lr, session, "", true, true)
 	require.NoError(t, err)
 	assert.Empty(t, errBuf.String())
-
-	v, _ := session.Get("out")
-	s, _ := v.Scalar()
-	assert.Equal(t, "ok", s)
+	assert.Contains(t, outBuf.String(), "ok")
 }
 
 func TestReplLoop_LetScalarAndAssert(t *testing.T) {

@@ -1,5 +1,16 @@
 # bpfman-shell scope design
 
+**Status.** The ten-commit sequence in Section 7 has landed on
+the `shell-scope-design` branch. The runtime `Session` now
+carries a stack of frames, the static checker mirrors the
+runtime model, `def` / `foreach` / `if` bodies each push a fresh
+frame, `source` evaluates against a module-scoped sub-session,
+typed retryable errors classify retry candidates uniformly, and
+the `eventually` construct has replaced `retry ... until`. The
+corpus has migrated; `retry`, `until`, and `return` are reserved
+tombstones in the lexer that produce targeted diagnostics for
+old scripts. Section 9 collects items deferred for later.
+
 This document is the implementation plan for lexical variable
 scope in bpfman-shell. The language gets one variable-scope
 primitive: a stack of frames on `Session`. `let` writes to
@@ -436,7 +447,7 @@ deadline grace) without ambiguity.
 Examples:
 
     eventually timeout 5s {
-        require (test -f "${ack}.1")
+        require path-exists "${ack}.1"
     }
 
     eventually timeout 10s interval 250ms {
@@ -1178,13 +1189,17 @@ Before:
 After:
 
     eventually timeout 5s {
-        require (test -f "${ack}.1")
+        require path-exists "${ack}.1"
     }
 
 The new shape is shorter, says what it means
 ("eventually the ack file must exist"), needs no `$probe`
 variable, drops the post-loop `require`, and produces no
-leaked names. The previous transitional form
+leaked names. `require path-exists FILE` is the filesystem
+predicate that matches `test -f` semantically; the
+`require ok COMMAND` predicate is reserved for `bpfman` and
+other domain commands the driver knows how to dispatch
+internally. The previous transitional form
 (`retry { require ... } until success or timeout 5s`) is
 not used -- `retry` is removed in commit 9, so the corpus
 migrates directly to `eventually`.

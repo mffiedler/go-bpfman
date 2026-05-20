@@ -46,6 +46,13 @@ func (e *ExecFailure) Error() string {
 // SourceSpan implements shell.SpanCarrier.
 func (e *ExecFailure) SourceSpan() shell.Span { return e.Span }
 
+// Retryable implements shell.RetryableError: a successfully
+// resolved subprocess that exited non-zero is the "ordinary
+// command non-zero rc" case, classified as a candidate for
+// retry under `eventually` (the world might change in a way
+// that flips the result).
+func (e *ExecFailure) Retryable() bool { return true }
+
 // CommandNotFound is the typed error returned at the subprocess
 // fallthrough when the first word resolves to no executable on
 // $PATH. Detected before argument resolution so a script that

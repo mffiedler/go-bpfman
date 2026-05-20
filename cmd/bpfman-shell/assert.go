@@ -51,9 +51,15 @@ func makeExecAssertStmt(cli *bpfmancli.CLI, session *shell.Session, loc sourceLo
 			label = "require"
 		}
 		message := formatExprFailure(s.Expr, session)
-		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, message)
+		// Inside an eventually attempt, retryable failures are
+		// expected polling state, not user-visible failures.
+		// Suppress the per-attempt diagnostic; the construct's
+		// overall-failure path is the single point of reporting.
+		if !session.InEventuallyAttempt() {
+			_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, message)
+		}
 		if s.IsRequire {
-			return repl.ErrRequireFailed
+			return &shell.RequireFailure{Span: s.Span, Expr: message}
 		}
 		session.RecordAssertFailure()
 		return nil
@@ -100,9 +106,11 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 			if result.pass {
 				return nil
 			}
-			_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+			if !session.InEventuallyAttempt() {
+				_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+			}
 			if isRequire {
-				return repl.ErrRequireFailed
+				return &shell.RequireFailure{Span: shell.ArgSpan(args[0]), Expr: result.message}
 			}
 			session.RecordAssertFailure()
 			return nil
@@ -130,7 +138,7 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 		}
 		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
 		if isRequire {
-			return repl.ErrRequireFailed
+			return &shell.RequireFailure{Span: shell.ArgSpan(args[0]), Expr: result.message}
 		}
 		session.RecordAssertFailure()
 		return nil
@@ -156,11 +164,15 @@ func replAssertRequire(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Man
 		return nil
 	}
 
-	// Failure path.
-	_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+	// Failure path. Suppress the per-attempt diagnostic when
+	// inside an eventually attempt; the construct's overall
+	// outcome is reported once at the outer scope.
+	if !session.InEventuallyAttempt() {
+		_ = cli.PrintErrf("%s[%s] FAIL: %s\n", loc, label, result.message)
+	}
 
 	if isRequire {
-		return repl.ErrRequireFailed
+		return &shell.RequireFailure{Span: shell.ArgSpan(verbArg), Expr: result.message}
 	}
 
 	session.RecordAssertFailure()

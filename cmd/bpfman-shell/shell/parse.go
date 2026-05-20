@@ -8,24 +8,6 @@ import (
 	"time"
 )
 
-// parseDurationLiteral wraps time.ParseDuration with a clearer
-// error phrasing.  Accepted forms are whatever Go accepts: "30s",
-// "200ms", "1h30m", "500us".  An empty string or a bare number
-// without a unit is rejected; the DSL insists on explicit units.
-func parseDurationLiteral(s string) (time.Duration, error) {
-	if s == "" {
-		return 0, fmt.Errorf("empty duration")
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("invalid duration %q (try 30s, 5m, 200ms)", s)
-	}
-	if d < 0 {
-		return 0, fmt.Errorf("duration must be non-negative, got %q", s)
-	}
-	return d, nil
-}
-
 // Program is the root of a parsed source unit: an ordered sequence
 // of statements with the source location of the first token.
 type Program struct {
@@ -87,16 +69,17 @@ type LetDestructureStmt struct {
 // is a guard, a non-ok envelope on any iteration halts the
 // whole collect via GuardFailure with no binding.
 //
-// Exactly one of Cmd and Collect is non-nil. "_" as a target
-// name discards that slot. Single-name binding always names
-// the primary; tuple binding names rc then primary, matching
-// section 6.2 of the design.
+// Exactly one of Cmd, Collect, and Eventually is non-nil. "_"
+// as a target name discards that slot. Single-name binding
+// always names the primary; tuple binding names rc then primary,
+// matching section 6.2 of the design.
 type BindStmt struct {
-	Primary string
-	Rc      string
-	Cmd     *CommandStmt
-	Collect *ForEachStmt
-	Guard   bool
+	Primary    string
+	Rc         string
+	Cmd        *CommandStmt
+	Collect    *ForEachStmt
+	Eventually *EventuallyStmt
+	Guard      bool
 	Span
 }
 
@@ -171,22 +154,23 @@ type ContinueStmt struct {
 	Span
 }
 
-// RetryStmt runs Body repeatedly until the Until expression
-// evaluates true.  Body errors do not halt the retry — they are
-// expected during polling; the most recent body error is carried
-// across iterations and returned as the statement's error if and
-// when Until becomes true.  Until is evaluated after each body
-// run regardless of whether the body errored, so time-based
-// exits fire even when every attempt is failing.
+// EventuallyStmt is the retrying construct that replaces the
+// retry/until form. The body runs in a fresh frame and a fresh
+// defer scope on each attempt; an attempt succeeds when the body
+// completes without a retryable failure and without recording a
+// new assertion failure during the attempt. Retryable failures
+// retry until Timeout elapses at the documented Interval cadence
+// (default 100ms); fatal failures halt the script immediately.
 //
-// There is no dedicated timeout or iteration clause; those are
-// primary-level expressions (TimeoutExpr and IterationExpr) that
-// compose into Until via the full expression grammar.  Retry
-// scope bookkeeping (start time, iteration counter) lives on
-// Env so no magic variables leak into the session.
-type RetryStmt struct {
-	Body  []Stmt
-	Until Expr
+// Two syntactic placements share one runtime: a statement form
+// that halts on overall failure, and a bind form that publishes
+// a structured result. The parser routes the bind form through a
+// BindStmt whose Eventually field is non-nil; the evaluator
+// dispatches on that.
+type EventuallyStmt struct {
+	Timeout  time.Duration
+	Interval time.Duration
+	Body     []Stmt
 	Span
 }
 
@@ -244,7 +228,7 @@ func (*ExprStmt) stmtNode()           {}
 func (*ForEachStmt) stmtNode()        {}
 func (*BreakStmt) stmtNode()          {}
 func (*ContinueStmt) stmtNode()       {}
-func (*RetryStmt) stmtNode()          {}
+func (*EventuallyStmt) stmtNode()     {}
 func (*DefStmt) stmtNode()            {}
 func (*AssertStmt) stmtNode()         {}
 
@@ -426,7 +410,13 @@ func (p *parser) parseStmt() (Stmt, error) {
 		case "foreach":
 			return p.parseForEachStmt()
 		case "retry":
-			return p.parseRetryStmt()
+			return nil, spanErrorf(t.Span, "retry is removed; use eventually timeout DUR { ... } (see SCOPE-DESIGN.md Section 3.4)")
+		case "until":
+			return nil, spanErrorf(t.Span, "until is no longer a keyword (retry was removed); see eventually timeout DUR { ... }")
+		case "return":
+			return nil, spanErrorf(t.Span, "return is reserved for a future value-returning def form (SCOPE-DESIGN.md Section 9)")
+		case "eventually":
+			return p.parseEventuallyStmt()
 		case "break":
 			return p.parseBreakStmt()
 		case "continue":
@@ -858,6 +848,24 @@ func (p *parser) parseBindRHS(stmtLoc Pos, rc, primary string, guard bool) (Stmt
 			Span:    p.spanFrom(stmtLoc),
 		}, nil
 	}
+	// Bind form of 'eventually': 'let r <- eventually timeout 5s {
+	// ... }'. takeBindRHSTokens stops at '{', which makes the
+	// trailing block unreachable via the generic command-form
+	// path; the eventually keyword in RHS position triggers the
+	// same special-case routing as foreach.
+	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "eventually" {
+		evStmt, err := p.parseEventuallyStmt()
+		if err != nil {
+			return nil, err
+		}
+		return &BindStmt{
+			Primary:    primary,
+			Rc:         rc,
+			Eventually: evStmt.(*EventuallyStmt),
+			Guard:      guard,
+			Span:       p.spanFrom(stmtLoc),
+		}, nil
+	}
 	cmdTokens, err := p.takeBindRHSTokens(bindTok)
 	if err != nil {
 		return nil, err
@@ -885,8 +893,8 @@ func describeStmt(s Stmt) string {
 		return "if"
 	case *ForEachStmt:
 		return "foreach"
-	case *RetryStmt:
-		return "retry"
+	case *EventuallyStmt:
+		return "eventually"
 	case *BreakStmt:
 		return "break"
 	case *ContinueStmt:
@@ -1084,27 +1092,28 @@ func (p *parser) parseCommandStmt() (Stmt, error) {
 // grammar. Allowing a def to shadow these would either be unreachable
 // (the keyword wins at parseStmt) or break statement parsing.
 var reservedDefNames = map[string]bool{
-	"def":       true,
-	"defer":     true,
-	"let":       true,
-	"guard":     true,
-	"if":        true,
-	"elif":      true,
-	"else":      true,
-	"foreach":   true,
-	"in":        true,
-	"retry":     true,
-	"until":     true,
-	"break":     true,
-	"continue":  true,
-	"and":       true,
-	"or":        true,
-	"not":       true,
-	"matches":   true,
-	"timeout":   true,
-	"iteration": true,
-	"true":      true,
-	"false":     true,
+	"def":        true,
+	"defer":      true,
+	"let":        true,
+	"guard":      true,
+	"if":         true,
+	"elif":       true,
+	"else":       true,
+	"foreach":    true,
+	"in":         true,
+	"retry":      true,
+	"until":      true,
+	"return":     true,
+	"eventually": true,
+	"interval":   true,
+	"break":      true,
+	"continue":   true,
+	"and":        true,
+	"or":         true,
+	"not":        true,
+	"matches":    true,
+	"true":       true,
+	"false":      true,
 }
 
 // parseDefStmt parses a `def NAME(P1 P2 ...) { BODY }` declaration.
@@ -1191,32 +1200,73 @@ func (p *parser) parseDefParams(defLoc Pos) ([]string, error) {
 	}
 }
 
-func (p *parser) parseRetryStmt() (Stmt, error) {
-	retryTok := p.advance() // "retry"
+// parseEventuallyStmt parses
+//
+//	eventually timeout DUR [interval DUR] { BODY }
+//
+// 'timeout' is mandatory: a test DSL should not have unbounded
+// waits by accident. 'interval' is named and optional; the
+// default cadence is 100ms. Both durations are Word tokens whose
+// text time.ParseDuration accepts. Keywords appear only at this
+// position; outside, the same texts remain ordinary Words.
+func (p *parser) parseEventuallyStmt() (Stmt, error) {
+	evTok := p.advance() // "eventually"
+	timeout, interval, err := p.parseEventuallyClauses(evTok)
+	if err != nil {
+		return nil, err
+	}
 	body, err := p.parseBlock()
 	if err != nil {
-		return nil, wrapSyntaxErr("retry", err)
+		return nil, wrapSyntaxErr("eventually", err)
 	}
-	// Skip separators between `}` and `until`.
-	for !p.atEOF() && p.peek().Kind == TokenSep {
-		p.pos++
+	return &EventuallyStmt{
+		Timeout:  timeout,
+		Interval: interval,
+		Body:     body,
+		Span:     p.spanFrom(evTok.Pos),
+	}, nil
+}
+
+// parseEventuallyClauses consumes the mandatory 'timeout DUR'
+// and the optional 'interval DUR' that follow the 'eventually'
+// keyword. The next significant token after the clauses is the
+// opening '{' of the block, which parseBlock consumes.
+func (p *parser) parseEventuallyClauses(evTok Token) (time.Duration, time.Duration, error) {
+	if p.atEOF() || p.peek().Kind != TokenWord || p.peek().Text != "timeout" {
+		return 0, 0, spanErrorf(evTok.Span, "eventually requires 'timeout DUR' (e.g. 'eventually timeout 5s { ... }')")
 	}
-	if p.atEOF() || !(p.peek().Kind == TokenWord && p.peek().Text == "until") {
-		return nil, spanErrorf(retryTok.Span, "retry requires 'until' after the body")
-	}
-	p.advance() // "until"
-	exprTokens, err := p.takeStmtTokens(false)
+	p.advance() // "timeout"
+	timeout, err := p.parseDurationWord(evTok, "timeout")
 	if err != nil {
-		return nil, err
+		return 0, 0, err
 	}
-	if len(exprTokens) == 0 {
-		return nil, spanErrorf(retryTok.Span, "retry until requires an expression")
+	interval := time.Duration(0)
+	if !p.atEOF() && p.peek().Kind == TokenWord && p.peek().Text == "interval" {
+		p.advance() // "interval"
+		interval, err = p.parseDurationWord(evTok, "interval")
+		if err != nil {
+			return 0, 0, err
+		}
 	}
-	until, err := parseExpression(exprTokens)
+	return timeout, interval, nil
+}
+
+// parseDurationWord reads the next Word token as a Go duration
+// literal. clause names the surrounding clause ("timeout",
+// "interval") so the diagnostic cites the right field.
+func (p *parser) parseDurationWord(evTok Token, clause string) (time.Duration, error) {
+	if p.atEOF() || p.peek().Kind != TokenWord {
+		return 0, spanErrorf(evTok.Span, "eventually %s requires a duration literal (e.g. 5s, 100ms)", clause)
+	}
+	durTok := p.advance()
+	d, err := time.ParseDuration(durTok.Text)
 	if err != nil {
-		return nil, err
+		return 0, spanErrorf(durTok.Span, "eventually %s: %v", clause, err)
 	}
-	return &RetryStmt{Body: body, Until: until, Span: p.spanFrom(retryTok.Pos)}, nil
+	if d <= 0 {
+		return 0, spanErrorf(durTok.Span, "eventually %s: %q is not a positive duration", clause, durTok.Text)
+	}
+	return d, nil
 }
 
 func (p *parser) parseForEachStmt() (Stmt, error) {
@@ -2050,12 +2100,6 @@ func (p *exprParser) parseTerm() (Expr, error) {
 	if t.Kind == TokenWord && t.Text == "[" {
 		return p.parseListLiteral()
 	}
-	if isKeywordWord(t, "timeout") {
-		return p.parseTimeoutExpr()
-	}
-	if isKeywordWord(t, "iteration") {
-		return p.parseIterationExpr()
-	}
 	if t.Kind == TokenWord {
 		if pb, ok := LookupPureBuiltin(t.Text); ok {
 			return p.parsePureCall(pb)
@@ -2197,38 +2241,6 @@ func (p *exprParser) parsePureCallArg(name string) (Expr, error) {
 
 // parseTimeoutExpr consumes a 'timeout' keyword followed by a
 // duration literal (e.g. 30s, 200ms, 1h30m — anything
-// time.ParseDuration accepts).  The result is a primary-level
-// boolean expression: it can participate in any comparison or
-// logical combinator at higher precedence.
-func (p *exprParser) parseTimeoutExpr() (Expr, error) {
-	tok := p.advance() // "timeout"
-	if p.eof() {
-		return nil, spanErrorf(tok.Span, "timeout requires a duration (e.g. timeout 30s, timeout $max_wait)")
-	}
-	arg, err := p.parseTerm()
-	if err != nil {
-		return nil, spanErrorf(tok.Span, "timeout: %v", err)
-	}
-	return &TimeoutExpr{Arg: arg, Span: p.spanFrom(tok.Pos)}, nil
-}
-
-// parseIterationExpr consumes an 'iteration' keyword followed
-// by an argument sub-expression producing a non-negative integer
-// at evaluation time.  Literal counts still work ("iteration 10")
-// but the argument may also be a variable reference or any
-// primary that reduces to a scalar.
-func (p *exprParser) parseIterationExpr() (Expr, error) {
-	tok := p.advance() // "iteration"
-	if p.eof() {
-		return nil, spanErrorf(tok.Span, "iteration requires a count (e.g. iteration 10, iteration $max)")
-	}
-	arg, err := p.parseTerm()
-	if err != nil {
-		return nil, spanErrorf(tok.Span, "iteration: %v", err)
-	}
-	return &IterationExpr{Arg: arg, Span: p.spanFrom(tok.Pos)}, nil
-}
-
 // parseCommandArgs turns a command's token run into argument
 // expressions. Each token becomes a primary expression; a
 // TokenAssign is preserved as a literal "=" only inside the alias

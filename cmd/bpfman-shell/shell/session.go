@@ -8,14 +8,26 @@ import (
 // Session holds variable bindings, aliases, and user-defined commands
 // (defs) for the REPL. It is the runtime state that persists across
 // commands within a session.
+//
+// Variables live on a stack of frames. There is always at least one
+// frame: the root frame, established by NewSession and never popped
+// while the session is alive. Block-shaped constructs (def calls, if
+// branches, foreach iterations, eventually attempts) push a fresh
+// frame for the duration of the body and pop it on exit. let writes
+// to the innermost frame; reads walk outward; deleting from the
+// innermost frame leaves outer bindings intact.
+//
+// Aliases and defs are session-level and are not part of the frame
+// stack.
 type Session struct {
-	vars           map[string]Value
-	aliases        map[string]string
-	defs           map[string]*DefValue
-	assertFailures int
-	deferFailures  int
-	jobLeaks       int
-	traceEnabled   bool
+	frames          []map[string]Value
+	aliases         map[string]string
+	defs            map[string]*DefValue
+	assertFailures  int
+	deferFailures   int
+	jobLeaks        int
+	traceEnabled    bool
+	eventuallyDepth int
 }
 
 // DefValue is a user-defined command registered via the `def NAME(P1
@@ -67,6 +79,25 @@ func (s *Session) JobLeaks() int {
 	return s.jobLeaks
 }
 
+// EnterEventuallyAttempt and ExitEventuallyAttempt bracket the
+// body of one eventually attempt so the driver-side assert /
+// require dispatchers can recognise retryable failures and
+// suppress their "[assert]/[require] FAIL: ..." stderr line.
+// The assertion counter still moves through its usual
+// record-and-return path; eventually's snapshot/reset compensates
+// for the counter side. The depth count permits nested eventually
+// constructs without misclassifying outer scope as quiet.
+//
+// InEventuallyAttempt is the read side: drivers consult it from
+// their assertion handlers before deciding whether to render the
+// failure to stderr. Outside any attempt the depth is zero and
+// reporting proceeds normally.
+func (s *Session) EnterEventuallyAttempt() { s.eventuallyDepth++ }
+func (s *Session) ExitEventuallyAttempt()  { s.eventuallyDepth-- }
+func (s *Session) InEventuallyAttempt() bool {
+	return s.eventuallyDepth > 0
+}
+
 // SetTrace enables or disables execution tracing. Drivers usually
 // install an Env.Trace callback whose body consults this so the
 // `trace on` / `trace off` builtin (and a startup CLI flag) can
@@ -80,10 +111,10 @@ func (s *Session) TraceEnabled() bool {
 	return s.traceEnabled
 }
 
-// NewSession returns an empty session.
+// NewSession returns an empty session with a single root frame.
 func NewSession() *Session {
 	return &Session{
-		vars:    make(map[string]Value),
+		frames:  []map[string]Value{make(map[string]Value)},
 		aliases: make(map[string]string),
 		defs:    make(map[string]*DefValue),
 	}
@@ -117,26 +148,135 @@ func (s *Session) DefNames() []string {
 	return slices.Sorted(maps.Keys(s.defs))
 }
 
-// Set binds a value to a variable name, replacing any existing binding.
+// Set binds a value to a variable name in the innermost frame,
+// shadowing any same-named binding in an outer frame. Crossing a
+// frame boundary creates a new shadowing binding rather than
+// mutating an outer one.
 func (s *Session) Set(name string, v Value) {
-	s.vars[name] = v
+	s.frames[len(s.frames)-1][name] = v
 }
 
-// Get retrieves a variable's value. The second return value indicates
-// whether the variable exists.
+// Get retrieves a variable's value. The lookup walks the frame
+// stack from innermost to outermost and returns the first hit, so
+// an inner binding shadows an outer one. The second return value
+// indicates whether a binding exists in any frame.
 func (s *Session) Get(name string) (Value, bool) {
-	v, ok := s.vars[name]
-	return v, ok
+	for i := len(s.frames) - 1; i >= 0; i-- {
+		if v, ok := s.frames[i][name]; ok {
+			return v, true
+		}
+	}
+	return Value{}, false
 }
 
-// Delete removes a variable binding.
-func (s *Session) Delete(name string) {
-	delete(s.vars, name)
+// DeleteLocal removes a binding from the innermost frame only. A
+// binding that lives further out is left intact: after
+// DeleteLocal, Get may still return a value if an outer frame
+// holds one. Callers that want to remove the visible binding
+// wherever it lives should use DeleteVisible.
+func (s *Session) DeleteLocal(name string) {
+	delete(s.frames[len(s.frames)-1], name)
 }
 
-// Names returns the sorted list of bound variable names.
+// DeleteVisible removes the first binding for name found while
+// walking frames from innermost outward. Outer bindings are left
+// intact even if multiple frames hold a binding of the same name
+// -- only the visible shadowing binding is removed, and the next
+// outer binding becomes visible.
+//
+// This is the operation a user-facing `unset NAME` builtin should
+// call: the intuitive semantics of "remove the binding I can
+// currently see" is delete-the-visible, not delete-from-innermost.
+// The evaluator itself uses DeleteLocal; DeleteVisible is the
+// escape hatch for explicit cleanup paths.
+func (s *Session) DeleteVisible(name string) {
+	for i := len(s.frames) - 1; i >= 0; i-- {
+		if _, ok := s.frames[i][name]; ok {
+			delete(s.frames[i], name)
+			return
+		}
+	}
+}
+
+// Names returns the visible variable set as a sorted slice, with
+// each name appearing exactly once. Inner bindings shadow outer
+// ones, so a name present in multiple frames is reported once.
 func (s *Session) Names() []string {
-	return slices.Sorted(maps.Keys(s.vars))
+	seen := make(map[string]struct{})
+	for _, f := range s.frames {
+		for name := range f {
+			seen[name] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// PushFrame appends an empty frame to the stack. Subsequent Set
+// calls bind into this frame; Get continues to walk outward and
+// can see bindings that the new frame does not shadow.
+func (s *Session) PushFrame() {
+	s.frames = append(s.frames, make(map[string]Value))
+}
+
+// PopFrame removes the innermost frame. PopFrame panics if asked
+// to pop the root frame: every Push must be paired with exactly
+// one Pop, and an unbalanced Pop is an invariant violation in the
+// evaluator. Callers that need exception-safe push/pop should use
+// WithFrame.
+func (s *Session) PopFrame() {
+	if len(s.frames) <= 1 {
+		panic("shell.Session.PopFrame: cannot pop root frame")
+	}
+	s.frames = s.frames[:len(s.frames)-1]
+}
+
+// WithFrame pushes a fresh frame, runs fn, and pops in a defer
+// so the pop runs on every exit path (success, error, panic). The
+// evaluator pushes frames only through WithFrame so block scope
+// is symmetric with the body's lexical extent.
+func (s *Session) WithFrame(fn func() error) error {
+	s.PushFrame()
+	defer s.PopFrame()
+	return fn()
+}
+
+// ChildForSource returns a fresh sub-session for module-scoped
+// evaluation per SCOPE-DESIGN.md Section 5. The child starts
+// with a single empty root frame, no aliases, and zero counters,
+// but inherits the parent's defs (shallow-cloned -- DefValue is
+// immutable after construction so a map copy is sufficient) and
+// the parent's traceEnabled flag (child-local: toggling tracing
+// inside a sourced file does not propagate back).
+//
+// Counters do not inherit; they accumulate back into the parent
+// via MergeChildSource regardless of evaluation outcome. Defs
+// merge only on successful completion -- a failed source is
+// transactional at the module boundary.
+func (s *Session) ChildForSource() *Session {
+	child := NewSession()
+	maps.Copy(child.defs, s.defs)
+	child.traceEnabled = s.traceEnabled
+	return child
+}
+
+// MergeChildSource folds the child sub-session's effects back
+// into s. Counter deltas (assert, defer, job-leak failures)
+// always accumulate so the run's overall outcome reflects every
+// failure that happened, including those inside a failed source.
+// When commitDefs is true the child's defs are merged into the
+// parent, making new defs and redefinitions visible to the
+// importer; when false, the child's defs are discarded entirely.
+//
+// Aliases and variables are always discarded: those are private
+// to the child session.
+func (s *Session) MergeChildSource(child *Session, commitDefs bool) {
+	s.assertFailures += child.assertFailures
+	s.deferFailures += child.deferFailures
+	s.jobLeaks += child.jobLeaks
+	if !commitDefs {
+		return
+	}
+	maps.Copy(s.defs, child.defs)
 }
 
 // SetAlias binds a first-token alias. The caller is responsible for

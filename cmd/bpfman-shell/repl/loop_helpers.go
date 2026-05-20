@@ -15,11 +15,16 @@ import (
 	"github.com/frobware/go-bpfman/internal/bpfmancli"
 )
 
-// ErrRequireFailed is returned by `require` to halt the script.
-// Distinct from ErrScriptError so the loop can tell why the
-// run aborted; both turn into a silent non-zero exit by the
+// ErrRequireFailed is the sentinel a failed `require` chains
+// into a *shell.RequireFailure so existing
+// `errors.Is(err, ErrRequireFailed)` halts at the same
+// script-loop boundaries that already check for it. The
+// canonical value lives in the shell package; this is the
+// driver-side re-export for callers that read repl import
+// paths. Distinct from ErrScriptError so the loop can tell why
+// the run aborted; both turn into a silent non-zero exit by the
 // time Run returns to the embedding binary.
-var ErrRequireFailed = errors.New("require failed")
+var ErrRequireFailed = shell.ErrRequireFailed
 
 // ErrScriptError is the sentinel the loop returns when a script
 // chunk emitted a runtime error that has already been printed

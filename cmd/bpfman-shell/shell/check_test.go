@@ -20,6 +20,116 @@ func checkSource(t *testing.T, src string) []Issue {
 	return Check(prog)
 }
 
+// TestCheckerFrames_* mirror the runtime Session-frame tests in
+// session_test.go: same shape, same names, exercised against the
+// checker's frame stack so the two halves of the language stay
+// in step.
+
+func TestCheckerFrames_DefineWritesInnermost(t *testing.T) {
+	t.Parallel()
+
+	c := newChecker()
+	c.define("x", KindShape(OriginScalar), nil)
+	c.withFrame(func() {
+		c.define("x", KindShape(OriginBool), nil)
+		sh, ok := c.lookupShape("x")
+		require.True(t, ok)
+		assert.Equal(t, OriginBool, sh.Kind)
+	})
+	sh, ok := c.lookupShape("x")
+	require.True(t, ok)
+	assert.Equal(t, OriginScalar, sh.Kind)
+}
+
+func TestCheckerFrames_LookupWalksOutward(t *testing.T) {
+	t.Parallel()
+
+	c := newChecker()
+	c.define("a", KindShape(OriginScalar), nil)
+	c.withFrame(func() {
+		c.define("b", KindShape(OriginBool), nil)
+		// Inner sees both: b directly, a through the walk.
+		assert.True(t, c.lookupDefined("a"))
+		assert.True(t, c.lookupDefined("b"))
+	})
+	// After pop, only the outer remains visible.
+	assert.True(t, c.lookupDefined("a"))
+	assert.False(t, c.lookupDefined("b"))
+}
+
+func TestCheckerFrames_InnerShadowsOuter(t *testing.T) {
+	t.Parallel()
+
+	c := newChecker()
+	c.define("x", KindShape(OriginScalar), nil)
+	c.withFrame(func() {
+		// Inner frame initially sees outer x.
+		sh, ok := c.lookupShape("x")
+		require.True(t, ok)
+		assert.Equal(t, OriginScalar, sh.Kind)
+		// Shadowing the name does not touch the outer binding.
+		c.define("x", KindShape(OriginBool), nil)
+		sh, ok = c.lookupShape("x")
+		require.True(t, ok)
+		assert.Equal(t, OriginBool, sh.Kind)
+	})
+	sh, ok := c.lookupShape("x")
+	require.True(t, ok)
+	assert.Equal(t, OriginScalar, sh.Kind)
+}
+
+func TestCheckerFrames_LiteralRecordingScopesToFrame(t *testing.T) {
+	t.Parallel()
+
+	// The arithmetic check inspects the recorded RHS literal
+	// for non-numeric tokens. The lookup must walk frames so a
+	// let inside an inner frame finds its own literal, and
+	// popping the frame restores any outer literal.
+	c := newChecker()
+	outerLit := &LiteralExpr{Text: "outer", Quoted: true}
+	c.define("x", KindShape(OriginScalar), outerLit)
+	c.withFrame(func() {
+		innerLit := &LiteralExpr{Text: "inner", Quoted: true}
+		c.define("x", KindShape(OriginScalar), innerLit)
+		got, ok := c.lookupLiteral("x")
+		require.True(t, ok)
+		assert.Equal(t, "inner", got.Text)
+	})
+	got, ok := c.lookupLiteral("x")
+	require.True(t, ok)
+	assert.Equal(t, "outer", got.Text)
+}
+
+func TestCheckerFrames_DiscardSlotNotBound(t *testing.T) {
+	t.Parallel()
+
+	c := newChecker()
+	c.define("_", KindShape(OriginScalar), nil)
+	assert.False(t, c.lookupDefined("_"))
+}
+
+func TestCheckerFrames_WithFramePopsOnPanic(t *testing.T) {
+	t.Parallel()
+
+	c := newChecker()
+	c.define("x", KindShape(OriginScalar), nil)
+
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		c.withFrame(func() {
+			c.define("x", KindShape(OriginBool), nil)
+			panic("boom")
+		})
+	}()
+
+	// Frame popped on panic; outer binding restored.
+	sh, ok := c.lookupShape("x")
+	require.True(t, ok)
+	assert.Equal(t, OriginScalar, sh.Kind)
+}
+
 func TestCheck_DefinedThenUsed_Clean(t *testing.T) {
 	t.Parallel()
 
@@ -345,16 +455,17 @@ func TestCheck_ContinueOutsideForeachReported(t *testing.T) {
 	assert.Contains(t, issues[0].Msg, "'continue' outside any foreach loop")
 }
 
-func TestCheck_BreakInsideRetryReported(t *testing.T) {
+func TestCheck_BreakInsideEventuallyReported(t *testing.T) {
 	t.Parallel()
 
-	// Retry is not a foreach loop for break/continue
+	// Eventually is not a foreach loop for break/continue
 	// purposes: the runtime errBreak only escapes through
-	// ForEachStmt's evaluator. The gallery's old example of
-	// 'if x { break }' inside retry was rewritten to use the
-	// 'until' clause; the static check enforces that
-	// distinction here.
-	src := "retry { break } until iteration 1"
+	// ForEachStmt's evaluator, and the language treats
+	// eventually as a retrying assertion block rather than an
+	// iteration construct. A bare `break` inside the body is
+	// caught here so the user does not need to reach the
+	// runtime to discover the mismatch.
+	src := "eventually timeout 1s { break }"
 	issues := checkSource(t, src)
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Msg, "'break'")

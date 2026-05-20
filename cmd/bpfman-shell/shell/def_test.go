@@ -223,6 +223,96 @@ boom
 	assert.True(t, strings.Contains(err.Error(), "kaboom"))
 }
 
+// TestEvalProgram_Def_* below pin the block-scope contract for
+// def calls introduced by the SCOPE-DESIGN rework: each call
+// runs in its own session frame, body-level `let` does not leak
+// to the caller, recursion gets independent frames, and defs do
+// not capture lexical variable frames.
+
+func TestEvalProgram_Def_BodyLet_DoesNotLeakToCaller(t *testing.T) {
+	t.Parallel()
+
+	src := `
+def f() {
+  let scratch = inside
+}
+f
+`
+	s, _ := runProgram(t, src)
+	_, ok := s.Get("scratch")
+	assert.False(t, ok, "body-level let must not leak past the def call")
+}
+
+func TestEvalProgram_Def_RecursionGetsIndependentFrames(t *testing.T) {
+	t.Parallel()
+
+	// Each recursive call binds label to its own argument. If
+	// frames were shared, the inner rebind of label would
+	// corrupt the outer call's view; after the inner call
+	// returns, the outer body's reference to $label must still
+	// resolve to the outer call's value. The order of recorded
+	// calls is: inner first (the recursive call runs before
+	// the post-recursion record), then outer.
+	src := `
+def step(label) {
+  if $label == "outer" {
+    step "inner"
+  }
+  recorded $label
+}
+step "outer"
+`
+	_, calls := runProgram(t, src)
+	require.Len(t, calls, 2)
+	assert.Equal(t, []string{"recorded", "inner"}, calls[0])
+	assert.Equal(t, []string{"recorded", "outer"}, calls[1])
+}
+
+func TestEvalProgram_Def_DoesNotCaptureVariableFrames(t *testing.T) {
+	t.Parallel()
+
+	// Defs are session-level declarations; they do not capture
+	// the variable frame they were declared in. Once the
+	// declaring if-branch ends, the let it introduced is gone
+	// and a call from outside the branch must fail with
+	// undefined-variable rather than seeing a captured snapshot.
+	src := `
+if true {
+  let captured = inner
+  def f() {
+    use $captured
+  }
+}
+f
+`
+	prog := parseProgram(t, src)
+	env := &Env{
+		Session:     NewSession(),
+		ExecCommand: func([]Arg, Span) (Value, error) { return Value{}, nil },
+	}
+	err := EvalProgram(prog, env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable: captured")
+}
+
+func TestEvalProgram_Def_ParameterScopesToCallFrame(t *testing.T) {
+	t.Parallel()
+
+	// A parameter is bound in the call frame; the caller's
+	// same-named binding is shadowed for the duration of the
+	// call and visible again afterwards.
+	src := `
+let n = caller
+def f(n) { print $n }
+f callee
+`
+	s, _ := runProgram(t, src)
+	v, ok := s.Get("n")
+	require.True(t, ok)
+	got, _ := v.Scalar()
+	assert.Equal(t, "caller", got, "caller's n is restored after the call")
+}
+
 // assertErr is a tiny error helper used so the test does not pull in
 // errors.New at multiple sites.
 func assertErr(msg string) error { return &simpleErr{msg} }

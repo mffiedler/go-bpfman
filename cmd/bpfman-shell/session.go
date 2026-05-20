@@ -151,7 +151,7 @@ func handleUnset(c builtinCtx) (shell.Value, error) {
 		if _, ok := session.Get(name); !ok {
 			return shell.Value{}, fmt.Errorf("undefined variable %q", name)
 		}
-		session.Delete(name)
+		session.DeleteVisible(name)
 	}
 	return shell.Value{}, nil
 }

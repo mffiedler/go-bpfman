@@ -56,12 +56,7 @@ func (i Issue) Error() string {
 // implemented today; future checks land here without changing
 // the signature.
 func Check(prog *Program) []Issue {
-	c := &checker{
-		defined:  map[string]bool{},
-		shapes:   map[string]Shape{},
-		literals: map[string]*LiteralExpr{},
-		aliases:  map[string]string{},
-	}
+	c := newChecker()
 	c.walkStmts(prog.Stmts)
 	c.checkJobLeaks(prog)
 	c.checkArithmeticOperands(prog)
@@ -72,56 +67,115 @@ func Check(prog *Program) []Issue {
 	return c.issues
 }
 
-// checker carries the rolling state for one Check pass. The
-// defined map is the active set of variable names visible at
-// the current point in the walk; foreach loop variables and
-// def parameters are pushed on entry and popped on exit so
-// they do not leak into following sibling statements at the
-// same level. The shapes map carries each visible variable's
-// inferred Shape when it can be inferred from the let or bind
-// RHS; absent entries default to an unsealed OriginUnknown and
-// are treated as wildcards by the path-validity check. The
-// literals map carries the verbatim let RHS LiteralExpr for
-// variables bound to a single literal, so type checks that
-// need to know whether a Scalar variable holds a number or a
-// non-numeric token (e.g. arithmetic operand validation) can
-// inspect the original expression.
+// checker carries the rolling state for one Check pass. Variable
+// state lives on a stack of frames that mirrors the runtime
+// Session frame stack: defines write innermost, lookups walk
+// outward, and a block-shaped construct pushes a frame for the
+// duration of its body. Each checkFrame holds the per-variable
+// shape and the verbatim RHS LiteralExpr for variables bound to a
+// single literal, so type checks (notably arithmetic-operand
+// validation) can inspect the original expression. Aliases are
+// session-level and live outside the frame stack: `alias` /
+// `unalias` are explicit user actions, not implicit by entering a
+// block.
 type checker struct {
+	frames  []checkFrame
+	aliases map[string]string
+	issues  []Issue
+}
+
+// checkFrame is one entry on the checker's frame stack. defined
+// carries the names introduced in this frame; shapes carries
+// their inferred Shape (or KindShape(OriginUnknown) when not
+// inferable); literals carries the bound RHS LiteralExpr for the
+// arithmetic-on-literal validation, or nil when the binding did
+// not come from a single literal.
+type checkFrame struct {
 	defined  map[string]bool
 	shapes   map[string]Shape
 	literals map[string]*LiteralExpr
-	aliases  map[string]string
-	issues   []Issue
 }
 
-// snapshotVar captures the current state of every per-variable
-// map for name and returns a restore closure. Used at scope
-// boundaries (foreach, def parameters) so a body's mutation of
-// a name does not leak past the scope. The maps covered are
-// defined, shapes, and literals; aliases is not per-name in the
-// scope sense (alias / unalias are explicit user actions, not
-// implicit by entering a block) so it is left out.
-func (c *checker) snapshotVar(name string) func() {
-	hadDefined := c.defined[name]
-	prevShape, hadShape := c.shapes[name]
-	prevLit, hadLit := c.literals[name]
-	return func() {
-		if hadDefined {
-			c.defined[name] = true
-		} else {
-			delete(c.defined, name)
-		}
-		if hadShape {
-			c.shapes[name] = prevShape
-		} else {
-			delete(c.shapes, name)
-		}
-		if hadLit {
-			c.literals[name] = prevLit
-		} else {
-			delete(c.literals, name)
+func newChecker() *checker {
+	return &checker{
+		frames:  []checkFrame{newCheckFrame()},
+		aliases: map[string]string{},
+	}
+}
+
+func newCheckFrame() checkFrame {
+	return checkFrame{
+		defined:  map[string]bool{},
+		shapes:   map[string]Shape{},
+		literals: map[string]*LiteralExpr{},
+	}
+}
+
+// define binds name into the innermost frame, shadowing any
+// outer binding for the duration of the frame. Crossing a frame
+// boundary creates a new shadowing binding rather than mutating
+// an outer one -- the inner binding disappears when the frame is
+// popped and the outer one becomes visible again. `_` is a
+// discard slot at every binding site and contributes no binding.
+func (c *checker) define(name string, shape Shape, lit *LiteralExpr) {
+	if name == "_" {
+		return
+	}
+	f := c.frames[len(c.frames)-1]
+	f.defined[name] = true
+	f.shapes[name] = shape
+	if lit != nil {
+		f.literals[name] = lit
+	} else {
+		delete(f.literals, name)
+	}
+}
+
+// lookupDefined reports whether name resolves in any frame.
+func (c *checker) lookupDefined(name string) bool {
+	for i := len(c.frames) - 1; i >= 0; i-- {
+		if c.frames[i].defined[name] {
+			return true
 		}
 	}
+	return false
+}
+
+// lookupShape returns the Shape for name found in the innermost
+// frame that holds a binding. The second return value reports
+// whether any frame had a shape entry; callers that find no
+// entry treat the variable as an unsealed wildcard.
+func (c *checker) lookupShape(name string) (Shape, bool) {
+	for i := len(c.frames) - 1; i >= 0; i-- {
+		if s, ok := c.frames[i].shapes[name]; ok {
+			return s, true
+		}
+	}
+	return Shape{}, false
+}
+
+// lookupLiteral returns the RHS LiteralExpr for name from the
+// innermost frame that recorded one. Absence means the binding
+// did not come from a single literal in any visible frame.
+func (c *checker) lookupLiteral(name string) (*LiteralExpr, bool) {
+	for i := len(c.frames) - 1; i >= 0; i-- {
+		if lit, ok := c.frames[i].literals[name]; ok {
+			return lit, true
+		}
+	}
+	return nil, false
+}
+
+// withFrame pushes a fresh frame, runs fn, and pops in a defer
+// so the pop runs on every exit path. The checker pushes frames
+// only through withFrame so block scope is symmetric with the
+// body's lexical extent.
+func (c *checker) withFrame(fn func()) {
+	c.frames = append(c.frames, newCheckFrame())
+	defer func() {
+		c.frames = c.frames[:len(c.frames)-1]
+	}()
+	fn()
 }
 
 // addIssue records an issue at span with the given message.
@@ -152,7 +206,7 @@ func (c *checker) inferExprShape(e Expr) Shape {
 		}
 		return KindShape(OriginScalar)
 	case *VarRefExpr:
-		shape, ok := c.shapes[v.Name]
+		shape, ok := c.lookupShape(v.Name)
 		if !ok {
 			return Shape{Sealed: false, Kind: OriginUnknown}
 		}
@@ -307,9 +361,9 @@ func primaryNameForHint(n *BindStmt) string {
 }
 
 // walkStmts walks a statement list in source order. Defining
-// statements (let, bind, foreach, def) update c.defined as a
-// side effect of being walked; expression statements run
-// their VarRef-usage check via checkExpr.
+// statements (let, bind, foreach, def) call c.define as a side
+// effect of being walked; expression statements run their
+// VarRef-usage check via checkExpr.
 func (c *checker) walkStmts(stmts []Stmt) {
 	for _, s := range stmts {
 		c.walkStmt(s)
@@ -325,17 +379,17 @@ func (c *checker) walkStmt(s Stmt) {
 	switch n := s.(type) {
 	case *LetStmt:
 		c.checkExpr(n.RHS)
-		c.defined[n.Name] = true
-		c.shapes[n.Name] = c.inferExprShape(n.RHS)
 		// Record the RHS literal when the binding is a single
 		// LiteralExpr, quoted or not. The arithmetic check
 		// consults the .Text and .Quoted fields so a quoted
 		// string ('let s = "world"') and an unquoted
 		// non-numeric token ('let s = bogus') both fire,
 		// while a numeric literal stays clean.
-		if lit, ok := n.RHS.(*LiteralExpr); ok {
-			c.literals[n.Name] = lit
+		var lit *LiteralExpr
+		if l, ok := n.RHS.(*LiteralExpr); ok {
+			lit = l
 		}
+		c.define(n.Name, c.inferExprShape(n.RHS), lit)
 
 	case *LetDestructureStmt:
 		c.checkExpr(n.RHS)
@@ -344,10 +398,7 @@ func (c *checker) walkStmt(s Stmt) {
 		// list expression; only the binding existence matters
 		// for downstream name-resolution.
 		for _, name := range n.Names {
-			if name == "_" {
-				continue
-			}
-			c.defined[name] = true
+			c.define(name, Shape{Sealed: false, Kind: OriginUnknown}, nil)
 		}
 
 	case *BindStmt:
@@ -378,60 +429,59 @@ func (c *checker) walkStmt(s Stmt) {
 			}
 		}
 		primaryShape := c.inferBindShape(n.Cmd)
-		if n.Primary != "" && n.Primary != "_" {
-			c.defined[n.Primary] = true
-			c.shapes[n.Primary] = primaryShape
-		}
-		if n.Rc != "" && n.Rc != "_" {
-			c.defined[n.Rc] = true
-			c.shapes[n.Rc] = KindShape(OriginEnvelope)
-		}
+		c.define(n.Primary, primaryShape, nil)
+		c.define(n.Rc, KindShape(OriginEnvelope), nil)
 
 	case *ForEachStmt:
 		c.checkExpr(n.List)
 		// Loop variables are in scope inside the body only.
-		// Save and restore the previous binding (if any) for
-		// each name across all per-variable maps so outer
-		// scope is preserved on exit. Without restoring
-		// c.shapes and c.literals, a body that reassigns a
-		// loop var to a new shape would leak that shape past
-		// the loop. Discard slots ("_") contribute no binding
-		// and are skipped.
-		restores := make([]func(), 0, len(n.Names))
-		for _, name := range n.Names {
-			if name == "_" {
-				continue
+		// The body runs inside a fresh frame so loop-var
+		// bindings and any body-level `let` disappear at the
+		// end of the loop. The checker has no notion of
+		// iteration; one frame for the body is enough -- the
+		// runtime allocates one frame per iteration but a
+		// static walk cannot make use of the distinction.
+		c.withFrame(func() {
+			for _, name := range n.Names {
+				c.define(name, Shape{Sealed: false, Kind: OriginUnknown}, nil)
 			}
-			restores = append(restores, c.snapshotVar(name))
-			c.defined[name] = true
-		}
-		c.walkStmts(n.Body)
-		for _, r := range restores {
-			r()
-		}
+			c.walkStmts(n.Body)
+		})
 
 	case *DefStmt:
-		// Parameters are visible inside the body. Save and
-		// restore all per-variable maps so nothing leaks to
-		// subsequent siblings.
-		restores := make([]func(), 0, len(n.Params))
-		for _, p := range n.Params {
-			restores = append(restores, c.snapshotVar(p))
-			c.defined[p] = true
-		}
-		c.walkStmts(n.Body)
-		for _, r := range restores {
-			r()
-		}
+		// Parameters are visible inside the body and disappear
+		// at end-of-def. The runtime allocates a fresh frame
+		// per call; the checker walks the def body once with
+		// its parameter frame in place.
+		c.withFrame(func() {
+			for _, p := range n.Params {
+				c.define(p, Shape{Sealed: false, Kind: OriginUnknown}, nil)
+			}
+			c.walkStmts(n.Body)
+		})
 
 	case *IfStmt:
+		// Each branch body checks in its own frame: a `let`
+		// inside one branch is invisible to subsequent
+		// sibling branches and to the post-if scope. The
+		// checker does not know which branch will run, so it
+		// walks every branch independently; none contributes
+		// bindings to the surrounding scope.
 		c.checkExpr(n.Cond)
-		c.walkStmts(n.Then)
+		c.withFrame(func() {
+			c.walkStmts(n.Then)
+		})
 		for _, b := range n.Elifs {
 			c.checkExpr(b.Cond)
-			c.walkStmts(b.Body)
+			c.withFrame(func() {
+				c.walkStmts(b.Body)
+			})
 		}
-		c.walkStmts(n.Else)
+		if len(n.Else) > 0 {
+			c.withFrame(func() {
+				c.walkStmts(n.Else)
+			})
+		}
 
 	case *DeferStmt:
 		if n.Cmd != nil {
@@ -440,9 +490,15 @@ func (c *checker) walkStmt(s Stmt) {
 			}
 		}
 
-	case *RetryStmt:
-		c.walkStmts(n.Body)
-		c.checkExpr(n.Until)
+	case *EventuallyStmt:
+		// The body checks in its own frame: body-level `let`
+		// stays inside the attempt and is invisible to the
+		// post-construct scope. The checker has no notion of
+		// "attempt"; one frame for the body is enough, just
+		// like foreach.
+		c.withFrame(func() {
+			c.walkStmts(n.Body)
+		})
 
 	case *AssertStmt:
 		c.checkExpr(n.Expr)
@@ -566,7 +622,7 @@ func (c *checker) checkExpr(e Expr) {
 	}
 	Inspect(e, func(n Node) bool {
 		if v, ok := n.(*VarRefExpr); ok {
-			if !c.defined[v.Name] {
+			if !c.lookupDefined(v.Name) {
 				c.addIssue(v.Span, "undefined variable: %s", v.Name)
 				return true
 			}
@@ -593,7 +649,7 @@ func (c *checker) checkVarRefPath(v *VarRefExpr) {
 	if v.Path == "" {
 		return
 	}
-	current, ok := c.shapes[v.Name]
+	current, ok := c.lookupShape(v.Name)
 	if !ok {
 		return
 	}
@@ -834,7 +890,7 @@ func (c *checker) flagNonNumericOperand(e Expr, op string) {
 		// numeric-parser test isNumericLiteral applies to
 		// arithmetic-on-literal operands.
 		if v.Path == "" {
-			if lit, ok := c.literals[v.Name]; ok {
+			if lit, ok := c.lookupLiteral(v.Name); ok {
 				if lit.Quoted || !isNumericLiteral(lit.Text) {
 					c.addIssue(v.Span, "arithmetic %s: %s is %q, not a number", op, v.Name, lit.Text)
 				}
@@ -958,7 +1014,12 @@ func (c *checker) checkLoopExits(stmts []Stmt, depth int) {
 		switch n := s.(type) {
 		case *ForEachStmt:
 			c.checkLoopExits(n.Body, depth+1)
-		case *RetryStmt:
+		case *EventuallyStmt:
+			// Eventually is not an iteration construct: break
+			// and continue are only valid inside a foreach,
+			// nested or otherwise. Pass through depth so a
+			// nested foreach inside the body still admits
+			// break/continue against itself.
 			c.checkLoopExits(n.Body, depth)
 		case *IfStmt:
 			c.checkLoopExits(n.Then, depth)

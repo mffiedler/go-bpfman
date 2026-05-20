@@ -2,6 +2,7 @@ package shell
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,13 +35,13 @@ func TestSessionSetGetDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "world", str)
 
-	// Delete.
-	s.Delete("x")
+	// DeleteLocal on the root frame removes the binding.
+	s.DeleteLocal("x")
 	_, ok = s.Get("x")
 	assert.False(t, ok)
 
-	// Delete non-existent is fine.
-	s.Delete("nonexistent")
+	// DeleteLocal of an absent name is fine.
+	s.DeleteLocal("nonexistent")
 }
 
 func TestSessionNames(t *testing.T) {
@@ -452,6 +453,226 @@ func TestSessionExpandAdapterRef(t *testing.T) {
 		assert.IsType(t, AdapterArg{}, got[1])
 		assert.IsType(t, AdapterArg{}, got[2])
 	})
+}
+
+func TestSessionFrames_SetWritesInnermost(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("root"))
+	s.PushFrame()
+	s.Set("x", StringValue("inner"))
+
+	// Inner frame holds the new value.
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "inner", str)
+
+	// Popping reveals the outer binding unchanged.
+	s.PopFrame()
+	v, ok = s.Get("x")
+	require.True(t, ok)
+	str, err = v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "root", str)
+}
+
+func TestSessionFrames_GetWalksOutward(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("a", StringValue("from-root"))
+	s.PushFrame()
+	s.Set("b", StringValue("from-inner"))
+
+	// Inner Get sees both: inner binding directly, outer through walk.
+	vb, ok := s.Get("b")
+	require.True(t, ok)
+	sb, err := vb.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "from-inner", sb)
+
+	va, ok := s.Get("a")
+	require.True(t, ok)
+	sa, err := va.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "from-root", sa)
+
+	// Names dedupes across frames and is sorted.
+	assert.Equal(t, []string{"a", "b"}, s.Names())
+}
+
+func TestSessionFrames_DeleteLocalRemovesInnermostOnly(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+	s.PushFrame()
+	s.Set("x", StringValue("inner"))
+
+	// DeleteLocal removes the inner binding; outer reappears.
+	s.DeleteLocal("x")
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+
+	// DeleteLocal again clears the inner frame; outer remains.
+	s.DeleteLocal("x")
+	v, ok = s.Get("x")
+	require.True(t, ok)
+	str, err = v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+}
+
+func TestSessionFrames_DeleteVisibleWalksOutwardAndDeletesFirstHit(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+	s.PushFrame()
+	s.Set("x", StringValue("inner"))
+
+	// First DeleteVisible removes the inner (visible) binding.
+	s.DeleteVisible("x")
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+
+	// Second DeleteVisible removes the outer binding.
+	s.DeleteVisible("x")
+	_, ok = s.Get("x")
+	assert.False(t, ok)
+
+	// DeleteVisible of an absent name is a no-op.
+	s.DeleteVisible("nope")
+}
+
+func TestSessionFrames_NamesReturnsVisibleNamesDeduped(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("alpha", StringValue("a"))
+	s.Set("beta", StringValue("b"))
+	s.PushFrame()
+	s.Set("alpha", StringValue("a2"))
+	s.Set("gamma", StringValue("g"))
+
+	// alpha appears once even though it is bound in both frames.
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, s.Names())
+}
+
+func TestSessionFrames_InnerNameShadowsOuter(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+	s.PushFrame()
+	// Inner frame has no binding for x.
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+
+	// Binding x in the inner frame shadows the outer one.
+	s.Set("x", StringValue("inner"))
+	v, ok = s.Get("x")
+	require.True(t, ok)
+	str, err = v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "inner", str)
+
+	// Popping restores the outer x verbatim.
+	s.PopFrame()
+	v, ok = s.Get("x")
+	require.True(t, ok)
+	str, err = v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+}
+
+func TestSessionFrames_PopRootPanics(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	assert.PanicsWithValue(t,
+		"shell.Session.PopFrame: cannot pop root frame",
+		func() { s.PopFrame() },
+	)
+}
+
+func TestSessionFrames_WithFramePopsOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+
+	err := s.WithFrame(func() error {
+		s.Set("x", StringValue("inner"))
+		v, _ := s.Get("x")
+		str, _ := v.Scalar()
+		assert.Equal(t, "inner", str)
+		return nil
+	})
+	require.NoError(t, err)
+
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+}
+
+func TestSessionFrames_WithFramePopsOnError(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+
+	bodyErr := errors.New("body failed")
+	err := s.WithFrame(func() error {
+		s.Set("x", StringValue("inner"))
+		return bodyErr
+	})
+	require.ErrorIs(t, err, bodyErr)
+
+	// The inner frame was popped despite the error, restoring outer.
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
+}
+
+func TestSessionFrames_WithFramePopsOnPanic(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	s.Set("x", StringValue("outer"))
+
+	func() {
+		defer func() {
+			_ = recover() // swallow so the test can assert post-panic state.
+		}()
+		_ = s.WithFrame(func() error {
+			s.Set("x", StringValue("inner"))
+			panic("boom")
+		})
+	}()
+
+	// Even though the body panicked, the frame was popped on unwind.
+	v, ok := s.Get("x")
+	require.True(t, ok)
+	str, err := v.Scalar()
+	require.NoError(t, err)
+	assert.Equal(t, "outer", str)
 }
 
 func TestSessionExpandNilVariable(t *testing.T) {
