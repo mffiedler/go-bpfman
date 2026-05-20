@@ -5,6 +5,17 @@ This document is the reference grammar for the language driven by
 `expr.go`, and `matches.go` is the load-bearing ground truth; this
 document is the human-readable shape of what that code accepts.
 
+**Forward-looking sections.** Some productions track the
+post-`SCOPE-DESIGN.md` target state and are temporarily ahead of
+the parser. The four affected areas are flagged inline: the
+`EventuallyStmt` / `EventuallyCommand` productions replace
+`retry ... until` (which becomes a tombstone), `BreakStmt` /
+`ContinueStmt` are restricted to `foreach`, the single-name
+`let _ = EXPR` form is rejected, and `return` is reserved.
+Commits 4 through 9 of the SCOPE-DESIGN plan bring the parser
+into sync; until they land, the parser still accepts `retry`
+and `let _ = EXPR`.
+
 ## Scope
 
 The doc describes parsing: what tokens the lexer emits, what
@@ -50,8 +61,8 @@ arguments can be written without quoting. Expression syntax is
 opt-in at specific parser sites: `let X = EXPR`, `assert` /
 `require` expression form, parenthesised command arguments,
 interpolation bodies, list literals, `if` / `elif` conditions,
-`foreach ... in` operands, `retry ... until` operands, and
-thread pipelines. Everywhere else, Word text stays opaque.
+`foreach ... in` operands, and thread pipelines. Everywhere
+else, Word text stays opaque.
 
 **Ergonomic goal.** A `bpfman ...` command copied from ordinary
 shell history can usually be pasted after `let NAME <-`,
@@ -260,13 +271,34 @@ tests by name.
 
 Statement-leading reserved words (tested in `parseStmt`):
 
-    let guard foreach if retry defer def break continue
+    let guard foreach if eventually defer def break continue
     assert require
 
-Branch- and trailer-keyword words (tested in `parseIfStmt` and
-`parseRetryStmt` after a block's closing `}`):
+Branch-keyword words (tested in `parseIfStmt` after a block's
+closing `}`):
 
-    elif else until
+    elif else
+
+Removed tombstone words (reserved only to produce a targeted
+diagnostic for old scripts; never valid as statement forms):
+
+    retry until return
+
+`retry` and `until` are reserved tombstones after the
+SCOPE-DESIGN rework removes the construct; the parser emits
+"retry is removed; use eventually" rather than letting the
+words parse as ordinary command names. `return` is reserved
+for the future value-returning def form (SCOPE-DESIGN
+Section 9); using it today is a parse error so a script
+cannot accidentally bind it as a command name and become
+ambiguous when the form lands.
+
+Inside `eventually`, the keyword words `timeout` and
+`interval` are recognised at the leading statement form
+only (between `eventually` and the block). Outside that
+position they remain ordinary Words. `timeout` was
+previously a unary expression form attached to the old
+`retry ... until` clause; that role is gone.
 
 ForEach separator word (tested in `parseForEachStmt` between the
 name list and the iteration expression):
@@ -285,7 +317,7 @@ statement dispatcher routes to `ExprStmt`):
 Expression primary words (tested in `parseTerm` and
 `parsePredicate`):
 
-    timeout iteration not-empty true false
+    not-empty true false
 
 Assert-command predicate words (tested in `assertTakesExprForm`
 to route into the command-form path):
@@ -350,12 +382,13 @@ the start of a Program or Block; any number may appear at the
 end; two consecutive statements must be separated by at least
 one Sep.
 
-Branch continuations after a `}` are not separate statements
-and are handled inside their owning statement productions:
-`elif` and `else` are consumed by `IfStmt`, and `until` is
-consumed by `RetryStmt`. Each of those productions skips any
-number of Sep tokens between the closing `}` and the trailing
-keyword, so the global SepSeq rule does not apply.
+Branch continuations after a `}` are not separate statements.
+`elif` and `else` are consumed by `IfStmt`. `IfStmt` skips
+any number of Sep tokens between the closing `}` and the
+trailing keyword, so the global SepSeq rule does not apply.
+`eventually` has no trailing control clause: its `timeout`
+and `interval` keywords appear in the leading statement
+form, before the block.
 
 ## Program
 
@@ -368,7 +401,7 @@ optional Sep tokens between, before, and after them.
                    | BindStmt             (* let X <- CMD, guard X <- CMD *)
                    | ForEachStmt
                    | IfStmt
-                   | RetryStmt
+                   | EventuallyStmt
                    | DeferStmt
                    | DefStmt
                    | BreakStmt
@@ -389,14 +422,21 @@ head is the keyword.
 
 Statement dispatch is decided by the first token of the
 statement. Reserved words `let`, `guard`, `foreach`, `if`,
-`retry`, `defer`, `def`, `break`, `continue` route to their
-named parsers. `assert` and `require` route to the assert
-parser, which chooses between `AssertStmt`, `AssertCommand`
-predicate form, and `AssertCommand` matches form using the
-disambiguation rule in the AssertStmt section. A
-statement-leading VarRef, Quoted, InterpString, AdapterRef, or
-one of the Words `(`, `not`, `not-empty`, `true`, `false`
-routes to ExprStmt. Anything else routes to CommandStmt.
+`eventually`, `defer`, `def`, `break`, `continue` route to
+their named parsers. `assert` and `require` route to the
+assert parser, which chooses between `AssertStmt`,
+`AssertCommand` predicate form, and `AssertCommand` matches
+form using the disambiguation rule in the AssertStmt
+section. Tombstone words `retry`, `until`, and `return` at
+statement position raise targeted parse errors rather than
+routing as command names. A statement-leading VarRef,
+Quoted, InterpString, AdapterRef, or one of the Words `(`,
+`not`, `not-empty`, `true`, `false` routes to ExprStmt.
+Anything else routes to CommandStmt. `source` has no
+dedicated production; it parses as a CommandStmt and is
+recognised by the command dispatcher in `repl/loop.go`,
+which evaluates the referenced file under the module-scope
+rules in SCOPE-DESIGN.md Section 5.
 
 A bare `{` or `}` at statement position is a parse error: the
 parser has already routed block-introducing keywords elsewhere,
@@ -408,7 +448,7 @@ construct above.
 ### Block
 
 A block is a brace-delimited statement sequence used by `if`,
-`elif`, `else`, `foreach`, `retry`, and `def`.
+`elif`, `else`, `foreach`, `eventually`, and `def`.
 
     Block          = '{' { Sep } [ Statement { SepSeq Statement } { Sep } ] '}' .
 
@@ -431,14 +471,20 @@ positional element to its name in the list.
     DestructureTarget
                    = '(' Name Name { Name } ')' .
 
-In the single-name form, `_` qualifies as an `Identifier` and
-binds an ordinary name `_`; it is not a discard slot. The
-destructure form requires at least two names; single-name parens
-(`let (x) = EXPR`) are rejected because the binding design
-refuses implicit single-name parens at non-def sites. Names are
-whitespace-separated; tokens whose text contains `,` are rejected
-explicitly. Duplicate real names are rejected; `_` is exempt. An
-all-underscore destructure list is rejected at parse time.
+In the single-name form, `_` as the bound name is **rejected**
+at parse time with "single-name let cannot bind '_'; use a
+real name". `_` is consistently a discard slot at every other
+binding site (bind, destructure, foreach); the single-name
+let is the only place that historically bound `_` as an
+ordinary name, and that asymmetry is removed. Force-evaluation
+for side effects belongs in bind / guard / a bare command,
+not in `let _ = ...`. The destructure form requires at least
+two names; single-name parens (`let (x) = EXPR`) are rejected
+because the binding design refuses implicit single-name parens
+at non-def sites. Names are whitespace-separated; tokens whose
+text contains `,` are rejected explicitly. Duplicate real names
+are rejected; `_` is exempt. An all-underscore destructure list
+is rejected at parse time.
 
 Runtime behaviour of the destructure form: EXPR must evaluate to
 a list of length `len(NAMES)`. Each non-`_` name binds to the
@@ -462,7 +508,8 @@ script (`guard`) or carries through normally (`let`).
     BindTarget     = Name
                    | '(' Name Name ')' .
     BindRHS        = CommandForm
-                   | ForEachStmt           (* bind-collect *) .
+                   | ForEachStmt           (* bind-collect *)
+                   | EventuallyCommand .
 
 `CommandForm` is the shared command-shape production; its
 definition is in the CommandStmt section. `Name` is the shared
@@ -478,7 +525,7 @@ name at either slot, but `(_ _)` is rejected at parse time as
 contains `,` (which the lexer does not split on its own) is
 rejected explicitly with "comma is not a separator".
 
-The `BindRHS` has two shapes:
+The `BindRHS` has three shapes:
 
 1. **Command form.** The default path. `parseBindRHS` reads the
    command's tokens up to the next Sep or block marker via
@@ -490,6 +537,15 @@ The `BindRHS` has two shapes:
    primary value is collected into a list bound to the BindStmt
    target. An empty body or a non-CommandStmt last statement is
    rejected at parse time.
+
+3. **Eventually form.** When the RHS begins with the keyword
+   `eventually`, the parser delegates to a dedicated
+   `parseEventuallyBindRHS`. The generic `takeBindRHSTokens`
+   path cannot handle the trailing block (it stops at `{`),
+   so `eventually` requires the same special-case routing as
+   `foreach`. The construct's structured result becomes the
+   bound primary value; see `EventuallyCommand` below and
+   SCOPE-DESIGN.md Section 3.4 for the result shape.
 
 Examples:
 
@@ -560,19 +616,62 @@ Example:
         print "some"
     }
 
-### RetryStmt
+### EventuallyStmt and EventuallyCommand
 
-`retry BLOCK until EXPR`. The body is a brace block; the
-until-expression follows the closing brace, optionally separated
-by newlines or `;` tokens.
+`eventually` retries a body until it succeeds or until a
+mandatory timeout elapses. Two syntactic placements share one
+operation: a statement form and a bindable command form. See
+SCOPE-DESIGN.md Section 3.4 for the full semantics (attempt
+frames, retryable/fatal classification, result shape).
 
-    RetryStmt      = 'retry' Block 'until' Expression .
+    EventuallyStmt = 'eventually' 'timeout' DurationWord
+                         [ 'interval' DurationWord ] Block .
+    EventuallyCommand
+                   = 'eventually' 'timeout' DurationWord
+                         [ 'interval' DurationWord ] Block .
+    DurationWord   = Word whose text is accepted by
+                     time.ParseDuration .
 
-Example:
+The lexer does not emit a distinct Duration token. The parser
+expects a Word at each duration slot and validates its text
+with `time.ParseDuration`. Elsewhere, the same text is just
+an ordinary Word.
 
-    retry {
-        let (rc _) <- bpfman program get $pid
-    } until $rc.ok
+`timeout DUR` is mandatory; an `eventually` without it is a
+parse error. `interval DUR` is optional and named; the
+default interval is `100ms`. The keywords `timeout` and
+`interval` are recognised at this position only.
+
+Examples:
+
+    eventually timeout 5s {
+        require (test -f "${ack}.1")
+    }
+
+    eventually timeout 10s interval 250ms {
+        guard got <- bpfman program get $pid
+        assert $got.status.kernel.id == $pid
+    }
+
+    let r <- eventually timeout 1s interval 50ms {
+        test -f "${ack}.1"
+    }
+    # r is { ok, timed_out, attempts, elapsed_ms, last_error }
+
+**Commands as conditions.** Inside an `eventually` block, an
+uncaptured command statement whose envelope is non-ok is a
+retryable attempt failure. This is stricter than ordinary
+block execution, where a command may run for side effects
+and the caller can ignore its envelope. Use
+`let rc <- CMD` or `let (rc value) <- CMD` inside the block
+when the script wants to inspect and handle the result
+itself rather than have it count against the attempt.
+
+**Loop control.** `break` and `continue` are not valid
+inside an `eventually` body. `eventually` is not an
+iteration construct in the user-language sense; it is a
+retrying assertion block whose success boundary is the body
+as a whole. See `BreakStmt and ContinueStmt` below.
 
 ### DeferStmt
 
@@ -623,6 +722,13 @@ Examples:
 
 Both keywords take no arguments; trailing tokens before the next
 separator are rejected at parse time.
+
+`break` and `continue` are valid only inside `foreach`. Using
+either inside `eventually`, `if`, `def`, a sourced file, or
+at top level is a static/runtime error. `eventually`
+deliberately does not let `continue` mean "next attempt": the
+attempt boundary is the body succeeding or producing a
+retryable failure, not a user-driven control transfer.
 
 ### AssertStmt and AssertCommand
 
@@ -1049,18 +1155,6 @@ Known builtin arities for `cmd/bpfman-shell`:
     zip     arity 2
     u32le   arity 1
     u64le   arity 1
-
-### TimeoutExpr and IterationExpr
-
-Two unary expression forms parsed at the Term level:
-
-    TimeoutExpr    = 'timeout' Term .
-    IterationExpr  = 'iteration' Term .
-
-Each takes one operand parsed at the Term layer. The
-`'timeout'` and `'iteration'` keywords are recognised by name
-inside the term parser; outside this position they parse as
-bare-word literals.
 
 ### MatchesBlock
 
