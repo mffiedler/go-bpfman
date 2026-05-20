@@ -645,7 +645,7 @@ default interval is `100ms`. The keywords `timeout` and
 Examples:
 
     eventually timeout 5s {
-        require (test -f "${ack}.1")
+        require path-exists "${ack}.1"
     }
 
     eventually timeout 10s interval 250ms {
@@ -656,7 +656,32 @@ Examples:
     let r <- eventually timeout 1s interval 50ms {
         test -f "${ack}.1"
     }
-    # r is { ok, timed_out, attempts, elapsed_ms, last_error }
+    # r is { ok, timed_out, attempts, elapsed_ms, error,
+    #        last_command }
+
+**Bind form result.** The bindable form publishes a structured
+value summarising the run:
+
+    {
+      ok:           bool
+      timed_out:    bool
+      attempts:     int
+      elapsed_ms:   int
+      error:        string-or-nil
+      last_command: envelope-or-nil
+    }
+
+`error` is the rendered failure message for the last
+retryable failure, nil on success. `last_command` is the
+captured command envelope `{ ok, code, stdout, stderr }` when
+the last retryable failure was command-shaped (ordinary
+command, guard, or subprocess exit); nil otherwise. Assertion-
+shaped failures (`assert`, `require`) set `error` and leave
+`last_command` nil rather than manufacturing a synthetic
+envelope. The internal RetryableError taxonomy stays internal
+-- callers branch on `ok` and on `last_command`'s presence,
+not on which evaluator error class fired. See
+SCOPE-DESIGN.md Section 3.4 for the full contract.
 
 **Commands as conditions.** Inside an `eventually` block, an
 uncaptured command statement whose envelope is non-ok is a
