@@ -276,6 +276,18 @@ type Env struct {
 	// is non-nil, so policy (a `trace on` toggle, a CLI flag)
 	// lives in the driver-side installer.
 	Trace func(line int, rendered string)
+
+	// RenderEventuallyFailure, when set, is invoked when an
+	// `eventually` statement form runs out of retry budget. The
+	// per-attempt diagnostic is suppressed during the construct
+	// (retryable failures are polling state, not user-visible
+	// failures) so the construct's overall outcome is the only
+	// natural place to report. lastErr is the last retryable
+	// failure returned by an attempt; the driver-side handler
+	// renders a "file:line: eventually: timed out (...)" summary
+	// to stderr. A nil callback discards the rendering; the
+	// failure still propagates as an error.
+	RenderEventuallyFailure func(span Span, attempts int, elapsedMs int64, lastErr error)
 }
 
 // IsBinaryOp reports whether s is a recognised binary operator.
@@ -857,7 +869,11 @@ func resetAssertCounter(s *Session, target int) {
 // evalEventuallyStmt runs the statement form: a successful run
 // returns nil; an overall timeout propagates the last retryable
 // failure so the script halts with the same shape the failing
-// statement would have produced on its own.
+// statement would have produced on its own. Per-attempt
+// diagnostics are suppressed by the assertion dispatcher while
+// retries are in flight; on overall timeout we ask the driver
+// to render a single summary citing the eventually statement so
+// the user sees what failed.
 func evalEventuallyStmt(s *EventuallyStmt, env *Env) error {
 	res, err := runEventually(s, env)
 	if err != nil {
@@ -865,6 +881,9 @@ func evalEventuallyStmt(s *EventuallyStmt, env *Env) error {
 	}
 	if res.ok {
 		return nil
+	}
+	if env.RenderEventuallyFailure != nil {
+		env.RenderEventuallyFailure(s.Span, res.attempts, res.elapsedMs, res.lastError)
 	}
 	if res.lastError != nil {
 		return res.lastError

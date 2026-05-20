@@ -274,6 +274,25 @@ func wireEnvForChunk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 		env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session, loc)
 	}
 	env.Trace = makeTraceHook(cli, session, loc)
+	env.RenderEventuallyFailure = makeRenderEventuallyFailure(cli, loc)
+}
+
+// makeRenderEventuallyFailure builds the callback the shell
+// evaluator invokes when an `eventually` statement-form times
+// out. Per-attempt diagnostics are suppressed during retries,
+// so this is the single place the user sees what failed: one
+// line with the eventually's source span, the attempt count,
+// the elapsed budget, and the last retryable failure's Error()
+// text.
+func makeRenderEventuallyFailure(cli *bpfmancli.CLI, loc SourceLoc) func(shell.Span, int, int64, error) {
+	return func(span shell.Span, attempts int, elapsedMs int64, lastErr error) {
+		msg := "unknown"
+		if lastErr != nil {
+			msg = lastErr.Error()
+		}
+		_ = cli.PrintErrf("%s[eventually] FAIL: timed out after %dms across %d attempt(s): %s\n",
+			loc.WithSpan(span), elapsedMs, attempts, msg)
+	}
 }
 
 // configHooks extracts the SourceHooks triple from the loop's
