@@ -546,7 +546,7 @@ LINT_DOCKERFILES := \
 # ---------------------------------------------------------------------------
 # Meta: default target, help, clean, version prints, bin directory.
 # ---------------------------------------------------------------------------
-all: bpfman-build bpfman-shell-build
+all: bpfman-build bpfman-shell-build bpfman-e2e-cleanup-build
 
 # Alias so 'make build-all' works as advertised in 'make help'.
 # 'all' stays the canonical default-target name; 'build-all' is
@@ -628,7 +628,7 @@ print-fedora-version:
 print-golangci-lint-version:
 	@echo $(GOLANGCI_LINT_VERSION)
 
-clean: clean-bpfman clean-bpfman-shell clean-bpf clean-coverage
+clean: clean-bpfman clean-bpfman-shell clean-bpfman-e2e-cleanup clean-bpf clean-coverage
 	$(RM) -r $(BIN_DIR) $(CI_E2E_BUNDLE)
 
 # Nuclear option, modeled on `make mrproper` in the kernel tree:
@@ -904,6 +904,19 @@ bpfman-shell-compile: | $(BIN_DIR)
 
 clean-bpfman-shell:
 	$(RM) $(BIN_DIR)/bpfman-shell
+
+# bpfman-e2e-cleanup is the host-state cleanup utility. It finds and
+# removes kernel-side residue left behind by bpfman (orphan
+# dispatcher links) and by the e2e harness (test interfaces and
+# netns from interrupted runs). Replaces the hack/cleanup-*.sh
+# shell scripts; ships only in dev / CI images.
+bpfman-e2e-cleanup-build: bpfman-fmt bpfman-e2e-cleanup-compile
+
+bpfman-e2e-cleanup-compile: | $(BIN_DIR)
+	$(strip CGO_ENABLED=1 go build $(if $(RACE),-race,) $(EXTRA_GOFLAGS) $(if $(BUILD_TAGS),-tags '$(BUILD_TAGS)') -ldflags "$(BIN_LDFLAGS)" -o $(BIN_DIR)/bpfman-e2e-cleanup ./cmd/bpfman-e2e-cleanup)
+
+clean-bpfman-e2e-cleanup:
+	$(RM) $(BIN_DIR)/bpfman-e2e-cleanup
 
 # ---------------------------------------------------------------------------
 # Proto generation for bpfman gRPC API.
@@ -1322,6 +1335,7 @@ bpfman-test-grpc: build-image-dev
 .PHONY: clean-bpf
 .PHONY: bpfman-build clean-bpfman bpfman-compile bpfman-fmt bpfman-goimports bpfman-proto bpfman-test-grpc bpfman-vet
 .PHONY: bpfman-shell-build bpfman-shell-compile clean-bpfman-shell
+.PHONY: bpfman-e2e-cleanup-build bpfman-e2e-cleanup-compile clean-bpfman-e2e-cleanup
 .PHONY: build-image build-image-amd64 build-image-arm64 build-image-csi-sanity build-image-dev build-image-nix build-image-openshift build-image-ppc64le build-image-s390x cosign-sign
 .PHONY: ci ci-build ci-check-fmt ci-check-goimports ci-check-vendor ci-check-vet ci-image ci-lint ci-test ci-test-e2e ci-test-e2e-grpc ci-test-e2e-scripts
 .PHONY: coverage clean-coverage coverage-func coverage-html coverage-open
