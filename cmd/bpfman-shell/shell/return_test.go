@@ -726,6 +726,52 @@ let v <- loop
 }
 
 // Regression: a single-word alias pointing at a def must
+// resolve to the def at command position too, mirroring the
+// bind-position resolution shipped in the W11 fix.
+// evalCommandStmt's inline def-lookup checked raw def names
+// only, so `alias greet = hello; def hello() { print ok };
+// greet` fell through to ExecCommand and reported the
+// alias's resolved name as an unknown command. The fix is to
+// route command-statement dispatch through the same
+// lookupDefHead helper used by bind and defer paths so all
+// three resolve aliases the same way.
+func TestEvalProgram_Return_CommandPositionAliasResolvesToDef(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	var commandCalls []string
+	session := NewSession()
+	session.SetAlias("greet", "hello")
+	env := &Env{
+		Session:  session,
+		ExecBind: r.execBind,
+		ExecCommand: func(args []Arg, _ Span) (Value, error) {
+			if len(args) > 0 {
+				if w, ok := args[0].(WordArg); ok {
+					commandCalls = append(commandCalls, w.Text)
+				}
+			}
+			return Value{}, nil
+		},
+	}
+	src := `
+def hello() {
+  ok_marker
+}
+greet
+`
+	require.NoError(t, runProgramWithEnv(t, src, env))
+	assert.Contains(t, commandCalls, "ok_marker", "alias-resolved def body must run at command position")
+	// Neither the alias name "greet" nor the resolved
+	// "hello" should appear as an unrecognised ExecCommand
+	// dispatch -- both should resolve through the def.
+	for _, c := range commandCalls {
+		if c == "greet" || c == "hello" {
+			t.Fatalf("def name reached ExecCommand as a head (saw %q); the def should have been dispatched", c)
+		}
+	}
+}
+
+// Regression: a single-word alias pointing at a def must
 // resolve to the def at the bind-dispatch site, not fall
 // through to the external-subprocess path. lookupDefHead used
 // to check the head's text against the session's def table

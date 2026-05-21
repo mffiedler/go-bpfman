@@ -2001,12 +2001,21 @@ func evalCommandStmt(s *CommandStmt, env *Env) error {
 	if env.Trace != nil {
 		env.Trace(s.Span.Pos.Line, renderArgvTrace(args))
 	}
-	if len(args) > 0 {
-		if name, ok := commandHeadName(args[0]); ok {
-			if def, hit := env.Session.GetDef(name); hit {
-				return callDef(def, args[1:], s.Pos, env)
-			}
-		}
+	// Route through the shared lookupDefHead helper so the
+	// def-vs-alias resolution rule is uniform across every
+	// dispatch site (bind-statement, bind-collect producer,
+	// defer, and command-statement). The inline raw-name
+	// lookup that used to live here missed single-word
+	// aliases pointing at defs, so an alias-resolved name at
+	// command position fell through to ExecCommand and
+	// emitted an "unknown command" diagnostic for what was
+	// actually a registered def. lookupDefHead alias-expands
+	// before consulting the def table; multi-word aliases
+	// (which need the driver's full ApplyAlias to rewrite
+	// the args vector) intentionally fall through to
+	// ExecCommand.
+	if def, ok := lookupDefHead(args, env); ok {
+		return callDef(def, args[1:], s.Pos, env)
 	}
 	if env.ExecCommand == nil {
 		return spanErrorf(s.Span, "command execution is not configured")
