@@ -104,7 +104,6 @@ func TestDispatch_Matrix_Sites_x_HeadKinds(t *testing.T) {
 
 	for _, site := range dispatchSites() {
 		for _, head := range headKinds() {
-			site, head := site, head
 			t.Run(site.name+"_"+head.name, func(t *testing.T) {
 				t.Parallel()
 
@@ -184,7 +183,6 @@ func TestDispatch_Matrix_UnknownNameAllSitesPassPreflight(t *testing.T) {
 	t.Parallel()
 
 	for _, site := range dispatchSites() {
-		site := site
 		t.Run(site.name, func(t *testing.T) {
 			t.Parallel()
 			src := site.wrap("totally_unknown_command")
