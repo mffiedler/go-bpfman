@@ -2,6 +2,7 @@ package shell
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -194,6 +195,59 @@ func TestEventually_BindForm_ReturnsResultOnOverallFailure(t *testing.T) {
 	// form did not halt the script on overall timeout.
 	_, ok = s.Get("kept")
 	assert.True(t, ok)
+}
+
+// Regression: `guard r <- eventually ...` was accepted by
+// preflight but evalEventuallyBind never consulted s.Guard,
+// so on overall timeout the script continued past the
+// construct as if `let r <- eventually ...` had been written.
+// The guard form must halt with GuardFailure when res.ok is
+// false, matching the ordinary command-bind family's guard
+// contract.
+func TestEventually_BindForm_GuardHaltsOnOverallFailure(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := eventuallyEnv(s,
+		func([]Arg, Span) (Value, error) { return Value{}, nil },
+		func([]Arg, Span) (BindResult, error) { return BindResult{Rc: Envelope{OK: true}}, nil },
+	)
+	src := "guard r <- eventually timeout 50ms interval 1ms {\n  assert 1 == 2\n}\n" +
+		"let after = post-eventually\n"
+	err := runEventuallySrc(t, src, env)
+	require.Error(t, err, "guard must halt on overall eventually failure")
+	var gf *GuardFailure
+	require.True(t, errors.As(err, &gf), "expected GuardFailure, got %T: %v", err, err)
+	assert.False(t, gf.Envelope.OK)
+	// The post-eventually statement must NOT have run, since
+	// guard halted the script.
+	_, ok := s.Get("after")
+	assert.False(t, ok, "post-eventually let must not have executed")
+}
+
+// Regression: eventually's bind envelope flipped only OK on
+// overall failure, leaving Code at 0. Same internal-
+// inconsistency shape as the def-callDefAsBind fix. The
+// envelope must carry a non-zero Code alongside OK=false so
+// the tuple-bind sees consistent fields and the GuardFailure
+// rendering path shows a real exit code.
+func TestEventually_BindForm_FailureCodeIsNonZero(t *testing.T) {
+	t.Parallel()
+
+	s := NewSession()
+	env := eventuallyEnv(s,
+		func([]Arg, Span) (Value, error) { return Value{}, nil },
+		func([]Arg, Span) (BindResult, error) { return BindResult{Rc: Envelope{OK: true}}, nil },
+	)
+	src := "let (rc r) <- eventually timeout 50ms interval 1ms {\n  assert 1 == 2\n}\n"
+	require.NoError(t, runEventuallySrc(t, src, env))
+	rcVal, ok := s.Get("rc")
+	require.True(t, ok)
+	rawRc, ok := rcVal.Raw().(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, false, rawRc["ok"])
+	codeStr := fmt.Sprint(rawRc["code"])
+	assert.NotEqual(t, "0", codeStr, "rc.code must be non-zero alongside rc.ok=false")
 }
 
 func TestEventually_DefaultInterval(t *testing.T) {

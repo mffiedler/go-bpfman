@@ -1254,7 +1254,29 @@ func evalEventuallyBind(s *BindStmt, env *Env) error {
 		return err
 	}
 	value := buildEventuallyResultValue(res)
+	// rc.ok mirrors the eventually outcome; rc.code is 1 on
+	// failure so the envelope is internally consistent with
+	// the rest of the bind-family contract (an envelope with
+	// OK=false never carries Code=0 elsewhere). Without this,
+	// tuple-bind callers see ok:false / code:0 and the
+	// guard-failure renderer prints "exit: 0" for a failed
+	// call.
 	rc := Envelope{OK: res.ok}
+	if !res.ok {
+		rc.Code = 1
+	}
+	// guard form: halt with GuardFailure when the construct
+	// did not succeed, mirroring `guard p <- cmd` for ordinary
+	// commands. Without this, `guard r <- eventually ...`
+	// silently behaved like `let r <- eventually ...` and the
+	// script continued past timeout.
+	if s.Guard && !res.ok {
+		var args []Arg
+		if s.Eventually != nil {
+			args = []Arg{WordArg{Text: "eventually", Span: s.Eventually.Span}}
+		}
+		return &GuardFailure{Span: s.Span, Primary: s.Primary, Args: args, Envelope: rc}
+	}
 	if s.Rc != "" && s.Rc != "_" {
 		env.Session.Set(s.Rc, ValueFromEnvelope(rc))
 	}
