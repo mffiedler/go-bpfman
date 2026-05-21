@@ -811,15 +811,26 @@ the existing list / destructure story:
     def load_xdp(path iface) {
         guard prog <- bpfman program load file \
             --path $path --type xdp
-        defer bpfman program unload $prog
         guard link <- bpfman link attach xdp \
             -i $iface generic 50 $prog
-        defer bpfman link detach $link
         return [prog link]
     }
 
     guard pair <- load_xdp ./xdp.o eth0
     let (prog link) = $pair
+    defer bpfman link detach $link
+    defer bpfman program unload $prog
+
+The cleanup `defer`s live at the call site, not inside the
+helper. A def opens its own defer scope on entry, so anything
+`defer`ed inside the body unwinds when the def returns -- BEFORE
+the caller binds the result. Putting `defer bpfman program
+unload $prog` inside `load_xdp` would unload the program at
+function return and leave the caller's `$prog` naming a freed
+resource. The lifecycle metaphor has to put cleanup with the
+consumer; the runtime is doing exactly what the spec says.
+See LANGUAGE-DIRECTION.md's "The sweet spot" section for the
+shape and the partial-cleanup trade-off.
 
 The single-name bind form intentionally discards the envelope,
 matching the existing command-bind family. Scripts that require

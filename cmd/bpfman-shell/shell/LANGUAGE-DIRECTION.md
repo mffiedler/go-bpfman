@@ -149,29 +149,52 @@ The valuable target is not "become Lisp". It is
 Today a multi-step lifecycle (load, attach, drive, detach,
 unload) is written inline in every script that needs it,
 or smeared across half-cooperative helpers. With lexical
-frames plus value-returning defs (deferred to
-SCOPE-DESIGN Section 9, shape pinned), the same sequence
-collapses to one library def:
+frames plus value-returning defs the same sequence still
+collapses, but the cleanup boundary belongs to the caller,
+not to the helper. The shape that actually works:
 
     def load_xdp(path iface) {
         guard prog <- bpfman program load file \
             --path $path --type xdp
-        defer bpfman program unload $prog
         guard link <- bpfman link attach xdp \
             -i $iface generic 50 $prog
-        defer bpfman link detach $link
         return [prog link]
     }
 
     guard pair <- load_xdp ./xdp.o eth0
     let (prog link) = $pair
+    defer bpfman link detach $link
+    defer bpfman program unload $prog
 
-Nothing magical. No new evaluator construct. Just a def
-with locals that do not leak, defers captured at
-registration, guards that halt on failure, and an explicit
-return that crosses the call boundary. Every piece is a
-primitive the language already has or will have after
-SCOPE-DESIGN.
+The cleanup `defer`s live at the call site, not inside
+load_xdp. The reason is mechanical: a def opens its own
+defer scope, so anything `defer`ed inside the body unwinds
+when the def returns -- BEFORE the caller binds the result.
+A helper that put `defer bpfman program unload $prog`
+inside its body would unload the program at function return,
+and the caller's `$prog` would name a freed resource. The
+runtime is doing the right thing; the lifecycle metaphor
+just has to put the cleanup with the consumer.
+
+The honest trade-off: partial-cleanup-on-error inside the
+helper is lost. If `bpfman link attach` fails after the
+load succeeded, the prog is loaded but the helper never
+ran an unload-on-error step before returning. For lifecycle
+patterns where partial cleanup matters, write the helper
+as two stages -- `load_then_attach`'s halves -- or have the
+helper publish both the resource and a cleanup recipe the
+caller installs. A "defer to caller scope" primitive (a
+def-local `defer` that registers in the caller's defer
+stack instead of the def's) would close the gap; it is not
+on any roadmap today and the corpus has not yet shown the
+shape is load-bearing.
+
+Nothing else is magical. Just a def with locals that do not
+leak, guards that halt on failure inside the helper, an
+explicit return that crosses the call boundary, and
+caller-side defers that name the resources the helper
+returned. Every piece is a primitive the language already
+has after SCOPE-DESIGN.
 
 This is the 80% of practical benefit Lisp-style
 abstraction would buy, achieved without a macro system.
