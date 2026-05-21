@@ -5,8 +5,8 @@ import (
 	"slices"
 )
 
-// Session holds variable bindings, aliases, and user-defined commands
-// (defs) for the REPL. It is the runtime state that persists across
+// Session holds variable bindings and user-defined commands (defs)
+// for the REPL. It is the runtime state that persists across
 // commands within a session.
 //
 // Variables live on a stack of frames. There is always at least one
@@ -17,11 +17,9 @@ import (
 // to the innermost frame; reads walk outward; deleting from the
 // innermost frame leaves outer bindings intact.
 //
-// Aliases and defs are session-level and are not part of the frame
-// stack.
+// Defs are session-level and are not part of the frame stack.
 type Session struct {
 	frames          []map[string]Value
-	aliases         map[string]string
 	defs            map[string]*DefValue
 	assertFailures  int
 	deferFailures   int
@@ -123,9 +121,8 @@ func (s *Session) TraceEnabled() bool {
 // NewSession returns an empty session with a single root frame.
 func NewSession() *Session {
 	return &Session{
-		frames:  []map[string]Value{make(map[string]Value)},
-		aliases: make(map[string]string),
-		defs:    make(map[string]*DefValue),
+		frames: []map[string]Value{make(map[string]Value)},
+		defs:   make(map[string]*DefValue),
 	}
 }
 
@@ -251,8 +248,8 @@ func (s *Session) WithFrame(fn func() error) error {
 
 // ChildForSource returns a fresh sub-session for module-scoped
 // evaluation per SCOPE-DESIGN.md Section 5. The child starts
-// with a single empty root frame, no aliases, and zero counters,
-// but inherits the parent's defs (shallow-cloned -- DefValue is
+// with a single empty root frame and zero counters, but
+// inherits the parent's defs (shallow-cloned -- DefValue is
 // immutable after construction so a map copy is sufficient) and
 // the parent's traceEnabled flag (child-local: toggling tracing
 // inside a sourced file does not propagate back).
@@ -286,27 +283,4 @@ func (s *Session) MergeChildSource(child *Session, commitDefs bool) {
 		return
 	}
 	maps.Copy(s.defs, child.defs)
-}
-
-// SetAlias binds a first-token alias. The caller is responsible for
-// validating that name does not collide with shell commands.
-func (s *Session) SetAlias(name, expansion string) {
-	s.aliases[name] = expansion
-}
-
-// GetAlias retrieves an alias expansion. The second return value
-// indicates whether the alias exists.
-func (s *Session) GetAlias(name string) (string, bool) {
-	v, ok := s.aliases[name]
-	return v, ok
-}
-
-// DeleteAlias removes an alias binding.
-func (s *Session) DeleteAlias(name string) {
-	delete(s.aliases, name)
-}
-
-// AliasNames returns the sorted list of defined alias names.
-func (s *Session) AliasNames() []string {
-	return slices.Sorted(maps.Keys(s.aliases))
 }
