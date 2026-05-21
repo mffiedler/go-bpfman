@@ -1131,6 +1131,18 @@ func (c *checker) checkComparisonOperands(prog *Program) {
 		if !isComparisonOp(be.Op) {
 			return true
 		}
+		// Def-name-as-bareword hint. A literal operand whose
+		// text matches a known def is almost certainly a missing
+		// `<- ` bind: the user wrote `if two == 2` meaning to
+		// compare the result of calling `two`, not the literal
+		// string "two". The arithmetic check has the parallel
+		// hint at flagNonNumericOperand; this is its comparison
+		// sibling. Emit and return -- the kind-based mismatch
+		// below would only re-describe the same problem in
+		// less helpful terms.
+		if c.flagDefNameOperand(be.Left, be.Op) || c.flagDefNameOperand(be.Right, be.Op) {
+			return true
+		}
 		l := c.inferExprKind(be.Left)
 		r := c.inferExprKind(be.Right)
 		if l == OriginUnknown || r == OriginUnknown {
@@ -1141,6 +1153,23 @@ func (c *checker) checkComparisonOperands(prog *Program) {
 		}
 		return true
 	})
+}
+
+// flagDefNameOperand emits a "did you mean `<-`?" hint when e
+// is an unquoted literal whose text matches a known def name.
+// Returns true when the hint fired so the caller can suppress
+// subsequent operand-kind diagnostics that would duplicate the
+// same root cause in less actionable terms.
+func (c *checker) flagDefNameOperand(e Expr, op string) bool {
+	lit, ok := e.(*LiteralExpr)
+	if !ok || lit.Quoted {
+		return false
+	}
+	if !c.defs[lit.Text] {
+		return false
+	}
+	c.addIssue(lit.Span, "binary %s: operand %q is a def -- call it via `let v <- %s` and use $v in the comparison", op, lit.Text, lit.Text)
+	return true
 }
 
 // isComparisonOp reports whether op is one of the binary

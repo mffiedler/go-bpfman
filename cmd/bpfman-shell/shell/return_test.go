@@ -925,6 +925,30 @@ func TestCheck_Return_LetEqualsNonDefIsClean(t *testing.T) {
 	assert.Empty(t, issues, "a bareword RHS that is not a def must not trigger the hint")
 }
 
+// Regression: a comparison operand naming a def must hint
+// at the bind form. The W3 arithmetic-operand hint covered
+// `let x = two + 3`; this is the parallel for `if two == 2`.
+// Same shape, different code path.
+func TestCheck_Return_ComparisonHintsAtDefBindForm(t *testing.T) {
+	t.Parallel()
+	src := `
+def two() {
+  return 2
+}
+if two == 2 {
+  print "yes"
+}
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "the mismatch must still be reported")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "two", "the diagnostic must name the offending operand")
+	assert.Contains(t, combined, "<-", "the diagnostic must point at the bind form")
+}
+
 // Regression: a non-numeric arithmetic operand whose text
 // happens to be a known def name produces a confusing
 // "operand 'two' is not numeric" diagnostic. The user almost
