@@ -655,13 +655,18 @@ func makeExecBind(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manager,
 			stdout := captured.Stdout()
 			stderr := captured.Stderr()
 			if err != nil {
-				rc := shell.Envelope{OK: false, Code: 1, Stdout: stdout, Stderr: stderr}
-				if rc.Stderr == "" {
+				rc := shell.FailEnvelope()
+				rc.Stdout = stdout
+				if stderr != "" {
+					rc.Stderr = stderr
+				} else {
 					rc.Stderr = err.Error()
 				}
 				return shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 			}
-			rc := shell.Envelope{OK: true, Code: 0, Stdout: stdout, Stderr: stderr}
+			rc := shell.OkEnvelope()
+			rc.Stdout = stdout
+			rc.Stderr = stderr
 			primary := val
 			if primary.IsNil() {
 				primary = shell.ValueFromEnvelope(rc)

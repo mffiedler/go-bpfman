@@ -63,6 +63,45 @@ func ValueFromEnvelope(e Envelope) Value {
 	return Value{v: mirror, origin: e, kind: OriginEnvelope}
 }
 
+// OkEnvelope returns the canonical "command succeeded with no
+// specific payload" envelope: OK=true, Code=0, no streams.
+// Used by dispatch sites that synthesize a successful outcome
+// from scratch -- a def body that ran cleanly, an eventually
+// attempt that satisfied its body without retry. Sites that
+// have real outcome data (a subprocess's captured streams,
+// an actual exit code from RunExternal) build Envelope{...}
+// directly because they have richer information than this
+// helper can express.
+func OkEnvelope() Envelope {
+	return Envelope{OK: true}
+}
+
+// FailEnvelope returns the canonical "command failed without a
+// more specific source" envelope: OK=false, Code=1, no
+// streams. The Code field tracks OK so an envelope is never
+// internally inconsistent (OK=false / Code=0 reads as
+// "succeeded but not ok" and confuses every renderer that
+// prints both fields). Sites that have a specific failure
+// code (a subprocess that exited non-zero, a guard-failure
+// envelope from a registered handler) build Envelope{...}
+// directly with the real code.
+func FailEnvelope() Envelope {
+	return Envelope{OK: false, Code: 1}
+}
+
+// FailEnvelopeFromError returns a FailEnvelope with err's
+// message in Stderr. Used by structural-failure paths where
+// the failure has no captured stderr of its own (a defer
+// whose dispatch failed without ever launching, a
+// builtin-resolution error before the handler ran).
+func FailEnvelopeFromError(err error) Envelope {
+	e := FailEnvelope()
+	if err != nil {
+		e.Stderr = err.Error()
+	}
+	return e
+}
+
 // BindResult is what an ExecBind hook returns. Rc is the result
 // envelope; Primary is the provider's primary result. For
 // providers that produce a typed payload, Primary is the typed

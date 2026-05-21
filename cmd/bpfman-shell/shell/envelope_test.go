@@ -7,6 +7,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The canonical constructors pin the bind-family invariant:
+// OK=true never carries a non-zero Code, and OK=false never
+// carries Code=0. Every dispatch site that synthesizes an
+// envelope from scratch routes through these helpers so the
+// invariant cannot drift across call sites.
+func TestOkEnvelope_HasOKTrueAndZeroCode(t *testing.T) {
+	t.Parallel()
+	e := OkEnvelope()
+	assert.True(t, e.OK)
+	assert.Equal(t, 0, e.Code)
+	assert.Empty(t, e.Stdout)
+	assert.Empty(t, e.Stderr)
+}
+
+func TestFailEnvelope_HasOKFalseAndCodeOne(t *testing.T) {
+	t.Parallel()
+	e := FailEnvelope()
+	assert.False(t, e.OK)
+	assert.Equal(t, 1, e.Code, "failure envelope must carry a non-zero code; OK=false with Code=0 is internally inconsistent")
+	assert.Empty(t, e.Stdout)
+	assert.Empty(t, e.Stderr)
+}
+
+func TestFailEnvelopeFromError_CarriesMessageInStderr(t *testing.T) {
+	t.Parallel()
+	e := FailEnvelopeFromError(assertErr("boom"))
+	assert.False(t, e.OK)
+	assert.Equal(t, 1, e.Code)
+	assert.Equal(t, "boom", e.Stderr)
+}
+
+func TestFailEnvelopeFromError_NilErrorYieldsBareFail(t *testing.T) {
+	t.Parallel()
+	e := FailEnvelopeFromError(nil)
+	assert.False(t, e.OK)
+	assert.Equal(t, 1, e.Code)
+	assert.Empty(t, e.Stderr)
+}
+
 func TestValueFromEnvelope_OriginAndKind(t *testing.T) {
 	t.Parallel()
 

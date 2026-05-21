@@ -728,19 +728,9 @@ func callDefAsBind(def *DefValue, args []Arg, callLoc Pos, env *Env) (BindResult
 	if err != nil {
 		return BindResult{}, decorateDefError(err, def, absoluteCallLoc(callLoc, env))
 	}
-	rc := Envelope{OK: true}
+	rc := OkEnvelope()
 	if localDeferFailures > 0 {
-		// Both fields move together: an envelope with
-		// OK=false / Code=0 reads as "successful exit but not
-		// ok", which is internally inconsistent and confuses
-		// the guard-failure renderer (it prints "exit: 0" for
-		// what was actually a failed call). The conventional
-		// shell exit code for "command failed without a more
-		// specific signal" is 1, which matches what
-		// runExternalAsBind / RenderEnvelopeFailure expect
-		// throughout the rest of the bind-family contract.
-		rc.OK = false
-		rc.Code = 1
+		rc = FailEnvelope()
 	}
 	primary := returned
 	if !hasReturn {
@@ -1281,16 +1271,9 @@ func evalEventuallyBind(s *BindStmt, env *Env) error {
 		return err
 	}
 	value := buildEventuallyResultValue(res)
-	// rc.ok mirrors the eventually outcome; rc.code is 1 on
-	// failure so the envelope is internally consistent with
-	// the rest of the bind-family contract (an envelope with
-	// OK=false never carries Code=0 elsewhere). Without this,
-	// tuple-bind callers see ok:false / code:0 and the
-	// guard-failure renderer prints "exit: 0" for a failed
-	// call.
-	rc := Envelope{OK: res.ok}
+	rc := OkEnvelope()
 	if !res.ok {
-		rc.Code = 1
+		rc = FailEnvelope()
 	}
 	// guard form: halt with GuardFailure when the construct
 	// did not succeed, mirroring `guard p <- cmd` for ordinary
@@ -1477,7 +1460,7 @@ func runDefers(env *Env, stack []deferEntry) int {
 			result, err = env.ExecBind(entry.Args, entry.Span)
 		}
 		if err != nil {
-			rc := Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			rc := FailEnvelopeFromError(err)
 			if env.RenderDeferFailure != nil {
 				env.RenderDeferFailure(entry.Pos, entry.Args, rc)
 			}
