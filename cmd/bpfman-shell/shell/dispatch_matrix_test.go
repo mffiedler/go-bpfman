@@ -1,6 +1,8 @@
 package shell
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -46,6 +48,13 @@ type dispatchSite struct {
 	// fires through ExecCommand when the def actually
 	// executes.
 	wrap func(headName string) string
+	// expectExecBind is true when an unknown head at this
+	// site reaches the ExecBind pipeline at runtime; false
+	// when it reaches ExecCommand. The negative test
+	// asserts the head shows up on the right pipeline so
+	// preflight-passes-runtime-still-dispatches is held
+	// together.
+	expectExecBind bool
 }
 
 type headKind struct {
@@ -64,22 +73,26 @@ type headKind struct {
 func dispatchSites() []dispatchSite {
 	return []dispatchSite{
 		{
-			name: "bind",
-			wrap: func(h string) string { return "let p <- " + h + "\n" },
+			name:           "bind",
+			wrap:           func(h string) string { return "let p <- " + h + "\n" },
+			expectExecBind: true,
 		},
 		{
-			name: "command",
-			wrap: func(h string) string { return h + "\n" },
+			name:           "command",
+			wrap:           func(h string) string { return h + "\n" },
+			expectExecBind: false,
 		},
 		{
-			name: "defer",
-			wrap: func(h string) string { return "defer " + h + "\nprint \"main\"\n" },
+			name:           "defer",
+			wrap:           func(h string) string { return "defer " + h + "\nprint \"main\"\n" },
+			expectExecBind: true,
 		},
 		{
 			name: "producer",
 			wrap: func(h string) string {
 				return "let xs <- foreach n in [1] { " + h + " }\n"
 			},
+			expectExecBind: true,
 		},
 	}
 }
@@ -175,17 +188,20 @@ func TestDispatch_Matrix_Sites_x_HeadKinds(t *testing.T) {
 
 // A focused negative test: each dispatch site, when given a
 // head name that does NOT exist anywhere in the program (no
-// def, no alias, no near-miss), passes preflight and reaches
-// the external dispatch path. Confirms the helpers do not
-// over-reject; only the conditional-branch case trips
-// preflight, not every unknown name.
+// def, no near-miss), passes preflight AND reaches the
+// external dispatch path at runtime. Preflight-only checking
+// would miss the case where the head still falls through to
+// the wrong runtime pipeline.
 func TestDispatch_Matrix_UnknownNameAllSitesPassPreflight(t *testing.T) {
 	t.Parallel()
 
 	for _, site := range dispatchSites() {
 		t.Run(site.name, func(t *testing.T) {
 			t.Parallel()
-			src := site.wrap("totally_unknown_command")
+			head := "totally_unknown_command"
+			src := site.wrap(head)
+			// Preflight must not trip the conditional hint --
+			// the name is not in source anywhere.
 			issues := checkSource(t, src)
 			for _, i := range issues {
 				if strings.Contains(i.Msg, "conditional") {
@@ -193,6 +209,159 @@ func TestDispatch_Matrix_UnknownNameAllSitesPassPreflight(t *testing.T) {
 						site.name, i.Msg)
 				}
 			}
+			// Runtime: the unknown head must reach the
+			// external dispatch pipeline for the site's
+			// shape. Bind-style sites land on ExecBind;
+			// command-style sites land on ExecCommand.
+			// site.expectExecBind says which pipeline the
+			// head should appear on.
+			r := &recorder{}
+			var commandCalls []string
+			env := &Env{
+				Session:  NewSession(),
+				ExecBind: r.execBind,
+				ExecCommand: func(args []Arg, _ Span) (Value, error) {
+					if len(args) > 0 {
+						if w, ok := args[0].(WordArg); ok {
+							commandCalls = append(commandCalls, w.Text)
+						}
+					}
+					return Value{}, nil
+				},
+				RenderDeferFailure: func(Pos, []Arg, Envelope) {},
+			}
+			require.NoError(t, runProgramWithEnv(t, src, env))
+			if site.expectExecBind {
+				found := false
+				for _, c := range r.calls {
+					if len(c.args) > 0 {
+						if w, ok := c.args[0].(WordArg); ok && w.Text == head {
+							found = true
+							break
+						}
+					}
+				}
+				assert.True(t, found, "site=%s: unknown head %q must reach ExecBind", site.name, head)
+			} else {
+				assert.Contains(t, commandCalls, head,
+					"site=%s: unknown head must reach ExecCommand", site.name)
+			}
 		})
+	}
+}
+
+// Outcome x bind-form matrix for the eventually bind path.
+// Captures the class of bug the recent external probe found
+// inside evalEventuallyBind: the guard form was ignored on
+// failure, the failure envelope's Code was 0 instead of 1.
+// Each cell pins one combination of (eventually outcome) x
+// (bind target shape). A regression in any of {let, guard,
+// let-tuple} x {success, failure} fails a single cell rather
+// than waiting for an external probe to reproduce.
+//
+// The matrix is separate from the dispatch matrix above
+// because the structural question is different: the dispatch
+// matrix tests "does the right runtime pipeline see this
+// head", this matrix tests "does evalEventuallyBind handle
+// every bind-target shape correctly across outcomes".
+func TestEventuallyBind_Matrix_BindForm_x_Outcome(t *testing.T) {
+	t.Parallel()
+
+	// body produces an eventually outcome. "ok" body
+	// succeeds first attempt; "fail" body times out.
+	type outcomeCase struct {
+		name string
+		body string
+	}
+	outcomes := []outcomeCase{
+		{name: "success", body: "  print \"ok\"\n"},
+		{name: "failure", body: "  assert 1 == 2\n"},
+	}
+	// form produces the bind target.
+	type formCase struct {
+		name    string
+		target  string
+		extract func(s *Session) (rcOK, rcCodeNonZero, primaryBound bool)
+	}
+	forms := []formCase{
+		{
+			name:   "let",
+			target: "r",
+			extract: func(s *Session) (bool, bool, bool) {
+				v, ok := s.Get("r")
+				if !ok {
+					return false, false, false
+				}
+				raw, _ := v.Raw().(map[string]any)
+				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", true
+			},
+		},
+		{
+			name:   "guard",
+			target: "r",
+			// guard sets the same single slot but halts
+			// before binding on failure.
+			extract: func(s *Session) (bool, bool, bool) {
+				v, ok := s.Get("r")
+				if !ok {
+					return false, false, false
+				}
+				raw, _ := v.Raw().(map[string]any)
+				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", true
+			},
+		},
+		{
+			name:   "let_tuple",
+			target: "(rc p)",
+			extract: func(s *Session) (bool, bool, bool) {
+				rcVal, ok := s.Get("rc")
+				if !ok {
+					return false, false, false
+				}
+				raw, _ := rcVal.Raw().(map[string]any)
+				_, primarySet := s.Get("p")
+				return raw["ok"] == true, fmt.Sprint(raw["code"]) != "0", primarySet
+			},
+		},
+	}
+	for _, outcome := range outcomes {
+		for _, form := range forms {
+			label := form.name + "_" + outcome.name
+			t.Run(label, func(t *testing.T) {
+				t.Parallel()
+				keyword := "let"
+				if form.name == "guard" {
+					keyword = "guard"
+				}
+				src := fmt.Sprintf(
+					"%s %s <- eventually timeout 30ms interval 5ms {\n%s}\n",
+					keyword, form.target, outcome.body,
+				)
+				s := NewSession()
+				env := eventuallyEnv(s,
+					func([]Arg, Span) (Value, error) { return Value{}, nil },
+					func([]Arg, Span) (BindResult, error) { return BindResult{Rc: OkEnvelope()}, nil },
+				)
+				err := runEventuallySrc(t, src, env)
+				rcOK, rcCodeNonZero, primaryBound := form.extract(s)
+				switch {
+				case outcome.name == "success":
+					require.NoError(t, err, "%s: success outcome must not error", label)
+					assert.True(t, rcOK, "%s: rc.ok must be true on success", label)
+					assert.True(t, primaryBound, "%s: target must be set on success", label)
+				case outcome.name == "failure" && form.name == "guard":
+					require.Error(t, err, "%s: guard form must halt on failure", label)
+					var gf *GuardFailure
+					require.True(t, errors.As(err, &gf), "%s: expected GuardFailure", label)
+					assert.False(t, gf.Envelope.OK, "%s: guard envelope OK=false", label)
+					assert.NotZero(t, gf.Envelope.Code, "%s: guard envelope Code != 0", label)
+				case outcome.name == "failure":
+					require.NoError(t, err, "%s: let form must not halt on failure", label)
+					assert.False(t, rcOK, "%s: rc.ok must be false on failure", label)
+					assert.True(t, rcCodeNonZero, "%s: rc.code must be non-zero on failure", label)
+					assert.True(t, primaryBound, "%s: target must be set on failure (let form)", label)
+				}
+			})
+		}
 	}
 }
