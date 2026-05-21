@@ -3922,6 +3922,46 @@ func TestReplLoop_TraceLetEmitsValue(t *testing.T) {
 	assert.Contains(t, out, "+ <repl>:3: let y = hello")
 }
 
+// Regression: trace lines emitted from inside a def body must
+// cite the def body's own file lines, not the line of whatever
+// top-level chunk is currently driving execution. Same root
+// cause as the deep-chain call-site annotation bug (W10): the
+// trace renderer shifts chunk-relative Pos values by the
+// CURRENT chunk's loc.Line, but the BindStmt inside a def body
+// was parsed in the def's registration chunk, not the
+// currently-executing chunk. Without the fix, a 2-level chain
+// where outer calls inner from its body trace-renders both the
+// inner call and the post-outer print as if they lived on the
+// same top-level line.
+func TestReplLoop_TraceInsideDefBodyCitesBodyLine(t *testing.T) {
+	t.Parallel()
+	// Defs spread across multiple file lines so the body
+	// positions are non-trivial; the inner call sits at the
+	// def's body's actual file line, not the top-level chunk.
+	input := "def inner(x) {\n" +
+		"  return $x\n" +
+		"}\n" +
+		"def outer(x) {\n" +
+		"  let v <- inner $x\n" +
+		"  return $v\n" +
+		"}\n" +
+		"trace on\n" +
+		"let r <- outer \"hi\"\n"
+	var outBuf, errBuf bytes.Buffer
+	cli := &bpfmancli.CLI{Out: &outBuf, Err: &errBuf}
+	lr := repl.NewScannerReader(strings.NewReader(input), nil)
+
+	err := replLoop(context.Background(), cli, nil, lr, shell.NewSession(), "", true, true)
+	require.NoError(t, err)
+	out := errBuf.String()
+	// The top-level let-r is on file line 9; its trace must
+	// cite line 9.
+	assert.Contains(t, out, "<repl>:9: let r <- outer hi", "top-level bind traces at the script's line")
+	// The inner call inside outer's body is on file line 5;
+	// the trace must cite line 5, not line 9.
+	assert.Contains(t, out, "<repl>:5: let v <- inner hi", "trace inside def body must cite the body's own line, not the executing chunk's line")
+}
+
 func TestReplLoop_TraceCommandResolvesInterpolations(t *testing.T) {
 	t.Parallel()
 

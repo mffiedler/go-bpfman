@@ -326,7 +326,11 @@ type Env struct {
 	// outermost user chunk that started the call). absoluteCallLoc
 	// reads this so the "called at L:C" annotation in
 	// decorateDefError reports the calling def's body line, not
-	// the surrounding user chunk's start.
+	// the surrounding user chunk's start. The driver's trace
+	// renderer in cmd/bpfman-shell/repl/loop.go consults the
+	// same value via CurrentDefRegStart() so `--trace` lines
+	// emitted from inside a def body cite the def body's own
+	// file lines.
 	currentDefRegStart int
 
 	// defCallDepth counts the def-call frames currently active
@@ -338,6 +342,18 @@ type Env struct {
 	// of goroutine traces, which is unkind. The cap is far below
 	// Go's stack limit so the diagnostic always wins.
 	defCallDepth int
+}
+
+// CurrentDefRegStart returns the file line at which the def
+// whose body is currently being evaluated was registered, or 0
+// at top level. Drivers that translate chunk-relative Pos
+// values to absolute file lines -- the diagnostic renderer in
+// decorateDefError, the `--trace` line emitter -- consult this
+// so positions captured during def-body parsing are shifted by
+// the def's registration chunk rather than by whatever
+// top-level chunk is currently driving execution.
+func (e *Env) CurrentDefRegStart() int {
+	return e.currentDefRegStart
 }
 
 // MaxDefCallDepth bounds how deep def calls can nest before

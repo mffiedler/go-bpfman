@@ -273,7 +273,7 @@ func wireEnvForChunk(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Manag
 	if hooks.MakeAssertStmt != nil {
 		env.ExecAssertStmt = hooks.MakeAssertStmt(cli, session, loc)
 	}
-	env.Trace = makeTraceHook(cli, session, loc)
+	env.Trace = makeTraceHook(cli, session, env, loc)
 	env.RenderEventuallyFailure = makeRenderEventuallyFailure(cli, loc)
 	env.ChunkFile = loc.File
 	env.ChunkStartLine = loc.Line
@@ -697,12 +697,26 @@ func runExternalAsBind(ctx context.Context, args []shell.Arg) (shell.BindResult,
 // closure consults session.TraceEnabled() on every invocation
 // so `trace on` / `trace off` can toggle tracing mid-script
 // without rebuilding the Env.
-func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, loc SourceLoc) func(int, string) {
+//
+// Line translation uses the def's registration chunk when we
+// are inside a def body, falling back to the executing chunk's
+// loc.Line otherwise. Without this, trace lines emitted from a
+// def body get shifted by the executing top-level chunk's
+// start (the bug at the heart of W17), and a nested call
+// renders both the body's call and the top-level statement as
+// if they lived on the same line. Same root cause as the W10
+// fix in decorateDefError's call-site annotation; both
+// renderers translate Pos values that were captured during
+// def-body parsing.
+func makeTraceHook(cli *bpfmancli.CLI, session *shell.Session, env *shell.Env, loc SourceLoc) func(int, string) {
 	return func(line int, rendered string) {
 		if !session.TraceEnabled() {
 			return
 		}
 		shift := loc.Line - 1
+		if defShift := env.CurrentDefRegStart(); defShift > 0 {
+			shift = defShift - 1
+		}
 		abs := line + shift
 		file := loc.File
 		if file == "" {
