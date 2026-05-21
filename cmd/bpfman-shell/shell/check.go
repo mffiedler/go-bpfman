@@ -504,6 +504,15 @@ func (c *checker) walkStmt(s Stmt) {
 		if l, ok := n.RHS.(*LiteralExpr); ok {
 			lit = l
 		}
+		// `let v = my_def` silently binds the literal string
+		// "my_def" when my_def is a registered def. The
+		// operator distinction between `=` (expression) and
+		// `<-` (bind) is intentional but easy to walk off; the
+		// hint points at the corrective shape without
+		// restricting the bareword-literal case.
+		if lit != nil && !lit.Quoted && c.defs[lit.Text] {
+			c.addIssue(lit.Span, "let %s = %s binds the literal string %q; %q is a def -- did you mean `let %s <- %s`?", n.Name, lit.Text, lit.Text, lit.Text, n.Name, lit.Text)
+		}
 		c.define(n.Name, c.inferExprShape(n.RHS), lit)
 
 	case *LetDestructureStmt:

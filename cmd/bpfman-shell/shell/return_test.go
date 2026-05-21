@@ -883,6 +883,48 @@ print "main"
 	}
 }
 
+// Regression: `let v = my_def` silently binds the literal
+// string "my_def" when my_def is a registered def. The two-
+// operator distinction between `=` (expression) and `<-`
+// (bind) is intentional, but the silent-wrong-thing failure
+// mode is steep enough that new users routinely walk off the
+// cliff. The checker has the defs map already populated for
+// the W2 / W3 work; on a single-name `let v = bareword` where
+// the bareword matches a known def, emit a hint pointing at
+// the bind form. Does NOT restrict the user -- a def name is
+// a valid bareword literal -- just helps when the shape is
+// almost certainly a typo.
+func TestCheck_Return_LetEqualsDefNameHintsAtBind(t *testing.T) {
+	t.Parallel()
+	src := `
+def maker() {
+  return "value"
+}
+let v = maker
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "the suspicious shape must produce an issue")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "maker", "the diagnostic must name the def")
+	assert.Contains(t, combined, "<-", "the diagnostic must point at the bind form")
+}
+
+// Regression: the same hint must NOT fire for a let whose RHS
+// names something that is NOT a def. A bareword on the RHS
+// of `=` is a perfectly valid string literal; we only intercept
+// when the bareword is a known def, where the shape is almost
+// certainly a typo'd bind. Without this guard the checker
+// would emit hints for every bareword-named-string assignment.
+func TestCheck_Return_LetEqualsNonDefIsClean(t *testing.T) {
+	t.Parallel()
+	src := `let v = literal_string_value`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "a bareword RHS that is not a def must not trigger the hint")
+}
+
 // Regression: a non-numeric arithmetic operand whose text
 // happens to be a known def name produces a confusing
 // "operand 'two' is not numeric" diagnostic. The user almost
