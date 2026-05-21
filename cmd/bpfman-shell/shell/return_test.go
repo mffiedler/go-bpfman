@@ -883,6 +883,85 @@ print "main"
 	}
 }
 
+// Regression: a def declared inside a conditional branch must
+// NOT be claimed by the checker as a globally-available def.
+// The runtime only registers a def when the DefStmt actually
+// executes; `if false { def hidden() {} }; let p <- hidden`
+// reached the runtime through preflight because c.defs was
+// populated by the walker for every DefStmt regardless of
+// branch position. Use-sites then went through the def
+// dispatch path, ran into an empty session.defs, and fell
+// through to runExternalAsBind which reported "executable
+// file not found in $PATH" -- a confusing diagnostic that
+// blames the user's path lookup rather than the dead-branch
+// declaration.
+//
+// The fix: only register defs in c.defs when they are
+// declared at the top-level walk. Defs inside conditional
+// branches (if/elif/else, foreach, eventually) and inside
+// other def bodies still get walked for their body content,
+// but their names are NOT added to c.defs because the
+// runtime cannot guarantee they will be registered. A
+// use-site of a conditionally-declared name then goes
+// through the same "unknown bind head" path as any other
+// undeclared name and produces the W18 typo-suggestion hint.
+func TestCheck_Return_ConditionalDefNotRegisteredGlobally(t *testing.T) {
+	t.Parallel()
+	src := `
+if false {
+  def hidden() {
+    return "v"
+  }
+}
+let p <- hidden
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "use of a conditionally-declared def must trip a diagnostic")
+	combined := issues[0].Msg
+	for _, i := range issues[1:] {
+		combined += "\n" + i.Msg
+	}
+	assert.Contains(t, combined, "hidden", "the diagnostic must name the offending head")
+	assert.Contains(t, combined, "conditional", "the diagnostic must name the conditional-declaration shape")
+}
+
+// Regression: top-level defs still get registered globally so
+// the existing usages work. This pins the boundary between
+// the W22 fix (conditional defs don't register) and the W2
+// baseline (top-level defs do register and surface in
+// bindHeadDef etc.).
+func TestCheck_Return_TopLevelDefStillRegistered(t *testing.T) {
+	t.Parallel()
+	src := `
+def visible() {
+  return "v"
+}
+let p <- visible
+print $p
+`
+	issues := checkSource(t, src)
+	assert.Empty(t, issues, "a top-level def must still register for bind dispatch to pass preflight")
+}
+
+// Regression: a def declared inside a foreach body is
+// conditional in the same way as an if-branch def. The
+// runtime registers it only when the iteration runs at least
+// once; the checker has no way to know how many iterations
+// the list produces. Treat the declaration as conditional.
+func TestCheck_Return_DefInForeachIsConditional(t *testing.T) {
+	t.Parallel()
+	src := `
+foreach x in [] {
+  def hidden() {
+    return $x
+  }
+}
+let p <- hidden
+`
+	issues := checkSource(t, src)
+	require.NotEmpty(t, issues, "use of a foreach-body def must trip a diagnostic")
+}
+
 // Regression: `let v = my_def` silently binds the literal
 // string "my_def" when my_def is a registered def. The two-
 // operator distinction between `=` (expression) and `<-`

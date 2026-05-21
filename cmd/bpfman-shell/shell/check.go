@@ -89,14 +89,43 @@ type checker struct {
 	// `if` branch of a def body is fine; a return at script top
 	// level or inside an if-at-top-level is rejected.
 	defDepth int
-	// defs records the names registered via DefStmt so a bind
-	// RHS whose head is a known def routes through the def's
-	// open-shape inference rather than the pure-builtin /
-	// envelope fallback. Defs are session-level declarations,
-	// so a forward reference is not legal at runtime; the
-	// checker mirrors that by adding the name when the DefStmt
-	// is walked rather than pre-scanning.
+	// defs records the names registered via DefStmt at the
+	// top-level walk so a bind RHS whose head is a known def
+	// routes through the def's open-shape inference rather
+	// than the pure-builtin / envelope fallback. Defs are
+	// session-level declarations, so a forward reference is
+	// not legal at runtime; the checker mirrors that by
+	// adding the name when the DefStmt is walked rather than
+	// pre-scanning. Defs declared inside conditional branches
+	// (if/elif/else bodies, foreach bodies, eventually bodies)
+	// or inside other def bodies are NOT added here -- the
+	// runtime only registers them when their DefStmt actually
+	// executes, which is unknown at static time. A use-site
+	// of a conditionally-declared name therefore falls into
+	// the unknown-bind-head path (see W22).
 	defs map[string]bool
+
+	// conditionalDepth tracks how many conditional bodies we
+	// are currently walking through. Non-zero means any
+	// DefStmt we encounter is conditional at runtime, so its
+	// name does NOT go into c.defs. The frames around if/
+	// elif/else branches, foreach bodies, eventually bodies,
+	// and def bodies push this counter; DefStmts at the top
+	// level keep it at zero and register normally.
+	conditionalDepth int
+
+	// conditionalDefs records names declared inside a
+	// conditional branch (if/elif/else, foreach, eventually,
+	// nested def body). Use-sites consult this so the
+	// diagnostic at the bind/command site is informative
+	// ("declared conditionally; may not be registered at
+	// runtime") rather than the generic "unknown bind head"
+	// hint, which would be technically correct but
+	// uninformative when the name actually does appear in
+	// source. Distinct from c.defs because top-level defs
+	// are guaranteed available at runtime; conditional defs
+	// are not.
+	conditionalDefs map[string]bool
 	// defHasReturn[name] is true when the def's body contains
 	// at least one ReturnStmt anywhere in its tree. The bind
 	// site uses the flag to keep the original sealed envelope
@@ -125,10 +154,11 @@ type checkFrame struct {
 
 func newChecker() *checker {
 	return &checker{
-		frames:       []checkFrame{newCheckFrame()},
-		aliases:      map[string]string{},
-		defs:         map[string]bool{},
-		defHasReturn: map[string]bool{},
+		frames:          []checkFrame{newCheckFrame()},
+		aliases:         map[string]string{},
+		defs:            map[string]bool{},
+		defHasReturn:    map[string]bool{},
+		conditionalDefs: map[string]bool{},
 	}
 }
 
@@ -420,15 +450,24 @@ func bodyHasReturn(stmts []Stmt) bool {
 	return false
 }
 
-// suggestDefForUnknownBindHead emits a "did you mean ..." hint
-// when cmd's bind head doesn't match any known def, alias, or
-// pure builtin AND a known def name is a short edit distance
-// away. The strdist threshold gates which candidates surface
-// so an arbitrary external command name does not get a
-// false-positive suggestion; only close-miss typos trip the
-// hint. The hint is informational -- an unknown head is a
-// valid shape (the user may genuinely call a subprocess) --
-// but a closely-matching typo is almost always a mistake.
+// suggestDefForUnknownBindHead emits a hint when cmd's bind
+// head doesn't match a top-level def. Two cases produce a
+// diagnostic:
+//
+//   - The head matches a CONDITIONALLY-declared def name (one
+//     declared inside an if/elif/else / foreach / eventually
+//     body or a nested def body). The runtime may not register
+//     it, so the use-site is suspect. Diagnostic names the
+//     conditional shape explicitly.
+//   - The head matches no def at all but a top-level def name
+//     is a short edit distance away. Likely typo; emit the
+//     existing "did you mean ..." hint.
+//
+// Both cases stop short of restricting the user -- an unknown
+// head is still a valid shape (the user may genuinely call a
+// subprocess) -- but the diagnostic at preflight is much more
+// useful than the runtime "executable file not found in
+// $PATH" the bind-dispatch fallback used to produce.
 func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
 	if cmd == nil || len(cmd.Args) == 0 {
 		return
@@ -440,6 +479,12 @@ func (c *checker) suggestDefForUnknownBindHead(cmd *CommandStmt) {
 	head := first.Text
 	if expanded, ok := c.aliases[head]; ok {
 		head = expanded
+	}
+	// Conditional-def case: the name appeared in source but
+	// inside a context the runtime may not execute.
+	if c.conditionalDefs[head] {
+		c.addIssue(first.Span, "bind head %q is declared in a conditional branch (if / foreach / eventually / def body); it is not registered at runtime unless the declaring branch ran", head)
+		return
 	}
 	if len(c.defs) == 0 {
 		return
@@ -657,12 +702,17 @@ func (c *checker) walkStmt(s Stmt) {
 		// iteration; one frame for the body is enough -- the
 		// runtime allocates one frame per iteration but a
 		// static walk cannot make use of the distinction.
+		// foreach with an empty list runs the body zero times,
+		// so any DefStmt inside the body is conditional from
+		// a static-availability perspective.
+		c.conditionalDepth++
 		c.withFrame(func() {
 			for _, name := range n.Names {
 				c.define(name, Shape{Sealed: false, Kind: OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
+		c.conditionalDepth--
 
 	case *DefStmt:
 		// Register the def name BEFORE walking the body so a
@@ -673,7 +723,21 @@ func (c *checker) walkStmt(s Stmt) {
 		// call site, which a recursive call hits after the
 		// SetDef installation, so the checker matches what the
 		// runtime does on the second and later iterations.
-		c.defs[n.Name] = true
+		// Defs declared inside conditional contexts (if/elif/
+		// else, foreach, eventually, or another def's body) are
+		// NOT registered in c.defs because the runtime would
+		// only install them when their parent block actually
+		// runs -- which is unknown at static time. Their body
+		// is still walked so internal errors surface, but
+		// use-sites of the name go through the unknown-bind-
+		// head path. The defHasReturn map records the shape
+		// regardless so a recursive call inside this same def
+		// resolves consistently.
+		if c.conditionalDepth == 0 {
+			c.defs[n.Name] = true
+		} else {
+			c.conditionalDefs[n.Name] = true
+		}
 		c.defHasReturn[n.Name] = bodyHasReturn(n.Body)
 		// Parameters are visible inside the body and disappear
 		// at end-of-def. The runtime allocates a fresh frame
@@ -681,13 +745,18 @@ func (c *checker) walkStmt(s Stmt) {
 		// its parameter frame in place. defDepth tracks whether
 		// the walk is currently inside any def so the ReturnStmt
 		// case can reject the keyword at the wrong nesting.
+		// The body's contents are conditional in the sense
+		// that they only execute when the def is called, so
+		// any nested DefStmt is also treated as conditional.
 		c.defDepth++
+		c.conditionalDepth++
 		c.withFrame(func() {
 			for _, p := range n.Params {
 				c.define(p, Shape{Sealed: false, Kind: OriginUnknown}, nil)
 			}
 			c.walkStmts(n.Body)
 		})
+		c.conditionalDepth--
 		c.defDepth--
 
 	case *ReturnStmt:
@@ -713,20 +782,35 @@ func (c *checker) walkStmt(s Stmt) {
 		// checker does not know which branch will run, so it
 		// walks every branch independently; none contributes
 		// bindings to the surrounding scope.
+		//
+		// conditionalDepth bumps for each branch so a DefStmt
+		// inside the branch body is NOT registered as
+		// globally available. The runtime registers a def
+		// only when the branch's DefStmt actually executes;
+		// the checker matches by treating any in-branch def
+		// as conditional. Without the bump, `if false { def
+		// x() }; x` passed preflight and crashed at runtime
+		// with "executable file not found".
 		c.checkExpr(n.Cond)
+		c.conditionalDepth++
 		c.withFrame(func() {
 			c.walkStmts(n.Then)
 		})
+		c.conditionalDepth--
 		for _, b := range n.Elifs {
 			c.checkExpr(b.Cond)
+			c.conditionalDepth++
 			c.withFrame(func() {
 				c.walkStmts(b.Body)
 			})
+			c.conditionalDepth--
 		}
 		if len(n.Else) > 0 {
+			c.conditionalDepth++
 			c.withFrame(func() {
 				c.walkStmts(n.Else)
 			})
+			c.conditionalDepth--
 		}
 
 	case *DeferStmt:
@@ -741,10 +825,17 @@ func (c *checker) walkStmt(s Stmt) {
 		// stays inside the attempt and is invisible to the
 		// post-construct scope. The checker has no notion of
 		// "attempt"; one frame for the body is enough, just
-		// like foreach.
+		// like foreach. Conditional from the same reason --
+		// the attempt may run zero times in pathological cases
+		// (timeout reached before first iteration), and even
+		// when it does, any DefStmt inside lives inside an
+		// attempt-local frame the runtime treats as
+		// conditional.
+		c.conditionalDepth++
 		c.withFrame(func() {
 			c.walkStmts(n.Body)
 		})
+		c.conditionalDepth--
 
 	case *AssertStmt:
 		c.checkExpr(n.Expr)
