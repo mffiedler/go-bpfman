@@ -184,18 +184,14 @@ func bpfmanBindFallback(ctx context.Context, cli *bpfmancli.CLI, mgr *manager.Ma
 		quiet := cli.WithDiscardOutput()
 		val, err := replDispatch(ctx, quiet, mgr, args)
 		if err != nil {
-			rc := shell.Envelope{OK: false, Code: 1, Stderr: err.Error()}
+			rc := shell.FailEnvelopeFromError(err)
 			return true, shell.BindResult{Rc: rc, Primary: shell.Value{}}, nil
 		}
-		rc := shell.Envelope{OK: true, Code: 0}
-		return true, shell.BindResult{Rc: rc, Primary: val}, nil
+		return true, shell.BindResult{Rc: shell.OkEnvelope(), Primary: val}, nil
 	}
 	if domainNouns[first] {
-		rc := shell.Envelope{
-			OK:     false,
-			Code:   1,
-			Stderr: fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " ")),
-		}
+		rc := shell.FailEnvelope()
+		rc.Stderr = fmt.Sprintf("domain commands require a \"bpfman\" prefix: try %q", "bpfman "+strings.Join(repl.ArgTexts(args), " "))
 		return true, shell.BindResult{Rc: rc, Primary: shell.ValueFromEnvelope(rc)}, nil
 	}
 	return false, shell.BindResult{}, nil

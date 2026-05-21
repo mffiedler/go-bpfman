@@ -443,14 +443,14 @@ func handleNetRelease(ctx context.Context, args []shell.Arg) (shell.Value, error
 		return shell.Value{}, fmt.Errorf("net release: %w", err)
 	}
 	if pair.MarkReleased() {
-		return shell.ValueFromEnvelope(shell.Envelope{OK: true, Code: 0}), nil
+		return shell.ValueFromEnvelope(shell.OkEnvelope()), nil
 	}
 	runIPIgnoreErr(ctx, "link", "del", pair.HostLink)
 	runIPIgnoreErr(ctx, "netns", "del", pair.Ns)
 	if pair.Lease != nil {
 		_ = shell.ReleasePoolSlot(pair.Lease, pair.Ns, pair.HostLink)
 	}
-	return shell.ValueFromEnvelope(shell.Envelope{OK: true, Code: 0}), nil
+	return shell.ValueFromEnvelope(shell.OkEnvelope()), nil
 }
 
 // replNetExec runs `ip netns exec NS CMD ARGS...` synchronously
