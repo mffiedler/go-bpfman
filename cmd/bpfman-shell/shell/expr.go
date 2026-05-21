@@ -239,6 +239,20 @@ type Env struct {
 	// counts toward the script's exit code via Session.
 	RenderDeferFailure func(stmtLoc Pos, args []Arg, rc Envelope)
 
+	// RenderDeferOutput fires after every defer dispatch, win or
+	// lose, so the driver can flush the deferred command's
+	// captured stdout/stderr to its terminal. Defers go through
+	// ExecBind, which captures output into the rc envelope (rc.
+	// Stdout / rc.Stderr); without this hook the captured bytes
+	// are dropped on the floor and `defer print "trace"` is
+	// silent. A nil callback preserves the historical drop-the-
+	// output behaviour for tests and embedders that do not want
+	// side output during cleanup. The failure-path rendering in
+	// RenderDeferFailure still shows the captured streams in
+	// its labelled block, but the standalone success-output flow
+	// is the job of this hook.
+	RenderDeferOutput func(args []Arg, rc Envelope)
+
 	// HandleJobLeak is called once per unmanaged job at scope
 	// exit. The driver renders the diagnostic ('[job] FAIL at
 	// file:line: argv') and is responsible for any cleanup
@@ -1314,6 +1328,16 @@ func runDefers(env *Env, stack []deferEntry) int {
 			env.Session.RecordDeferFailure()
 			failures++
 			continue
+		}
+		// Flush the captured stdout/stderr through the driver
+		// before the failure-path branch decides whether to
+		// also render a labelled block: a successful defer's
+		// output would otherwise be dropped, and a failing
+		// defer's output is included in the failure block below
+		// so the success-output hook only carries the
+		// non-failure case.
+		if result.Rc.OK && env.RenderDeferOutput != nil {
+			env.RenderDeferOutput(entry.Args, result.Rc)
 		}
 		if !result.Rc.OK {
 			if env.RenderDeferFailure != nil {

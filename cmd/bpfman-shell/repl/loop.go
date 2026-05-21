@@ -345,7 +345,8 @@ func scriptLoop(ctx context.Context, cfg Config) error {
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			RenderEnvelopeFailure(cli, "defer", SourceLoc{File: file}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: StrictJobLeakHandler(cli, session),
+		RenderDeferOutput: makeDeferOutputFlusher(cli),
+		HandleJobLeak:     StrictJobLeakHandler(cli, session),
 	}
 	hooks := configHooks(cfg)
 	return shell.WithJobScope(env, func() error {
@@ -500,7 +501,8 @@ func interactiveLoop(ctx context.Context, cfg Config) error {
 		RenderDeferFailure: func(stmtLoc shell.Pos, args []shell.Arg, rc shell.Envelope) {
 			RenderEnvelopeFailure(cli, "defer", SourceLoc{}, stmtLoc, args, rc)
 		},
-		HandleJobLeak: SilentJobLeakHandler(),
+		RenderDeferOutput: makeDeferOutputFlusher(cli),
+		HandleJobLeak:     SilentJobLeakHandler(),
 	}
 
 	promptPrimary := cfg.PromptPrimary

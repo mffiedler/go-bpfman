@@ -89,6 +89,43 @@ func runProgramWithEnv(t *testing.T, src string, env *Env) error {
 	return EvalProgram(prog, env)
 }
 
+// Regression: a defer command's stdout/stderr is captured into
+// its result envelope but the driver did not surface it. The
+// user-facing symptom: `defer print "trace"` produces no
+// output. The fix is an Env.RenderDeferOutput callback the
+// driver wires to flush captured streams; the shell layer
+// invokes it after every defer dispatch so the driver decides
+// where the bytes go.
+func TestEvalProgram_Defer_StdoutFlushedThroughRenderDeferOutput(t *testing.T) {
+	t.Parallel()
+
+	r := &recorder{rc: func(args []Arg) Envelope {
+		// Simulate a defer whose dispatched handler produced
+		// stdout (the way the print builtin would inside
+		// makeExecBind's captured stdout buffer).
+		head := argText0(recordedCall{args: args})
+		if head == "say" && len(args) > 1 {
+			if w, ok := args[1].(WordArg); ok {
+				return Envelope{OK: true, Stdout: w.Text}
+			}
+		}
+		return Envelope{OK: true}
+	}}
+	var flushed []string
+	env := &Env{
+		Session:  NewSession(),
+		ExecBind: r.execBind,
+		RenderDeferOutput: func(args []Arg, rc Envelope) {
+			if rc.Stdout != "" {
+				flushed = append(flushed, rc.Stdout)
+			}
+		},
+	}
+	require.NoError(t, runProgramWithEnv(t, "defer say hello\n", env))
+	require.Len(t, flushed, 1, "RenderDeferOutput must fire for the dispatched defer")
+	assert.Equal(t, "hello", flushed[0])
+}
+
 func TestEvalProgram_Defer_LIFOOrder(t *testing.T) {
 	t.Parallel()
 

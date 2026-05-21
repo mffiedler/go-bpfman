@@ -33,6 +33,32 @@ var ErrRequireFailed = shell.ErrRequireFailed
 // error message.
 var ErrScriptError = errors.New("script error")
 
+// makeDeferOutputFlusher returns a shell.Env.RenderDeferOutput
+// hook that writes the captured stdout/stderr of a successful
+// defer through to the driver's terminal. Defers go through
+// ExecBind, which captures the deferred command's output into
+// the result envelope; without this flush the captured bytes
+// were dropped, so `defer print "trace"` produced no visible
+// output. Failure-path defers still render through
+// RenderDeferFailure's labelled block (which already shows the
+// captured streams), so this hook only fires on success.
+//
+// Output is forwarded verbatim. Builtins like print append a
+// trailing newline themselves, so this code adds no extra
+// formatting; subprocess output that lacks a trailing newline
+// will appear without one, matching how the same command would
+// look when run at the prompt.
+func makeDeferOutputFlusher(cli *bpfmancli.CLI) func(args []shell.Arg, rc shell.Envelope) {
+	return func(_ []shell.Arg, rc shell.Envelope) {
+		if rc.Stdout != "" {
+			_ = cli.PrintOut(rc.Stdout)
+		}
+		if rc.Stderr != "" {
+			_ = cli.PrintErr(rc.Stderr)
+		}
+	}
+}
+
 // RenderEnvelopeFailure prints a captured-result failure as a
 // labelled block: the verb header (guard, require, assert,
 // defer), the source position of the failing statement, the
